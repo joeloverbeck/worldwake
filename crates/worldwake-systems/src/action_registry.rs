@@ -1,12 +1,14 @@
 use crate::{
     register_accuse_action, register_ask_witness_action, register_attack_action,
-    register_bury_action, register_consult_record_action, register_craft_actions,
-    register_defend_action, register_establish_camp_action, register_exile_action,
-    register_fine_action, register_harvest_actions, register_heal_action,
-    register_investigate_action, register_loot_action, register_needs_actions,
-    register_office_actions, register_patrol_action, register_queue_for_facility_use_action,
-    register_staff_market_action, register_stock_actions, register_tell_action,
-    register_trade_action, register_transport_actions, register_travel_actions,
+    register_artifact_actions, register_bury_action, register_consult_record_action,
+    register_craft_actions, register_defend_action, register_establish_camp_action,
+    register_exile_action, register_fine_action, register_harvest_actions,
+    register_heal_action, register_investigate_action, register_loot_action,
+    register_needs_actions, register_office_actions, register_patrol_action,
+    register_queue_for_care_target_action, register_queue_for_corpse_use_action,
+    register_queue_for_facility_use_action, register_staff_market_action,
+    register_stock_actions, register_tell_action, register_trade_action,
+    register_transport_actions, register_travel_actions,
 };
 use worldwake_core::ActionDefId;
 use worldwake_sim::{
@@ -26,6 +28,8 @@ pub fn register_all_actions(
 ) {
     register_needs_actions(defs, handlers);
     let _ = register_queue_for_facility_use_action(defs, handlers);
+    let _ = register_queue_for_corpse_use_action(defs, handlers);
+    let _ = register_queue_for_care_target_action(defs, handlers);
     let _ = register_harvest_actions(defs, handlers, recipes);
     let _ = register_craft_actions(defs, handlers, recipes);
     let _ = register_trade_action(defs, handlers);
@@ -33,6 +37,7 @@ pub fn register_all_actions(
     let _ = register_tell_action(defs, handlers);
     let _ = register_consult_record_action(defs, handlers);
     let _ = register_office_actions(defs, handlers);
+    let _ = register_artifact_actions(defs, handlers);
     let _ = register_travel_actions(defs, handlers);
     let _ = register_transport_actions(defs, handlers);
     let _ = register_attack_action(defs, handlers);
@@ -86,10 +91,15 @@ mod tests {
             "toilet",
             "wash",
             "queue_for_facility_use",
+            "queue_for_corpse_use",
+            "queue_for_care_target",
             "trade",
             "staff_market",
             "tell",
             "consult_record",
+            "post_bounty",
+            "post_notice",
+            "claim_bounty",
             "bribe",
             "threaten",
             "declare_support",

@@ -4972,6 +4972,8 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(seed: Seed) -> (Stat
             wounds: Vec::new(),
             last_known_courage: None,
             believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
             observed_tick: Tick(0),
             source: PerceptionSource::DirectObservation,
         },
@@ -6347,6 +6349,13 @@ fn run_witness_deterrence_suppresses_theft_candidate(seed: Seed) -> (StateHash, 
             default_perception_profile(),
         );
     }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        thief,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
 
     set_theft_profile(
         &mut h,
@@ -7266,6 +7275,8 @@ fn run_dual_discovery_converges_without_double_accusation(seed: Seed) -> (StateH
             wounds: Vec::new(),
             last_known_courage: None,
             believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
             observed_tick: Tick(0),
             source: PerceptionSource::DirectObservation,
         },

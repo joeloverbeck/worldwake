@@ -278,6 +278,7 @@ mod tests {
             bound_targets: vec![],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         });
         assert!(!repl_state.last_affordances.is_empty());
 

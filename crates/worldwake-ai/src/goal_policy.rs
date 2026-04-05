@@ -187,6 +187,7 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         GoalKind::BuryCorpse { .. }
         | GoalKind::RegroupWithFaction { .. }
         | GoalKind::EstablishBanditCamp { .. }
+        | GoalKind::FulfillBounty { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. }
         | GoalKind::InvestigateViolation { .. }

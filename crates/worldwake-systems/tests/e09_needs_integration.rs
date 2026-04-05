@@ -458,7 +458,7 @@ fn authoritative_schema_includes_expected_shared_e09_e12_and_e14_components_and_
         ComponentKind::CombatProfile,
         ComponentKind::DeadAt,
         ComponentKind::CombatStance,
-        ComponentKind::FacilityQueueDispositionProfile,
+        ComponentKind::ContentionDispositionProfile,
         ComponentKind::AgentBeliefStore,
         ComponentKind::PerceptionProfile,
         ComponentKind::DriveThresholds,

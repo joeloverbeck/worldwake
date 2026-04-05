@@ -14,14 +14,14 @@ use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, AgentData, BeliefConfidencePolicy,
     BlockedIntentMemory, CombatProfile, CommodityKind, ControlSource, DriveThresholds, EventTag,
     FactionPurpose, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead, MetabolismProfile,
-    PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, Seed, StateHash,
-    SuccessionLaw, TellProfile, Tick, UtilityProfile,
+    NoticeTopic, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, Seed,
+    StateHash, SuccessionLaw, TellProfile, Tick, UtilityProfile,
 };
 use worldwake_sim::{
     get_affordances, ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind,
-    InputKind, OfficeSuccessionOutcome, PerAgentBeliefView, PressForceClaimActionPayload,
-    RequestProvenance, RuntimeBeliefView, SupportCountTrace, SupportResolutionTrace,
-    VacancyTimerTrace, YieldForceClaimActionPayload,
+    InputKind, OfficeSuccessionOutcome, PerAgentBeliefView, PostNoticeActionPayload,
+    PressForceClaimActionPayload, RequestProvenance, RuntimeBeliefView, SupportCountTrace,
+    SupportResolutionTrace, VacancyTimerTrace, YieldForceClaimActionPayload,
 };
 
 // ---------------------------------------------------------------------------
@@ -253,6 +253,35 @@ fn set_control_source(
     txn.set_component_agent_data(agent, AgentData { control_source })
         .unwrap();
     commit_txn(txn, &mut h.event_log);
+}
+
+fn request_action_with_payload(
+    h: &mut GoldenHarness,
+    actor: worldwake_core::EntityId,
+    def_name: &str,
+    targets: Vec<worldwake_core::EntityId>,
+    payload_override: Option<ActionPayload>,
+) {
+    let def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == def_name)
+        .map_or_else(
+            || panic!("full registries should include {def_name}"),
+            |def| def.id,
+        );
+    let tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        tick,
+        InputKind::RequestAction {
+            actor,
+            def_id,
+            targets,
+            payload_override,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
 }
 
 #[test]
@@ -3232,5 +3261,249 @@ fn golden_force_control_locality_requires_tell_replays_deterministically() {
     assert_eq!(
         first, second,
         "force-control locality and tell relay should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 109: Vacancy notice unlocks political action without record consult
+// ---------------------------------------------------------------------------
+//
+// Systems: Social artifact actions, Perception, Institutional beliefs, AI,
+//   Political actions, Succession
+// GoalKinds: ClaimOffice
+// ActionDomains: Social, Generic
+// Places: VillageSquare
+// Principles: 7, 12, 18, 25
+//
+// Setup: A human issuer and a non-AI claimant are co-located with a vacant
+//   support-law office at VillageSquare. The claimant has no seeded office-
+//   holder belief and no pre-consulted office register. The issuer posts an
+//   `OfficeVacancy` notice locally, the claimant perceives it, internalizes
+//   vacancy certainty through the notice path, then AI resumes.
+//
+// Proves: The notice-artifact path can unlock ordinary political action without
+//   `consult_record` or Tell. The claimant perceives the notice, records a
+//   direct-observation vacancy belief, generates `ClaimOffice`, commits
+//   `declare_support`, and becomes office holder through the normal succession
+//   surface.
+//
+// Chain: post_notice -> local perception stores believed_artifact vacancy ->
+//   institutional belief becomes Certain(None) via DirectObservation -> AI
+//   generates ClaimOffice -> declare_support commits without consult_record ->
+//   succession installs claimant.
+
+#[allow(clippy::too_many_lines)]
+fn run_vacancy_notice_political_uptake(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let issuer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Vacancy Herald",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, issuer, ControlSource::Human, 0);
+
+    let claimant = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Ambitious Claimant",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(800)),
+    );
+    set_control_source(&mut h, claimant, ControlSource::None, 0);
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        claimant,
+        default_perception_profile(),
+    );
+
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Village Elder",
+        VILLAGE_SQUARE,
+        SuccessionLaw::Support,
+        5,
+        vec![],
+    );
+
+    let pre_notice_belief = h
+        .world
+        .get_component_agent_belief_store(claimant)
+        .map_or(InstitutionalBeliefRead::Unknown, |store| {
+            store.believed_office_holder(office)
+        });
+    assert!(
+        matches!(pre_notice_belief, InstitutionalBeliefRead::Unknown),
+        "claimant should start without seeded office-holder knowledge"
+    );
+
+    request_action_with_payload(
+        &mut h,
+        issuer,
+        "post_notice",
+        vec![VILLAGE_SQUARE],
+        Some(ActionPayload::PostNotice(PostNoticeActionPayload {
+            posting_place: VILLAGE_SQUARE,
+            issuing_authority: None,
+            expires_at: Some(Tick(40)),
+            jurisdiction: None,
+            topic: NoticeTopic::OfficeVacancy { office },
+        })),
+    );
+
+    let mut notice = None;
+    let mut noticed_vacancy = false;
+    for _ in 0..8 {
+        h.step_once();
+        if notice.is_none() {
+            notice = h.world.query_artifact_header().find_map(|(entity, header)| {
+                (header.kind == worldwake_core::ArtifactKind::Notice).then_some(entity)
+            });
+        }
+        noticed_vacancy = notice.is_some_and(|artifact| {
+            agent_belief_about(&h.world, claimant, artifact)
+                .and_then(|belief| belief.believed_artifact.as_ref())
+                .is_some_and(|artifact_state| {
+                    artifact_state.kind == worldwake_core::ArtifactKind::Notice
+                        && artifact_state.state == worldwake_core::ArtifactState::Active
+                        && artifact_state.notice_topic
+                            == Some(NoticeTopic::OfficeVacancy { office })
+                })
+                && h.world
+                    .get_component_agent_belief_store(claimant)
+                    .is_some_and(|store| {
+                        matches!(
+                            store.believed_office_holder(office),
+                            InstitutionalBeliefRead::Certain(None)
+                        ) && store
+                            .institutional_beliefs
+                            .get(&worldwake_core::InstitutionalBeliefKey::OfficeHolderOf {
+                                office,
+                            })
+                            .is_some_and(|beliefs| beliefs.iter().any(|belief| {
+                                belief.claim
+                                    == worldwake_core::InstitutionalClaim::OfficeHolder {
+                                        office,
+                                        holder: None,
+                                        effective_tick: belief.learned_tick,
+                                    }
+                                    && belief.source
+                                        == worldwake_core::InstitutionalKnowledgeSource::DirectObservation
+                                    && belief.learned_at == Some(VILLAGE_SQUARE)
+                            }))
+                    })
+        });
+        if noticed_vacancy {
+            break;
+        }
+    }
+
+    let notice = notice.expect("post_notice should create a notice artifact");
+    assert!(
+        h.action_trace_sink()
+            .expect("action tracing enabled")
+            .events_for(issuer)
+            .iter()
+            .any(|event| {
+                event.action_name == "post_notice"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
+        "issuer should commit post_notice"
+    );
+    assert!(
+        noticed_vacancy,
+        "claimant should perceive the vacancy notice and internalize the vacancy belief"
+    );
+    assert_eq!(
+        h.world
+            .get_component_artifact_header(notice)
+            .expect("posted notice should retain an artifact header")
+            .kind,
+        worldwake_core::ArtifactKind::Notice,
+        "the created social artifact should be a notice"
+    );
+
+    let ai_tick = h.scheduler.current_tick().0;
+    set_control_source(&mut h, claimant, ControlSource::Ai, ai_tick);
+
+    for _ in 0..20 {
+        h.step_once();
+        if h.world.office_holder(office) == Some(claimant) {
+            break;
+        }
+    }
+
+    let decision_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for vacancy-notice scenario");
+    let generated_claim_goal = decision_sink
+        .goal_history_for(claimant, &GoalKind::ClaimOffice { office })
+        .into_iter()
+        .any(|entry| entry.status.is_generated());
+    assert!(
+        generated_claim_goal,
+        "claimant should generate ClaimOffice after learning vacancy from the notice"
+    );
+
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for vacancy-notice scenario");
+    assert!(
+        !action_sink.events_for(claimant).iter().any(|event| {
+            event.action_name == "consult_record"
+                && matches!(
+                    event.kind,
+                    ActionTraceKind::Started { .. }
+                        | ActionTraceKind::Committed { .. }
+                        | ActionTraceKind::StartFailed { .. }
+                )
+        }),
+        "claimant should not start consult_record when notice-derived vacancy belief is already certain"
+    );
+    assert!(
+        action_sink.events_for(claimant).iter().any(|event| {
+            event.action_name == "declare_support"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        }),
+        "claimant should commit declare_support through the ordinary political action path"
+    );
+    assert_eq!(
+        h.world.office_holder(office),
+        Some(claimant),
+        "claimant should become office holder after acting on the notice-derived vacancy belief"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_vacancy_notice_unlocks_political_action_without_record_consult() {
+    let _ = run_vacancy_notice_political_uptake(Seed([128; 32]));
+}
+
+#[test]
+fn golden_vacancy_notice_unlocks_political_action_without_record_consult_replays_deterministically() {
+    let seed = Seed([129; 32]);
+
+    let first = run_vacancy_notice_political_uptake(seed);
+    let second = run_vacancy_notice_political_uptake(seed);
+
+    assert_eq!(
+        first, second,
+        "vacancy-notice political uptake should replay deterministically"
     );
 }

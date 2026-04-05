@@ -4,6 +4,8 @@
 //! Depends on `worldwake-core` and `worldwake-sim`.
 
 pub mod action_registry;
+pub mod artifact_actions;
+pub mod artifact_lifecycle;
 pub mod bandit_camp;
 pub mod bandit_camp_actions;
 pub mod combat;
@@ -32,15 +34,18 @@ pub mod transport_actions;
 pub mod travel_actions;
 
 pub use action_registry::{build_full_action_registries, register_all_actions, ActionRegistries};
+pub use artifact_actions::register_artifact_actions;
+pub use artifact_lifecycle::artifact_lifecycle_system;
 pub use bandit_camp::bandit_camp_system;
 pub use bandit_camp_actions::register_establish_camp_action;
 pub use combat::{
     combat_system, register_attack_action, register_bury_action, register_defend_action,
-    register_heal_action, register_loot_action,
+    register_heal_action, register_loot_action, register_queue_for_care_target_action,
+    register_queue_for_corpse_use_action,
 };
 pub use consult_record_actions::register_consult_record_action;
 pub use epistemic_actions::register_ask_witness_action;
-pub use facility_queue::facility_queue_system;
+pub use facility_queue::contention_system;
 pub use facility_queue_actions::register_queue_for_facility_use_action;
 pub use investigate_actions::register_investigate_action;
 pub use justice_actions::{register_accuse_action, register_exile_action, register_fine_action};
@@ -71,7 +76,8 @@ pub fn dispatch_table() -> SystemDispatchTable {
         resource_regeneration_system,
         trade_system_tick,
         combat_system,
-        facility_queue_system,
+        artifact_lifecycle_system,
+        contention_system,
         succession_system,
         perception_system,
         bandit_camp_system,

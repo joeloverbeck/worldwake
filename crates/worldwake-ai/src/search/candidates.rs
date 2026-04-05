@@ -7,7 +7,9 @@ use crate::{
     GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{ActionDefId, BlockedIntentMemory, EntityId, GoalKind, Tick};
+use worldwake_core::{
+    ActionDefId, BlockedIntentMemory, ContentionStatus, EntityId, GoalKind, Tick,
+};
 use worldwake_sim::{
     get_affordances_for_defs, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
     QueueForFacilityUsePayload, RuntimeBeliefView,
@@ -126,7 +128,7 @@ pub(super) fn search_candidates(
     )
     .into_iter()
     .flat_map(|affordance| {
-        search_candidates_from_affordance(goal, &node.state, registry, &affordance)
+        search_candidates_from_affordance(goal, &node.state, registry, handlers, &affordance)
     })
     .collect::<Vec<_>>();
     let ask_witness_omission = conditional_ask_witness_omission_trace(
@@ -243,6 +245,21 @@ pub(super) fn search_candidates(
                     crate::decision_trace::RootCandidateFilterReason::BindingMismatch {
                         required_target,
                     },
+                ),
+            );
+            continue;
+        }
+
+        if !goal
+            .key
+            .kind
+            .candidate_is_available(&node.state, semantics.op_kind)
+        {
+            update_root_candidate_outcome(
+                &mut root_candidates,
+                trace_index,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::GoalUnavailable,
                 ),
             );
             continue;
@@ -515,6 +532,7 @@ pub(super) fn search_candidates_from_affordance(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
     affordance: &Affordance,
 ) -> Vec<SearchCandidate> {
     if !affordance_matches_grounded_opportunity(goal, affordance) {
@@ -538,7 +556,18 @@ pub(super) fn search_candidates_from_affordance(
     let Some(def) = registry.get(affordance.def_id) else {
         return vec![base];
     };
-    if def.name != "queue_for_facility_use" {
+    if matches!(def.name.as_str(), "loot" | "bury" | "heal")
+        && !matches!(
+            affordance.contention_status,
+            ContentionStatus::Unmanaged | ContentionStatus::Granted
+        )
+    {
+        return Vec::new();
+    }
+    if !matches!(
+        def.name.as_str(),
+        "queue_for_facility_use" | "queue_for_corpse_use" | "queue_for_care_target"
+    ) {
         return vec![base];
     }
     if base.payload_override.is_some() {
@@ -557,8 +586,8 @@ pub(super) fn search_candidates_from_affordance(
     {
         return Vec::new();
     }
-    let Some((workstation_tag, intended_actions)) =
-        queue_intended_actions_for(goal, state, registry, facility)
+    let Some(intended_actions) =
+        queue_intended_actions_for(goal, state, registry, facility, def.name.as_str())
     else {
         return Vec::new();
     };
@@ -566,8 +595,20 @@ pub(super) fn search_candidates_from_affordance(
         return Vec::new();
     }
 
+    let require_current_affordability = def.name == "queue_for_care_target";
+
     intended_actions
         .into_iter()
+        .filter(|action_id| {
+            !require_current_affordability
+                || intended_action_is_currently_affordable(
+                    goal,
+                    state,
+                    registry,
+                    handlers,
+                    *action_id,
+                )
+        })
         .filter(|action_id| !state.has_actor_facility_grant(facility, *action_id))
         .map(|action_id| SearchCandidate {
             payload_override: Some(ActionPayload::QueueForFacilityUse(
@@ -577,54 +618,90 @@ pub(super) fn search_candidates_from_affordance(
             )),
             ..base.clone()
         })
-        .filter(|candidate| {
-            registry
-                .get(candidate.def_id)
-                .is_some_and(|_| state.workstation_tag(facility) == Some(workstation_tag))
-        })
         .collect()
+}
+
+fn intended_action_is_currently_affordable(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    intended_action: ActionDefId,
+) -> bool {
+    let allowed_defs = BTreeSet::from([intended_action]);
+    get_affordances_for_defs(state, state.snapshot().actor(), registry, handlers, &allowed_defs)
+        .into_iter()
+        .any(|affordance| affordance_matches_grounded_opportunity(goal, &affordance))
 }
 
 fn queue_intended_actions_for(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
-    facility: EntityId,
-) -> Option<(worldwake_core::WorkstationTag, Vec<ActionDefId>)> {
-    let workstation_tag = state.workstation_tag(facility)?;
-    let actions = match goal.key.kind {
-        GoalKind::ProduceCommodity { recipe_id } => registry
-            .iter()
-            .filter_map(|def| {
-                let payload = def.payload.as_craft()?;
-                (payload.recipe_id == recipe_id
-                    && payload.required_workstation_tag == workstation_tag)
-                    .then_some(def.id)
-            })
-            .collect::<Vec<_>>(),
-        GoalKind::AcquireCommodity { commodity, .. }
-        | GoalKind::ConsumeOwnedCommodity { commodity }
-        | GoalKind::RestockCommodity { commodity } => registry
-            .iter()
-            .filter_map(|def| {
-                if let Some(payload) = def.payload.as_harvest() {
-                    return (payload.output_commodity == commodity
-                        && payload.required_workstation_tag == workstation_tag)
-                        .then_some(def.id);
-                }
-                def.payload.as_craft().and_then(|payload| {
-                    (payload.required_workstation_tag == workstation_tag
-                        && payload.outputs.iter().any(|(output, quantity)| {
-                            *output == commodity && *quantity > worldwake_core::Quantity(0)
-                        }))
-                    .then_some(def.id)
-                })
-            })
-            .collect::<Vec<_>>(),
+    entity: EntityId,
+    queue_action_name: &str,
+) -> Option<Vec<ActionDefId>> {
+    let actions = match queue_action_name {
+        "queue_for_facility_use" => {
+            let workstation_tag = state.workstation_tag(entity)?;
+            match goal.key.kind {
+                GoalKind::ProduceCommodity { recipe_id } => registry
+                    .iter()
+                    .filter_map(|def| {
+                        let payload = def.payload.as_craft()?;
+                        (payload.recipe_id == recipe_id
+                            && payload.required_workstation_tag == workstation_tag)
+                            .then_some(def.id)
+                    })
+                    .collect::<Vec<_>>(),
+                GoalKind::AcquireCommodity { commodity, .. }
+                | GoalKind::ConsumeOwnedCommodity { commodity }
+                | GoalKind::RestockCommodity { commodity } => registry
+                    .iter()
+                    .filter_map(|def| {
+                        if let Some(payload) = def.payload.as_harvest() {
+                            return (payload.output_commodity == commodity
+                                && payload.required_workstation_tag == workstation_tag)
+                                .then_some(def.id);
+                        }
+                        def.payload.as_craft().and_then(|payload| {
+                            (payload.required_workstation_tag == workstation_tag
+                                && payload.outputs.iter().any(|(output, quantity)| {
+                                    *output == commodity
+                                        && *quantity > worldwake_core::Quantity(0)
+                                }))
+                            .then_some(def.id)
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            }
+        }
+        "queue_for_corpse_use" => match goal.key.kind {
+            GoalKind::LootCorpse { corpse } if corpse == entity => registry
+                .iter()
+                .find(|def| def.name == "loot")
+                .map(|def| vec![def.id])
+                .unwrap_or_default(),
+            GoalKind::BuryCorpse { corpse, .. } if corpse == entity => registry
+                .iter()
+                .find(|def| def.name == "bury")
+                .map(|def| vec![def.id])
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        },
+        "queue_for_care_target" => match goal.key.kind {
+            GoalKind::TreatWounds { patient } if patient == entity => registry
+                .iter()
+                .find(|def| def.name == "heal")
+                .map(|def| vec![def.id])
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        },
         _ => Vec::new(),
     };
 
-    (!actions.is_empty()).then_some((workstation_tag, actions))
+    (!actions.is_empty()).then_some(actions)
 }
 
 pub(super) fn search_candidate_from_planner(

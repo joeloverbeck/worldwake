@@ -155,7 +155,8 @@ pub fn start_action(
             ActionError::InternalError("action instance id overflowed".to_string())
         })?);
 
-    txn.add_tag(EventTag::ActionStarted);
+    txn.set_action_name(def.name.clone())
+        .add_tag(EventTag::ActionStarted);
     for target in &instance.targets {
         txn.add_target(*target);
     }
@@ -467,6 +468,7 @@ mod tests {
             bound_targets: vec![target],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         defs.register(sample_def(
@@ -530,6 +532,7 @@ mod tests {
         let record = log.get(worldwake_core::EventId(0)).unwrap();
         assert_eq!(record.cause(), CauseRef::Bootstrap);
         assert_eq!(record.actor_id(), Some(actor));
+        assert_eq!(record.action_name(), Some("action-0"));
         assert_eq!(record.place_id(), Some(place));
         assert_eq!(record.target_ids(), vec![target]);
         assert!(record.tags().contains(&EventTag::ActionStarted));
@@ -571,6 +574,7 @@ mod tests {
                 weapon: CombatWeaponRef::Commodity(CommodityKind::Bow),
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         defs.register(ActionDef {
@@ -673,6 +677,7 @@ mod tests {
             bound_targets: Vec::new(),
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         defs.register(ActionDef {
@@ -739,6 +744,7 @@ mod tests {
             bound_targets: vec![target],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         let def = sample_def(
@@ -804,6 +810,7 @@ mod tests {
             bound_targets: Vec::new(),
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         defs.register(sample_def(
@@ -870,6 +877,7 @@ mod tests {
             bound_targets: vec![target],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         defs.register(sample_def(
@@ -961,6 +969,7 @@ mod tests {
             bound_targets: vec![first_target, second_target],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         let mut def = sample_def(
@@ -1033,6 +1042,7 @@ mod tests {
             bound_targets: Vec::new(),
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         defs.register(sample_def(
@@ -1116,6 +1126,7 @@ mod tests {
             bound_targets: Vec::new(),
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let defs = ActionDefRegistry::new();
         let handlers = ActionHandlerRegistry::new();
@@ -1151,6 +1162,7 @@ mod tests {
             bound_targets: Vec::new(),
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         defs.register(sample_def(
@@ -1204,6 +1216,7 @@ mod tests {
             bound_targets: Vec::new(),
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut defs = ActionDefRegistry::new();
         defs.register(sample_def(

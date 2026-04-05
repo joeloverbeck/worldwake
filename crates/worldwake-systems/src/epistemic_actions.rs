@@ -508,6 +508,7 @@ mod tests {
             bound_targets: vec![target],
             payload_override: Some(ActionPayload::AskWitness(payload)),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         }
     }
 

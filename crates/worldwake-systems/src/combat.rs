@@ -2,21 +2,25 @@ use crate::inventory::{
     consume_one_unit_of_commodity, controlled_entity_load, move_entity_to_direct_possession,
     remaining_capacity,
 };
+use crate::facility_queue_actions::{enqueue_for_contention, validate_contention_queue_admission};
+use crate::production_actions::ensure_matching_contention_grant;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     is_wound_load_fatal, load_per_unit, ActionDefId, ActionDomain, BodyCostPerTick, BodyPart,
     CauseRef, CombatStance, CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind,
-    Container, DeadAt, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView,
-    EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta, VisibilitySpec,
-    WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause, WoundList,
+    Container, ContentionPolicy, ContentionQueue, DeadAt, DriveThresholds, EntityId, EntityKind,
+    EventLog, EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity,
+    StateDelta, VisibilitySpec, WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause,
+    WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, CombatActionPayload, CommitOutcome, Constraint, DeterministicRng,
     DurationExpr, Interruptibility, LootActionPayload, PayloadEntityRole, Precondition,
-    RuntimeBeliefView, SelfTargetActionKind, SystemError, SystemExecutionContext, TargetSpec,
+    QueueForFacilityUsePayload, RuntimeBeliefView, SelfTargetActionKind, SystemError,
+    SystemExecutionContext, TargetSpec,
 };
 
 const BODY_PARTS: [BodyPart; 6] = [
@@ -27,6 +31,22 @@ const BODY_PARTS: [BodyPart; 6] = [
     BodyPart::LeftLeg,
     BodyPart::RightLeg,
 ];
+
+fn corpse_contention_policy() -> ContentionPolicy {
+    ContentionPolicy {
+        grant_hold_ticks: NonZeroU32::new(5).unwrap(),
+        auto_promote: true,
+        max_waiters: None,
+    }
+}
+
+fn care_contention_policy() -> ContentionPolicy {
+    ContentionPolicy {
+        grant_hold_ticks: NonZeroU32::new(5).unwrap(),
+        auto_promote: true,
+        max_waiters: None,
+    }
+}
 
 pub fn register_attack_action(
     defs: &mut ActionDefRegistry,
@@ -58,7 +78,8 @@ pub fn register_loot_action(
 ) -> ActionDefId {
     let handler = handlers.register(
         ActionHandler::new(start_loot, tick_loot, commit_loot, abort_loot)
-            .with_affordance_payloads(enumerate_loot_payloads),
+            .with_affordance_payloads(enumerate_loot_payloads)
+            .with_authoritative_payload_validator(validate_loot_contention_grant),
     );
     defs.register(loot_action_def(ActionDefId(defs.len() as u32), handler))
 }
@@ -67,12 +88,10 @@ pub fn register_bury_action(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
-    let handler = handlers.register(ActionHandler::new(
-        start_bury,
-        tick_bury,
-        commit_bury,
-        abort_bury,
-    ));
+    let handler = handlers.register(
+        ActionHandler::new(start_bury, tick_bury, commit_bury, abort_bury)
+            .with_authoritative_payload_validator(validate_bury_contention_grant),
+    );
     defs.register(bury_action_def(ActionDefId(defs.len() as u32), handler))
 }
 
@@ -80,13 +99,51 @@ pub fn register_heal_action(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
 ) -> ActionDefId {
-    let handler = handlers.register(ActionHandler::new(
-        start_heal,
-        tick_heal,
-        commit_heal,
-        abort_heal,
-    ));
+    let handler = handlers.register(
+        ActionHandler::new(start_heal, tick_heal, commit_heal, abort_heal)
+            .with_authoritative_payload_validator(validate_heal_contention_grant),
+    );
     defs.register(heal_action_def(ActionDefId(defs.len() as u32), handler))
+}
+
+pub fn register_queue_for_corpse_use_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(
+        ActionHandler::new(
+            start_queue_for_corpse_use,
+            tick_queue_for_corpse_use,
+            commit_queue_for_corpse_use,
+            abort_queue_for_corpse_use,
+        )
+        .with_payload_override_validator(validate_queue_for_corpse_payload_override)
+        .with_authoritative_payload_validator(validate_queue_for_corpse_payload_authoritatively),
+    );
+    defs.register(queue_for_corpse_use_action_def(
+        ActionDefId(defs.len() as u32),
+        handler,
+    ))
+}
+
+pub fn register_queue_for_care_target_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> ActionDefId {
+    let handler = handlers.register(
+        ActionHandler::new(
+            start_queue_for_care_target,
+            tick_queue_for_care_target,
+            commit_queue_for_care_target,
+            abort_queue_for_care_target,
+        )
+        .with_payload_override_validator(validate_queue_for_care_payload_override)
+        .with_authoritative_payload_validator(validate_queue_for_care_payload_authoritatively),
+    );
+    defs.register(queue_for_care_target_action_def(
+        ActionDefId(defs.len() as u32),
+        handler,
+    ))
 }
 
 pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -120,7 +177,13 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
             .add_tag(EventTag::Combat)
             .add_target(fatality.entity);
         txn.extend_evidence(fatality.evidence);
+        clear_entity_contention_state(&mut txn, fatality.entity)
+            .map_err(|error| SystemError::new(format!("{error:?}")))?;
         txn.set_component_dead_at(fatality.entity, DeadAt(tick))
+            .map_err(|error| SystemError::new(error.to_string()))?;
+        txn.set_component_contention_queue(fatality.entity, ContentionQueue::default())
+            .map_err(|error| SystemError::new(error.to_string()))?;
+        txn.set_component_contention_policy(fatality.entity, corpse_contention_policy())
             .map_err(|error| SystemError::new(error.to_string()))?;
         let _ = txn.commit(event_log);
     }
@@ -161,6 +224,16 @@ fn apply_wound_progression(
     for update in updates {
         txn.set_component_wound_list(update.entity, update.wounds)
             .map_err(|error| SystemError::new(error.to_string()))?;
+        let current_wounds = txn
+            .get_component_wound_list(update.entity)
+            .ok_or_else(|| SystemError::new(format!("entity {} missing wound list after update", update.entity)))?;
+        if current_wounds.wounds.is_empty() {
+            clear_entity_contention_state(&mut txn, update.entity)
+                .map_err(|error| SystemError::new(format!("{error:?}")))?;
+        } else {
+            ensure_care_contention_state(&mut txn, update.entity)
+                .map_err(|error| SystemError::new(format!("{error:?}")))?;
+        }
     }
 
     let _ = txn.commit(event_log);
@@ -507,6 +580,40 @@ fn bury_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
     }
 }
 
+fn queue_for_corpse_use_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    ActionDef {
+        id,
+        name: "queue_for_corpse_use".to_string(),
+        domain: ActionDomain::Corpse,
+        actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorNotInTransit],
+        targets: vec![TargetSpec::EntityAtActorPlace {
+            kind: EntityKind::Agent,
+        }],
+        preconditions: vec![
+            Precondition::TargetExists(0),
+            Precondition::TargetAtActorPlace(0),
+            Precondition::TargetDead(0),
+            Precondition::TargetIsAgent(0),
+            Precondition::TargetNotInContainer(0),
+        ],
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::Fixed(NonZeroU32::MIN),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::FreelyInterruptible,
+        commit_conditions: vec![
+            Precondition::TargetExists(0),
+            Precondition::TargetAtActorPlace(0),
+            Precondition::TargetDead(0),
+            Precondition::TargetIsAgent(0),
+            Precondition::TargetNotInContainer(0),
+        ],
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
+        payload: ActionPayload::None,
+        handler,
+    }
+}
+
 fn enumerate_loot_payloads(
     _def: &ActionDef,
     _actor: EntityId,
@@ -519,6 +626,244 @@ fn enumerate_loot_payloads(
         .map(|target| ActionPayload::Loot(LootActionPayload { target }))
         .into_iter()
         .collect()
+}
+
+fn queue_payload<'a>(
+    def: &ActionDef,
+    payload: &'a ActionPayload,
+) -> Result<&'a QueueForFacilityUsePayload, ActionError> {
+    payload.as_queue_for_facility_use().ok_or_else(|| {
+        ActionError::PreconditionFailed(format!(
+            "action def {} requires QueueForFacilityUse payload",
+            def.id
+        ))
+    })
+}
+
+fn validate_queue_for_corpse_payload_override(
+    def: &ActionDef,
+    _actor: EntityId,
+    _targets: &[EntityId],
+    payload: &ActionPayload,
+    _view: &dyn RuntimeBeliefView,
+) -> bool {
+    payload
+        .as_queue_for_facility_use()
+        .is_some_and(|queue| queue.intended_action != def.id)
+}
+
+fn validate_queue_for_care_payload_override(
+    def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+    payload: &ActionPayload,
+    view: &dyn RuntimeBeliefView,
+) -> bool {
+    validate_queue_for_corpse_payload_override(def, actor, targets, payload, view)
+}
+
+fn validate_queue_for_corpse_payload_authoritatively(
+    def: &ActionDef,
+    registry: &ActionDefRegistry,
+    actor: EntityId,
+    targets: &[EntityId],
+    payload: &ActionPayload,
+    world: &worldwake_core::World,
+) -> Result<(), ActionError> {
+    let payload = queue_payload(def, payload)?;
+    let corpse = *targets.first().ok_or(ActionError::InvalidTarget(actor))?;
+    validate_contention_queue_admission(world, actor, corpse)?;
+    let intended_def = registry.get(payload.intended_action).ok_or_else(|| {
+        ActionError::PreconditionFailed(format!(
+            "intended action {:?} is not registered",
+            payload.intended_action
+        ))
+    })?;
+    if !matches!(intended_def.name.as_str(), "loot" | "bury") {
+        return Err(ActionError::PreconditionFailed(format!(
+            "intended action {:?} is not a corpse contention operation",
+            payload.intended_action
+        )));
+    }
+    Ok(())
+}
+
+fn validate_queue_for_care_payload_authoritatively(
+    def: &ActionDef,
+    registry: &ActionDefRegistry,
+    actor: EntityId,
+    targets: &[EntityId],
+    payload: &ActionPayload,
+    world: &worldwake_core::World,
+) -> Result<(), ActionError> {
+    let payload = queue_payload(def, payload)?;
+    let patient = *targets.first().ok_or(ActionError::InvalidTarget(actor))?;
+    validate_contention_queue_admission(world, actor, patient)?;
+    let intended_def = registry.get(payload.intended_action).ok_or_else(|| {
+        ActionError::PreconditionFailed(format!(
+            "intended action {:?} is not registered",
+            payload.intended_action
+        ))
+    })?;
+    if intended_def.name != "heal" {
+        return Err(ActionError::PreconditionFailed(format!(
+            "intended action {:?} is not a care contention operation",
+            payload.intended_action
+        )));
+    }
+    Ok(())
+}
+
+fn validate_loot_contention_grant(
+    def: &ActionDef,
+    _registry: &ActionDefRegistry,
+    actor: EntityId,
+    targets: &[EntityId],
+    _payload: &ActionPayload,
+    world: &worldwake_core::World,
+) -> Result<(), ActionError> {
+    let corpse = *targets.first().ok_or(ActionError::InvalidTarget(actor))?;
+    ensure_matching_contention_grant(world, actor, corpse, def.id)
+}
+
+fn validate_bury_contention_grant(
+    def: &ActionDef,
+    _registry: &ActionDefRegistry,
+    actor: EntityId,
+    targets: &[EntityId],
+    _payload: &ActionPayload,
+    world: &worldwake_core::World,
+) -> Result<(), ActionError> {
+    let corpse = *targets.first().ok_or(ActionError::InvalidTarget(actor))?;
+    ensure_matching_contention_grant(world, actor, corpse, def.id)
+}
+
+fn validate_heal_contention_grant(
+    def: &ActionDef,
+    _registry: &ActionDefRegistry,
+    actor: EntityId,
+    targets: &[EntityId],
+    _payload: &ActionPayload,
+    world: &worldwake_core::World,
+) -> Result<(), ActionError> {
+    let patient = *targets.first().ok_or(ActionError::InvalidTarget(actor))?;
+    ensure_matching_contention_grant(world, actor, patient, def.id)
+}
+
+fn clear_contention_membership(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    entity: EntityId,
+    action_def: ActionDefId,
+) -> Result<(), ActionError> {
+    match (
+        txn.get_component_contention_policy(entity),
+        txn.get_component_contention_queue(entity).cloned(),
+    ) {
+        (None, None) => {}
+        (Some(_), Some(mut queue)) => {
+            if queue
+                .granted
+                .as_ref()
+                .is_some_and(|grant| grant.actor == actor && grant.intended_action == action_def)
+            {
+                queue.clear_grant();
+                txn.set_component_contention_queue(entity, queue)
+                    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            }
+        }
+        (Some(_), None) => {
+            return Err(ActionError::PreconditionFailed(format!(
+                "entity {entity} is contention-managed but lacks ContentionQueue grant state"
+            )))
+        }
+        (None, Some(_)) => {
+            return Err(ActionError::PreconditionFailed(format!(
+                "entity {entity} has ContentionQueue grant state without ContentionPolicy"
+            )))
+        }
+    }
+
+    if let Some(mut intents) = txn.get_component_contention_intents(actor).cloned() {
+        let remove_entry = intents
+            .intents
+            .get(&entity)
+            .is_some_and(|intent| intent.intended_action == action_def);
+        if remove_entry {
+            intents.intents.remove(&entity);
+            if intents.intents.is_empty() {
+                txn.clear_component_contention_intents(actor)
+                    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            } else {
+                txn.set_component_contention_intents(actor, intents)
+                    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn clear_contention_intent_for_entity(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    entity: EntityId,
+) -> Result<(), ActionError> {
+    let Some(mut intents) = txn.get_component_contention_intents(actor).cloned() else {
+        return Ok(());
+    };
+    if intents.intents.remove(&entity).is_none() {
+        return Ok(());
+    }
+    if intents.intents.is_empty() {
+        txn.clear_component_contention_intents(actor)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    } else {
+        txn.set_component_contention_intents(actor, intents)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    Ok(())
+}
+
+fn clear_entity_contention_state(
+    txn: &mut WorldTxn<'_>,
+    entity: EntityId,
+) -> Result<(), ActionError> {
+    if let Some(queue) = txn.get_component_contention_queue(entity).cloned() {
+        let mut actors = BTreeSet::new();
+        if let Some(grant) = queue.granted {
+            actors.insert(grant.actor);
+        }
+        actors.extend(queue.waiting.values().map(|waiter| waiter.actor));
+        for actor in actors {
+            clear_contention_intent_for_entity(txn, actor, entity)?;
+        }
+        txn.clear_component_contention_queue(entity)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    if txn.get_component_contention_policy(entity).is_some() {
+        txn.clear_component_contention_policy(entity)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    Ok(())
+}
+
+fn ensure_care_contention_state(
+    txn: &mut WorldTxn<'_>,
+    entity: EntityId,
+) -> Result<(), ActionError> {
+    if txn.get_component_dead_at(entity).is_some() {
+        return Ok(());
+    }
+    if txn.get_component_contention_queue(entity).is_none() {
+        txn.set_component_contention_queue(entity, ContentionQueue::default())
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    if txn.get_component_contention_policy(entity).is_none() {
+        txn.set_component_contention_policy(entity, care_contention_policy())
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    Ok(())
 }
 
 fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
@@ -564,6 +909,40 @@ fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         ],
         visibility: VisibilitySpec::SamePlace,
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation, EventTag::Inventory]),
+        payload: ActionPayload::None,
+        handler,
+    }
+}
+
+fn queue_for_care_target_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
+    ActionDef {
+        id,
+        name: "queue_for_care_target".to_string(),
+        domain: ActionDomain::Care,
+        actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorNotInTransit],
+        targets: vec![TargetSpec::EntityAtActorPlace {
+            kind: EntityKind::Agent,
+        }],
+        preconditions: vec![
+            Precondition::TargetExists(0),
+            Precondition::TargetAtActorPlace(0),
+            Precondition::TargetAlive(0),
+            Precondition::TargetIsAgent(0),
+            Precondition::TargetHasWounds(0),
+        ],
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::Fixed(NonZeroU32::MIN),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        interruptibility: Interruptibility::FreelyInterruptible,
+        commit_conditions: vec![
+            Precondition::TargetExists(0),
+            Precondition::TargetAtActorPlace(0),
+            Precondition::TargetAlive(0),
+            Precondition::TargetIsAgent(0),
+            Precondition::TargetHasWounds(0),
+        ],
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
     }
@@ -1019,6 +1398,110 @@ fn start_attack(
 }
 
 #[allow(clippy::unnecessary_wraps)]
+fn start_queue_for_corpse_use(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    Ok(None)
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_queue_for_corpse_use(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn commit_queue_for_corpse_use(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let payload = queue_payload(def, &instance.payload)?;
+    let corpse = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    enqueue_for_contention(txn, instance.actor, corpse, payload.intended_action)?;
+    Ok(CommitOutcome::empty())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_queue_for_corpse_use(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn start_queue_for_care_target(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    Ok(None)
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_queue_for_care_target(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn commit_queue_for_care_target(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let payload = queue_payload(def, &instance.payload)?;
+    let patient = *instance
+        .targets
+        .first()
+        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    enqueue_for_contention(txn, instance.actor, patient, payload.intended_action)?;
+    Ok(CommitOutcome::empty())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_queue_for_care_target(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
 fn start_heal(
     _def: &ActionDef,
     instance: &mut ActionInstance,
@@ -1203,6 +1686,7 @@ fn commit_loot(
     for entity in direct_loot_entities(txn, corpse) {
         let _ = transferable_loot_entity(txn, instance.actor, corpse, entity, place)?;
     }
+    clear_contention_membership(txn, instance.actor, corpse, instance.def_id)?;
     Ok(CommitOutcome::empty())
 }
 
@@ -1237,6 +1721,7 @@ fn commit_bury(
     let grave = create_grave_container(txn, corpse, place)?;
     txn.put_into_container(corpse, grave)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    clear_contention_membership(txn, instance.actor, corpse, instance.def_id)?;
     Ok(CommitOutcome::empty())
 }
 
@@ -1313,6 +1798,7 @@ fn commit_attack(
     next_wounds.wounds.push(wound);
     txn.set_component_wound_list(target, next_wounds)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    ensure_care_contention_state(txn, target)?;
     Ok(CommitOutcome::empty())
 }
 
@@ -1332,51 +1818,69 @@ fn abort_attack(
 #[allow(clippy::unnecessary_wraps)]
 fn abort_loot(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
+    if let Some(corpse) = instance.targets.first().copied() {
+        clear_contention_membership(txn, instance.actor, corpse, instance.def_id)?;
+    }
     Ok(())
 }
 
 #[allow(clippy::unnecessary_wraps)]
 fn abort_bury(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
+    if let Some(corpse) = instance.targets.first().copied() {
+        clear_contention_membership(txn, instance.actor, corpse, instance.def_id)?;
+    }
     Ok(())
 }
 
 #[allow(clippy::unnecessary_wraps)]
 fn commit_heal(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
+    if let Some(patient) = instance.targets.first().copied() {
+        clear_contention_membership(txn, instance.actor, patient, instance.def_id)?;
+        if txn
+            .get_component_wound_list(patient)
+            .is_some_and(|wounds| wounds.wounds.is_empty())
+        {
+            clear_entity_contention_state(txn, patient)?;
+        }
+    }
     Ok(CommitOutcome::empty())
 }
 
 #[allow(clippy::unnecessary_wraps)]
 fn abort_heal(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
+    if let Some(patient) = instance.targets.first().copied() {
+        clear_contention_membership(txn, instance.actor, patient, instance.def_id)?;
+    }
     Ok(())
 }
 
@@ -1384,27 +1888,31 @@ fn abort_heal(
 mod tests {
     use super::{
         combat_system, effective_guard_skill, register_attack_action, register_bury_action,
-        register_defend_action, register_heal_action, register_loot_action, resolve_attack_wound,
-        AttackResolutionActor, AttackResolutionContext, AttackResolutionTarget,
+        register_defend_action, register_heal_action, register_loot_action,
+        register_queue_for_care_target_action, register_queue_for_corpse_use_action,
+        resolve_attack_wound, AttackResolutionActor, AttackResolutionContext,
+        AttackResolutionTarget,
     };
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyPart,
-        CarryCapacity, CauseRef, CombatProfile, CombatStance, CombatWeaponRef, CommodityKind,
-        Container, ControlSource, DeadAt, DeprivationKind, DriveThresholds, EntityKind, EventLog,
-        EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, PerceptionSource, Permille,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, Seed, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-        WoundCause, WoundId, WoundList,
+        build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
+        BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CombatWeaponRef,
+        CommodityKind, Container, ControlSource, ContentionGrant, ContentionIntents,
+        ContentionPolicy, ContentionQueue, ContentionWaiter, DeadAt, DeprivationKind,
+        DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView, EvidenceRef,
+        GoalKey, GoalKind, HomeostaticNeeds, LoadUnits, PerceptionSource, Permille,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
+        QueuedContentionIntent, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
         get_affordances, start_action, tick_action, ActionDuration, ActionError,
         ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId,
         ActionPayload, ActionStatus, Affordance, CombatActionPayload, DeterministicRng,
-        DurationExpr, Interruptibility, PerAgentBeliefView, SystemExecutionContext, SystemId,
-        TickOutcome,
+        DurationExpr, Interruptibility, PerAgentBeliefView, QueueForFacilityUsePayload,
+        SystemExecutionContext, SystemId, TickOutcome,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1430,6 +1938,51 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn attach_contention(
+        world: &mut World,
+        entity: EntityId,
+        grant_hold_ticks: u32,
+        auto_promote: bool,
+        max_waiters: Option<u8>,
+    ) {
+        let mut txn = new_txn(world, 1);
+        txn.set_component_contention_policy(
+            entity,
+            ContentionPolicy {
+                grant_hold_ticks: nz(grant_hold_ticks),
+                auto_promote,
+                max_waiters,
+            },
+        )
+        .unwrap();
+        txn.set_component_contention_queue(entity, ContentionQueue::default())
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    fn grant_contention(
+        world: &mut World,
+        entity: EntityId,
+        actor: EntityId,
+        intended_action: ActionDefId,
+        granted_at: u64,
+        expires_at: u64,
+    ) {
+        let mut txn = new_txn(world, granted_at);
+        let mut queue = txn
+            .get_component_contention_queue(entity)
+            .cloned()
+            .unwrap_or_default();
+        queue.granted = Some(ContentionGrant {
+            actor,
+            intended_action,
+            granted_at: Tick(granted_at),
+            expires_at: Tick(expires_at),
+        });
+        txn.set_component_contention_queue(entity, queue).unwrap();
+        commit_txn(txn);
     }
 
     fn test_rng(seed: u8) -> DeterministicRng {
@@ -1771,6 +2324,293 @@ mod tests {
         assert!(heal
             .preconditions
             .contains(&worldwake_sim::Precondition::TargetHasWounds(0)));
+    }
+
+    #[test]
+    fn queue_for_corpse_use_commits_waiter_into_contention_queue() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let looter = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let corpse = spawn_guard(&mut world, 2, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_dead_at(corpse, DeadAt(Tick(3))).unwrap();
+            commit_txn(txn);
+        }
+        attach_contention(&mut world, corpse, 5, true, None);
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let queue_id = register_queue_for_corpse_use_action(&mut defs, &mut handlers);
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        let affordance = Affordance {
+            def_id: queue_id,
+            actor: looter,
+            bound_targets: vec![corpse],
+            payload_override: Some(ActionPayload::QueueForFacilityUse(
+                QueueForFacilityUsePayload {
+                    intended_action: loot_id,
+                },
+            )),
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Available,
+        };
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x31);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
+        )
+        .unwrap();
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        let queue = world.get_component_contention_queue(corpse).unwrap();
+        assert_eq!(queue.waiting.len(), 1);
+        let waiter = queue.waiting.values().next().unwrap();
+        assert_eq!(waiter.actor, looter);
+        assert_eq!(waiter.intended_action, loot_id);
+    }
+
+    #[test]
+    fn queue_for_care_target_commits_waiter_into_contention_queue() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let healer = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let patient = spawn_guard(&mut world, 2, ControlSource::Ai);
+        arm_actor(&mut world, healer, 3, CommodityKind::Medicine, 1);
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 300, 20, 4)],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        attach_contention(&mut world, patient, 5, true, None);
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let queue_id = register_queue_for_care_target_action(&mut defs, &mut handlers);
+        let heal_id = register_heal_action(&mut defs, &mut handlers);
+        let affordance = Affordance {
+            def_id: queue_id,
+            actor: healer,
+            bound_targets: vec![patient],
+            payload_override: Some(ActionPayload::QueueForFacilityUse(
+                QueueForFacilityUsePayload {
+                    intended_action: heal_id,
+                },
+            )),
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Available,
+        };
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x32);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        let queue = world.get_component_contention_queue(patient).unwrap();
+        assert_eq!(queue.waiting.len(), 1);
+        let waiter = queue.waiting.values().next().unwrap();
+        assert_eq!(waiter.actor, healer);
+        assert_eq!(waiter.intended_action, heal_id);
+    }
+
+    #[test]
+    fn loot_requires_matching_grant_on_contention_managed_corpse() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let looter = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let corpse = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let place = world.effective_place(looter).unwrap();
+        {
+            let mut txn = new_txn(&mut world, 3);
+            let coins = txn.create_item_lot(CommodityKind::Coin, Quantity(3)).unwrap();
+            txn.set_component_dead_at(corpse, DeadAt(Tick(3))).unwrap();
+            txn.set_ground_location(coins, place).unwrap();
+            txn.set_possessor(coins, corpse).unwrap();
+            commit_txn(txn);
+        }
+        attach_contention(&mut world, corpse, 5, true, None);
+        set_carry_capacity(&mut world, looter, 4, 20);
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        let affordance = affordances_for(&world, looter, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == loot_id && affordance.bound_targets == vec![corpse])
+            .expect("loot affordance should still be visible for the corpse");
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x33);
+
+        let error = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .expect_err("contention-managed corpse use should fail without a grant");
+
+        assert!(matches!(
+            error,
+            ActionError::PreconditionFailed(message)
+                if message.contains("no matching grant") || message.contains("grant belongs")
+        ));
+    }
+
+    #[test]
+    fn loot_commit_clears_matching_grant_and_contention_intent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let looter = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let corpse = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let place = world.effective_place(looter).unwrap();
+        {
+            let mut txn = new_txn(&mut world, 3);
+            let coins = txn.create_item_lot(CommodityKind::Coin, Quantity(3)).unwrap();
+            txn.set_component_dead_at(corpse, DeadAt(Tick(3))).unwrap();
+            txn.set_ground_location(coins, place).unwrap();
+            txn.set_possessor(coins, corpse).unwrap();
+            commit_txn(txn);
+        }
+        attach_contention(&mut world, corpse, 5, true, None);
+        set_carry_capacity(&mut world, looter, 4, 20);
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let loot_id = register_loot_action(&mut defs, &mut handlers);
+        grant_contention(&mut world, corpse, looter, loot_id, 5, 10);
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_contention_intents(
+                looter,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        corpse,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::LootCorpse { corpse }),
+                            intended_action: loot_id,
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let affordance = affordances_for(&world, looter, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| affordance.def_id == loot_id && affordance.bound_targets == vec![corpse])
+            .expect("loot affordance should remain available with a grant");
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0x34);
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
+        )
+        .expect("matching grant should allow loot start");
+
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(7)),
+        )
+        .expect("loot should complete with the grant");
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        let queue = world.get_component_contention_queue(corpse).unwrap();
+        assert!(
+            queue.granted.is_none(),
+            "matching grant should be cleared after the exclusive action commits"
+        );
+        assert!(
+            world.get_component_contention_intents(looter).is_none(),
+            "matching contention intent should be cleared after the exclusive action commits"
+        );
     }
 
     #[test]
@@ -2242,6 +3082,7 @@ mod tests {
             bound_targets: vec![corpse],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2320,6 +3161,7 @@ mod tests {
             bound_targets: vec![corpse],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2408,6 +3250,7 @@ mod tests {
             bound_targets: vec![corpse],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2479,6 +3322,7 @@ mod tests {
             bound_targets: vec![corpse, grave_plot],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2532,6 +3376,7 @@ mod tests {
                 bound_targets: vec![corpse],
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,
@@ -2599,6 +3444,7 @@ mod tests {
             bound_targets: vec![dead_target],
             payload_override: None,
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2636,6 +3482,7 @@ mod tests {
                 bound_targets: vec![dead_target],
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,
@@ -2661,6 +3508,7 @@ mod tests {
                 bound_targets: vec![dead_target],
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,
@@ -2785,6 +3633,14 @@ mod tests {
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
         let wounds = world.get_component_wound_list(target).unwrap();
         assert_eq!(wounds.wounds.len(), 1);
+        assert_eq!(
+            world.get_component_contention_policy(target),
+            Some(&super::care_contention_policy())
+        );
+        assert_eq!(
+            world.get_component_contention_queue(target),
+            Some(&ContentionQueue::default())
+        );
         assert_eq!(
             wounds.wounds[0].cause,
             WoundCause::Combat {
@@ -3245,6 +4101,7 @@ mod tests {
                 bound_targets: Vec::new(),
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,
@@ -3270,6 +4127,7 @@ mod tests {
                 bound_targets: Vec::new(),
                 payload_override: None,
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             &defs,
             &handlers,
@@ -3339,6 +4197,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(5))));
+        assert_eq!(
+            world.get_component_contention_policy(guard),
+            Some(&super::corpse_contention_policy())
+        );
+        assert_eq!(
+            world.get_component_contention_queue(guard),
+            Some(&ContentionQueue::default())
+        );
         assert_eq!(world.effective_place(guard), place_before);
         assert_eq!(
             world.controlled_commodity_quantity(guard, worldwake_core::CommodityKind::Bread),
@@ -3921,6 +4787,196 @@ mod tests {
 
         let wounds = world.get_component_wound_list(guard).unwrap();
         assert!(wounds.wounds.is_empty());
+    }
+
+    #[test]
+    fn passive_recovery_clears_care_contention_and_stale_actor_intents() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let patient = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let healer = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let waiting_healer = spawn_guard(&mut world, 3, ControlSource::Ai);
+        set_recovery_state(&mut world, patient, 4, HomeostaticNeeds::new_sated());
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 10, 0, 5)],
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_policy(patient, super::care_contention_policy())
+                .unwrap();
+            txn.set_component_contention_queue(
+                patient,
+                ContentionQueue {
+                    next_ordinal: 1,
+                    waiting: BTreeMap::from([(
+                        0,
+                        ContentionWaiter {
+                            actor: waiting_healer,
+                            intended_action: ActionDefId(77),
+                            queued_at: Tick(5),
+                        },
+                    )]),
+                    granted: Some(ContentionGrant {
+                        actor: healer,
+                        intended_action: ActionDefId(77),
+                        granted_at: Tick(5),
+                        expires_at: Tick(10),
+                    }),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_intents(
+                healer,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        patient,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::LootCorpse { corpse: patient }),
+                            intended_action: ActionDefId(77),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_intents(
+                waiting_healer,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        patient,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::LootCorpse { corpse: patient }),
+                            intended_action: ActionDefId(77),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([24; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(6),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        assert_eq!(world.get_component_wound_list(patient), Some(&WoundList::default()));
+        assert!(world.get_component_contention_queue(patient).is_none());
+        assert!(world.get_component_contention_policy(patient).is_none());
+        assert!(world.get_component_contention_intents(healer).is_none());
+        assert!(world.get_component_contention_intents(waiting_healer).is_none());
+    }
+
+    #[test]
+    fn fatality_replaces_care_contention_with_fresh_corpse_contention_and_clears_intents() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let patient = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let healer = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let waiting_healer = spawn_guard(&mut world, 3, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_wound_list(
+                patient,
+                WoundList {
+                    wounds: vec![deprivation_wound(1, 1000, 0, 4)],
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_policy(patient, super::care_contention_policy())
+                .unwrap();
+            txn.set_component_contention_queue(
+                patient,
+                ContentionQueue {
+                    next_ordinal: 1,
+                    waiting: BTreeMap::from([(
+                        0,
+                        ContentionWaiter {
+                            actor: waiting_healer,
+                            intended_action: ActionDefId(88),
+                            queued_at: Tick(4),
+                        },
+                    )]),
+                    granted: Some(ContentionGrant {
+                        actor: healer,
+                        intended_action: ActionDefId(88),
+                        granted_at: Tick(4),
+                        expires_at: Tick(9),
+                    }),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_intents(
+                healer,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        patient,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::LootCorpse { corpse: patient }),
+                            intended_action: ActionDefId(88),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_intents(
+                waiting_healer,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        patient,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::LootCorpse { corpse: patient }),
+                            intended_action: ActionDefId(88),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([25; 32]));
+        let active_actions = BTreeMap::new();
+        let defs = worldwake_sim::ActionDefRegistry::new();
+
+        combat_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(5),
+            system_id: SystemId::Combat,
+        })
+        .unwrap();
+
+        assert_eq!(world.get_component_dead_at(patient), Some(&DeadAt(Tick(5))));
+        assert_eq!(
+            world.get_component_contention_policy(patient),
+            Some(&super::corpse_contention_policy())
+        );
+        let queue = world.get_component_contention_queue(patient).unwrap();
+        assert!(queue.waiting.is_empty());
+        assert!(queue.granted.is_none());
+        assert!(world.get_component_contention_intents(healer).is_none());
+        assert!(world.get_component_contention_intents(waiting_healer).is_none());
     }
 
     #[test]

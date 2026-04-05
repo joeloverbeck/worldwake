@@ -2,7 +2,8 @@ use crate::{ExhaustionEntry, GoalDispatchKey, InvalidationStrategy, OpportunityK
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, EntityId, EntityKind, GoalKind, HomeostaticNeedId,
+    ArtifactKind, ArtifactState, CommodityKind, CommodityPurpose, EntityId, EntityKind, GoalKind,
+    HomeostaticNeedId,
     HomeostaticNeeds, Permille, Quantity, ThresholdBand, UniqueItemKind,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
@@ -21,6 +22,7 @@ pub enum ExhaustionInvalidationCondition {
         need: HomeostaticNeedId,
         band: ThresholdBand,
     },
+    BountyStateChanged(EntityId),
     StealTargetStateChanged(EntityId),
     TargetDead(EntityId),
 }
@@ -101,6 +103,7 @@ pub(crate) fn derive_invalidation_conditions(
         InvalidationStrategy::PositionAndTargetDead => {
             position_and_target_dead_conditions(goal, &mut conditions);
         }
+        InvalidationStrategy::BountyActive => bounty_active_conditions(goal, &mut conditions),
         InvalidationStrategy::StealTargetState => {
             steal_target_state_conditions(goal, &mut conditions);
         }
@@ -282,6 +285,19 @@ fn steal_target_state_conditions(
     ));
 }
 
+fn bounty_active_conditions(
+    goal: &GoalKind,
+    conditions: &mut BTreeSet<ExhaustionInvalidationCondition>,
+) {
+    let GoalKind::FulfillBounty { bounty } = *goal else {
+        unreachable!("BountyActive strategy requires FulfillBounty goal");
+    };
+    conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
+    conditions.insert(ExhaustionInvalidationCondition::BountyStateChanged(
+        bounty,
+    ));
+}
+
 fn claim_office_conditions(conditions: &mut BTreeSet<ExhaustionInvalidationCondition>) {
     conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
     conditions.insert(ExhaustionInvalidationCondition::BlockerExpired);
@@ -388,6 +404,14 @@ pub(crate) fn condition_changed(
             classify_need_band(need_value(&current_needs, *need), *band)
                 != classify_need_band(need_value(&baseline_needs, *need), *band)
         }
+        ExhaustionInvalidationCondition::BountyStateChanged(bounty) => view
+            .known_entity_beliefs(agent)
+            .into_iter()
+            .find_map(|(entity, belief)| (entity == *bounty).then_some(belief))
+            .and_then(|belief| belief.believed_artifact)
+            .is_none_or(|artifact| {
+                artifact.kind != ArtifactKind::Bounty || artifact.state != ArtifactState::Active
+            }),
         ExhaustionInvalidationCondition::StealTargetStateChanged(target) => {
             let current = capture_steal_target_snapshot(view, agent, *target);
             baseline
@@ -543,12 +567,14 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BeliefConfidencePolicy, BodyCostPerTick, BodyPart, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind,
-        HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, JusticeDispositionProfile,
-        LoadUnits, MerchandiseProfile, OfficeData, Permille, PunishmentKind, Quantity,
-        RecipientKnowledgeStatus, RecordEntryId, ResourceSource, TellMemoryKey, TellProfile,
-        TellTopic, TheftDispositionProfile, ThresholdBand, UniqueItemKind,
+        ArtifactKind, ArtifactState, BeliefConfidencePolicy, BelievedArtifactState,
+        BelievedBountyTerms, BelievedEntityState, BodyCostPerTick, BodyPart, BountyTarget,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
+        EntityKind, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead,
+        JusticeDispositionProfile, LoadUnits, MerchandiseProfile, OfficeData, Permille,
+        PunishmentKind, Quantity, RecipientKnowledgeStatus, RecordEntryId, ResourceSource,
+        TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, ThresholdBand,
+        UniqueItemKind,
         ViolationDispositionProfile, ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
@@ -570,6 +596,7 @@ mod tests {
         wounds: Vec<(EntityId, Vec<Wound>)>,
         visible_hostiles: Vec<(EntityId, Vec<EntityId>)>,
         dead: Vec<EntityId>,
+        beliefs: Vec<(EntityId, BelievedEntityState)>,
     }
 
     impl GoalBeliefView for MockView {
@@ -597,6 +624,10 @@ mod tests {
 
         fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
+        }
+
+        fn known_entity_beliefs(&self, _agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.beliefs.clone()
         }
 
         fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
@@ -998,6 +1029,204 @@ mod tests {
             &view,
             agent,
             true,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_bounty_state_detects_non_active_bounty() {
+        let agent = entity(1);
+        let bounty = entity(2);
+        let issuer = entity(3);
+        let claim_place = entity(4);
+        let active_view = MockView {
+            beliefs: vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::EliminateEntity { target: entity(5) },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(10),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: worldwake_core::Tick(2),
+                    }),
+                    believed_contention: None,
+                    observed_tick: worldwake_core::Tick(2),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+            ..MockView::default()
+        };
+
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::BountyStateChanged(bounty),
+            &ExhaustionBaseline::default(),
+            &active_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+
+        let fulfilled_view = MockView {
+            beliefs: vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Fulfilled,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::EliminateEntity { target: entity(5) },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(10),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: worldwake_core::Tick(2),
+                    }),
+                    believed_contention: None,
+                    observed_tick: worldwake_core::Tick(2),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+            ..MockView::default()
+        };
+
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::BountyStateChanged(bounty),
+            &ExhaustionBaseline::default(),
+            &fulfilled_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn condition_changed_bounty_state_detects_non_active_delivery_bounty() {
+        let agent = entity(1);
+        let bounty = entity(2);
+        let issuer = entity(3);
+        let claim_place = entity(4);
+        let active_view = MockView {
+            beliefs: vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination: claim_place,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(10),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: worldwake_core::Tick(2),
+                    }),
+                    believed_contention: None,
+                    observed_tick: worldwake_core::Tick(2),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+            ..MockView::default()
+        };
+
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::BountyStateChanged(bounty),
+            &ExhaustionBaseline::default(),
+            &active_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+
+        let withdrawn_view = MockView {
+            beliefs: vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Withdrawn,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination: claim_place,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(10),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: worldwake_core::Tick(2),
+                    }),
+                    believed_contention: None,
+                    observed_tick: worldwake_core::Tick(2),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+            ..MockView::default()
+        };
+
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::BountyStateChanged(bounty),
+            &ExhaustionBaseline::default(),
+            &withdrawn_view,
+            agent,
+            false,
             false,
             false,
         ));

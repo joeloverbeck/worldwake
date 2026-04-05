@@ -374,7 +374,9 @@ impl ActionTraceDetail {
             | ActionPayload::Combat(_)
             | ActionPayload::Loot(_)
             | ActionPayload::QueueForFacilityUse(_)
-            | ActionPayload::StaffMarket(_) => None,
+            | ActionPayload::StaffMarket(_)
+            | ActionPayload::PostBounty(_)
+            | ActionPayload::PostNotice(_) => None,
         }
     }
 

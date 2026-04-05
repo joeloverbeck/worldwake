@@ -26,7 +26,7 @@ If this command fails, stop and report the error. Do not analyze stale generated
 ### 2. Load context
 
 1. Resolve the completed spec from the provided spec identifier or spec path.
-2. Search `specs/` first, then `archive/specs/` if needed.
+2. Search `specs/` first, then `archive/specs/` if needed. If the user names a specific canonical spec path, accept that live path wherever it currently resides and note separately whether the spec is still active or already archived instead of treating location alone as the completion signal.
 3. If multiple specs match, stop and ask the user to disambiguate.
 4. Read the resolved spec completely.
 5. Read:
@@ -80,6 +80,12 @@ High-value candidates usually involve:
 - failure if one participating system were removed
 
 Before keeping a candidate that depends on a specific `GoalKind`, verify in the live code that candidate generation can actually emit it. Check for filters or suppression paths that would prevent the goal from appearing at runtime.
+
+Before keeping a candidate centered on a spec-defined subtype, artifact kind, or notice topic, verify that the live code already provides both:
+- the implemented substrate carrying that fact
+- at least one lawful downstream consumer or behavior that makes the fact matter at runtime
+
+If the subtype exists only as stored metadata with no live consumer yet, treat it as an implementation gap or future extension, not as a golden-gap candidate.
 
 ### 6. Deduplicate aggressively
 

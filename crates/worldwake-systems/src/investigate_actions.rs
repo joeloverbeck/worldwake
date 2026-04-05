@@ -551,6 +551,8 @@ mod tests {
                 wounds: Vec::new(),
                 last_known_courage: None,
                 believed_activity: None,
+                believed_artifact: None,
+                believed_contention: None,
                 observed_tick: Tick(1),
                 source: PerceptionSource::DirectObservation,
             },
@@ -805,6 +807,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -958,6 +961,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -1026,6 +1030,7 @@ mod tests {
                 violation_id: first_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -1522,6 +1527,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -1595,6 +1601,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();
@@ -1652,6 +1659,7 @@ mod tests {
                 violation_id,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
 
         let mut event_log = EventLog::new();

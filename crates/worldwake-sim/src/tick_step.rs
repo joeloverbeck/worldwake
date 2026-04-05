@@ -91,7 +91,7 @@ pub enum TickStepError {
         actor: EntityId,
         def_id: ActionDefId,
         targets: Vec<EntityId>,
-        payload_override: Option<crate::ActionPayload>,
+        payload_override: Option<Box<crate::ActionPayload>>,
     },
     CancelActorMismatch {
         actor: EntityId,
@@ -158,13 +158,16 @@ pub fn step_tick(
     };
     let tick = runtime.scheduler.current_tick();
     let events_before = runtime.event_log.len();
+    let pre_action_systems_ran = run_pre_action_systems(&mut runtime, tick, &mut services)?;
     produce_tick_inputs(&mut runtime, tick, &mut services)?;
     let pre_progress_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     let (inputs_processed, actions_started, actions_aborted) =
         process_inputs(&mut runtime, controller, tick, &services)?;
     let (actions_completed, progressed_action_aborts) =
         progress_active_actions(&mut runtime, tick, &mut services)?;
-    let systems_ran = run_systems(&mut runtime, tick, &mut services)?;
+    let systems_ran = pre_action_systems_ran
+        .checked_add(run_systems(&mut runtime, tick, &mut services)?)
+        .expect("tick-step system-run counter overflowed");
     let post_system_dead_aborts = abort_actions_for_dead_actors(&mut runtime, tick, &services)?;
     emit_end_of_tick_marker(runtime.event_log, tick);
     runtime.scheduler.increment_tick();
@@ -285,7 +288,7 @@ fn apply_input(
                         actor,
                         def_id,
                         targets,
-                        payload_override,
+                        payload_override: payload_override.map(Box::new),
                     });
                 }
             };
@@ -503,6 +506,7 @@ fn resolve_affordance(
                 bound_targets: targets.to_vec(),
                 payload_override: payload_override.clone(),
                 explanation: None,
+                contention_status: worldwake_core::ContentionStatus::Unmanaged,
             },
             RequestBindingKind::BestEffortFallback,
         ),
@@ -776,15 +780,29 @@ fn run_systems(
     tick: Tick,
     services: &mut TickStepServices<'_>,
 ) -> Result<u32, TickStepError> {
+    let manifest = crate::SystemManifest::new(runtime.scheduler.system_manifest().ordered_ids().to_vec())
+        .expect("scheduler system manifest should not contain duplicate ids");
+    run_system_manifest(runtime, &manifest, tick, services)
+}
+
+fn run_pre_action_systems(
+    runtime: &mut TickStepRuntime<'_>,
+    tick: Tick,
+    services: &mut TickStepServices<'_>,
+) -> Result<u32, TickStepError> {
+    let manifest = crate::SystemManifest::pre_action();
+    run_system_manifest(runtime, &manifest, tick, services)
+}
+
+fn run_system_manifest(
+    runtime: &mut TickStepRuntime<'_>,
+    manifest: &crate::SystemManifest,
+    tick: Tick,
+    services: &mut TickStepServices<'_>,
+) -> Result<u32, TickStepError> {
     let mut systems_ran = 0u32;
 
-    for system_id in runtime
-        .scheduler
-        .system_manifest()
-        .ordered_ids()
-        .iter()
-        .copied()
-    {
+    for system_id in manifest.ordered_ids().iter().copied() {
         let mut system_rng = runtime.rng.substream(tick, system_id, 0);
         services.systems.get(system_id)(crate::SystemExecutionContext {
             world: runtime.world,
@@ -836,6 +854,7 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
         tick,
         cause: CauseRef::SystemTick(tick),
         actor_id: None,
+        action_name: None,
         target_ids: Vec::new(),
         evidence: Vec::new(),
         place_id: None,
@@ -1023,6 +1042,29 @@ mod tests {
         Ok(())
     }
 
+    #[allow(clippy::needless_pass_by_value)]
+    fn kill_first_agent_system(context: SystemExecutionContext<'_>) -> Result<(), SystemError> {
+        let actor = context
+            .world
+            .all_entities()
+            .find(|entity| context.world.entity_kind(*entity) == Some(EntityKind::Agent))
+            .ok_or_else(|| SystemError::new("expected at least one agent in test world"))?;
+        let place = context.world.effective_place(actor);
+        let mut txn = WorldTxn::new(
+            context.world,
+            context.tick,
+            CauseRef::SystemTick(context.tick),
+            Some(actor),
+            place,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.set_component_dead_at(actor, DeadAt(context.tick))
+            .map_err(|error| SystemError::new(error.to_string()))?;
+        let _ = txn.commit(context.event_log);
+        Ok(())
+    }
+
     fn handler_registry() -> ActionHandlerRegistry {
         let mut registry = ActionHandlerRegistry::new();
         let continue_id = registry.register(ActionHandler::new(
@@ -1176,6 +1218,12 @@ mod tests {
         SystemDispatchTable::from_handlers([record_system; crate::SystemId::ALL.len()])
     }
 
+    fn expected_system_order() -> Vec<crate::SystemId> {
+        let mut ordered = crate::SystemManifest::pre_action().ordered_ids().to_vec();
+        ordered.extend_from_slice(crate::SystemManifest::canonical().ordered_ids());
+        ordered
+    }
+
     fn build_state() -> (
         World,
         EventLog,
@@ -1249,6 +1297,21 @@ mod tests {
         }
     }
 
+    struct AssertDeadProducer {
+        actor: EntityId,
+    }
+
+    impl TickInputProducer for AssertDeadProducer {
+        fn produce_inputs(&mut self, ctx: TickInputContext<'_>) -> Result<(), TickInputError> {
+            if ctx.world.get_component_dead_at(self.actor).is_none() {
+                return Err(TickInputError::new(
+                    "pre-action systems should mutate world state before input production",
+                ));
+            }
+            Ok(())
+        }
+    }
+
     fn controlled_actor(controller: &ControllerState) -> EntityId {
         controller.controlled_entity().unwrap()
     }
@@ -1270,6 +1333,7 @@ mod tests {
 
         let systems = SystemDispatchTable::canonical_noop();
         let services = services(&defs, &handlers, &recipes, &systems);
+
         let result = step_tick(
             &mut world,
             &mut event_log,
@@ -2723,6 +2787,9 @@ mod tests {
             Ok(())
         }
 
+        let mut system_handlers = [record_system as crate::SystemFn; crate::SystemId::ALL.len()];
+        system_handlers[crate::SystemId::Needs.ordinal()] = kill_actor_system;
+
         let result = step_tick(
             &mut world,
             &mut event_log,
@@ -2733,9 +2800,7 @@ mod tests {
                 action_defs: &defs,
                 action_handlers: &handlers,
                 recipe_registry: &recipes,
-                systems: &SystemDispatchTable::from_handlers(
-                    [kill_actor_system; crate::SystemId::ALL.len()],
-                ),
+                systems: &SystemDispatchTable::from_handlers(system_handlers),
                 input_producer: None,
                 action_trace: None,
                 request_resolution_trace: None,
@@ -2789,7 +2854,7 @@ mod tests {
 
         assert_eq!(
             hook_log().lock().unwrap().systems,
-            SystemManifest::canonical().ordered_ids()
+            expected_system_order()
         );
     }
 
@@ -2843,10 +2908,12 @@ mod tests {
         .unwrap();
 
         let log = hook_log().lock().unwrap().clone();
-        assert_eq!(log.systems, SystemManifest::canonical().ordered_ids());
+        assert_eq!(log.systems, expected_system_order());
+        let mut expected_active_action_counts = vec![0];
+        expected_active_action_counts.extend(vec![1; crate::SystemId::ALL.len() - 1]);
         assert_eq!(
             log.system_active_action_counts,
-            vec![1; crate::SystemId::ALL.len()]
+            expected_active_action_counts
         );
         assert_eq!(
             log.system_def_counts,
@@ -2900,6 +2967,53 @@ mod tests {
         assert_eq!(result.inputs_processed, 1);
         assert_eq!(result.actions_started, 1);
         assert_eq!(producer.observed_pending_replans, vec![0]);
+    }
+
+    #[test]
+    fn pre_action_systems_run_before_input_producer() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
+        let actor = controlled_actor(&controller);
+        let mut producer = AssertDeadProducer { actor };
+        let mut system_handlers = [record_system as crate::SystemFn; crate::SystemId::ALL.len()];
+        system_handlers[crate::SystemId::ArtifactLifecycle.ordinal()] = kill_first_agent_system;
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::from_handlers(system_handlers),
+                input_producer: Some(&mut producer),
+                action_trace: None,
+                request_resolution_trace: None,
+                politics_trace: None,
+                perception_trace: None,
+                institutional_knowledge_trace: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.systems_ran, crate::SystemId::ALL.len() as u32);
+        assert_eq!(
+            world.get_component_dead_at(actor),
+            Some(&DeadAt(Tick(0)))
+        );
     }
 
     #[test]

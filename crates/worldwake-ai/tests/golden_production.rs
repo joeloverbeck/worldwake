@@ -2,7 +2,7 @@
 
 mod golden_harness;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use golden_harness::*;
 use worldwake_ai::{
@@ -14,14 +14,15 @@ use worldwake_core::{
     verify_authoritative_conservation, verify_live_lot_conservation, AgentData, BlockingFact,
     BodyPart, CarryCapacity, CombatProfile, CommodityKind, ControlSource, DemandMemory,
     DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind, EntityId,
-    EventTag, EventView, GrantedFacilityUse, HomeostaticNeeds, KnownRecipes, LoadUnits,
+    EventTag, EventView, ContentionGrant, HomeostaticNeeds, KnownRecipes, LoadUnits,
     MerchandiseProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
-    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
-    Wound, WoundCause, WoundId, WoundList,
+    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
-    ActionStartFailureReason, ActionTraceKind, RequestAttemptTrace, RequestBindingKind,
-    RequestProvenance, RequestResolutionOutcome, ResolvedRequestTrace,
+    ActionRequestMode, ActionStartFailureReason, ActionTraceKind, InputKind,
+    RequestAttemptTrace, RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
+    ResolvedRequestTrace,
 };
 
 fn production_perception_profile() -> PerceptionProfile {
@@ -46,6 +47,38 @@ fn set_control_source(
     txn.set_component_agent_data(agent, AgentData { control_source })
         .unwrap();
     commit_txn(txn, &mut h.event_log);
+}
+
+fn request_simple_action(
+    h: &mut GoldenHarness,
+    actor: EntityId,
+    def_name: &str,
+    targets: Vec<EntityId>,
+) {
+    let def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == def_name)
+        .map_or_else(
+            || panic!("full registries should include {def_name}"),
+            |def| def.id,
+        );
+    let tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        tick,
+        InputKind::RequestAction {
+            actor,
+            def_id,
+            targets,
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+}
+
+fn request_travel(h: &mut GoldenHarness, traveler: EntityId, destination: EntityId) {
+    request_simple_action(h, traveler, "travel", vec![destination]);
 }
 
 // ---------------------------------------------------------------------------
@@ -1938,7 +1971,8 @@ fn run_exclusive_queue_contention_scenario(seed: Seed) -> ExclusiveQueueContenti
 
         let queue = h
             .world
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
+            .cloned()
             .expect("exclusive workstation should retain queue state");
         max_waiting_len = max_waiting_len.max(queue.waiting.len());
         saw_granted_state |= queue.granted.is_some();
@@ -2039,16 +2073,16 @@ fn run_dead_agent_pruned_from_facility_queue_scenario(
     {
         let mut txn = new_txn(&mut h.world, 0);
         let mut queue = txn
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
             .cloned()
             .expect("exclusive workstation should have queue state");
-        queue.granted = Some(GrantedFacilityUse {
+        queue.granted = Some(ContentionGrant {
             actor: grant_holder,
             intended_action: harvest_action,
             granted_at: Tick(0),
             expires_at: Tick(12),
         });
-        txn.set_component_facility_use_queue(workstation, queue)
+        txn.set_component_contention_queue(workstation, queue)
             .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
@@ -2085,7 +2119,8 @@ fn run_dead_agent_pruned_from_facility_queue_scenario(
 
         let queue = h
             .world
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
+            .cloned()
             .expect("exclusive workstation should retain queue state");
         let fragile_position = queue.position_of(fragile);
         let healthy_position = queue.position_of(healthy);
@@ -2234,16 +2269,16 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
         )
         .unwrap();
         let mut queue = txn
-            .get_component_facility_use_queue(facility_a)
+            .get_component_contention_queue(facility_a)
             .cloned()
             .expect("exclusive facility A should have queue state");
-        queue.granted = Some(GrantedFacilityUse {
+        queue.granted = Some(ContentionGrant {
             actor: monopolist,
             intended_action: harvest_action,
             granted_at: Tick(0),
             expires_at: Tick(12),
         });
-        txn.set_component_facility_use_queue(facility_a, queue)
+        txn.set_component_contention_queue(facility_a, queue)
             .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
@@ -2268,7 +2303,7 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
 
         let queue_a = h
             .world
-            .get_component_facility_use_queue(facility_a)
+            .get_component_contention_queue(facility_a)
             .expect("facility A should retain queue state");
         if queue_a.position_of(patient).is_some() {
             joined_facility_a = true;
@@ -2318,7 +2353,8 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
 }
 
 #[allow(clippy::struct_excessive_bools)]
-struct GrantExpiryBeforeIntendedActionOutcome {
+#[derive(Debug)]
+struct LocalDetourBeforeIntendedActionOutcome {
     saw_initial_grant: bool,
     saw_local_detour_before_harvest: bool,
     saw_grant_expire: bool,
@@ -2329,9 +2365,9 @@ struct GrantExpiryBeforeIntendedActionOutcome {
 }
 
 #[allow(clippy::too_many_lines)]
-fn run_grant_expiry_before_intended_action_scenario(
+fn run_local_detour_before_intended_action_scenario(
     seed: Seed,
-) -> GrantExpiryBeforeIntendedActionOutcome {
+) -> LocalDetourBeforeIntendedActionOutcome {
     let mut h = GoldenHarness::new(seed);
     let thirst_spike_after_first_grant = MetabolismProfile::new(
         pm(2),
@@ -2382,14 +2418,14 @@ fn run_grant_expiry_before_intended_action_scenario(
         .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
-    give_commodity(
-        &mut h.world,
-        &mut h.event_log,
-        agent,
-        ORCHARD_FARM,
-        CommodityKind::Water,
-        Quantity(1),
-    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        let water = txn
+            .create_item_lot(CommodityKind::Water, Quantity(1))
+            .unwrap();
+        txn.set_ground_location(water, ORCHARD_FARM).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
 
     let workstation = place_exclusive_workstation_with_source(
         &mut h.world,
@@ -2403,7 +2439,7 @@ fn run_grant_expiry_before_intended_action_scenario(
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
         },
-        nz(1),
+        nz(4),
         ProductionOutputOwner::Actor,
     );
     seed_actor_local_beliefs(
@@ -2430,7 +2466,8 @@ fn run_grant_expiry_before_intended_action_scenario(
 
         let queue = h
             .world
-            .get_component_facility_use_queue(workstation)
+            .get_component_contention_queue(workstation)
+            .cloned()
             .expect("exclusive workstation should retain queue state");
         let source_quantity = h
             .world
@@ -2469,7 +2506,7 @@ fn run_grant_expiry_before_intended_action_scenario(
             source_untouched_when_grant_expired |= source_quantity == Quantity(4);
         }
 
-        if h.agent_commodity_qty(agent, CommodityKind::Water) == Quantity(0)
+        if total_authoritative_commodity_quantity(&h.world, CommodityKind::Water) == 0
             && source_quantity == Quantity(4)
         {
             saw_local_detour_before_harvest = true;
@@ -2485,7 +2522,7 @@ fn run_grant_expiry_before_intended_action_scenario(
             .unwrap();
 
         if h.agent_hunger(agent) < initial_hunger && source_quantity < Quantity(4) {
-            return GrantExpiryBeforeIntendedActionOutcome {
+            return LocalDetourBeforeIntendedActionOutcome {
                 saw_initial_grant,
                 saw_local_detour_before_harvest,
                 saw_grant_expire,
@@ -2497,7 +2534,7 @@ fn run_grant_expiry_before_intended_action_scenario(
         }
     }
 
-    GrantExpiryBeforeIntendedActionOutcome {
+    LocalDetourBeforeIntendedActionOutcome {
         saw_initial_grant,
         saw_local_detour_before_harvest,
         saw_grant_expire,
@@ -2509,6 +2546,301 @@ fn run_grant_expiry_before_intended_action_scenario(
             .get_component_resource_source(workstation)
             .expect("exclusive workstation should retain resource source")
             .available_quantity,
+    }
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug)]
+struct DepartedWaiterPrunedFromFacilityQueueOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    saw_traveler_join_queue: bool,
+    saw_healthy_join_behind_traveler: bool,
+    traveler_departed: bool,
+    traveler_pruned_after_departure: bool,
+    healthy_promoted: bool,
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_departed_waiter_pruned_from_facility_queue_scenario(
+    seed: Seed,
+) -> DepartedWaiterPrunedFromFacilityQueueOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.enable_action_tracing();
+
+    let grant_holder = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Aster",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let traveler = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Traveler",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let healthy = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Cara",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(875), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    let workstation = place_exclusive_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        nz(12),
+        ProductionOutputOwner::Actor,
+    );
+    let harvest_action = h
+        .defs
+        .iter()
+        .find(|def| def.name == "harvest:Harvest Apples")
+        .map(|def| def.id)
+        .expect("harvest action should be registered");
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        let mut queue = txn
+            .get_component_contention_queue(workstation)
+            .cloned()
+            .expect("exclusive workstation should have queue state");
+        queue.granted = Some(ContentionGrant {
+            actor: grant_holder,
+            intended_action: harvest_action,
+            granted_at: Tick(0),
+            expires_at: Tick(12),
+        });
+        txn.set_component_contention_queue(workstation, queue)
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        healthy,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    let mut saw_traveler_join_queue = false;
+    let mut saw_healthy_join_behind_traveler = false;
+    let mut requested_departure = false;
+    let mut traveler_departed = false;
+    let mut traveler_pruned_after_departure = false;
+    let mut healthy_promoted = false;
+
+    for _ in 0..100 {
+        h.step_once();
+
+        let queue = h
+            .world
+            .get_component_contention_queue(workstation)
+            .cloned()
+            .expect("exclusive workstation should retain queue state");
+        let traveler_position = queue.position_of(traveler);
+        let healthy_position = queue.position_of(healthy);
+        saw_traveler_join_queue |= traveler_position.is_some();
+        saw_healthy_join_behind_traveler |= matches!(
+            (traveler_position, healthy_position),
+            (Some(traveler_idx), Some(healthy_idx)) if healthy_idx > traveler_idx
+        );
+
+        if !requested_departure && saw_healthy_join_behind_traveler {
+            let tick = h.scheduler.current_tick().0;
+            set_control_source(&mut h, traveler, ControlSource::Human, tick);
+            request_travel(
+                &mut h,
+                traveler,
+                worldwake_core::prototype_place_entity(PrototypePlace::EastFieldTrail),
+            );
+            requested_departure = true;
+        }
+
+        traveler_departed |= h.world.is_in_transit(traveler)
+            || h.world.effective_place(traveler) != Some(ORCHARD_FARM);
+        if traveler_departed {
+            traveler_pruned_after_departure |= traveler_position.is_none();
+            healthy_promoted |= queue
+                .granted
+                .as_ref()
+                .is_some_and(|granted| granted.actor == healthy);
+        }
+
+        if requested_departure
+            && traveler_departed
+            && traveler_pruned_after_departure
+            && healthy_promoted
+        {
+            break;
+        }
+    }
+
+    DepartedWaiterPrunedFromFacilityQueueOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        saw_traveler_join_queue,
+        saw_healthy_join_behind_traveler,
+        traveler_departed,
+        traveler_pruned_after_departure,
+        healthy_promoted,
+    }
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug)]
+struct UniqueItemRaceRejectionOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    winner_claimed_item: bool,
+    loser_rejected_at_start: bool,
+    loser_used_alternative_path: bool,
+    loser_hunger_decreased: bool,
+}
+
+fn run_unique_item_race_rejection_redirect_scenario(seed: Seed) -> UniqueItemRaceRejectionOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let winner = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Winner",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let loser = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Loser",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        loser,
+        production_perception_profile(),
+    );
+    let _orchard = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let tool = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let tool = txn
+            .create_unique_item(UniqueItemKind::SimpleTool, Some("Awl"), BTreeMap::new())
+            .unwrap();
+        txn.set_ground_location(tool, ORCHARD_FARM).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        tool
+    };
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        loser,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    set_control_source(&mut h, winner, ControlSource::Human, 0);
+    request_simple_action(&mut h, winner, "pick_up", vec![tool]);
+    request_simple_action(&mut h, loser, "pick_up", vec![tool]);
+    h.step_once();
+
+    let loser_failure_tick = h
+        .action_trace_sink()
+        .expect("action tracing should remain enabled")
+        .events_for(loser)
+        .into_iter()
+        .find(|event| {
+            event.action_name == "pick_up"
+                && matches!(event.kind, ActionTraceKind::StartFailed { .. })
+        })
+        .map(|event| event.tick)
+        .expect("loser should hit pick_up StartFailed once the winner claims the unique item");
+
+    let loser_failure = h
+        .scheduler
+        .action_start_failures()
+        .iter()
+        .find(|failure| failure.actor == loser && failure.tick == loser_failure_tick)
+        .expect("loser should retain one recorded action start failure");
+    let loser_rejected_at_start = matches!(
+        &loser_failure.reason,
+        ActionStartFailureReason::PreconditionFailed(detail) if detail == "contention_rejected"
+    );
+
+    let mut loser_used_alternative_path = false;
+    let mut loser_hunger_decreased = false;
+    let initial_loser_hunger = h.agent_hunger(loser);
+
+    for _ in 0..40 {
+        h.step_once();
+
+        loser_used_alternative_path |= h
+            .action_trace_sink()
+            .expect("action tracing should remain enabled")
+            .events_for(loser)
+            .iter()
+            .any(|event| {
+                matches!(event.kind, ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. })
+                    && matches!(event.action_name.as_str(), "harvest:Harvest Apples" | "eat")
+            });
+        loser_hunger_decreased |= h.agent_hunger(loser) < initial_loser_hunger;
+        if loser_used_alternative_path && loser_hunger_decreased {
+            break;
+        }
+    }
+
+    UniqueItemRaceRejectionOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        winner_claimed_item: h.world.possessor_of(tool) == Some(winner),
+        loser_rejected_at_start,
+        loser_used_alternative_path,
+        loser_hunger_decreased,
     }
 }
 
@@ -2814,6 +3146,52 @@ fn golden_dead_agent_pruned_from_facility_queue() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 102: Departed Waiter Pruned From Facility Queue
+// ---------------------------------------------------------------------------
+//
+// Systems: Contention, Travel, Production
+// GoalKinds: RestockCommodity
+// ActionDomains: Production, Travel
+// Places: OrchardFarm, VillageSquare
+// Principles: 8, 9, 20
+//
+// Setup: one actor holds the facility grant while two hungry waiters queue.
+//   The queue head then leaves the place through lawful travel before
+//   promotion.
+//
+// Proves: queue membership is tied to real co-location. A departed waiter is
+//   pruned from the authoritative queue and the next local waiter is promoted.
+//
+// Chain: grant holder blocks facility -> two waiters queue -> head departs ->
+//   queue prune -> next waiter promoted.
+
+#[test]
+fn golden_departed_waiter_pruned_from_facility_queue() {
+    let outcome = run_departed_waiter_pruned_from_facility_queue_scenario(Seed([25; 32]));
+
+    assert!(
+        outcome.saw_traveler_join_queue,
+        "the departing actor should first enter the real facility queue"
+    );
+    assert!(
+        outcome.saw_healthy_join_behind_traveler,
+        "a second actor should queue behind the future traveler before the departure prune"
+    );
+    assert!(
+        outcome.traveler_departed,
+        "the queued traveler should physically leave the facility place"
+    );
+    assert!(
+        outcome.traveler_pruned_after_departure,
+        "the authoritative contention queue should prune the departed traveler"
+    );
+    assert!(
+        outcome.healthy_promoted,
+        "once the traveler departs, the next waiting actor should receive the facility grant"
+    );
+}
+
 #[test]
 fn golden_facility_queue_patience_timeout() {
     let outcome = run_facility_queue_patience_timeout_scenario(Seed([19; 32]));
@@ -2854,8 +3232,8 @@ fn golden_facility_queue_patience_timeout_replays_deterministically() {
 }
 
 #[test]
-fn golden_grant_expiry_before_intended_action() {
-    let outcome = run_grant_expiry_before_intended_action_scenario(Seed([20; 32]));
+fn golden_local_detour_reuses_existing_grant_before_harvest() {
+    let outcome = run_local_detour_before_intended_action_scenario(Seed([20; 32]));
 
     assert!(
         outcome.saw_initial_grant,
@@ -2863,27 +3241,27 @@ fn golden_grant_expiry_before_intended_action() {
     );
     assert!(
         outcome.saw_local_detour_before_harvest,
-        "A higher-priority local detour should consume the carried water before the orchard stock changes"
+        "A higher-priority local detour should consume the local water before the orchard stock changes"
     );
     assert!(
-        outcome.saw_grant_expire,
-        "The unused facility grant should expire through the authoritative facility queue system"
+        !outcome.saw_grant_expire,
+        "The short local detour should reuse the original grant rather than forcing an expiry/requeue cycle: {outcome:?}"
     );
     assert!(
-        outcome.source_untouched_when_grant_expired,
-        "The exclusive orchard stock should remain untouched when the first grant expires"
+        !outcome.saw_second_promotion,
+        "Reusing the original grant should avoid a second queue promotion: {outcome:?}"
     );
     assert!(
-        outcome.saw_second_promotion,
-        "Grant expiry recovery should lead to a second real promotion, proving the agent re-entered the normal queue path"
+        !outcome.source_untouched_when_grant_expired,
+        "The expiry-specific aftermath should remain absent when the original grant survives the detour: {outcome:?}"
     );
     assert!(
         outcome.hunger_decreased,
-        "After recovering from the expired grant, the agent should still satisfy the original hunger-driven goal"
+        "After the local detour, the agent should still satisfy the original hunger-driven goal"
     );
     assert!(
         outcome.final_source_quantity < Quantity(4),
-        "The exclusive orchard should eventually be used after the recovered re-queue path"
+        "The exclusive orchard should still be used after the grant-preserving detour path"
     );
 }
 
@@ -3159,6 +3537,83 @@ fn golden_dead_agent_pruned_from_facility_queue_replays_deterministically() {
     assert_eq!(
         outcome_1.log_hash, outcome_2.log_hash,
         "Dead-agent queue prune scenario should replay to the same event log hash"
+    );
+}
+
+#[test]
+fn golden_departed_waiter_pruned_from_facility_queue_replays_deterministically() {
+    let seed = Seed([26; 32]);
+
+    let first = run_departed_waiter_pruned_from_facility_queue_scenario(seed);
+    let second = run_departed_waiter_pruned_from_facility_queue_scenario(seed);
+
+    assert_eq!(
+        first.world_hash, second.world_hash,
+        "departed-waiter queue prune scenario should replay to the same world hash"
+    );
+    assert_eq!(
+        first.log_hash, second.log_hash,
+        "departed-waiter queue prune scenario should replay to the same event log hash"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 103: Unique-Item Race Rejection Redirects To Local Alternative
+// ---------------------------------------------------------------------------
+//
+// Systems: Transport, Contention, Production, AI
+// GoalKinds: AcquireCommodity(SelfConsume)
+// ActionDomains: Transport, Production
+// Places: OrchardFarm
+// Principles: 8, 9, 20, 21
+//
+// Setup: a ground unique tool and a local orchard share OrchardFarm. One actor
+//   claims the tool through `pick_up`; a second AI actor attempts the same
+//   `pick_up` request and is rejected by the race-mode contention grant.
+//
+// Proves: the losing actor records a structured `contention_rejected`
+//   start failure and then replans to a lawful local harvest alternative rather
+//   than acting on the already-claimed item.
+//
+// Chain: winner pick_up grant -> loser `contention_rejected` -> next AI tick
+//   sees start failure -> local harvest selected -> hunger relief.
+
+#[test]
+fn golden_unique_item_race_rejection_redirects_to_local_alternative() {
+    let outcome = run_unique_item_race_rejection_redirect_scenario(Seed([27; 32]));
+
+    assert!(
+        outcome.winner_claimed_item,
+        "the winning actor should retain exclusive possession of the unique item"
+    );
+    assert!(
+        outcome.loser_rejected_at_start,
+        "the losing actor should receive a structured contention_rejected start failure"
+    );
+    assert!(
+        outcome.loser_used_alternative_path,
+        "after the unique-item rejection, the losing AI actor should follow some other lawful action path"
+    );
+    assert!(
+        outcome.loser_hunger_decreased,
+        "the losing actor should eventually satisfy hunger through the redirected alternative path"
+    );
+}
+
+#[test]
+fn golden_unique_item_race_rejection_redirects_to_local_alternative_replays_deterministically() {
+    let seed = Seed([28; 32]);
+
+    let first = run_unique_item_race_rejection_redirect_scenario(seed);
+    let second = run_unique_item_race_rejection_redirect_scenario(seed);
+
+    assert_eq!(
+        first.world_hash, second.world_hash,
+        "unique-item race rejection scenario should replay to the same world hash"
+    );
+    assert_eq!(
+        first.log_hash, second.log_hash,
+        "unique-item race rejection scenario should replay to the same event log hash"
     );
 }
 

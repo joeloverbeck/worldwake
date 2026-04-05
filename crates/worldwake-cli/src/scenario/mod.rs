@@ -359,8 +359,8 @@ fn spawn_agent(
     if let Some(ref profile) = agent_def.pursuit_profile {
         txn.set_component_pursuit_profile(agent_id, profile.clone())?;
     }
-    if let Some(ref profile) = agent_def.facility_queue_disposition {
-        txn.set_component_facility_queue_disposition_profile(agent_id, profile.clone())?;
+    if let Some(ref profile) = agent_def.contention_disposition {
+        txn.set_component_contention_disposition_profile(agent_id, profile.clone())?;
     }
     if let Some(ref profile) = agent_def.commodity_valuation {
         txn.set_component_commodity_valuation_profile(agent_id, *profile)?;
@@ -475,7 +475,7 @@ mod tests {
     use worldwake_core::{
         BeliefConfidencePolicy, CarryCapacity, CommodityKind, CommodityValuationProfile,
         CommunicationProfile, ControlSource, DriveThresholds, EpistemicDispositionProfile,
-        FacilityQueueDispositionProfile, HomeostaticNeeds, IntentionDispositionProfile,
+        ContentionDispositionProfile, HomeostaticNeeds, IntentionDispositionProfile,
         JusticeDispositionProfile, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile,
         Permille, PreferenceProfile, PursuitProfile, Quantity, ReasoningProfile,
         SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
@@ -509,7 +509,7 @@ mod tests {
             patrol_profile: None,
             patrol_route: None,
             pursuit_profile: None,
-            facility_queue_disposition: None,
+            contention_disposition: None,
             commodity_valuation: None,
             substitute_preferences: None,
         }
@@ -1150,7 +1150,7 @@ mod tests {
             min_location_confidence: Permille::new(600).unwrap(),
             max_pursuit_travel_ticks: NonZeroU32::new(10).unwrap(),
         };
-        let queue_profile = FacilityQueueDispositionProfile {
+        let queue_profile = ContentionDispositionProfile {
             queue_patience_ticks: Some(NonZeroU32::new(8).unwrap()),
         };
         let valuation_profile = CommodityValuationProfile {
@@ -1187,7 +1187,7 @@ mod tests {
                     assigned_places: vec!["Gate".into(), "Market".into()],
                 }),
                 pursuit_profile: Some(pursuit_profile.clone()),
-                facility_queue_disposition: Some(queue_profile.clone()),
+                contention_disposition: Some(queue_profile.clone()),
                 commodity_valuation: Some(valuation_profile),
                 substitute_preferences: Some(substitute_preferences.clone()),
                 ..minimal_agent("Guard", "Gate", ControlSource::Ai)
@@ -1236,7 +1236,7 @@ mod tests {
         );
         assert_eq!(world.get_component_pursuit_profile(agent), Some(&pursuit_profile));
         assert_eq!(
-            world.get_component_facility_queue_disposition_profile(agent),
+            world.get_component_contention_disposition_profile(agent),
             Some(&queue_profile)
         );
         assert_eq!(
@@ -1264,7 +1264,7 @@ mod tests {
         assert_eq!(world.get_component_patrol_profile(agent), None);
         assert_eq!(world.get_component_patrol_route(agent), None);
         assert_eq!(world.get_component_pursuit_profile(agent), None);
-        assert_eq!(world.get_component_facility_queue_disposition_profile(agent), None);
+        assert_eq!(world.get_component_contention_disposition_profile(agent), None);
         assert_eq!(world.get_component_commodity_valuation_profile(agent), None);
         assert_eq!(world.get_component_substitute_preferences(agent), None);
     }

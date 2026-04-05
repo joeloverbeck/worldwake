@@ -13,9 +13,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    belief_confidence, CommodityKind, CommodityPurpose, EntityId, EpistemicSubject, GoalKey,
-    GoalKind, InstitutionalBeliefRead, Permille, PlaceTag, Quantity, ReasoningProfile,
-    RecordKind, SuccessionLaw, WorkstationTag, OUTDOOR_RELIEF_TAGS,
+    belief_confidence, ArtifactKind, ArtifactState, BountyTarget, CommodityKind,
+    CommodityPurpose, EntityId, EpistemicSubject, GoalKey, GoalKind, InstitutionalBeliefRead,
+    Permille, PlaceTag, Quantity, ReasoningProfile, RecordKind, SuccessionLaw, WorkstationTag,
+    OUTDOOR_RELIEF_TAGS,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
@@ -78,6 +79,9 @@ pub trait GoalKindPlannerExt {
     ///   goal's canonical entity.
     /// - Flexible goals → always `true` regardless of op or targets.
     fn matches_binding(&self, authoritative_targets: &[EntityId], op_kind: PlannerOpKind) -> bool;
+    /// Whether the current planning state lawfully permits considering this operator.
+    /// Used for stateful root-candidate filtering when binding alone is insufficient.
+    fn candidate_is_available(&self, state: &PlanningState<'_>, op_kind: PlannerOpKind) -> bool;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -388,6 +392,31 @@ fn political_step_blocked_by_unknown_vacancy(
         && state.believed_office_holder(office) != InstitutionalBeliefRead::Certain(None)
 }
 
+fn believed_bounty_terms(
+    state: &PlanningState<'_>,
+    bounty: EntityId,
+) -> Option<worldwake_core::BelievedBountyTerms> {
+    let actor = state.snapshot().actor();
+    state.known_entity_beliefs(actor)
+        .into_iter()
+        .find_map(|(entity, belief)| {
+            (entity == bounty)
+                .then(|| belief.believed_artifact.and_then(|artifact| artifact.bounty_terms))
+                .flatten()
+        })
+}
+
+fn believed_bounty_artifact_state(
+    state: &PlanningState<'_>,
+    bounty: EntityId,
+) -> Option<worldwake_core::BelievedArtifactState> {
+    let actor = state.snapshot().actor();
+    state.known_entity_beliefs(actor)
+        .into_iter()
+        .find_map(|(entity, belief)| (entity == bounty).then_some(belief.believed_artifact))
+        .flatten()
+}
+
 impl GoalKindPlannerExt for GoalKind {
     fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily> {
         GoalDispatchKey::from_goal_kind(self)
@@ -430,6 +459,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::TreatWounds { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. }
+            | GoalKind::FulfillBounty { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. }
@@ -450,6 +480,34 @@ impl GoalKindPlannerExt for GoalKind {
         def: &ActionDef,
         semantics: &PlannerOpSemantics,
     ) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+        if let GoalKind::FulfillBounty { bounty } = self {
+            if matches!(semantics.op_kind, PlannerOpKind::Attack | PlannerOpKind::ClaimBounty) {
+                let Some(terms) = believed_bounty_terms(state, *bounty) else {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                };
+                match (semantics.op_kind, terms.target) {
+                    (PlannerOpKind::Attack, BountyTarget::EliminateEntity { target }) => {
+                        let Some(actual_target) = targets.first().copied() else {
+                            return Err(GoalPayloadOverrideError::MissingTarget);
+                        };
+                        if actual_target != target || state.is_dead(target) {
+                            return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                        }
+                        return Ok(Some(ActionPayload::Combat(CombatActionPayload {
+                            target: actual_target,
+                            weapon: worldwake_core::CombatWeaponRef::Unarmed,
+                        })));
+                    }
+                    (PlannerOpKind::ClaimBounty, BountyTarget::EliminateEntity { target }) => {
+                        if !state.is_dead(target) {
+                            return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         if let Some(payload) = payload_override_from_affordance(self, affordance_payload)? {
             if semantics.op_kind == PlannerOpKind::ConsultRecord {
                 let Some(record) = payload.as_consult_record().map(|consult| consult.record) else {
@@ -620,6 +678,46 @@ impl GoalKindPlannerExt for GoalKind {
                     let per_unit = worldwake_core::load_per_unit(*commodity).0;
                     let carry_fit = Quantity(remaining_capacity / per_unit);
                     let quantity = Quantity(lot_quantity.0.min(restock_gap.0).min(carry_fit.0));
+                    if quantity == Quantity(0) {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    }
+                    Ok(Some(ActionPayload::Transport(TransportActionPayload {
+                        quantity,
+                    })))
+                }
+                GoalKind::FulfillBounty { bounty } if def.name == "pick_up" => {
+                    let Some(terms) = believed_bounty_terms(state, *bounty) else {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    };
+                    let BountyTarget::DeliverCommodity {
+                        commodity,
+                        quantity,
+                        destination,
+                    } = terms.target
+                    else {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    };
+                    let Some(target) = targets.first().copied() else {
+                        return Err(GoalPayloadOverrideError::MissingTarget);
+                    };
+                    if state.item_lot_commodity(target) != Some(commodity) {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    }
+                    let lot_quantity = state.commodity_quantity(target, commodity);
+                    let Some(delivery_gap) =
+                        delivery_bounty_gap_at_destination(state, actor, destination, commodity, quantity)
+                    else {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    };
+                    let remaining_capacity = state
+                        .remaining_carry_capacity_ref(crate::PlanningEntityRef::Authoritative(
+                            actor,
+                        ))
+                        .ok_or(GoalPayloadOverrideError::UnsupportedGoal)?
+                        .0;
+                    let per_unit = worldwake_core::load_per_unit(commodity).0;
+                    let carry_fit = Quantity(remaining_capacity / per_unit);
+                    let quantity = Quantity(lot_quantity.0.min(delivery_gap.0).min(carry_fit.0));
                     if quantity == Quantity(0) {
                         return Err(GoalPayloadOverrideError::UnsupportedGoal);
                     }
@@ -805,6 +903,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::StockManagement
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
+            | PlannerOpKind::ClaimBounty
             | PlannerOpKind::Attack
             | PlannerOpKind::Defend
             | PlannerOpKind::Patrol
@@ -825,6 +924,8 @@ impl GoalKindPlannerExt for GoalKind {
                 self,
                 GoalKind::ConsumeOwnedCommodity { .. }
                     | GoalKind::AcquireCommodity { .. }
+                    | GoalKind::LootCorpse { .. }
+                    | GoalKind::BuryCorpse { .. }
                     | GoalKind::TreatWounds { .. }
                     | GoalKind::ProduceCommodity { .. }
                     | GoalKind::RestockCommodity { .. }
@@ -842,6 +943,12 @@ impl GoalKindPlannerExt for GoalKind {
         }
 
         if matches!(self, GoalKind::Patrol { .. }) && step.op_kind == PlannerOpKind::Patrol {
+            return true;
+        }
+
+        if matches!(self, GoalKind::FulfillBounty { .. })
+            && step.op_kind == PlannerOpKind::ClaimBounty
+        {
             return true;
         }
 
@@ -894,7 +1001,12 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. } => true,
-            GoalKind::TreatWounds { .. } => step.op_kind == PlannerOpKind::Trade,
+            GoalKind::TreatWounds { .. } => {
+                matches!(
+                    step.op_kind,
+                    PlannerOpKind::Trade | PlannerOpKind::QueueForFacilityUse
+                )
+            }
             _ => false,
         }
     }
@@ -968,6 +1080,11 @@ impl GoalKindPlannerExt for GoalKind {
                 .copied()
                 .all(|commodity| state.commodity_quantity(*corpse, commodity) == Quantity(0)),
             GoalKind::BuryCorpse { corpse, .. } => state.direct_container(*corpse).is_some(),
+            GoalKind::FulfillBounty { bounty } => believed_bounty_artifact_state(state, *bounty)
+                .is_some_and(|artifact| {
+                    artifact.kind == ArtifactKind::Bounty
+                        && artifact.state != ArtifactState::Active
+                }),
             GoalKind::SupportCandidateForOffice { office, candidate } => {
                 state.effective_support_declaration(actor, *office) == Some(*candidate)
             }
@@ -1084,6 +1201,35 @@ impl GoalKindPlannerExt for GoalKind {
                 .or(Some(*destination))
                 .into_iter()
                 .collect(),
+            GoalKind::FulfillBounty { bounty } => {
+                let Some(terms) = believed_bounty_terms(state, *bounty) else {
+                    return Vec::new();
+                };
+                match terms.target {
+                    BountyTarget::EliminateEntity { target }
+                        if !state.is_dead(target)
+                            && state.effective_place(target).is_some() =>
+                    {
+                        state.effective_place(target).into_iter().collect()
+                    }
+                    BountyTarget::DeliverCommodity {
+                        commodity,
+                        quantity,
+                        destination,
+                    } if delivery_bounty_gap_at_destination(
+                        state,
+                        actor,
+                        destination,
+                        commodity,
+                        quantity,
+                    )
+                    .is_some() =>
+                    {
+                        vec![destination]
+                    }
+                    _ => vec![terms.claim_place],
+                }
+            }
             GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => {
                 state.effective_place(*corpse).into_iter().collect()
             }
@@ -1208,6 +1354,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Exile
             | PlannerOpKind::Investigate
             | PlannerOpKind::AskWitness
+            | PlannerOpKind::ClaimBounty
             | PlannerOpKind::Bury => {}
         }
 
@@ -1249,6 +1396,9 @@ impl GoalKindPlannerExt for GoalKind {
                 accused: target, ..
             } => authoritative_targets.contains(target),
             GoalKind::LootCorpse { corpse } => authoritative_targets.contains(corpse),
+            GoalKind::FulfillBounty { bounty } => {
+                op_kind != PlannerOpKind::ClaimBounty || authoritative_targets.contains(bounty)
+            }
             GoalKind::BuryCorpse {
                 corpse,
                 burial_site,
@@ -1258,6 +1408,46 @@ impl GoalKindPlannerExt for GoalKind {
             }
             GoalKind::ShareBelief { listener, .. } => authoritative_targets.contains(listener),
             GoalKind::MoveCargo { destination, .. } => authoritative_targets.contains(destination),
+        }
+    }
+
+    fn candidate_is_available(&self, state: &PlanningState<'_>, op_kind: PlannerOpKind) -> bool {
+        match (self, op_kind) {
+            (GoalKind::FulfillBounty { bounty }, op_kind) => {
+                let Some(terms) = believed_bounty_terms(state, *bounty) else {
+                    return false;
+                };
+                let actor_at_claim_place =
+                    state.effective_place(state.snapshot().actor()) == Some(terms.claim_place);
+                match terms.target {
+                    BountyTarget::EliminateEntity { target } => match op_kind {
+                        PlannerOpKind::Attack => !state.is_dead(target),
+                        PlannerOpKind::ClaimBounty => {
+                            state.is_dead(target) && actor_at_claim_place
+                        }
+                        PlannerOpKind::MoveCargo | PlannerOpKind::StockManagement => false,
+                        _ => true,
+                    },
+                    BountyTarget::DeliverCommodity {
+                        commodity,
+                        quantity,
+                        destination,
+                    } => match op_kind {
+                        PlannerOpKind::Attack => false,
+                        PlannerOpKind::ClaimBounty => delivery_bounty_gap_at_destination(
+                            state,
+                            state.snapshot().actor(),
+                            destination,
+                            commodity,
+                            quantity,
+                        )
+                        .is_none()
+                            && actor_at_claim_place,
+                        _ => true,
+                    },
+                }
+            }
+            _ => true,
         }
     }
 }
@@ -1279,6 +1469,17 @@ fn places_with_resource_source(
         }
     }
     places.into_iter().collect()
+}
+
+fn delivery_bounty_gap_at_destination(
+    state: &PlanningState<'_>,
+    actor: EntityId,
+    destination: EntityId,
+    commodity: CommodityKind,
+    required_quantity: Quantity,
+) -> Option<Quantity> {
+    let delivered = state.controlled_commodity_quantity_at_place(actor, destination, commodity);
+    (delivered < required_quantity).then_some(Quantity(required_quantity.0 - delivered.0))
 }
 
 /// Append places where merchants are selling the given commodity (deduplicating with `existing`).
@@ -1797,6 +1998,18 @@ impl GroundedGoal {
                 GoalKind::PunishAccused { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
+            PlannerOpKind::ClaimBounty => match &self.key.kind {
+                GoalKind::FulfillBounty { bounty }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::SpecificEntity(_)]
+                    ) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![*bounty])
+                }
+                GoalKind::FulfillBounty { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
             _ => RootCandidateSynthesis::UnsupportedGoalOp,
         }
     }
@@ -1833,15 +2046,17 @@ mod tests {
     use worldwake_core::ActionDomain;
     use worldwake_core::{
         test_utils::{entity_id, sample_trade_disposition_profile},
-        ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BelievedEntityState,
-        BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
-        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EpistemicSubject,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        Permille, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource,
-        SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-        ViolationId, VisibilitySpec, WorkstationTag, Wound,
+        ActionDefId, ArtifactKind, ArtifactState, AskWitnessMemory, AskWitnessMemoryKey,
+        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
+        DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        EpistemicDispositionProfile, EpistemicSubject, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PunishmentKind, Quantity,
+        RecipeId, RecordEntryId, RecordKind, ResourceSource, SuccessionLaw, TellTopic, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec,
+        WorkstationTag, Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
@@ -2242,7 +2457,26 @@ mod tests {
             burial_site: entity_id(2, 0),
         };
 
-        assert_eq!(goal.relevant_op_kinds(), &[PlannerOpKind::Bury]);
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[PlannerOpKind::QueueForFacilityUse, PlannerOpKind::Bury]
+        );
+    }
+
+    #[test]
+    fn loot_goal_uses_queue_then_loot_op_family() {
+        let goal = GoalKind::LootCorpse {
+            corpse: entity_id(1, 0),
+        };
+
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[
+                PlannerOpKind::Travel,
+                PlannerOpKind::QueueForFacilityUse,
+                PlannerOpKind::Loot,
+            ]
+        );
     }
 
     #[test]
@@ -3702,6 +3936,45 @@ mod tests {
     }
 
     #[test]
+    fn grounded_goal_synthesizes_claim_bounty_root_targets_from_goal_identity() {
+        let bounty = entity(10);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+            key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+            evidence_entities: BTreeSet::from([bounty]),
+            evidence_places: BTreeSet::new(),
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "claim_bounty".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::SpecificEntity(entity(999))],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::ClaimBounty,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            RootCandidateSynthesis::Targets(vec![bounty])
+        );
+    }
+
+    #[test]
     fn grounded_goal_synthesizes_establish_camp_root_targets_from_goal_place() {
         let rally_place = entity(14);
         let goal = GroundedGoal {
@@ -4378,6 +4651,12 @@ mod tests {
         assert!(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::Restock,
+        }
+        .is_progress_barrier(&queue_step));
+        assert!(GoalKind::LootCorpse { corpse: entity(41) }.is_progress_barrier(&queue_step));
+        assert!(GoalKind::BuryCorpse {
+            corpse: entity(41),
+            burial_site: entity(42),
         }
         .is_progress_barrier(&queue_step));
         assert!(GoalKind::ProduceCommodity {
@@ -6682,6 +6961,8 @@ mod tests {
             wounds: Vec::new(),
             last_known_courage: None,
             believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
             observed_tick,
             source: worldwake_core::PerceptionSource::DirectObservation,
         }
@@ -7618,6 +7899,418 @@ mod tests {
             commodity: CommodityKind::Bread,
         }
         .is_satisfied(&state));
+    }
+
+    #[test]
+    fn fulfill_bounty_is_satisfied_when_believed_bounty_is_non_active() {
+        let actor = entity_id(1, 0);
+        let bounty = entity_id(2, 0);
+        let issuer = entity_id(3, 0);
+        let claim_place = entity_id(4, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bounty, EntityKind::SocialArtifact);
+        view.effective_places.insert(actor, claim_place);
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Fulfilled,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::EliminateEntity {
+                                target: entity_id(5, 0),
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(20),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bounty]),
+            &BTreeSet::from([claim_place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(GoalKind::FulfillBounty { bounty }.is_satisfied(&state));
+    }
+
+    #[test]
+    fn fulfill_bounty_elimination_availability_switches_from_attack_to_claim_after_target_death() {
+        let actor = entity_id(1, 0);
+        let bounty = entity_id(2, 0);
+        let issuer = entity_id(3, 0);
+        let claim_place = entity_id(4, 0);
+        let target = entity_id(5, 0);
+        let goal = GoalKind::FulfillBounty { bounty };
+
+        let mut live_view = TestBeliefView::default();
+        live_view.alive.insert(actor);
+        live_view.alive.insert(target);
+        live_view.kinds.insert(actor, EntityKind::Agent);
+        live_view.kinds.insert(target, EntityKind::Agent);
+        live_view.kinds.insert(bounty, EntityKind::SocialArtifact);
+        live_view.effective_places.insert(actor, claim_place);
+        live_view.effective_places.insert(target, claim_place);
+        live_view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::EliminateEntity { target },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(20),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        let live_snapshot = build_planning_snapshot(
+            &live_view,
+            actor,
+            &BTreeSet::from([bounty, target]),
+            &BTreeSet::from([claim_place]),
+            1,
+        );
+        let live_state = PlanningState::new(&live_snapshot);
+        assert!(goal.candidate_is_available(&live_state, PlannerOpKind::Attack));
+        assert!(!goal.candidate_is_available(&live_state, PlannerOpKind::ClaimBounty));
+
+        let mut dead_view = live_view;
+        dead_view.alive.remove(&target);
+        let dead_snapshot = build_planning_snapshot(
+            &dead_view,
+            actor,
+            &BTreeSet::from([bounty, target]),
+            &BTreeSet::from([claim_place]),
+            1,
+        );
+        let dead_state = PlanningState::new(&dead_snapshot);
+        assert!(!goal.candidate_is_available(&dead_state, PlannerOpKind::Attack));
+        assert!(goal.candidate_is_available(&dead_state, PlannerOpKind::ClaimBounty));
+    }
+
+    #[test]
+    fn fulfill_bounty_relevant_ops_include_delivery_cargo_surfaces() {
+        let goal = GoalKind::FulfillBounty {
+            bounty: entity_id(2, 0),
+        };
+
+        assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::Travel));
+        assert!(goal.relevant_op_kinds().contains(&PlannerOpKind::MoveCargo));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&PlannerOpKind::StockManagement));
+        assert!(goal
+            .relevant_op_kinds()
+            .contains(&PlannerOpKind::ClaimBounty));
+    }
+
+    #[test]
+    fn fulfill_bounty_delivery_relevant_place_is_destination_until_delivered() {
+        let actor = entity_id(1, 0);
+        let bounty = entity_id(2, 0);
+        let issuer = entity_id(3, 0);
+        let destination = entity_id(4, 0);
+        let claim_place = entity_id(5, 0);
+        let bread_lot = entity_id(6, 0);
+        let source = entity_id(7, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bounty, EntityKind::SocialArtifact);
+        view.kinds.insert(destination, EntityKind::Place);
+        view.kinds.insert(claim_place, EntityKind::Place);
+        view.kinds.insert(source, EntityKind::Place);
+        view.kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(actor, source);
+        view.effective_places.insert(bread_lot, source);
+        view.entities_at.insert(source, vec![actor, bread_lot]);
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread_lot, CommodityKind::Bread), Quantity(3));
+        view.controllable.insert((actor, bread_lot));
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(20),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bounty, bread_lot]),
+            &BTreeSet::from([source, destination, claim_place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            GoalKind::FulfillBounty { bounty }.goal_relevant_places(&state, &RecipeRegistry::new()),
+            vec![destination]
+        );
+    }
+
+    #[test]
+    fn fulfill_bounty_delivery_relevant_place_becomes_claim_place_once_delivered() {
+        let actor = entity_id(1, 0);
+        let bounty = entity_id(2, 0);
+        let issuer = entity_id(3, 0);
+        let destination = entity_id(4, 0);
+        let claim_place = entity_id(5, 0);
+        let bread_lot = entity_id(6, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bounty, EntityKind::SocialArtifact);
+        view.kinds.insert(destination, EntityKind::Place);
+        view.kinds.insert(claim_place, EntityKind::Place);
+        view.kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(actor, destination);
+        view.effective_places.insert(bread_lot, destination);
+        view.entities_at.insert(destination, vec![actor, bread_lot]);
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread_lot, CommodityKind::Bread), Quantity(3));
+        view.controllable.insert((actor, bread_lot));
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(20),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bounty, bread_lot]),
+            &BTreeSet::from([destination, claim_place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            GoalKind::FulfillBounty { bounty }.goal_relevant_places(&state, &RecipeRegistry::new()),
+            vec![claim_place]
+        );
+    }
+
+    #[test]
+    fn fulfill_bounty_delivery_builds_pick_up_payload_from_delivery_gap() {
+        let actor = entity_id(1, 0);
+        let bounty = entity_id(2, 0);
+        let issuer = entity_id(3, 0);
+        let destination = entity_id(4, 0);
+        let claim_place = entity_id(5, 0);
+        let source = entity_id(6, 0);
+        let bread_lot = entity_id(7, 0);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, bounty, destination, claim_place, source, bread_lot]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(bounty, EntityKind::SocialArtifact);
+        view.kinds.insert(destination, EntityKind::Place);
+        view.kinds.insert(claim_place, EntityKind::Place);
+        view.kinds.insert(source, EntityKind::Place);
+        view.kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(actor, source);
+        view.effective_places.insert(bread_lot, source);
+        view.entities_at.insert(source, vec![actor, bread_lot]);
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((bread_lot, CommodityKind::Bread), Quantity(5));
+        view.carry_capacities.insert(actor, LoadUnits(2));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(bread_lot, LoadUnits(5));
+        view.controllable.insert((actor, bread_lot));
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(20),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([bounty, bread_lot]),
+            &BTreeSet::from([source, destination, claim_place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::FulfillBounty { bounty };
+        let def = ActionDef {
+            id: ActionDefId(9),
+            name: "pick_up".to_string(),
+            domain: ActionDomain::Transport,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::MoveCargo,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::PickUpGroundLot,
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[bread_lot], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(2),
+            }))
+        );
     }
 
     #[test]

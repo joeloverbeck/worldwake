@@ -14,7 +14,7 @@ use crate::{
     authoritative_target, clear_resolved_blockers, rank_candidates, AgentDecisionRuntime,
     DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
 };
-use worldwake_core::{FacilityQueueIntents, QueuedFacilityIntent};
+use worldwake_core::{ContentionIntents, QueuedContentionIntent};
 
 use super::{
     advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
@@ -73,7 +73,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     action_defs: &worldwake_sim::ActionDefRegistry,
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
-    facility_intents: &mut FacilityQueueIntents,
+    facility_intents: &mut ContentionIntents,
     blocked_memory: &mut BlockedIntentMemory,
     violation_memory: &mut worldwake_core::ViolationMemory,
     agent: EntityId,
@@ -191,7 +191,7 @@ pub(super) fn refresh_runtime_for_read_phase(
 pub(super) fn handle_facility_queue_transitions(
     view: &dyn RuntimeBeliefView,
     runtime: &AgentDecisionRuntime,
-    facility_intents: &mut FacilityQueueIntents,
+    facility_intents: &mut ContentionIntents,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     tick: Tick,
@@ -244,7 +244,7 @@ pub(super) fn handle_facility_queue_transitions(
                                 }
                             })
                         })?;
-                    Some(QueuedFacilityIntent {
+                    Some(QueuedContentionIntent {
                         goal_key: plan.goal,
                         intended_action,
                     })
@@ -287,7 +287,7 @@ pub(super) fn reconcile_in_flight_state(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<worldwake_core::ActiveGoal>,
     jc: &mut Option<worldwake_core::IntentionFrame>,
-    facility_intents: &mut FacilityQueueIntents,
+    facility_intents: &mut ContentionIntents,
     blocked_memory: &mut BlockedIntentMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
@@ -380,7 +380,7 @@ fn matching_start_failure<'a>(
 
 fn reconcile_committed_facility_queue_intents(
     runtime: &AgentDecisionRuntime,
-    facility_intents: &mut FacilityQueueIntents,
+    facility_intents: &mut ContentionIntents,
     active_goal: Option<worldwake_core::GoalKey>,
     step: &PlannedStep,
 ) {
@@ -404,7 +404,7 @@ fn reconcile_committed_facility_queue_intents(
             };
             facility_intents.intents.insert(
                 facility,
-                QueuedFacilityIntent {
+                QueuedContentionIntent {
                     goal_key,
                     intended_action: payload.intended_action,
                 },
@@ -439,6 +439,7 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::YieldForceClaim
         | crate::PlannerOpKind::Investigate
         | crate::PlannerOpKind::AskWitness
+        | crate::PlannerOpKind::ClaimBounty
         | crate::PlannerOpKind::StaffMarket
         | crate::PlannerOpKind::StockManagement => {}
     }
@@ -513,7 +514,7 @@ pub(super) fn facility_access_signature(
 
     view.entities_at(place)
         .into_iter()
-        .filter(|entity| view.has_exclusive_facility_policy(*entity))
+        .filter(|entity| view.has_contention_policy(*entity))
         .filter_map(|facility| {
             let queued = view.facility_queue_position(facility, agent).is_some();
             let matching_grant = view
@@ -537,7 +538,7 @@ pub(super) fn facility_queue_patience_exhausted(
     };
 
     view.entities_at(place).into_iter().any(|facility| {
-        if !view.has_exclusive_facility_policy(facility) {
+        if !view.has_contention_policy(facility) {
             return false;
         }
         if view

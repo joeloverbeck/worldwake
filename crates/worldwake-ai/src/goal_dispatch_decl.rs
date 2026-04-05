@@ -16,6 +16,7 @@ pub enum InvalidationStrategy {
     PositionAndCommodity,
     PositionCommodityAndCoin,
     PositionAndTargetDead,
+    BountyActive,
     StealTargetState,
     ClaimOffice,
     SupportCandidateForOffice,
@@ -109,8 +110,19 @@ const MOVE_CARGO_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::MoveCargo,
     PlannerOpKind::StockManagement,
 ];
-const LOOT_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Loot];
-const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Bury];
+const LOOT_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Travel,
+    PlannerOpKind::QueueForFacilityUse,
+    PlannerOpKind::Loot,
+];
+const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::QueueForFacilityUse, PlannerOpKind::Bury];
+const FULFILL_BOUNTY_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Travel,
+    PlannerOpKind::Attack,
+    PlannerOpKind::MoveCargo,
+    PlannerOpKind::StockManagement,
+    PlannerOpKind::ClaimBounty,
+];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
 const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
@@ -264,6 +276,13 @@ static DECL_BURY_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::CorpseBurialCheck,
 };
+static DECL_FULFILL_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "FulfillBounty",
+    provenance_family: None,
+    relevant_ops: FULFILL_BOUNTY_OPS,
+    invalidation_strategy: InvalidationStrategy::BountyActive,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+};
 static DECL_SHARE_BELIEF: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ShareBelief",
     provenance_family: None,
@@ -351,6 +370,7 @@ impl GoalDispatchKey {
             Self::MoveCargo => &DECL_MOVE_CARGO,
             Self::LootCorpse => &DECL_LOOT_CORPSE,
             Self::BuryCorpse => &DECL_BURY_CORPSE,
+            Self::FulfillBounty => &DECL_FULFILL_BOUNTY,
             Self::ShareBelief => &DECL_SHARE_BELIEF,
             Self::ClaimOffice => &DECL_CLAIM_OFFICE,
             Self::SupportCandidateForOffice => &DECL_SUPPORT_CANDIDATE_FOR_OFFICE,
@@ -393,6 +413,7 @@ mod tests {
         GoalDispatchKey::MoveCargo,
         GoalDispatchKey::LootCorpse,
         GoalDispatchKey::BuryCorpse,
+        GoalDispatchKey::FulfillBounty,
         GoalDispatchKey::ShareBelief,
         GoalDispatchKey::ClaimOffice,
         GoalDispatchKey::SupportCandidateForOffice,
@@ -461,6 +482,7 @@ mod tests {
                 corpse: target,
                 burial_site: destination,
             },
+            GoalDispatchKey::FulfillBounty => GoalKind::FulfillBounty { bounty: target },
             GoalDispatchKey::ShareBelief => GoalKind::ShareBelief {
                 listener: target,
                 topic: TellTopic::EntityBelief { subject: office },
@@ -506,7 +528,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 28);
+        assert_eq!(ALL_KEYS.len(), 29);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();
@@ -606,6 +628,7 @@ mod tests {
                 | InvalidationStrategy::SupportCandidateForOffice
                 | InvalidationStrategy::InvestigateViolation
                 | InvalidationStrategy::Patrol
+                | InvalidationStrategy::BountyActive
                 | InvalidationStrategy::PunishAccused => {}
                 InvalidationStrategy::NeedWithFacilities(need)
                 | InvalidationStrategy::NeedWithPosition(need) => {

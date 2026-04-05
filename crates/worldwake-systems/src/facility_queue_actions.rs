@@ -106,25 +106,7 @@ fn validate_queue_payload_authoritatively(
             ActionError::PreconditionFailed(format!("facility {facility} lacks workstation marker"))
         })?;
 
-    if world
-        .get_component_exclusive_facility_policy(facility)
-        .is_none()
-    {
-        return Err(ActionError::PreconditionFailed(format!(
-            "facility {facility} lacks ExclusiveFacilityPolicy"
-        )));
-    }
-
-    let queue = world
-        .get_component_facility_use_queue(facility)
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!("facility {facility} lacks FacilityUseQueue"))
-        })?;
-    if queue.has_actor(actor) {
-        return Err(ActionError::PreconditionFailed(format!(
-            "actor {actor} is already queued or granted at facility {facility}"
-        )));
-    }
+    validate_contention_queue_admission(world, actor, facility)?;
 
     let intended_def = registry.get(payload.intended_action).ok_or_else(|| {
         ActionError::PreconditionFailed(format!(
@@ -169,6 +151,62 @@ pub(crate) fn exclusive_facility_workstation_tag(def: &ActionDef) -> Option<Work
     }
 }
 
+pub(crate) fn validate_contention_queue_admission(
+    world: &World,
+    actor: EntityId,
+    entity: EntityId,
+) -> Result<(), ActionError> {
+    if world.get_component_contention_policy(entity).is_none() {
+        return Err(ActionError::PreconditionFailed(format!(
+            "entity {entity} lacks ContentionPolicy"
+        )));
+    }
+
+    let queue = world
+        .get_component_contention_queue(entity)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("entity {entity} lacks ContentionQueue"))
+        })?;
+    if queue.has_actor(actor) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} is already queued or granted at entity {entity}"
+        )));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn enqueue_for_contention(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    entity: EntityId,
+    intended_action: ActionDefId,
+) -> Result<(), ActionError> {
+    let mut queue = txn
+        .get_component_contention_queue(entity)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("entity {entity} lacks ContentionQueue"))
+        })?;
+    let max_waiters = txn
+        .get_component_contention_policy(entity)
+        .map(|policy| policy.max_waiters)
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("entity {entity} lacks ContentionPolicy"))
+        })?;
+
+    queue
+        .enqueue(actor, intended_action, txn.tick(), max_waiters)
+        .map_err(|err| match err {
+            worldwake_core::ContentionError::QueueFull => {
+                ActionError::PreconditionFailed("contention_rejected".to_string())
+            }
+            other => ActionError::PreconditionFailed(format!("{other:?}")),
+        })?;
+    txn.set_component_contention_queue(entity, queue)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn start_queue_for_facility_use(
     _def: &ActionDef,
@@ -204,18 +242,7 @@ fn commit_queue_for_facility_use(
         .targets
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    let mut queue = txn
-        .get_component_facility_use_queue(facility)
-        .cloned()
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!("facility {facility} lacks FacilityUseQueue"))
-        })?;
-
-    queue
-        .enqueue(instance.actor, payload.intended_action, txn.tick())
-        .map_err(|err| ActionError::PreconditionFailed(format!("{err:?}")))?;
-    txn.set_component_facility_use_queue(facility, queue)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    enqueue_for_contention(txn, instance.actor, facility, payload.intended_action)?;
     Ok(worldwake_sim::CommitOutcome::empty())
 }
 
@@ -245,7 +272,7 @@ mod tests {
     use worldwake_core::{
         build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
         ControlSource, EntityId, EntityKind, EventLog, EventTag, EventView,
-        ExclusiveFacilityPolicy, FacilityUseQueue, Permille, ProductionOutputOwner,
+        ContentionPolicy, ContentionQueue, Permille, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
@@ -350,7 +377,7 @@ mod tests {
                 },
             )
             .unwrap();
-            txn.set_component_facility_use_queue(facility, FacilityUseQueue::default())
+            txn.set_component_contention_queue(facility, ContentionQueue::default())
                 .unwrap();
             txn.set_component_production_output_ownership_policy(
                 facility,
@@ -360,10 +387,12 @@ mod tests {
             )
             .unwrap();
             if with_policy {
-                txn.set_component_exclusive_facility_policy(
+                txn.set_component_contention_policy(
                     facility,
-                    ExclusiveFacilityPolicy {
+                    ContentionPolicy {
                         grant_hold_ticks: nz(3),
+                        auto_promote: true,
+                        max_waiters: None,
                     },
                 )
                 .unwrap();
@@ -388,6 +417,7 @@ mod tests {
                 QueueForFacilityUsePayload { intended_action },
             )),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         }
     }
 
@@ -458,7 +488,7 @@ mod tests {
                 outcome: worldwake_sim::CommitOutcome::empty()
             }
         );
-        let queue = world.get_component_facility_use_queue(facility).unwrap();
+        let queue = world.get_component_contention_queue(facility).unwrap();
         let queued = queue.waiting.get(&0).unwrap();
         assert_eq!(queue.position_of(actor), Some(0));
         assert_eq!(queued.actor, actor);
@@ -499,7 +529,7 @@ mod tests {
         .unwrap_err();
 
         assert!(
-            matches!(err, ActionError::PreconditionFailed(message) if message.contains("ExclusiveFacilityPolicy"))
+            matches!(err, ActionError::PreconditionFailed(message) if message.contains("ContentionPolicy"))
         );
     }
 
@@ -511,11 +541,11 @@ mod tests {
         {
             let mut txn = new_txn(&mut world, 2);
             let mut queue = txn
-                .get_component_facility_use_queue(facility)
+                .get_component_contention_queue(facility)
                 .cloned()
                 .unwrap();
-            queue.enqueue(actor, harvest_id, Tick(2)).unwrap();
-            txn.set_component_facility_use_queue(facility, queue)
+            queue.enqueue(actor, harvest_id, Tick(2), None).unwrap();
+            txn.set_component_contention_queue(facility, queue)
                 .unwrap();
             commit_txn(txn);
         }
@@ -553,12 +583,12 @@ mod tests {
         {
             let mut txn = new_txn(&mut world, 2);
             let mut queue = txn
-                .get_component_facility_use_queue(facility)
+                .get_component_contention_queue(facility)
                 .cloned()
                 .unwrap();
-            queue.enqueue(actor, harvest_id, Tick(2)).unwrap();
+            queue.enqueue(actor, harvest_id, Tick(2), None).unwrap();
             queue.promote_head(Tick(3), nz(3));
-            txn.set_component_facility_use_queue(facility, queue)
+            txn.set_component_contention_queue(facility, queue)
                 .unwrap();
             commit_txn(txn);
         }
@@ -659,7 +689,7 @@ mod tests {
         )
         .unwrap();
 
-        let queue = world.get_component_facility_use_queue(facility).unwrap();
+        let queue = world.get_component_contention_queue(facility).unwrap();
         assert!(queue.waiting.is_empty());
         assert_eq!(queue.granted, None);
     }

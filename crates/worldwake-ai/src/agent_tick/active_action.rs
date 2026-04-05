@@ -39,7 +39,7 @@ pub(super) fn handle_active_action_phase(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
-    facility_intents: &mut worldwake_core::FacilityQueueIntents,
+    facility_intents: &mut worldwake_core::ContentionIntents,
     blocked_memory: &mut BlockedIntentMemory,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],

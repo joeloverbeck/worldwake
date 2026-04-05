@@ -53,7 +53,7 @@ Read the files relevant to the top recommendations.
 
 For each recommendation, identify the *primary* classification and note any secondary files affected. This guides where to start, not where to stop — real fixes are often cross-cutting.
 
-- **Display fix** (wrong presentation): Output is correct but shown poorly. Start in handlers or `display.rs`. Examples: debug format, cramped layout, missing labels. May require reading component type definitions in `worldwake-core/src/` to understand field names and types (read-only exploration, not a scope violation).
+- **Display fix** (wrong presentation): Output is correct but shown poorly. Start in handlers or `display.rs`. Examples: debug format, cramped layout, missing labels. May require reading component type definitions in `worldwake-core/src/` to understand field names and types (read-only exploration, not a scope violation). May also include semantic enrichment — extracting meaningful field values from component deltas (`ComponentValue` variants) to show WHAT changed, not just WHICH component. This often requires matching on specific `ComponentKind` values and diffing before/after `ComponentValue` contents.
 - **Validation fix** (wrong behavior): Actions are listed that shouldn't be, or errors lack context. Start in `handlers/actions.rs` or the relevant handler. Examples: missing profile check, unhelpful error message.
 - **Flow fix** (wrong interaction): The command sequence is confusing or implicit. Start in `repl.rs` or `commands.rs`. Often also requires updating `handlers/mod.rs` (dispatch) and `tests/integration.rs`.
 - **Upstream flag** (needs non-CLI changes): The fix requires changes to core/sim/systems/ai crates. Do NOT implement — flag it as a separate spec/ticket.
@@ -125,6 +125,10 @@ Handlers follow: `fn handle_X(sim, ...) -> CommandResult` where `CommandResult =
 ### Command Definition Patterns
 
 Commands use Clap derive macros in `commands.rs`. For multi-word arguments, use `#[arg(trailing_var_arg = true)]`. For required multi-word args, add `num_args = 1..`. The dispatch function in `handlers/mod.rs` joins `Vec<String>` args with spaces before passing to handlers.
+
+### Action Trace Infrastructure
+
+The tick handler can collect action lifecycle events by passing `ActionTraceSink::new()` to `TickStepServices.action_trace`. After each tick, `action_trace.events()` returns `&[ActionTraceEvent]` with: `actor: EntityId`, `action_name: String`, `kind: ActionTraceKind` (Started/Committed/Aborted/StartFailed). Enable this for per-agent tick summaries. Types are in `worldwake_sim::action_trace`.
 
 ### Error Patterns
 

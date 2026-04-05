@@ -19,6 +19,7 @@ pub struct WorldTxn<'w> {
     tick: Tick,
     cause: CauseRef,
     actor_id: Option<EntityId>,
+    action_name: Option<String>,
     place_id: Option<EntityId>,
     tags: BTreeSet<EventTag>,
     target_ids: Vec<EntityId>,
@@ -92,6 +93,7 @@ impl<'w> WorldTxn<'w> {
             tick,
             cause,
             actor_id,
+            action_name: None,
             place_id,
             tags: BTreeSet::new(),
             target_ids: Vec::new(),
@@ -116,6 +118,11 @@ impl<'w> WorldTxn<'w> {
     #[must_use]
     pub const fn actor_id(&self) -> Option<EntityId> {
         self.actor_id
+    }
+
+    #[must_use]
+    pub fn action_name(&self) -> Option<&str> {
+        self.action_name.as_deref()
     }
 
     #[must_use]
@@ -160,6 +167,7 @@ impl<'w> WorldTxn<'w> {
             tick: self.tick,
             cause: self.cause,
             actor_id: self.actor_id,
+            action_name: self.action_name,
             target_ids: self.target_ids,
             evidence: self.evidence,
             place_id: self.place_id,
@@ -188,6 +196,11 @@ impl<'w> WorldTxn<'w> {
 
     pub fn add_tag(&mut self, tag: EventTag) -> &mut Self {
         self.tags.insert(tag);
+        self
+    }
+
+    pub fn set_action_name(&mut self, action_name: impl Into<String>) -> &mut Self {
+        self.action_name = Some(action_name.into());
         self
     }
 
@@ -4492,6 +4505,8 @@ mod tests {
                 wounds: Vec::new(),
                 last_known_courage: None,
                 believed_activity: None,
+                believed_artifact: None,
+                believed_contention: None,
                 observed_tick: Tick(12),
                 source: PerceptionSource::Inference,
             },

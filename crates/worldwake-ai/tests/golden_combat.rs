@@ -10,19 +10,61 @@ use worldwake_ai::{
     RankedPriorityAdjustment,
 };
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, AgentData, CombatProfile, CombatStance,
-    CommodityKind, ControlSource, DeadAt, DeprivationExposure, GoalKey, GoalKind, HomeostaticNeeds,
-    KnownRecipes, MetabolismProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash,
-    Tick, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    hash_event_log, hash_world, total_live_lot_quantity, AgentData, BeliefConfidencePolicy,
+    BelievedContentionState, CombatProfile, CombatStance, CommodityKind, ContentionIntents,
+    ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DeprivationExposure, GoalKey,
+    GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile,
+    PrototypePlace, Quantity, QueuedContentionIntent, ResourceSource, Seed, StateHash, Tick,
+    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
-    ActionDuration, ActionInstance, ActionPayload, ActionStatus, ActionTraceKind,
-    CombatActionPayload,
+    ActionDuration, ActionInstance, ActionPayload, ActionRequestMode, ActionStatus,
+    ActionTraceKind, CombatActionPayload, InputKind, RequestProvenance,
 };
 
 // ---------------------------------------------------------------------------
 // Combat-specific helpers (only used by tests in this file)
 // ---------------------------------------------------------------------------
+
+fn request_simple_action(
+    h: &mut GoldenHarness,
+    actor: worldwake_core::EntityId,
+    def_name: &str,
+    targets: Vec<worldwake_core::EntityId>,
+) {
+    let def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == def_name)
+        .map_or_else(
+            || panic!("full registries should include {def_name}"),
+            |def| def.id,
+        );
+    let tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        tick,
+        InputKind::RequestAction {
+            actor,
+            def_id,
+            targets,
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+}
+
+fn set_control_source(
+    h: &mut GoldenHarness,
+    agent: worldwake_core::EntityId,
+    control_source: ControlSource,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+}
 
 fn seed_fragile_deprivation_victim(h: &mut GoldenHarness) -> worldwake_core::EntityId {
     let agent = seed_agent(
@@ -131,7 +173,7 @@ fn build_death_and_loot_scenario(
         &mut h.event_log,
         "Looter",
         VILLAGE_SQUARE,
-        HomeostaticNeeds::new(pm(100), pm(0), pm(100), pm(0), pm(0)),
+        HomeostaticNeeds::new_sated(),
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
@@ -2507,6 +2549,322 @@ fn golden_suppression_then_binding_combined_replays_deterministically() {
     assert_eq!(
         first, second,
         "suppression-then-binding combined scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 101: Corpse Contention Projects Visible Queue And Grant State
+// ---------------------------------------------------------------------------
+//
+// Systems: Combat, Contention, Perception, AI
+// GoalKinds: LootCorpse
+// ActionDomains: Corpse
+// Places: VillageSquare
+// Principles: 7, 8, 9, 20
+//
+// Setup: Two hungry looters and one dead bread-carrying corpse share
+//   VillageSquare. The corpse carries explicit contention state and more bread
+//   than one looter can carry in a single loot commit.
+//
+// Proves: corpse looting resolves through real queue/grant state, the waiting
+//   actor can perceive that contention state locally, and the second looter is
+//   promoted after the first partial loot commit.
+//
+// Chain: contested corpse loot -> first grant -> second waiter queued ->
+//   local believed contention projection -> first partial loot commit ->
+//   second grant -> second partial loot commit.
+
+#[derive(Debug)]
+struct CorpseContentionOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    projection_state: ContentionProjectionState,
+    saw_second_promotion: bool,
+    bread_gain_count: u8,
+    corpse_emptied: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ContentionProjectionState {
+    None,
+    WaitingOnly,
+    WaitingAndBelief,
+}
+
+fn contention_perception_profile() -> PerceptionProfile {
+    PerceptionProfile {
+        memory_capacity: 20,
+        memory_retention_ticks: 100,
+        observation_fidelity: pm(1000),
+        confidence_policy: BeliefConfidencePolicy::default(),
+        institutional_memory_capacity: 20,
+        consultation_speed_factor: pm(500),
+        contradiction_tolerance: pm(300),
+    }
+}
+
+fn run_corpse_contention_visible_state_scenario(seed: Seed) -> CorpseContentionOutcome {
+    let mut h = GoldenHarness::new(seed);
+    let first = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "LooterA",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let second = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "LooterB",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(875), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        first,
+        contention_perception_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        second,
+        contention_perception_profile(),
+    );
+
+    let corpse = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "BreadCorpse",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        corpse,
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(80),
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        txn.set_component_contention_policy(
+            corpse,
+            ContentionPolicy {
+                grant_hold_ticks: nz(4),
+                auto_promote: true,
+                max_waiters: None,
+            },
+        )
+        .unwrap();
+        let loot_action = h
+            .defs
+            .iter()
+            .find(|def| def.name == "loot")
+            .map(|def| def.id)
+            .expect("loot action should be registered");
+        let mut queue = ContentionQueue {
+            next_ordinal: 0,
+            waiting: std::collections::BTreeMap::new(),
+            granted: Some(worldwake_core::ContentionGrant {
+                actor: first,
+                intended_action: loot_action,
+                granted_at: Tick(0),
+                expires_at: Tick(4),
+            }),
+        };
+        queue.enqueue(second, loot_action, Tick(0), None).unwrap();
+        txn.set_component_contention_queue(corpse, queue).unwrap();
+        txn.set_component_contention_intents(
+            second,
+            ContentionIntents {
+                intents: std::collections::BTreeMap::from([(
+                    corpse,
+                    QueuedContentionIntent {
+                        goal_key: GoalKey::from(GoalKind::LootCorpse { corpse }),
+                        intended_action: loot_action,
+                    },
+                )]),
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    set_control_source(&mut h, first, ControlSource::Human, 0);
+    set_control_source(&mut h, second, ControlSource::Human, 0);
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        first,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        second,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    let initial_queue = h
+        .world
+        .get_component_contention_queue(corpse)
+        .cloned()
+        .expect("corpse contention state should exist before the first tick");
+    let saw_waiting_state = initial_queue.position_of(second).is_some();
+    let initial_belief = h
+        .world
+        .get_component_agent_belief_store(second)
+        .and_then(|store| store.get_entity(&corpse))
+        .and_then(|state| state.believed_contention);
+    let mut saw_believed_contention = matches!(
+        initial_belief,
+        Some(BelievedContentionState {
+            grant_holder: Some(holder),
+            queue_length,
+            ..
+        }) if queue_length >= 1 && holder == first
+    );
+    let mut grant_sequence = initial_queue
+        .granted
+        .as_ref()
+        .map(|granted| vec![granted.actor])
+        .unwrap_or_default();
+    let mut first_looter_gained_bread = false;
+    let mut second_looter_gained_bread = false;
+    let mut first_loot_requested = false;
+    let mut second_loot_requested = false;
+
+    for _ in 0..80 {
+        if !first_loot_requested {
+            request_simple_action(&mut h, first, "loot", vec![corpse]);
+            first_loot_requested = true;
+        }
+        h.step_once();
+
+        let queue = h
+            .world
+            .get_component_contention_queue(corpse)
+            .cloned()
+            .expect("corpse contention state should persist during the scenario");
+        if let Some(granted) = queue.granted.as_ref() {
+            if grant_sequence.last().copied() != Some(granted.actor) {
+                grant_sequence.push(granted.actor);
+            }
+        }
+        let second_has_grant = queue
+            .granted
+            .as_ref()
+            .is_some_and(|granted| granted.actor == second);
+
+        if !second_loot_requested && second_has_grant {
+            request_simple_action(&mut h, second, "loot", vec![corpse]);
+            second_loot_requested = true;
+        }
+
+        let waiting_actor = if queue.position_of(first).is_some() {
+            Some(first)
+        } else if queue.position_of(second).is_some() {
+            Some(second)
+        } else {
+            None
+        };
+
+        if let Some(waiting_actor) = waiting_actor {
+            let belief = h
+                .world
+                .get_component_agent_belief_store(waiting_actor)
+                .and_then(|store| store.get_entity(&corpse))
+                .and_then(|state| state.believed_contention);
+            saw_believed_contention |= matches!(
+                belief,
+                Some(BelievedContentionState {
+                    grant_holder: Some(holder),
+                    queue_length,
+                    ..
+                }) if queue_length >= 1
+                    && queue
+                        .granted
+                        .as_ref()
+                        .is_some_and(|granted| granted.actor == holder)
+            );
+        }
+
+        first_looter_gained_bread |= h.agent_commodity_qty(first, CommodityKind::Bread) > Quantity(0);
+        second_looter_gained_bread |= h.agent_commodity_qty(second, CommodityKind::Bread) > Quantity(0);
+
+        if saw_believed_contention
+            && grant_sequence.len() >= 2
+            && first_looter_gained_bread
+            && second_looter_gained_bread
+            && h.agent_commodity_qty(corpse, CommodityKind::Bread) == Quantity(0)
+        {
+            break;
+        }
+    }
+
+    CorpseContentionOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        projection_state: if saw_waiting_state && saw_believed_contention {
+            ContentionProjectionState::WaitingAndBelief
+        } else if saw_waiting_state {
+            ContentionProjectionState::WaitingOnly
+        } else {
+            ContentionProjectionState::None
+        },
+        saw_second_promotion: grant_sequence.len() >= 2 && grant_sequence[0] != grant_sequence[1],
+        bread_gain_count: u8::from(first_looter_gained_bread) + u8::from(second_looter_gained_bread),
+        corpse_emptied: h.agent_commodity_qty(corpse, CommodityKind::Bread) == Quantity(0),
+    }
+}
+
+#[test]
+fn golden_corpse_contention_projects_visible_queue_and_grant_state() {
+    let outcome = run_corpse_contention_visible_state_scenario(Seed([33; 32]));
+
+    assert_eq!(
+        outcome.projection_state,
+        ContentionProjectionState::WaitingAndBelief,
+        "the waiting looter should perceive local contention state through BelievedContentionState"
+    );
+    assert!(
+        outcome.saw_second_promotion,
+        "after the first partial loot commit, the second looter should receive a real promotion on the same corpse"
+    );
+    assert_eq!(
+        outcome.bread_gain_count,
+        2,
+        "carry-constrained corpse loot should leave enough bread for the promoted second looter"
+    );
+    assert!(
+        outcome.corpse_emptied,
+        "the corpse bread should be fully transferred across the two promoted loot turns"
+    );
+}
+
+#[test]
+fn golden_corpse_contention_projects_visible_queue_and_grant_state_replays_deterministically() {
+    let seed = Seed([34; 32]);
+    let first = run_corpse_contention_visible_state_scenario(seed);
+    let second = run_corpse_contention_visible_state_scenario(seed);
+
+    assert_eq!(
+        first.world_hash, second.world_hash,
+        "corpse contention visible-state scenario should replay to the same world hash"
+    );
+    assert_eq!(
+        first.log_hash, second.log_hash,
+        "corpse contention visible-state scenario should replay to the same event log hash"
     );
 }
 

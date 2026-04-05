@@ -143,6 +143,7 @@ fn goal_specific_feasibility(
             GoalKind::ReduceDanger
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }
+            | GoalKind::FulfillBounty { .. }
             | GoalKind::StealItem { .. },
         ) => None,
         (FeasibilityStrategy::SellCheck, GoalKind::SellCommodity { commodity }) => {

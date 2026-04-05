@@ -3,8 +3,7 @@
 //! All handlers are read-only — zero world mutation.
 
 use worldwake_core::{
-    cause::CauseRef, event_log::EventLog, event_record::EventView as _, ids::EntityId,
-    ids::EventId, EventTag,
+    cause::CauseRef, event_log::EventLog, event_record::EventView as _, ids::EventId,
 };
 use worldwake_sim::SimulationState;
 use worldwake_systems::ActionRegistries;
@@ -18,7 +17,7 @@ use crate::display::{entity_display_name, format_state_delta};
 fn format_event_summary(
     sim: &SimulationState,
     event_id: EventId,
-    registries: &ActionRegistries,
+    _registries: &ActionRegistries,
 ) -> Option<String> {
     let record = sim.event_log().get(event_id)?;
     let world = sim.world();
@@ -33,14 +32,10 @@ fn format_event_summary(
         tags.join(", ")
     };
 
-    // Append action name for ActionStarted events
-    let action_suffix = if record.tags().contains(&EventTag::ActionStarted) {
-        resolve_actor_action_name(sim, record.actor_id(), registries)
-            .map(|name| format!("({name})"))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
+    let action_suffix = record
+        .action_name()
+        .map(|name| format!("({name})"))
+        .unwrap_or_default();
 
     let actor_str = match record.actor_id() {
         Some(actor) => format!(" by {}", entity_display_name(world, actor)),
@@ -55,24 +50,6 @@ fn format_event_summary(
     ))
 }
 
-/// Try to resolve the action name for an actor from the scheduler's active actions.
-fn resolve_actor_action_name(
-    sim: &SimulationState,
-    actor_id: Option<EntityId>,
-    registries: &ActionRegistries,
-) -> Option<String> {
-    let actor = actor_id?;
-    for action in sim.scheduler().active_actions().values() {
-        if action.actor == actor {
-            return registries
-                .defs
-                .get(action.def_id)
-                .map(|def| def.name.clone());
-        }
-    }
-    None
-}
-
 /// Format a `CauseRef` for display.
 fn format_cause(cause: &CauseRef) -> String {
     match cause {
@@ -81,6 +58,10 @@ fn format_cause(cause: &CauseRef) -> String {
         CauseRef::Bootstrap => "bootstrap".to_string(),
         CauseRef::ExternalInput(seq) => format!("external input {seq}"),
     }
+}
+
+fn format_action_detail_line(record: &impl worldwake_core::event_record::EventView) -> Option<String> {
+    record.action_name().map(|name| format!("  action: {name}"))
 }
 
 /// Show the last `n` events from the event log.
@@ -119,7 +100,7 @@ pub fn handle_events(
 pub fn handle_event(
     sim: &SimulationState,
     id: u64,
-    registries: &ActionRegistries,
+    _registries: &ActionRegistries,
 ) -> CommandResult {
     let event_id = EventId(id);
     let log = sim.event_log();
@@ -147,11 +128,8 @@ pub fn handle_event(
         }
     );
 
-    // Action name for ActionStarted events
-    if record.tags().contains(&EventTag::ActionStarted) {
-        if let Some(name) = resolve_actor_action_name(sim, record.actor_id(), registries) {
-            println!("  action: {name}");
-        }
+    if let Some(line) = format_action_detail_line(record) {
+        println!("{line}");
     }
 
     // Cause
@@ -309,7 +287,7 @@ mod tests {
                 patrol_profile: None,
                 patrol_route: None,
                 pursuit_profile: None,
-                facility_queue_disposition: None,
+                contention_disposition: None,
                 commodity_valuation: None,
                 substitute_preferences: None,
             }],
@@ -324,6 +302,7 @@ mod tests {
             tick: sim.scheduler().current_tick(),
             cause: CauseRef::Bootstrap,
             actor_id: None,
+            action_name: None,
             target_ids: vec![],
             evidence: Vec::new(),
             place_id: None,
@@ -341,6 +320,7 @@ mod tests {
             tick: sim.scheduler().current_tick(),
             cause: CauseRef::Event(cause),
             actor_id: None,
+            action_name: Some("wait".to_string()),
             target_ids: vec![],
             evidence: Vec::new(),
             place_id: None,
@@ -409,6 +389,53 @@ mod tests {
         let record = sim.event_log().get(eid).unwrap();
         assert_eq!(record.tick(), sim.scheduler().current_tick());
         assert!(record.tags().contains(&EventTag::System));
+    }
+
+    #[test]
+    fn test_event_summary_uses_stored_action_name_for_commits() {
+        let spawned = spawn_scenario(&minimal_scenario()).unwrap();
+        let mut sim = spawned.state;
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: sim.scheduler().current_tick(),
+            cause: CauseRef::Bootstrap,
+            actor_id: None,
+            action_name: Some("pick_up".to_string()),
+            target_ids: vec![],
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::ActionCommitted]),
+        });
+        let event_id = sim.event_log_mut().emit(pending);
+
+        let summary = format_event_summary(&sim, event_id, &spawned.action_registries).unwrap();
+        assert!(summary.contains("ActionCommitted(pick_up)"), "{summary}");
+    }
+
+    #[test]
+    fn test_event_detail_line_uses_stored_action_name() {
+        let pending = PendingEvent::from_payload(EventPayload {
+            tick: worldwake_core::Tick(0),
+            cause: CauseRef::Bootstrap,
+            actor_id: None,
+            action_name: Some("bury".to_string()),
+            target_ids: vec![],
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::new(),
+        });
+
+        assert_eq!(
+            format_action_detail_line(&pending),
+            Some("  action: bury".to_string())
+        );
     }
 
     #[test]

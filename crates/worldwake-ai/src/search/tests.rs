@@ -18,12 +18,14 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, prototype_place_entity,
-    test_utils::sample_trade_disposition_profile, ActionDefId, BelievedEntityState, BlockedIntent,
-    BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity,
-    CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource,
-    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
-    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog,
-    ExclusiveFacilityPolicy, FacilityUseQueue, GrantedFacilityUse, HomeostaticNeeds,
+    test_utils::sample_trade_disposition_profile, ActionDefId, ArtifactKind, ArtifactState,
+    BelievedArtifactState, BelievedBountyTerms, BelievedEntityState, BlockedIntent,
+    BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, BountyTarget,
+    CarryCapacity, CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
+    DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+    EpistemicDispositionProfile, EventLog, ContentionPolicy, ContentionQueue, ContentionGrant,
+    HomeostaticNeeds,
     InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
     PerceptionSource, Permille, Place, PlaceTag, PrototypePlace, Quantity, RecipeId,
     ResourceSource, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
@@ -439,6 +441,39 @@ fn sync_all_beliefs(world: &mut World, observer: EntityId, observed_tick: Tick) 
     let _ = txn.commit(&mut event_log);
 }
 
+fn patch_believed_entity_state<F>(
+    world: &mut World,
+    observer: EntityId,
+    entity: EntityId,
+    observed_tick: Tick,
+    patch: F,
+) where
+    F: FnOnce(&mut BelievedEntityState),
+{
+    let mut store = world
+        .get_component_agent_belief_store(observer)
+        .cloned()
+        .expect("observer must have AgentBeliefStore");
+    let state = store
+        .known_entities
+        .get_mut(&entity)
+        .expect("entity belief should exist before patching");
+    patch(state);
+    let mut txn = WorldTxn::new(
+        world,
+        observed_tick,
+        CauseRef::Bootstrap,
+        None,
+        None,
+        VisibilitySpec::SamePlace,
+        WitnessData::default(),
+    );
+    txn.set_component_agent_belief_store(observer, store)
+        .expect("observer belief store should remain writable");
+    let mut event_log = EventLog::new();
+    let _ = txn.commit(&mut event_log);
+}
+
 fn build_registry() -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry) {
     let recipes = RecipeRegistry::new();
     let registries = build_full_action_registries(&recipes).unwrap();
@@ -474,6 +509,8 @@ fn believed_entity_state_at(
         wounds: Vec::new(),
         last_known_courage: None,
         believed_activity: None,
+        believed_artifact: None,
+        believed_contention: None,
         observed_tick,
         source: PerceptionSource::DirectObservation,
     }
@@ -3292,24 +3329,26 @@ fn build_exclusive_orchard_fixture(granted: bool) -> ExclusiveOrchardFixture {
             },
         )
         .unwrap();
-        txn.set_component_exclusive_facility_policy(
+        txn.set_component_contention_policy(
             orchard_row,
-            ExclusiveFacilityPolicy {
+            ContentionPolicy {
                 grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
             },
         )
         .unwrap();
-        let granted = granted.then_some(GrantedFacilityUse {
+        let granted = granted.then_some(ContentionGrant {
             actor,
             intended_action: harvest_action,
             granted_at: Tick(2),
             expires_at: Tick(5),
         });
-        txn.set_component_facility_use_queue(
+        txn.set_component_contention_queue(
             orchard_row,
-            FacilityUseQueue {
+            ContentionQueue {
                 granted,
-                ..FacilityUseQueue::default()
+                ..ContentionQueue::default()
             },
         )
         .unwrap();
@@ -3343,17 +3382,174 @@ fn enqueue_actor_for_exclusive_fixture(fixture: &mut ExclusiveOrchardFixture, qu
         WitnessData::default(),
     );
     let mut queue = txn
-        .get_component_facility_use_queue(fixture.orchard_row)
+        .get_component_contention_queue(fixture.orchard_row)
         .cloned()
         .expect("exclusive fixture should include queue state");
     queue
-        .enqueue(fixture.actor, fixture.harvest_action, queued_at)
+        .enqueue(fixture.actor, fixture.harvest_action, queued_at, None)
         .expect("fixture actor should be queueable");
-    txn.set_component_facility_use_queue(fixture.orchard_row, queue)
+    txn.set_component_contention_queue(fixture.orchard_row, queue)
         .unwrap();
     let mut event_log = EventLog::new();
     let _ = txn.commit(&mut event_log);
     sync_all_beliefs(&mut fixture.world, fixture.actor, queued_at);
+}
+
+struct ContentionCorpseFixture {
+    world: World,
+    actor: EntityId,
+    town: EntityId,
+    corpse: EntityId,
+    grave_plot: EntityId,
+    loot_action: ActionDefId,
+    bury_action: ActionDefId,
+    registry: ActionDefRegistry,
+    handlers: worldwake_sim::ActionHandlerRegistry,
+}
+
+fn build_contention_corpse_fixture() -> ContentionCorpseFixture {
+    let town = prototype_place_entity(PrototypePlace::VillageSquare);
+    let (registry, handlers) = build_registry();
+    let loot_action = registry
+        .iter()
+        .find(|def| def.name == "loot")
+        .map(|def| def.id)
+        .expect("loot action should be registered");
+    let bury_action = registry
+        .iter()
+        .find(|def| def.name == "bury")
+        .map(|def| def.id)
+        .expect("bury action should be registered");
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, corpse, grave_plot) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Gravedigger", ControlSource::Ai).unwrap();
+        let corpse = txn.create_agent("Corpse", ControlSource::Ai).unwrap();
+        let grave_plot = txn.create_entity(EntityKind::Facility);
+        let coins = txn.create_item_lot(CommodityKind::Coin, Quantity(3)).unwrap();
+        txn.set_ground_location(actor, town).unwrap();
+        txn.set_ground_location(corpse, town).unwrap();
+        txn.set_ground_location(grave_plot, town).unwrap();
+        txn.set_ground_location(coins, town).unwrap();
+        txn.set_possessor(coins, corpse).unwrap();
+        txn.set_component_dead_at(corpse, DeadAt(Tick(1))).unwrap();
+        txn.set_component_workstation_marker(
+            grave_plot,
+            WorkstationMarker(WorkstationTag::GravePlot),
+        )
+        .unwrap();
+        txn.set_component_contention_policy(
+            corpse,
+            ContentionPolicy {
+                grant_hold_ticks: NonZeroU32::new(4).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
+            },
+        )
+        .unwrap();
+        txn.set_component_contention_queue(corpse, ContentionQueue::default())
+            .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, corpse, grave_plot)
+    };
+    sync_all_beliefs(&mut world, actor, Tick(1));
+    patch_believed_entity_state(&mut world, actor, corpse, Tick(1), |state| {
+        state.last_known_inventory.insert(CommodityKind::Coin, Quantity(3));
+        state.alive = false;
+    });
+
+    ContentionCorpseFixture {
+        world,
+        actor,
+        town,
+        corpse,
+        grave_plot,
+        loot_action,
+        bury_action,
+        registry,
+        handlers,
+    }
+}
+
+struct ContentionCareFixture {
+    world: World,
+    actor: EntityId,
+    town: EntityId,
+    patient: EntityId,
+    heal_action: ActionDefId,
+    registry: ActionDefRegistry,
+    handlers: worldwake_sim::ActionHandlerRegistry,
+}
+
+fn build_contention_care_fixture() -> ContentionCareFixture {
+    let town = prototype_place_entity(PrototypePlace::VillageSquare);
+    let (registry, handlers) = build_registry();
+    let heal_action = registry
+        .iter()
+        .find(|def| def.name == "heal")
+        .map(|def| def.id)
+        .expect("heal action should be registered");
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, patient) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Healer", ControlSource::Ai).unwrap();
+        let patient = txn.create_agent("Patient", ControlSource::Ai).unwrap();
+        let medicine = txn
+            .create_item_lot(CommodityKind::Medicine, Quantity(1))
+            .unwrap();
+        txn.set_ground_location(actor, town).unwrap();
+        txn.set_ground_location(patient, town).unwrap();
+        txn.set_ground_location(medicine, town).unwrap();
+        txn.set_possessor(medicine, actor).unwrap();
+        txn.set_component_wound_list(patient, worldwake_core::WoundList { wounds: vec![wound(400)] })
+            .unwrap();
+        txn.set_component_contention_policy(
+            patient,
+            ContentionPolicy {
+                grant_hold_ticks: NonZeroU32::new(4).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
+            },
+        )
+        .unwrap();
+        txn.set_component_contention_queue(patient, ContentionQueue::default())
+            .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, patient)
+    };
+    sync_all_beliefs(&mut world, actor, Tick(1));
+    patch_believed_entity_state(&mut world, actor, patient, Tick(1), |state| {
+        state.wounds = vec![wound(400)];
+        state.alive = true;
+    });
+
+    ContentionCareFixture {
+        world,
+        actor,
+        town,
+        patient,
+        heal_action,
+        registry,
+        handlers,
+    }
 }
 
 #[test]
@@ -3698,14 +3894,16 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
             },
         )
         .unwrap();
-        txn.set_component_exclusive_facility_policy(
+        txn.set_component_contention_policy(
             orchard_row,
-            ExclusiveFacilityPolicy {
+            ContentionPolicy {
                 grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
             },
         )
         .unwrap();
-        txn.set_component_facility_use_queue(orchard_row, FacilityUseQueue::default())
+        txn.set_component_contention_queue(orchard_row, ContentionQueue::default())
             .unwrap();
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
@@ -3772,6 +3970,351 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
     );
 }
 
+#[test]
+fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant() {
+    let fixture = build_contention_corpse_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::LootCorpse {
+            corpse: fixture.corpse,
+        }),
+        evidence_entities: BTreeSet::from([fixture.corpse]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+    let state = PlanningState::new(&snapshot);
+    let queue_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_corpse_use")
+            .map(|def| def.id)
+            .expect("queue_for_corpse_use should be registered"),
+        bound_targets: vec![fixture.corpse],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+    let queue_candidates =
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance);
+
+    assert_eq!(queue_candidates.len(), 1);
+    assert_eq!(
+        queue_candidates[0].payload_override,
+        Some(ActionPayload::QueueForFacilityUse(
+            QueueForFacilityUsePayload {
+                intended_action: fixture.loot_action,
+            },
+        ))
+    );
+    assert_eq!(
+        queue_candidates[0].authoritative_targets,
+        vec![fixture.corpse]
+    );
+
+    let direct_loot_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture.loot_action,
+        bound_targets: vec![fixture.corpse],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+
+    assert!(
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &direct_loot_affordance)
+            .is_empty(),
+        "direct loot should not search as available until the actor holds the grant"
+    );
+}
+
+#[test]
+fn corpse_loot_goal_searches_queue_step_before_loot_when_corpse_is_contention_managed() {
+    let fixture = build_contention_corpse_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::LootCorpse {
+            corpse: fixture.corpse,
+        }),
+        evidence_entities: BTreeSet::from([fixture.corpse]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&fixture.registry),
+        &fixture.registry,
+        &fixture.handlers,
+        &ReasoningProfile::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("contention-managed corpse loot should search a queue-backed plan");
+
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
+}
+
+#[test]
+fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant() {
+    let fixture = build_contention_corpse_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::BuryCorpse {
+            corpse: fixture.corpse,
+            burial_site: fixture.grave_plot,
+        }),
+        evidence_entities: BTreeSet::from([fixture.corpse, fixture.grave_plot]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+    let state = PlanningState::new(&snapshot);
+    let queue_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_corpse_use")
+            .map(|def| def.id)
+            .expect("queue_for_corpse_use should be registered"),
+        bound_targets: vec![fixture.corpse],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+    let queue_candidates =
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance);
+
+    assert_eq!(queue_candidates.len(), 1);
+    assert_eq!(
+        queue_candidates[0].payload_override,
+        Some(ActionPayload::QueueForFacilityUse(
+            QueueForFacilityUsePayload {
+                intended_action: fixture.bury_action,
+            },
+        ))
+    );
+    assert_eq!(
+        queue_candidates[0].authoritative_targets,
+        vec![fixture.corpse]
+    );
+
+    let direct_bury_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture.bury_action,
+        bound_targets: vec![fixture.corpse, fixture.grave_plot],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+
+    assert!(
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &direct_bury_affordance)
+            .is_empty(),
+        "direct bury should not search as available until the actor holds the grant"
+    );
+}
+
+#[test]
+fn corpse_bury_goal_searches_queue_step_before_bury_when_corpse_is_contention_managed() {
+    let fixture = build_contention_corpse_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::BuryCorpse {
+            corpse: fixture.corpse,
+            burial_site: fixture.grave_plot,
+        }),
+        evidence_entities: BTreeSet::from([fixture.corpse, fixture.grave_plot]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&fixture.registry),
+        &fixture.registry,
+        &fixture.handlers,
+        &ReasoningProfile::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("contention-managed corpse burial should search a queue-backed plan");
+
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
+}
+
+#[test]
+fn care_queue_affordance_expands_to_heal_and_filters_direct_heal_without_grant() {
+    let fixture = build_contention_care_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::TreatWounds {
+            patient: fixture.patient,
+        }),
+        evidence_entities: BTreeSet::from([fixture.patient]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+    let state = PlanningState::new(&snapshot);
+    let queue_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_care_target")
+            .map(|def| def.id)
+            .expect("queue_for_care_target should be registered"),
+        bound_targets: vec![fixture.patient],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+    let queue_candidates =
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance);
+
+    assert_eq!(queue_candidates.len(), 1);
+    assert_eq!(
+        queue_candidates[0].payload_override,
+        Some(ActionPayload::QueueForFacilityUse(
+            QueueForFacilityUsePayload {
+                intended_action: fixture.heal_action,
+            },
+        ))
+    );
+    assert_eq!(
+        queue_candidates[0].authoritative_targets,
+        vec![fixture.patient]
+    );
+
+    let direct_heal_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture.heal_action,
+        bound_targets: vec![fixture.patient],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+
+    assert!(
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &direct_heal_affordance)
+            .is_empty(),
+        "direct heal should not search as available until the actor holds the grant"
+    );
+}
+
+#[test]
+fn care_queue_affordance_does_not_expand_when_actor_cannot_currently_heal() {
+    let mut fixture = build_contention_care_fixture();
+    let medicine = fixture
+        .world
+        .entities()
+        .find(|entity| {
+            fixture
+                .world
+                .get_component_item_lot(*entity)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Medicine)
+        })
+        .expect("fixture should seed medicine");
+    let mut txn = WorldTxn::new(
+        &mut fixture.world,
+        Tick(2),
+        CauseRef::Bootstrap,
+        None,
+        None,
+        VisibilitySpec::SamePlace,
+        WitnessData::default(),
+    );
+    txn.clear_possessor(medicine).unwrap();
+    txn.set_ground_location(medicine, fixture.town).unwrap();
+    let mut event_log = EventLog::new();
+    let _ = txn.commit(&mut event_log);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::TreatWounds {
+            patient: fixture.patient,
+        }),
+        evidence_entities: BTreeSet::from([fixture.patient]),
+        evidence_places: BTreeSet::from([fixture.town]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ReasoningProfile::default().snapshot_travel_horizon,
+    );
+    let state = PlanningState::new(&snapshot);
+    let queue_affordance = Affordance {
+        actor: fixture.actor,
+        def_id: fixture
+            .registry
+            .iter()
+            .find(|def| def.name == "queue_for_care_target")
+            .map(|def| def.id)
+            .expect("queue_for_care_target should be registered"),
+        bound_targets: vec![fixture.patient],
+        payload_override: None,
+        explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Available,
+    };
+
+    assert!(
+        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance)
+            .is_empty(),
+        "queue_for_care_target should not expand when the actor cannot currently perform heal"
+    );
+}
+
 #[allow(clippy::too_many_lines)]
 #[test]
 fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
@@ -3779,7 +4322,7 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
     let mut recipes = RecipeRegistry::new();
     recipes.register(harvest_apple_recipe_variant("Harvest Apples Alpha", 2));
     recipes.register(harvest_apple_recipe_variant("Harvest Apples Beta", 1));
-    let (registry, _handlers) = build_registry_with_recipes(&recipes);
+    let (registry, handlers) = build_registry_with_recipes(&recipes);
     let mut world = World::new(build_prototype_world()).unwrap();
     let (actor, orchard_row) = {
         let mut txn = WorldTxn::new(
@@ -3823,14 +4366,16 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
             },
         )
         .unwrap();
-        txn.set_component_exclusive_facility_policy(
+        txn.set_component_contention_policy(
             orchard_row,
-            ExclusiveFacilityPolicy {
+            ContentionPolicy {
                 grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+                auto_promote: true,
+                max_waiters: None,
             },
         )
         .unwrap();
-        txn.set_component_facility_use_queue(orchard_row, FacilityUseQueue::default())
+        txn.set_component_contention_queue(orchard_row, ContentionQueue::default())
             .unwrap();
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
@@ -3892,9 +4437,10 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         bound_targets: vec![orchard_row],
         payload_override: None,
         explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
 
-    let queue_candidates = search_candidates_from_affordance(&goal, &state, &registry, &affordance);
+    let queue_candidates = search_candidates_from_affordance(&goal, &state, &registry, &handlers, &affordance);
 
     assert_eq!(queue_candidates.len(), 2);
     let intended_actions = queue_candidates
@@ -3994,7 +4540,7 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
         1,
     );
     let state = PlanningState::new(&snapshot);
-    let (registry, _handlers) = build_registry();
+    let (registry, handlers) = build_registry();
     let trade_def_id = registry
         .iter()
         .find(|def| def.name == "trade")
@@ -4013,6 +4559,7 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
             requested_quantity: Quantity(1),
         })),
         explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
     let remote_seller_affordance = Affordance {
         def_id: trade_def_id,
@@ -4026,12 +4573,13 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
             requested_quantity: Quantity(1),
         })),
         explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
 
     let wrong_candidates =
-        search_candidates_from_affordance(&goal, &state, &registry, &local_seller_affordance);
+        search_candidates_from_affordance(&goal, &state, &registry, &handlers, &local_seller_affordance);
     let correct_candidates =
-        search_candidates_from_affordance(&goal, &state, &registry, &remote_seller_affordance);
+        search_candidates_from_affordance(&goal, &state, &registry, &handlers, &remote_seller_affordance);
 
     assert!(wrong_candidates.is_empty());
     assert_eq!(correct_candidates.len(), 1);
@@ -5434,6 +5982,641 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
                 && candidate.authoritative_targets == vec![accused]
         }),
         "PunishAccused goals should surface the exact bound punishment candidate from goal identity once the action exists"
+    );
+}
+
+#[test]
+fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
+    let actor = entity(1);
+    let bounty = entity(2);
+    let issuer = entity(3);
+    let target = entity(4);
+    let claim_place = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.insert(actor);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(bounty, EntityKind::SocialArtifact);
+    view.kinds.insert(target, EntityKind::Agent);
+    view.effective_places.insert(actor, claim_place);
+    view.effective_places.insert(bounty, claim_place);
+    view.entities_at.insert(claim_place, vec![actor, bounty]);
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(
+            bounty,
+            BelievedEntityState {
+                last_known_place: Some(claim_place),
+                last_known_inventory: BTreeMap::new(),
+                workstation_tag: None,
+                resource_source: None,
+                alive: true,
+                wounds: Vec::new(),
+                last_known_courage: None,
+                believed_activity: None,
+                believed_artifact: Some(BelievedArtifactState {
+                    kind: ArtifactKind::Bounty,
+                    state: ArtifactState::Active,
+                    issuer,
+                    expires_at: None,
+                    bounty_terms: Some(BelievedBountyTerms {
+                        target: BountyTarget::EliminateEntity { target },
+                        reward_commodity: CommodityKind::Coin,
+                        reward_quantity: Quantity(25),
+                        claim_place,
+                    }),
+                    notice_topic: None,
+                    observed_tick: Tick(1),
+                }),
+                believed_contention: None,
+                observed_tick: Tick(1),
+                source: PerceptionSource::DirectObservation,
+            },
+        )],
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([bounty, target]),
+        &BTreeSet::from([claim_place]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = ReasoningProfile::default();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+        key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+        evidence_entities: BTreeSet::from([bounty]),
+        evidence_places: BTreeSet::from([claim_place]),
+    };
+
+    let rel_defs = relevant_action_defs(&goal, &semantics);
+    assert!(
+        rel_defs.iter().any(|def_id| {
+            registry
+                .get(*def_id)
+                .is_some_and(|def| def.name == "claim_bounty")
+        }),
+        "FulfillBounty goals should expose claim_bounty once the action is classified"
+    );
+
+    let node = root_node(&snapshot, &goal, &recipes, &budget);
+    let candidates = search_candidates(
+        &goal,
+        &node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        &rel_defs,
+    );
+    assert!(
+        candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "claim_bounty")
+                && candidate.authoritative_targets == vec![bounty]
+        }),
+        "FulfillBounty should synthesize the exact bound claim_bounty root candidate"
+    );
+}
+
+#[test]
+fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
+    let actor = entity(1);
+    let bounty = entity(2);
+    let issuer = entity(3);
+    let origin = entity(10);
+    let destination = entity(11);
+    let claim_place = entity(12);
+    let bread = entity(20);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, bounty, origin, destination, claim_place, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(bounty, EntityKind::SocialArtifact);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(destination, EntityKind::Place);
+    view.kinds.insert(claim_place, EntityKind::Place);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, origin);
+    view.effective_places.insert(bounty, origin);
+    view.effective_places.insert(bread, origin);
+    view.entities_at.insert(origin, vec![actor, bread]);
+    view.entities_at.insert(destination, vec![bounty]);
+    view.entities_at.insert(claim_place, Vec::new());
+    view.adjacent
+        .insert(origin, vec![(destination, NonZeroU32::new(2).unwrap())]);
+    view.adjacent
+        .insert(
+            destination,
+            vec![
+                (origin, NonZeroU32::new(2).unwrap()),
+                (claim_place, NonZeroU32::new(1).unwrap()),
+            ],
+        );
+    view.adjacent.insert(
+        claim_place,
+        vec![(destination, NonZeroU32::new(1).unwrap())],
+    );
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(3));
+    view.controllable.insert((actor, bread));
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(bread, LoadUnits(3));
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![
+            (
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(destination),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(25),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: PerceptionSource::DirectObservation,
+                },
+            ),
+            (
+                bread,
+                BelievedEntityState {
+                    last_known_place: Some(origin),
+                    last_known_inventory: BTreeMap::from([(
+                        CommodityKind::Bread,
+                        Quantity(3),
+                    )]),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: PerceptionSource::DirectObservation,
+                },
+            ),
+        ],
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([bounty, bread]),
+        &BTreeSet::from([origin, destination, claim_place]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let plan = search_plan(
+        &snapshot,
+        &GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+            key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+            evidence_entities: BTreeSet::from([bounty, bread]),
+            evidence_places: BTreeSet::from([origin, destination, claim_place]),
+        },
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ReasoningProfile::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .unwrap();
+
+    assert!(
+        plan.steps.iter().any(|step| step.op_kind == PlannerOpKind::MoveCargo),
+        "delivery bounty plan should use cargo movement"
+    );
+    assert!(
+        plan.steps.iter().any(|step| step.op_kind == PlannerOpKind::Travel),
+        "delivery bounty plan should use travel"
+    );
+    assert!(
+        plan.steps
+            .iter()
+            .filter(|step| step.op_kind == PlannerOpKind::Travel)
+            .count()
+            >= 2,
+        "delivery bounty plan should travel once to deliver and again to reach the claim place"
+    );
+    assert!(
+        plan.steps.iter().any(|step| {
+            step.op_kind == PlannerOpKind::Travel
+                && step.targets
+                    == vec![crate::planning_state::PlanningEntityRef::Authoritative(
+                        claim_place,
+                    )]
+        }),
+        "delivery bounty plan should include travel to the distinct claim place before claim"
+    );
+    assert_eq!(
+        plan.steps.last().map(|step| step.op_kind),
+        Some(PlannerOpKind::ClaimBounty)
+    );
+}
+
+#[test]
+fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_death() {
+    let actor = entity(1);
+    let bounty = entity(2);
+    let issuer = entity(3);
+    let claim_place = entity(10);
+    let target = entity(11);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, issuer, target, claim_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(issuer, EntityKind::Agent);
+    view.kinds.insert(target, EntityKind::Agent);
+    view.kinds.insert(bounty, EntityKind::SocialArtifact);
+    view.kinds.insert(claim_place, EntityKind::Place);
+    view.effective_places.insert(actor, claim_place);
+    view.effective_places.insert(issuer, claim_place);
+    view.effective_places.insert(target, claim_place);
+    view.effective_places.insert(bounty, claim_place);
+    view.entities_at
+        .insert(claim_place, vec![actor, issuer, target, bounty]);
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(
+            bounty,
+            BelievedEntityState {
+                last_known_place: Some(claim_place),
+                last_known_inventory: BTreeMap::new(),
+                workstation_tag: None,
+                resource_source: None,
+                alive: true,
+                wounds: Vec::new(),
+                last_known_courage: None,
+                believed_activity: None,
+                believed_artifact: Some(BelievedArtifactState {
+                    kind: ArtifactKind::Bounty,
+                    state: ArtifactState::Active,
+                    issuer,
+                    expires_at: None,
+                    bounty_terms: Some(BelievedBountyTerms {
+                        target: BountyTarget::EliminateEntity { target },
+                        reward_commodity: CommodityKind::Coin,
+                        reward_quantity: Quantity(25),
+                        claim_place,
+                    }),
+                    notice_topic: None,
+                    observed_tick: Tick(1),
+                }),
+                believed_contention: None,
+                observed_tick: Tick(1),
+                source: PerceptionSource::DirectObservation,
+            },
+        )],
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([bounty, target, issuer]),
+        &BTreeSet::from([claim_place]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = ReasoningProfile::default();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+        key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+        evidence_entities: BTreeSet::from([bounty, target]),
+        evidence_places: BTreeSet::from([claim_place]),
+    };
+
+    let node = root_node(&snapshot, &goal, &recipes, &budget);
+    let rel_defs = relevant_action_defs(&goal, &semantics);
+    let candidates = search_candidates(
+        &goal,
+        &node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        &rel_defs,
+    );
+
+    assert!(
+        !candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "claim_bounty")
+        }),
+        "elimination bounty should not surface claim_bounty before the target is dead"
+    );
+}
+
+#[test]
+fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_closes() {
+    let actor = entity(1);
+    let bounty = entity(2);
+    let issuer = entity(3);
+    let origin = entity(10);
+    let destination = entity(11);
+    let bread = entity(20);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, bounty, issuer, origin, destination, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(bounty, EntityKind::SocialArtifact);
+    view.kinds.insert(issuer, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(destination, EntityKind::Place);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, origin);
+    view.effective_places.insert(bounty, destination);
+    view.effective_places.insert(issuer, destination);
+    view.effective_places.insert(bread, origin);
+    view.entities_at.insert(origin, vec![actor, bread]);
+    view.entities_at.insert(destination, vec![bounty, issuer]);
+    view.carry_capacities.insert(actor, LoadUnits(6));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(3));
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![
+            (
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(destination),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(25),
+                            claim_place: destination,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: PerceptionSource::DirectObservation,
+                },
+            ),
+            (
+                bread,
+                BelievedEntityState {
+                    last_known_place: Some(origin),
+                    last_known_inventory: BTreeMap::from([(
+                        CommodityKind::Bread,
+                        Quantity(3),
+                    )]),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: PerceptionSource::DirectObservation,
+                },
+            ),
+        ],
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([bounty, bread]),
+        &BTreeSet::from([origin, destination]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = ReasoningProfile::default();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+        key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+        evidence_entities: BTreeSet::from([bounty, bread]),
+        evidence_places: BTreeSet::from([origin, destination]),
+    };
+
+    let node = root_node(&snapshot, &goal, &recipes, &budget);
+    let rel_defs = relevant_action_defs(&goal, &semantics);
+    let candidates = search_candidates(
+        &goal,
+        &node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        &rel_defs,
+    );
+
+    assert!(
+        !candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "claim_bounty")
+        }),
+        "delivery bounty should not surface claim_bounty before the delivery gap is closed"
+    );
+}
+
+#[test]
+fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_claim_place() {
+    let actor = entity(1);
+    let bounty = entity(2);
+    let issuer = entity(3);
+    let destination = entity(11);
+    let claim_place = entity(12);
+    let bread = entity(20);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, bounty, issuer, destination, claim_place, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(bounty, EntityKind::SocialArtifact);
+    view.kinds.insert(issuer, EntityKind::Agent);
+    view.kinds.insert(destination, EntityKind::Place);
+    view.kinds.insert(claim_place, EntityKind::Place);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, destination);
+    view.effective_places.insert(bounty, claim_place);
+    view.effective_places.insert(issuer, claim_place);
+    view.effective_places.insert(bread, destination);
+    view.entities_at.insert(destination, vec![actor, bread]);
+    view.entities_at.insert(claim_place, vec![bounty, issuer]);
+    view.controllable.insert((actor, bread));
+    view.carry_capacities.insert(actor, LoadUnits(6));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(3));
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![
+            (
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(25),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: PerceptionSource::DirectObservation,
+                },
+            ),
+            (
+                bread,
+                BelievedEntityState {
+                    last_known_place: Some(destination),
+                    last_known_inventory: BTreeMap::from([(
+                        CommodityKind::Bread,
+                        Quantity(3),
+                    )]),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: PerceptionSource::DirectObservation,
+                },
+            ),
+        ],
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([bounty, bread]),
+        &BTreeSet::from([destination, claim_place]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = ReasoningProfile::default();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+        key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+        evidence_entities: BTreeSet::from([bounty, bread]),
+        evidence_places: BTreeSet::from([destination, claim_place]),
+    };
+
+    let node = root_node(&snapshot, &goal, &recipes, &budget);
+    let rel_defs = relevant_action_defs(&goal, &semantics);
+    let candidates = search_candidates(
+        &goal,
+        &node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        &rel_defs,
+    );
+
+    assert!(
+        !candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "claim_bounty")
+        }),
+        "delivery bounty should not surface claim_bounty until the actor reaches claim_place"
     );
 }
 
@@ -7461,6 +8644,8 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
                 wounds: Vec::new(),
                 last_known_courage: None,
                 believed_activity: None,
+                believed_artifact: None,
+                believed_contention: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
             },
@@ -7556,6 +8741,8 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
                 wounds: Vec::new(),
                 last_known_courage: None,
                 believed_activity: None,
+                believed_artifact: None,
+                believed_contention: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
             },

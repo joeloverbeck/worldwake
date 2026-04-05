@@ -33,6 +33,7 @@ pub mod canonical;
 pub mod cause;
 pub mod combat;
 pub mod communication;
+pub mod contention;
 pub mod component_schema;
 pub mod component_tables;
 pub mod components;
@@ -48,7 +49,6 @@ pub mod experience;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
-pub mod facility_queue;
 pub mod factions;
 pub mod goal;
 pub mod ids;
@@ -66,6 +66,7 @@ pub mod production;
 pub mod pursuit;
 pub mod reasoning_profile;
 pub mod relations;
+pub mod social_artifact;
 pub mod test_utils;
 pub mod topology;
 pub mod trade;
@@ -90,11 +91,12 @@ pub use belief::{
     recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
     social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
     to_shared_belief_snapshot, AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey,
-    BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, HeardBeliefDisposition,
-    HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
+    BeliefConfidencePolicy, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
+    BelievedContentionState, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
+    MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
     RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
-    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile,
-    TellTopic, ToldBeliefMemory,
+    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey,
+    TellProfile, TellTopic, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
@@ -106,6 +108,11 @@ pub use canonical::{
 pub use cause::CauseRef;
 pub use combat::{CombatProfile, CombatStance, DeadAt};
 pub use communication::{classify_communication, CommunicationClass, CommunicationProfile};
+pub use contention::{
+    ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
+    ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter,
+    QueuedContentionIntent,
+};
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
 pub use conservation::{
@@ -132,10 +139,6 @@ pub use experience::{
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
-pub use facility_queue::{
-    ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityQueueError, FacilityUseQueue,
-    GrantedFacilityUse, QueuedFacilityUse,
-};
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
@@ -144,7 +147,7 @@ pub use institutional::{
     InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
     InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
 };
-pub use intention::{ActiveGoal, FacilityQueueIntents, QueuedFacilityIntent};
+pub use intention::ActiveGoal;
 pub use intention_disposition::IntentionDispositionProfile;
 pub use intention_frame::{
     FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionDomainTag,
@@ -175,6 +178,10 @@ pub use production::{
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
 };
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
+pub use social_artifact::{
+    ArtifactHeader, ArtifactKind, ArtifactState, BountyTarget, BountyTerms, NoticeContent,
+    NoticeTopic, ProofRequirement, RewardSource,
+};
 pub use topology::{
     build_prototype_world, prototype_place_entity, Place, PlaceTag, PlaceTagSet, PrototypePlace,
     Route, Topology, TravelEdge, OUTDOOR_RELIEF_TAGS,

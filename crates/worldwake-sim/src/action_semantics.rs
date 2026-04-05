@@ -37,7 +37,9 @@ pub enum TargetSpec {
     SpecificEntity(EntityId),
     ActorPlace,
     EntityAtActorPlace { kind: EntityKind },
+    EntityAtActorPlaceAnyOf { kinds: [EntityKind; 2] },
     EntityDirectlyPossessedByActor { kind: EntityKind },
+    EntityDirectlyPossessedByActorAnyOf { kinds: [EntityKind; 2] },
     AdjacentPlace,
 }
 
@@ -401,14 +403,20 @@ mod tests {
         Constraint::ActorKind(EntityKind::Agent),
     ];
 
-    const ALL_TARGET_SPECS: [TargetSpec; 5] = [
+    const ALL_TARGET_SPECS: [TargetSpec; 7] = [
         TargetSpec::SpecificEntity(ENTITY_B),
         TargetSpec::ActorPlace,
         TargetSpec::EntityAtActorPlace {
             kind: EntityKind::Facility,
         },
+        TargetSpec::EntityAtActorPlaceAnyOf {
+            kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
+        },
         TargetSpec::EntityDirectlyPossessedByActor {
             kind: EntityKind::ItemLot,
+        },
+        TargetSpec::EntityDirectlyPossessedByActorAnyOf {
+            kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
         },
         TargetSpec::AdjacentPlace,
     ];
@@ -1137,7 +1145,7 @@ mod tests {
 
         match (Precondition::TargetKind {
             target_index: 5,
-            kind: EntityKind::Rumor,
+            kind: EntityKind::SocialArtifact,
         }) {
             Precondition::TargetKind { target_index, .. } => {
                 let _: u8 = target_index;

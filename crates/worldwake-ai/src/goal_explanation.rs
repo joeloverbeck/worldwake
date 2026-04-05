@@ -65,7 +65,7 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         BlockedIntentMemory, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind, GrantedFacilityUse,
+        DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind, ContentionGrant,
         HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
         ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
@@ -197,7 +197,7 @@ mod tests {
             None
         }
 
-        fn has_exclusive_facility_policy(&self, _entity: EntityId) -> bool {
+        fn has_contention_policy(&self, _entity: EntityId) -> bool {
             false
         }
 
@@ -205,7 +205,7 @@ mod tests {
             None
         }
 
-        fn facility_grant(&self, _facility: EntityId) -> Option<&GrantedFacilityUse> {
+        fn facility_grant(&self, _facility: EntityId) -> Option<&ContentionGrant> {
             None
         }
 

@@ -150,7 +150,8 @@ fn derive_blocking_fact(
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
-        | PlannerOpKind::AskWitness => {}
+        | PlannerOpKind::AskWitness
+        | PlannerOpKind::ClaimBounty => {}
     }
 
     if danger_too_high(view, agent) {
@@ -397,7 +398,8 @@ fn classify_input_failure(
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
-        | PlannerOpKind::AskWitness => None,
+        | PlannerOpKind::AskWitness
+        | PlannerOpKind::ClaimBounty => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))
@@ -423,7 +425,8 @@ fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Harvest
-        | PlannerOpKind::Craft => view.entity_kind(target).is_none(),
+        | PlannerOpKind::Craft
+        | PlannerOpKind::ClaimBounty => view.entity_kind(target).is_none(),
         PlannerOpKind::Attack | PlannerOpKind::Defend => {
             if view.entity_kind(target).is_none() || view.is_dead(target) {
                 return true;
@@ -579,6 +582,9 @@ fn parse_abort_detail(detail: &str) -> Option<BlockingFact> {
         Some(BlockingFact::NoKnownPath)
     } else if detail.contains("destroyed") || detail.contains("gone") {
         Some(BlockingFact::TargetGone)
+    } else if detail.contains("contention") || detail.contains("grant") || detail.contains("queue")
+    {
+        Some(BlockingFact::ExclusiveFacilityUnavailable)
     } else {
         None
     }
@@ -709,7 +715,8 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::AskWitness
         | PlannerOpKind::Accuse
         | PlannerOpKind::Fine
-        | PlannerOpKind::Exile => step.targets.first().copied().and_then(authoritative_target),
+        | PlannerOpKind::Exile
+        | PlannerOpKind::ClaimBounty => step.targets.first().copied().and_then(authoritative_target),
         PlannerOpKind::Bribe => step
             .payload_override
             .as_ref()
@@ -783,7 +790,8 @@ fn related_place(
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
-        | PlannerOpKind::AskWitness => view.effective_place(agent),
+        | PlannerOpKind::AskWitness
+        | PlannerOpKind::ClaimBounty => view.effective_place(agent),
     }
 }
 

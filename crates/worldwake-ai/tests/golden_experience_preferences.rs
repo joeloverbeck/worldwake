@@ -234,6 +234,7 @@ fn emit_combat_event(log: &mut EventLog, tick: Tick, place: EntityId, actor: Ent
         tick,
         cause: CauseRef::Bootstrap,
         actor_id: Some(actor),
+        action_name: None,
         target_ids: vec![target],
         evidence: Vec::new(),
         place_id: Some(place),

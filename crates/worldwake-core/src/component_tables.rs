@@ -6,16 +6,18 @@ use crate::{
     blocked_intent::BlockedIntentMemory,
     combat::{CombatProfile, CombatStance, DeadAt},
     communication::CommunicationProfile,
+    contention::{
+        ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
+    },
     component_schema::with_component_schema_entries,
     components::{AgentData, Name},
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
     experience::{PreferenceProfile, RouteExperience, SourceReliability},
-    facility_queue::{ExclusiveFacilityPolicy, FacilityQueueDispositionProfile, FacilityUseQueue},
     factions::FactionData,
     institutional::RecordData,
-    intention::{ActiveGoal, FacilityQueueIntents},
+    intention::ActiveGoal,
     intention_disposition::IntentionDispositionProfile,
     intention_frame::IntentionFrame,
     items::{Container, ItemLot, UniqueItem},
@@ -24,6 +26,7 @@ use crate::{
     patrol::{PatrolProfile, PatrolRoute},
     pursuit::PursuitProfile,
     reasoning_profile::ReasoningProfile,
+    social_artifact::{ArtifactHeader, BountyTerms, NoticeContent},
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
@@ -141,13 +144,14 @@ mod tests {
         },
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory,
-            sample_facility_queue_disposition_profile, sample_merchandise_profile,
+            sample_contention_disposition_profile, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
         ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
         CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, ExclusiveFacilityPolicy, FacilityUseQueue, HomeostaticNeeds,
+        ContentionIntents, ContentionPolicy, ContentionQueue, DriveThresholds, EntityId, GoalKey,
+        GoalKind, HomeostaticNeeds,
         InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
         CommunicationProfile, PatrolProfile, PatrolRoute, Permille, ProductionJob, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource, Tick,
@@ -206,6 +210,8 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
                     observed_tick: Tick(7),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -433,7 +439,7 @@ mod tests {
         assert_eq!(tables.iter_wound_lists().count(), 0);
         assert_eq!(tables.iter_combat_profiles().count(), 0);
         assert_eq!(tables.iter_dead_ats().count(), 0);
-        assert_eq!(tables.iter_facility_queue_disposition_profiles().count(), 0);
+        assert_eq!(tables.iter_contention_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_utility_profiles().count(), 0);
         assert_eq!(tables.iter_blocked_intent_memories().count(), 0);
         assert_eq!(tables.iter_agent_belief_stores().count(), 0);
@@ -454,8 +460,8 @@ mod tests {
         assert_eq!(tables.iter_trade_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_merchandise_profiles().count(), 0);
         assert_eq!(tables.iter_substitute_preferences().count(), 0);
-        assert_eq!(tables.iter_exclusive_facility_policies().count(), 0);
-        assert_eq!(tables.iter_facility_use_queues().count(), 0);
+        assert_eq!(tables.iter_contention_policies().count(), 0);
+        assert_eq!(tables.iter_contention_queues().count(), 0);
         assert_eq!(tables.iter_workstation_markers().count(), 0);
         assert_eq!(
             tables.iter_production_output_ownership_policies().count(),
@@ -848,25 +854,25 @@ mod tests {
     }
 
     #[test]
-    fn facility_queue_disposition_profile_insert_get_remove_has_cycle() {
+    fn contention_disposition_profile_insert_get_remove_has_cycle() {
         let mut tables = ComponentTables::default();
         let id = entity(34);
-        let profile = sample_facility_queue_disposition_profile();
+        let profile = sample_contention_disposition_profile();
 
         assert_eq!(
-            tables.insert_facility_queue_disposition_profile(id, profile.clone()),
+            tables.insert_contention_disposition_profile(id, profile.clone()),
             None
         );
         assert_eq!(
-            tables.get_facility_queue_disposition_profile(id),
+            tables.get_contention_disposition_profile(id),
             Some(&profile)
         );
-        assert!(tables.has_facility_queue_disposition_profile(id));
+        assert!(tables.has_contention_disposition_profile(id));
         assert_eq!(
-            tables.remove_facility_queue_disposition_profile(id),
+            tables.remove_contention_disposition_profile(id),
             Some(profile)
         );
-        assert_eq!(tables.get_facility_queue_disposition_profile(id), None);
+        assert_eq!(tables.get_contention_disposition_profile(id), None);
     }
 
     #[test]
@@ -945,30 +951,76 @@ mod tests {
     fn facility_queue_components_insert_get_remove_has_cycle() {
         let mut tables = ComponentTables::default();
         let facility = entity(41);
-        let policy = ExclusiveFacilityPolicy {
+        let policy = ContentionPolicy {
             grant_hold_ticks: NonZeroU32::new(4).unwrap(),
+            auto_promote: true,
+            max_waiters: None,
         };
-        let mut queue = FacilityUseQueue::default();
-        queue.enqueue(entity(99), ActionDefId(7), Tick(3)).unwrap();
+        let mut queue = ContentionQueue::default();
+        queue.enqueue(entity(99), ActionDefId(7), Tick(3), None)
+            .unwrap();
 
         assert_eq!(
-            tables.insert_exclusive_facility_policy(facility, policy.clone()),
+            tables.insert_contention_policy(facility, policy.clone()),
             None
         );
         assert_eq!(
-            tables.get_exclusive_facility_policy(facility),
+            tables.get_contention_policy(facility),
             Some(&policy)
         );
         assert_eq!(
-            tables.insert_facility_use_queue(facility, queue.clone()),
+            tables.insert_contention_queue(facility, queue.clone()),
             None
         );
-        assert_eq!(tables.get_facility_use_queue(facility), Some(&queue));
+        assert_eq!(tables.get_contention_queue(facility), Some(&queue));
         assert_eq!(
-            tables.remove_exclusive_facility_policy(facility),
+            tables.remove_contention_policy(facility),
             Some(policy)
         );
-        assert_eq!(tables.remove_facility_use_queue(facility), Some(queue));
+        assert_eq!(tables.remove_contention_queue(facility), Some(queue));
+    }
+
+    #[test]
+    fn contention_components_insert_get_remove_has_cycle() {
+        let mut tables = ComponentTables::default();
+        let facility = entity(42);
+        let policy = ContentionPolicy {
+            grant_hold_ticks: NonZeroU32::new(4).unwrap(),
+            auto_promote: true,
+            max_waiters: Some(2),
+        };
+        let mut queue = ContentionQueue::default();
+        queue
+            .enqueue(entity(99), ActionDefId(7), Tick(3), policy.max_waiters)
+            .unwrap();
+
+        assert_eq!(tables.insert_contention_policy(facility, policy.clone()), None);
+        assert_eq!(tables.get_contention_policy(facility), Some(&policy));
+        assert_eq!(tables.insert_contention_queue(facility, queue.clone()), None);
+        assert_eq!(tables.get_contention_queue(facility), Some(&queue));
+        assert_eq!(tables.remove_contention_policy(facility), Some(policy));
+        assert_eq!(tables.remove_contention_queue(facility), Some(queue));
+    }
+
+    #[test]
+    fn contention_intents_insert_get_remove_has_cycle() {
+        let mut tables = ComponentTables::default();
+        let agent = entity(421);
+        let intents = ContentionIntents {
+            intents: BTreeMap::from([(
+                entity(422),
+                crate::QueuedContentionIntent {
+                    goal_key: GoalKey::from(GoalKind::Sleep),
+                    intended_action: ActionDefId(8),
+                },
+            )]),
+        };
+
+        assert_eq!(tables.insert_contention_intents(agent, intents.clone()), None);
+        assert_eq!(tables.get_contention_intents(agent), Some(&intents));
+        assert!(tables.has_contention_intents(agent));
+        assert_eq!(tables.remove_contention_intents(agent), Some(intents));
+        assert_eq!(tables.get_contention_intents(agent), None);
     }
 
     #[test]

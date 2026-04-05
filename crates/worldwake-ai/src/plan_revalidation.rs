@@ -70,6 +70,7 @@ fn revalidate_exact_target_step(
         bound_targets: targets.to_vec(),
         payload_override: None,
         explanation: None,
+        contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
     requested_affordance_matches(
         &synthetic,
@@ -1057,6 +1058,8 @@ mod tests {
             wounds: Vec::new(),
             last_known_courage: None,
             believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
             observed_tick: observed,
             source: PerceptionSource::DirectObservation,
         }

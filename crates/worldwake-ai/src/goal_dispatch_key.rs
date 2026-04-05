@@ -23,6 +23,7 @@ pub enum GoalDispatchKey {
     MoveCargo,
     LootCorpse,
     BuryCorpse,
+    FulfillBounty,
     ShareBelief,
     ClaimOffice,
     SupportCandidateForOffice,
@@ -35,7 +36,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 29] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -55,6 +56,7 @@ impl GoalDispatchKey {
         Self::MoveCargo,
         Self::LootCorpse,
         Self::BuryCorpse,
+        Self::FulfillBounty,
         Self::ShareBelief,
         Self::ClaimOffice,
         Self::SupportCandidateForOffice,
@@ -95,6 +97,7 @@ impl GoalDispatchKey {
             GoalKind::MoveCargo { .. } => Self::MoveCargo,
             GoalKind::LootCorpse { .. } => Self::LootCorpse,
             GoalKind::BuryCorpse { .. } => Self::BuryCorpse,
+            GoalKind::FulfillBounty { .. } => Self::FulfillBounty,
             GoalKind::ShareBelief { .. } => Self::ShareBelief,
             GoalKind::ClaimOffice { .. } => Self::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => Self::SupportCandidateForOffice,
@@ -251,6 +254,7 @@ mod tests {
                 corpse: target,
                 burial_site: destination,
             },
+            GoalKind::FulfillBounty { bounty: target },
             GoalKind::ShareBelief {
                 listener: target,
                 topic: TellTopic::EntityBelief { subject: office },
@@ -285,7 +289,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 24);
+        assert_eq!(goals.len(), 25);
         for goal in goals {
             let _ = GoalDispatchKey::from(goal);
         }
@@ -301,7 +305,7 @@ mod tests {
     #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 28);
+        assert_eq!(GoalDispatchKey::all().len(), 29);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),

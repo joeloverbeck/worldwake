@@ -8,7 +8,7 @@ use std::num::NonZeroU32;
 use serde::Deserialize;
 use worldwake_core::{
     CarryCapacity, CombatProfile, CommodityValuationProfile, CommunicationProfile, ControlSource,
-    DriveThresholds, EpistemicDispositionProfile, FacilityQueueDispositionProfile,
+    DriveThresholds, EpistemicDispositionProfile, ContentionDispositionProfile,
     HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
     MetabolismProfile, PatrolProfile, PerceptionProfile, PreferenceProfile,
     PursuitProfile, Quantity, ReasoningProfile, SubstitutePreferences, TellProfile,
@@ -101,7 +101,7 @@ pub struct AgentDef {
     #[serde(default)]
     pub pursuit_profile: Option<PursuitProfile>,
     #[serde(default)]
-    pub facility_queue_disposition: Option<FacilityQueueDispositionProfile>,
+    pub contention_disposition: Option<ContentionDispositionProfile>,
     #[serde(default)]
     pub commodity_valuation: Option<CommodityValuationProfile>,
     #[serde(default)]
@@ -413,7 +413,7 @@ mod tests {
         assert!(agent.patrol_profile.is_none());
         assert!(agent.patrol_route.is_none());
         assert!(agent.pursuit_profile.is_none());
-        assert!(agent.facility_queue_disposition.is_none());
+        assert!(agent.contention_disposition.is_none());
         assert!(agent.commodity_valuation.is_none());
         assert!(agent.substitute_preferences.is_none());
     }

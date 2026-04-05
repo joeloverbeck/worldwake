@@ -626,6 +626,7 @@ mod tests {
                 record,
             })),
             explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();

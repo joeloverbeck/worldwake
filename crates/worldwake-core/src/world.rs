@@ -2,11 +2,13 @@
 
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
+    ArtifactHeader, BountyTerms,
     BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container, DeadAt, DemandMemory,
-    DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
-    EpistemicDispositionProfile, EventId, ExclusiveFacilityPolicy, FacilityQueueDispositionProfile,
-    FacilityQueueIntents, FacilityUseQueue, FactionData, HomeostaticNeeds, InTransitOnEdge,
+    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables,
+    ComponentValue, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
+    ContentionQueue, Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds,
+    EntityAllocator, EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId,
+    FactionData, HomeostaticNeeds, InTransitOnEdge,
     IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
     LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
     OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile, ReasoningProfile,
@@ -15,6 +17,7 @@ use crate::{
     RouteExperience, SourceReliability, SubstitutePreferences, TellProfile, TheftDispositionProfile,
     Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
+    NoticeContent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -510,6 +513,7 @@ impl World {
                 | EntityKind::UniqueItem
                 | EntityKind::Container
                 | EntityKind::Record
+                | EntityKind::SocialArtifact
         )
     }
 
@@ -699,6 +703,8 @@ mod tests {
                 wounds: Vec::new(),
                 last_known_courage: None,
                 believed_activity: None,
+                believed_artifact: None,
+                believed_contention: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
             },

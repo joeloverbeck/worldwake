@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use crate::PlanningSnapshot;
 use worldwake_core::{
-    belief_confidence, ActionDomain, BeliefConfidencePolicy, BelievedEntityState, EntityId,
-    Permille, SocialObservation, SocialObservationKind, Tick,
+    belief_confidence, ActionDomain, ArtifactKind, ArtifactState, BeliefConfidencePolicy,
+    BelievedArtifactState, BelievedEntityState, EntityId, NoticeTopic, Permille,
+    SocialObservation, SocialObservationKind, Tick,
 };
 
 fn place_threat_estimate_from_memory(
@@ -49,7 +50,34 @@ fn place_threat_estimate_from_memory(
         .max()
         .unwrap_or(0);
 
-    Permille::new(belief_threat.max(social_threat))
+    let notice_threat = entity_beliefs
+        .values()
+        .filter_map(|belief| {
+            let artifact = belief.believed_artifact.as_ref()?;
+            matches!(
+                artifact,
+                BelievedArtifactState {
+                    kind: ArtifactKind::Notice,
+                    state: ArtifactState::Active,
+                    notice_topic: Some(NoticeTopic::ThreatWarning {
+                        place: warned_place
+                    }),
+                    ..
+                } if *warned_place == place
+            )
+            .then(|| {
+                belief_confidence(
+                    &belief.source,
+                    current_tick.0.saturating_sub(artifact.observed_tick.0),
+                    &confidence_policy,
+                )
+                .value()
+            })
+        })
+        .max()
+        .unwrap_or(0);
+
+    Permille::new(belief_threat.max(social_threat).max(notice_threat))
         .expect("place threat estimate must remain within permille bounds")
 }
 
@@ -133,9 +161,10 @@ mod tests {
     use super::{perceived_direct_travel_cost_from_memory, route_threat_estimate_from_memory};
     use std::collections::BTreeMap;
     use worldwake_core::{
-        ActionDomain, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState, BodyPart,
-        EntityId, PerceptionSource, SocialObservation, SocialObservationDetail, Tick, Wound,
-        WoundCause, WoundId,
+        ActionDomain, ArtifactKind, ArtifactState, BeliefConfidencePolicy, BelievedActivity,
+        BelievedArtifactState, BelievedEntityState, BodyPart, EntityId, NoticeTopic,
+        PerceptionSource, SocialObservation, SocialObservationDetail, Tick, Wound, WoundCause,
+        WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -163,6 +192,8 @@ mod tests {
                 target: None,
                 observed_tick,
             }),
+            believed_artifact: None,
+            believed_contention: None,
             observed_tick,
             source: PerceptionSource::DirectObservation,
         }
@@ -188,6 +219,31 @@ mod tests {
             severity: pm(300),
             inflicted_at: Tick(1),
             bleed_rate_per_tick: pm(0),
+        }
+    }
+
+    fn sample_threat_warning(place: EntityId, observed_tick: Tick) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: Some(entity(40)),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: Some(BelievedArtifactState {
+                kind: ArtifactKind::Notice,
+                state: ArtifactState::Active,
+                issuer: entity(41),
+                expires_at: None,
+                bounty_terms: None,
+                notice_topic: Some(NoticeTopic::ThreatWarning { place }),
+                observed_tick,
+            }),
+            believed_contention: None,
+            observed_tick,
+            source: PerceptionSource::DirectObservation,
         }
     }
 
@@ -302,6 +358,24 @@ mod tests {
     }
 
     #[test]
+    fn threat_warning_notice_contributes_route_threat() {
+        let place = entity(5);
+        let notice = entity(50);
+        let beliefs = BTreeMap::from([(notice, sample_threat_warning(place, Tick(9)))]);
+
+        let threat = route_threat_estimate_from_memory(
+            Tick(9),
+            BeliefConfidencePolicy::default(),
+            &beliefs,
+            &[],
+            place,
+            entity(6),
+        );
+
+        assert!(threat.value() > 0);
+    }
+
+    #[test]
     fn perceived_direct_travel_cost_scales_with_route_threat() {
         let place_a = entity(1);
         let place_b = entity(2);
@@ -327,5 +401,33 @@ mod tests {
         );
 
         assert!(dangerous_cost > safe_cost);
+    }
+
+    #[test]
+    fn perceived_direct_travel_cost_scales_with_threat_warning_notice() {
+        let place_a = entity(1);
+        let place_b = entity(2);
+        let notice = entity(70);
+
+        let safe_cost = perceived_direct_travel_cost_from_memory(
+            Tick(9),
+            BeliefConfidencePolicy::default(),
+            &BTreeMap::new(),
+            &[],
+            place_a,
+            place_b,
+            3,
+        );
+        let warned_cost = perceived_direct_travel_cost_from_memory(
+            Tick(9),
+            BeliefConfidencePolicy::default(),
+            &BTreeMap::from([(notice, sample_threat_warning(place_b, Tick(9)))]),
+            &[],
+            place_a,
+            place_b,
+            3,
+        );
+
+        assert!(warned_cost > safe_cost);
     }
 }
