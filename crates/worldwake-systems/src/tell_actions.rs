@@ -8,8 +8,9 @@ use worldwake_core::{
     TellProfile, TellTopic, ToldBeliefMemory, ViolationKind, VisibilitySpec, World, WorldTxn,
     classify_communication, current_institutional_belief_topics,
     institutional_claim_same_memory_lane, institutional_claim_subject_entity,
-    institutional_knowledge_chain_len, social_observation_is_redundant_for_listener,
-    tell_subject_is_directly_observable_by_listener,
+    institutional_knowledge_chain_len, share_equivalent,
+    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
+    to_shared_belief_snapshot,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -605,6 +606,7 @@ fn commit_tell(
                     let existing = listener_beliefs.get_entity(&subject).cloned();
                     let should_update_entity = existing.as_ref().is_none_or(|existing| {
                         existing.observed_tick < speaker_belief.observed_tick
+                            || !share_equivalent(existing, &to_shared_belief_snapshot(&transferred))
                     });
                     if should_update_entity {
                         listener_beliefs.record_entity_snapshot_claims(
@@ -1957,15 +1959,7 @@ mod tests {
             tell_test_setup(PerceptionSource::DirectObservation);
         let instance = tell_instance(tell_id, speaker, listener, subject);
 
-        let outcome =
-            commit_tell_result(&defs, &handlers, tell_id, &mut world, &instance, 1, 8).unwrap();
-
-        assert_tell_trace(
-            &outcome,
-            TellCommitResult::Accepted,
-            Some(HeardBeliefDisposition::Accepted),
-            TellBeliefDeltaKind::EntityBelief,
-        );
+        commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
     }
 
     #[test]
@@ -2285,6 +2279,107 @@ mod tests {
         assert_eq!(
             heard.disposition,
             HeardBeliefDisposition::AlreadyHeldEqualOrNewer
+        );
+    }
+
+    #[test]
+    fn tell_commit_accepts_same_tick_contradictory_entity_belief_and_preserves_both_claims() {
+        let (defs, handlers, tell_id, mut world, place, speaker, listener, subject) =
+            tell_test_setup(PerceptionSource::DirectObservation);
+        let listener_profile = *world.get_component_perception_profile(listener).unwrap();
+        {
+            let mut speaker_store = world
+                .get_component_agent_belief_store(speaker)
+                .cloned()
+                .unwrap_or_default();
+            let mut listener_store = world
+                .get_component_agent_belief_store(listener)
+                .cloned()
+                .unwrap_or_default();
+            let mut contradictory_hearsay = build_believed_entity_state(
+                &world,
+                subject,
+                Tick(2),
+                PerceptionSource::Rumor { chain_len: 2 },
+            )
+            .unwrap();
+            contradictory_hearsay.last_known_place = Some(place);
+            let prior_summary = listener_store.get_entity(&subject).cloned();
+            listener_store.record_entity_snapshot_claims(
+                subject,
+                &contradictory_hearsay,
+                prior_summary.as_ref(),
+                Tick(7),
+                Some(Tick(2)),
+                &listener_profile.confidence_policy,
+            );
+            listener_store.enforce_capacity(&listener_profile, Tick(7));
+
+            let mut direct_belief = build_believed_entity_state(
+                &world,
+                subject,
+                Tick(3),
+                PerceptionSource::DirectObservation,
+            )
+            .unwrap();
+            direct_belief.last_known_place = None;
+            speaker_store.update_entity(subject, direct_belief);
+
+            let mut txn = new_txn(&mut world, 7);
+            txn.set_component_agent_belief_store(speaker, speaker_store)
+                .unwrap();
+            txn.set_component_agent_belief_store(listener, listener_store)
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        assert_eq!(
+            world.get_component_agent_belief_store(speaker)
+                .unwrap()
+                .get_entity(&subject)
+                .unwrap()
+                .last_known_place,
+            None
+        );
+        let instance = tell_instance(tell_id, speaker, listener, subject);
+
+        commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
+
+        let listener_store = world.get_component_agent_belief_store(listener).unwrap();
+        let heard = listener_store
+            .heard_beliefs
+            .get(&tell_memory_key(speaker, subject))
+            .unwrap();
+        assert_eq!(heard.disposition, HeardBeliefDisposition::Accepted);
+        let claims = listener_store
+            .entity_claims
+            .get(&subject)
+            .expect("listener should retain claim-backed contradictory evidence");
+        let location_claims = claims
+            .iter()
+            .filter(|claim| claim.aspect == EntityBeliefAspect::Location)
+            .collect::<Vec<_>>();
+        assert_eq!(location_claims.len(), 2);
+        assert!(location_claims.iter().any(|claim| {
+            claim.source == PerceptionSource::Rumor { chain_len: 2 }
+                && claim.value == worldwake_core::ClaimValue::Place(Some(place))
+        }));
+        assert!(location_claims.iter().any(|claim| {
+            claim.source
+                == PerceptionSource::Report {
+                    from: speaker,
+                    chain_len: 1,
+                }
+                && claim.value == worldwake_core::ClaimValue::Place(None)
+        }), "claims={claims:?}");
+        let summary = listener_store.get_entity(&subject).unwrap();
+        assert_eq!(summary.last_known_place, None);
+        assert_eq!(
+            summary.source,
+            PerceptionSource::Report {
+                from: speaker,
+                chain_len: 1,
+            }
         );
     }
 

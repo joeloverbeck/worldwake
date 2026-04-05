@@ -10,7 +10,7 @@ Phase 6: Architectural Substrates II
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -228,3 +228,27 @@ Verify that `derive_entity_summary` over freshly-emitted claims produces identic
 ### Golden test: contradictory claims coexist
 
 Two agents tell a third agent contradictory facts about the same entity. The third agent holds both claims, and `known_entities` reflects the highest-confidence claim. When the third agent later perceives the entity directly, the DirectObservation claim wins over both heard claims.
+
+## Outcome
+
+- **Completed**: 2026-04-05
+- **What changed**:
+  - Added `EntityBeliefClaim`, `ClaimId`, `EntityBeliefAspect`, and `ClaimValue` as the claim-backed entity-belief substrate in `worldwake-core`
+  - Extended `AgentBeliefStore` with `entity_claims` and `next_claim_id`, with `known_entities` now derived from claims for the passive-perception / witnessed-event / Tell lane
+  - Migrated passive perception, witnessed event intake, and Tell acceptance to emit claim-backed entity beliefs while preserving planner-facing `known_entities`
+  - Split `PerceptionProfile.memory_capacity` into `entity_memory_capacity` and `entity_claim_capacity` so cross-entity breadth and per-subject claim depth are separate policy controls
+  - Added focused unit and golden coverage proving contradictory claims coexist, confidence-based resolution works, and direct observation outranks older hearsay without deleting it
+- **Deviations from original plan**:
+  - `known_entities` remains a mixed world during the current codebase state: the passive/witnessed/Tell lane is claim-backed, while some explicit action-local refresh paths still write `known_entities` directly and remain outside S54 scope
+  - `SAVE_FORMAT_VERSION` did not need a dedicated hand-edited migration path because the repo continues to reject older save versions rather than supporting compatibility
+  - The contradiction-proof ticket (`S54ENTBEL-003`) exposed a bounded production bug in `tell` intake, so final delivery included a small systems fix in addition to the planned golden proof
+- **Verification**:
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-cli`
+  - `cargo test -p worldwake-systems tell_commit_accepts_same_tick_contradictory_entity_belief_and_preserves_both_claims -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_social golden_contradictory_location_claims_coexist_and_direct_observation_wins -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_merchant_selling combined_market_trip_selected_for_side_benefit_replays_deterministically -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_combat golden_death_cascade_and_opportunistic_loot -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_combat golden_defend_changed_conditions -- --nocapture`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

@@ -233,6 +233,7 @@ Typical order:
 - When a migration reshapes a common API surface, expect lint fallout as well as compile fallout. Satisfy trait expectations like `Default` instead of suppressing lints.
 - When long-running verification commands are in flight, reuse those sessions rather than spawning duplicates.
 - When new registered actions or systems cause broad failures, triage for catalog-order drift, completeness assertions, and registry-expansion fallout before assuming the feature's runtime logic is broken.
+- If a focused failing proof exposes a real production contradiction in a ticket currently marked test-only or `Engine Changes: None`, update the ticket sections that define scope (`Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Out of Scope`) before continuing. Do not leave the ticket describing “tests only” work once live code changes are required.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md):
 

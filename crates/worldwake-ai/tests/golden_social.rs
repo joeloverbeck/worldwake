@@ -5,13 +5,18 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::GoalTraceStatus;
 use worldwake_core::{
-    CommodityKind, CommunicationProfile, EntityId, EventTag, EventView, EvidenceRef, GoalKind,
+    AgentData, BelievedEntityState, CommodityKind, CommunicationProfile, ControlSource,
+    EntityBeliefAspect, EntityBeliefClaim, EntityId, EventTag, EventView, EvidenceRef, GoalKind,
     HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity, ResourceSource,
     Seed, SharedTellState, SocialObservation, SocialObservationDetail, SocialObservationKind,
-    TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile, WorkstationTag, belief_confidence,
-    build_believed_entity_state, hash_event_log, hash_world, verify_authoritative_conservation,
+    TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile, WorkstationTag,
+    belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
+    verify_authoritative_conservation,
 };
-use worldwake_sim::{ActionTraceKind, CommitTraceData, TellCommitResult, TellTopicOmissionReason};
+use worldwake_sim::{
+    ActionPayload, ActionRequestMode, ActionTraceKind, CommitTraceData, InputKind,
+    RequestProvenance, TellActionPayload, TellCommitResult, TellTopicOmissionReason,
+};
 
 fn social_weighted_utility(weight: u16) -> UtilityProfile {
     UtilityProfile {
@@ -121,6 +126,75 @@ fn seed_social_observation(
     commit_txn(txn, event_log);
 }
 
+fn seed_claim_backed_belief(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    subject: EntityId,
+    believed_state: &BelievedEntityState,
+    acquired_tick: Tick,
+) {
+    let mut store = world
+        .get_component_agent_belief_store(agent)
+        .cloned()
+        .unwrap_or_else(worldwake_core::AgentBeliefStore::new);
+    let prior_summary = store.get_entity(&subject).cloned();
+    let profile = world
+        .get_component_perception_profile(agent)
+        .copied()
+        .unwrap_or_default();
+    store.record_entity_snapshot_claims(
+        subject,
+        believed_state,
+        prior_summary.as_ref(),
+        acquired_tick,
+        Some(believed_state.observed_tick),
+        &profile.confidence_policy,
+    );
+
+    let mut txn = new_txn(world, acquired_tick.0);
+    txn.set_component_agent_belief_store(agent, store)
+        .expect("golden social test should keep claim-backed belief stores writable");
+    commit_txn(txn, event_log);
+}
+
+fn set_control_source(
+    h: &mut GoldenHarness,
+    agent: EntityId,
+    control_source: ControlSource,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_agent_data(agent, AgentData { control_source })
+        .expect("golden social test should keep control source writable");
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn request_action_with_payload(
+    h: &mut GoldenHarness,
+    actor: EntityId,
+    def_name: &str,
+    targets: Vec<EntityId>,
+    payload_override: Option<ActionPayload>,
+) {
+    let def_id = h.defs.iter().find(|def| def.name == def_name).map_or_else(
+        || panic!("full registries should include {def_name}"),
+        |def| def.id,
+    );
+    let tick = h.scheduler.current_tick();
+    let _ = h.scheduler.input_queue_mut().enqueue(
+        tick,
+        InputKind::RequestAction {
+            actor,
+            def_id,
+            targets,
+            payload_override,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+}
+
 fn agent_social_observation(
     world: &worldwake_core::World,
     agent: EntityId,
@@ -132,6 +206,18 @@ fn agent_social_observation(
         .iter()
         .copied()
         .find(|observation| observation.detail == detail)
+}
+
+fn entity_location_claims(
+    store: &worldwake_core::AgentBeliefStore,
+    subject: EntityId,
+) -> Vec<&EntityBeliefClaim> {
+    store.entity_claims.get(&subject).map_or_else(Vec::new, |claims| {
+        claims
+            .iter()
+            .filter(|claim| claim.aspect == EntityBeliefAspect::Location)
+            .collect()
+    })
 }
 
 fn witnessed_conflict(
@@ -2952,5 +3038,323 @@ fn golden_alarm_relay_through_stressed_intermediary() {
     assert_eq!(
         first, second,
         "alarm-relay-through-stress scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 101: Contradictory location claims coexist and direct observation wins
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_lines)]
+fn run_contradictory_location_claims_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_recipes());
+    h.enable_action_tracing();
+
+    let informant_a = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "SpeakerA",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let informant_b = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "SpeakerB",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        social_weighted_utility(900),
+    );
+    let listener = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Listener",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        listener_suppressed_social_utility(),
+    );
+    let report_source = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "ReportSource",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let subject = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Merchant",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        worldwake_core::MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    set_control_source(&mut h, informant_a, ControlSource::None, 0);
+    set_control_source(&mut h, informant_b, ControlSource::None, 0);
+    set_control_source(&mut h, listener, ControlSource::None, 0);
+    set_control_source(&mut h, report_source, ControlSource::None, 0);
+    set_control_source(&mut h, subject, ControlSource::None, 0);
+
+    for agent in [informant_a, informant_b, listener] {
+        ensure_empty_belief_store(&mut h.world, &mut h.event_log, agent);
+    }
+    for speaker in [informant_a, informant_b] {
+        set_agent_tell_profile(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            focused_accepting_tell_profile(),
+        );
+        set_agent_perception_profile(
+            &mut h.world,
+            &mut h.event_log,
+            speaker,
+            blind_perception_profile(),
+        );
+    }
+    set_agent_tell_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_tell_profile(),
+    );
+    set_agent_communication_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        accepting_communication_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        keen_perception_profile(),
+    );
+
+    let listener_snapshot = build_believed_entity_state(
+        &h.world,
+        listener,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("listener should be observable for tell targeting");
+    seed_claim_backed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        informant_a,
+        listener,
+        &listener_snapshot,
+        Tick(0),
+    );
+    seed_claim_backed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        informant_b,
+        listener,
+        &listener_snapshot,
+        Tick(0),
+    );
+
+    let mut wrong_place_snapshot = build_believed_entity_state(
+        &h.world,
+        subject,
+        Tick(1),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("subject should be observable for direct-observation seeding");
+    wrong_place_snapshot.last_known_place = Some(RULERS_HALL);
+    seed_claim_backed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        informant_a,
+        subject,
+        &wrong_place_snapshot,
+        Tick(1),
+    );
+
+    let mut reported_snapshot = build_believed_entity_state(
+        &h.world,
+        subject,
+        Tick(1),
+        PerceptionSource::Report {
+            from: report_source,
+            chain_len: 1,
+        },
+    )
+    .expect("subject should be observable for report seeding");
+    reported_snapshot.last_known_place = Some(ORCHARD_FARM);
+    seed_claim_backed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        informant_b,
+        subject,
+        &reported_snapshot,
+        Tick(1),
+    );
+
+    let topic = TellTopic::EntityBelief { subject };
+    request_action_with_payload(
+        &mut h,
+        informant_a,
+        "tell",
+        vec![listener],
+        Some(ActionPayload::Tell(TellActionPayload { listener, topic })),
+    );
+    request_action_with_payload(
+        &mut h,
+        informant_b,
+        "tell",
+        vec![listener],
+        Some(ActionPayload::Tell(TellActionPayload { listener, topic })),
+    );
+    let both_tells_committed = run_until(80, || {
+        h.step_once();
+        committed_tell_trace(&h, informant_a, listener, &topic)
+            == Some((TellCommitResult::Accepted, true))
+            && committed_tell_trace(&h, informant_b, listener, &topic)
+                == Some((TellCommitResult::Accepted, true))
+    });
+    assert!(
+        both_tells_committed,
+        "both speakers should commit accepted tells for the contradictory location topic"
+    );
+
+    let listener_store = h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should keep a belief store");
+    let location_claims = entity_location_claims(listener_store, subject);
+    assert_eq!(
+        location_claims.len(),
+        2,
+        "listener should retain both contradictory heard location claims before direct observation"
+    );
+    assert!(
+        location_claims.iter().any(|claim| {
+            claim.value == worldwake_core::ClaimValue::Place(Some(RULERS_HALL))
+                && claim.source
+                    == PerceptionSource::Report {
+                        from: informant_a,
+                        chain_len: 1,
+                    }
+        }),
+        "listener should retain the wrong-place Report claim from SpeakerA"
+    );
+    assert!(
+        location_claims.iter().any(|claim| {
+            claim.value == worldwake_core::ClaimValue::Place(Some(ORCHARD_FARM))
+                && claim.source == PerceptionSource::Rumor { chain_len: 2 }
+        }),
+        "listener should retain the correct-place Rumor claim from SpeakerB's relayed report"
+    );
+
+    let hearsay_summary = agent_belief_about(&h.world, listener, subject)
+        .expect("listener should derive a summary from contradictory hearsay");
+    assert_eq!(
+        hearsay_summary.last_known_place,
+        Some(RULERS_HALL),
+        "Report confidence should outrank the Rumor claim before direct observation"
+    );
+    assert_eq!(
+        hearsay_summary.source,
+        PerceptionSource::Report {
+            from: informant_a,
+            chain_len: 1,
+        },
+        "summary provenance should match the stronger wrong-place report"
+    );
+
+    {
+        let relocation_tick = h.scheduler.current_tick().0;
+        let mut txn = new_txn(&mut h.world, relocation_tick);
+        txn.set_ground_location(listener, ORCHARD_FARM)
+            .expect("golden contradiction scenario should be able to relocate the listener");
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let direct_observation_arrived = run_until(24, || {
+        h.step_once();
+        agent_belief_about(&h.world, listener, subject).is_some_and(|belief| {
+            belief.last_known_place == Some(ORCHARD_FARM)
+                && belief.source == PerceptionSource::DirectObservation
+        })
+    });
+    assert!(
+        direct_observation_arrived,
+        "listener should directly perceive the subject at Orchard Farm after relocation"
+    );
+
+    let listener_store = h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should keep a belief store after perception");
+    let location_claims = entity_location_claims(listener_store, subject);
+    assert_eq!(
+        location_claims.len(),
+        3,
+        "direct observation should add a third location claim without deleting older hearsay"
+    );
+    assert!(
+        location_claims.iter().any(|claim| {
+            claim.value == worldwake_core::ClaimValue::Place(Some(RULERS_HALL))
+                && claim.source
+                    == PerceptionSource::Report {
+                        from: informant_a,
+                        chain_len: 1,
+                    }
+        }),
+        "wrong-place report claim should persist after being outranked"
+    );
+    assert!(
+        location_claims.iter().any(|claim| {
+            claim.value == worldwake_core::ClaimValue::Place(Some(ORCHARD_FARM))
+                && claim.source == PerceptionSource::Rumor { chain_len: 2 }
+        }),
+        "correct-place rumor claim should persist after direct observation"
+    );
+    assert!(
+        location_claims.iter().any(|claim| {
+            claim.value == worldwake_core::ClaimValue::Place(Some(ORCHARD_FARM))
+                && claim.source == PerceptionSource::DirectObservation
+        }),
+        "listener should add a direct-observation location claim at Orchard Farm"
+    );
+
+    let corrected_summary = agent_belief_about(&h.world, listener, subject)
+        .expect("listener should retain a corrected summary");
+    assert_eq!(
+        corrected_summary.last_known_place,
+        Some(ORCHARD_FARM),
+        "direct observation should supersede both contradictory heard claims"
+    );
+    assert_eq!(
+        corrected_summary.source,
+        PerceptionSource::DirectObservation,
+        "summary provenance should upgrade to direct observation"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+#[test]
+fn golden_contradictory_location_claims_coexist_and_direct_observation_wins() {
+    let first = run_contradictory_location_claims_scenario(Seed([104; 32]));
+    let second = run_contradictory_location_claims_scenario(Seed([104; 32]));
+
+    assert_eq!(
+        first, second,
+        "contradictory-location-claims scenario should replay deterministically"
     );
 }
