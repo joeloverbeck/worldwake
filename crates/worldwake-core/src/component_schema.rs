@@ -1165,6 +1165,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                scene_evidences,
+                SceneEvidence,
+                insert_scene_evidence,
+                get_scene_evidence,
+                get_scene_evidence_mut,
+                remove_scene_evidence,
+                has_scene_evidence,
+                iter_scene_evidences,
+                insert_component_scene_evidence,
+                get_component_scene_evidence,
+                get_component_scene_evidence_mut,
+                remove_component_scene_evidence,
+                has_component_scene_evidence,
+                entities_with_scene_evidence,
+                query_scene_evidence,
+                count_with_scene_evidence,
+                "SceneEvidence",
+                |kind| kind == EntityKind::Place,
+                SceneEvidence,
+                crate::SceneEvidence,
+                set_component_scene_evidence,
+                clear_component_scene_evidence,
+                txn_simple_set
+            }
+            {
                 bandit_faction_policies,
                 BanditFactionPolicy,
                 insert_bandit_faction_policy,
@@ -1702,3 +1727,26 @@ macro_rules! select_txn_simple_set_components {
 pub(crate) use forward_authoritative_components;
 pub(crate) use select_txn_simple_set_components;
 pub(crate) use with_component_schema_entries;
+
+#[cfg(test)]
+mod tests {
+    use crate::{EntityKind, SceneEvidence, Tick, Topology, World, WorldError};
+
+    #[test]
+    fn scene_evidence_is_registered_for_places_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let place = world.create_entity(EntityKind::Place, Tick(1));
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+
+        world
+            .insert_component_scene_evidence(place, SceneEvidence::default())
+            .unwrap();
+        assert!(world.has_component_scene_evidence(place));
+        assert_eq!(world.count_with_scene_evidence(), 1);
+
+        let error = world
+            .insert_component_scene_evidence(agent, SceneEvidence::default())
+            .unwrap_err();
+        assert!(matches!(error, WorldError::InvalidOperation(_)));
+    }
+}

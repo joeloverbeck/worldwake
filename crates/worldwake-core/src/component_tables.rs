@@ -13,6 +13,7 @@ use crate::{
     components::{AgentData, Name},
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     drives::DriveThresholds,
+    evidence::SceneEvidence,
     epistemic::EpistemicDispositionProfile,
     experience::{PreferenceProfile, RouteExperience, SourceReliability},
     factions::FactionData,

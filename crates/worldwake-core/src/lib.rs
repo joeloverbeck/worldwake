@@ -42,6 +42,7 @@ pub mod control;
 pub mod crime;
 pub mod delta;
 pub mod drives;
+pub mod evidence;
 pub mod entity;
 pub mod epistemic;
 pub mod error;
@@ -130,6 +131,7 @@ pub use delta::{
     RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
 pub use drives::{DriveThresholds, ThresholdBand};
+pub use evidence::{DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence};
 pub use entity::{EntityKind, EntityMeta};
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
 pub use error::WorldError;
