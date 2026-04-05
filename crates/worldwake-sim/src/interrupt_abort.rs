@@ -186,9 +186,9 @@ mod tests {
     use std::num::NonZeroU32;
     use std::sync::{Mutex, OnceLock};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
-        CommodityKind, ControlSource, EntityId, EventLog, EventPayload, EventTag, EventView,
-        PendingEvent, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CommodityKind,
+        ControlSource, EntityId, EventLog, EventPayload, EventTag, EventView, PendingEvent,
+        Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
     };
 
     #[allow(clippy::struct_field_names)]

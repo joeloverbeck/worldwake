@@ -22,8 +22,7 @@ use worldwake_core::{
     ContentionIntents, ControlSource, EntityId, GoalKey, GoalKind, HomeostaticNeeds,
     InstitutionalClaim, MetabolismProfile, PerceptionSource, Permille, Quantity,
     QueuedContentionIntent, RecordData, RecordKind, Seed, SuccessionLaw, TellProfile, TellTopic,
-    TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile, ViolationKind,
-    ViolationMemory,
+    TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionPayload, ActionRequestMode, InputKind, InvestigateActionPayload,
@@ -999,9 +998,7 @@ fn conformance_trade_exact_acquisition() {
         let mut txn = new_txn(&mut ch.h.world, 0);
         txn.set_component_sale_listing(
             seller_bread_lot,
-            worldwake_core::SaleListing {
-                listed_at: Tick(0),
-            },
+            worldwake_core::SaleListing { listed_at: Tick(0) },
         )
         .unwrap();
         txn.set_component_trade_disposition_profile(

@@ -1129,7 +1129,9 @@ fn build_generalized_contention_roundtrip_scenario(
                 expires_at: Tick(4),
             }),
         };
-        queue.enqueue(queued_actor, loot_action, Tick(0), None).unwrap();
+        queue
+            .enqueue(queued_actor, loot_action, Tick(0), None)
+            .unwrap();
         txn.set_component_contention_queue(corpse, queue).unwrap();
         txn.commit(&mut h.event_log);
     }
@@ -1145,7 +1147,8 @@ fn build_generalized_contention_roundtrip_scenario(
 }
 
 fn run_generalized_contention_roundtrip_scenario(seed: Seed) -> (StateHash, StateHash) {
-    let (h, corpse, observer, granted_actor) = build_generalized_contention_roundtrip_scenario(seed);
+    let (h, corpse, observer, granted_actor) =
+        build_generalized_contention_roundtrip_scenario(seed);
 
     let pre_policy = h
         .world

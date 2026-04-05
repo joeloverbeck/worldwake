@@ -424,11 +424,7 @@ mod tests {
             self.recipe_definitions.get(&recipe).cloned()
         }
 
-        fn matching_workstations_at(
-            &self,
-            place: EntityId,
-            tag: WorkstationTag,
-        ) -> Vec<EntityId> {
+        fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
             self.matching_workstations
                 .get(&(place, tag))
                 .cloned()

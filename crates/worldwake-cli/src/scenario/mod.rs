@@ -10,10 +10,10 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    hash_world, CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId,
-    EntityKind, EventLog, LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource,
-    Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-    WorkstationMarker, World, WorldTxn,
+    hash_world, CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind,
+    EventLog, LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource, Seed, Tick,
+    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
+    WorldTxn,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -278,7 +278,9 @@ fn spawn_agent(
     txn.set_component_drive_thresholds(agent_id, thresholds)?;
     let metabolism = agent_def.metabolism_profile.unwrap_or_default();
     txn.set_component_metabolism_profile(agent_id, metabolism)?;
-    let carry = agent_def.carry_capacity.unwrap_or(DEFAULT_AGENT_CARRY_CAPACITY);
+    let carry = agent_def
+        .carry_capacity
+        .unwrap_or(DEFAULT_AGENT_CARRY_CAPACITY);
     txn.set_component_carry_capacity(agent_id, carry)?;
 
     let perception = agent_def.perception_profile.unwrap_or_default();
@@ -474,13 +476,12 @@ mod tests {
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
         BeliefConfidencePolicy, CarryCapacity, CommodityKind, CommodityValuationProfile,
-        CommunicationProfile, ControlSource, DriveThresholds, EpistemicDispositionProfile,
-        ContentionDispositionProfile, HomeostaticNeeds, IntentionDispositionProfile,
+        CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
+        EpistemicDispositionProfile, HomeostaticNeeds, IntentionDispositionProfile,
         JusticeDispositionProfile, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile,
         Permille, PreferenceProfile, PursuitProfile, Quantity, ReasoningProfile,
-        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
-        TradeCategory, WorkstationTag,
-        ViolationDispositionProfile,
+        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -1008,7 +1009,10 @@ mod tests {
             world.get_component_perception_profile(agent),
             Some(&PerceptionProfile::default())
         );
-        assert_eq!(world.get_component_tell_profile(agent), Some(&TellProfile::default()));
+        assert_eq!(
+            world.get_component_tell_profile(agent),
+            Some(&TellProfile::default())
+        );
         assert_eq!(
             world.get_component_reasoning_profile(agent),
             Some(&ReasoningProfile::default())
@@ -1118,8 +1122,14 @@ mod tests {
             .next()
             .expect("spawned scenario should contain one agent");
 
-        assert_eq!(world.get_component_perception_profile(agent), Some(&custom_perception));
-        assert_eq!(world.get_component_drive_thresholds(agent), Some(&custom_thresholds));
+        assert_eq!(
+            world.get_component_perception_profile(agent),
+            Some(&custom_perception)
+        );
+        assert_eq!(
+            world.get_component_drive_thresholds(agent),
+            Some(&custom_thresholds)
+        );
     }
 
     #[test]
@@ -1226,7 +1236,10 @@ mod tests {
             world.get_component_violation_disposition_profile(agent),
             Some(&violation_profile)
         );
-        assert_eq!(world.get_component_patrol_profile(agent), Some(&patrol_profile));
+        assert_eq!(
+            world.get_component_patrol_profile(agent),
+            Some(&patrol_profile)
+        );
         assert_eq!(
             world.get_component_patrol_route(agent),
             Some(&PatrolRoute {
@@ -1234,7 +1247,10 @@ mod tests {
                 current_index: 0,
             })
         );
-        assert_eq!(world.get_component_pursuit_profile(agent), Some(&pursuit_profile));
+        assert_eq!(
+            world.get_component_pursuit_profile(agent),
+            Some(&pursuit_profile)
+        );
         assert_eq!(
             world.get_component_contention_disposition_profile(agent),
             Some(&queue_profile)
@@ -1260,11 +1276,17 @@ mod tests {
 
         assert_eq!(world.get_component_theft_disposition_profile(agent), None);
         assert_eq!(world.get_component_justice_disposition_profile(agent), None);
-        assert_eq!(world.get_component_violation_disposition_profile(agent), None);
+        assert_eq!(
+            world.get_component_violation_disposition_profile(agent),
+            None
+        );
         assert_eq!(world.get_component_patrol_profile(agent), None);
         assert_eq!(world.get_component_patrol_route(agent), None);
         assert_eq!(world.get_component_pursuit_profile(agent), None);
-        assert_eq!(world.get_component_contention_disposition_profile(agent), None);
+        assert_eq!(
+            world.get_component_contention_disposition_profile(agent),
+            None
+        );
         assert_eq!(world.get_component_commodity_valuation_profile(agent), None);
         assert_eq!(world.get_component_substitute_preferences(agent), None);
     }

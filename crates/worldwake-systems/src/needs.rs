@@ -309,7 +309,10 @@ fn critical_ticks(
 
 #[cfg(test)]
 mod tests {
-    use super::{aggregate_body_costs, apply_action_body_cost, needs_system, worsen_or_create_deprivation_wound};
+    use super::{
+        aggregate_body_costs, apply_action_body_cost, needs_system,
+        worsen_or_create_deprivation_wound,
+    };
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -317,10 +320,11 @@ mod tests {
     use worldwake_core::ActionDomain;
     use worldwake_core::{
         build_prototype_world, BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource,
-        DeadAt, DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, EntityId,
-        DeprivationKind, DriveThresholds, EventLog, EventTag, EventView, HomeostaticNeeds,
-        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec,
-        WitnessData, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        DeadAt, DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EntityId, EventLog, EventTag, EventView,
+        HomeostaticNeeds, MetabolismProfile, Permille, Quantity, Seed, Tick,
+        TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn, Wound, WoundCause,
+        WoundId, WoundList,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -1326,7 +1330,10 @@ mod tests {
                     .is_some_and(|lot| lot.commodity == CommodityKind::Waste)
             })
             .collect();
-        assert!(waste_at_place.is_empty(), "no waste should exist when agent is in transit");
+        assert!(
+            waste_at_place.is_empty(),
+            "no waste should exist when agent is in transit"
+        );
     }
 
     #[test]

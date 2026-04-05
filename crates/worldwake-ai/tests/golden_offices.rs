@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 use golden_harness::*;
 use worldwake_ai::{
     apply_hypothetical_transition, build_planning_snapshot, build_semantics_table, DecisionOutcome,
-    GoalKindPlannerExt, GroundedGoal, PlanSearchResult, PlannerOpKind, ReasoningProfile,
-    PlanningState, SelectedPlanSource,
+    GoalKindPlannerExt, GroundedGoal, PlanSearchResult, PlannerOpKind, PlanningState,
+    ReasoningProfile, SelectedPlanSource,
 };
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, AgentData, BeliefConfidencePolicy,
@@ -262,14 +262,10 @@ fn request_action_with_payload(
     targets: Vec<worldwake_core::EntityId>,
     payload_override: Option<ActionPayload>,
 ) {
-    let def_id = h
-        .defs
-        .iter()
-        .find(|def| def.name == def_name)
-        .map_or_else(
-            || panic!("full registries should include {def_name}"),
-            |def| def.id,
-        );
+    let def_id = h.defs.iter().find(|def| def.name == def_name).map_or_else(
+        || panic!("full registries should include {def_name}"),
+        |def| def.id,
+    );
     let tick = h.scheduler.current_tick();
     let _ = h.scheduler.input_queue_mut().enqueue(
         tick,
@@ -3366,9 +3362,12 @@ fn run_vacancy_notice_political_uptake(seed: Seed) -> (StateHash, StateHash) {
     for _ in 0..8 {
         h.step_once();
         if notice.is_none() {
-            notice = h.world.query_artifact_header().find_map(|(entity, header)| {
-                (header.kind == worldwake_core::ArtifactKind::Notice).then_some(entity)
-            });
+            notice = h
+                .world
+                .query_artifact_header()
+                .find_map(|(entity, header)| {
+                    (header.kind == worldwake_core::ArtifactKind::Notice).then_some(entity)
+                });
         }
         noticed_vacancy = notice.is_some_and(|artifact| {
             agent_belief_about(&h.world, claimant, artifact)
@@ -3496,7 +3495,8 @@ fn golden_vacancy_notice_unlocks_political_action_without_record_consult() {
 }
 
 #[test]
-fn golden_vacancy_notice_unlocks_political_action_without_record_consult_replays_deterministically() {
+fn golden_vacancy_notice_unlocks_political_action_without_record_consult_replays_deterministically()
+{
     let seed = Seed([129; 32]);
 
     let first = run_vacancy_notice_political_uptake(seed);

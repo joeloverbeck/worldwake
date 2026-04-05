@@ -101,33 +101,33 @@ fn pursuit_perception_profile() -> PerceptionProfile {
 
 fn strong_bandit_combat_profile() -> CombatProfile {
     CombatProfile::new(
-        pm(900),  // wound_capacity
-        pm(600),  // attack_skill
-        pm(300),  // defense_skill
-        pm(300),  // guard_skill
-        pm(80),   // attack_severity
-        pm(25),   // bleed_rate
-        pm(0),    // bleed_rate_variance
-        pm(200),  // dodge_chance
-        pm(50),   // parry_chance
-        nz(2),    // attacks_per_round
-        nz(4),    // combat_round_ticks
+        pm(900), // wound_capacity
+        pm(600), // attack_skill
+        pm(300), // defense_skill
+        pm(300), // guard_skill
+        pm(80),  // attack_severity
+        pm(25),  // bleed_rate
+        pm(0),   // bleed_rate_variance
+        pm(200), // dodge_chance
+        pm(50),  // parry_chance
+        nz(2),   // attacks_per_round
+        nz(4),   // combat_round_ticks
     )
 }
 
 fn weak_traveler_combat_profile() -> CombatProfile {
     CombatProfile::new(
-        pm(400),  // wound_capacity
-        pm(200),  // attack_skill
-        pm(150),  // defense_skill
-        pm(100),  // guard_skill
-        pm(30),   // attack_severity
-        pm(10),   // bleed_rate
-        pm(0),    // bleed_rate_variance
-        pm(80),   // dodge_chance
-        pm(20),   // parry_chance
-        nz(1),    // attacks_per_round
-        nz(4),    // combat_round_ticks
+        pm(400), // wound_capacity
+        pm(200), // attack_skill
+        pm(150), // defense_skill
+        pm(100), // guard_skill
+        pm(30),  // attack_severity
+        pm(10),  // bleed_rate
+        pm(0),   // bleed_rate_variance
+        pm(80),  // dodge_chance
+        pm(20),  // parry_chance
+        nz(1),   // attacks_per_round
+        nz(4),   // combat_round_ticks
     )
 }
 
@@ -420,12 +420,12 @@ fn run_scenario_1(seed: Seed) -> (StateHash, StateHash) {
         .action_trace_sink()
         .expect("action tracing enabled")
         .events_for(ids.bandit);
-    let travel_committed = bandit_events.iter().any(|e| {
-        e.action_name == "travel" && matches!(e.kind, ActionTraceKind::Committed { .. })
-    });
-    let attack_committed = bandit_events.iter().any(|e| {
-        e.action_name == "attack" && matches!(e.kind, ActionTraceKind::Committed { .. })
-    });
+    let travel_committed = bandit_events
+        .iter()
+        .any(|e| e.action_name == "travel" && matches!(e.kind, ActionTraceKind::Committed { .. }));
+    let attack_committed = bandit_events
+        .iter()
+        .any(|e| e.action_name == "attack" && matches!(e.kind, ActionTraceKind::Committed { .. }));
     assert!(
         travel_committed,
         "bandit action trace should show a committed travel action"
@@ -437,19 +437,16 @@ fn run_scenario_1(seed: Seed) -> (StateHash, StateHash) {
 
     // Assert: decision trace shows RaidTarget was selected.
     let trace_sink = h.driver.trace_sink().expect("tracing enabled");
-    let any_raid_selected = trace_sink
-        .traces_for(ids.bandit)
-        .into_iter()
-        .any(|trace| {
-            if let DecisionOutcome::Planning(ref p) = trace.outcome {
-                p.selection
-                    .selected_goal_is(GoalKey::from(GoalKind::RaidTarget {
-                        target: ids.traveler,
-                    }))
-            } else {
-                false
-            }
-        });
+    let any_raid_selected = trace_sink.traces_for(ids.bandit).into_iter().any(|trace| {
+        if let DecisionOutcome::Planning(ref p) = trace.outcome {
+            p.selection
+                .selected_goal_is(GoalKey::from(GoalKind::RaidTarget {
+                    target: ids.traveler,
+                }))
+        } else {
+            false
+        }
+    });
     assert!(
         any_raid_selected,
         "decision trace should show RaidTarget selected for remote pursuit"
@@ -573,19 +570,16 @@ fn run_scenario_2(seed: Seed) -> (StateHash, StateHash) {
     // Decision trace: verify the bandit selected RaidTarget at some point
     // (proving pursuit was attempted).
     let trace_sink = h.driver.trace_sink().expect("tracing enabled");
-    let any_raid_selected = trace_sink
-        .traces_for(ids.bandit)
-        .into_iter()
-        .any(|trace| {
-            if let DecisionOutcome::Planning(ref p) = trace.outcome {
-                p.selection
-                    .selected_goal_is(GoalKey::from(GoalKind::RaidTarget {
-                        target: ids.traveler,
-                    }))
-            } else {
-                false
-            }
-        });
+    let any_raid_selected = trace_sink.traces_for(ids.bandit).into_iter().any(|trace| {
+        if let DecisionOutcome::Planning(ref p) = trace.outcome {
+            p.selection
+                .selected_goal_is(GoalKey::from(GoalKind::RaidTarget {
+                    target: ids.traveler,
+                }))
+        } else {
+            false
+        }
+    });
     assert!(
         any_raid_selected,
         "decision trace should show RaidTarget was selected (pursuit attempted)"

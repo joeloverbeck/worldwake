@@ -1,8 +1,6 @@
 use crate::{
-    authoritative_target,
-    decision_trace::PursuitInvalidationReason,
-    resolve_planning_targets_with, MaterializationBindings, PlannedPlan, PlannedStep,
-    PlannerOpKind,
+    authoritative_target, decision_trace::PursuitInvalidationReason, resolve_planning_targets_with,
+    MaterializationBindings, PlannedPlan, PlannedStep, PlannerOpKind,
 };
 use std::collections::BTreeSet;
 use worldwake_core::{belief_confidence, EntityId, GoalKind, Tick};
@@ -129,8 +127,14 @@ fn is_pursuit_plan(plan: &PlannedPlan) -> bool {
     if !is_pursuit_goal || plan.steps.len() < 2 {
         return false;
     }
-    let has_travel = plan.steps.iter().any(|s| s.op_kind == PlannerOpKind::Travel);
-    let has_attack = plan.steps.iter().any(|s| s.op_kind == PlannerOpKind::Attack);
+    let has_travel = plan
+        .steps
+        .iter()
+        .any(|s| s.op_kind == PlannerOpKind::Travel);
+    let has_attack = plan
+        .steps
+        .iter()
+        .any(|s| s.op_kind == PlannerOpKind::Attack);
     has_travel && has_attack
 }
 
@@ -233,9 +237,9 @@ mod tests {
         ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
         EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OpportunityAnchor, OpportunityKey,
-        PerceptionSource, Permille, PursuitProfile, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
+        MerchandiseProfile, MetabolismProfile, OpportunityAnchor, OpportunityKey, PerceptionSource,
+        Permille, PursuitProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
@@ -408,14 +412,8 @@ mod tests {
             worldwake_core::BeliefConfidencePolicy::default()
         }
 
-        fn known_entity_beliefs(
-            &self,
-            agent: EntityId,
-        ) -> Vec<(EntityId, BelievedEntityState)> {
-            self.entity_beliefs
-                .get(&agent)
-                .cloned()
-                .unwrap_or_default()
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.entity_beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
         fn pursuit_profile(&self, agent: EntityId) -> Option<PursuitProfile> {
@@ -1125,9 +1123,7 @@ mod tests {
                     issuing_authority: None,
                     expires_at: None,
                     jurisdiction: Some(place),
-                    target: worldwake_core::BountyTarget::EliminateEntity {
-                        target: entity(2),
-                    },
+                    target: worldwake_core::BountyTarget::EliminateEntity { target: entity(2) },
                     proof_requirement: worldwake_core::ProofRequirement::PhysicalEvidence,
                     reward_commodity: CommodityKind::Coin,
                     reward_quantity: Quantity(3),
@@ -1226,10 +1222,8 @@ mod tests {
         view.effective_places.insert(actor, actor_place);
         view.pursuit_profiles
             .insert(actor, default_pursuit_profile());
-        view.entity_beliefs.insert(
-            actor,
-            vec![(target, alive_belief(Some(dest), Tick(1)))],
-        );
+        view.entity_beliefs
+            .insert(actor, vec![(target, alive_belief(Some(dest), Tick(1)))]);
 
         let plan = pursuit_plan(target, dest);
         assert!(is_pursuit_plan_invalid(&view, actor, &plan, Tick(2)).is_none());
@@ -1274,10 +1268,8 @@ mod tests {
             .insert(actor, default_pursuit_profile());
         // Belief observed a long time ago → staleness will decay confidence
         // below 500 permille with default policy.
-        view.entity_beliefs.insert(
-            actor,
-            vec![(target, alive_belief(Some(dest), Tick(0)))],
-        );
+        view.entity_beliefs
+            .insert(actor, vec![(target, alive_belief(Some(dest), Tick(0)))]);
 
         // At tick 1000, staleness is 1000 ticks → confidence should be very low.
         let plan = pursuit_plan(target, dest);
@@ -1298,10 +1290,8 @@ mod tests {
         view.effective_places.insert(actor, actor_place);
         view.pursuit_profiles
             .insert(actor, default_pursuit_profile());
-        view.entity_beliefs.insert(
-            actor,
-            vec![(target, dead_belief(Some(dest), Tick(1)))],
-        );
+        view.entity_beliefs
+            .insert(actor, vec![(target, dead_belief(Some(dest), Tick(1)))]);
 
         let plan = pursuit_plan(target, dest);
         assert_eq!(
@@ -1322,10 +1312,8 @@ mod tests {
         view.pursuit_profiles
             .insert(actor, default_pursuit_profile());
         // Belief has no known place.
-        view.entity_beliefs.insert(
-            actor,
-            vec![(target, alive_belief(None, Tick(1)))],
-        );
+        view.entity_beliefs
+            .insert(actor, vec![(target, alive_belief(None, Tick(1)))]);
 
         let plan = pursuit_plan(target, dest);
         assert_eq!(

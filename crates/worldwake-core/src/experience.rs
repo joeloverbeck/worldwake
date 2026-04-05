@@ -21,9 +21,7 @@ impl Component for RouteExperience {}
 impl RouteExperience {
     pub fn enforce_limits(&mut self, current_tick: Tick, profile: &PreferenceProfile) {
         self.edges.retain(|_, experience| {
-            current_tick
-                .0
-                .saturating_sub(experience.last_travel_tick.0)
+            current_tick.0.saturating_sub(experience.last_travel_tick.0)
                 <= profile.memory_retention_ticks
         });
 
@@ -92,7 +90,8 @@ impl Component for SourceReliability {}
 impl SourceReliability {
     pub fn enforce_limits(&mut self, current_tick: Tick, profile: &PreferenceProfile) {
         self.sources.retain(|_, record| {
-            current_tick.0.saturating_sub(record.last_attempt_tick.0) <= profile.memory_retention_ticks
+            current_tick.0.saturating_sub(record.last_attempt_tick.0)
+                <= profile.memory_retention_ticks
         });
 
         let capacity = profile.source_memory_capacity as usize;
@@ -107,13 +106,17 @@ impl SourceReliability {
             .collect();
         oldest_sources.sort_by_key(|(source_key, last_tick)| (*last_tick, *source_key));
 
-        for (source_key, _) in oldest_sources.into_iter().take(self.sources.len() - capacity) {
+        for (source_key, _) in oldest_sources
+            .into_iter()
+            .take(self.sources.len() - capacity)
+        {
             self.sources.remove(&source_key);
         }
     }
 
     pub fn prune_dead_sources(&mut self, is_alive: impl Fn(&EntityId) -> bool) {
-        self.sources.retain(|source_key, _| is_alive(&source_key.entity));
+        self.sources
+            .retain(|source_key, _| is_alive(&source_key.entity));
     }
 }
 
@@ -143,8 +146,8 @@ impl Component for PreferenceProfile {}
 #[cfg(test)]
 mod tests {
     use super::{
-        EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
-        SourceReliability, danger_ratio_permille, failure_ratio_permille,
+        danger_ratio_permille, failure_ratio_permille, EdgeExperience, PreferenceProfile,
+        ReliabilityRecord, RouteExperience, SourceKey, SourceReliability,
     };
     use crate::{
         test_utils::{
@@ -211,8 +214,14 @@ mod tests {
     fn preference_profile_default_matches_fixture_baseline() {
         let profile = PreferenceProfile::default();
 
-        assert_eq!(profile.route_caution_weight, crate::Permille::new(300).unwrap());
-        assert_eq!(profile.source_trust_weight, crate::Permille::new(200).unwrap());
+        assert_eq!(
+            profile.route_caution_weight,
+            crate::Permille::new(300).unwrap()
+        );
+        assert_eq!(
+            profile.source_trust_weight,
+            crate::Permille::new(200).unwrap()
+        );
         assert_eq!(profile.route_memory_capacity, 24);
         assert_eq!(profile.source_memory_capacity, 18);
         assert_eq!(profile.memory_retention_ticks, 400);
@@ -273,7 +282,9 @@ mod tests {
     #[test]
     fn experience_components_roundtrip_through_world_storage() {
         let mut world = World::new(Topology::new()).unwrap();
-        let agent = world.create_agent("Aster", ControlSource::Ai, Tick(1)).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
         let route = sample_route_experience();
         let sources = sample_source_reliability();
         let profile = sample_preference_profile();
@@ -293,8 +304,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(world.get_component_route_experience(agent), Some(&route));
-        assert_eq!(world.get_component_source_reliability(agent), Some(&sources));
-        assert_eq!(world.get_component_preference_profile(agent), Some(&profile));
+        assert_eq!(
+            world.get_component_source_reliability(agent),
+            Some(&sources)
+        );
+        assert_eq!(
+            world.get_component_preference_profile(agent),
+            Some(&profile)
+        );
 
         assert_eq!(
             world.remove_component_route_experience(agent).unwrap(),

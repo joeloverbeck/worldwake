@@ -24,14 +24,7 @@ pub fn explain_goal(
 ) -> Option<GoalExplanation> {
     let candidates = generate_candidates(view, agent, blocked, recipes, current_tick);
     let dc = build_decision_context(view, agent);
-    let outcome = rank_candidates(
-        &candidates,
-        view,
-        agent,
-        current_tick,
-        utility,
-        &dc,
-    );
+    let outcome = rank_candidates(&candidates, view, agent, current_tick, utility, &dc);
     let target = outcome
         .ranked
         .iter()
@@ -65,11 +58,11 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         BlockedIntentMemory, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind, ContentionGrant,
+        ContentionGrant, DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind,
         HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
-        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        TellProfile, WorkstationTag, Wound,
+        ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
+        UtilityProfile, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,

@@ -9,6 +9,8 @@ use worldwake_sim::{
     DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
 };
 
+use crate::evidence_support::emit_evidence;
+
 pub fn register_travel_actions(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
@@ -261,7 +263,7 @@ fn commit_travel(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let (edge_id, _, destination, departure_tick, _) = travel_state(instance)?;
+    let (edge_id, origin, destination, departure_tick, _) = travel_state(instance)?;
     txn.clear_component_in_transit_on_edge(instance.actor)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_ground_location(instance.actor, destination)
@@ -271,6 +273,18 @@ fn commit_travel(
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
     let current_tick = txn.tick();
+    emit_evidence(
+        txn,
+        origin,
+        worldwake_core::EvidenceKind::MovementTrace {
+            entity: instance.actor,
+            departed_from: origin,
+            direction: destination,
+            observed_at: current_tick,
+        },
+        30,
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
     let hostile = had_combat_during_travel(event_log, instance.actor, departure_tick, current_tick);
     record_route_experience(txn, instance.actor, edge_id, current_tick, hostile)?;
     Ok(CommitOutcome::empty())
@@ -309,14 +323,13 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, AgentBeliefStore, CauseRef, Container, ControlSource,
-        EdgeExperience, EventLog, EventPayload, EventView, InTransitOnEdge, LoadUnits,
-        MetabolismProfile, PendingEvent, PerceptionSource, Place, PreferenceProfile, Quantity,
-        RouteExperience, Seed, Topology, TravelEdge, WitnessData, World,
+        EdgeExperience, EventLog, EventPayload, EventView, EvidenceKind, InTransitOnEdge,
+        LoadUnits, MetabolismProfile, PendingEvent, PerceptionSource, Place, PreferenceProfile,
+        Quantity, RouteExperience, Seed, Tick, Topology, TravelEdge, WitnessData, World,
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionInstance, ActionInstanceId, DeterministicRng,
-        PerAgentBeliefView, TickOutcome,
+        ActionInstance, ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome,
     };
 
     use super::*;
@@ -550,7 +563,8 @@ mod tests {
 
     fn set_preference_profile(world: &mut World, actor: EntityId, profile: PreferenceProfile) {
         let mut txn = new_txn(world, 2);
-        txn.set_component_preference_profile(actor, profile).unwrap();
+        txn.set_component_preference_profile(actor, profile)
+            .unwrap();
         commit_txn(txn);
     }
 
@@ -707,6 +721,68 @@ mod tests {
             err,
             ActionError::PreconditionFailed("TargetAdjacentToActor(0)".to_string())
         );
+    }
+
+    #[test]
+    fn travel_commit_emits_movement_trace_at_departure_place() {
+        let (mut world, actor, bag, bread, origin, destination) = setup_world();
+        let (defs, handlers, travel_def) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+        let affordance = worldwake_sim::Affordance {
+            def_id: travel_def,
+            actor,
+            bound_targets: vec![destination],
+            payload_override: None,
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+
+        for tick in [6, 7, 8] {
+            let _ = tick_travel_action(
+                &mut world,
+                &mut log,
+                &mut active_actions,
+                &mut rng,
+                &defs,
+                &handlers,
+                instance_id,
+                tick,
+            );
+        }
+
+        let scene = world
+            .get_component_scene_evidence(origin)
+            .expect("travel should leave evidence at origin");
+        assert!(scene.evidence.iter().any(|entry| {
+            entry.kind
+                == EvidenceKind::MovementTrace {
+                    entity: actor,
+                    departed_from: origin,
+                    direction: destination,
+                    observed_at: Tick(8),
+                }
+        }));
+        assert_eq!(world.effective_place(actor), Some(destination));
+        assert_eq!(world.effective_place(bag), Some(destination));
+        assert_eq!(world.effective_place(bread), Some(destination));
     }
 
     #[test]
@@ -1198,11 +1274,8 @@ mod tests {
         // Set a MetabolismProfile with default (zero) travel multipliers.
         {
             let mut txn = new_txn(&mut world, 2);
-            txn.set_component_metabolism_profile(
-                actor,
-                MetabolismProfile::default(),
-            )
-            .unwrap();
+            txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+                .unwrap();
             commit_txn(txn);
         }
         let (defs, handlers, _) = setup_registries();

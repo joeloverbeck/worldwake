@@ -1,8 +1,10 @@
+use crate::experience_recording::{
+    record_failed_source_attempt, record_successful_source_acquisition,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     ActionDefId, CommodityKind, Container, EntityId, EntityKind, EventTag, LoadUnits,
-    ProductionOutputOwner, Quantity, SourceKey, VisibilitySpec, WorkstationMarker, World,
-    WorldTxn,
+    ProductionOutputOwner, Quantity, SourceKey, VisibilitySpec, WorkstationMarker, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -10,9 +12,6 @@ use worldwake_sim::{
     CommitOutcome, Constraint, CraftActionPayload, DeterministicRng, DurationExpr,
     HarvestActionPayload, Interruptibility, Precondition, RecipeDefinition, RecipeRegistry,
     ReservationReq, TargetSpec,
-};
-use crate::experience_recording::{
-    record_failed_source_attempt, record_successful_source_acquisition,
 };
 
 pub fn register_harvest_actions(
@@ -347,8 +346,8 @@ pub(crate) fn ensure_matching_contention_grant(
         }
         (None, Some(_)) => {
             return Err(ActionError::PreconditionFailed(format!(
-            "entity {entity} has ContentionQueue grant state without ContentionPolicy"
-        )))
+                "entity {entity} has ContentionQueue grant state without ContentionPolicy"
+            )))
         }
     };
     match queue.granted.as_ref() {
@@ -370,9 +369,7 @@ fn consume_matching_facility_grant(
     action_def: ActionDefId,
 ) -> Result<(), ActionError> {
     ensure_matching_contention_grant(txn, actor, facility, action_def)?;
-    if txn
-        .get_component_contention_policy(facility)
-        .is_none()
+    if txn.get_component_contention_policy(facility).is_none()
         && txn.get_component_contention_queue(facility).is_none()
     {
         return Ok(());
@@ -702,7 +699,8 @@ fn harvest_source_failed_intrinsically(
     let Some(source) = txn.get_component_resource_source(workstation) else {
         return true;
     };
-    source.commodity != payload.output_commodity || source.available_quantity < payload.output_quantity
+    source.commodity != payload.output_commodity
+        || source.available_quantity < payload.output_quantity
 }
 
 #[allow(clippy::too_many_arguments, clippy::unnecessary_wraps)]
@@ -723,7 +721,12 @@ fn record_harvest_start_failure(
         return Ok(());
     };
     if harvest_source_failed_intrinsically(txn, actor, workstation, payload, error) {
-        record_failed_source_attempt(txn, actor, harvest_source_key(payload, workstation), txn.tick())?;
+        record_failed_source_attempt(
+            txn,
+            actor,
+            harvest_source_key(payload, workstation),
+            txn.tick(),
+        )?;
     }
     Ok(())
 }
@@ -764,12 +767,12 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         build_believed_entity_state, build_prototype_world, AgentBeliefStore, BodyCostPerTick,
-        CauseRef, CommodityKind, Container, ControlSource, DeprivationExposure, DriveThresholds,
-        EntityId, EventId, EventLog, EventView, ContentionPolicy, ContentionQueue,
-        ContentionGrant, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource,
-        Permille, PreferenceProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        Quantity, RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource,
-        Seed, SourceKey, SourceReliability, StateDelta, Tick, VisibilitySpec, WitnessData,
+        CauseRef, CommodityKind, Container, ContentionGrant, ContentionPolicy, ContentionQueue,
+        ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog,
+        EventView, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource, Permille,
+        PreferenceProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
+        RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource, Seed,
+        SourceKey, SourceReliability, StateDelta, Tick, VisibilitySpec, WitnessData,
         WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
@@ -926,7 +929,8 @@ mod tests {
 
     fn set_source_reliability(world: &mut World, actor: EntityId, reliability: SourceReliability) {
         let mut txn = new_txn(world, 2);
-        txn.set_component_source_reliability(actor, reliability).unwrap();
+        txn.set_component_source_reliability(actor, reliability)
+            .unwrap();
         commit_txn(txn);
     }
 
@@ -1109,16 +1113,14 @@ mod tests {
             granted_at: Tick(granted_at),
             expires_at: Tick(granted_at + 3),
         });
-        txn.set_component_contention_queue(facility, queue)
-            .unwrap();
+        txn.set_component_contention_queue(facility, queue).unwrap();
         commit_txn(txn);
     }
 
     fn provision_facility_queue(world: &mut World, facility: EntityId, tick: u64) {
         let mut txn = new_txn(world, tick);
         let queue = ensure_facility_queue_components(&mut txn, facility);
-        txn.set_component_contention_queue(facility, queue)
-            .unwrap();
+        txn.set_component_contention_queue(facility, queue).unwrap();
         commit_txn(txn);
     }
 
@@ -1126,10 +1128,7 @@ mod tests {
         txn: &mut WorldTxn<'_>,
         facility: EntityId,
     ) -> ContentionQueue {
-        if txn
-            .get_component_contention_policy(facility)
-            .is_none()
-        {
+        if txn.get_component_contention_policy(facility).is_none() {
             txn.set_component_contention_policy(
                 facility,
                 ContentionPolicy {
@@ -1167,7 +1166,10 @@ mod tests {
                     event_log,
                     rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::SystemTick(Tick(tick)), Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::SystemTick(Tick(tick)),
+                    Tick(tick),
+                ),
             )
             .unwrap()
             {
@@ -1464,10 +1466,14 @@ mod tests {
 
         assert!(matches!(err, ActionError::PreconditionFailed(_)));
         assert_eq!(
-            world.get_component_source_reliability(actor).unwrap().sources.get(&SourceKey {
-                entity: workstation,
-                commodity: CommodityKind::Apple,
-            }),
+            world
+                .get_component_source_reliability(actor)
+                .unwrap()
+                .sources
+                .get(&SourceKey {
+                    entity: workstation,
+                    commodity: CommodityKind::Apple,
+                }),
             Some(&ReliabilityRecord {
                 successful_acquisitions: 0,
                 failed_attempts: 1,
@@ -1933,7 +1939,10 @@ mod tests {
                     event_log: &mut event_log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::SystemTick(Tick(tick)), Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::SystemTick(Tick(tick)),
+                    Tick(tick),
+                ),
             )
             .unwrap();
 
@@ -2131,7 +2140,10 @@ mod tests {
                 event_log: &mut event_log,
                 rng: &mut rng,
             },
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::SystemTick(Tick(11)), Tick(11)),
+            worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::SystemTick(Tick(11)),
+                Tick(11),
+            ),
         )
         .unwrap();
         assert_eq!(first_tick, TickOutcome::Continuing);
@@ -2153,7 +2165,10 @@ mod tests {
                 event_log: &mut event_log,
                 rng: &mut rng,
             },
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::SystemTick(Tick(12)), Tick(12)),
+            worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::SystemTick(Tick(12)),
+                Tick(12),
+            ),
         )
         .unwrap();
         assert!(matches!(second_tick, TickOutcome::Committed { .. }));
@@ -2420,7 +2435,10 @@ mod tests {
                     event_log: &mut event_log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::SystemTick(Tick(tick)), Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::SystemTick(Tick(tick)),
+                    Tick(tick),
+                ),
             )
             .unwrap();
 
@@ -2656,7 +2674,10 @@ mod tests {
                     event_log: &mut event_log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::SystemTick(Tick(tick)), Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::SystemTick(Tick(tick)),
+                    Tick(tick),
+                ),
             ) {
                 Ok(TickOutcome::Continuing) => {}
                 Ok(TickOutcome::Committed { .. }) => {
@@ -2773,7 +2794,10 @@ mod tests {
                     event_log: &mut event_log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::SystemTick(Tick(tick)), Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::SystemTick(Tick(tick)),
+                    Tick(tick),
+                ),
             ) {
                 Ok(TickOutcome::Continuing) => {}
                 Ok(TickOutcome::Committed { .. }) => {
@@ -3050,7 +3074,10 @@ mod tests {
                     event_log: &mut event_log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::SystemTick(Tick(tick)), Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::SystemTick(Tick(tick)),
+                    Tick(tick),
+                ),
             ) {
                 Ok(TickOutcome::Continuing) => {}
                 Ok(TickOutcome::Committed { .. }) => {

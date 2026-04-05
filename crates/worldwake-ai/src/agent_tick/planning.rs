@@ -10,13 +10,12 @@ use crate::search::PlanSearchResult;
 use crate::{
     authoritative_target, build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
     search_plan, select_best_plan, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
-    ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep,
-    PlannerOpSemantics, RankedGoal,
+    ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics,
+    RankedGoal,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockedIntentMemory, IntentionFrame, Permille, ReasoningProfile,
-    Tick,
+    ActionDefId, ActiveGoal, BlockedIntentMemory, IntentionFrame, Permille, ReasoningProfile, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, GoalBeliefView, RecipeRegistry, RuntimeBeliefView, Scheduler,
@@ -397,18 +396,16 @@ fn try_continue_snapshot_plan(
         return None;
     }
 
-    let current_goal_still_top = ranked_candidates
-        .first()
-        .is_some_and(|top| {
-            Some(top.grounded.key) == active_goal_key
-                && runtime.current_plan.as_ref().is_some_and(|plan| {
-                    plan.opportunity
-                        == crate::OpportunityKey {
-                            goal_key: top.grounded.key,
-                            anchor: top.grounded.anchor,
-                        }
-                })
-        });
+    let current_goal_still_top = ranked_candidates.first().is_some_and(|top| {
+        Some(top.grounded.key) == active_goal_key
+            && runtime.current_plan.as_ref().is_some_and(|plan| {
+                plan.opportunity
+                    == crate::OpportunityKey {
+                        goal_key: top.grounded.key,
+                        anchor: top.grounded.anchor,
+                    }
+            })
+    });
     if !current_goal_still_top {
         return None;
     }
@@ -742,8 +739,8 @@ pub(super) fn plan_and_validate_next_step_traced(
                         plan_continued = true;
                         selection_trace.selected_opportunity =
                             runtime.current_plan.as_ref().map(|plan| plan.opportunity);
-                        selection_trace.selected_plan = runtime.current_plan.as_ref().and_then(
-                            |plan| {
+                        selection_trace.selected_plan =
+                            runtime.current_plan.as_ref().and_then(|plan| {
                                 selected_plan_value(ranked_candidates, plan, side_benefit_weight)
                                     .map(|plan_value| {
                                         summarize_selected_plan(
@@ -754,8 +751,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                                             &plan_value,
                                         )
                                     })
-                            },
-                        );
+                            });
                         selection_trace.selected_plan_source =
                             Some(SelectedPlanSource::SnapshotContinuation);
                         return (
@@ -847,12 +843,9 @@ pub(super) fn plan_and_validate_next_step_traced(
                 matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
                     .then(|| summarize_search_provenance(&plans, selected_opportunity))
                     .flatten();
-            let plan_value = selected_plan_value(
-                ranked_candidates,
-                &selected_plan,
-                side_benefit_weight,
-            )
-            .expect("selected plan must map back to a ranked opportunity");
+            let plan_value =
+                selected_plan_value(ranked_candidates, &selected_plan, side_benefit_weight)
+                    .expect("selected plan must map back to a ranked opportunity");
             selection_trace.selected_opportunity = Some(selected_plan.opportunity);
             selection_trace.selected_plan = Some(summarize_selected_plan(
                 &selected_plan,
@@ -991,10 +984,11 @@ mod tests {
     use crate::{
         build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
-        feasibility::FeasibilityHint, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
-        ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind,
-        GoalPriorityClass, GroundedGoal, OpportunityAnchor, OpportunityKey, PlanSearchResult,
-        PlanTerminalKind, PlannedPlan, PlannedStep, ReasoningProfile, RankedGoal,
+        feasibility::FeasibilityHint,
+        AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
+        ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
+        OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
+        PlannedStep, RankedGoal, ReasoningProfile,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
@@ -1311,14 +1305,12 @@ mod tests {
                 feasibility: FeasibilityHint::Likely,
             },
         ];
-        let plan_value = selected_plan_value(
-            &ranked_candidates,
-            &plan,
-            Permille::new(100).unwrap(),
-        )
-        .expect("selected plan should resolve to ranked primary motive");
+        let plan_value =
+            selected_plan_value(&ranked_candidates, &plan, Permille::new(100).unwrap())
+                .expect("selected plan should resolve to ranked primary motive");
 
-        let summary = summarize_selected_plan(&plan, 0, &ActionDefRegistry::new(), None, &plan_value);
+        let summary =
+            summarize_selected_plan(&plan, 0, &ActionDefRegistry::new(), None, &plan_value);
 
         assert_eq!(summary.primary_motive, 800);
         assert_eq!(summary.total_value, 830);

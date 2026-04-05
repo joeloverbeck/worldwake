@@ -63,9 +63,7 @@ impl Component for SceneEvidence {}
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence,
-    };
+    use super::{DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence};
     use crate::{traits::Component, EntityId, Permille, Tick};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt::Debug;

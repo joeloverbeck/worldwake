@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use worldwake_core::{
-    ArtifactHeader, ArtifactKind, ArtifactState, BountyTarget, BountyTerms, BodyCostPerTick,
+    ArtifactHeader, ArtifactKind, ArtifactState, BodyCostPerTick, BountyTarget, BountyTerms,
     ContentionPolicy, ContentionQueue, EntityId, EntityKind, EventLog, EventTag, NoticeContent,
     NoticeTopic, Quantity, RewardSource, Tick, VisibilitySpec, World, WorldTxn,
 };
@@ -10,8 +10,8 @@ use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionExecutionContext, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
     ActionPayload, ActionProgress, ActionState, CommitOutcome, Constraint, DeterministicRng,
-    DurationExpr, Interruptibility, PostBountyActionPayload, PostNoticeActionPayload,
-    Precondition, RuntimeBeliefView, TargetSpec,
+    DurationExpr, Interruptibility, PostBountyActionPayload, PostNoticeActionPayload, Precondition,
+    RuntimeBeliefView, TargetSpec,
 };
 
 pub fn register_artifact_actions(
@@ -155,10 +155,7 @@ fn post_notice_action_def(id: worldwake_core::ActionDefId, handler: ActionHandle
     }
 }
 
-fn claim_bounty_action_def(
-    id: worldwake_core::ActionDefId,
-    handler: ActionHandlerId,
-) -> ActionDef {
+fn claim_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandlerId) -> ActionDef {
     ActionDef {
         id,
         name: "claim_bounty".to_string(),
@@ -260,7 +257,10 @@ fn validate_target_place(world: &World, place: EntityId) -> Result<(), ActionErr
     Ok(())
 }
 
-fn validate_expiration_tick(current_tick: Tick, expires_at: Option<Tick>) -> Result<(), ActionError> {
+fn validate_expiration_tick(
+    current_tick: Tick,
+    expires_at: Option<Tick>,
+) -> Result<(), ActionError> {
     if expires_at.is_some_and(|expires_at| expires_at <= current_tick) {
         return Err(ActionError::PreconditionFailed(format!(
             "artifact expiration tick {expires_at:?} must be after current tick {current_tick}"
@@ -278,7 +278,9 @@ fn validate_bounty_target(world: &World, target: BountyTarget) -> Result<(), Act
                 )));
             }
         }
-        BountyTarget::DeliverCommodity { destination, .. } => validate_target_place(world, destination)?,
+        BountyTarget::DeliverCommodity { destination, .. } => {
+            validate_target_place(world, destination)?;
+        }
     }
     Ok(())
 }
@@ -521,7 +523,9 @@ fn validate_bounty_claim_target(
     let header = txn
         .get_component_artifact_header(target)
         .cloned()
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("artifact {target} lacks header")))?;
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("artifact {target} lacks header"))
+        })?;
     if header.kind != ArtifactKind::Bounty {
         return Err(ActionError::PreconditionFailed(format!(
             "artifact {target} is not a bounty"
@@ -535,7 +539,9 @@ fn validate_bounty_claim_target(
     let terms = txn
         .get_component_bounty_terms(target)
         .cloned()
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("artifact {target} lacks bounty terms")))?;
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("artifact {target} lacks bounty terms"))
+        })?;
     if actor_place != terms.claim_place {
         return Err(ActionError::PreconditionFailed(format!(
             "actor {actor} is not at claim place {} for bounty {target}",
@@ -563,7 +569,8 @@ fn validate_bounty_target_satisfied(
             quantity,
             destination,
         } => {
-            if txn.controlled_commodity_quantity_at_place(actor, destination, commodity) < quantity {
+            if txn.controlled_commodity_quantity_at_place(actor, destination, commodity) < quantity
+            {
                 return Err(ActionError::PreconditionFailed(format!(
                     "actor {actor} has not delivered {:?} x{} to destination {destination}",
                     commodity, quantity.0
@@ -623,7 +630,8 @@ fn validate_bounty_claim_proof(
                 quantity,
                 destination,
             } => {
-                if txn.controlled_commodity_quantity_at_place(actor, destination, commodity) < quantity
+                if txn.controlled_commodity_quantity_at_place(actor, destination, commodity)
+                    < quantity
                 {
                     return Err(ActionError::PreconditionFailed(format!(
                         "insufficient proof: actor {actor} lacks delivered {:?} x{} at {destination}",
@@ -688,11 +696,15 @@ fn claim_or_require_bounty_grant(
     let policy = txn
         .get_component_contention_policy(target)
         .cloned()
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("bounty {target} lacks ContentionPolicy")))?;
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("bounty {target} lacks ContentionPolicy"))
+        })?;
     let mut queue = txn
         .get_component_contention_queue(target)
         .cloned()
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("bounty {target} lacks ContentionQueue")))?;
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("bounty {target} lacks ContentionQueue"))
+        })?;
 
     match queue.granted.as_ref() {
         Some(granted) if granted.actor == actor && granted.intended_action == action_def => {
@@ -776,7 +788,7 @@ fn resolve_controlled_lots(
             (lot.commodity == commodity
                 && txn.can_exercise_control(holder, entity).is_ok()
                 && txn.effective_place(entity) == Some(place))
-                .then_some((entity, lot.quantity))
+            .then_some((entity, lot.quantity))
         })
         .collect::<Vec<_>>();
     lots.sort_by_key(|(entity, _)| *entity);
@@ -849,7 +861,8 @@ fn transfer_controlled_commodity(
     place: EntityId,
 ) -> Result<(), ActionError> {
     ensure_accessible_quantity(txn, holder, commodity, quantity)?;
-    for (lot_id, moved_quantity) in resolve_controlled_lots(txn, holder, commodity, quantity, place)?
+    for (lot_id, moved_quantity) in
+        resolve_controlled_lots(txn, holder, commodity, quantity, place)?
     {
         transfer_lot_to_holder(txn, lot_id, new_holder, place, moved_quantity)?;
     }
@@ -864,10 +877,9 @@ fn transfer_reserved_reward_lot(
     commodity: worldwake_core::CommodityKind,
     quantity: Quantity,
 ) -> Result<(), ActionError> {
-    let item_lot = txn
-        .get_component_item_lot(lot)
-        .cloned()
-        .ok_or_else(|| ActionError::PreconditionFailed(format!("reserved reward lot {lot} is not an item lot")))?;
+    let item_lot = txn.get_component_item_lot(lot).cloned().ok_or_else(|| {
+        ActionError::PreconditionFailed(format!("reserved reward lot {lot} is not an item lot"))
+    })?;
     if item_lot.commodity != commodity {
         return Err(ActionError::PreconditionFailed(format!(
             "reserved reward lot {lot} commodity {:?} does not match promised {:?}",
@@ -1088,8 +1100,13 @@ fn commit_post_notice(
         },
     )
     .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    txn.set_component_notice_content(artifact, NoticeContent { topic: payload.topic })
-        .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    txn.set_component_notice_content(
+        artifact,
+        NoticeContent {
+            topic: payload.topic,
+        },
+    )
+    .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.set_ground_location(artifact, posting_place)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.add_target(artifact).add_target(posting_place);
@@ -1132,7 +1149,8 @@ fn commit_claim_bounty(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let target = artifact_target_from_instance(instance)?;
-    let (actor_place, mut header, terms) = validate_bounty_claim_target(txn, instance.actor, target)?;
+    let (actor_place, mut header, terms) =
+        validate_bounty_claim_target(txn, instance.actor, target)?;
     validate_bounty_target_satisfied(txn, instance.actor, &terms)?;
     validate_bounty_claim_proof(txn, instance.actor, actor_place, &terms)?;
     claim_or_require_bounty_grant(txn, instance.actor, target, def.id, false)?;
@@ -1212,9 +1230,9 @@ mod tests {
     };
     use worldwake_sim::{
         start_action, tick_action, ActionDefRegistry, ActionError, ActionExecutionAuthority,
-        ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionPayload,
-        Affordance, DeterministicRng, PerAgentBeliefView, PostBountyActionPayload,
-        PostNoticeActionPayload, TickOutcome,
+        ActionExecutionContext, ActionHandlerRegistry, ActionInstanceId, ActionPayload, Affordance,
+        DeterministicRng, PerAgentBeliefView, PostBountyActionPayload, PostNoticeActionPayload,
+        TickOutcome,
     };
 
     use super::*;
@@ -1262,7 +1280,8 @@ mod tests {
 
     fn kill_entity(world: &mut World, entity: EntityId, tick: u64) {
         let mut txn = new_txn(world, tick);
-        txn.set_component_dead_at(entity, DeadAt(Tick(tick))).unwrap();
+        txn.set_component_dead_at(entity, DeadAt(Tick(tick)))
+            .unwrap();
         commit_txn(txn);
     }
 
@@ -1399,8 +1418,14 @@ mod tests {
         assert_eq!(defs.get(ids[0]).unwrap().name, "post_bounty");
         assert_eq!(defs.get(ids[1]).unwrap().name, "post_notice");
         assert_eq!(defs.get(ids[2]).unwrap().name, "claim_bounty");
-        assert_eq!(defs.get(ids[0]).unwrap().targets, vec![TargetSpec::ActorPlace]);
-        assert_eq!(defs.get(ids[1]).unwrap().targets, vec![TargetSpec::ActorPlace]);
+        assert_eq!(
+            defs.get(ids[0]).unwrap().targets,
+            vec![TargetSpec::ActorPlace]
+        );
+        assert_eq!(
+            defs.get(ids[1]).unwrap().targets,
+            vec![TargetSpec::ActorPlace]
+        );
         assert_eq!(
             defs.get(ids[2]).unwrap().targets,
             vec![TargetSpec::SpecificEntity(EntityId {
@@ -1491,11 +1516,17 @@ mod tests {
             ArtifactKind::Bounty
         );
         assert_eq!(
-            world.get_component_bounty_terms(artifact).unwrap().reward_quantity,
+            world
+                .get_component_bounty_terms(artifact)
+                .unwrap()
+                .reward_quantity,
             Quantity(4)
         );
         assert_eq!(
-            world.get_component_contention_policy(artifact).unwrap().max_waiters,
+            world
+                .get_component_contention_policy(artifact)
+                .unwrap()
+                .max_waiters,
             Some(0)
         );
         assert_eq!(
@@ -1692,13 +1723,11 @@ mod tests {
             Quantity(0)
         );
         assert_eq!(sum_commodity(&world, CommodityKind::Coin), total_before);
-        assert!(
-            world
-                .get_component_contention_queue(bounty)
-                .unwrap()
-                .granted
-                .is_none()
-        );
+        assert!(world
+            .get_component_contention_queue(bounty)
+            .unwrap()
+            .granted
+            .is_none());
     }
 
     #[test]
@@ -1793,7 +1822,9 @@ mod tests {
         kill_entity(&mut world, target, 2);
         let reward_lot = {
             let mut txn = new_txn(&mut world, 2);
-            let lot = txn.create_item_lot(CommodityKind::Coin, Quantity(4)).unwrap();
+            let lot = txn
+                .create_item_lot(CommodityKind::Coin, Quantity(4))
+                .unwrap();
             txn.set_ground_location(lot, claim_place).unwrap();
             txn.set_owner(lot, issuer).unwrap();
             commit_txn(txn);
@@ -2048,7 +2079,8 @@ mod tests {
                     source: PerceptionSource::DirectObservation,
                 },
             );
-            txn.set_component_agent_belief_store(claimant, beliefs).unwrap();
+            txn.set_component_agent_belief_store(claimant, beliefs)
+                .unwrap();
             commit_txn(txn);
         }
 

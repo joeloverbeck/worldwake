@@ -11,7 +11,7 @@ use crate::{
     build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
     build_semantics_table, CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanSearchResult,
     PlanTerminalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
-    ReasoningProfile, PlanningEntityRef, PlanningSnapshot, PlanningState,
+    PlanningEntityRef, PlanningSnapshot, PlanningState, ReasoningProfile,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
@@ -21,16 +21,15 @@ use worldwake_core::{
     test_utils::sample_trade_disposition_profile, ActionDefId, ArtifactKind,
     ArtifactPostingContext, ArtifactState, BelievedArtifactState, BelievedBountyTerms,
     BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
-    BodyCostPerTick, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CauseRef,
-    CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DeadAt,
-    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
-    DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
-    EventLog, ContentionPolicy, ContentionQueue, ContentionGrant, HomeostaticNeeds,
-    InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    NoticeTopic, PerceptionSource, Permille, Place, PlaceTag, ProofRequirement,
-    PrototypePlace, Quantity, RecipeId, ResourceSource, RewardSource,
-    TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
-    TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
+    BodyCostPerTick, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CauseRef, CombatProfile,
+    CommodityConsumableProfile, CommodityKind, ContentionGrant, ContentionPolicy, ContentionQueue,
+    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
+    DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+    EpistemicDispositionProfile, EventLog, HomeostaticNeeds, InTransitOnEdge, KnownRecipes,
+    LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, PerceptionSource, Permille,
+    Place, PlaceTag, ProofRequirement, PrototypePlace, Quantity, RecipeId, ResourceSource,
+    RewardSource, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
+    TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
     WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
 };
 use worldwake_sim::{
@@ -219,7 +218,10 @@ impl RuntimeBeliefView for TestBeliefView {
     fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
         None
     }
-    fn stock_storage_policy(&self, facility: EntityId) -> Option<worldwake_core::StockStoragePolicy> {
+    fn stock_storage_policy(
+        &self,
+        facility: EntityId,
+    ) -> Option<worldwake_core::StockStoragePolicy> {
         self.stock_storage_policies.get(&facility).cloned()
     }
     fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
@@ -317,11 +319,7 @@ impl RuntimeBeliefView for TestBeliefView {
     fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
         self.attackers.get(&agent).cloned().unwrap_or_default()
     }
-    fn listed_sale_lots_at(
-        &self,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Vec<EntityId> {
+    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
         self.listed_lots
             .get(&(place, commodity))
             .cloned()
@@ -1058,7 +1056,8 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
     view.effective_places.insert(actor, town);
     view.effective_places.insert(seller, town);
     view.effective_places.insert(seller_lot, town);
-    view.entities_at.insert(town, vec![actor, seller, seller_lot]);
+    view.entities_at
+        .insert(town, vec![actor, seller, seller_lot]);
     view.lot_commodities
         .insert(seller_lot, CommodityKind::Bread);
     view.lot_sellers.insert(seller_lot, seller);
@@ -1885,7 +1884,8 @@ fn cargo_search_finds_pickup_then_travel_plan() {
     let bread = entity(20);
     let mut view = TestBeliefView::default();
     let facility = entity(12);
-    view.alive.extend([actor, origin, destination, facility, bread]);
+    view.alive
+        .extend([actor, origin, destination, facility, bread]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(origin, EntityKind::Place);
     view.kinds.insert(destination, EntityKind::Place);
@@ -1980,7 +1980,8 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
     let bread = entity(20);
     let mut view = TestBeliefView::default();
     let facility = entity(12);
-    view.alive.extend([actor, origin, destination, facility, bread]);
+    view.alive
+        .extend([actor, origin, destination, facility, bread]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(origin, EntityKind::Place);
     view.kinds.insert(destination, EntityKind::Place);
@@ -2103,11 +2104,8 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
     view.lot_commodities.insert(bread, CommodityKind::Bread);
     view.commodity_quantities
         .insert((bread, CommodityKind::Bread), Quantity(2));
-    view.controllable.extend([
-        (actor, bread),
-        (actor, facility),
-        (actor, stock_container),
-    ]);
+    view.controllable
+        .extend([(actor, bread), (actor, facility), (actor, stock_container)]);
     view.carry_capacities.insert(actor, LoadUnits(4));
     view.entity_loads.insert(actor, LoadUnits(0));
     view.entity_loads.insert(bread, LoadUnits(2));
@@ -2177,7 +2175,9 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[2].op_kind, PlannerOpKind::StockManagement);
     assert_eq!(
-        registry.get(plan.steps[2].def_id).map(|def| def.name.as_str()),
+        registry
+            .get(plan.steps[2].def_id)
+            .map(|def| def.name.as_str()),
         Some("store_stock")
     );
 }
@@ -2275,7 +2275,9 @@ fn sell_search_for_stored_home_stock_requires_stage_before_goal_satisfaction() {
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::StockManagement);
     assert_eq!(
-        registry.get(plan.steps[0].def_id).map(|def| def.name.as_str()),
+        registry
+            .get(plan.steps[0].def_id)
+            .map(|def| def.name.as_str()),
         Some("stage_stock_for_sale")
     );
 }
@@ -3435,7 +3437,9 @@ fn build_contention_corpse_fixture() -> ContentionCorpseFixture {
         let actor = txn.create_agent("Gravedigger", ControlSource::Ai).unwrap();
         let corpse = txn.create_agent("Corpse", ControlSource::Ai).unwrap();
         let grave_plot = txn.create_entity(EntityKind::Facility);
-        let coins = txn.create_item_lot(CommodityKind::Coin, Quantity(3)).unwrap();
+        let coins = txn
+            .create_item_lot(CommodityKind::Coin, Quantity(3))
+            .unwrap();
         txn.set_ground_location(actor, town).unwrap();
         txn.set_ground_location(corpse, town).unwrap();
         txn.set_ground_location(grave_plot, town).unwrap();
@@ -3464,7 +3468,9 @@ fn build_contention_corpse_fixture() -> ContentionCorpseFixture {
     };
     sync_all_beliefs(&mut world, actor, Tick(1));
     patch_believed_entity_state(&mut world, actor, corpse, Tick(1), |state| {
-        state.last_known_inventory.insert(CommodityKind::Coin, Quantity(3));
+        state
+            .last_known_inventory
+            .insert(CommodityKind::Coin, Quantity(3));
         state.alive = false;
     });
 
@@ -3519,8 +3525,13 @@ fn build_contention_care_fixture() -> ContentionCareFixture {
         txn.set_ground_location(patient, town).unwrap();
         txn.set_ground_location(medicine, town).unwrap();
         txn.set_possessor(medicine, actor).unwrap();
-        txn.set_component_wound_list(patient, worldwake_core::WoundList { wounds: vec![wound(400)] })
-            .unwrap();
+        txn.set_component_wound_list(
+            patient,
+            worldwake_core::WoundList {
+                wounds: vec![wound(400)],
+            },
+        )
+        .unwrap();
         txn.set_component_contention_policy(
             patient,
             ContentionPolicy {
@@ -4004,8 +4015,13 @@ fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant
         explanation: None,
         contention_status: worldwake_core::ContentionStatus::Available,
     };
-    let queue_candidates =
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance);
+    let queue_candidates = search_candidates_from_affordance(
+        &goal,
+        &state,
+        &fixture.registry,
+        &fixture.handlers,
+        &queue_affordance,
+    );
 
     assert_eq!(queue_candidates.len(), 1);
     assert_eq!(
@@ -4031,8 +4047,14 @@ fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant
     };
 
     assert!(
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &direct_loot_affordance)
-            .is_empty(),
+        search_candidates_from_affordance(
+            &goal,
+            &state,
+            &fixture.registry,
+            &fixture.handlers,
+            &direct_loot_affordance
+        )
+        .is_empty(),
         "direct loot should not search as available until the actor holds the grant"
     );
 }
@@ -4111,8 +4133,13 @@ fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant
         explanation: None,
         contention_status: worldwake_core::ContentionStatus::Available,
     };
-    let queue_candidates =
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance);
+    let queue_candidates = search_candidates_from_affordance(
+        &goal,
+        &state,
+        &fixture.registry,
+        &fixture.handlers,
+        &queue_affordance,
+    );
 
     assert_eq!(queue_candidates.len(), 1);
     assert_eq!(
@@ -4138,8 +4165,14 @@ fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant
     };
 
     assert!(
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &direct_bury_affordance)
-            .is_empty(),
+        search_candidates_from_affordance(
+            &goal,
+            &state,
+            &fixture.registry,
+            &fixture.handlers,
+            &direct_bury_affordance
+        )
+        .is_empty(),
         "direct bury should not search as available until the actor holds the grant"
     );
 }
@@ -4218,8 +4251,13 @@ fn care_queue_affordance_expands_to_heal_and_filters_direct_heal_without_grant()
         explanation: None,
         contention_status: worldwake_core::ContentionStatus::Available,
     };
-    let queue_candidates =
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance);
+    let queue_candidates = search_candidates_from_affordance(
+        &goal,
+        &state,
+        &fixture.registry,
+        &fixture.handlers,
+        &queue_affordance,
+    );
 
     assert_eq!(queue_candidates.len(), 1);
     assert_eq!(
@@ -4245,8 +4283,14 @@ fn care_queue_affordance_expands_to_heal_and_filters_direct_heal_without_grant()
     };
 
     assert!(
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &direct_heal_affordance)
-            .is_empty(),
+        search_candidates_from_affordance(
+            &goal,
+            &state,
+            &fixture.registry,
+            &fixture.handlers,
+            &direct_heal_affordance
+        )
+        .is_empty(),
         "direct heal should not search as available until the actor holds the grant"
     );
 }
@@ -4310,8 +4354,14 @@ fn care_queue_affordance_does_not_expand_when_actor_cannot_currently_heal() {
     };
 
     assert!(
-        search_candidates_from_affordance(&goal, &state, &fixture.registry, &fixture.handlers, &queue_affordance)
-            .is_empty(),
+        search_candidates_from_affordance(
+            &goal,
+            &state,
+            &fixture.registry,
+            &fixture.handlers,
+            &queue_affordance
+        )
+        .is_empty(),
         "queue_for_care_target should not expand when the actor cannot currently perform heal"
     );
 }
@@ -4441,7 +4491,8 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
 
-    let queue_candidates = search_candidates_from_affordance(&goal, &state, &registry, &handlers, &affordance);
+    let queue_candidates =
+        search_candidates_from_affordance(&goal, &state, &registry, &handlers, &affordance);
 
     assert_eq!(queue_candidates.len(), 2);
     let intended_actions = queue_candidates
@@ -4517,8 +4568,14 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
     view.lot_commodities.insert(lot_b, CommodityKind::Bread);
     view.direct_possessors.insert(lot_a, seller_a);
     view.direct_possessors.insert(lot_b, seller_b);
-    view.direct_possessions.entry(seller_a).or_default().push(lot_a);
-    view.direct_possessions.entry(seller_b).or_default().push(lot_b);
+    view.direct_possessions
+        .entry(seller_a)
+        .or_default()
+        .push(lot_a);
+    view.direct_possessions
+        .entry(seller_b)
+        .or_default()
+        .push(lot_b);
     view.listed_lots
         .insert((market, CommodityKind::Bread), vec![lot_a, lot_b]);
     view.lot_sellers.insert(lot_a, seller_a);
@@ -4577,10 +4634,20 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
         contention_status: worldwake_core::ContentionStatus::Unmanaged,
     };
 
-    let wrong_candidates =
-        search_candidates_from_affordance(&goal, &state, &registry, &handlers, &local_seller_affordance);
-    let correct_candidates =
-        search_candidates_from_affordance(&goal, &state, &registry, &handlers, &remote_seller_affordance);
+    let wrong_candidates = search_candidates_from_affordance(
+        &goal,
+        &state,
+        &registry,
+        &handlers,
+        &local_seller_affordance,
+    );
+    let correct_candidates = search_candidates_from_affordance(
+        &goal,
+        &state,
+        &registry,
+        &handlers,
+        &remote_seller_affordance,
+    );
 
     assert!(wrong_candidates.is_empty());
     assert_eq!(correct_candidates.len(), 1);
@@ -6116,14 +6183,13 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
     view.entities_at.insert(claim_place, Vec::new());
     view.adjacent
         .insert(origin, vec![(destination, NonZeroU32::new(2).unwrap())]);
-    view.adjacent
-        .insert(
-            destination,
-            vec![
-                (origin, NonZeroU32::new(2).unwrap()),
-                (claim_place, NonZeroU32::new(1).unwrap()),
-            ],
-        );
+    view.adjacent.insert(
+        destination,
+        vec![
+            (origin, NonZeroU32::new(2).unwrap()),
+            (claim_place, NonZeroU32::new(1).unwrap()),
+        ],
+    );
     view.adjacent.insert(
         claim_place,
         vec![(destination, NonZeroU32::new(1).unwrap())],
@@ -6176,10 +6242,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
                 bread,
                 BelievedEntityState {
                     last_known_place: Some(origin),
-                    last_known_inventory: BTreeMap::from([(
-                        CommodityKind::Bread,
-                        Quantity(3),
-                    )]),
+                    last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
                     workstation_tag: None,
                     resource_source: None,
                     alive: true,
@@ -6225,11 +6288,15 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
     .unwrap();
 
     assert!(
-        plan.steps.iter().any(|step| step.op_kind == PlannerOpKind::MoveCargo),
+        plan.steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::MoveCargo),
         "delivery bounty plan should use cargo movement"
     );
     assert!(
-        plan.steps.iter().any(|step| step.op_kind == PlannerOpKind::Travel),
+        plan.steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::Travel),
         "delivery bounty plan should use travel"
     );
     assert!(
@@ -6365,7 +6432,8 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
     let bread = entity(20);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, bounty, issuer, origin, destination, bread]);
+    view.alive
+        .extend([actor, bounty, issuer, origin, destination, bread]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(bounty, EntityKind::SocialArtifact);
     view.kinds.insert(issuer, EntityKind::Agent);
@@ -6424,10 +6492,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
                 bread,
                 BelievedEntityState {
                     last_known_place: Some(origin),
-                    last_known_inventory: BTreeMap::from([(
-                        CommodityKind::Bread,
-                        Quantity(3),
-                    )]),
+                    last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
                     workstation_tag: None,
                     resource_source: None,
                     alive: true,
@@ -6558,10 +6623,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
                 bread,
                 BelievedEntityState {
                     last_known_place: Some(destination),
-                    last_known_inventory: BTreeMap::from([(
-                        CommodityKind::Bread,
-                        Quantity(3),
-                    )]),
+                    last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
                     workstation_tag: None,
                     resource_source: None,
                     alive: true,
@@ -8797,7 +8859,8 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
         current_tick: Tick(10),
         ..TestBeliefView::default()
     };
-    view.alive.extend([actor, target, actor_place, remote_place]);
+    view.alive
+        .extend([actor, target, actor_place, remote_place]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(target, EntityKind::Agent);
     view.kinds.insert(actor_place, EntityKind::Place);
@@ -8805,16 +8868,18 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
     view.effective_places.insert(actor, actor_place);
     // Target believed at remote place.
     view.effective_places.insert(target, remote_place);
-    view.entities_at
-        .insert(actor_place, vec![actor]);
-    view.entities_at
-        .insert(remote_place, vec![target]);
+    view.entities_at.insert(actor_place, vec![actor]);
+    view.entities_at.insert(remote_place, vec![target]);
     view.thresholds.insert(actor, DriveThresholds::default());
     // Connect places bidirectionally.
-    view.adjacent
-        .insert(actor_place, vec![(remote_place, NonZeroU32::new(2).unwrap())]);
-    view.adjacent
-        .insert(remote_place, vec![(actor_place, NonZeroU32::new(2).unwrap())]);
+    view.adjacent.insert(
+        actor_place,
+        vec![(remote_place, NonZeroU32::new(2).unwrap())],
+    );
+    view.adjacent.insert(
+        remote_place,
+        vec![(actor_place, NonZeroU32::new(2).unwrap())],
+    );
     // Actor believes target is at remote_place.
     view.known_entity_beliefs.insert(
         actor,
@@ -8896,23 +8961,26 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
         current_tick: Tick(10),
         ..TestBeliefView::default()
     };
-    view.alive.extend([actor, target, actor_place, remote_place]);
+    view.alive
+        .extend([actor, target, actor_place, remote_place]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(target, EntityKind::Agent);
     view.kinds.insert(actor_place, EntityKind::Place);
     view.kinds.insert(remote_place, EntityKind::Place);
     view.effective_places.insert(actor, actor_place);
     view.effective_places.insert(target, remote_place);
-    view.entities_at
-        .insert(actor_place, vec![actor]);
-    view.entities_at
-        .insert(remote_place, vec![target]);
+    view.entities_at.insert(actor_place, vec![actor]);
+    view.entities_at.insert(remote_place, vec![target]);
     view.thresholds.insert(actor, DriveThresholds::default());
     view.hostiles.insert(actor, vec![target]);
-    view.adjacent
-        .insert(actor_place, vec![(remote_place, NonZeroU32::new(2).unwrap())]);
-    view.adjacent
-        .insert(remote_place, vec![(actor_place, NonZeroU32::new(2).unwrap())]);
+    view.adjacent.insert(
+        actor_place,
+        vec![(remote_place, NonZeroU32::new(2).unwrap())],
+    );
+    view.adjacent.insert(
+        remote_place,
+        vec![(actor_place, NonZeroU32::new(2).unwrap())],
+    );
     view.known_entity_beliefs.insert(
         actor,
         vec![(

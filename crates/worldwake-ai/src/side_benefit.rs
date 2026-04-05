@@ -111,9 +111,9 @@ fn candidate_target_place(candidate: &RankedGoal) -> Option<EntityId> {
 }
 
 fn capped_total_value(primary_motive: u32, side_benefits: &[SideBenefit]) -> u32 {
-    let side_benefit_total = side_benefits
-        .iter()
-        .fold(0u32, |acc, benefit| acc.saturating_add(benefit.estimated_value));
+    let side_benefit_total = side_benefits.iter().fold(0u32, |acc, benefit| {
+        acc.saturating_add(benefit.estimated_value)
+    });
     let cap = primary_motive.saturating_mul(3) / 2;
     primary_motive.saturating_add(side_benefit_total).min(cap)
 }
@@ -126,7 +126,10 @@ mod tests {
         PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
     };
     use std::collections::BTreeSet;
-    use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, Permille};
+    use worldwake_core::{
+        ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey,
+        Permille,
+    };
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -135,11 +138,7 @@ mod tests {
         }
     }
 
-    fn ranked(
-        goal: GoalKind,
-        anchor: OpportunityAnchor,
-        motive_score: u32,
-    ) -> RankedGoal {
+    fn ranked(goal: GoalKind, anchor: OpportunityAnchor, motive_score: u32) -> RankedGoal {
         RankedGoal {
             grounded: GroundedGoal {
                 key: GoalKey::from(goal),
@@ -171,7 +170,9 @@ mod tests {
     fn hypothetical_travel_step() -> PlannedStep {
         PlannedStep {
             def_id: ActionDefId(2),
-            targets: vec![PlanningEntityRef::Hypothetical(crate::HypotheticalEntityId(7))],
+            targets: vec![PlanningEntityRef::Hypothetical(
+                crate::HypotheticalEntityId(7),
+            )],
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 3,
@@ -203,12 +204,26 @@ mod tests {
         let plan = plan(primary_goal, &[market, orchard]);
         let candidates = vec![
             ranked(primary_goal.kind, OpportunityAnchor::None, 900),
-            ranked(GoalKind::SellCommodity { commodity: CommodityKind::Apple }, OpportunityAnchor::Place(market), 400),
-            ranked(GoalKind::Patrol { place: orchard }, OpportunityAnchor::None, 250),
+            ranked(
+                GoalKind::SellCommodity {
+                    commodity: CommodityKind::Apple,
+                },
+                OpportunityAnchor::Place(market),
+                400,
+            ),
+            ranked(
+                GoalKind::Patrol { place: orchard },
+                OpportunityAnchor::None,
+                250,
+            ),
         ];
 
-        let benefits =
-            detect_side_benefits(&plan, &candidates, &primary_goal, Permille::new(100).unwrap());
+        let benefits = detect_side_benefits(
+            &plan,
+            &candidates,
+            &primary_goal,
+            Permille::new(100).unwrap(),
+        );
 
         assert_eq!(
             benefits,
@@ -256,8 +271,12 @@ mod tests {
             ),
         ];
 
-        let benefits =
-            detect_side_benefits(&plan, &candidates, &primary_goal, Permille::new(100).unwrap());
+        let benefits = detect_side_benefits(
+            &plan,
+            &candidates,
+            &primary_goal,
+            Permille::new(100).unwrap(),
+        );
 
         assert!(benefits.is_empty());
     }
@@ -272,19 +291,53 @@ mod tests {
         let plan = plan(primary_goal, &[market]);
         let candidates = vec![
             ranked(primary_goal.kind, OpportunityAnchor::None, 900),
-            ranked(GoalKind::SellCommodity { commodity: CommodityKind::Apple }, OpportunityAnchor::Place(market), 400),
-            ranked(GoalKind::RestockCommodity { commodity: CommodityKind::Bread }, OpportunityAnchor::Place(market), 350),
-            ranked(GoalKind::Patrol { place: market }, OpportunityAnchor::None, 300),
-            ranked(GoalKind::Patrol { place: market }, OpportunityAnchor::Place(market), 275),
-            ranked(GoalKind::InvestigateViolation { violation_id: worldwake_core::ViolationId(1), place: market }, OpportunityAnchor::Place(market), 250),
+            ranked(
+                GoalKind::SellCommodity {
+                    commodity: CommodityKind::Apple,
+                },
+                OpportunityAnchor::Place(market),
+                400,
+            ),
+            ranked(
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread,
+                },
+                OpportunityAnchor::Place(market),
+                350,
+            ),
+            ranked(
+                GoalKind::Patrol { place: market },
+                OpportunityAnchor::None,
+                300,
+            ),
+            ranked(
+                GoalKind::Patrol { place: market },
+                OpportunityAnchor::Place(market),
+                275,
+            ),
+            ranked(
+                GoalKind::InvestigateViolation {
+                    violation_id: worldwake_core::ViolationId(1),
+                    place: market,
+                },
+                OpportunityAnchor::Place(market),
+                250,
+            ),
         ];
 
-        let benefits =
-            detect_side_benefits(&plan, &candidates, &primary_goal, Permille::new(100).unwrap());
+        let benefits = detect_side_benefits(
+            &plan,
+            &candidates,
+            &primary_goal,
+            Permille::new(100).unwrap(),
+        );
 
         assert_eq!(benefits.len(), 3);
         assert_eq!(
-            benefits.iter().map(|benefit| benefit.goal_key).collect::<Vec<_>>(),
+            benefits
+                .iter()
+                .map(|benefit| benefit.goal_key)
+                .collect::<Vec<_>>(),
             vec![
                 GoalKey::from(GoalKind::SellCommodity {
                     commodity: CommodityKind::Apple
@@ -307,8 +360,20 @@ mod tests {
         let plan = plan(primary_goal, &[market]);
         let candidates = vec![
             ranked(primary_goal.kind, OpportunityAnchor::None, 1_000),
-            ranked(GoalKind::SellCommodity { commodity: CommodityKind::Apple }, OpportunityAnchor::Place(market), 2_000),
-            ranked(GoalKind::RestockCommodity { commodity: CommodityKind::Bread }, OpportunityAnchor::Place(market), 2_000),
+            ranked(
+                GoalKind::SellCommodity {
+                    commodity: CommodityKind::Apple,
+                },
+                OpportunityAnchor::Place(market),
+                2_000,
+            ),
+            ranked(
+                GoalKind::RestockCommodity {
+                    commodity: CommodityKind::Bread,
+                },
+                OpportunityAnchor::Place(market),
+                2_000,
+            ),
         ];
 
         let value = build_plan_value(
@@ -362,12 +427,8 @@ mod tests {
             400,
         )];
 
-        let benefits = detect_side_benefits(
-            &plan,
-            &candidates,
-            &primary_goal,
-            Permille::new(0).unwrap(),
-        );
+        let benefits =
+            detect_side_benefits(&plan, &candidates, &primary_goal, Permille::new(0).unwrap());
 
         assert!(benefits.is_empty());
     }

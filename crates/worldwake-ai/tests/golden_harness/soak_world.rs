@@ -72,11 +72,8 @@ pub fn build_t30_topology() -> Topology {
         place("T30Farm", &[PlaceTag::Farm, PlaceTag::Field]),
     )
     .unwrap();
-    t.add_place(
-        PLACE_T30_FORGE,
-        place("T30Forge", &[PlaceTag::Village]),
-    )
-    .unwrap();
+    t.add_place(PLACE_T30_FORGE, place("T30Forge", &[PlaceTag::Village]))
+        .unwrap();
     t.add_place(
         PLACE_T30_BARRACKS,
         place("T30Barracks", &[PlaceTag::Barracks, PlaceTag::Village]),
@@ -97,11 +94,8 @@ pub fn build_t30_topology() -> Topology {
         place("T30BanditCamp", &[PlaceTag::Camp, PlaceTag::Forest]),
     )
     .unwrap();
-    t.add_place(
-        PLACE_T30_ROAD,
-        place("T30Road", &[PlaceTag::Road]),
-    )
-    .unwrap();
+    t.add_place(PLACE_T30_ROAD, place("T30Road", &[PlaceTag::Road]))
+        .unwrap();
     t.add_place(
         PLACE_T30_ORCHARD,
         place("T30Orchard", &[PlaceTag::Farm, PlaceTag::Field]),
@@ -157,10 +151,10 @@ pub fn build_t30_world(
     seed: Seed,
 ) -> (
     GoldenHarness,
-    Vec<EntityId>,   // all agents
-    EntityId,        // ruling_faction
-    EntityId,        // bandit_faction
-    EntityId,        // office
+    Vec<EntityId>, // all agents
+    EntityId,      // ruling_faction
+    EntityId,      // bandit_faction
+    EntityId,      // office
 ) {
     let mut h = build_harness_with_topology(seed, build_t30_topology());
 
@@ -298,8 +292,15 @@ pub fn build_t30_world(
         txn.set_component_combat_profile(
             ruler,
             CombatProfile::new(
-                pm(600), pm(700), pm(400), pm(400), pm(100),
-                pm(200), pm(50), pm(150), pm(50),
+                pm(600),
+                pm(700),
+                pm(400),
+                pm(400),
+                pm(100),
+                pm(200),
+                pm(50),
+                pm(150),
+                pm(50),
                 std::num::NonZeroU32::new(5).unwrap(),
                 std::num::NonZeroU32::new(3).unwrap(),
             ),
@@ -369,8 +370,13 @@ pub fn build_t30_world(
             },
         )
         .unwrap();
-        txn.set_component_demand_memory(merchant, DemandMemory { observations: vec![] })
-            .unwrap();
+        txn.set_component_demand_memory(
+            merchant,
+            DemandMemory {
+                observations: vec![],
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
     give_commodity(
@@ -433,11 +439,7 @@ pub fn build_t30_world(
             txn.set_component_patrol_route(
                 guard,
                 PatrolRoute {
-                    assigned_places: vec![
-                        PLACE_T30_MARKET,
-                        PLACE_T30_ROAD,
-                        PLACE_T30_BARRACKS,
-                    ],
+                    assigned_places: vec![PLACE_T30_MARKET, PLACE_T30_ROAD, PLACE_T30_BARRACKS],
                     current_index: i,
                 },
             )
@@ -456,8 +458,15 @@ pub fn build_t30_world(
             txn.set_component_combat_profile(
                 guard,
                 CombatProfile::new(
-                    pm(700), pm(800), pm(500), pm(500), pm(150),
-                    pm(250), pm(80), pm(200), pm(80),
+                    pm(700),
+                    pm(800),
+                    pm(500),
+                    pm(500),
+                    pm(150),
+                    pm(250),
+                    pm(80),
+                    pm(200),
+                    pm(80),
                     std::num::NonZeroU32::new(4).unwrap(),
                     std::num::NonZeroU32::new(3).unwrap(),
                 ),
@@ -494,8 +503,11 @@ pub fn build_t30_world(
     let bandit_supplies;
     {
         let mut txn = new_txn(&mut h.world, 0);
-        bandit_supplies = txn.create_item_lot(CommodityKind::Bread, Quantity(5)).unwrap();
-        txn.set_ground_location(bandit_supplies, PLACE_T30_BANDIT_CAMP).unwrap();
+        bandit_supplies = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(5))
+            .unwrap();
+        txn.set_ground_location(bandit_supplies, PLACE_T30_BANDIT_CAMP)
+            .unwrap();
         txn.set_possessor(bandit_supplies, bandit_faction).unwrap();
         txn.set_component_bandit_camp(
             PLACE_T30_BANDIT_CAMP,
@@ -546,8 +558,15 @@ pub fn build_t30_world(
             txn.set_component_combat_profile(
                 bandit,
                 CombatProfile::new(
-                    pm(500), pm(600), pm(400), pm(300), pm(100),
-                    pm(150), pm(40), pm(180), pm(60),
+                    pm(500),
+                    pm(600),
+                    pm(400),
+                    pm(300),
+                    pm(100),
+                    pm(150),
+                    pm(40),
+                    pm(180),
+                    pm(60),
                     std::num::NonZeroU32::new(4).unwrap(),
                     std::num::NonZeroU32::new(3).unwrap(),
                 ),
@@ -568,7 +587,11 @@ pub fn build_t30_world(
 
     // --- 2 Thieves ---
     for i in 0..2 {
-        let thief_place = if i == 0 { PLACE_T30_MARKET } else { PLACE_T30_HUB };
+        let thief_place = if i == 0 {
+            PLACE_T30_MARKET
+        } else {
+            PLACE_T30_HUB
+        };
         let thief = seed_agent(
             &mut h.world,
             &mut h.event_log,

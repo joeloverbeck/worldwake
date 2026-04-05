@@ -6,11 +6,11 @@
 use crate::{
     ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind,
     CommodityPurpose, CommodityValuationProfile, ContentionDispositionProfile, DemandMemory,
-    DemandObservation, DemandObservationReason, EdgeExperience, EntityId, GoalKey,
-    GoalKind, MerchandiseProfile, PreferenceProfile, Permille, Quantity, ReliabilityRecord,
-    RouteExperience, Seed, SourceKey, SourceReliability, StockAssignment, StockAssignmentKind,
-    StockStoragePolicy, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
-    TravelEdgeId, UtilityProfile,
+    DemandObservation, DemandObservationReason, EdgeExperience, EntityId, GoalKey, GoalKind,
+    MerchandiseProfile, Permille, PreferenceProfile, Quantity, ReliabilityRecord, RouteExperience,
+    Seed, SourceKey, SourceReliability, StockAssignment, StockAssignmentKind, StockStoragePolicy,
+    SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, TravelEdgeId,
+    UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{NonZeroU32, NonZeroU8};

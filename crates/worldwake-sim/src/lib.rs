@@ -23,8 +23,8 @@ pub mod affordance;
 pub mod affordance_query;
 pub mod autonomous_controller;
 pub mod belief_view;
-pub mod controller_state;
 pub mod commodity_opportunity;
+pub mod controller_state;
 pub mod deterministic_rng;
 pub mod input_event;
 pub mod input_queue;
@@ -95,8 +95,8 @@ pub use autonomous_controller::{
     AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,
 };
 pub use belief_view::{estimate_duration_from_beliefs, GoalBeliefView, RuntimeBeliefView};
-pub use controller_state::{ControlError, ControllerState};
 pub use commodity_opportunity::{commodity_opportunity_score, CommodityOpportunityBreakdown};
+pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
 pub use input_event::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
 pub use input_queue::{InputQueue, InputQueueError};

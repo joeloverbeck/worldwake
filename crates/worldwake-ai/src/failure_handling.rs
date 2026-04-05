@@ -1,6 +1,4 @@
-use crate::{
-    authoritative_target, AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind,
-};
+use crate::{authoritative_target, AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind};
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact, CommodityKind,
     EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, ReasoningProfile, Tick,
@@ -724,7 +722,9 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Accuse
         | PlannerOpKind::Fine
         | PlannerOpKind::Exile
-        | PlannerOpKind::ClaimBounty => step.targets.first().copied().and_then(authoritative_target),
+        | PlannerOpKind::ClaimBounty => {
+            step.targets.first().copied().and_then(authoritative_target)
+        }
         PlannerOpKind::Bribe => step
             .payload_override
             .as_ref()
@@ -835,7 +835,7 @@ mod tests {
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
-        PlannerOpKind, ReasoningProfile, PlanningEntityRef,
+        PlannerOpKind, PlanningEntityRef, ReasoningProfile,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1038,11 +1038,7 @@ mod tests {
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
-        fn listed_sale_lots_at(
-            &self,
-            place: EntityId,
-            commodity: CommodityKind,
-        ) -> Vec<EntityId> {
+        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
             self.listed_lots
                 .get(&(place, commodity))
                 .cloned()
@@ -1851,6 +1847,10 @@ mod tests {
         // The blocker should NOT auto-resolve even though the target entity
         // still exists — pursuit TargetGone relies on TTL expiry.
         clear_resolved_blockers(&view, agent, &mut blocked, Tick(10));
-        assert_eq!(blocked.intents.len(), 1, "pursuit TargetGone blocker should not auto-resolve");
+        assert_eq!(
+            blocked.intents.len(),
+            1,
+            "pursuit TargetGone blocker should not auto-resolve"
+        );
     }
 }

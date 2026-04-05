@@ -1,6 +1,4 @@
-use crate::{
-    CommodityKind, Component, EntityId, InstitutionalClaim, Quantity, Tick,
-};
+use crate::{CommodityKind, Component, EntityId, InstitutionalClaim, Quantity, Tick};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -53,7 +51,9 @@ impl Component for BountyTerms {}
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum BountyTarget {
-    EliminateEntity { target: EntityId },
+    EliminateEntity {
+        target: EntityId,
+    },
     DeliverCommodity {
         commodity: CommodityKind,
         quantity: Quantity,
@@ -84,13 +84,19 @@ impl Component for NoticeContent {}
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum NoticeTopic {
-    ThreatWarning { place: EntityId },
-    OfficeVacancy { office: EntityId },
+    ThreatWarning {
+        place: EntityId,
+    },
+    OfficeVacancy {
+        office: EntityId,
+    },
     CommodityShortage {
         commodity: CommodityKind,
         place: EntityId,
     },
-    Institutional { claim: InstitutionalClaim },
+    Institutional {
+        claim: InstitutionalClaim,
+    },
 }
 
 #[cfg(test)]

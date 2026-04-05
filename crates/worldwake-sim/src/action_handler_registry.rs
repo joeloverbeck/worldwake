@@ -59,10 +59,10 @@ mod tests {
     use super::{verify_completeness, ActionHandlerRegistry};
     use crate::{
         AbortReason, ActionDef, ActionDefRegistry, ActionDuration, ActionError,
-        ActionExecutionContext, ActionHandler, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionProgress, ActionState, ActionStatus,
-        CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility,
-        Precondition, RecipeRegistry, ReservationReq, TargetSpec,
+        ActionExecutionContext, ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionProgress, ActionState, ActionStatus, CommitOutcome, Constraint,
+        DeterministicRng, DurationExpr, Interruptibility, Precondition, RecipeRegistry,
+        ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -233,13 +233,11 @@ mod tests {
         );
 
         assert_eq!(
-            (retrieved_first.on_start)(&def, &mut instance, &context, &mut rng, &mut txn)
-                .unwrap(),
+            (retrieved_first.on_start)(&def, &mut instance, &context, &mut rng, &mut txn).unwrap(),
             None
         );
         assert_eq!(
-            (retrieved_second.on_start)(&def, &mut instance, &context, &mut rng, &mut txn)
-                .unwrap(),
+            (retrieved_second.on_start)(&def, &mut instance, &context, &mut rng, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
     }
@@ -298,12 +296,7 @@ mod tests {
         );
 
         (registry.get(handler_id).unwrap().on_commit)(
-            &def,
-            &instance,
-            &context,
-            &event_log,
-            &mut rng,
-            &mut txn,
+            &def, &instance, &context, &event_log, &mut rng, &mut txn,
         )
         .unwrap();
 

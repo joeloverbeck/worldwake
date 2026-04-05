@@ -87,12 +87,17 @@ fn is_listing_valid(world: &World, lot: EntityId) -> bool {
         .get_component_stock_assignment(lot)
         .filter(|assignment| assignment.kind == worldwake_core::StockAssignmentKind::Displayed)
         .is_some_and(|assignment| {
-            world.entities_effectively_at(lot_place).into_iter().any(|entity| {
-                world
-                    .get_component_merchandise_profile(entity)
-                    .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
-                    && world.can_exercise_control(entity, assignment.facility).is_ok()
-            })
+            world
+                .entities_effectively_at(lot_place)
+                .into_iter()
+                .any(|entity| {
+                    world
+                        .get_component_merchandise_profile(entity)
+                        .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+                        && world
+                            .can_exercise_control(entity, assignment.facility)
+                            .is_ok()
+                })
         })
 }
 
@@ -735,8 +740,13 @@ mod tests {
 
     fn list_lot(world: &mut World, lot: EntityId, tick: u64) {
         let mut txn = new_txn(world, tick);
-        txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(tick) })
-            .unwrap();
+        txn.set_component_sale_listing(
+            lot,
+            SaleListing {
+                listed_at: Tick(tick),
+            },
+        )
+        .unwrap();
         commit_txn(txn);
     }
 
@@ -792,7 +802,13 @@ mod tests {
         let agent = seed_agent(&mut world, "Departed", None, None);
         place_agent_at(&mut world, agent, place_a);
         set_merchandise_profile(&mut world, agent, sale_profile(&[CommodityKind::Bread]));
-        let lot = grant_stock(&mut world, agent, place_a, CommodityKind::Bread, Quantity(3));
+        let lot = grant_stock(
+            &mut world,
+            agent,
+            place_a,
+            CommodityKind::Bread,
+            Quantity(3),
+        );
         list_lot(&mut world, lot, 4);
 
         // Move seller to a different place.

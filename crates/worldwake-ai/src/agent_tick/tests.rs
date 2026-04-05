@@ -30,17 +30,16 @@ use worldwake_core::{
     build_believed_entity_state, build_prototype_world, ActionDefId, BanditFactionPolicy,
     BeliefConfidencePolicy, BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory,
     BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind,
-    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
-    DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog, EventPayload,
-    ContentionPolicy, ContentionIntents, ContentionQueue, FrameState,
-    ContentionGrant, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
-    PatrolRoute,
-    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
-    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
-    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
+    ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
+    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
+    EntityId, EntityKind, EventLog, EventPayload, FrameState, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    IntentionDispositionProfile, IntentionDomain, IntentionFrame, KnownRecipes, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent,
+    PerceptionProfile, PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent,
+    RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
+    TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId,
+    UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
     WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
@@ -1354,8 +1353,7 @@ fn set_local_queue_state(
             .enqueue(actor, ActionDefId(77), Tick(queued_at), None)
             .unwrap();
     }
-    txn.set_component_contention_queue(facility, queue)
-        .unwrap();
+    txn.set_component_contention_queue(facility, queue).unwrap();
     commit_txn(txn);
     sync_all_beliefs(world, actor, Tick(queued_at.max(1)));
 }
@@ -1368,8 +1366,7 @@ fn clear_local_queue_state(world: &mut World, actor: EntityId, facility: EntityI
         .unwrap_or_default();
     queue.waiting.clear();
     queue.granted = None;
-    txn.set_component_contention_queue(facility, queue)
-        .unwrap();
+    txn.set_component_contention_queue(facility, queue).unwrap();
     commit_txn(txn);
     sync_all_beliefs(world, actor, Tick(tick.max(1)));
 }
@@ -1643,11 +1640,7 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
         Vec::new()
     }
-    fn listed_sale_lots_at(
-        &self,
-        _place: EntityId,
-        _commodity: CommodityKind,
-    ) -> Vec<EntityId> {
+    fn listed_sale_lots_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
         Vec::new()
     }
     fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
@@ -2286,10 +2279,7 @@ fn frame_snapshot_reports_budget_margin_when_no_profile_override_applies() {
         snapshot.switch_margin_source,
         FrameSwitchMarginSource::ReasoningProfile
     );
-    assert_eq!(
-        snapshot.effective_switch_margin,
-        budget.switch_margin
-    );
+    assert_eq!(snapshot.effective_switch_margin, budget.switch_margin);
     assert_eq!(snapshot.runtime.committed_destination, None);
     assert_eq!(snapshot.runtime.active_plan_destination, None);
     assert!(!snapshot.runtime.has_active_frame_travel);
@@ -3599,8 +3589,10 @@ fn patrol_route_change_marks_runtime_dirty() {
         .get_component_utility_profile(harness.actor)
         .cloned()
         .unwrap_or_default();
-    let place = worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::VillageSquare);
-    let remote = worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::OrchardFarm);
+    let place =
+        worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::VillageSquare);
+    let remote =
+        worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::OrchardFarm);
     let route = PatrolRoute {
         assigned_places: vec![place, remote],
         current_index: 0,
@@ -3707,9 +3699,9 @@ fn trace_planning_outcome_includes_patrol_route_provenance() {
                 Some(OpportunityAnchor::Place(remote))
             );
             assert!(
-                planning.selection.selected_goal_is(GoalKey::from(GoalKind::Patrol {
-                    place: remote
-                })),
+                planning
+                    .selection
+                    .selected_goal_is(GoalKey::from(GoalKind::Patrol { place: remote })),
                 "selected goal should stay aligned with the patrol provenance surface"
             );
         }

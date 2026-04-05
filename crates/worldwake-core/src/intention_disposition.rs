@@ -110,6 +110,9 @@ mod tests {
 
         assert!(profile.domain_patience.is_empty());
         assert_eq!(profile.default_patience_ticks, NonZeroU32::new(30).unwrap());
-        assert_eq!(profile.commitment_switch_margin, Permille::new(200).unwrap());
+        assert_eq!(
+            profile.commitment_switch_margin,
+            Permille::new(200).unwrap()
+        );
     }
 }

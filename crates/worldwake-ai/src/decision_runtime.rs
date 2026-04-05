@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-    IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, ReasoningProfile,
-    Tick,
+    IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, ReasoningProfile, Tick,
     UniqueItemKind, Wound,
 };
 
@@ -277,8 +276,8 @@ mod tests {
     use crate::{
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
         GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, ReasoningProfile,
-        PlanningEntityRef,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        ReasoningProfile,
     };
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;

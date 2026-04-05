@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use worldwake_core::{
     load_per_unit, to_shared_belief_snapshot, ActionDefId, ActionDomain, BelievedEntityState,
-    BelievedInstitutionalClaim, CombatProfile, CommodityKind, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge,
+    BelievedInstitutionalClaim, CombatProfile, CommodityKind, ContentionGrant, DemandObservation,
+    DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
     PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus,
     RecordData, ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey,
@@ -15,8 +15,7 @@ use worldwake_core::{
     TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::{
-    estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
-    RuntimeBeliefView,
+    estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -918,12 +917,12 @@ impl<'snapshot> PlanningState<'snapshot> {
             self.resolve_effective_place_ref(container, visited)
         } else {
             match entity {
-            PlanningEntityRef::Authoritative(entity) => self
-                .snapshot
-                .entities
-                .get(&entity)
-                .and_then(|snapshot| snapshot.effective_place),
-            PlanningEntityRef::Hypothetical(_) => None,
+                PlanningEntityRef::Authoritative(entity) => self
+                    .snapshot
+                    .entities
+                    .get(&entity)
+                    .and_then(|snapshot| snapshot.effective_place),
+                PlanningEntityRef::Hypothetical(_) => None,
             }
         };
         self.effective_place_cache
@@ -1052,7 +1051,11 @@ impl<'snapshot> PlanningState<'snapshot> {
         refs
     }
 
-    pub(crate) fn can_control_ref(&self, actor: PlanningEntityRef, entity: PlanningEntityRef) -> bool {
+    pub(crate) fn can_control_ref(
+        &self,
+        actor: PlanningEntityRef,
+        entity: PlanningEntityRef,
+    ) -> bool {
         if self.removed_entities.contains(&actor) || self.removed_entities.contains(&entity) {
             return false;
         }
@@ -1365,7 +1368,10 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.workstation_tag)
     }
 
-    fn stock_storage_policy(&self, facility: EntityId) -> Option<worldwake_core::StockStoragePolicy> {
+    fn stock_storage_policy(
+        &self,
+        facility: EntityId,
+    ) -> Option<worldwake_core::StockStoragePolicy> {
         self.stock_storage_policy_snapshot(facility)
     }
 
@@ -2008,14 +2014,15 @@ mod tests {
     use worldwake_core::ActionDomain;
     use worldwake_core::{
         ActionDefId, BelievedActivity, BelievedEntityState, BodyCostPerTick, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
-        DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ContentionGrant,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute,
-        Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
-        ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
-        TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
+        CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
+        DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        PatrolProfile, PatrolRoute, Permille, Quantity, RecipeId, RecipientKnowledgeStatus,
+        RecordData, RecordKind, ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey,
+        TellProfile, TellTopic, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, get_affordances, ActionDef, ActionDefRegistry,
@@ -3581,12 +3588,21 @@ mod tests {
             .set_possessor_ref(cargo_ref, actor_ref)
             .set_quantity_ref(cargo_ref, CommodityKind::Bread, Quantity(2));
 
-        assert_eq!(RuntimeBeliefView::entities_at(&base, town), vec![actor, bread]);
+        assert_eq!(
+            RuntimeBeliefView::entities_at(&base, town),
+            vec![actor, bread]
+        );
 
         let moved = base.clone().move_actor_to(field);
 
-        assert_eq!(RuntimeBeliefView::entities_at(&base, town), vec![actor, bread]);
-        assert_eq!(RuntimeBeliefView::entities_at(&moved, field), vec![actor, bread]);
+        assert_eq!(
+            RuntimeBeliefView::entities_at(&base, town),
+            vec![actor, bread]
+        );
+        assert_eq!(
+            RuntimeBeliefView::entities_at(&moved, field),
+            vec![actor, bread]
+        );
         assert_eq!(moved.effective_place_ref(cargo_ref), Some(field));
     }
 

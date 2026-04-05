@@ -1,8 +1,8 @@
 //! Shared goal identity types used across authoritative memory and AI planning.
 
 use crate::{
-    ArtifactPostingContext, BountyTerms, CommodityKind, CommunicationClass, EntityId,
-    NoticeTopic, PunishmentKind, RecipeId, RecordEntryId, TellTopic, ViolationId,
+    ArtifactPostingContext, BountyTerms, CommodityKind, CommunicationClass, EntityId, NoticeTopic,
+    PunishmentKind, RecipeId, RecordEntryId, TellTopic, ViolationId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -319,7 +319,9 @@ mod tests {
                 expires_at: None,
                 jurisdiction: None,
             },
-            topic: NoticeTopic::ThreatWarning { place: entity_id(27, 0) },
+            topic: NoticeTopic::ThreatWarning {
+                place: entity_id(27, 0),
+            },
         };
         let key = GoalKey::from(goal);
 

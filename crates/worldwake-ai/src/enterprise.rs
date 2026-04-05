@@ -160,7 +160,7 @@ fn exact_destination_facility(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     destination: EntityId,
-)-> Option<EntityId> {
+) -> Option<EntityId> {
     if view.stock_storage_policy(destination).is_some() && view.can_control(agent, destination) {
         return Some(destination);
     }

@@ -780,8 +780,9 @@ fn run_systems(
     tick: Tick,
     services: &mut TickStepServices<'_>,
 ) -> Result<u32, TickStepError> {
-    let manifest = crate::SystemManifest::new(runtime.scheduler.system_manifest().ordered_ids().to_vec())
-        .expect("scheduler system manifest should not contain duplicate ids");
+    let manifest =
+        crate::SystemManifest::new(runtime.scheduler.system_manifest().ordered_ids().to_vec())
+            .expect("scheduler system manifest should not contain duplicate ids");
     run_system_manifest(runtime, &manifest, tick, services)
 }
 
@@ -877,8 +878,8 @@ mod tests {
         ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
         ActionPayload, ActionProgress, ActionRequestMode, ActionState, ActionStatus,
         ActionTraceDetail, ActionTraceKind, ActionTraceSink, CommitOutcome, ControllerState,
-        DeterministicRng, DurationExpr, InputKind, Interruptibility, Precondition,
-        RecipeRegistry, RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
+        DeterministicRng, DurationExpr, InputKind, Interruptibility, Precondition, RecipeRegistry,
+        RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
         RequestResolutionRejectionReason, RequestResolutionTraceSink, ReservationReq, Scheduler,
         SystemDispatchTable, SystemError, SystemExecutionContext, SystemManifest, TargetSpec,
         TellActionPayload, TickInputContext, TickInputError, TickInputProducer,
@@ -2050,7 +2051,8 @@ mod tests {
         let (world, _event_log, _scheduler, controller, _rng, _recipes, defs, handlers) =
             build_state();
         let actor = controlled_actor(&controller);
-        let view = crate::PerAgentBeliefView::from_world_with_recipes(actor, &world, test_recipes());
+        let view =
+            crate::PerAgentBeliefView::from_world_with_recipes(actor, &world, test_recipes());
         let def = defs.get(ActionDefId(0)).unwrap();
         let affordance = get_affordances(&view, actor, &defs, &handlers)
             .into_iter()
@@ -2852,10 +2854,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            hook_log().lock().unwrap().systems,
-            expected_system_order()
-        );
+        assert_eq!(hook_log().lock().unwrap().systems, expected_system_order());
     }
 
     #[test]
@@ -3010,10 +3009,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.systems_ran, crate::SystemId::ALL.len() as u32);
-        assert_eq!(
-            world.get_component_dead_at(actor),
-            Some(&DeadAt(Tick(0)))
-        );
+        assert_eq!(world.get_component_dead_at(actor), Some(&DeadAt(Tick(0))));
     }
 
     #[test]

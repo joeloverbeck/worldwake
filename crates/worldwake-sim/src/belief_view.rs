@@ -6,8 +6,8 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityTreatmentProfile, CommodityValuationProfile, DemandObservation, DriveThresholds,
-    EffectiveRight, EntityId, EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge,
+    CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant, DemandObservation,
+    DriveThresholds, EffectiveRight, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
     PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
@@ -1269,10 +1269,7 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::seller_for_sale_lot(self, lot)
             }
 
-            fn has_sale_listing(
-                &self,
-                lot: worldwake_core::EntityId,
-            ) -> bool {
+            fn has_sale_listing(&self, lot: worldwake_core::EntityId) -> bool {
                 $crate::RuntimeBeliefView::has_sale_listing(self, lot)
             }
 

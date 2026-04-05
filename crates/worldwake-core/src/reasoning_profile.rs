@@ -119,7 +119,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(world.get_component_reasoning_profile(agent), Some(&profile));
-        assert_eq!(world.entities_with_reasoning_profile().collect::<Vec<_>>(), vec![agent]);
+        assert_eq!(
+            world.entities_with_reasoning_profile().collect::<Vec<_>>(),
+            vec![agent]
+        );
         assert_eq!(
             world.query_reasoning_profile().collect::<Vec<_>>(),
             vec![(agent, &profile)]

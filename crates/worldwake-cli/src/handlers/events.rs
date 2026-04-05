@@ -60,7 +60,9 @@ fn format_cause(cause: &CauseRef) -> String {
     }
 }
 
-fn format_action_detail_line(record: &impl worldwake_core::event_record::EventView) -> Option<String> {
+fn format_action_detail_line(
+    record: &impl worldwake_core::event_record::EventView,
+) -> Option<String> {
     record.action_name().map(|name| format!("  action: {name}"))
 }
 

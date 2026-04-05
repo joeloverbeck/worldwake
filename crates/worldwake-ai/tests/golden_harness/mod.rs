@@ -6,8 +6,8 @@
 // Each test binary uses a different subset of harness items.
 #![allow(dead_code)]
 
-mod timeline;
 pub mod soak_world;
+mod timeline;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -17,18 +17,17 @@ use worldwake_core::{
     build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
     to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
     BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
-    CombatStance, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
-    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
-    EventLog, EventRecord, EventTag, EventView, ContentionPolicy,
-    ContentionDispositionProfile, ContentionQueue, FactionData, FactionPurpose,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, OfficeForceProfile,
-    OfficeForceState, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
-    ReasoningProfile, RecipeId, RecordData, RecordKind, RelationDelta, RelationValue,
-    ResourceSource, Seed, SharedTellState, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile,
-    TellTopic, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
-    CommunicationProfile,
+    CombatStance, CommodityKind, CommunicationProfile, ComponentDelta, ComponentKind,
+    ComponentValue, ContentionDispositionProfile, ContentionPolicy, ContentionQueue, ControlSource,
+    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog,
+    EventRecord, EventTag, EventView, FactionData, FactionPurpose, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
+    LoadUnits, MetabolismProfile, OfficeData, OfficeForceProfile, OfficeForceState,
+    PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, ReasoningProfile,
+    RecipeId, RecordData, RecordKind, RelationDelta, RelationValue, ResourceSource, Seed,
+    SharedTellState, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
+    ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
@@ -717,8 +716,15 @@ pub fn place_exclusive_workstation_with_source(
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
-    txn.set_component_contention_policy(ws, ContentionPolicy { grant_hold_ticks, auto_promote: true, max_waiters: None })
-        .unwrap();
+    txn.set_component_contention_policy(
+        ws,
+        ContentionPolicy {
+            grant_hold_ticks,
+            auto_promote: true,
+            max_waiters: None,
+        },
+    )
+    .unwrap();
     txn.set_component_contention_queue(ws, ContentionQueue::default())
         .unwrap();
     txn.set_component_production_output_ownership_policy(
@@ -1204,10 +1210,7 @@ impl GoldenHarness {
     }
 
     pub fn from_simulation_state(state: &SimulationState) -> Self {
-        Self::from_simulation_state_with_driver(
-            state,
-            AgentTickDriver::new(),
-        )
+        Self::from_simulation_state_with_driver(state, AgentTickDriver::new())
     }
 
     fn from_simulation_state_with_driver(state: &SimulationState, driver: AgentTickDriver) -> Self {

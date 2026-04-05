@@ -6,10 +6,10 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
 use worldwake_core::{
-    ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameClearReason, GoalKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, OpportunityAnchor,
-    OpportunityKey, PatrolRoute, PerceptionSource, Permille, PunishmentFineSelectionTrace,
-    SuspensionReason, TellTopic, Tick,
+    ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameClearReason,
+    GoalKey, InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag,
+    OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
+    PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
@@ -179,16 +179,19 @@ impl DecisionOutcome {
                     });
                 let frame_suffix =
                     format_frame_transition_summary(planning.frame_transition.as_ref());
-                let patrol_suffix = planning.selected_patrol_anchor.map_or_else(String::new, |anchor| {
-                    format!(
-                        ", patrol_waypoint={}, patrol_anchor={}",
-                        planning
-                            .patrol_route
-                            .current_waypoint
-                            .map_or_else(|| "none".to_string(), |place| place.to_string()),
-                        format_opportunity_anchor(anchor)
-                    )
-                });
+                let patrol_suffix =
+                    planning
+                        .selected_patrol_anchor
+                        .map_or_else(String::new, |anchor| {
+                            format!(
+                                ", patrol_waypoint={}, patrol_anchor={}",
+                                planning
+                                    .patrol_route
+                                    .current_waypoint
+                                    .map_or_else(|| "none".to_string(), |place| place.to_string()),
+                                format_opportunity_anchor(anchor)
+                            )
+                        });
                 let dirty = planning.dirty.display_names();
                 format!(
                     "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{competition_suffix}{ranking_suffix}{unknown_suffix}{frame_suffix}{patrol_suffix}"
@@ -1202,10 +1205,7 @@ impl DecisionTraceSink {
                     }
                 }
                 for omission in &planning.candidates.omitted_violation_detection {
-                    eprintln!(
-                        "  Violation detection skipped: {:?}",
-                        omission.reason
-                    );
+                    eprintln!("  Violation detection skipped: {:?}", omission.reason);
                 }
                 if let Some(reason) = planning.pursuit_invalidation {
                     eprintln!("  Pursuit invalidated: {reason:?}");
@@ -1376,14 +1376,8 @@ fn omitted_social_reason_for_goal(
 ) -> Option<TellTopicOmissionReason> {
     omissions.iter().find_map(|omission| match goal {
         crate::GoalKind::ShareBelief {
-            listener,
-            topic,
-            ..
-        }
-            if omission.listener == *listener && omission.topic == *topic =>
-        {
-            Some(omission.reason)
-        }
+            listener, topic, ..
+        } if omission.listener == *listener && omission.topic == *topic => Some(omission.reason),
         // Social omissions are only recorded for ShareBelief candidates.
         // Other goal families correctly fall through with no omission reason.
         _ => None,
@@ -2137,7 +2131,7 @@ mod tests {
                 frame_transition: None,
                 patrol_route: PatrolRouteSnapshotTrace::default(),
                 selected_patrol_anchor: None,
-            pursuit_invalidation: None,
+                pursuit_invalidation: None,
             })),
         }
     }
@@ -4220,7 +4214,7 @@ mod tests {
                 frame_transition: None,
                 patrol_route: PatrolRouteSnapshotTrace::default(),
                 selected_patrol_anchor: None,
-            pursuit_invalidation: None,
+                pursuit_invalidation: None,
             })),
         };
         sink.record(trace);

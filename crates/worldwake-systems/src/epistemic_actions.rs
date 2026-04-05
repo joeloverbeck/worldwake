@@ -389,8 +389,8 @@ mod tests {
         Seed, Tick, WitnessData, Wound, WoundCause, WoundId, WoundList,
     };
     use worldwake_sim::{
-        get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionInstanceId, Affordance, PerAgentBeliefView, TickOutcome,
+        get_affordances, start_action, tick_action, ActionExecutionAuthority, ActionInstanceId,
+        Affordance, PerAgentBeliefView, TickOutcome,
     };
 
     fn nz(value: u32) -> NonZeroU32 {
@@ -536,7 +536,10 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(start_tick)),
+            worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                Tick(start_tick),
+            ),
         )
         .unwrap();
 
@@ -551,7 +554,10 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap();
             if tick == commit_tick {
@@ -862,7 +868,10 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3)
+                ),
             )
             .unwrap(),
             TickOutcome::Continuing

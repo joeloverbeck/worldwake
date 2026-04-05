@@ -80,10 +80,7 @@ pub fn register_stock_actions(
                 Precondition::TargetAtActorPlace(0),
             ],
             visibility: VisibilitySpec::SamePlace,
-            causal_event_tags: BTreeSet::from([
-                EventTag::Transfer,
-                EventTag::WorldMutation,
-            ]),
+            causal_event_tags: BTreeSet::from([EventTag::Transfer, EventTag::WorldMutation]),
             payload: ActionPayload::None,
             handler: store_handler,
         }),
@@ -112,10 +109,7 @@ pub fn register_stock_actions(
                 Precondition::TargetAtActorPlace(0),
             ],
             visibility: VisibilitySpec::SamePlace,
-            causal_event_tags: BTreeSet::from([
-                EventTag::Transfer,
-                EventTag::WorldMutation,
-            ]),
+            causal_event_tags: BTreeSet::from([EventTag::Transfer, EventTag::WorldMutation]),
             payload: ActionPayload::None,
             handler: collect_handler,
         }),
@@ -209,7 +203,9 @@ fn controlled_facility_policy(
 ) -> Result<(EntityId, StockStoragePolicy), ActionError> {
     let actor_place = txn
         .effective_place(actor)
-        .ok_or(ActionError::PreconditionFailed("actor has no effective place".to_string()))?;
+        .ok_or(ActionError::PreconditionFailed(
+            "actor has no effective place".to_string(),
+        ))?;
     if txn.effective_place(facility) != Some(actor_place) {
         return Err(ActionError::PreconditionFailed(
             "facility is not at actor's place".to_string(),
@@ -230,14 +226,16 @@ fn resolve_merchant_home_facility(
     txn: &WorldTxn<'_>,
     actor: EntityId,
 ) -> Result<(EntityId, StockStoragePolicy), ActionError> {
-    let profile = txn
-        .get_component_merchandise_profile(actor)
+    let profile =
+        txn.get_component_merchandise_profile(actor)
+            .ok_or(ActionError::PreconditionFailed(
+                "actor lacks MerchandiseProfile".to_string(),
+            ))?;
+    let facility = profile
+        .home_facility
         .ok_or(ActionError::PreconditionFailed(
-            "actor lacks MerchandiseProfile".to_string(),
+            "actor lacks a bound home facility".to_string(),
         ))?;
-    let facility = profile.home_facility.ok_or(ActionError::PreconditionFailed(
-        "actor lacks a bound home facility".to_string(),
-    ))?;
     controlled_facility_policy(txn, actor, facility)
 }
 
@@ -249,7 +247,9 @@ fn resolve_controlled_facility(
 ) -> Result<(EntityId, StockStoragePolicy), ActionError> {
     let place = txn
         .effective_place(actor)
-        .ok_or(ActionError::PreconditionFailed("actor has no effective place".to_string()))?;
+        .ok_or(ActionError::PreconditionFailed(
+            "actor has no effective place".to_string(),
+        ))?;
 
     // Find any Facility at the actor's place with a StockStoragePolicy that
     // the actor can control.
@@ -371,7 +371,9 @@ fn commit_collect_display_stock(
     let lot = require_item_lot_target(instance)?;
     let place = txn
         .effective_place(instance.actor)
-        .ok_or(ActionError::PreconditionFailed("actor has no effective place".to_string()))?;
+        .ok_or(ActionError::PreconditionFailed(
+            "actor has no effective place".to_string(),
+        ))?;
 
     // Move lot out of container into direct possession.
     move_entity_to_direct_possession(txn, lot, instance.actor, place)?;
@@ -425,9 +427,7 @@ fn commit_stage_stock_for_sale(
     let (facility, policy) = resolve_facility_for_lot(txn, instance.actor, lot)
         .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
     let display_container = policy.display_container.ok_or_else(|| {
-        ActionError::PreconditionFailed(
-            "facility has no display container for staging".to_string(),
-        )
+        ActionError::PreconditionFailed("facility has no display container for staging".to_string())
     })?;
 
     // Move lot from stock container to display container.
@@ -445,8 +445,13 @@ fn commit_stage_stock_for_sale(
     )
     .map_err(|err| ActionError::InternalError(err.to_string()))?;
     // Add SaleListing.
-    txn.set_component_sale_listing(lot, SaleListing { listed_at: txn.tick() })
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.set_component_sale_listing(
+        lot,
+        SaleListing {
+            listed_at: txn.tick(),
+        },
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
     Ok(CommitOutcome::empty())
 }
@@ -544,14 +549,14 @@ fn abort_stock(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
     use worldwake_core::{
-        CommodityKind, ControlSource, EventLog, LoadUnits, Place, Quantity,
-        StockAssignmentKind, Tick, Topology, World,
+        CommodityKind, ControlSource, EventLog, LoadUnits, Place, Quantity, StockAssignmentKind,
+        Tick, Topology, World,
     };
     use worldwake_sim::{
         ActionDuration, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
     };
-    use std::collections::BTreeSet;
 
     fn test_topology() -> Topology {
         let mut topo = Topology::new();
@@ -662,13 +667,12 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
-            handler: ActionHandlerRegistry::new()
-                .register(ActionHandler::new(
-                    start_store_stock,
-                    tick_stock,
-                    commit_store_stock,
-                    abort_stock,
-                )),
+            handler: ActionHandlerRegistry::new().register(ActionHandler::new(
+                start_store_stock,
+                tick_stock,
+                commit_store_stock,
+                abort_stock,
+            )),
         }
     }
 
@@ -692,7 +696,18 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_store_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -713,7 +728,18 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_store_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -739,7 +765,18 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_store_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -747,14 +784,28 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_collect_display_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_collect_display_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
         // Post: lot is possessed by agent, not in container, no assignment.
         assert_eq!(h.world.possessor_of(h.bread_lot), Some(h.agent));
         assert!(h.world.direct_container(h.bread_lot).is_none());
-        assert!(h.world.get_component_stock_assignment(h.bread_lot).is_none());
+        assert!(h
+            .world
+            .get_component_stock_assignment(h.bread_lot)
+            .is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -781,7 +832,16 @@ mod tests {
         let def = dummy_def();
         let mut txn = new_txn(&mut h.world, &mut h.event_log);
         let mut instance = make_instance(stranger, h.bread_lot);
-        let result = start_store_stock(&def, &mut instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn);
+        let result = start_store_stock(
+            &def,
+            &mut instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                worldwake_core::CauseRef::Bootstrap,
+                txn.tick(),
+            ),
+            &mut rng,
+            &mut txn,
+        );
 
         assert!(
             result.is_err(),
@@ -809,12 +869,26 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_store_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
         assert_eq!(
-            h.world.get_component_item_lot(h.bread_lot).unwrap().quantity,
+            h.world
+                .get_component_item_lot(h.bread_lot)
+                .unwrap()
+                .quantity,
             original_qty,
             "quantity should not change during store"
         );
@@ -823,12 +897,26 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_collect_display_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_collect_display_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
         assert_eq!(
-            h.world.get_component_item_lot(h.bread_lot).unwrap().quantity,
+            h.world
+                .get_component_item_lot(h.bread_lot)
+                .unwrap()
+                .quantity,
             original_qty,
             "quantity should not change during collect"
         );
@@ -873,7 +961,13 @@ mod tests {
             txn.set_possessor(bread_lot, agent).unwrap();
 
             txn.commit(&mut log);
-            (agent, facility, stock_container, display_container, bread_lot)
+            (
+                agent,
+                facility,
+                stock_container,
+                display_container,
+                bread_lot,
+            )
         };
 
         DisplayTestHarness {
@@ -894,7 +988,18 @@ mod tests {
         let mut rng = dummy_rng();
         let mut txn = new_txn(&mut h.world, &mut h.event_log);
         let instance = make_instance(h.agent, h.bread_lot);
-        commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+        commit_store_stock(
+            &def,
+            &instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                worldwake_core::CauseRef::Bootstrap,
+                txn.tick(),
+            ),
+            &EventLog::new(),
+            &mut rng,
+            &mut txn,
+        )
+        .unwrap();
         txn.commit(&mut h.event_log);
     }
 
@@ -914,7 +1019,18 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_stage_stock_for_sale(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_stage_stock_for_sale(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -954,7 +1070,18 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_stage_stock_for_sale(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_stage_stock_for_sale(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -962,7 +1089,18 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_unstage_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_unstage_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
@@ -1000,14 +1138,34 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_store_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_store_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
         // Attempt to stage — should fail.
         let mut txn = new_txn(&mut h.world, &mut h.event_log);
         let mut instance = make_instance(h.agent, h.bread_lot);
-        let result = start_stage_stock_for_sale(&def, &mut instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &mut rng, &mut txn);
+        let result = start_stage_stock_for_sale(
+            &def,
+            &mut instance,
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                worldwake_core::CauseRef::Bootstrap,
+                txn.tick(),
+            ),
+            &mut rng,
+            &mut txn,
+        );
 
         assert!(
             result.is_err(),
@@ -1037,31 +1195,70 @@ mod tests {
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_stage_stock_for_sale(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_stage_stock_for_sale(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
         // Unstage.
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_unstage_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_unstage_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
         // Collect.
         {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
-            commit_collect_display_stock(&def, &instance, &worldwake_sim::ActionExecutionContext::without_recipes(worldwake_core::CauseRef::Bootstrap, txn.tick()), &EventLog::new(), &mut rng, &mut txn).unwrap();
+            commit_collect_display_stock(
+                &def,
+                &instance,
+                &worldwake_sim::ActionExecutionContext::without_recipes(
+                    worldwake_core::CauseRef::Bootstrap,
+                    txn.tick(),
+                ),
+                &EventLog::new(),
+                &mut rng,
+                &mut txn,
+            )
+            .unwrap();
             txn.commit(&mut h.event_log);
         }
 
         // Lot is back in possession, quantity preserved.
         assert_eq!(h.world.possessor_of(h.bread_lot), Some(h.agent));
         assert!(h.world.direct_container(h.bread_lot).is_none());
-        assert!(h.world.get_component_stock_assignment(h.bread_lot).is_none());
+        assert!(h
+            .world
+            .get_component_stock_assignment(h.bread_lot)
+            .is_none());
         assert!(h.world.get_component_sale_listing(h.bread_lot).is_none());
         assert_eq!(
-            h.world.get_component_item_lot(h.bread_lot).unwrap().quantity,
+            h.world
+                .get_component_item_lot(h.bread_lot)
+                .unwrap()
+                .quantity,
             original_qty,
             "quantity should be preserved through full round-trip"
         );

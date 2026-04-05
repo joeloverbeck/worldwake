@@ -172,9 +172,11 @@ impl World {
 
         match self.collect_control_rights(actor, entity) {
             ControlOutcome::Allowed(_) => Ok(()),
-            ControlOutcome::BlockedByPossessor(holder) => Err(WorldError::PreconditionFailed(
-                format!("entity {entity} is possessed by {holder}, so {actor} cannot exercise control"),
-            )),
+            ControlOutcome::BlockedByPossessor(holder) => {
+                Err(WorldError::PreconditionFailed(format!(
+                    "entity {entity} is possessed by {holder}, so {actor} cannot exercise control"
+                )))
+            }
             ControlOutcome::NoRights => Err(WorldError::PreconditionFailed(format!(
                 "entity {actor} neither possesses nor owns {entity}"
             ))),

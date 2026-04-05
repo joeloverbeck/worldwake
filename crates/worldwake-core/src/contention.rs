@@ -74,14 +74,14 @@ pub enum ContentionError {
 }
 
 /// Derived affordance-time summary of an actor's relation to a contended entity.
-#[derive(
-    Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum ContentionStatus {
     #[default]
     Unmanaged,
     Granted,
-    Queued { position: u32 },
+    Queued {
+        position: u32,
+    },
     Available,
     Full,
 }
@@ -228,8 +228,14 @@ mod tests {
     fn enqueue_appends_and_returns_incrementing_ordinals() {
         let mut queue = ContentionQueue::default();
 
-        assert_eq!(queue.enqueue(actor(1), ActionDefId(4), Tick(10), None), Ok(0));
-        assert_eq!(queue.enqueue(actor(2), ActionDefId(5), Tick(11), None), Ok(1));
+        assert_eq!(
+            queue.enqueue(actor(1), ActionDefId(4), Tick(10), None),
+            Ok(0)
+        );
+        assert_eq!(
+            queue.enqueue(actor(2), ActionDefId(5), Tick(11), None),
+            Ok(1)
+        );
         assert_eq!(queue.next_ordinal, 2);
         assert_eq!(queue.waiting.len(), 2);
     }
@@ -237,7 +243,9 @@ mod tests {
     #[test]
     fn enqueue_rejects_duplicate_actor_membership() {
         let mut queue = ContentionQueue::default();
-        queue.enqueue(actor(1), ActionDefId(4), Tick(10), None).unwrap();
+        queue
+            .enqueue(actor(1), ActionDefId(4), Tick(10), None)
+            .unwrap();
 
         assert_eq!(
             queue.enqueue(actor(1), ActionDefId(5), Tick(11), None),
@@ -248,9 +256,15 @@ mod tests {
     #[test]
     fn position_of_is_zero_indexed_from_queue_head() {
         let mut queue = ContentionQueue::default();
-        queue.enqueue(actor(1), ActionDefId(4), Tick(10), None).unwrap();
-        queue.enqueue(actor(2), ActionDefId(5), Tick(11), None).unwrap();
-        queue.enqueue(actor(3), ActionDefId(6), Tick(12), None).unwrap();
+        queue
+            .enqueue(actor(1), ActionDefId(4), Tick(10), None)
+            .unwrap();
+        queue
+            .enqueue(actor(2), ActionDefId(5), Tick(11), None)
+            .unwrap();
+        queue
+            .enqueue(actor(3), ActionDefId(6), Tick(12), None)
+            .unwrap();
 
         assert_eq!(queue.position_of(actor(1)), Some(0));
         assert_eq!(queue.position_of(actor(2)), Some(1));
@@ -261,8 +275,12 @@ mod tests {
     #[test]
     fn has_actor_and_remove_actor_cover_waiting_and_granted_entries() {
         let mut queue = ContentionQueue::default();
-        queue.enqueue(actor(1), ActionDefId(4), Tick(10), None).unwrap();
-        queue.enqueue(actor(2), ActionDefId(5), Tick(11), None).unwrap();
+        queue
+            .enqueue(actor(1), ActionDefId(4), Tick(10), None)
+            .unwrap();
+        queue
+            .enqueue(actor(2), ActionDefId(5), Tick(11), None)
+            .unwrap();
         queue.promote_head(Tick(20), NonZeroU32::new(3).unwrap());
 
         assert!(queue.has_actor(actor(1)));
@@ -279,8 +297,12 @@ mod tests {
     #[test]
     fn promote_head_grants_oldest_waiter_with_expiry() {
         let mut queue = ContentionQueue::default();
-        queue.enqueue(actor(1), ActionDefId(4), Tick(10), None).unwrap();
-        queue.enqueue(actor(2), ActionDefId(5), Tick(11), None).unwrap();
+        queue
+            .enqueue(actor(1), ActionDefId(4), Tick(10), None)
+            .unwrap();
+        queue
+            .enqueue(actor(2), ActionDefId(5), Tick(11), None)
+            .unwrap();
 
         let granted = queue.promote_head(Tick(20), NonZeroU32::new(3).unwrap());
 
@@ -299,7 +321,9 @@ mod tests {
     #[test]
     fn grant_expired_tracks_expiry_boundary() {
         let mut queue = ContentionQueue::default();
-        queue.enqueue(actor(1), ActionDefId(4), Tick(10), None).unwrap();
+        queue
+            .enqueue(actor(1), ActionDefId(4), Tick(10), None)
+            .unwrap();
         queue.promote_head(Tick(20), NonZeroU32::new(3).unwrap());
 
         assert!(!queue.grant_expired(Tick(22)));

@@ -61,13 +61,13 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
+    use worldwake_core::RecipeId;
     use worldwake_core::{
         BeliefConfidencePolicy, BelievedEntityState, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, LoadUnits,
         MerchandiseProfile, PerceptionSource, Quantity, ResourceSource, Tick, UniqueItemKind,
-        Wound, WorkstationTag,
+        WorkstationTag, Wound,
     };
-    use worldwake_core::RecipeId;
     use worldwake_sim::GoalBeliefView;
 
     const ACTOR: EntityId = EntityId {
@@ -136,10 +136,7 @@ mod tests {
         fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
-        fn known_entity_beliefs(
-            &self,
-            _agent: EntityId,
-        ) -> Vec<(EntityId, BelievedEntityState)> {
+        fn known_entity_beliefs(&self, _agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.clone()
         }
         fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {

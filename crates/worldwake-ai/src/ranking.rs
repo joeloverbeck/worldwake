@@ -16,13 +16,12 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 use worldwake_core::{
-    belief_confidence, ActionDomain, BelievedEntityState, BountyTarget, CommodityKind,
-    CommodityPurpose, CommunicationClass, DriveThresholds, EntityId, GoalKey, GoalKind,
-    HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, NoticeTopic, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, Permille, Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick,
-    UtilityProfile, ViolationKind,
-    failure_ratio_permille,
+    belief_confidence, failure_ratio_permille, ActionDomain, BelievedEntityState, BountyTarget,
+    CommodityKind, CommodityPurpose, CommunicationClass, DriveThresholds, EntityId, GoalKey,
+    GoalKind, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, NoticeTopic, OpportunityAnchor, OpportunityKey, PerceptionSource,
+    Permille, Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile,
+    ViolationKind,
 };
 use worldwake_sim::{commodity_opportunity_score, CommodityOpportunityBreakdown, GoalBeliefView};
 
@@ -391,10 +390,7 @@ fn has_clotted_wounds(view: &dyn GoalBeliefView, agent: EntityId) -> bool {
         .any(|wound| wound.severity.value() > 0 && wound.bleed_rate_per_tick.value() == 0)
 }
 
-fn priority_class(
-    candidate: &GroundedGoal,
-    context: &RankingContext<'_>,
-) -> GoalPriorityClass {
+fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> GoalPriorityClass {
     match candidate.key.kind {
         GoalKind::ConsumeOwnedCommodity { commodity }
         | GoalKind::AcquireCommodity {
@@ -405,8 +401,12 @@ fn priority_class(
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
         }
-        | GoalKind::ProduceCommodity { recipe_id } => best_recipe_output_assessment(recipe_id, context)
-            .map_or(GoalPriorityClass::Background, |assessment| assessment.priority_class),
+        | GoalKind::ProduceCommodity { recipe_id } => {
+            best_recipe_output_assessment(recipe_id, context)
+                .map_or(GoalPriorityClass::Background, |assessment| {
+                    assessment.priority_class
+                })
+        }
         GoalKind::AcquireCommodity { .. }
         | GoalKind::SellCommodity { .. }
         | GoalKind::RestockCommodity { .. }
@@ -549,10 +549,7 @@ fn drive_provenance_from_inputs(
     }
 }
 
-fn motive_score(
-    candidate: &GroundedGoal,
-    context: &RankingContext<'_>,
-) -> u32 {
+fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
     match candidate.key.kind {
         GoalKind::ConsumeOwnedCommodity { commodity }
         | GoalKind::AcquireCommodity {
@@ -567,8 +564,10 @@ fn motive_score(
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
         }
-        | GoalKind::ProduceCommodity { recipe_id } => best_recipe_output_assessment(recipe_id, context)
-            .map_or(0, |assessment| assessment.motive_score),
+        | GoalKind::ProduceCommodity { recipe_id } => {
+            best_recipe_output_assessment(recipe_id, context)
+                .map_or(0, |assessment| assessment.motive_score)
+        }
         GoalKind::AcquireCommodity { commodity, .. }
         | GoalKind::SellCommodity { commodity }
         | GoalKind::RestockCommodity { commodity } => enterprise_score(commodity, context),
@@ -604,12 +603,8 @@ fn motive_score(
                     reward_signal_from_quantity(terms.reward_quantity),
                 )
             }),
-        GoalKind::PostBounty { posting, terms } => {
-            post_bounty_motive(context, posting, terms)
-        }
-        GoalKind::PostNotice { posting, topic } => {
-            post_notice_motive(context, posting, topic)
-        }
+        GoalKind::PostBounty { posting, terms } => post_bounty_motive(context, posting, terms),
+        GoalKind::PostNotice { posting, topic } => post_notice_motive(context, posting, topic),
         GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
         GoalKind::RegroupWithFaction { .. } => u32::from(context.utility.social_weight.value()),
         GoalKind::EstablishBanditCamp { .. } => {
@@ -786,9 +781,7 @@ fn post_bounty_motive(
         .view
         .believed_rights(context.agent, target)
         .into_iter()
-        .any(|right| {
-            right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office)
-        })
+        .any(|right| right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office))
     {
         return 0;
     }
@@ -821,7 +814,10 @@ fn post_notice_motive(
     posting: worldwake_core::ArtifactPostingContext,
     topic: NoticeTopic,
 ) -> u32 {
-    let NoticeTopic::ThreatWarning { place: warned_place } = topic else {
+    let NoticeTopic::ThreatWarning {
+        place: warned_place,
+    } = topic
+    else {
         return 0;
     };
     if posting.issuing_authority.is_some() {
@@ -909,8 +905,7 @@ fn patrol_motive(context: &RankingContext<'_>) -> u32 {
         .count() as u32;
 
     base.saturating_mul(
-        1u32
-            .saturating_add(unresolved_thefts)
+        1u32.saturating_add(unresolved_thefts)
             .saturating_add(believed_vacancies)
             .saturating_add(believed_contests),
     )
@@ -928,7 +923,11 @@ fn patrol_relevant_offices(
     agent: EntityId,
     route: &worldwake_core::PatrolRoute,
 ) -> BTreeSet<EntityId> {
-    let route_places = route.assigned_places.iter().copied().collect::<BTreeSet<_>>();
+    let route_places = route
+        .assigned_places
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
     view.known_institutional_beliefs(agent)
         .into_iter()
         .filter_map(|belief| match belief.claim {
@@ -1097,7 +1096,10 @@ fn local_alternatives_from_view(
                 .listed_sale_lots_at(place, commodity)
                 .into_iter()
                 .filter(|lot| view.seller_for_sale_lot(*lot) != Some(agent))
-                .map(|lot| view.locally_observed_commodity_quantity(agent, lot, commodity).0)
+                .map(|lot| {
+                    view.locally_observed_commodity_quantity(agent, lot, commodity)
+                        .0
+                })
                 .sum();
             (commodity, quantity)
         })
@@ -1105,9 +1107,14 @@ fn local_alternatives_from_view(
 }
 
 fn treatment_priority(context: &RankingContext<'_>) -> GoalPriorityClass {
-    context.thresholds.map_or(GoalPriorityClass::Background, |thresholds| {
-        classify_band(derive_pain_pressure(context.view, context.agent), &thresholds.pain)
-    })
+    context
+        .thresholds
+        .map_or(GoalPriorityClass::Background, |thresholds| {
+            classify_band(
+                derive_pain_pressure(context.view, context.agent),
+                &thresholds.pain,
+            )
+        })
 }
 
 fn treatment_motive_score(context: &RankingContext<'_>) -> u32 {
@@ -1450,29 +1457,30 @@ mod tests {
     };
     use crate::{
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
-        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind,
-        RankedGoalProvenance, RankedPriorityAdjustment,
+        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
+        RankedPriorityAdjustment,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         belief_confidence, ActionDomain, ArtifactKind, ArtifactPostingContext, ArtifactState,
         BeliefConfidencePolicy, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
-        BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BodyPart,
-        BountyTarget, BountyTerms, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        CommodityPurpose, CommodityValuationProfile, DemandObservation,
-        DemandObservationReason, DeprivationKind, DriveThresholds, EffectiveRight, EntityId,
-        EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
-        JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic,
-        OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
-        PreferenceProfile, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation,
-        ReliabilityRecord, ResourceSource, RewardSource, RightKind, RouteExperience, SourceKey,
-        SourceReliability, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
-        WorkstationTag, Wound, WoundCause, WoundId,
+        BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, BountyTarget,
+        BountyTerms, CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        CommodityValuationProfile, DemandObservation, DemandObservationReason, DeprivationKind,
+        DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
+        PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity,
+        RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
+        RouteExperience, SourceKey, SourceReliability, TellTopic, TheftDispositionProfile,
+        TheftFacts, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+        ViolationId, ViolationKind, WorkstationTag, Wound, WoundCause, WoundId,
     };
-    use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RuntimeBeliefView};
+    use worldwake_sim::{
+        ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RuntimeBeliefView,
+    };
 
     #[derive(Clone, Default)]
     struct TestBeliefView {
@@ -1697,7 +1705,10 @@ mod tests {
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
         }
-        fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        fn commodity_valuation_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<CommodityValuationProfile> {
             self.commodity_valuation_profiles.get(&agent).copied()
         }
         fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
@@ -1757,11 +1768,7 @@ mod tests {
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
-        fn listed_sale_lots_at(
-            &self,
-            place: EntityId,
-            commodity: CommodityKind,
-        ) -> Vec<EntityId> {
+        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
             self.listed_sale_lots
                 .get(&(place, commodity))
                 .cloned()
@@ -1776,11 +1783,7 @@ mod tests {
         fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
             self.recipe_definitions.get(&recipe).cloned()
         }
-        fn matching_workstations_at(
-            &self,
-            place: EntityId,
-            tag: WorkstationTag,
-        ) -> Vec<EntityId> {
+        fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
             self.matching_workstations
                 .get(&(place, tag))
                 .cloned()
@@ -2088,7 +2091,10 @@ mod tests {
         view.alive.insert(facility);
         view.entity_kinds.insert(facility, EntityKind::Facility);
         view.effective_places.insert(facility, market);
-        view.place_entities.entry(market).or_default().push(facility);
+        view.place_entities
+            .entry(market)
+            .or_default()
+            .push(facility);
     }
 
     fn source_reliability_record(
@@ -2702,8 +2708,10 @@ mod tests {
 
         view.office_holder_beliefs
             .insert(office, InstitutionalBeliefRead::Certain(None));
-        view.force_controller_beliefs
-            .insert(office, InstitutionalBeliefRead::Certain((Some(entity(30)), true)));
+        view.force_controller_beliefs.insert(
+            office,
+            InstitutionalBeliefRead::Certain((Some(entity(30)), true)),
+        );
 
         let escalated = rank(
             &[goal_at_place(GoalKind::Patrol { place }, place)],
@@ -2888,15 +2896,19 @@ mod tests {
         let market = entity(2);
         let facility = entity(3);
         let mut view = base_view(agent);
-        let recipe_id = teach_recipe(&mut view, agent, RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::zero(),
-        });
+        let recipe_id = teach_recipe(
+            &mut view,
+            agent,
+            RecipeDefinition {
+                name: "Bake Bread".to_string(),
+                inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+                outputs: vec![(CommodityKind::Bread, Quantity(1))],
+                work_ticks: NonZeroU32::new(3).unwrap(),
+                required_workstation_tag: Some(WorkstationTag::Mill),
+                required_tool_kinds: Vec::new(),
+                body_cost_per_tick: BodyCostPerTick::zero(),
+            },
+        );
         add_home_facility(&mut view, market, facility);
         view.merchandise_profiles.insert(
             agent,
@@ -3462,15 +3474,19 @@ mod tests {
             HomeostaticNeeds::new(thresholds.hunger.critical(), pm(0), pm(0), pm(0), pm(0)),
         );
 
-        let recipe_id = teach_recipe(&mut view, agent, RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::zero(),
-        });
+        let recipe_id = teach_recipe(
+            &mut view,
+            agent,
+            RecipeDefinition {
+                name: "Bake Bread".to_string(),
+                inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+                outputs: vec![(CommodityKind::Bread, Quantity(1))],
+                work_ticks: NonZeroU32::new(3).unwrap(),
+                required_workstation_tag: Some(WorkstationTag::Mill),
+                required_tool_kinds: Vec::new(),
+                body_cost_per_tick: BodyCostPerTick::zero(),
+            },
+        );
 
         let ranked = rank(
             &[goal(GoalKind::AcquireCommodity {
@@ -3889,14 +3905,8 @@ mod tests {
             &utility(),
         )
         .into_ranked();
-        let trusting_ranked = rank(
-            &[goal],
-            &trusting_view,
-            agent,
-            current_tick(),
-            &utility(),
-        )
-        .into_ranked();
+        let trusting_ranked =
+            rank(&[goal], &trusting_view, agent, current_tick(), &utility()).into_ranked();
 
         assert!(
             trusting_ranked[0].motive_score > skeptical_ranked[0].motive_score,
@@ -4310,15 +4320,19 @@ mod tests {
         );
         view.demand_memory
             .insert(agent, vec![demand(market, CommodityKind::Firewood, 10)]);
-        let recipe_id = teach_recipe(&mut view, agent, RecipeDefinition {
-            name: "Cut Firewood".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Firewood, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: None,
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
+        let recipe_id = teach_recipe(
+            &mut view,
+            agent,
+            RecipeDefinition {
+                name: "Cut Firewood".to_string(),
+                inputs: vec![(CommodityKind::Grain, Quantity(2))],
+                outputs: vec![(CommodityKind::Firewood, Quantity(1))],
+                work_ticks: NonZeroU32::new(3).unwrap(),
+                required_workstation_tag: None,
+                required_tool_kinds: Vec::new(),
+                body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
+            },
+        );
 
         let ranked = rank(
             &[goal(GoalKind::ProduceCommodity { recipe_id })],
@@ -4341,15 +4355,19 @@ mod tests {
             agent,
             HomeostaticNeeds::new(pm(900), pm(100), pm(100), pm(100), pm(100)),
         );
-        let recipe_id = teach_recipe(&mut view, agent, RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Firewood, Quantity(1))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
+        let recipe_id = teach_recipe(
+            &mut view,
+            agent,
+            RecipeDefinition {
+                name: "Bake Bread".to_string(),
+                inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+                outputs: vec![(CommodityKind::Bread, Quantity(1))],
+                work_ticks: NonZeroU32::new(3).unwrap(),
+                required_workstation_tag: Some(WorkstationTag::Mill),
+                required_tool_kinds: Vec::new(),
+                body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
+            },
+        );
 
         let ranked = rank(
             &[goal(GoalKind::ProduceCommodity { recipe_id })],
@@ -4392,22 +4410,8 @@ mod tests {
             goal(GoalKind::Sleep),
         ];
 
-        let first = rank(
-            &candidates,
-            &view,
-            agent,
-            current_tick(),
-            &utility(),
-        )
-        .into_ranked();
-        let second = rank(
-            &candidates,
-            &view,
-            agent,
-            current_tick(),
-            &utility(),
-        )
-        .into_ranked();
+        let first = rank(&candidates, &view, agent, current_tick(), &utility()).into_ranked();
+        let second = rank(&candidates, &view, agent, current_tick(), &utility()).into_ranked();
 
         assert_eq!(first, second);
     }

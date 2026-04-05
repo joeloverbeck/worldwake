@@ -74,15 +74,7 @@ impl DirtySet {
 
     /// All snapshot bits (6–12).
     pub const SNAPSHOT_MASK: DirtySet =
-        DirtySet(
-            (1 << 6)
-                | (1 << 7)
-                | (1 << 8)
-                | (1 << 9)
-                | (1 << 10)
-                | (1 << 11)
-                | (1 << 12),
-        );
+        DirtySet((1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12));
 
     /// All frame lifecycle bits (13–15).
     pub const FRAME_MASK: DirtySet = DirtySet((1 << 13) | (1 << 14) | (1 << 15));

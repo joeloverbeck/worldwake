@@ -3,8 +3,8 @@ use super::observation::update_runtime_observation_snapshot;
 use super::{handle_recoverable_travel_step_blockage, runtime_belief_view, AgentTickContext};
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, ContentionIntents, Tick,
-    VisibilitySpec, WitnessData, WorldTxn,
+    ActiveGoal, BlockedIntentMemory, CauseRef, ContentionIntents, EntityId, Tick, VisibilitySpec,
+    WitnessData, WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
 

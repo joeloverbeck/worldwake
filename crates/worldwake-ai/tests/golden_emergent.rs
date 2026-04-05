@@ -14,15 +14,13 @@ use worldwake_core::{
     verify_live_lot_conservation, AgentBeliefStore, AgentData, BeliefConfidencePolicy,
     BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind,
     CommunicationProfile, ComponentKind, ComponentValue, ControlSource, DeadAt,
-    DeprivationExposure, DeprivationKind, DriveThresholds, EventTag, EventView, GoalKey,
-    GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes,
-    IntentionDispositionProfile, MetabolismProfile, PerceptionProfile, PerceptionSource,
-    PrototypePlace, Quantity, RightKind,
-    RecordData, RecordKind, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw,
-    TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand, Tick,
-    UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag,
+    DeprivationExposure, DeprivationKind, DriveThresholds, EventTag, EventView, GoalKey, GoalKind,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, IntentionDispositionProfile, JusticeDispositionProfile,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace, Quantity,
+    RecordData, RecordKind, RelationValue, ResourceSource, RightKind, Seed, StateHash,
+    SuccessionLaw, TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand,
+    Tick, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
 };
 use worldwake_sim::{
     step_tick, ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail,
@@ -7297,9 +7295,7 @@ fn run_jurisdiction_gated_punishment_branch(
         .world
         .effective_rights(authority, accused)
         .into_iter()
-        .any(|right| {
-            right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office)
-        });
+        .any(|right| right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office));
 
     if expect_punish {
         assert_eq!(

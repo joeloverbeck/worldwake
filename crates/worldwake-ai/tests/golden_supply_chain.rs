@@ -63,7 +63,12 @@ fn create_home_facility(
 ) -> worldwake_core::EntityId {
     let mut txn = new_txn(&mut h.world, tick);
     let (facility, _stock_container, _display_container) = txn
-        .create_merchant_facility(place, owner, worldwake_core::LoadUnits(500), Some(worldwake_core::LoadUnits(300)))
+        .create_merchant_facility(
+            place,
+            owner,
+            worldwake_core::LoadUnits(500),
+            Some(worldwake_core::LoadUnits(300)),
+        )
         .unwrap();
     commit_txn(txn, &mut h.event_log);
     facility
@@ -1821,20 +1826,20 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
             "authoritative apples should never increase during the full supply chain"
         );
 
-        merchant_left_home |=
-            h.world.is_in_transit(merchant) || h.world.effective_place(merchant) != Some(general_store);
+        merchant_left_home |= h.world.is_in_transit(merchant)
+            || h.world.effective_place(merchant) != Some(general_store);
         consumer_hunger_decreased |= h.agent_hunger(consumer) < initial_consumer_hunger;
-        consumer_trade_agreed |= h
-            .world
-            .get_component_demand_memory(consumer)
-            .is_some_and(|memory| {
-                memory.observations.iter().any(|obs| {
-                    obs.reason == DemandObservationReason::TradeAgreed
-                        && obs.commodity == CommodityKind::Apple
-                        && obs.quantity > Quantity(1)
-                        && obs.counterparty == Some(merchant)
-                })
-            });
+        consumer_trade_agreed |=
+            h.world
+                .get_component_demand_memory(consumer)
+                .is_some_and(|memory| {
+                    memory.observations.iter().any(|obs| {
+                        obs.reason == DemandObservationReason::TradeAgreed
+                            && obs.commodity == CommodityKind::Apple
+                            && obs.quantity > Quantity(1)
+                            && obs.counterparty == Some(merchant)
+                    })
+                });
 
         let consumer_events = h
             .action_trace_sink()
@@ -1848,11 +1853,10 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
             event.action_name == "harvest:Harvest Apples"
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
         });
-        merchant_returned_home_after_harvest |= merchant_harvested_apples
-            && h.world.effective_place(merchant) == Some(general_store);
+        merchant_returned_home_after_harvest |=
+            merchant_harvested_apples && h.world.effective_place(merchant) == Some(general_store);
         consumer_started_trade |= consumer_events.iter().any(|event| {
-            event.action_name == "trade"
-                && matches!(event.kind, ActionTraceKind::Started { .. })
+            event.action_name == "trade" && matches!(event.kind, ActionTraceKind::Started { .. })
         });
 
         if merchant_left_home
@@ -1893,7 +1897,10 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
     assert!(!h.agent_is_dead(merchant), "merchant must stay alive");
     assert!(!h.agent_is_dead(consumer), "consumer must stay alive");
 
-    let sink = h.driver.trace_sink().expect("decision tracing should be enabled");
+    let sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
     let consumer_selected_acquire = sink.traces_for(consumer).into_iter().any(|trace| {
         matches!(
             &trace.outcome,

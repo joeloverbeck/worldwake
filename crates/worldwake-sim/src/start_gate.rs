@@ -316,12 +316,12 @@ mod tests {
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
+    use std::sync::LazyLock;
     use worldwake_core::{
         build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CombatProfile,
         CombatWeaponRef, CommodityKind, ControlSource, EntityId, EventLog, EventTag, EventView,
         Quantity, Seed, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
     };
-    use std::sync::LazyLock;
 
     static TEST_RECIPES: LazyLock<RecipeRegistry> = LazyLock::new(RecipeRegistry::new);
 

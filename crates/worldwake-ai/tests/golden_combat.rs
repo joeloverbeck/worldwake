@@ -13,9 +13,9 @@ use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, AgentData, BeliefConfidencePolicy,
     BelievedContentionState, CombatProfile, CombatStance, CommodityKind, ContentionIntents,
     ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DeprivationExposure, GoalKey,
-    GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile,
-    PrototypePlace, Quantity, QueuedContentionIntent, ResourceSource, Seed, StateHash, Tick,
-    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    GoalKind, HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, PrototypePlace,
+    Quantity, QueuedContentionIntent, ResourceSource, Seed, StateHash, Tick, UtilityProfile,
+    WorkstationTag, Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
     ActionDuration, ActionInstance, ActionPayload, ActionRequestMode, ActionStatus,
@@ -32,14 +32,10 @@ fn request_simple_action(
     def_name: &str,
     targets: Vec<worldwake_core::EntityId>,
 ) {
-    let def_id = h
-        .defs
-        .iter()
-        .find(|def| def.name == def_name)
-        .map_or_else(
-            || panic!("full registries should include {def_name}"),
-            |def| def.id,
-        );
+    let def_id = h.defs.iter().find(|def| def.name == def_name).map_or_else(
+        || panic!("full registries should include {def_name}"),
+        |def| def.id,
+    );
     let tick = h.scheduler.current_tick();
     let _ = h.scheduler.input_queue_mut().enqueue(
         tick,
@@ -2799,8 +2795,10 @@ fn run_corpse_contention_visible_state_scenario(seed: Seed) -> CorpseContentionO
             );
         }
 
-        first_looter_gained_bread |= h.agent_commodity_qty(first, CommodityKind::Bread) > Quantity(0);
-        second_looter_gained_bread |= h.agent_commodity_qty(second, CommodityKind::Bread) > Quantity(0);
+        first_looter_gained_bread |=
+            h.agent_commodity_qty(first, CommodityKind::Bread) > Quantity(0);
+        second_looter_gained_bread |=
+            h.agent_commodity_qty(second, CommodityKind::Bread) > Quantity(0);
 
         if saw_believed_contention
             && grant_sequence.len() >= 2
@@ -2823,7 +2821,8 @@ fn run_corpse_contention_visible_state_scenario(seed: Seed) -> CorpseContentionO
             ContentionProjectionState::None
         },
         saw_second_promotion: grant_sequence.len() >= 2 && grant_sequence[0] != grant_sequence[1],
-        bread_gain_count: u8::from(first_looter_gained_bread) + u8::from(second_looter_gained_bread),
+        bread_gain_count: u8::from(first_looter_gained_bread)
+            + u8::from(second_looter_gained_bread),
         corpse_emptied: h.agent_commodity_qty(corpse, CommodityKind::Bread) == Quantity(0),
     }
 }
@@ -2842,8 +2841,7 @@ fn golden_corpse_contention_projects_visible_queue_and_grant_state() {
         "after the first partial loot commit, the second looter should receive a real promotion on the same corpse"
     );
     assert_eq!(
-        outcome.bread_gain_count,
-        2,
+        outcome.bread_gain_count, 2,
         "carry-constrained corpse loot should leave enough bread for the promoted second looter"
     );
     assert!(

@@ -3,9 +3,10 @@ use crate::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         BlockerMatchDetail, CandidateEvidenceContributor, CandidateEvidenceExclusion,
         CandidateEvidenceExclusionReason, CandidateEvidenceKind, CandidateEvidenceTrace,
-        CandidateLegalityTrace, DesireFullyBlocked, PursuitDiagnostic, PursuitOmissionReason,
-        PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-        SocialCandidateOmission, ViolationDetectionOmission, ViolationDetectionOmissionReason,
+        CandidateLegalityTrace, DesireFullyBlocked, PoliticalCandidateOmission,
+        PoliticalCandidateOmissionReason, PoliticalGoalFamily, PursuitDiagnostic,
+        PursuitOmissionReason, SocialCandidateOmission, ViolationDetectionOmission,
+        ViolationDetectionOmissionReason,
     },
     derive_danger_pressure,
     enterprise::{
@@ -24,18 +25,17 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    classify_communication,
-    current_institutional_belief_topics, load_per_unit,
+    classify_communication, current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
     ArtifactPostingContext, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
     BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule,
     EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
-    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
-    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
-    UtilityProfile, ViolationId, ViolationKind, ViolationMemory,
+    PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
+    PunishmentKind, Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
+    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
+    ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
@@ -284,16 +284,13 @@ fn filter_blocked_candidates(
     for candidate in candidates {
         *emitted_counts.entry(candidate.key).or_default() += 1;
         if let Some(detail) = find_matching_blocker(&candidate, blocked, current_tick) {
-            blocked_by_goal
-                .entry(candidate.key)
-                .or_default()
-                .push((
-                    OpportunityKey {
-                        goal_key: candidate.key,
-                        anchor: candidate.anchor,
-                    },
-                    Some(detail),
-                ));
+            blocked_by_goal.entry(candidate.key).or_default().push((
+                OpportunityKey {
+                    goal_key: candidate.key,
+                    anchor: candidate.anchor,
+                },
+                Some(detail),
+            ));
             continue;
         }
         surviving.push(candidate);
@@ -454,9 +451,7 @@ fn emit_bounty_candidates(
                         trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
                             subject: target,
                             aspect: BeliefAspect::LocationAt {
-                                place: target_belief
-                                    .last_known_place
-                                    .unwrap_or(terms.claim_place),
+                                place: target_belief.last_known_place.unwrap_or(terms.claim_place),
                             },
                             source: target_belief.source,
                             observed_tick: target_belief.observed_tick,
@@ -478,24 +473,16 @@ fn emit_bounty_candidates(
                 quantity,
                 destination,
             } => {
-                let delivery_gap = delivery_bounty_gap(
-                    ctx.view,
-                    ctx.agent,
-                    destination,
-                    commodity,
-                    quantity,
-                );
-                let controlled_sources = known_controlled_delivery_sources(
-                    ctx.view,
-                    ctx.agent,
-                    &beliefs,
-                    commodity,
-                );
-                let available_quantity = controlled_sources
-                    .iter()
-                    .fold(Quantity(0), |total, (_, _, source_quantity)| {
+                let delivery_gap =
+                    delivery_bounty_gap(ctx.view, ctx.agent, destination, commodity, quantity);
+                let controlled_sources =
+                    known_controlled_delivery_sources(ctx.view, ctx.agent, &beliefs, commodity);
+                let available_quantity = controlled_sources.iter().fold(
+                    Quantity(0),
+                    |total, (_, _, source_quantity)| {
                         Quantity(total.0.saturating_add(source_quantity.0))
-                    });
+                    },
+                );
                 if delivery_gap > Quantity(0) && available_quantity < delivery_gap {
                     continue;
                 }
@@ -520,14 +507,15 @@ fn emit_bounty_candidates(
                     trace.contributor(CandidateEvidenceKind::LooseLot, *place, *lot);
                 }
                 if ctx.tracing_enabled {
-                    trace.knowledge_path.entity_beliefs.extend(
-                        belief_provenance_for_contributors(
+                    trace
+                        .knowledge_path
+                        .entity_beliefs
+                        .extend(belief_provenance_for_contributors(
                             ctx.view,
                             ctx.agent,
                             &trace.contributors,
                             commodity,
-                        ),
-                    );
+                        ));
                 }
 
                 emit_candidate_with_trace(
@@ -572,7 +560,10 @@ fn emit_bounty_posting_candidates(
                 violation_id: _,
                 ..
             },
-            InstitutionalKnowledgeSource::RecordConsultation { record, entry_id: _ },
+            InstitutionalKnowledgeSource::RecordConsultation {
+                record,
+                entry_id: _,
+            },
         ) = (belief.claim, belief.source)
         else {
             continue;
@@ -614,8 +605,12 @@ fn emit_bounty_posting_candidates(
 
         let posting_place = office_data.seat;
         let mut evidence = Evidence::with_entity(accused);
-        evidence.entities.extend([office, record, theft.missing_entity]);
-        evidence.places.extend([posting_place, theft.expected_place]);
+        evidence
+            .entities
+            .extend([office, record, theft.missing_entity]);
+        evidence
+            .places
+            .extend([posting_place, theft.expected_place]);
         let mut trace = EvidenceTrace::default();
         if ctx.tracing_enabled {
             trace
@@ -689,11 +684,9 @@ fn emit_notice_posting_candidates(
             .into_iter()
             .filter(|(_entity, belief)| belief.last_known_place == Some(warned_place))
             .filter(|(_entity, belief)| {
-                belief
-                    .believed_activity
-                    .as_ref()
-                    .is_some_and(|activity| activity.action_domain == worldwake_core::ActionDomain::Combat)
-                    || (belief.alive && !belief.wounds.is_empty())
+                belief.believed_activity.as_ref().is_some_and(|activity| {
+                    activity.action_domain == worldwake_core::ActionDomain::Combat
+                }) || (belief.alive && !belief.wounds.is_empty())
             })
             .map(|(entity, _belief)| entity),
     );
@@ -725,7 +718,9 @@ fn emit_notice_posting_candidates(
                 expires_at: None,
                 jurisdiction: Some(posting_place),
             },
-            topic: NoticeTopic::ThreatWarning { place: warned_place },
+            topic: NoticeTopic::ThreatWarning {
+                place: warned_place,
+            },
         },
         OpportunityAnchor::Place(posting_place),
         evidence,
@@ -1950,12 +1945,8 @@ fn emit_remote_engage_hostile_targets(
             continue;
         };
 
-        let staleness = ctx
-            .current_tick
-            .0
-            .saturating_sub(belief.observed_tick.0);
-        let confidence =
-            worldwake_core::belief_confidence(&belief.source, staleness, &policy);
+        let staleness = ctx.current_tick.0.saturating_sub(belief.observed_tick.0);
+        let confidence = worldwake_core::belief_confidence(&belief.source, staleness, &policy);
 
         if confidence < pursuit_profile.min_location_confidence {
             if tracing {
@@ -1973,8 +1964,7 @@ fn emit_remote_engage_hostile_targets(
             continue;
         }
 
-        let route_cost =
-            min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place);
+        let route_cost = min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place);
         if route_cost.is_none() {
             if tracing {
                 emit_pursuit_omission_trace_with_belief(
@@ -2111,7 +2101,13 @@ fn emit_raid_target_goals(
 
     // Remote raid targets: iterate entity beliefs for targets believed at a
     // remote place that satisfy pursuit-profile constraints.
-    emit_remote_raid_targets(candidates, diagnostics, ctx, &local_targets, &current_attackers);
+    emit_remote_raid_targets(
+        candidates,
+        diagnostics,
+        ctx,
+        &local_targets,
+        &current_attackers,
+    );
 }
 
 fn emit_remote_raid_targets(
@@ -2177,12 +2173,8 @@ fn emit_remote_raid_targets(
             continue;
         };
 
-        let staleness = ctx
-            .current_tick
-            .0
-            .saturating_sub(belief.observed_tick.0);
-        let confidence =
-            worldwake_core::belief_confidence(&belief.source, staleness, &policy);
+        let staleness = ctx.current_tick.0.saturating_sub(belief.observed_tick.0);
+        let confidence = worldwake_core::belief_confidence(&belief.source, staleness, &policy);
         if confidence < pursuit_profile.min_location_confidence {
             if tracing {
                 emit_pursuit_omission_trace_with_belief(
@@ -2199,8 +2191,7 @@ fn emit_remote_raid_targets(
             continue;
         }
 
-        let route_cost =
-            min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place);
+        let route_cost = min_travel_ticks_via_view(ctx.view, actor_place, belief.believed_place);
         if route_cost.is_none() {
             if tracing {
                 emit_pursuit_omission_trace_with_belief(
@@ -2843,7 +2834,9 @@ fn emit_sell_goals(
             }
 
             let mut evidence = Evidence::with_place(current_place);
-            evidence.entities.extend(unlisted_local_lots.iter().copied());
+            evidence
+                .entities
+                .extend(unlisted_local_lots.iter().copied());
             let mut trace = EvidenceTrace::default();
             for &lot in &unlisted_local_lots {
                 trace.contributor(CandidateEvidenceKind::LooseLot, current_place, lot);
@@ -2853,14 +2846,15 @@ fn emit_sell_goals(
                     .knowledge_path
                     .self_knowledge
                     .push(SelfKnowledgeProvenance::MerchantIdentity);
-                trace.knowledge_path.entity_beliefs.extend(
-                    belief_provenance_for_contributors(
+                trace
+                    .knowledge_path
+                    .entity_beliefs
+                    .extend(belief_provenance_for_contributors(
                         ctx.view,
                         ctx.agent,
                         &trace.contributors,
                         commodity,
-                    ),
-                );
+                    ));
             }
             emit_candidate_with_trace(
                 candidates,
@@ -3702,11 +3696,7 @@ fn acquisition_path_evidence_inner(
                 if seller != agent {
                     place_evidence.places.insert(candidate_place);
                     place_evidence.entities.insert(seller);
-                    place_trace.contributor(
-                        CandidateEvidenceKind::Seller,
-                        candidate_place,
-                        seller,
-                    );
+                    place_trace.contributor(CandidateEvidenceKind::Seller, candidate_place, seller);
                 }
             }
         }
@@ -4285,21 +4275,20 @@ mod tests {
     use worldwake_core::{
         AgentBeliefStore, ArtifactKind, ArtifactPostingContext, ArtifactState,
         BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
-        BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey,
-        BlockingFact, BodyPart, BountyTarget, BountyTerms, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
-        DemandObservation, DemandObservationReason, DriveThresholds, EffectiveRight,
-        EligibilityRule, EntityId, EntityKind, EpistemicDispositionProfile, GoalKey, GoalKind,
-        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, PatrolProfile,
-        PatrolRoute, PerceptionSource, Permille, ProofRequirement,
-        PunishmentFineSelectionTrace, PunishmentFineTraceFacts, Quantity, RecipeId,
-        RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
-        RewardSource, RightKind, SharedTellState, SocialObservation, SocialObservationDetail,
-        TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationKind, ViolationMemory,
-        WorkstationTag, Wound, WoundCause, WoundId, OpportunityAnchor,
+        BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
+        BodyPart, BountyTarget, BountyTerms, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
+        DemandObservationReason, DriveThresholds, EffectiveRight, EligibilityRule, EntityId,
+        EntityKind, EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeedId,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
+        PerceptionSource, Permille, ProofRequirement, PunishmentFineSelectionTrace,
+        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+        RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
+        SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic,
+        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        UtilityProfile, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -4457,20 +4446,13 @@ mod tests {
         }
     }
 
-    static SALE_LOT_COUNTER: std::sync::atomic::AtomicU32 =
-        std::sync::atomic::AtomicU32::new(5000);
+    static SALE_LOT_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(5000);
 
     impl TestBeliefView {
         /// Register a seller as having listed lots of `commodity` at `place`.
         /// Creates a synthetic lot entity and maps it to the seller.
-        fn register_seller(
-            &mut self,
-            place: EntityId,
-            commodity: CommodityKind,
-            seller: EntityId,
-        ) {
-            let lot_slot =
-                SALE_LOT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        fn register_seller(&mut self, place: EntityId, commodity: CommodityKind, seller: EntityId) {
+            let lot_slot = SALE_LOT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let lot = entity(lot_slot);
             self.listed_lots
                 .entry((place, commodity))
@@ -4934,11 +4916,7 @@ mod tests {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn listed_sale_lots_at(
-            &self,
-            place: EntityId,
-            commodity: CommodityKind,
-        ) -> Vec<EntityId> {
+        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
             self.listed_lots
                 .get(&(place, commodity))
                 .cloned()
@@ -5291,18 +5269,16 @@ mod tests {
         view.entities_at.insert(square, vec![agent]);
         view.beliefs.insert(
             agent,
-            vec![
-                (
-                    fulfilled_bounty,
-                    believed_bounty_state(
-                        issuer,
-                        square,
-                        BountyTarget::EliminateEntity { target },
-                        ArtifactState::Fulfilled,
-                        250,
-                    ),
+            vec![(
+                fulfilled_bounty,
+                believed_bounty_state(
+                    issuer,
+                    square,
+                    BountyTarget::EliminateEntity { target },
+                    ArtifactState::Fulfilled,
+                    250,
                 ),
-            ],
+            )],
         );
 
         let result = generate_candidates_with_travel_horizon(
@@ -5316,14 +5292,12 @@ mod tests {
             false,
         );
 
-        assert!(
-            !contains_goal(
-                &result.candidates,
-                GoalKind::FulfillBounty {
-                    bounty: fulfilled_bounty,
-                }
-            )
-        );
+        assert!(!contains_goal(
+            &result.candidates,
+            GoalKind::FulfillBounty {
+                bounty: fulfilled_bounty,
+            }
+        ));
     }
 
     #[test]
@@ -5368,10 +5342,7 @@ mod tests {
                     bread_lot,
                     BelievedEntityState {
                         last_known_place: Some(source_place),
-                        last_known_inventory: BTreeMap::from([(
-                            CommodityKind::Bread,
-                            Quantity(3),
-                        )]),
+                        last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,
@@ -5446,10 +5417,7 @@ mod tests {
                     bread_lot,
                     BelievedEntityState {
                         last_known_place: Some(source_place),
-                        last_known_inventory: BTreeMap::from([(
-                            CommodityKind::Bread,
-                            Quantity(1),
-                        )]),
+                        last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
                         workstation_tag: None,
                         resource_source: None,
                         alive: true,
@@ -5527,7 +5495,9 @@ mod tests {
         let gate = entity(11);
         let mut missing_profile = TestBeliefView::default();
         missing_profile.alive.insert(agent);
-        missing_profile.entity_kinds.insert(agent, EntityKind::Agent);
+        missing_profile
+            .entity_kinds
+            .insert(agent, EntityKind::Agent);
         missing_profile.effective_places.insert(agent, square);
         missing_profile.entities_at.insert(square, vec![agent]);
         missing_profile.patrol_routes.insert(
@@ -5554,7 +5524,9 @@ mod tests {
         ));
 
         let mut invalid_route = missing_profile;
-        invalid_route.patrol_profiles.insert(agent, patrol_profile(550));
+        invalid_route
+            .patrol_profiles
+            .insert(agent, patrol_profile(550));
         invalid_route.patrol_routes.insert(
             agent,
             PatrolRoute {
@@ -5573,12 +5545,10 @@ mod tests {
             6,
             false,
         );
-        assert!(
-            !invalid_route_result
-                .candidates
-                .iter()
-                .any(|candidate| matches!(candidate.key.kind, GoalKind::Patrol { .. }))
-        );
+        assert!(!invalid_route_result
+            .candidates
+            .iter()
+            .any(|candidate| matches!(candidate.key.kind, GoalKind::Patrol { .. })));
     }
 
     fn goals_for<'a>(
@@ -8250,11 +8220,14 @@ mod tests {
         view.effective_places.insert(stored_bread, place);
         view.entities_at
             .insert(place, vec![agent, facility, listed_bread, stored_bread]);
-        view.direct_possessions.insert(agent, vec![listed_bread, stored_bread]);
+        view.direct_possessions
+            .insert(agent, vec![listed_bread, stored_bread]);
         view.direct_possessors.insert(listed_bread, agent);
         view.direct_possessors.insert(stored_bread, agent);
-        view.lot_commodities.insert(listed_bread, CommodityKind::Bread);
-        view.lot_commodities.insert(stored_bread, CommodityKind::Bread);
+        view.lot_commodities
+            .insert(listed_bread, CommodityKind::Bread);
+        view.lot_commodities
+            .insert(stored_bread, CommodityKind::Bread);
         view.commodity_quantities
             .insert((agent, CommodityKind::Bread), Quantity(6));
         view.commodity_quantities
@@ -8307,7 +8280,8 @@ mod tests {
         let other_place = entity(11);
         let bread = entity(20);
         let mut view = TestBeliefView::default();
-        view.alive.extend([agent, home, other_place, facility, bread]);
+        view.alive
+            .extend([agent, home, other_place, facility, bread]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(home, EntityKind::Place);
         view.entity_kinds.insert(other_place, EntityKind::Place);
@@ -8316,8 +8290,7 @@ mod tests {
         view.effective_places.insert(agent, other_place);
         view.effective_places.insert(facility, home);
         view.effective_places.insert(bread, other_place);
-        view.entities_at
-            .insert(other_place, vec![agent, bread]);
+        view.entities_at.insert(other_place, vec![agent, bread]);
         view.entities_at.insert(home, vec![facility]);
         view.direct_possessions.insert(agent, vec![bread]);
         view.direct_possessors.insert(bread, agent);
@@ -8545,13 +8518,7 @@ mod tests {
                 target_item: contained
             }
         ));
-        for rejected in [
-            self_owned,
-            unowned,
-            controllable,
-            possessed,
-            too_heavy,
-        ] {
+        for rejected in [self_owned, unowned, controllable, possessed, too_heavy] {
             assert!(
                 !contains_goal(
                     &candidates,
@@ -8624,7 +8591,8 @@ mod tests {
         view.effective_places.insert(owner, remote_place);
         view.effective_places.insert(remote_guard, remote_place);
         view.entities_at.insert(place, vec![agent, item]);
-        view.entities_at.insert(remote_place, vec![owner, remote_guard]);
+        view.entities_at
+            .insert(remote_place, vec![owner, remote_guard]);
         view.entity_loads.insert(agent, LoadUnits(1));
         view.entity_loads.insert(item, LoadUnits(2));
         view.carry_capacities.insert(agent, LoadUnits(5));
@@ -8637,7 +8605,8 @@ mod tests {
             },
         );
         view.believed_owners.insert(item, owner);
-        view.patrol_profiles.insert(local_guard, patrol_profile(400));
+        view.patrol_profiles
+            .insert(local_guard, patrol_profile(400));
         view.patrol_routes.insert(
             local_guard,
             PatrolRoute {
@@ -8645,7 +8614,8 @@ mod tests {
                 current_index: 0,
             },
         );
-        view.patrol_profiles.insert(remote_guard, patrol_profile(400));
+        view.patrol_profiles
+            .insert(remote_guard, patrol_profile(400));
         view.patrol_routes.insert(
             remote_guard,
             PatrolRoute {
@@ -8670,7 +8640,8 @@ mod tests {
         );
 
         view.effective_places.insert(local_guard, place);
-        view.entities_at.insert(place, vec![agent, item, local_guard]);
+        view.entities_at
+            .insert(place, vec![agent, item, local_guard]);
 
         let local_guard_present = generate_candidates(
             &view,
@@ -10664,7 +10635,8 @@ mod tests {
         let facility = entity(12);
         let bread = entity(20);
         let mut view = TestBeliefView::default();
-        view.alive.extend([agent, origin, destination, facility, bread]);
+        view.alive
+            .extend([agent, origin, destination, facility, bread]);
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.entity_kinds.insert(origin, EntityKind::Place);
         view.entity_kinds.insert(destination, EntityKind::Place);
@@ -12736,7 +12708,8 @@ mod tests {
         let mut view = TestBeliefView::default();
         view.alive.insert(agent);
         view.entity_kinds.insert(agent, EntityKind::Agent);
-        view.entity_kinds.insert(missing_entity, EntityKind::ItemLot);
+        view.entity_kinds
+            .insert(missing_entity, EntityKind::ItemLot);
         view.effective_places.insert(agent, place);
         view.effective_places.insert(missing_entity, entity(20));
         view.violation_disposition_profiles
@@ -12746,7 +12719,8 @@ mod tests {
             vec![(missing_entity, belief_at_place(place, Tick(1)))],
         );
         view.believed_owners.insert(missing_entity, agent);
-        view.direct_containers.insert(missing_entity, facility_container);
+        view.direct_containers
+            .insert(missing_entity, facility_container);
         view.entities_at.insert(place, vec![agent]);
 
         let result = generate_candidates_with_travel_horizon(
@@ -13396,8 +13370,7 @@ mod tests {
         view.effective_places.insert(agent, agent_place);
         // Target is NOT at agent_place (remote).
         view.effective_places.insert(target, remote_place);
-        view.entities_at
-            .insert(agent_place, vec![agent]);
+        view.entities_at.insert(agent_place, vec![agent]);
         view.entities_at.insert(remote_place, vec![target]);
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
@@ -13425,14 +13398,8 @@ mod tests {
         }
         places.push(remote_place);
         for w in places.windows(2) {
-            view.adjacent_places
-                .entry(w[0])
-                .or_default()
-                .push(w[1]);
-            view.adjacent_places
-                .entry(w[1])
-                .or_default()
-                .push(w[0]);
+            view.adjacent_places.entry(w[0]).or_default().push(w[1]);
+            view.adjacent_places.entry(w[1]).or_default().push(w[0]);
         }
 
         let candidates = generate_candidates(
@@ -13489,8 +13456,7 @@ mod tests {
         view.entity_kinds.insert(target, EntityKind::Agent);
         view.effective_places.insert(agent, agent_place);
         view.effective_places.insert(target, remote_place);
-        view.entities_at
-            .insert(agent_place, vec![agent]);
+        view.entities_at.insert(agent_place, vec![agent]);
         view.entities_at.insert(remote_place, vec![target]);
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
@@ -13507,10 +13473,8 @@ mod tests {
                 max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
             },
         );
-        view.adjacent_places
-            .insert(agent_place, vec![remote_place]);
-        view.adjacent_places
-            .insert(remote_place, vec![agent_place]);
+        view.adjacent_places.insert(agent_place, vec![remote_place]);
+        view.adjacent_places.insert(remote_place, vec![agent_place]);
 
         let mut blocked = BlockedIntentMemory::default();
         blocked.record(BlockedIntent {
@@ -13557,8 +13521,7 @@ mod tests {
         view.entity_kinds.insert(target, EntityKind::Agent);
         view.effective_places.insert(agent, agent_place);
         // Target has no effective place and no belief about place.
-        view.entities_at
-            .insert(agent_place, vec![agent]);
+        view.entities_at.insert(agent_place, vec![agent]);
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
         view.factions_by_member.insert(agent, vec![faction]);
@@ -13602,8 +13565,7 @@ mod tests {
         view.entity_kinds.insert(target, EntityKind::Agent);
         view.effective_places.insert(agent, agent_place);
         view.effective_places.insert(target, remote_place);
-        view.entities_at
-            .insert(agent_place, vec![agent]);
+        view.entities_at.insert(agent_place, vec![agent]);
         view.entities_at.insert(remote_place, vec![target]);
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
@@ -13619,10 +13581,8 @@ mod tests {
                 max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
             },
         );
-        view.adjacent_places
-            .insert(agent_place, vec![remote_place]);
-        view.adjacent_places
-            .insert(remote_place, vec![agent_place]);
+        view.adjacent_places.insert(agent_place, vec![remote_place]);
+        view.adjacent_places.insert(remote_place, vec![agent_place]);
 
         let candidates = generate_candidates(
             &view,
@@ -13651,8 +13611,7 @@ mod tests {
         view.entity_kinds.insert(target, EntityKind::Agent);
         view.effective_places.insert(agent, agent_place);
         view.effective_places.insert(target, remote_place);
-        view.entities_at
-            .insert(agent_place, vec![agent]);
+        view.entities_at.insert(agent_place, vec![agent]);
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
         view.hostiles.insert(agent, vec![target]);
@@ -13668,10 +13627,8 @@ mod tests {
                 max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
             },
         );
-        view.adjacent_places
-            .insert(agent_place, vec![remote_place]);
-        view.adjacent_places
-            .insert(remote_place, vec![agent_place]);
+        view.adjacent_places.insert(agent_place, vec![remote_place]);
+        view.adjacent_places.insert(remote_place, vec![agent_place]);
 
         let candidates = generate_candidates(
             &view,
@@ -13742,7 +13699,14 @@ mod tests {
         let blocked = BlockedIntentMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
-            &view, agent, &blocked, &vm, &RecipeRegistry::new(), Tick(5), 6, false,
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
         );
 
         assert!(
@@ -13769,7 +13733,14 @@ mod tests {
         let blocked = BlockedIntentMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
-            &view, agent, &blocked, &vm, &RecipeRegistry::new(), Tick(5), 6, false,
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
         );
 
         assert!(
@@ -13796,7 +13767,14 @@ mod tests {
         let blocked = BlockedIntentMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
-            &view, agent, &blocked, &vm, &RecipeRegistry::new(), Tick(5), 6, false,
+            &view,
+            agent,
+            &blocked,
+            &vm,
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
         );
 
         assert!(

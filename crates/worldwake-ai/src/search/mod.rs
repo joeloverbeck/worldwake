@@ -5,8 +5,7 @@ mod transition;
 
 use crate::{
     shared_collections::SharedVec, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan,
-    PlannedStep, PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot,
-    PlanningState,
+    PlannedStep, PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot, PlanningState,
 };
 use candidates::{
     root_candidate_payload_status, search_candidates, unsupported_goal, SearchCandidate,

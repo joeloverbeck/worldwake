@@ -287,8 +287,12 @@ fn format_active_goal_delta(agent_name: &str, after: &ComponentValue, world: &Wo
 /// Format a `GoalKind` with resolved entity names instead of raw `EntityId` values.
 pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
     match kind {
-        GoalKind::ConsumeOwnedCommodity { commodity } => format!("ConsumeOwnedCommodity({commodity:?})"),
-        GoalKind::AcquireCommodity { commodity, purpose } => format!("AcquireCommodity({commodity:?}, {purpose:?})"),
+        GoalKind::ConsumeOwnedCommodity { commodity } => {
+            format!("ConsumeOwnedCommodity({commodity:?})")
+        }
+        GoalKind::AcquireCommodity { commodity, purpose } => {
+            format!("AcquireCommodity({commodity:?}, {purpose:?})")
+        }
         GoalKind::Sleep => "Sleep".to_string(),
         GoalKind::Relieve => "Relieve".to_string(),
         GoalKind::Wash => "Wash".to_string(),
@@ -303,22 +307,41 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
             format!("TreatWounds({})", entity_display_name(world, *patient))
         }
         GoalKind::RegroupWithFaction { faction } => {
-            format!("RegroupWithFaction({})", entity_display_name(world, *faction))
+            format!(
+                "RegroupWithFaction({})",
+                entity_display_name(world, *faction)
+            )
         }
         GoalKind::EstablishBanditCamp { faction } => {
-            format!("EstablishBanditCamp({})", entity_display_name(world, *faction))
+            format!(
+                "EstablishBanditCamp({})",
+                entity_display_name(world, *faction)
+            )
         }
         GoalKind::ProduceCommodity { recipe_id } => format!("ProduceCommodity({recipe_id:?})"),
         GoalKind::SellCommodity { commodity } => format!("SellCommodity({commodity:?})"),
         GoalKind::RestockCommodity { commodity } => format!("RestockCommodity({commodity:?})"),
-        GoalKind::MoveCargo { commodity, destination } => {
-            format!("MoveCargo({commodity:?} → {})", entity_display_name(world, *destination))
+        GoalKind::MoveCargo {
+            commodity,
+            destination,
+        } => {
+            format!(
+                "MoveCargo({commodity:?} → {})",
+                entity_display_name(world, *destination)
+            )
         }
         GoalKind::LootCorpse { corpse } => {
             format!("LootCorpse({})", entity_display_name(world, *corpse))
         }
-        GoalKind::BuryCorpse { corpse, burial_site } => {
-            format!("BuryCorpse({} at {})", entity_display_name(world, *corpse), entity_display_name(world, *burial_site))
+        GoalKind::BuryCorpse {
+            corpse,
+            burial_site,
+        } => {
+            format!(
+                "BuryCorpse({} at {})",
+                entity_display_name(world, *corpse),
+                entity_display_name(world, *burial_site)
+            )
         }
         GoalKind::FulfillBounty { bounty } => {
             format!("FulfillBounty({})", entity_display_name(world, *bounty))
@@ -336,7 +359,11 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
                 entity_display_name(world, posting.posting_place)
             )
         }
-        GoalKind::ShareBelief { listener, topic, communication_class } => {
+        GoalKind::ShareBelief {
+            listener,
+            topic,
+            communication_class,
+        } => {
             let listener_name = entity_display_name(world, *listener);
             let topic_str = format_tell_topic_brief(world, topic);
             format!("ShareBelief({communication_class:?}, tell {listener_name} about {topic_str})")
@@ -345,10 +372,17 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
             format!("ClaimOffice({})", entity_display_name(world, *office))
         }
         GoalKind::SupportCandidateForOffice { office, candidate } => {
-            format!("SupportCandidate({} for {})", entity_display_name(world, *candidate), entity_display_name(world, *office))
+            format!(
+                "SupportCandidate({} for {})",
+                entity_display_name(world, *candidate),
+                entity_display_name(world, *office)
+            )
         }
         GoalKind::InvestigateViolation { place, .. } => {
-            format!("InvestigateViolation(at {})", entity_display_name(world, *place))
+            format!(
+                "InvestigateViolation(at {})",
+                entity_display_name(world, *place)
+            )
         }
         GoalKind::Patrol { place } => {
             format!("Patrol({})", entity_display_name(world, *place))
@@ -359,8 +393,15 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::Accuse { accused, .. } => {
             format!("Accuse({})", entity_display_name(world, *accused))
         }
-        GoalKind::PunishAccused { accused, punishment, .. } => {
-            format!("PunishAccused({}, {punishment:?})", entity_display_name(world, *accused))
+        GoalKind::PunishAccused {
+            accused,
+            punishment,
+            ..
+        } => {
+            format!(
+                "PunishAccused({}, {punishment:?})",
+                entity_display_name(world, *accused)
+            )
         }
     }
 }
@@ -386,19 +427,39 @@ fn format_needs_delta(
     if let Some(bn) = before_needs {
         let mut changes = Vec::new();
         if bn.hunger != after_needs.hunger {
-            changes.push(format!("hunger {}→{}‰", bn.hunger.value(), after_needs.hunger.value()));
+            changes.push(format!(
+                "hunger {}→{}‰",
+                bn.hunger.value(),
+                after_needs.hunger.value()
+            ));
         }
         if bn.thirst != after_needs.thirst {
-            changes.push(format!("thirst {}→{}‰", bn.thirst.value(), after_needs.thirst.value()));
+            changes.push(format!(
+                "thirst {}→{}‰",
+                bn.thirst.value(),
+                after_needs.thirst.value()
+            ));
         }
         if bn.fatigue != after_needs.fatigue {
-            changes.push(format!("fatigue {}→{}‰", bn.fatigue.value(), after_needs.fatigue.value()));
+            changes.push(format!(
+                "fatigue {}→{}‰",
+                bn.fatigue.value(),
+                after_needs.fatigue.value()
+            ));
         }
         if bn.bladder != after_needs.bladder {
-            changes.push(format!("bladder {}→{}‰", bn.bladder.value(), after_needs.bladder.value()));
+            changes.push(format!(
+                "bladder {}→{}‰",
+                bn.bladder.value(),
+                after_needs.bladder.value()
+            ));
         }
         if bn.dirtiness != after_needs.dirtiness {
-            changes.push(format!("dirtiness {}→{}‰", bn.dirtiness.value(), after_needs.dirtiness.value()));
+            changes.push(format!(
+                "dirtiness {}→{}‰",
+                bn.dirtiness.value(),
+                after_needs.dirtiness.value()
+            ));
         }
         if changes.is_empty() {
             format!("HomeostaticNeeds: unchanged on {agent_name}")
@@ -471,10 +532,7 @@ fn format_belief_store_delta(
                 }
             }
         } else {
-            changes.push(format!(
-                "received {} beliefs",
-                after_heard - before_heard
-            ));
+            changes.push(format!("received {} beliefs", after_heard - before_heard));
         }
     }
 

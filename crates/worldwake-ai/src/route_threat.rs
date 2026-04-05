@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{derive_danger_pressure, PlanningSnapshot};
 use worldwake_core::{
     belief_confidence, ActionDomain, ArtifactKind, ArtifactState, BeliefConfidencePolicy,
-    BelievedArtifactState, BelievedEntityState, EntityId, NoticeTopic, Permille,
-    SocialObservation, SocialObservationKind, Tick,
+    BelievedArtifactState, BelievedEntityState, EntityId, NoticeTopic, Permille, SocialObservation,
+    SocialObservationKind, Tick,
 };
 use worldwake_sim::GoalBeliefView;
 

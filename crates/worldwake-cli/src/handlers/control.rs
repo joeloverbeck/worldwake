@@ -54,11 +54,7 @@ pub fn handle_switch(sim: &mut SimulationState, name: &str) -> CommandResult {
     let target_id = match resolve_entity(sim.world(), name) {
         Ok(id) => id,
         Err(ResolveError::NotFound(input)) => {
-            let names: Vec<String> = sim
-                .world()
-                .query_name()
-                .map(|(_, n)| n.0.clone())
-                .collect();
+            let names: Vec<String> = sim.world().query_name().map(|(_, n)| n.0.clone()).collect();
             if names.is_empty() {
                 println!("No entity found matching \"{input}\"");
             } else {

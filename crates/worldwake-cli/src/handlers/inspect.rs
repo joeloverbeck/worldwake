@@ -133,7 +133,8 @@ pub fn handle_look(sim: &SimulationState) -> CommandResult {
 /// Show all components on a resolved entity.
 pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResult {
     let world = sim.world();
-    let entity = resolve_entity(world, entity_input).map_err(resolve_error_to_command_error_with_world(world))?;
+    let entity = resolve_entity(world, entity_input)
+        .map_err(resolve_error_to_command_error_with_world(world))?;
 
     let name = entity_display_name(world, entity);
     let kind = world
@@ -162,39 +163,120 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
     }
     if let Some(cp) = world.get_component_combat_profile(entity) {
         println!("  CombatProfile:");
-        println!("    attack_skill: {}, guard_skill: {}", cp.attack_skill, cp.guard_skill);
-        println!("    wound_capacity: {}, incapacitation: {}", cp.wound_capacity, cp.incapacitation_threshold);
-        println!("    defend_bonus: {}, unarmed_severity: {}", cp.defend_bonus, cp.unarmed_wound_severity);
-        println!("    unarmed_bleed: {}, clot_resistance: {}", cp.unarmed_bleed_rate, cp.natural_clot_resistance);
-        println!("    recovery_rate: {}, attack_ticks: {}, defend_ticks: {}", cp.natural_recovery_rate, cp.unarmed_attack_ticks, cp.defend_stance_ticks);
+        println!(
+            "    attack_skill: {}, guard_skill: {}",
+            cp.attack_skill, cp.guard_skill
+        );
+        println!(
+            "    wound_capacity: {}, incapacitation: {}",
+            cp.wound_capacity, cp.incapacitation_threshold
+        );
+        println!(
+            "    defend_bonus: {}, unarmed_severity: {}",
+            cp.defend_bonus, cp.unarmed_wound_severity
+        );
+        println!(
+            "    unarmed_bleed: {}, clot_resistance: {}",
+            cp.unarmed_bleed_rate, cp.natural_clot_resistance
+        );
+        println!(
+            "    recovery_rate: {}, attack_ticks: {}, defend_ticks: {}",
+            cp.natural_recovery_rate, cp.unarmed_attack_ticks, cp.defend_stance_ticks
+        );
     }
     if let Some(dead) = world.get_component_dead_at(entity) {
         println!("  DeadAt: tick {}", dead.0 .0);
     }
     if let Some(up) = world.get_component_utility_profile(entity) {
         println!("  UtilityProfile:");
-        println!("    hunger: {}, thirst: {}, fatigue: {}", up.hunger_weight, up.thirst_weight, up.fatigue_weight);
-        println!("    bladder: {}, dirtiness: {}, pain: {}", up.bladder_weight, up.dirtiness_weight, up.pain_weight);
-        println!("    danger: {}, enterprise: {}, social: {}", up.danger_weight, up.enterprise_weight, up.social_weight);
-        println!("    activity_awareness: {}, side_benefit: {}, courage: {}, care: {}", up.activity_awareness_weight, up.side_benefit_weight, up.courage, up.care_weight);
+        println!(
+            "    hunger: {}, thirst: {}, fatigue: {}",
+            up.hunger_weight, up.thirst_weight, up.fatigue_weight
+        );
+        println!(
+            "    bladder: {}, dirtiness: {}, pain: {}",
+            up.bladder_weight, up.dirtiness_weight, up.pain_weight
+        );
+        println!(
+            "    danger: {}, enterprise: {}, social: {}",
+            up.danger_weight, up.enterprise_weight, up.social_weight
+        );
+        println!(
+            "    activity_awareness: {}, side_benefit: {}, courage: {}, care: {}",
+            up.activity_awareness_weight, up.side_benefit_weight, up.courage, up.care_weight
+        );
     }
     if let Some(dt) = world.get_component_drive_thresholds(entity) {
         println!("  DriveThresholds:");
-        println!("    hunger:    low={} med={} high={} crit={}", dt.hunger.low(), dt.hunger.medium(), dt.hunger.high(), dt.hunger.critical());
-        println!("    thirst:    low={} med={} high={} crit={}", dt.thirst.low(), dt.thirst.medium(), dt.thirst.high(), dt.thirst.critical());
-        println!("    fatigue:   low={} med={} high={} crit={}", dt.fatigue.low(), dt.fatigue.medium(), dt.fatigue.high(), dt.fatigue.critical());
-        println!("    bladder:   low={} med={} high={} crit={}", dt.bladder.low(), dt.bladder.medium(), dt.bladder.high(), dt.bladder.critical());
-        println!("    dirtiness: low={} med={} high={} crit={}", dt.dirtiness.low(), dt.dirtiness.medium(), dt.dirtiness.high(), dt.dirtiness.critical());
-        println!("    pain:      low={} med={} high={} crit={}", dt.pain.low(), dt.pain.medium(), dt.pain.high(), dt.pain.critical());
-        println!("    danger:    low={} med={} high={} crit={}", dt.danger.low(), dt.danger.medium(), dt.danger.high(), dt.danger.critical());
+        println!(
+            "    hunger:    low={} med={} high={} crit={}",
+            dt.hunger.low(),
+            dt.hunger.medium(),
+            dt.hunger.high(),
+            dt.hunger.critical()
+        );
+        println!(
+            "    thirst:    low={} med={} high={} crit={}",
+            dt.thirst.low(),
+            dt.thirst.medium(),
+            dt.thirst.high(),
+            dt.thirst.critical()
+        );
+        println!(
+            "    fatigue:   low={} med={} high={} crit={}",
+            dt.fatigue.low(),
+            dt.fatigue.medium(),
+            dt.fatigue.high(),
+            dt.fatigue.critical()
+        );
+        println!(
+            "    bladder:   low={} med={} high={} crit={}",
+            dt.bladder.low(),
+            dt.bladder.medium(),
+            dt.bladder.high(),
+            dt.bladder.critical()
+        );
+        println!(
+            "    dirtiness: low={} med={} high={} crit={}",
+            dt.dirtiness.low(),
+            dt.dirtiness.medium(),
+            dt.dirtiness.high(),
+            dt.dirtiness.critical()
+        );
+        println!(
+            "    pain:      low={} med={} high={} crit={}",
+            dt.pain.low(),
+            dt.pain.medium(),
+            dt.pain.high(),
+            dt.pain.critical()
+        );
+        println!(
+            "    danger:    low={} med={} high={} crit={}",
+            dt.danger.low(),
+            dt.danger.medium(),
+            dt.danger.high(),
+            dt.danger.critical()
+        );
     }
     if let Some(mp) = world.get_component_metabolism_profile(entity) {
         println!("  MetabolismProfile:");
-        println!("    rates: hunger={}, thirst={}, fatigue={}, bladder={}, dirtiness={}", mp.hunger_rate, mp.thirst_rate, mp.fatigue_rate, mp.bladder_rate, mp.dirtiness_rate);
+        println!(
+            "    rates: hunger={}, thirst={}, fatigue={}, bladder={}, dirtiness={}",
+            mp.hunger_rate, mp.thirst_rate, mp.fatigue_rate, mp.bladder_rate, mp.dirtiness_rate
+        );
         println!("    rest_efficiency: {}", mp.rest_efficiency);
         println!("    tolerances: starvation={} ticks, dehydration={} ticks, exhaustion={} ticks, bladder={} ticks", mp.starvation_tolerance_ticks, mp.dehydration_tolerance_ticks, mp.exhaustion_collapse_ticks, mp.bladder_accident_tolerance_ticks);
-        println!("    durations: toilet={} ticks, wash={} ticks", mp.toilet_ticks, mp.wash_ticks);
-        println!("    travel: fatigue={}, thirst={}, bladder={}, wilderness_dirtiness={}", mp.travel_fatigue_multiplier, mp.travel_thirst_multiplier, mp.travel_bladder_multiplier, mp.wilderness_relief_dirtiness_penalty);
+        println!(
+            "    durations: toilet={} ticks, wash={} ticks",
+            mp.toilet_ticks, mp.wash_ticks
+        );
+        println!(
+            "    travel: fatigue={}, thirst={}, bladder={}, wilderness_dirtiness={}",
+            mp.travel_fatigue_multiplier,
+            mp.travel_thirst_multiplier,
+            mp.travel_bladder_multiplier,
+            mp.wilderness_relief_dirtiness_penalty
+        );
     }
     if let Some(dep) = world.get_component_deprivation_exposure(entity) {
         println!("  DeprivationExposure: hunger={} ticks, thirst={} ticks, fatigue={} ticks, bladder={} ticks",
@@ -221,20 +303,38 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
     }
     if let Some(mp) = world.get_component_merchandise_profile(entity) {
         let kinds: Vec<String> = mp.sale_kinds.iter().map(|k| format!("{k:?}")).collect();
-        let home = mp.home_facility.map_or("none".to_string(), |f| entity_display_name(world, f));
-        println!("  MerchandiseProfile: sells [{}], home={}", kinds.join(", "), home);
+        let home = mp
+            .home_facility
+            .map_or("none".to_string(), |f| entity_display_name(world, f));
+        println!(
+            "  MerchandiseProfile: sells [{}], home={}",
+            kinds.join(", "),
+            home
+        );
     }
     if let Some(tdp) = world.get_component_trade_disposition_profile(entity) {
         println!("  TradeDisposition:");
-        println!("    negotiation: {} ticks, initial_offer_bias: {}", tdp.negotiation_round_ticks, tdp.initial_offer_bias);
-        println!("    concession: {}, rejection_escalation: {}", tdp.concession_rate, tdp.rejection_escalation_rate);
-        println!("    demand_retention: {} ticks, market_presence: {} ticks", tdp.demand_memory_retention_ticks, tdp.market_presence_ticks);
+        println!(
+            "    negotiation: {} ticks, initial_offer_bias: {}",
+            tdp.negotiation_round_ticks, tdp.initial_offer_bias
+        );
+        println!(
+            "    concession: {}, rejection_escalation: {}",
+            tdp.concession_rate, tdp.rejection_escalation_rate
+        );
+        println!(
+            "    demand_retention: {} ticks, market_presence: {} ticks",
+            tdp.demand_memory_retention_ticks, tdp.market_presence_ticks
+        );
     }
     if let Some(dm) = world.get_component_demand_memory(entity) {
         println!("  DemandMemory: {} observation(s)", dm.observations.len());
     }
     if let Some(sp) = world.get_component_substitute_preferences(entity) {
-        println!("  SubstitutePreferences: {} categor(ies)", sp.preferences.len());
+        println!(
+            "  SubstitutePreferences: {} categor(ies)",
+            sp.preferences.len()
+        );
         for (cat, kinds) in &sp.preferences {
             let items: Vec<String> = kinds.iter().map(|k| format!("{k:?}")).collect();
             println!("    {cat:?}: [{}]", items.join(", "));
@@ -245,7 +345,10 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
     }
     if let Some(pj) = world.get_component_production_job(entity) {
         let worker_name = entity_display_name(world, pj.worker);
-        println!("  ProductionJob: recipe={}, worker={}, progress={} ticks", pj.recipe_id.0, worker_name, pj.progress_ticks);
+        println!(
+            "  ProductionJob: recipe={}, worker={}, progress={} ticks",
+            pj.recipe_id.0, worker_name, pj.progress_ticks
+        );
     }
     if let Some(rs) = world.get_component_resource_source(entity) {
         println!(
@@ -256,7 +359,10 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
     if let Some(transit) = world.get_component_in_transit_on_edge(entity) {
         let origin = entity_display_name(world, transit.origin);
         let dest = entity_display_name(world, transit.destination);
-        println!("  InTransit: {} -> {}, depart tick {}, arrive tick {}", origin, dest, transit.departure_tick.0, transit.arrival_tick.0);
+        println!(
+            "  InTransit: {} -> {}, depart tick {}, arrive tick {}",
+            origin, dest, transit.departure_tick.0, transit.arrival_tick.0
+        );
     }
     if let Some(stance) = world.get_component_combat_stance(entity) {
         println!("  CombatStance: {stance:?}");
@@ -276,7 +382,8 @@ pub fn handle_inventory(sim: &SimulationState, entity_input: Option<&str>) -> Co
     let world = sim.world();
 
     let entity = match entity_input {
-        Some(input) => resolve_entity(world, input).map_err(resolve_error_to_command_error_with_world(world))?,
+        Some(input) => resolve_entity(world, input)
+            .map_err(resolve_error_to_command_error_with_world(world))?,
         None => sim.controller_state().controlled_entity().ok_or_else(|| {
             CommandError::new("no controlled agent (observer mode) — specify an entity")
         })?,
@@ -325,7 +432,8 @@ pub fn handle_needs(sim: &SimulationState, entity_input: Option<&str>) -> Comman
     let world = sim.world();
 
     let entity = match entity_input {
-        Some(input) => resolve_entity(world, input).map_err(resolve_error_to_command_error_with_world(world))?,
+        Some(input) => resolve_entity(world, input)
+            .map_err(resolve_error_to_command_error_with_world(world))?,
         None => sim.controller_state().controlled_entity().ok_or_else(|| {
             CommandError::new("no controlled agent (observer mode) — specify an entity")
         })?,
@@ -379,7 +487,8 @@ pub fn handle_needs(sim: &SimulationState, entity_input: Option<&str>) -> Comman
 /// Show all relations involving an entity.
 pub fn handle_relations(sim: &SimulationState, entity_input: &str) -> CommandResult {
     let world = sim.world();
-    let entity = resolve_entity(world, entity_input).map_err(resolve_error_to_command_error_with_world(world))?;
+    let entity = resolve_entity(world, entity_input)
+        .map_err(resolve_error_to_command_error_with_world(world))?;
 
     let name = entity_display_name(world, entity);
     println!("{name} relations:");

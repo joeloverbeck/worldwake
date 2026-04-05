@@ -168,7 +168,10 @@ mod tests {
         assert_eq!(SystemId::Production.to_string(), "production");
         assert_eq!(SystemId::Trade.to_string(), "trade");
         assert_eq!(SystemId::Combat.to_string(), "combat");
-        assert_eq!(SystemId::ArtifactLifecycle.to_string(), "artifact_lifecycle");
+        assert_eq!(
+            SystemId::ArtifactLifecycle.to_string(),
+            "artifact_lifecycle"
+        );
         assert_eq!(SystemId::BanditCamp.to_string(), "bandit_camp");
         assert_eq!(SystemId::Contention.to_string(), "contention");
         assert_eq!(SystemId::Perception.to_string(), "perception");

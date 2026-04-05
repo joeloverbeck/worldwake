@@ -3,7 +3,9 @@
 mod golden_harness;
 
 use golden_harness::*;
-use worldwake_ai::{DecisionOutcome, GoalKey, OpportunityAnchor, OpportunityKey, PlanningPipelineTrace};
+use worldwake_ai::{
+    DecisionOutcome, GoalKey, OpportunityAnchor, OpportunityKey, PlanningPipelineTrace,
+};
 use worldwake_core::{
     prototype_place_entity, AgentBeliefStore, BeliefConfidencePolicy, CommodityKind, GoalKind,
     HomeostaticNeeds, InstitutionalKnowledgeSource, PatrolProfile, PatrolRoute, PerceptionProfile,
@@ -64,12 +66,7 @@ fn set_violation_profile(
     commit_txn(txn, &mut h.event_log);
 }
 
-fn set_hunger(
-    h: &mut GoldenHarness,
-    agent: worldwake_core::EntityId,
-    hunger: u16,
-    tick: u64,
-) {
+fn set_hunger(h: &mut GoldenHarness, agent: worldwake_core::EntityId, hunger: u16, tick: u64) {
     let mut needs = h
         .world
         .get_component_homeostatic_needs(agent)
@@ -181,10 +178,7 @@ fn maybe_planning_trace_at(
         .map(|planning| &**planning)
 }
 
-fn patrol_motive_score(
-    planning: &PlanningPipelineTrace,
-    place: worldwake_core::EntityId,
-) -> u32 {
+fn patrol_motive_score(planning: &PlanningPipelineTrace, place: worldwake_core::EntityId) -> u32 {
     planning
         .candidates
         .ranked_summary_for_opportunity(OpportunityKey {
@@ -256,8 +250,7 @@ fn run_patrol_cycle(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
     let patrol_commit_ticks = patrol_events
         .iter()
         .filter(|event| {
-            event.action_name == "patrol"
-                && matches!(event.kind, ActionTraceKind::Committed { .. })
+            event.action_name == "patrol" && matches!(event.kind, ActionTraceKind::Committed { .. })
         })
         .map(|event| event.tick)
         .collect::<Vec<_>>();
@@ -326,7 +319,10 @@ fn golden_patrol_cycle_wraps_route() {
 fn golden_patrol_cycle_wraps_route_replays_deterministically() {
     let first = run_patrol_cycle(Seed([0x51; 32]));
     let second = run_patrol_cycle(Seed([0x51; 32]));
-    assert_eq!(first, second, "patrol cycle scenario should replay deterministically");
+    assert_eq!(
+        first, second,
+        "patrol cycle scenario should replay deterministically"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -399,7 +395,10 @@ fn golden_patrol_interruption_preserves_waypoint_until_resume() {
             })
         })
     });
-    assert!(patrol_started, "guard should start patrolling before interruption");
+    assert!(
+        patrol_started,
+        "guard should start patrolling before interruption"
+    );
 
     let hunger_tick = h.scheduler.current_tick().0;
     set_hunger(&mut h, guard, 950, hunger_tick);
@@ -421,7 +420,10 @@ fn golden_patrol_interruption_preserves_waypoint_until_resume() {
 
     let _eat_commit_tick = eat_commit_tick.expect("guard should interrupt patrol to eat");
     assert_eq!(
-        h.world.get_component_patrol_route(guard).unwrap().current_index,
+        h.world
+            .get_component_patrol_route(guard)
+            .unwrap()
+            .current_index,
         1,
         "route index should remain on the interrupted waypoint after eating"
     );
@@ -441,7 +443,10 @@ fn golden_patrol_interruption_preserves_waypoint_until_resume() {
         "guard should restart patrol after resolving critical hunger"
     );
     assert_eq!(
-        h.world.get_component_patrol_route(guard).unwrap().current_index,
+        h.world
+            .get_component_patrol_route(guard)
+            .unwrap()
+            .current_index,
         1,
         "route index should still point at the interrupted waypoint when patrol restarts"
     );
@@ -461,7 +466,10 @@ fn golden_patrol_interruption_preserves_waypoint_until_resume() {
         "guard should eventually complete the resumed patrol leg"
     );
     assert_eq!(
-        h.world.get_component_patrol_route(guard).unwrap().current_index,
+        h.world
+            .get_component_patrol_route(guard)
+            .unwrap()
+            .current_index,
         0,
         "route should advance only after the resumed patrol leg commits"
     );
@@ -577,7 +585,10 @@ fn golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy() {
 
     let baseline_motive = patrol_motive_score(baseline_planning, village_square);
     let informed_motive = patrol_motive_score(informed_planning, village_square);
-    assert_eq!(baseline_motive, 150, "baseline patrol motive should stay at profile weight");
+    assert_eq!(
+        baseline_motive, 150,
+        "baseline patrol motive should stay at profile weight"
+    );
     assert!(
         informed_motive > baseline_motive,
         "local theft memory and vacancy belief should increase patrol motive"
@@ -639,7 +650,10 @@ fn golden_patrol_route_adaptation_retargets_after_local_report() {
     let adapted = (0..20).find_map(|_| {
         h.step_once();
         let route = h.world.get_component_patrol_route(guard).unwrap();
-        route.assigned_places.contains(&general_store).then_some(route.clone())
+        route
+            .assigned_places
+            .contains(&general_store)
+            .then_some(route.clone())
     });
     let adapted = adapted.expect("route should adapt from the guard-local report");
     assert_eq!(
@@ -652,7 +666,10 @@ fn golden_patrol_route_adaptation_retargets_after_local_report() {
         let tick_before = h.scheduler.current_tick();
         h.step_once();
         let planning = planning_trace_at(&h, guard, tick_before);
-        if planning.selection.selected_goal_is(patrol_goal(general_store)) {
+        if planning
+            .selection
+            .selected_goal_is(patrol_goal(general_store))
+        {
             retarget_tick = Some(tick_before);
             break;
         }
@@ -661,7 +678,9 @@ fn golden_patrol_route_adaptation_retargets_after_local_report() {
 
     let planning = planning_trace_at(&h, guard, retarget_tick);
     assert!(
-        planning.selection.selected_goal_is(patrol_goal(general_store)),
+        planning
+            .selection
+            .selected_goal_is(patrol_goal(general_store)),
         "retargeted planning tick should target the adapted waypoint"
     );
     assert_eq!(planning.patrol_route.route, Some(adapted.clone()));
@@ -743,7 +762,9 @@ fn golden_patrol_locality_requires_guard_local_report() {
     let planning = maybe_planning_trace_at(&h, guard, Tick(0))
         .expect("guard should produce an opening planning trace");
     assert!(
-        planning.selection.selected_goal_is(patrol_goal(village_square)),
+        planning
+            .selection
+            .selected_goal_is(patrol_goal(village_square)),
         "guard should keep the baseline patrol goal without a local report"
     );
     assert_eq!(
@@ -850,7 +871,9 @@ fn run_patrol_driven_crime_discovery(
 
     let opening_planning = planning_trace_at(&h, guard, Tick(0));
     assert!(
-        opening_planning.selection.selected_goal_is(patrol_goal(general_store)),
+        opening_planning
+            .selection
+            .selected_goal_is(patrol_goal(general_store)),
         "guard should open by selecting patrol for the remote waypoint"
     );
 
@@ -885,13 +908,14 @@ fn run_patrol_driven_crime_discovery(
                 let planning = planning.as_ref();
                 if generated_violation_id.is_none() {
                     generated_violation_id =
-                        planning.candidates.generated.iter().find_map(|goal| match goal.goal_key.kind {
-                            GoalKind::InvestigateViolation { violation_id, place }
-                                if place == general_store =>
-                            {
-                                Some(violation_id)
+                        planning.candidates.generated.iter().find_map(|goal| {
+                            match goal.goal_key.kind {
+                                GoalKind::InvestigateViolation {
+                                    violation_id,
+                                    place,
+                                } if place == general_store => Some(violation_id),
+                                _ => None,
                             }
-                            _ => None,
                         });
                 }
             }
@@ -901,7 +925,9 @@ fn run_patrol_driven_crime_discovery(
             h.world
                 .get_component_violation_memory(guard)
                 .is_some_and(|memory| {
-                    memory.unresolved_by_id(violation_id, h.scheduler.current_tick()).is_some()
+                    memory
+                        .unresolved_by_id(violation_id, h.scheduler.current_tick())
+                        .is_some()
                 })
         }) {
             saw_unresolved_entity_missing = true;

@@ -464,9 +464,8 @@ mod tests {
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId,
-        ActionPayload, DeterministicRng, EstablishCampActionPayload, PerAgentBeliefView,
-        TickOutcome,
+        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId, ActionPayload,
+        DeterministicRng, EstablishCampActionPayload, PerAgentBeliefView, TickOutcome,
     };
 
     struct Harness {
@@ -570,7 +569,10 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_id,
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(10),
+                ),
             )
         }
 
@@ -585,7 +587,10 @@ mod tests {
                     event_log: &mut self.log,
                     rng: &mut self.rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(11),
+                ),
             )
             .unwrap()
         }

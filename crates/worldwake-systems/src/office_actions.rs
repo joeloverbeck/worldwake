@@ -1512,7 +1512,10 @@ mod tests {
         (handler.on_commit)(
             def,
             instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &EventLog::new(),
             &mut rng,
             &mut txn,
@@ -2015,7 +2018,10 @@ mod tests {
         let err = (handler.on_commit)(
             def,
             &instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &EventLog::new(),
             &mut rng,
             &mut txn,
@@ -2060,7 +2066,10 @@ mod tests {
         (handler.on_abort)(
             def,
             &instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &AbortReason::external_abort(ExternalAbortReason::Other),
             &EventLog::new(),
             &mut rng,

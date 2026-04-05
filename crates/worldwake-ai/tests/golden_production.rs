@@ -12,17 +12,16 @@ use worldwake_ai::{
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation, AgentData, BlockingFact,
-    BodyPart, CarryCapacity, CombatProfile, CommodityKind, ControlSource, DemandMemory,
-    DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind, EntityId,
-    EventTag, EventView, ContentionGrant, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
-    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    BodyPart, CarryCapacity, CombatProfile, CommodityKind, ContentionGrant, ControlSource,
+    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
+    EntityId, EventTag, EventView, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed,
+    StateHash, Tick, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
+    Wound, WoundCause, WoundId, WoundList,
 };
 use worldwake_sim::{
-    ActionRequestMode, ActionStartFailureReason, ActionTraceKind, InputKind,
-    RequestAttemptTrace, RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
-    ResolvedRequestTrace,
+    ActionRequestMode, ActionStartFailureReason, ActionTraceKind, InputKind, RequestAttemptTrace,
+    RequestBindingKind, RequestProvenance, RequestResolutionOutcome, ResolvedRequestTrace,
 };
 
 fn production_perception_profile() -> PerceptionProfile {
@@ -55,14 +54,10 @@ fn request_simple_action(
     def_name: &str,
     targets: Vec<EntityId>,
 ) {
-    let def_id = h
-        .defs
-        .iter()
-        .find(|def| def.name == def_name)
-        .map_or_else(
-            || panic!("full registries should include {def_name}"),
-            |def| def.id,
-        );
+    let def_id = h.defs.iter().find(|def| def.name == def_name).map_or_else(
+        || panic!("full registries should include {def_name}"),
+        |def| def.id,
+    );
     let tick = h.scheduler.current_tick();
     let _ = h.scheduler.input_queue_mut().enqueue(
         tick,
@@ -2825,8 +2820,10 @@ fn run_unique_item_race_rejection_redirect_scenario(seed: Seed) -> UniqueItemRac
             .events_for(loser)
             .iter()
             .any(|event| {
-                matches!(event.kind, ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. })
-                    && matches!(event.action_name.as_str(), "harvest:Harvest Apples" | "eat")
+                matches!(
+                    event.kind,
+                    ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. }
+                ) && matches!(event.action_name.as_str(), "harvest:Harvest Apples" | "eat")
             });
         loser_hunger_decreased |= h.agent_hunger(loser) < initial_loser_hunger;
         if loser_used_alternative_path && loser_hunger_decreased {
@@ -3813,7 +3810,6 @@ fn record_faction_ownership_milestones(
     if world.effective_place(scenario.outsider) != Some(ORCHARD_FARM) {
         milestones.insert(FactionOwnershipMilestone::OutsiderLeftFactionOrchard);
     }
-
 }
 
 fn assert_faction_ownership_conservation(world: &worldwake_core::World) {

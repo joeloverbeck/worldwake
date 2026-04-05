@@ -2,26 +2,22 @@
 
 use crate::{
     component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
-    ArtifactHeader, BountyTerms,
-    BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables,
-    ComponentValue, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
-    ContentionQueue, Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds,
-    EntityAllocator, EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId,
-    SceneEvidence,
-    FactionData, HomeostaticNeeds, InTransitOnEdge,
+    ArtifactHeader, BanditCamp, BanditFactionPolicy, BlockedIntentMemory, BountyTerms,
+    CarryCapacity, CombatProfile, CombatStance, CommodityKind, CommodityValuationProfile,
+    CommunicationProfile, ComponentTables, ComponentValue, Container, ContentionDispositionProfile,
+    ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, DemandMemory,
+    DeprivationExposure, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
+    EpistemicDispositionProfile, EventId, FactionData, HomeostaticNeeds, InTransitOnEdge,
     IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
-    LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-    PlaceTag, PlaceTagSet, PursuitProfile, ReasoningProfile,
-    PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
-    Quantity, RecordData,
-    RelationTables, ResourceSource, SaleListing, StockAssignment, StockStoragePolicy,
-    RouteExperience, SourceReliability, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem,
-    UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
-    NoticeContent,
+    LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, NoticeContent,
+    OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute,
+    PerceptionProfile, PlaceTag, PlaceTagSet, PreferenceProfile, ProductionJob,
+    ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, ReasoningProfile,
+    RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence,
+    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
+    WoundList,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -172,7 +168,8 @@ impl World {
                 entity,
                 IntentionDispositionProfile::default(),
             )?;
-            world.insert_component_communication_profile(entity, CommunicationProfile::default())?;
+            world
+                .insert_component_communication_profile(entity, CommunicationProfile::default())?;
             world.insert_component_preference_profile(entity, PreferenceProfile::default())?;
             Ok(())
         })
@@ -453,9 +450,9 @@ impl World {
     /// Returns `true` if the place has at least one tag present in the given `PlaceTagSet`.
     #[must_use]
     pub fn place_has_any_tag_in(&self, place: EntityId, tag_set: PlaceTagSet) -> bool {
-        self.topology.place(place).is_some_and(|place_data| {
-            place_data.tags.iter().any(|tag| tag_set.contains(*tag))
-        })
+        self.topology
+            .place(place)
+            .is_some_and(|place_data| place_data.tags.iter().any(|tag| tag_set.contains(*tag)))
     }
 
     pub fn archive_dependencies(
@@ -620,19 +617,19 @@ mod tests {
             sample_utility_profile,
         },
         AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
-        BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
-        ControlSource, DeadAt, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds,
-        EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData,
-        FactionPurpose, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
-        InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits,
-        LotOperation, MerchandiseProfile,
+        BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
+        CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EffectiveRight, EntityId, EntityKind,
+        EpistemicDispositionProfile, EventId, FactionData, FactionPurpose, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
+        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
         MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-        CommunicationProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob, PursuitProfile,
-        ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
-        ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw, TellProfile,
-        TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
-        WoundCause, WoundList, RightKind,
+        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
+        ProvenanceEntry, PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind,
+        ReservationId, ReservationRecord, ResourceSource, RightKind, SubstitutePreferences,
+        SuccessionLaw, TellProfile, TheftDispositionProfile, Tick, TickRange, Topology,
+        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        WorkstationTag, WorldError, Wound, WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3897,14 +3894,12 @@ mod tests {
         world.set_ground_location(item, entity(2)).unwrap();
 
         assert!(world.has_right(holder, item, RightKind::JurisdictionalAuthority));
-        assert!(
-            world
-                .effective_rights(holder, item)
-                .contains(&EffectiveRight {
-                    kind: RightKind::JurisdictionalAuthority,
-                    via: Some(office),
-                })
-        );
+        assert!(world
+            .effective_rights(holder, item)
+            .contains(&EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }));
     }
 
     #[test]
@@ -3952,7 +3947,10 @@ mod tests {
                 rights.iter().any(|right| right.kind == kind)
             );
         }
-        assert_eq!(world.can_exercise_control(actor, bread).is_ok(), !rights.is_empty());
+        assert_eq!(
+            world.can_exercise_control(actor, bread).is_ok(),
+            !rights.is_empty()
+        );
         assert!(
             !world.has_right(actor, bread, RightKind::JurisdictionalAuthority),
             "container-mediated control should stay separate from jurisdictional authority"
@@ -4946,7 +4944,10 @@ mod tests {
         world
             .insert_component_communication_profile(id, profile.clone())
             .unwrap();
-        assert_eq!(world.get_component_communication_profile(id), Some(&profile));
+        assert_eq!(
+            world.get_component_communication_profile(id),
+            Some(&profile)
+        );
         assert!(world.has_component_communication_profile(id));
         assert_eq!(
             world.query_communication_profile().collect::<Vec<_>>(),

@@ -1,6 +1,4 @@
-use worldwake_core::{
-    ArtifactState, CauseRef, EventTag, VisibilitySpec, WitnessData, WorldTxn,
-};
+use worldwake_core::{ArtifactState, CauseRef, EventTag, VisibilitySpec, WitnessData, WorldTxn};
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
 pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -20,7 +18,9 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
         .query_artifact_header()
         .filter_map(|(artifact, header)| {
             (header.state == ArtifactState::Active
-                && header.expires_at.is_some_and(|expires_at| tick >= expires_at))
+                && header
+                    .expires_at
+                    .is_some_and(|expires_at| tick >= expires_at))
             .then_some((artifact, *header))
         })
         .collect::<Vec<_>>();
@@ -76,7 +76,11 @@ mod tests {
         let _ = txn.commit(&mut log);
     }
 
-    fn spawn_agent_at(world: &mut World, slot: u32, place: worldwake_core::EntityId) -> worldwake_core::EntityId {
+    fn spawn_agent_at(
+        world: &mut World,
+        slot: u32,
+        place: worldwake_core::EntityId,
+    ) -> worldwake_core::EntityId {
         let mut txn = new_txn(world, 1);
         let agent = txn
             .create_agent(&format!("agent-{slot}"), ControlSource::Ai)

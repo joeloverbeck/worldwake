@@ -410,8 +410,8 @@ mod tests {
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionInstanceId, Affordance, DeterministicRng,
-        ExternalAbortReason, PerAgentBeliefView, TickOutcome,
+        ActionInstanceId, Affordance, DeterministicRng, ExternalAbortReason, PerAgentBeliefView,
+        TickOutcome,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -719,7 +719,10 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3)
+                ),
             )
             .unwrap(),
             TickOutcome::Continuing
@@ -1063,7 +1066,10 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3)
+                ),
             )
             .unwrap(),
             TickOutcome::Continuing
@@ -1174,7 +1180,10 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3)
+                ),
             )
             .unwrap(),
             TickOutcome::Continuing
@@ -1327,7 +1336,10 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3)
+                ),
             )
             .unwrap(),
             TickOutcome::Continuing
@@ -1449,7 +1461,10 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3)
+                ),
             )
             .unwrap(),
             TickOutcome::Continuing

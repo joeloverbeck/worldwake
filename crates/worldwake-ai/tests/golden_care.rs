@@ -6,8 +6,8 @@ use golden_harness::*;
 use std::num::NonZeroU32;
 use worldwake_ai::{
     apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
-    generate_candidates, search_plan, DecisionOutcome, GoalKind, PlannerOpKind, ReasoningProfile,
-    PlanningEntityRef, PlanningState,
+    generate_candidates, search_plan, DecisionOutcome, GoalKind, PlannerOpKind, PlanningEntityRef,
+    PlanningState, ReasoningProfile,
 };
 use worldwake_core::{
     hash_event_log, hash_world, total_live_lot_quantity, BlockedIntent, BlockedIntentMemory,

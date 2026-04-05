@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    classify_communication, CommunicationClass,
-    current_institutional_belief_topics, institutional_claim_same_memory_lane,
-    institutional_claim_subject_entity, institutional_knowledge_chain_len,
-    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
-    ActionDefId, AgentBeliefStore, BelievedInstitutionalClaim, BodyCostPerTick, EntityId,
-    EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory, InstitutionalBeliefKey,
+    classify_communication, current_institutional_belief_topics,
+    institutional_claim_same_memory_lane, institutional_claim_subject_entity,
+    institutional_knowledge_chain_len, social_observation_is_redundant_for_listener,
+    tell_subject_is_directly_observable_by_listener, ActionDefId, AgentBeliefStore,
+    BelievedInstitutionalClaim, BodyCostPerTick, CommunicationClass, EntityId, EntityKind,
+    EventTag, HeardBeliefDisposition, HeardBeliefMemory, InstitutionalBeliefKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, PerceptionProfile, PerceptionSource,
     Permille, RecipientKnowledgeStatus, SocialObservationDetail, TellMemoryKey, TellProfile,
     TellTopic, ToldBeliefMemory, ViolationKind, VisibilitySpec, World, WorldTxn,
@@ -572,9 +572,7 @@ fn commit_tell(
     let communication_profile = txn
         .get_component_communication_profile(listener)
         .cloned()
-        .unwrap_or_else(|| {
-            panic!("live agent {listener} lacks required CommunicationProfile")
-        });
+        .unwrap_or_else(|| panic!("live agent {listener} lacks required CommunicationProfile"));
     let acceptance_fidelity = match classify_communication(&payload.topic, &speaker_beliefs) {
         CommunicationClass::Alarm => communication_profile.alarm_acceptance,
         CommunicationClass::Testimony => communication_profile.testimony_acceptance,
@@ -1062,7 +1060,10 @@ mod tests {
         (handler.on_commit)(
             def,
             instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &EventLog::new(),
             &mut rng,
             &mut txn,
@@ -1098,7 +1099,10 @@ mod tests {
         (handler.on_commit)(
             def,
             instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &EventLog::new(),
             &mut rng,
             &mut txn,
@@ -2852,7 +2856,10 @@ mod tests {
         (handler.on_commit)(
             def,
             &instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &EventLog::new(),
             &mut rng,
             &mut txn,

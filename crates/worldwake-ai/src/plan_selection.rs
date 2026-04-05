@@ -584,7 +584,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(selected.goal, high_goal);
-        assert_ne!(selected.goal, GoalKey::from(worldwake_core::GoalKind::Patrol { place: orchard }));
+        assert_ne!(
+            selected.goal,
+            GoalKey::from(worldwake_core::GoalKind::Patrol { place: orchard })
+        );
     }
 
     #[test]

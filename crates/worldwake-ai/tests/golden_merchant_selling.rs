@@ -9,6 +9,7 @@ mod golden_harness;
 
 use golden_harness::*;
 use std::collections::BTreeSet;
+use worldwake_ai::{CommodityPurpose, DecisionOutcome, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity, AgentData,
     CommodityKind, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
@@ -17,7 +18,6 @@ use worldwake_core::{
     Quantity, SaleListing, Seed, StockAssignmentKind, Tick, TradeDispositionProfile,
     UtilityProfile,
 };
-use worldwake_ai::{CommodityPurpose, DecisionOutcome, SelectedPlanSource};
 use worldwake_sim::{
     ActionRequestMode, ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry,
     RequestProvenance, RuntimeBeliefView,
@@ -71,14 +71,10 @@ fn request_simple_action(
     def_name: &str,
     targets: Vec<worldwake_core::EntityId>,
 ) {
-    let def_id = h
-        .defs
-        .iter()
-        .find(|def| def.name == def_name)
-        .map_or_else(
-            || panic!("full registries should include {def_name}"),
-            |def| def.id,
-        );
+    let def_id = h.defs.iter().find(|def| def.name == def_name).map_or_else(
+        || panic!("full registries should include {def_name}"),
+        |def| def.id,
+    );
     let tick = h.scheduler.current_tick();
     let _ = h.scheduler.input_queue_mut().enqueue(
         tick,
@@ -182,7 +178,8 @@ fn seed_merchant(
     let display_container = display.unwrap();
     // Move lot from direct possession into the display container.
     txn.clear_possessor(stock_lot).unwrap();
-    txn.put_into_container(stock_lot, display_container).unwrap();
+    txn.put_into_container(stock_lot, display_container)
+        .unwrap();
     txn.set_component_stock_assignment(
         stock_lot,
         StockAssignment {
@@ -447,7 +444,10 @@ fn run_displayed_lot_retains_listing(
         "SaleListing must persist across idle ticks when no trade or unstage occurs"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[test]
@@ -491,13 +491,8 @@ fn run_buyer_trades_listed_lot(
     // Pre-list the stock so buyers can discover it immediately.
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_sale_listing(
-            stock_lot,
-            SaleListing {
-                listed_at: Tick(0),
-            },
-        )
-        .unwrap();
+        txn.set_component_sale_listing(stock_lot, SaleListing { listed_at: Tick(0) })
+            .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -559,7 +554,10 @@ fn run_buyer_trades_listed_lot(
         );
     }
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 #[test]
@@ -692,17 +690,23 @@ fn loose_home_stock_is_staged_before_sell_goal_settles() {
         .action_trace_sink()
         .expect("action tracing should be enabled for staging scenario");
     assert!(
-        action_trace.events_for_at(merchant, Tick(0)).iter().any(|e| {
-            e.action_name == "store_stock"
-                && matches!(e.kind, ActionTraceKind::Committed { .. })
-        }),
+        action_trace
+            .events_for_at(merchant, Tick(0))
+            .iter()
+            .any(|e| {
+                e.action_name == "store_stock"
+                    && matches!(e.kind, ActionTraceKind::Committed { .. })
+            }),
         "merchant should first store loose home stock into facility custody"
     );
     assert!(
-        action_trace.events_for_at(merchant, Tick(1)).iter().any(|e| {
-            e.action_name == "stage_stock_for_sale"
-                && matches!(e.kind, ActionTraceKind::Committed { .. })
-        }),
+        action_trace
+            .events_for_at(merchant, Tick(1))
+            .iter()
+            .any(|e| {
+                e.action_name == "stage_stock_for_sale"
+                    && matches!(e.kind, ActionTraceKind::Committed { .. })
+            }),
         "merchant should then stage stored stock for sale"
     );
 
@@ -735,9 +739,10 @@ fn loose_home_stock_is_staged_before_sell_goal_settles() {
             planning
                 .selection
                 .selected_goal()
-                .is_some_and(|goal| goal.kind == GoalKind::SellCommodity {
-                    commodity: CommodityKind::Bread,
-                }),
+                .is_some_and(|goal| goal.kind
+                    == GoalKind::SellCommodity {
+                        commodity: CommodityKind::Bread,
+                    }),
             "staging ticks should still be executing SellCommodity planning"
         );
     }
@@ -763,11 +768,12 @@ fn loose_home_stock_is_staged_before_sell_goal_settles() {
             .trace_at(merchant, tick_before)
         {
             if let DecisionOutcome::Planning(planning) = &trace.outcome {
-                sell_reselected_after_listing |= planning
-                    .selection
-                    .selected_goal()
-                    .is_some_and(|goal| goal.kind == GoalKind::SellCommodity {
-                        commodity: CommodityKind::Bread,
+                sell_reselected_after_listing |=
+                    planning.selection.selected_goal().is_some_and(|goal| {
+                        goal.kind
+                            == GoalKind::SellCommodity {
+                                commodity: CommodityKind::Bread,
+                            }
                     });
             }
         }
@@ -897,7 +903,10 @@ fn unstage_round_trip_preserves_storage_contract() {
 fn unstage_round_trip_preserves_storage_contract_replays_deterministically() {
     let first = run_unstage_round_trip_preserves_storage_contract(Seed([67; 32]));
     let second = run_unstage_round_trip_preserves_storage_contract(Seed([67; 32]));
-    assert_eq!(first, second, "unstage round-trip scenario should replay deterministically");
+    assert_eq!(
+        first, second,
+        "unstage round-trip scenario should replay deterministically"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -956,7 +965,10 @@ fn buyer_discovers_listed_lots_not_unlisted_stock() {
     // the listed lot (via trade evidence), not the unlisted lot.
     let sink = h.driver.trace_sink().expect("tracing enabled");
     let trace = sink.trace_at(buyer, Tick(0));
-    assert!(trace.is_some(), "buyer should have a decision trace at tick 0");
+    assert!(
+        trace.is_some(),
+        "buyer should have a decision trace at tick 0"
+    );
 
     // The unlisted lot should never appear as a trade-discoverable lot.
     assert!(
@@ -1048,7 +1060,9 @@ fn merchant_emits_sell_commodity_at_home_facility() {
 
     // Decision trace should show SellCommodity candidate was generated.
     let sink = h.driver.trace_sink().expect("tracing enabled");
-    let trace = sink.trace_at(merchant, Tick(0)).expect("merchant should have trace at tick 0");
+    let trace = sink
+        .trace_at(merchant, Tick(0))
+        .expect("merchant should have trace at tick 0");
     match &trace.outcome {
         DecisionOutcome::Planning(planning) => {
             let has_sell = planning.candidates.ranked.iter().any(|c| {
@@ -1232,7 +1246,12 @@ fn move_cargo_then_sell_commodity_plan_shape() {
     let home_facility = {
         let mut txn = new_txn(&mut h.world, 0);
         let (home_facility, _stock_container, _display_container) = txn
-            .create_merchant_facility(VILLAGE_SQUARE, merchant, LoadUnits(500), Some(LoadUnits(300)))
+            .create_merchant_facility(
+                VILLAGE_SQUARE,
+                merchant,
+                LoadUnits(500),
+                Some(LoadUnits(300)),
+            )
             .unwrap();
         txn.set_component_merchandise_profile(
             merchant,
@@ -1290,8 +1309,7 @@ fn move_cargo_then_sell_commodity_plan_shape() {
         arrived_at_home |= h.world.effective_place(merchant) == Some(VILLAGE_SQUARE);
         if let Some(sink) = h.action_trace_sink() {
             saw_staff_market |= sink.events_for(merchant).iter().any(|e| {
-                e.action_name == "staff_market"
-                    && matches!(e.kind, ActionTraceKind::Started { .. })
+                e.action_name == "staff_market" && matches!(e.kind, ActionTraceKind::Started { .. })
             });
         }
         if saw_staff_market {
@@ -1455,7 +1473,8 @@ fn run_side_benefit_market_trip_selection(seed: Seed) -> SideBenefitSelectionOut
             .unwrap();
         let display_container = display.unwrap();
         txn.clear_possessor(stock_lot).unwrap();
-        txn.put_into_container(stock_lot, display_container).unwrap();
+        txn.put_into_container(stock_lot, display_container)
+            .unwrap();
         txn.set_component_stock_assignment(
             stock_lot,
             StockAssignment {
@@ -1611,7 +1630,9 @@ fn run_side_benefit_market_trip_selection(seed: Seed) -> SideBenefitSelectionOut
         "side-benefit-aware selection should choose the home-market seller over the equally valuable inn seller",
     );
 
-    let ranked_summaries = opening_planning.candidates.ranked_summaries_for_goal(bread_goal);
+    let ranked_summaries = opening_planning
+        .candidates
+        .ranked_summaries_for_goal(bread_goal);
     let market_summary = ranked_summaries
         .iter()
         .find(|summary| summary.opportunity == market_opportunity)
@@ -1689,10 +1710,7 @@ fn run_side_benefit_market_trip_selection(seed: Seed) -> SideBenefitSelectionOut
 
         firewood_listing_created |= h.world.get_component_sale_listing(firewood_lot).is_some();
 
-        if trade_started_against_market
-            && trade_committed
-            && firewood_listing_created
-        {
+        if trade_started_against_market && trade_committed && firewood_listing_created {
             break;
         }
     }
@@ -1894,10 +1912,7 @@ fn run_hungry_merchant_eats_listed_stock(
 
     // Conservation: bread quantity decreased by exactly 1 (lawful consumption sink).
     let final_bread = total_live_lot_quantity(&h.world, CommodityKind::Bread);
-    assert_eq!(
-        final_bread, 0,
-        "Quantity(1) bread should be fully consumed"
-    );
+    assert_eq!(final_bread, 0, "Quantity(1) bread should be fully consumed");
 
     (
         hash_world(&h.world).unwrap(),

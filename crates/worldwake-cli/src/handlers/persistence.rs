@@ -197,7 +197,13 @@ mod tests {
         let mut loaded_sim = build_test_sim();
         let mut loaded_driver = AgentTickDriver::new();
         let mut repl_state = ReplState::new();
-        handle_load(&mut loaded_sim, &mut loaded_driver, &mut repl_state, path_str).unwrap();
+        handle_load(
+            &mut loaded_sim,
+            &mut loaded_driver,
+            &mut repl_state,
+            path_str,
+        )
+        .unwrap();
 
         assert_eq!(
             loaded_sim.world().get_component_reasoning_profile(agent),

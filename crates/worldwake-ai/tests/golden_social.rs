@@ -10,8 +10,7 @@ use worldwake_core::{
     EventView, EvidenceRef, GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile,
     PerceptionSource, Quantity, ResourceSource, Seed, SharedTellState, SocialObservation,
     SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, Tick,
-    UtilityProfile,
-    WorkstationTag,
+    UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::{ActionTraceKind, CommitTraceData, TellCommitResult, TellTopicOmissionReason};
 
@@ -374,14 +373,17 @@ fn committed_tell_trace(
     listener: EntityId,
     topic: &TellTopic,
 ) -> Option<(TellCommitResult, bool)> {
-    h.action_trace_sink()?.events_for(speaker).into_iter().find_map(|event| {
-        let ActionTraceKind::Committed { outcome, .. } = &event.kind else {
-            return None;
-        };
-        let CommitTraceData::Tell(tell_trace) = outcome.trace.as_ref()?;
-        (tell_trace.listener == listener && &tell_trace.topic == topic)
-            .then_some((tell_trace.result, tell_trace.artifact_changed()))
-    })
+    h.action_trace_sink()?
+        .events_for(speaker)
+        .into_iter()
+        .find_map(|event| {
+            let ActionTraceKind::Committed { outcome, .. } = &event.kind else {
+                return None;
+            };
+            let CommitTraceData::Tell(tell_trace) = outcome.trace.as_ref()?;
+            (tell_trace.listener == listener && &tell_trace.topic == topic)
+                .then_some((tell_trace.result, tell_trace.artifact_changed()))
+        })
 }
 
 fn wait_for_initial_tell(fixture: &mut SocialRetellFixture) -> Tick {
@@ -2489,7 +2491,13 @@ fn run_alarm_survives_stress_suppression_scenario(
         PerceptionSource::Rumor { chain_len: 2 },
     )
     .expect("orchard should remain observable for rumor seeding");
-    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, rumor_belief);
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        orchard,
+        rumor_belief,
+    );
     let mut death_alarm = build_believed_entity_state(
         &h.world,
         dead_subject,
@@ -2677,7 +2685,13 @@ fn run_class_aware_acceptance_scenario(
         PerceptionSource::Rumor { chain_len: 2 },
     )
     .expect("orchard should remain observable for gossip seeding");
-    seed_belief(&mut h.world, &mut h.event_log, speaker, orchard, gossip_belief);
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        speaker,
+        orchard,
+        gossip_belief,
+    );
 
     let topic = TellTopic::EntityBelief { subject: orchard };
     let mut default_accepted = false;

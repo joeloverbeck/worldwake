@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new belief type, perception handler extension, investigation action extension
-**Deps**: S52EVIDAFT-001
+**Deps**: S52EVIDAFT-001, S52EVIDAFT-002
 
 ## Problem
 

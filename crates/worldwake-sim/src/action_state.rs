@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use worldwake_core::{CommodityKind, EntityId, Quantity, Tick, TradeRole, TravelEdgeId, ViolationId};
+use worldwake_core::{
+    CommodityKind, EntityId, Quantity, Tick, TradeRole, TravelEdgeId, ViolationId,
+};
 
 #[derive(
     Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize,

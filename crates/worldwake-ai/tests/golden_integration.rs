@@ -37,29 +37,29 @@ mod golden_harness;
 
 use golden_harness::*;
 use std::collections::BTreeSet;
-use worldwake_ai::{AgentTickDriver, CommodityPurpose, DecisionOutcome, PlannerOpKind, SelectedPlanSource};
+use worldwake_ai::{
+    AgentTickDriver, CommodityPurpose, DecisionOutcome, PlannerOpKind, SelectedPlanSource,
+};
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, AgentData, AgentBeliefStore, BelievedActivity,
-    BelievedInstitutionalClaim,
-    ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
-    BountyTarget, BountyTerms, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
-    DemandMemory, DemandObservation, DemandObservationReason, EffectiveRight, EligibilityRule,
-    EntityId, FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalClaim,
-    InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute, PerceptionProfile,
-    PerceptionSource, PlaceTag, ProductionOutputOwner, ProofRequirement, PursuitProfile,
-    Quantity, RecordData, RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, Seed,
-    SocialObservationDetail, StateHash, SuccessionLaw, TellProfile, TellTopic,
-    TheftDispositionProfile, TheftFacts, Tick, Topology, TradeDispositionProfile, TravelEdge,
-    TravelEdgeId, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
-    WorkstationTag,
+    verify_authoritative_conservation, AgentBeliefStore, AgentData, ArtifactKind, ArtifactState,
+    BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity,
+    BelievedInstitutionalClaim, BountyTarget, BountyTerms, CombatProfile, CommodityKind, Container,
+    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
+    EffectiveRight, EligibilityRule, EntityId, FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, NoticeTopic,
+    PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, PlaceTag,
+    ProductionOutputOwner, ProofRequirement, PursuitProfile, Quantity, RecordData, RecordEntryId,
+    RecordKind, ResourceSource, RewardSource, RightKind, Seed, SocialObservationDetail, StateHash,
+    SuccessionLaw, TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, Tick, Topology,
+    TradeDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile, ViolationDispositionProfile,
+    ViolationKind, ViolationMemory, WorkstationTag,
 };
 use worldwake_sim::{
     get_affordances, ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind,
-    CombatActionPayload, ControllerState, InputKind, PerAgentBeliefView,
-    PostBountyActionPayload, PostNoticeActionPayload, RequestProvenance,
+    CombatActionPayload, ControllerState, InputKind, PerAgentBeliefView, PostBountyActionPayload,
+    PostNoticeActionPayload, RequestProvenance,
 };
 
 // ---------------------------------------------------------------------------
@@ -130,16 +130,10 @@ fn build_t20_topology() -> Topology {
         .unwrap();
     t.add_place(PLACE_FARM, place("Farm", &[PlaceTag::Village]))
         .unwrap();
-    t.add_place(
-        PLACE_BANDIT_ROAD,
-        place("BanditRoad", &[PlaceTag::Road]),
-    )
-    .unwrap();
-    t.add_place(
-        PLACE_SAFE_ROUTE,
-        place("SafeRoute", &[PlaceTag::Village]),
-    )
-    .unwrap();
+    t.add_place(PLACE_BANDIT_ROAD, place("BanditRoad", &[PlaceTag::Road]))
+        .unwrap();
+    t.add_place(PLACE_SAFE_ROUTE, place("SafeRoute", &[PlaceTag::Village]))
+        .unwrap();
     t.add_place(
         PLACE_REMOTE_ORCHARD,
         place("RemoteOrchard", &[PlaceTag::Village]),
@@ -156,14 +150,10 @@ fn build_t20_topology() -> Topology {
     )
     .unwrap();
     // BanditRoad ↔ Farm (3 ticks each way)
-    t.add_edge(
-        TravelEdge::new(TravelEdgeId(302), PLACE_BANDIT_ROAD, PLACE_FARM, 3, None).unwrap(),
-    )
-    .unwrap();
-    t.add_edge(
-        TravelEdge::new(TravelEdgeId(303), PLACE_FARM, PLACE_BANDIT_ROAD, 3, None).unwrap(),
-    )
-    .unwrap();
+    t.add_edge(TravelEdge::new(TravelEdgeId(302), PLACE_BANDIT_ROAD, PLACE_FARM, 3, None).unwrap())
+        .unwrap();
+    t.add_edge(TravelEdge::new(TravelEdgeId(303), PLACE_FARM, PLACE_BANDIT_ROAD, 3, None).unwrap())
+        .unwrap();
     // Market ↔ SafeRoute (5 ticks each way)
     t.add_edge(
         TravelEdge::new(TravelEdgeId(304), PLACE_MARKET, PLACE_SAFE_ROUTE, 5, None).unwrap(),
@@ -174,14 +164,10 @@ fn build_t20_topology() -> Topology {
     )
     .unwrap();
     // SafeRoute ↔ Farm (5 ticks each way)
-    t.add_edge(
-        TravelEdge::new(TravelEdgeId(306), PLACE_SAFE_ROUTE, PLACE_FARM, 5, None).unwrap(),
-    )
-    .unwrap();
-    t.add_edge(
-        TravelEdge::new(TravelEdgeId(307), PLACE_FARM, PLACE_SAFE_ROUTE, 5, None).unwrap(),
-    )
-    .unwrap();
+    t.add_edge(TravelEdge::new(TravelEdgeId(306), PLACE_SAFE_ROUTE, PLACE_FARM, 5, None).unwrap())
+        .unwrap();
+    t.add_edge(TravelEdge::new(TravelEdgeId(307), PLACE_FARM, PLACE_SAFE_ROUTE, 5, None).unwrap())
+        .unwrap();
     // Farm ↔ RemoteOrchard (4 ticks each way)
     t.add_edge(
         TravelEdge::new(TravelEdgeId(308), PLACE_FARM, PLACE_REMOTE_ORCHARD, 4, None).unwrap(),
@@ -505,8 +491,8 @@ fn run_t20_apple_stockout(seed: Seed) -> (StateHash, StateHash) {
         let merchant_place = h.world.effective_place(merchant);
 
         // Track merchant leaving Market (travel toward Farm).
-        merchant_traveled |= h.world.is_in_transit(merchant)
-            || merchant_place != Some(PLACE_MARKET);
+        merchant_traveled |=
+            h.world.is_in_transit(merchant) || merchant_place != Some(PLACE_MARKET);
 
         // Track consumer hunger change (needs domain exercised).
         consumer_hunger_changed |= h.agent_hunger(consumer) != initial_consumer_hunger;
@@ -520,37 +506,32 @@ fn run_t20_apple_stockout(seed: Seed) -> (StateHash, StateHash) {
              current={current_apple_authority} at tick {}",
             h.scheduler.current_tick().0,
         );
-        verify_authoritative_conservation(
-            &h.world,
-            CommodityKind::Apple,
-            current_apple_authority,
-        )
-        .unwrap();
+        verify_authoritative_conservation(&h.world, CommodityKind::Apple, current_apple_authority)
+            .unwrap();
     }
 
     // --- Check decision traces for restock goal ---
     let trace_sink = h.driver.trace_sink().expect("tracing enabled");
-    let merchant_generated_restock = trace_sink
-        .traces_for(merchant)
-        .into_iter()
-        .any(|trace| match &trace.outcome {
-            DecisionOutcome::Planning(planning) => {
-                planning.candidates.generated.iter().any(|g| {
-                    matches!(
-                        g.goal_key.kind,
-                        GoalKind::RestockCommodity {
-                            commodity: CommodityKind::Apple
-                        }
-                    )
-                })
-            }
-            _ => false,
-        });
+    let merchant_generated_restock =
+        trace_sink
+            .traces_for(merchant)
+            .into_iter()
+            .any(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => {
+                    planning.candidates.generated.iter().any(|g| {
+                        matches!(
+                            g.goal_key.kind,
+                            GoalKind::RestockCommodity {
+                                commodity: CommodityKind::Apple
+                            }
+                        )
+                    })
+                }
+                _ => false,
+            });
 
     // --- Cross-domain coverage: ≥ 4 distinct ActionDomain values ---
-    let action_sink = h
-        .action_trace_sink()
-        .expect("action tracing enabled");
+    let action_sink = h.action_trace_sink().expect("action tracing enabled");
     let mut domains_seen = std::collections::BTreeSet::new();
     for event in action_sink.events() {
         if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
@@ -591,8 +572,7 @@ fn run_t20_apple_stockout(seed: Seed) -> (StateHash, StateHash) {
         .events_for(merchant)
         .iter()
         .filter(|e| {
-            e.action_name == "travel"
-                && matches!(e.kind, ActionTraceKind::Committed { .. })
+            e.action_name == "travel" && matches!(e.kind, ActionTraceKind::Committed { .. })
         })
         .count();
     if merchant_traveled {
@@ -609,14 +589,8 @@ fn run_t20_apple_stockout(seed: Seed) -> (StateHash, StateHash) {
     );
     // (Merchant may or may not die to bandits — either outcome is valid.)
     // (Bandits should survive.)
-    assert!(
-        !h.agent_is_dead(bandit_1),
-        "Bandit 1 must survive",
-    );
-    assert!(
-        !h.agent_is_dead(bandit_2),
-        "Bandit 2 must survive",
-    );
+    assert!(!h.agent_is_dead(bandit_1), "Bandit 1 must survive",);
+    assert!(!h.agent_is_dead(bandit_2), "Bandit 2 must survive",);
 
     (
         hash_world(&h.world).unwrap(),
@@ -690,14 +664,10 @@ fn request_action_with_payload(
     targets: Vec<EntityId>,
     payload_override: Option<ActionPayload>,
 ) {
-    let def_id = h
-        .defs
-        .iter()
-        .find(|def| def.name == def_name)
-        .map_or_else(
-            || panic!("full registries should include {def_name}"),
-            |def| def.id,
-        );
+    let def_id = h.defs.iter().find(|def| def.name == def_name).map_or_else(
+        || panic!("full registries should include {def_name}"),
+        |def| def.id,
+    );
     let tick = h.scheduler.current_tick();
     let _ = h.scheduler.input_queue_mut().enqueue(
         tick,
@@ -744,11 +714,8 @@ fn run_t24_player_replacement(seed: Seed) -> (StateHash, StateHash) {
             HomeostaticNeeds::new(pm(200), pm(0), pm(100), pm(0), pm(0)),
         )
         .unwrap();
-        txn.set_component_deprivation_exposure(
-            a,
-            worldwake_core::DeprivationExposure::default(),
-        )
-        .unwrap();
+        txn.set_component_deprivation_exposure(a, worldwake_core::DeprivationExposure::default())
+            .unwrap();
         txn.set_component_drive_thresholds(a, worldwake_core::DriveThresholds::default())
             .unwrap();
         txn.set_component_metabolism_profile(a, MetabolismProfile::default())
@@ -759,11 +726,8 @@ fn run_t24_player_replacement(seed: Seed) -> (StateHash, StateHash) {
             .unwrap();
         txn.set_component_wound_list(a, worldwake_core::WoundList::default())
             .unwrap();
-        txn.set_component_blocked_intent_memory(
-            a,
-            worldwake_core::BlockedIntentMemory::default(),
-        )
-        .unwrap();
+        txn.set_component_blocked_intent_memory(a, worldwake_core::BlockedIntentMemory::default())
+            .unwrap();
         txn.set_component_carry_capacity(
             a,
             worldwake_core::CarryCapacity(worldwake_core::LoadUnits(50)),
@@ -776,9 +740,7 @@ fn run_t24_player_replacement(seed: Seed) -> (StateHash, StateHash) {
     };
 
     // Register Agent A as the human-controlled entity.
-    h.controller
-        .switch_control(None, Some(agent_a))
-        .unwrap();
+    h.controller.switch_control(None, Some(agent_a)).unwrap();
 
     // Give Agent A an Apple.
     let _apple_lot = give_commodity(
@@ -846,10 +808,7 @@ fn run_t24_player_replacement(seed: Seed) -> (StateHash, StateHash) {
     let swap_tick = h.scheduler.current_tick().0;
 
     // --- Snapshot pre-swap state for invariant checks ---
-    let pre_swap_a_needs = h
-        .world
-        .get_component_homeostatic_needs(agent_a)
-        .cloned();
+    let pre_swap_a_needs = h.world.get_component_homeostatic_needs(agent_a).cloned();
     let pre_swap_a_wounds = h.world.get_component_wound_list(agent_a).cloned();
     let pre_swap_a_place = h.world.effective_place(agent_a);
     let pre_swap_a_inventory = h.agent_commodity_qty(agent_a, CommodityKind::Apple);
@@ -863,8 +822,13 @@ fn run_t24_player_replacement(seed: Seed) -> (StateHash, StateHash) {
     // --- Phase 2: Swap ControlSource via WorldTxn ---
     {
         let mut txn = new_txn(&mut h.world, swap_tick);
-        txn.set_component_agent_data(agent_a, AgentData { control_source: ControlSource::Ai })
-            .unwrap();
+        txn.set_component_agent_data(
+            agent_a,
+            AgentData {
+                control_source: ControlSource::Ai,
+            },
+        )
+        .unwrap();
         txn.set_component_agent_data(
             agent_b,
             AgentData {
@@ -888,10 +852,7 @@ fn run_t24_player_replacement(seed: Seed) -> (StateHash, StateHash) {
     );
 
     // --- Verification: only ControlSource changed ---
-    let post_swap_a_needs = h
-        .world
-        .get_component_homeostatic_needs(agent_a)
-        .cloned();
+    let post_swap_a_needs = h.world.get_component_homeostatic_needs(agent_a).cloned();
     let post_swap_a_wounds = h.world.get_component_wound_list(agent_a).cloned();
     let post_swap_a_place = h.world.effective_place(agent_a);
     let post_swap_a_inventory = h.agent_commodity_qty(agent_a, CommodityKind::Apple);
@@ -1102,27 +1063,24 @@ fn run_t27_controlled_agent_death(seed: Seed) -> (StateHash, StateHash) {
         txn.set_component_combat_profile(
             a,
             CombatProfile::new(
-                pm(200),  // wound_capacity — very fragile
-                pm(150),  // incapacitation_threshold
-                pm(100),  // attack_skill — irrelevant (human, won't attack)
-                pm(100),  // guard_skill
-                pm(40),   // defend_bonus
-                pm(25),   // natural_clot_resistance
-                pm(0),    // natural_recovery_rate — no healing
-                pm(50),   // unarmed_wound_severity
-                pm(10),   // unarmed_bleed_rate
-                nz(6),    // unarmed_attack_ticks
-                nz(10),   // defend_stance_ticks
+                pm(200), // wound_capacity — very fragile
+                pm(150), // incapacitation_threshold
+                pm(100), // attack_skill — irrelevant (human, won't attack)
+                pm(100), // guard_skill
+                pm(40),  // defend_bonus
+                pm(25),  // natural_clot_resistance
+                pm(0),   // natural_recovery_rate — no healing
+                pm(50),  // unarmed_wound_severity
+                pm(10),  // unarmed_bleed_rate
+                nz(6),   // unarmed_attack_ticks
+                nz(10),  // defend_stance_ticks
             ),
         )
         .unwrap();
         txn.set_component_wound_list(a, worldwake_core::WoundList::default())
             .unwrap();
-        txn.set_component_blocked_intent_memory(
-            a,
-            worldwake_core::BlockedIntentMemory::default(),
-        )
-        .unwrap();
+        txn.set_component_blocked_intent_memory(a, worldwake_core::BlockedIntentMemory::default())
+            .unwrap();
         txn.set_component_carry_capacity(
             a,
             worldwake_core::CarryCapacity(worldwake_core::LoadUnits(50)),
@@ -1204,10 +1162,7 @@ fn run_t27_controlled_agent_death(seed: Seed) -> (StateHash, StateHash) {
         h.step_once();
         if h.agent_is_dead(agent_a) {
             // Record the tick from the DeadAt component.
-            death_tick = h
-                .world
-                .get_component_dead_at(agent_a)
-                .map(|d| d.0);
+            death_tick = h.world.get_component_dead_at(agent_a).map(|d| d.0);
             break;
         }
     }
@@ -1346,26 +1301,14 @@ fn t27_controlled_agent_death_seed_2() {
 /// All edges are 3 ticks. Indoor Village tags to avoid outdoor relief distractions.
 fn build_t28_topology() -> Topology {
     let mut t = Topology::new();
-    t.add_place(
-        PLACE_ALPHA,
-        place("Hideout", &[PlaceTag::Village]),
-    )
-    .unwrap();
-    t.add_place(
-        PLACE_BETA,
-        place("Crossroads", &[PlaceTag::Village]),
-    )
-    .unwrap();
-    t.add_place(
-        PLACE_GAMMA,
-        place("Village", &[PlaceTag::Village]),
-    )
-    .unwrap();
-    t.add_place(
-        PLACE_DELTA,
-        place("Sanctuary", &[PlaceTag::Village]),
-    )
-    .unwrap();
+    t.add_place(PLACE_ALPHA, place("Hideout", &[PlaceTag::Village]))
+        .unwrap();
+    t.add_place(PLACE_BETA, place("Crossroads", &[PlaceTag::Village]))
+        .unwrap();
+    t.add_place(PLACE_GAMMA, place("Village", &[PlaceTag::Village]))
+        .unwrap();
+    t.add_place(PLACE_DELTA, place("Sanctuary", &[PlaceTag::Village]))
+        .unwrap();
     // Hideout ↔ Crossroads (3 ticks)
     t.add_edge(TravelEdge::new(TravelEdgeId(200), PLACE_ALPHA, PLACE_BETA, 3, None).unwrap())
         .unwrap();
@@ -1664,7 +1607,9 @@ fn run_t28_pursuit_information_boundary(seed: Seed) -> (StateHash, StateHash) {
     // Positive check: at least one travel commit for the bandit.
     let bandit_travel_commits = bandit_events
         .iter()
-        .filter(|e| e.action_name == "travel" && matches!(e.kind, ActionTraceKind::Committed { .. }))
+        .filter(|e| {
+            e.action_name == "travel" && matches!(e.kind, ActionTraceKind::Committed { .. })
+        })
         .count();
     assert!(
         bandit_travel_commits >= 1,
@@ -1684,17 +1629,14 @@ fn run_t28_pursuit_information_boundary(seed: Seed) -> (StateHash, StateHash) {
 
     // --- Verification 5: Decision trace shows RaidTarget selected ---
     let trace_sink = h.driver.trace_sink().expect("tracing enabled");
-    let any_raid_selected = trace_sink
-        .traces_for(bandit)
-        .into_iter()
-        .any(|trace| {
-            if let DecisionOutcome::Planning(ref p) = trace.outcome {
-                p.selection
-                    .selected_goal_is(GoalKey::from(GoalKind::RaidTarget { target }))
-            } else {
-                false
-            }
-        });
+    let any_raid_selected = trace_sink.traces_for(bandit).into_iter().any(|trace| {
+        if let DecisionOutcome::Planning(ref p) = trace.outcome {
+            p.selection
+                .selected_goal_is(GoalKey::from(GoalKind::RaidTarget { target }))
+        } else {
+            false
+        }
+    });
     assert!(
         any_raid_selected,
         "decision trace should show RaidTarget was selected (pursuit attempted)"
@@ -1812,22 +1754,48 @@ fn build_t29_topology() -> Topology {
     .unwrap();
     // Market ↔ Storehouse (3 ticks)
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(300), PLACE_T29_MARKET, PLACE_T29_STOREHOUSE, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(300),
+            PLACE_T29_MARKET,
+            PLACE_T29_STOREHOUSE,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(301), PLACE_T29_STOREHOUSE, PLACE_T29_MARKET, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(301),
+            PLACE_T29_STOREHOUSE,
+            PLACE_T29_MARKET,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // Market ↔ Tavern (4 ticks)
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(302), PLACE_T29_MARKET, PLACE_T29_TAVERN, 4, None).unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(302),
+            PLACE_T29_MARKET,
+            PLACE_T29_TAVERN,
+            4,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(303), PLACE_T29_TAVERN, PLACE_T29_MARKET, 4, None).unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(303),
+            PLACE_T29_TAVERN,
+            PLACE_T29_MARKET,
+            4,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // Storehouse ↔ GuardPost (3 ticks)
@@ -1855,13 +1823,25 @@ fn build_t29_topology() -> Topology {
     .unwrap();
     // Market ↔ GuardPost (5 ticks)
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(306), PLACE_T29_MARKET, PLACE_T29_GUARD_POST, 5, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(306),
+            PLACE_T29_MARKET,
+            PLACE_T29_GUARD_POST,
+            5,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(307), PLACE_T29_GUARD_POST, PLACE_T29_MARKET, 5, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(307),
+            PLACE_T29_GUARD_POST,
+            PLACE_T29_MARKET,
+            5,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t
@@ -2467,9 +2447,7 @@ fn run_t29_wrongful_accusation(seed: Seed) -> (StateHash, StateHash) {
     );
 
     // --- Cross-domain coverage: ≥ 2 distinct ActionDomain values ---
-    let action_sink = h
-        .action_trace_sink()
-        .expect("action tracing enabled");
+    let action_sink = h.action_trace_sink().expect("action tracing enabled");
     let mut domains_seen = BTreeSet::new();
     for event in action_sink.events() {
         if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
@@ -2575,11 +2553,8 @@ fn build_t21_topology() -> Topology {
         place("Market", &[PlaceTag::Store, PlaceTag::Village]),
     )
     .unwrap();
-    t.add_place(
-        PLACE_T21_GATE_ROAD,
-        place("GateRoad", &[PlaceTag::Road]),
-    )
-    .unwrap();
+    t.add_place(PLACE_T21_GATE_ROAD, place("GateRoad", &[PlaceTag::Road]))
+        .unwrap();
     t.add_place(
         PLACE_T21_BANDIT_FOREST,
         place("BanditForest", &[PlaceTag::Forest]),
@@ -2598,24 +2573,48 @@ fn build_t21_topology() -> Topology {
 
     // RulersHall ↔ Market (2 ticks each way)
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(400), PLACE_T21_RULERS_HALL, PLACE_T21_MARKET, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(400),
+            PLACE_T21_RULERS_HALL,
+            PLACE_T21_MARKET,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(401), PLACE_T21_MARKET, PLACE_T21_RULERS_HALL, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(401),
+            PLACE_T21_MARKET,
+            PLACE_T21_RULERS_HALL,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // Market ↔ GateRoad (3 ticks each way)
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(402), PLACE_T21_MARKET, PLACE_T21_GATE_ROAD, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(402),
+            PLACE_T21_MARKET,
+            PLACE_T21_GATE_ROAD,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(403), PLACE_T21_GATE_ROAD, PLACE_T21_MARKET, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(403),
+            PLACE_T21_GATE_ROAD,
+            PLACE_T21_MARKET,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // GateRoad ↔ BanditForest (3 ticks each way)
@@ -2666,22 +2665,48 @@ fn build_t21_topology() -> Topology {
     .unwrap();
     // GuardPost ↔ GateRoad (2 ticks each way)
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(408), PLACE_T21_GUARD_POST, PLACE_T21_GATE_ROAD, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(408),
+            PLACE_T21_GUARD_POST,
+            PLACE_T21_GATE_ROAD,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(409), PLACE_T21_GATE_ROAD, PLACE_T21_GUARD_POST, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(409),
+            PLACE_T21_GATE_ROAD,
+            PLACE_T21_GUARD_POST,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // GateRoad ↔ Farm (3 ticks each way) — merchant must pass through GateRoad
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(410), PLACE_T21_GATE_ROAD, PLACE_T21_FARM, 3, None).unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(410),
+            PLACE_T21_GATE_ROAD,
+            PLACE_T21_FARM,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(411), PLACE_T21_FARM, PLACE_T21_GATE_ROAD, 3, None).unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(411),
+            PLACE_T21_FARM,
+            PLACE_T21_GATE_ROAD,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t
@@ -3270,9 +3295,9 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
         }
 
         // Check guard presence at GateRoad.
-        let guard_at_gate = guards
-            .iter()
-            .any(|&g| !h.agent_is_dead(g) && h.world.effective_place(g) == Some(PLACE_T21_GATE_ROAD));
+        let guard_at_gate = guards.iter().any(|&g| {
+            !h.agent_is_dead(g) && h.world.effective_place(g) == Some(PLACE_T21_GATE_ROAD)
+        });
         if guard_at_gate {
             current_no_guard_streak = 0;
         } else {
@@ -3290,8 +3315,7 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
                 for event in &tick_events {
                     if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
                         if def.domain == worldwake_core::ActionDomain::Combat
-                            && h.world.effective_place(event.actor)
-                                == Some(PLACE_T21_GATE_ROAD)
+                            && h.world.effective_place(event.actor) == Some(PLACE_T21_GATE_ROAD)
                         {
                             combat_at_gate_without_guard = true;
                         }
@@ -3402,9 +3426,7 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
     }
 
     // --- Verification 8: Cross-domain ≥ 4 ---
-    let action_sink = h
-        .action_trace_sink()
-        .expect("action tracing enabled");
+    let action_sink = h.action_trace_sink().expect("action tracing enabled");
     let mut domains_seen = BTreeSet::new();
     for event in action_sink.events() {
         if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
@@ -3524,13 +3546,25 @@ fn build_t33_topology() -> Topology {
     // reach RulersHall. With uncontested_hold_ticks=5, the claimant installs
     // as holder by tick ~7, before guards arrive to contest.
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(500), PLACE_T33_RULERS_HALL, PLACE_T33_MARKET, 8, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(500),
+            PLACE_T33_RULERS_HALL,
+            PLACE_T33_MARKET,
+            8,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(501), PLACE_T33_MARKET, PLACE_T33_RULERS_HALL, 8, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(501),
+            PLACE_T33_MARKET,
+            PLACE_T33_RULERS_HALL,
+            8,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // Market ↔ Road (2 ticks each way)
@@ -3576,13 +3610,25 @@ fn build_t33_topology() -> Topology {
     .unwrap();
     // GuardPost ↔ Market (2 ticks each way)
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(508), PLACE_T33_GUARD_POST, PLACE_T33_MARKET, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(508),
+            PLACE_T33_GUARD_POST,
+            PLACE_T33_MARKET,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(509), PLACE_T33_MARKET, PLACE_T33_GUARD_POST, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(509),
+            PLACE_T33_MARKET,
+            PLACE_T33_GUARD_POST,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t
@@ -4054,10 +4100,7 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
 
         // Early exit if all conditions met: theft during vacancy, succession
         // complete, and guard returned post-succession.
-        if theft_committed
-            && succession_completed
-            && guard_returned_to_market_after_succession
-        {
+        if theft_committed && succession_completed && guard_returned_to_market_after_succession {
             // Run a few more ticks to let the thief observe the guard and
             // re-evaluate theft deterrence.
             for _ in 0..30 {
@@ -4175,9 +4218,7 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
     }
 
     // --- Verification 9: Cross-domain ≥ 5 ---
-    let action_sink = h
-        .action_trace_sink()
-        .expect("action tracing enabled");
+    let action_sink = h.action_trace_sink().expect("action tracing enabled");
     let mut domains_seen = BTreeSet::new();
     for event in action_sink.events() {
         if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
@@ -4272,68 +4313,140 @@ fn build_t22r_topology() -> Topology {
 
     // OldCamp ↔ RallyGlen (2 ticks)
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(600), PLACE_T22R_OLD_CAMP, PLACE_T22R_RALLY_GLEN, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(600),
+            PLACE_T22R_OLD_CAMP,
+            PLACE_T22R_RALLY_GLEN,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(601), PLACE_T22R_RALLY_GLEN, PLACE_T22R_OLD_CAMP, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(601),
+            PLACE_T22R_RALLY_GLEN,
+            PLACE_T22R_OLD_CAMP,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // RallyGlen ↔ Market (2 ticks) — short leg 1
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(602), PLACE_T22R_RALLY_GLEN, PLACE_T22R_MARKET, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(602),
+            PLACE_T22R_RALLY_GLEN,
+            PLACE_T22R_MARKET,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(603), PLACE_T22R_MARKET, PLACE_T22R_RALLY_GLEN, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(603),
+            PLACE_T22R_MARKET,
+            PLACE_T22R_RALLY_GLEN,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // RallyGlen ↔ Farm (2 ticks) — short leg 2
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(604), PLACE_T22R_RALLY_GLEN, PLACE_T22R_FARM, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(604),
+            PLACE_T22R_RALLY_GLEN,
+            PLACE_T22R_FARM,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(605), PLACE_T22R_FARM, PLACE_T22R_RALLY_GLEN, 2, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(605),
+            PLACE_T22R_FARM,
+            PLACE_T22R_RALLY_GLEN,
+            2,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // Market ↔ SafeRoute (3 ticks) — safe leg 1
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(606), PLACE_T22R_MARKET, PLACE_T22R_SAFE_ROUTE, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(606),
+            PLACE_T22R_MARKET,
+            PLACE_T22R_SAFE_ROUTE,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(607), PLACE_T22R_SAFE_ROUTE, PLACE_T22R_MARKET, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(607),
+            PLACE_T22R_SAFE_ROUTE,
+            PLACE_T22R_MARKET,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // SafeRoute ↔ Farm (3 ticks) — safe leg 2
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(608), PLACE_T22R_SAFE_ROUTE, PLACE_T22R_FARM, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(608),
+            PLACE_T22R_SAFE_ROUTE,
+            PLACE_T22R_FARM,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(609), PLACE_T22R_FARM, PLACE_T22R_SAFE_ROUTE, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(609),
+            PLACE_T22R_FARM,
+            PLACE_T22R_SAFE_ROUTE,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     // Market ↔ Downstream (3 ticks)
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(610), PLACE_T22R_MARKET, PLACE_T22R_DOWNSTREAM, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(610),
+            PLACE_T22R_MARKET,
+            PLACE_T22R_DOWNSTREAM,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t.add_edge(
-        TravelEdge::new(TravelEdgeId(611), PLACE_T22R_DOWNSTREAM, PLACE_T22R_MARKET, 3, None)
-            .unwrap(),
+        TravelEdge::new(
+            TravelEdgeId(611),
+            PLACE_T22R_DOWNSTREAM,
+            PLACE_T22R_MARKET,
+            3,
+            None,
+        )
+        .unwrap(),
     )
     .unwrap();
     t
@@ -4458,10 +4571,7 @@ fn t22r_agent_knows_conflict_at(
         })
 }
 
-fn t22r_latest_safe_reroute_destination(
-    h: &GoldenHarness,
-    merchant: EntityId,
-) -> Option<EntityId> {
+fn t22r_latest_safe_reroute_destination(h: &GoldenHarness, merchant: EntityId) -> Option<EntityId> {
     h.driver
         .trace_sink()?
         .traces_for(merchant)
@@ -4617,8 +4727,7 @@ fn run_t22_camp_reconstitution(seed: Seed) -> (StateHash, StateHash) {
     let mut guards = Vec::new();
     for name in ["T22R Marshal", "T22R Pike"] {
         let guard = txn.create_agent(name, ControlSource::None).unwrap();
-        txn.set_ground_location(guard, PLACE_T22R_OLD_CAMP)
-            .unwrap();
+        txn.set_ground_location(guard, PLACE_T22R_OLD_CAMP).unwrap();
         txn.set_component_perception_profile(guard, t22r_perception())
             .unwrap();
         txn.set_component_combat_profile(guard, t22r_guard_combat())
@@ -4675,11 +4784,8 @@ fn run_t22_camp_reconstitution(seed: Seed) -> (StateHash, StateHash) {
     let merchant = txn
         .create_agent("T22R Merchant", ControlSource::None)
         .unwrap();
-    txn.set_component_known_recipes(
-        merchant,
-        KnownRecipes::with([worldwake_core::RecipeId(0)]),
-    )
-    .unwrap();
+    txn.set_component_known_recipes(merchant, KnownRecipes::with([worldwake_core::RecipeId(0)]))
+        .unwrap();
     txn.set_ground_location(merchant, PLACE_T22R_MARKET)
         .unwrap();
     txn.set_component_perception_profile(merchant, t22r_perception())
@@ -4991,7 +5097,12 @@ fn run_t22_camp_reconstitution(seed: Seed) -> (StateHash, StateHash) {
         .iter()
         .find(|b| !h.agent_is_dead(**b))
         .expect("at least one bandit should survive");
-    t22r_set_control(&mut h, attacking_bandit, ControlSource::Human, arrival_tick.0);
+    t22r_set_control(
+        &mut h,
+        attacking_bandit,
+        ControlSource::Human,
+        arrival_tick.0,
+    );
     add_hostility(&mut h.world, &mut h.event_log, attacking_bandit, traveler);
     add_hostility(&mut h.world, &mut h.event_log, traveler, attacking_bandit);
     let _ = h.scheduler.input_queue_mut().enqueue(
@@ -5367,7 +5478,10 @@ fn s45_place_orchard_source(h: &mut GoldenHarness) -> EntityId {
     )
 }
 
-fn latest_selected_apple_travel_destination(h: &GoldenHarness, agent: EntityId) -> Option<EntityId> {
+fn latest_selected_apple_travel_destination(
+    h: &GoldenHarness,
+    agent: EntityId,
+) -> Option<EntityId> {
     h.driver
         .trace_sink()?
         .traces_for(agent)
@@ -5411,7 +5525,10 @@ fn trace_summaries(h: &GoldenHarness, agent: EntityId) -> Vec<String> {
         .collect()
 }
 
-fn find_first_social_artifact(world: &worldwake_core::World, kind: ArtifactKind) -> Option<EntityId> {
+fn find_first_social_artifact(
+    world: &worldwake_core::World,
+    kind: ArtifactKind,
+) -> Option<EntityId> {
     world.all_entities().find(|entity| {
         world.entity_kind(*entity) == Some(worldwake_core::EntityKind::SocialArtifact)
             && world
@@ -5490,7 +5607,9 @@ fn run_s45_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
 
     let reward_lot = {
         let mut txn = new_txn(&mut h.world, 0);
-        let lot = txn.create_item_lot(CommodityKind::Coin, Quantity(10)).unwrap();
+        let lot = txn
+            .create_item_lot(CommodityKind::Coin, Quantity(10))
+            .unwrap();
         txn.set_ground_location(lot, PLACE_S45_TOWN_SQUARE).unwrap();
         txn.set_owner(lot, issuer).unwrap();
         txn.set_possessor(lot, issuer).unwrap();
@@ -5539,7 +5658,8 @@ fn run_s45_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
         if bounty.is_some() && !issuer_relocated {
             let relocation_tick = h.scheduler.current_tick().0;
             let mut txn = new_txn(&mut h.world, relocation_tick);
-            txn.set_ground_location(issuer, PLACE_S45_ISSUER_HOME).unwrap();
+            txn.set_ground_location(issuer, PLACE_S45_ISSUER_HOME)
+                .unwrap();
             commit_txn(txn, &mut h.event_log);
             set_control_source(&mut h, issuer, ControlSource::None, relocation_tick);
             issuer_relocated = true;
@@ -5623,8 +5743,14 @@ fn run_s45_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
                 ActionTraceKind::Started { targets } if targets == &vec![target]
             )
     });
-    assert!(traveled_to_wilderness, "hunter should travel to the target place");
-    assert!(attacked_target, "hunter should start a real attack against the target");
+    assert!(
+        traveled_to_wilderness,
+        "hunter should travel to the target place"
+    );
+    assert!(
+        attacked_target,
+        "hunter should start a real attack against the target"
+    );
     assert!(
         h.world.get_component_dead_at(target).is_some(),
         "the target should be dead before the claim completes"
@@ -5648,7 +5774,8 @@ fn run_s45_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
         "successful claim should mark the bounty fulfilled"
     );
     assert_eq!(
-        h.world.controlled_commodity_quantity(hunter, CommodityKind::Coin),
+        h.world
+            .controlled_commodity_quantity(hunter, CommodityKind::Coin),
         Quantity(10),
         "hunter should receive the full reward"
     );
@@ -5833,7 +5960,9 @@ fn run_s45_delivery_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
 
     let reward_lot = {
         let mut txn = new_txn(&mut h.world, 0);
-        let lot = txn.create_item_lot(CommodityKind::Coin, Quantity(10)).unwrap();
+        let lot = txn
+            .create_item_lot(CommodityKind::Coin, Quantity(10))
+            .unwrap();
         txn.set_ground_location(lot, PLACE_S45_TOWN_SQUARE).unwrap();
         txn.set_owner(lot, issuer).unwrap();
         txn.set_possessor(lot, issuer).unwrap();
@@ -5842,15 +5971,16 @@ fn run_s45_delivery_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
     };
     let delivery_lot = {
         let mut txn = new_txn(&mut h.world, 0);
-        let lot = txn.create_item_lot(CommodityKind::Grain, Quantity(3)).unwrap();
+        let lot = txn
+            .create_item_lot(CommodityKind::Grain, Quantity(3))
+            .unwrap();
         txn.set_ground_location(lot, PLACE_S45_TOWN_SQUARE).unwrap();
         txn.set_owner(lot, courier).unwrap();
         commit_txn(txn, &mut h.event_log);
         lot
     };
     let total_coin_before = total_authoritative_commodity_quantity(&h.world, CommodityKind::Coin);
-    let total_grain_before =
-        total_authoritative_commodity_quantity(&h.world, CommodityKind::Grain);
+    let total_grain_before = total_authoritative_commodity_quantity(&h.world, CommodityKind::Grain);
 
     seed_actor_local_beliefs(
         &mut h.world,
@@ -5899,7 +6029,8 @@ fn run_s45_delivery_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
         if bounty.is_some() && !issuer_relocated {
             let relocation_tick = h.scheduler.current_tick().0;
             let mut txn = new_txn(&mut h.world, relocation_tick);
-            txn.set_ground_location(issuer, PLACE_S45_ISSUER_HOME).unwrap();
+            txn.set_ground_location(issuer, PLACE_S45_ISSUER_HOME)
+                .unwrap();
             commit_txn(txn, &mut h.event_log);
             set_control_source(&mut h, issuer, ControlSource::None, relocation_tick);
             issuer_relocated = true;
@@ -6041,7 +6172,8 @@ fn run_s45_delivery_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
         "successful delivery claim should mark the bounty fulfilled"
     );
     assert_eq!(
-        h.world.controlled_commodity_quantity(courier, CommodityKind::Coin),
+        h.world
+            .controlled_commodity_quantity(courier, CommodityKind::Coin),
         Quantity(10),
         "courier should receive the full reserved reward"
     );
@@ -6191,7 +6323,10 @@ fn run_s45_notice_discovery(seed: Seed) -> (StateHash, StateHash) {
             }),
         "issuer should commit post_notice"
     );
-    assert!(traveler_saw_notice, "traveler should perceive the posted warning notice");
+    assert!(
+        traveler_saw_notice,
+        "traveler should perceive the posted warning notice"
+    );
     assert!(
         h.world
             .get_component_agent_belief_store(traveler)
@@ -6323,7 +6458,9 @@ fn run_s51_autonomous_bounty_posting(seed: Seed) -> (StateHash, StateHash) {
             .unwrap();
         txn.append_record_entry(crime_register, accusation_claim)
             .unwrap();
-        let treasury_lot = txn.create_item_lot(CommodityKind::Coin, Quantity(6)).unwrap();
+        let treasury_lot = txn
+            .create_item_lot(CommodityKind::Coin, Quantity(6))
+            .unwrap();
         txn.set_ground_location(treasury_lot, PLACE_S45_TOWN_SQUARE)
             .unwrap();
         txn.set_owner(treasury_lot, office).unwrap();
@@ -6461,12 +6598,14 @@ fn run_s51_autonomous_bounty_posting(seed: Seed) -> (StateHash, StateHash) {
             .map(worldwake_sim::ActionTraceEvent::summary)
             .collect::<Vec<_>>()
     });
-    let request_summaries = h.request_resolution_trace_sink().map_or_else(Vec::new, |sink| {
-        sink.events_for(issuer)
-            .into_iter()
-            .map(worldwake_sim::RequestResolutionTraceEvent::summary)
-            .collect::<Vec<_>>()
-    });
+    let request_summaries = h
+        .request_resolution_trace_sink()
+        .map_or_else(Vec::new, |sink| {
+            sink.events_for(issuer)
+                .into_iter()
+                .map(worldwake_sim::RequestResolutionTraceEvent::summary)
+                .collect::<Vec<_>>()
+        });
     assert!(
         selected_bounty,
         "issuer should select PostBounty from the consulted accusation belief; traces={summaries:?}; request_traces={request_summaries:?}; action_traces={action_summaries:?}"

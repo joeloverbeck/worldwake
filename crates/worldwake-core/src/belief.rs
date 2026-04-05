@@ -1,11 +1,11 @@
 //! Authoritative belief and perception state for E14.
 
 use crate::{
+    social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
     ActionDomain, BelievedInstitutionalClaim, CommodityKind, Component, EntityId,
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
     WorkstationTag, World, Wound,
-    social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1171,7 +1171,9 @@ pub fn build_believed_artifact_state(
             reward_quantity: terms.reward_quantity,
             claim_place: terms.claim_place,
         });
-    let notice_topic = world.get_component_notice_content(entity).map(|notice| notice.topic);
+    let notice_topic = world
+        .get_component_notice_content(entity)
+        .map(|notice| notice.topic);
 
     Some(BelievedArtifactState {
         kind: header.kind,
@@ -1467,11 +1469,11 @@ mod tests {
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
         recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot, AgentBeliefStore,
         AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy, BelievedActivity,
-        BelievedContentionState, BelievedEntityState, HeardBeliefDisposition,
-        HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile,
-        PerceptionSource, RecipientKnowledgeStatus, SharedInstitutionalBelief, SharedTellState,
-        SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey,
-        TellProfile, TellTopic, ToldBeliefMemory,
+        BelievedContentionState, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
+        MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
+        RecipientKnowledgeStatus, SharedInstitutionalBelief, SharedTellState, SocialObservation,
+        SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
+        ToldBeliefMemory,
     };
     use crate::{
         build_prototype_world, current_institutional_belief_topics,

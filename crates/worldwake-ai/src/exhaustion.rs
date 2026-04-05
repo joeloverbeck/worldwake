@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     ArtifactKind, ArtifactState, CommodityKind, CommodityPurpose, EntityId, EntityKind, GoalKind,
-    HomeostaticNeedId,
-    HomeostaticNeeds, Permille, Quantity, ThresholdBand, UniqueItemKind,
+    HomeostaticNeedId, HomeostaticNeeds, Permille, Quantity, ThresholdBand, UniqueItemKind,
 };
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -294,9 +293,7 @@ fn bounty_active_conditions(
         unreachable!("BountyActive strategy requires FulfillBounty goal");
     };
     conditions.insert(ExhaustionInvalidationCondition::PositionChanged);
-    conditions.insert(ExhaustionInvalidationCondition::BountyStateChanged(
-        bounty,
-    ));
+    conditions.insert(ExhaustionInvalidationCondition::BountyStateChanged(bounty));
 }
 
 fn claim_office_conditions(conditions: &mut BTreeSet<ExhaustionInvalidationCondition>) {
@@ -575,8 +572,8 @@ mod tests {
         JusticeDispositionProfile, LoadUnits, MerchandiseProfile, OfficeData, Permille,
         PunishmentKind, Quantity, RecipientKnowledgeStatus, RecordEntryId, ResourceSource,
         TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, ThresholdBand,
-        UniqueItemKind,
-        ViolationDispositionProfile, ViolationId, WorkstationTag, Wound, WoundCause, WoundId,
+        UniqueItemKind, ViolationDispositionProfile, ViolationId, WorkstationTag, Wound,
+        WoundCause, WoundId,
     };
     use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
 

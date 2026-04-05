@@ -1,8 +1,8 @@
 //! Communication-type classification and per-agent acceptance profiles.
 
 use crate::{
-    current_institutional_belief_topics, AgentBeliefStore, Component,
-    InstitutionalKnowledgeSource, PerceptionSource, Permille, SocialObservationDetail, TellTopic,
+    current_institutional_belief_topics, AgentBeliefStore, Component, InstitutionalKnowledgeSource,
+    PerceptionSource, Permille, SocialObservationDetail, TellTopic,
 };
 use serde::{Deserialize, Serialize};
 
@@ -50,22 +50,23 @@ pub fn classify_communication(
             | SocialObservationDetail::WitnessedTelling { .. }
             | SocialObservationDetail::CoPresence { .. } => CommunicationClass::Gossip,
         },
-        TellTopic::EntityBelief { subject } => speaker_beliefs
-            .get_entity(&subject)
-            .map_or(CommunicationClass::Gossip, |belief| {
-                if belief.alive {
-                    match belief.source {
-                        PerceptionSource::DirectObservation | PerceptionSource::Report { .. } => {
-                            CommunicationClass::Testimony
+        TellTopic::EntityBelief { subject } => {
+            speaker_beliefs
+                .get_entity(&subject)
+                .map_or(CommunicationClass::Gossip, |belief| {
+                    if belief.alive {
+                        match belief.source {
+                            PerceptionSource::DirectObservation
+                            | PerceptionSource::Report { .. } => CommunicationClass::Testimony,
+                            PerceptionSource::Rumor { .. } | PerceptionSource::Inference => {
+                                CommunicationClass::Gossip
+                            }
                         }
-                        PerceptionSource::Rumor { .. } | PerceptionSource::Inference => {
-                            CommunicationClass::Gossip
-                        }
+                    } else {
+                        CommunicationClass::Alarm
                     }
-                } else {
-                    CommunicationClass::Alarm
-                }
-            }),
+                })
+        }
         TellTopic::InstitutionalClaim { claim } => current_institutional_belief_topics(
             speaker_beliefs
                 .institutional_beliefs
@@ -271,8 +272,14 @@ mod tests {
         let profile = CommunicationProfile::default();
 
         assert_eq!(profile.alarm_acceptance, crate::Permille::new(950).unwrap());
-        assert_eq!(profile.testimony_acceptance, crate::Permille::new(800).unwrap());
-        assert_eq!(profile.gossip_acceptance, crate::Permille::new(600).unwrap());
+        assert_eq!(
+            profile.testimony_acceptance,
+            crate::Permille::new(800).unwrap()
+        );
+        assert_eq!(
+            profile.gossip_acceptance,
+            crate::Permille::new(600).unwrap()
+        );
     }
 
     #[test]
@@ -308,9 +315,14 @@ mod tests {
             .insert_component_communication_profile(agent, profile.clone())
             .unwrap();
 
-        assert_eq!(world.get_component_communication_profile(agent), Some(&profile));
         assert_eq!(
-            world.entities_with_communication_profile().collect::<Vec<_>>(),
+            world.get_component_communication_profile(agent),
+            Some(&profile)
+        );
+        assert_eq!(
+            world
+                .entities_with_communication_profile()
+                .collect::<Vec<_>>(),
             vec![agent]
         );
         assert_eq!(

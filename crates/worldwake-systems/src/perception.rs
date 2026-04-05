@@ -373,9 +373,7 @@ fn observe_active_actions(
                 if let Some(instance) = active_by_actor.get(subject) {
                     let is_travel = action_defs
                         .get(instance.def_id)
-                        .is_some_and(|def| {
-                            def.domain == worldwake_core::ActionDomain::Travel
-                        });
+                        .is_some_and(|def| def.domain == worldwake_core::ActionDomain::Travel);
                     if is_travel {
                         if let Some(destination) = instance.targets.first().copied() {
                             belief.last_known_place = Some(destination);
@@ -1054,18 +1052,18 @@ mod tests {
     use worldwake_core::{
         build_observed_entity_snapshot, build_prototype_world, prototype_place_entity, ActionDefId,
         ActionDomain, AgentBeliefStore, ArtifactHeader, ArtifactKind, ArtifactState, BanditCamp,
-        BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity,
-        BelievedContentionState, BelievedEntityState, BountyTarget, BountyTerms, CauseRef,
-        CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ContentionGrant,
-        ContentionQueue, ContentionWaiter, Container, ControlSource, DeadAt, EntityKind,
-        EventLog, EventPayload, EventTag, EventView, EvidenceRef, InstitutionalBeliefKey,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MismatchKind, NoticeContent,
-        NoticeTopic, ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
+        BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity, BelievedContentionState,
+        BelievedEntityState, BountyTarget, BountyTerms, CauseRef, CommodityKind, ComponentDelta,
+        ComponentKind, ComponentValue, Container, ContentionGrant, ContentionQueue,
+        ContentionWaiter, ControlSource, DeadAt, EntityKind, EventLog, EventPayload, EventTag,
+        EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LoadUnits, MismatchKind, NoticeContent, NoticeTopic,
+        ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
         PerceptionSource, Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
         ProofRequirement, PrototypePlace, Quantity, RelationDelta, RelationKind, RelationValue,
         ResourceSource, RewardSource, SaleListing, Seed, SocialObservationDetail,
-        SocialObservationKind, StateDelta, StockAssignment, StockAssignmentKind, TheftFacts,
-        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        SocialObservationKind, StateDelta, StockAssignment, StockAssignmentKind, TheftFacts, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -1531,7 +1529,8 @@ mod tests {
                 .create_item_lot(CommodityKind::Bread, Quantity(2))
                 .unwrap();
             txn.set_owner(stock_lot, observer).unwrap();
-            txn.put_into_container(stock_lot, display_container).unwrap();
+            txn.put_into_container(stock_lot, display_container)
+                .unwrap();
             txn.set_component_stock_assignment(
                 stock_lot,
                 StockAssignment {
@@ -1549,7 +1548,8 @@ mod tests {
                 observed_snapshot(Some(place), 2)
                     .to_believed_entity_state(Tick(1), PerceptionSource::DirectObservation),
             );
-            txn.set_component_agent_belief_store(observer, store).unwrap();
+            txn.set_component_agent_belief_store(observer, store)
+                .unwrap();
 
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);

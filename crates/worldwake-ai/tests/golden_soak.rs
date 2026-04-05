@@ -15,8 +15,8 @@ use golden_harness::soak_world::build_t30_world;
 use std::collections::BTreeSet;
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, CauseRef, CommodityKind, EventId, EventView, Permille,
-    Seed, StateHash,
+    verify_authoritative_conservation, CauseRef, CommodityKind, EventId, EventView, Permille, Seed,
+    StateHash,
 };
 
 /// Per-run result collected for cross-run diversity analysis.
@@ -183,26 +183,47 @@ fn run_t30_soak(seed: Seed) -> SoakResult {
 
         // Track travel emergence.
         if !saw_travel {
-            saw_travel = h.event_log.events_by_tag(worldwake_core::EventTag::Travel).len() > 0;
+            saw_travel = h
+                .event_log
+                .events_by_tag(worldwake_core::EventTag::Travel)
+                .len()
+                > 0;
         }
     }
 
     // --- Per-run invariant 7: Emergence checks via event log ---
     // Death: already tracked per-tick.
     // Acquire: check for any completed trade or harvest action.
-    let saw_acquire =
-        h.event_log.events_by_tag(worldwake_core::EventTag::Trade).len() > 0
-        || h.event_log.events_by_tag(worldwake_core::EventTag::ActionCommitted).len() > 0;
+    let saw_acquire = h
+        .event_log
+        .events_by_tag(worldwake_core::EventTag::Trade)
+        .len()
+        > 0
+        || h.event_log
+            .events_by_tag(worldwake_core::EventTag::ActionCommitted)
+            .len()
+            > 0;
     // Travel: already tracked.
     // Share belief: check for social (tell) events.
-    let saw_tell = h.event_log.events_by_tag(worldwake_core::EventTag::Social).len() > 0;
+    let saw_tell = h
+        .event_log
+        .events_by_tag(worldwake_core::EventTag::Social)
+        .len()
+        > 0;
 
     // Political emergence (ClaimOffice): check for political events.
-    let saw_claim_office =
-        h.event_log.events_by_tag(worldwake_core::EventTag::Political).len() > 0;
+    let saw_claim_office = h
+        .event_log
+        .events_by_tag(worldwake_core::EventTag::Political)
+        .len()
+        > 0;
 
     // Crime emergence (StealItem): check for crime events.
-    let saw_steal = h.event_log.events_by_tag(worldwake_core::EventTag::Crime).len() > 0;
+    let saw_steal = h
+        .event_log
+        .events_by_tag(worldwake_core::EventTag::Crime)
+        .len()
+        > 0;
 
     // --- Per-run invariant 8: State changed ---
     let final_world_hash = hash_world(&h.world).unwrap();
@@ -265,18 +286,12 @@ fn t30_seven_day_soak() {
     let tell_count = results.iter().filter(|r| r.saw_tell).count();
 
     // These should be true for the vast majority of runs given diverse population.
-    assert!(
-        death_count >= 1,
-        "no runs produced a death in 10080 ticks"
-    );
+    assert!(death_count >= 1, "no runs produced a death in 10080 ticks");
     assert!(
         acquire_count >= 1,
         "no runs produced an acquire/trade action in 10080 ticks"
     );
-    assert!(
-        travel_count >= 1,
-        "no runs produced travel in 10080 ticks"
-    );
+    assert!(travel_count >= 1, "no runs produced travel in 10080 ticks");
     assert!(
         tell_count >= 1,
         "no runs produced a tell/share-belief action in 10080 ticks"

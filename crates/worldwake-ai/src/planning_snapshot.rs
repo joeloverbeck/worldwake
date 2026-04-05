@@ -1,18 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
-    BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
-    ContentionGrant, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData,
-    ResourceSource, StockStoragePolicy,
-    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    ViolationDispositionProfile, WorkstationTag, Wound,
+    ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+    BelievedInstitutionalClaim, BlockedIntentMemory, BlockingFact, CombatProfile,
+    CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DriveThresholds,
+    EntityId, EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity,
+    RecipeId, RecordData, ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw,
+    TellMemoryKey, TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
-use worldwake_sim::{RuntimeBeliefView};
+use worldwake_sim::RuntimeBeliefView;
 
 use crate::route_threat::perceived_direct_travel_cost_from_memory;
 
@@ -317,7 +316,11 @@ impl PlanningSnapshot {
             .collect();
         let content_edges = entities
             .iter()
-            .filter_map(|(&entity, snapshot)| snapshot.direct_container.map(|container| (entity, container)))
+            .filter_map(|(&entity, snapshot)| {
+                snapshot
+                    .direct_container
+                    .map(|container| (entity, container))
+            })
             .collect::<Vec<_>>();
         for (entity, container) in content_edges {
             if let Some(container_snapshot) = entities.get_mut(&container) {
@@ -625,13 +628,7 @@ fn build_snapshot_entity(
         .direct_possessions(entity)
         .into_iter()
         .filter(|possessed| {
-            included_entities_contains(
-                view,
-                *possessed,
-                actor,
-                evidence_entities,
-                included_places,
-            )
+            included_entities_contains(view, *possessed, actor, evidence_entities, included_places)
         })
         .collect();
     let known_recipes = view.known_recipes(entity);
@@ -925,10 +922,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
-        EligibilityRule, EntityId, EntityKind, ContentionGrant, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        OfficeData, PatrolProfile, PatrolRoute, Quantity, RecipeId, ResourceSource, SuccessionLaw,
+        CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
+        DriveThresholds, EligibilityRule, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        PatrolProfile, PatrolRoute, Quantity, RecipeId, ResourceSource, SuccessionLaw,
         TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
         UniqueItemKind, WorkstationTag, Wound,
     };
@@ -1553,11 +1550,19 @@ mod tests {
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
 
         assert_eq!(
-            snapshot.entities.get(&lot).and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Bread)).copied(),
+            snapshot
+                .entities
+                .get(&lot)
+                .and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Bread))
+                .copied(),
             Some(Quantity(3))
         );
         assert_eq!(
-            snapshot.entities.get(&lot).and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Water)).copied(),
+            snapshot
+                .entities
+                .get(&lot)
+                .and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Water))
+                .copied(),
             None
         );
     }

@@ -1947,8 +1947,8 @@ mod tests {
         InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
         OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
         PerceptionSource, PreferenceProfile, ReasoningProfile, RecordData, RecordEntryId,
-        RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
-        TradeDispositionProfile, UtilityProfile,
+        RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile,
+        UtilityProfile,
     };
     use crate::{
         BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
@@ -2368,9 +2368,7 @@ mod tests {
                     entity: agent,
                     component_kind: ComponentKind::CommunicationProfile,
                     before: None,
-                    after: ComponentValue::CommunicationProfile(
-                        CommunicationProfile::default(),
-                    ),
+                    after: ComponentValue::CommunicationProfile(CommunicationProfile::default(),),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,
@@ -5781,10 +5779,7 @@ mod tests {
 
         assert_eq!(world.effective_place(facility), Some(place));
         assert_eq!(world.effective_place(stock), Some(place));
-        assert_eq!(
-            world.effective_place(display.unwrap()),
-            Some(place)
-        );
+        assert_eq!(world.effective_place(display.unwrap()), Some(place));
     }
 
     #[test]

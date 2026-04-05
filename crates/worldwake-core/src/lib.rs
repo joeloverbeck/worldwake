@@ -33,23 +33,23 @@ pub mod canonical;
 pub mod cause;
 pub mod combat;
 pub mod communication;
-pub mod contention;
 pub mod component_schema;
 pub mod component_tables;
 pub mod components;
 pub mod conservation;
+pub mod contention;
 pub mod control;
 pub mod crime;
 pub mod delta;
 pub mod drives;
-pub mod evidence;
 pub mod entity;
 pub mod epistemic;
 pub mod error;
-pub mod experience;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
+pub mod evidence;
+pub mod experience;
 pub mod factions;
 pub mod goal;
 pub mod ids;
@@ -97,8 +97,8 @@ pub use belief::{
     BelievedContentionState, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
     MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
     RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
-    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey,
-    TellProfile, TellTopic, ToldBeliefMemory,
+    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile,
+    TellTopic, ToldBeliefMemory,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
@@ -110,16 +110,15 @@ pub use canonical::{
 pub use cause::CauseRef;
 pub use combat::{CombatProfile, CombatStance, DeadAt};
 pub use communication::{classify_communication, CommunicationClass, CommunicationProfile};
-pub use contention::{
-    ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
-    ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter,
-    QueuedContentionIntent,
-};
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
 pub use conservation::{
     total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation,
+};
+pub use contention::{
+    ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
+    ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter, QueuedContentionIntent,
 };
 pub use control::ControlSource;
 pub use crime::{
@@ -131,17 +130,17 @@ pub use delta::{
     RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
 pub use drives::{DriveThresholds, ThresholdBand};
-pub use evidence::{DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence};
 pub use entity::{EntityKind, EntityMeta};
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
 pub use error::WorldError;
-pub use experience::{
-    EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
-    SourceReliability, danger_ratio_permille, failure_ratio_permille,
-};
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
+pub use evidence::{DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence};
+pub use experience::{
+    danger_ratio_permille, failure_ratio_permille, EdgeExperience, PreferenceProfile,
+    ReliabilityRecord, RouteExperience, SourceKey, SourceReliability,
+};
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
@@ -174,26 +173,26 @@ pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
 pub use patrol::{PatrolProfile, PatrolRoute};
-pub use pursuit::PursuitProfile;
-pub use reasoning_profile::ReasoningProfile;
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
 };
+pub use pursuit::PursuitProfile;
+pub use reasoning_profile::ReasoningProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use rights::{EffectiveRight, RightKind};
 pub use social_artifact::{
-    ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactState, BountyTarget,
-    BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
+    ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactState, BountyTarget, BountyTerms,
+    NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
 };
 pub use topology::{
     build_prototype_world, prototype_place_entity, Place, PlaceTag, PlaceTagSet, PrototypePlace,
     Route, Topology, TravelEdge, OUTDOOR_RELIEF_TAGS,
 };
 pub use trade::{
-    DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
-    SaleListing, StockAssignment, StockAssignmentKind, StockStoragePolicy,
-    SubstitutePreferences, TradeDispositionProfile, TradeRole,
+    DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, SaleListing,
+    StockAssignment, StockAssignmentKind, StockStoragePolicy, SubstitutePreferences,
+    TradeDispositionProfile, TradeRole,
 };
 pub use traits::{Component, RelationRecord};
 pub use utility_profile::UtilityProfile;

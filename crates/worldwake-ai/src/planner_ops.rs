@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{load_per_unit, ActionDefId, ActionDomain, EntityId, EntityKind, Quantity};
 use worldwake_sim::{
-    ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView,
-    MaterializationTag,
+    ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView, MaterializationTag,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -94,9 +93,7 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Trade, "staff_market") => Some(PlannerOpKind::StaffMarket),
         (ActionDomain::Production, "queue_for_facility_use")
         | (ActionDomain::Corpse, "queue_for_corpse_use")
-        | (ActionDomain::Care, "queue_for_care_target") => {
-            Some(PlannerOpKind::QueueForFacilityUse)
-        }
+        | (ActionDomain::Care, "queue_for_care_target") => Some(PlannerOpKind::QueueForFacilityUse),
         (ActionDomain::Production, name)
             if name.starts_with("harvest:") && matches!(def.payload, ActionPayload::Harvest(_)) =>
         {
@@ -110,14 +107,10 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Transport, "pick_up" | "put_down" | "steal") => {
             Some(PlannerOpKind::MoveCargo)
         }
-        (
-            ActionDomain::Transport,
-            "store_stock" | "collect_display_stock",
-        )
-        | (
-            ActionDomain::Trade,
-            "stage_stock_for_sale" | "unstage_stock",
-        ) => Some(PlannerOpKind::StockManagement),
+        (ActionDomain::Transport, "store_stock" | "collect_display_stock")
+        | (ActionDomain::Trade, "stage_stock_for_sale" | "unstage_stock") => {
+            Some(PlannerOpKind::StockManagement)
+        }
         (ActionDomain::Care, "heal") => Some(PlannerOpKind::Heal),
         (ActionDomain::Corpse, "loot") => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury") => Some(PlannerOpKind::Bury),
@@ -638,7 +631,8 @@ fn apply_collect_stock_transition<'snapshot>(
         return None;
     }
     let container = state.direct_container_ref(lot_ref)?;
-    let _ = controlled_facility_for_any_storage_container(&state, actor_ref, actor_place, container)?;
+    let _ =
+        controlled_facility_for_any_storage_container(&state, actor_ref, actor_place, container)?;
 
     Some(HypotheticalTransition {
         targets: vec![lot_ref],
@@ -952,9 +946,9 @@ fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
 mod tests {
     use super::{
         apply_hypothetical_transition, authoritative_target, authoritative_targets,
-        build_semantics_table, classify_action_def, planner_only_candidates, semantics_for,
-        resolve_planning_targets_with, ExpectedMaterialization, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
+        build_semantics_table, classify_action_def, planner_only_candidates,
+        resolve_planning_targets_with, semantics_for, ExpectedMaterialization, PlanTerminalKind,
+        PlannedPlan, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
     };
     use crate::{
         build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, GroundedGoal,
@@ -964,10 +958,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         load_per_unit, ActionDefId, ActionDomain, BodyCostPerTick, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Permille, Quantity, RecipeId, ResourceSource, TellTopic, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
+        RecipeId, ResourceSource, TellTopic, TickRange, TradeDispositionProfile, UniqueItemKind,
+        WorkstationTag, Wound,
     };
     use worldwake_sim::{
         estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionPayload,
@@ -995,7 +989,10 @@ mod tests {
             ],
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: entity(3),
-                sale_lot: EntityId { slot: 50, generation: 0 },
+                sale_lot: EntityId {
+                    slot: 50,
+                    generation: 0,
+                },
                 offered_commodity: CommodityKind::Coin,
                 offered_quantity: Quantity(2),
                 requested_quantity: Quantity(1),
@@ -1852,15 +1849,15 @@ mod tests {
         def.payload = ActionPayload::None;
         def.targets.clear();
 
-        let semantics = semantics_for(
-            &def,
-            PlannerOpKind::Patrol,
-        );
+        let semantics = semantics_for(&def, PlannerOpKind::Patrol);
 
         assert_eq!(semantics.op_kind, PlannerOpKind::Patrol);
         assert!(!semantics.may_appear_mid_plan);
         assert!(!semantics.is_materialization_barrier);
-        assert_eq!(semantics.transition_kind, PlannerTransitionKind::GoalModelFallback);
+        assert_eq!(
+            semantics.transition_kind,
+            PlannerTransitionKind::GoalModelFallback
+        );
     }
 
     #[test]
@@ -2238,6 +2235,9 @@ mod tests {
             !sem.is_materialization_barrier,
             "StaffMarket should NOT be a materialization barrier"
         );
-        assert_eq!(sem.transition_kind, PlannerTransitionKind::GoalModelFallback);
+        assert_eq!(
+            sem.transition_kind,
+            PlannerTransitionKind::GoalModelFallback
+        );
     }
 }

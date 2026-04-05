@@ -33,8 +33,8 @@ pub mod pursuit_belief;
 pub mod ranking;
 mod route_threat;
 pub mod search;
-pub mod side_benefit;
 mod shared_collections;
+pub mod side_benefit;
 mod theft;
 
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
@@ -46,20 +46,18 @@ pub use decision_runtime::{
 };
 pub use decision_trace::{
     ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,
-    AskWitnessOmissionDetail,
-    BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily, BindingRejection,
-    CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
-    CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, CandidateTrace,
-    CompetitionDiscount, DecisionOutcome, DecisionTraceSink, DesireFullyBlocked,
-    ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry, GoalHistoryEntry,
-    GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PayloadOverrideFailureReason,
-    PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary,
-    PlanningPipelineTrace, PoliticalCandidateOmission, PoliticalCandidateOmissionReason,
-    PursuitDiagnostic, PursuitInvalidationReason, PursuitOmissionReason,
-    PoliticalGoalFamily, PatrolRouteSnapshotTrace, PrerequisiteExclusionReason,
-    PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, RankedGoalSummary,
-    RootCandidateFilterReason, RootCandidateOutcome, RootCandidatePayloadStatus,
-    RootCandidateSkipReason, RootCandidateTrace,
+    AskWitnessOmissionDetail, BanditCandidateOmission, BanditCandidateOmissionReason,
+    BanditGoalFamily, BindingRejection, CandidateEvidenceContributor, CandidateEvidenceExclusion,
+    CandidateEvidenceExclusionReason, CandidateEvidenceKind, CandidateEvidenceTrace,
+    CandidateLegalityTrace, CandidateTrace, CompetitionDiscount, DecisionOutcome,
+    DecisionTraceSink, DesireFullyBlocked, ExecutionFailureReason, ExecutionTrace,
+    ExhaustionTraceEntry, GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus, InterruptTrace,
+    PatrolRouteSnapshotTrace, PayloadOverrideFailureReason, PlanAttemptTrace, PlanSearchOutcome,
+    PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace, PoliticalCandidateOmission,
+    PoliticalCandidateOmissionReason, PoliticalGoalFamily, PrerequisiteExclusionReason,
+    PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, PursuitDiagnostic,
+    PursuitInvalidationReason, PursuitOmissionReason, RankedGoalSummary, RootCandidateFilterReason,
+    RootCandidateOutcome, RootCandidatePayloadStatus, RootCandidateSkipReason, RootCandidateTrace,
     RootOperatorOmissionDetail, RootOperatorOmissionReason, RootOperatorOmissionTrace,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
@@ -101,11 +99,11 @@ pub use planning_state::{
 pub use pressure::{
     assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure, DangerAssessment,
 };
+pub use pursuit_belief::{pursuit_target_belief, PursuitTargetBelief};
 pub use ranking::{
     build_decision_context, rank_candidates, RankedGoalComparison, RankedGoalComparisonDimension,
     RankingOutcome,
 };
-pub use pursuit_belief::{pursuit_target_belief, PursuitTargetBelief};
 pub use search::{search_plan, PlanSearchResult};
 pub use side_benefit::{build_plan_value, detect_side_benefits, PlanValue, SideBenefit};
 pub use worldwake_core::{

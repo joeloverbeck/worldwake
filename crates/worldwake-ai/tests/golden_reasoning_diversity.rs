@@ -3,13 +3,11 @@
 mod golden_harness;
 
 use golden_harness::*;
-use worldwake_ai::{
-    DecisionOutcome, PlannerOpKind, SelectedPlanSource,
-};
+use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
-    hash_event_log, hash_world, BeliefConfidencePolicy, CommodityKind, EntityId,
-    HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity,
-    ReasoningProfile, Seed, StateHash, Tick, UtilityProfile, WorkstationTag,
+    hash_event_log, hash_world, BeliefConfidencePolicy, CommodityKind, EntityId, HomeostaticNeeds,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity, ReasoningProfile, Seed,
+    StateHash, Tick, UtilityProfile, WorkstationTag,
 };
 
 fn planning_trace_at(
@@ -194,10 +192,7 @@ fn search_depth_divergence() {
         "default reasoning plan should include the bake step"
     );
     assert!(
-        thorough_planning
-            .selection
-            .selected_goal()
-            .is_some(),
+        thorough_planning.selection.selected_goal().is_some(),
         "default reasoning should still select a concrete goal; planning={thorough_planning:?}"
     );
 
@@ -206,8 +201,7 @@ fn search_depth_divergence() {
         "tight reasoning should fail to select the remote craft plan under the reduced expansion budget"
     );
     assert_eq!(
-        tight_planning.selection.selected_plan_source,
-        None,
+        tight_planning.selection.selected_plan_source, None,
         "tight reasoning should stop before a plan source is recorded"
     );
 }

@@ -616,8 +616,14 @@ mod tests {
             declaration.relevant_ops,
             &[PlannerOpKind::Travel, PlannerOpKind::Patrol]
         );
-        assert_eq!(declaration.invalidation_strategy, InvalidationStrategy::Patrol);
-        assert_eq!(declaration.feasibility_strategy, FeasibilityStrategy::PlaceMatch);
+        assert_eq!(
+            declaration.invalidation_strategy,
+            InvalidationStrategy::Patrol
+        );
+        assert_eq!(
+            declaration.feasibility_strategy,
+            FeasibilityStrategy::PlaceMatch
+        );
     }
 
     #[test]

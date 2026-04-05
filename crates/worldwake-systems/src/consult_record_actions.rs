@@ -291,9 +291,9 @@ mod tests {
     };
     use worldwake_sim::{
         abort_action, get_affordances, start_action, step_tick, tick_action,
-        ActionExecutionAuthority, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionState, ActionTraceSink, ControllerState, ExternalAbortReason,
-        InputKind, InstitutionalBeliefReadSummary, InstitutionalBeliefTransitionTrace,
+        ActionExecutionAuthority, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
+        ActionTraceSink, ControllerState, ExternalAbortReason, InputKind,
+        InstitutionalBeliefReadSummary, InstitutionalBeliefTransitionTrace,
         InstitutionalKnowledgeTraceSink, InstitutionalKnowledgeTraceSource, PerAgentBeliefView,
         Scheduler, SystemDispatchTable, SystemManifest, TickOutcome, TickStepServices,
     };

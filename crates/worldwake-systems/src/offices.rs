@@ -682,8 +682,7 @@ fn stage_force_control_record_update(
     seat: EntityId,
     claim: InstitutionalClaim,
 ) -> Result<(), SystemError> {
-    let Some(record) = unique_record_at_place(txn, seat, RecordKind::OfficeRegister)?
-    else {
+    let Some(record) = unique_record_at_place(txn, seat, RecordKind::OfficeRegister)? else {
         return Ok(());
     };
     let current = active_force_control_entry(txn, record, office)?;

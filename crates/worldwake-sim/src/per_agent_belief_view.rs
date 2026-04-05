@@ -6,17 +6,17 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
-    CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityValuationProfile, ControlSource, DemandObservation, DriveThresholds, EffectiveRight,
-    EntityId, EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
-    RecordedViolation, ResourceSource, RouteExperience, SocialObservation, SourceReliability,
-    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
-    World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
+    danger_ratio_permille, is_incapacitated, load_of_entity, AgentBeliefStore,
+    BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim, CarryCapacity,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityValuationProfile,
+    ContentionGrant, ControlSource, DemandObservation, DriveThresholds, EffectiveRight, EntityId,
+    EntityKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, WorkstationTag, World, Wound,
 };
 
 #[derive(Clone, Copy)]
@@ -208,7 +208,13 @@ impl<'w> PerAgentBeliefView<'w> {
         world: &'w World,
         runtime: PerAgentBeliefRuntime<'w>,
     ) -> Self {
-        Self::with_runtime_from_world_at_tick_with_recipes(agent, current_tick, world, None, runtime)
+        Self::with_runtime_from_world_at_tick_with_recipes(
+            agent,
+            current_tick,
+            world,
+            None,
+            runtime,
+        )
     }
 
     #[must_use]
@@ -544,7 +550,9 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
-        self.recipe_registry.and_then(|registry| registry.get(recipe)).cloned()
+        self.recipe_registry
+            .and_then(|registry| registry.get(recipe))
+            .cloned()
     }
 
     fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
@@ -701,9 +709,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn has_contention_policy(&self, entity: EntityId) -> bool {
-        self.world
-            .get_component_contention_policy(entity)
-            .is_some()
+        self.world.get_component_contention_policy(entity).is_some()
     }
 
     fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
@@ -767,7 +773,11 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
 
     fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
         self.knows_entity(facility)
-            .then(|| self.world.get_component_stock_storage_policy(facility).cloned())
+            .then(|| {
+                self.world
+                    .get_component_stock_storage_policy(facility)
+                    .cloned()
+            })
             .flatten()
     }
 
@@ -1461,20 +1471,21 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
+        build_believed_entity_state, build_prototype_world,
+        test_utils::{
+            sample_commodity_valuation_profile, sample_preference_profile, sample_route_experience,
+            sample_source_reliability,
+        },
         ActionDefId, ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
         BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind, ControlSource,
         EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille, Place, PlaceTag,
-        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, RightKind,
-        ResourceSource, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
+        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
         ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId, build_believed_entity_state, build_prototype_world,
-        test_utils::{
-            sample_commodity_valuation_profile, sample_preference_profile,
-            sample_route_experience, sample_source_reliability,
-        },
+        WoundId,
     };
 
     fn assert_goal_belief_view<T: GoalBeliefView>() {}
@@ -1674,7 +1685,12 @@ mod tests {
 
             // Believed merchant: facility with display container, lot staged
             let (facility1, _stock1, display1) = txn
-                .create_merchant_facility(place, believed_merchant, LoadUnits(200), Some(LoadUnits(100)))
+                .create_merchant_facility(
+                    place,
+                    believed_merchant,
+                    LoadUnits(200),
+                    Some(LoadUnits(100)),
+                )
                 .unwrap();
             let display1 = display1.unwrap();
             let listed_lot = txn
@@ -1699,7 +1715,12 @@ mod tests {
 
             // Hidden merchant: same setup but agent won't have beliefs about it
             let (facility2, _stock2, display2) = txn
-                .create_merchant_facility(place, hidden_merchant, LoadUnits(200), Some(LoadUnits(100)))
+                .create_merchant_facility(
+                    place,
+                    hidden_merchant,
+                    LoadUnits(200),
+                    Some(LoadUnits(100)),
+                )
                 .unwrap();
             let display2 = display2.unwrap();
             let hidden_lot = txn
@@ -1723,7 +1744,13 @@ mod tests {
             .unwrap();
 
             commit_txn(txn);
-            (agent, believed_merchant, hidden_merchant, listed_lot, hidden_lot)
+            (
+                agent,
+                believed_merchant,
+                hidden_merchant,
+                listed_lot,
+                hidden_lot,
+            )
         };
 
         let mut beliefs = AgentBeliefStore::new();
@@ -2061,8 +2088,14 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::commodity_valuation_profile(&view, agent), Some(profile));
-        assert_eq!(GoalBeliefView::commodity_valuation_profile(&view, agent), Some(profile));
+        assert_eq!(
+            RuntimeBeliefView::commodity_valuation_profile(&view, agent),
+            Some(profile)
+        );
+        assert_eq!(
+            GoalBeliefView::commodity_valuation_profile(&view, agent),
+            Some(profile)
+        );
     }
 
     #[test]
@@ -2085,8 +2118,14 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::commodity_valuation_profile(&view, agent), None);
-        assert_eq!(GoalBeliefView::commodity_valuation_profile(&view, agent), None);
+        assert_eq!(
+            RuntimeBeliefView::commodity_valuation_profile(&view, agent),
+            None
+        );
+        assert_eq!(
+            GoalBeliefView::commodity_valuation_profile(&view, agent),
+            None
+        );
     }
 
     #[test]
@@ -2201,8 +2240,14 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::preference_profile(&view, agent), Some(profile));
-        assert_eq!(GoalBeliefView::preference_profile(&view, agent), Some(profile));
+        assert_eq!(
+            RuntimeBeliefView::preference_profile(&view, agent),
+            Some(profile)
+        );
+        assert_eq!(
+            GoalBeliefView::preference_profile(&view, agent),
+            Some(profile)
+        );
     }
 
     #[test]
@@ -2497,7 +2542,9 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         let expected_ticks = NonZeroU32::new(
             base_ticks.get()
-                * (1000 + u32::from(PreferenceProfile::default().route_caution_weight.value()) * 500 / 1000)
+                * (1000
+                    + u32::from(PreferenceProfile::default().route_caution_weight.value()) * 500
+                        / 1000)
                 / 1000,
         )
         .unwrap();
@@ -2929,7 +2976,10 @@ mod tests {
                 .jurisdiction,
             BTreeSet::from([place])
         );
-        assert_eq!(RuntimeBeliefView::office_data(&view, office).unwrap().seat, place);
+        assert_eq!(
+            RuntimeBeliefView::office_data(&view, office).unwrap().seat,
+            place
+        );
         assert_eq!(
             RuntimeBeliefView::believed_office_holder(&view, office),
             InstitutionalBeliefRead::Certain(Some(holder))
