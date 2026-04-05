@@ -188,6 +188,8 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         | GoalKind::RegroupWithFaction { .. }
         | GoalKind::EstablishBanditCamp { .. }
         | GoalKind::FulfillBounty { .. }
+        | GoalKind::PostBounty { .. }
+        | GoalKind::PostNotice { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. }
         | GoalKind::InvestigateViolation { .. }

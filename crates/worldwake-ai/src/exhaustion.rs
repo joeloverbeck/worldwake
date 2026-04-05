@@ -70,6 +70,7 @@ pub(crate) fn derive_invalidation_conditions(
         .declaration()
         .invalidation_strategy
     {
+        InvalidationStrategy::NoOpinion => {}
         InvalidationStrategy::CommodityOnly => commodity_only_conditions(goal, &mut conditions),
         InvalidationStrategy::AcquireCommodity => {
             acquire_commodity_conditions(goal, &mut conditions);

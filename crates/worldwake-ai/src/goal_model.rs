@@ -460,6 +460,8 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. }
             | GoalKind::FulfillBounty { .. }
+            | GoalKind::PostBounty { .. }
+            | GoalKind::PostNotice { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. }
@@ -1108,6 +1110,8 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ProduceCommodity { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
+            | GoalKind::PostBounty { .. }
+            | GoalKind::PostNotice { .. }
             | GoalKind::InvestigateViolation { .. }
             | GoalKind::Patrol { .. }
             | GoalKind::Accuse { .. }
@@ -1230,6 +1234,8 @@ impl GoalKindPlannerExt for GoalKind {
                     _ => vec![terms.claim_place],
                 }
             }
+            GoalKind::PostBounty { posting_place, .. }
+            | GoalKind::PostNotice { posting_place, .. } => vec![*posting_place],
             GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => {
                 state.effective_place(*corpse).into_iter().collect()
             }
@@ -1408,6 +1414,10 @@ impl GoalKindPlannerExt for GoalKind {
             }
             GoalKind::ShareBelief { listener, .. } => authoritative_targets.contains(listener),
             GoalKind::MoveCargo { destination, .. } => authoritative_targets.contains(destination),
+            GoalKind::PostBounty { posting_place, .. }
+            | GoalKind::PostNotice { posting_place, .. } => {
+                authoritative_targets.contains(posting_place)
+            }
         }
     }
 

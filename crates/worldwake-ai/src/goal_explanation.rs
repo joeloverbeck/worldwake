@@ -408,6 +408,8 @@ mod tests {
             social_weight: pm(150),
             activity_awareness_weight: pm(200),
             side_benefit_weight: pm(100),
+            bounty_posting_weight: pm(0),
+            notice_posting_weight: pm(0),
             courage: pm(500),
             care_weight: pm(200),
         }

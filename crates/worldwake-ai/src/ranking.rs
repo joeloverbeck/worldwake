@@ -412,6 +412,8 @@ fn priority_class(
         | GoalKind::RegroupWithFaction { .. }
         | GoalKind::EstablishBanditCamp { .. }
         | GoalKind::FulfillBounty { .. }
+        | GoalKind::PostBounty { .. }
+        | GoalKind::PostNotice { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. } => GoalPriorityClass::Medium,
         GoalKind::Sleep => drive_priority(
@@ -599,6 +601,7 @@ fn motive_score(
                     reward_signal_from_quantity(terms.reward_quantity),
                 )
             }),
+        GoalKind::PostBounty { .. } | GoalKind::PostNotice { .. } => 0,
         GoalKind::ClaimOffice { .. } => u32::from(context.utility.enterprise_weight.value()),
         GoalKind::RegroupWithFaction { .. } => u32::from(context.utility.social_weight.value()),
         GoalKind::EstablishBanditCamp { .. } => {
@@ -1345,6 +1348,8 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::StealItem { .. } => 23,
         GoalKind::Accuse { .. } => 24,
         GoalKind::PunishAccused { .. } => 25,
+        GoalKind::PostBounty { .. } => 26,
+        GoalKind::PostNotice { .. } => 27,
     }
 }
 
@@ -1943,6 +1948,8 @@ mod tests {
             social_weight: pm(150),
             activity_awareness_weight: pm(200),
             side_benefit_weight: pm(100),
+            bounty_posting_weight: pm(0),
+            notice_posting_weight: pm(0),
             courage: pm(500),
             care_weight: pm(200),
         }

@@ -4,7 +4,7 @@
 // 4 agents (1 human, 3 AI) with diverse profiles, items, facilities,
 // and resource sources.  Designed to exercise all CLI commands.
 //
-// Updated 2026-04-03: Added side_benefit_weight to all UtilityProfiles (S39).
+// Updated 2026-04-05: Added bounty_posting_weight and notice_posting_weight to all UtilityProfiles (S51ARTISS-001).
 //   Added Forge at Hearthstone Inn and Medicine/Bow items for commodity variety.
 // Updated 2026-04-03: S44 — Added universal and role-specific profiles to exercise
 //   agent diversity: perception, tell, reasoning, communication, drive thresholds,
@@ -58,6 +58,8 @@
                 social_weight: 500,
                 activity_awareness_weight: 500,
                 side_benefit_weight: 500,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
                 courage: 500,
                 care_weight: 500,
             ),
@@ -114,6 +116,8 @@
                 social_weight: 400,
                 activity_awareness_weight: 300,
                 side_benefit_weight: 500,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
                 courage: 300,
                 care_weight: 200,
             ),
@@ -190,6 +194,8 @@
                 social_weight: 300,
                 activity_awareness_weight: 500,
                 side_benefit_weight: 500,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
                 courage: 400,
                 care_weight: 300,
             ),
@@ -270,6 +276,8 @@
                 social_weight: 300,
                 activity_awareness_weight: 400,
                 side_benefit_weight: 500,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
                 courage: 850,
                 care_weight: 400,
             ),

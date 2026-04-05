@@ -17,6 +17,8 @@ pub struct UtilityProfile {
     pub social_weight: Permille,
     pub activity_awareness_weight: Permille,
     pub side_benefit_weight: Permille,
+    pub bounty_posting_weight: Permille,
+    pub notice_posting_weight: Permille,
     pub courage: Permille,
     pub care_weight: Permille,
 }
@@ -26,6 +28,7 @@ impl Default for UtilityProfile {
         let balanced = Permille::new_unchecked(500);
         let social = Permille::new_unchecked(200);
         let side_benefit = Permille::new_unchecked(100);
+        let disabled = Permille::new_unchecked(0);
         Self {
             hunger_weight: balanced,
             thirst_weight: balanced,
@@ -38,6 +41,8 @@ impl Default for UtilityProfile {
             social_weight: social,
             activity_awareness_weight: social,
             side_benefit_weight: side_benefit,
+            bounty_posting_weight: disabled,
+            notice_posting_weight: disabled,
             courage: balanced,
             care_weight: social,
         }
@@ -78,6 +83,8 @@ mod tests {
         assert_eq!(profile.social_weight.value(), 200);
         assert_eq!(profile.activity_awareness_weight.value(), 200);
         assert_eq!(profile.side_benefit_weight.value(), 100);
+        assert_eq!(profile.bounty_posting_weight.value(), 0);
+        assert_eq!(profile.notice_posting_weight.value(), 0);
         assert_eq!(profile.courage.value(), 500);
         assert_eq!(profile.care_weight.value(), 200);
         assert!(profile.social_weight < profile.enterprise_weight);
@@ -89,6 +96,8 @@ mod tests {
             social_weight: crate::Permille::new(875).unwrap(),
             activity_awareness_weight: crate::Permille::new(375).unwrap(),
             side_benefit_weight: crate::Permille::new(150).unwrap(),
+            bounty_posting_weight: crate::Permille::new(225).unwrap(),
+            notice_posting_weight: crate::Permille::new(325).unwrap(),
             courage: crate::Permille::new(125).unwrap(),
             care_weight: crate::Permille::new(750).unwrap(),
             ..UtilityProfile::default()

@@ -24,6 +24,8 @@ pub enum GoalDispatchKey {
     LootCorpse,
     BuryCorpse,
     FulfillBounty,
+    PostBounty,
+    PostNotice,
     ShareBelief,
     ClaimOffice,
     SupportCandidateForOffice,
@@ -36,7 +38,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 31] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -57,6 +59,8 @@ impl GoalDispatchKey {
         Self::LootCorpse,
         Self::BuryCorpse,
         Self::FulfillBounty,
+        Self::PostBounty,
+        Self::PostNotice,
         Self::ShareBelief,
         Self::ClaimOffice,
         Self::SupportCandidateForOffice,
@@ -98,6 +102,8 @@ impl GoalDispatchKey {
             GoalKind::LootCorpse { .. } => Self::LootCorpse,
             GoalKind::BuryCorpse { .. } => Self::BuryCorpse,
             GoalKind::FulfillBounty { .. } => Self::FulfillBounty,
+            GoalKind::PostBounty { .. } => Self::PostBounty,
+            GoalKind::PostNotice { .. } => Self::PostNotice,
             GoalKind::ShareBelief { .. } => Self::ShareBelief,
             GoalKind::ClaimOffice { .. } => Self::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => Self::SupportCandidateForOffice,
@@ -305,7 +311,7 @@ mod tests {
     #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 29);
+        assert_eq!(GoalDispatchKey::all().len(), 31);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),

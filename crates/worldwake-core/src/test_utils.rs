@@ -102,6 +102,8 @@ pub fn sample_utility_profile() -> UtilityProfile {
         social_weight: Permille::new(200).unwrap(),
         activity_awareness_weight: Permille::new(250).unwrap(),
         side_benefit_weight: Permille::new(100).unwrap(),
+        bounty_posting_weight: Permille::new(0).unwrap(),
+        notice_posting_weight: Permille::new(0).unwrap(),
         courage: Permille::new(350).unwrap(),
         care_weight: Permille::new(250).unwrap(),
     }

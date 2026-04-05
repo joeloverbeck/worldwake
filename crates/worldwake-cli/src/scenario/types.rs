@@ -247,6 +247,8 @@ mod tests {
                         social_weight: 200,
                         activity_awareness_weight: 200,
                         side_benefit_weight: 100,
+                        bounty_posting_weight: 0,
+                        notice_posting_weight: 0,
                         courage: 500,
                         care_weight: 200,
                     ),
@@ -333,6 +335,14 @@ mod tests {
                 .activity_awareness_weight
                 .value(),
             200
+        );
+        assert_eq!(
+            bob.utility_profile
+                .as_ref()
+                .unwrap()
+                .bounty_posting_weight
+                .value(),
+            0
         );
         assert_eq!(
             bob.utility_profile

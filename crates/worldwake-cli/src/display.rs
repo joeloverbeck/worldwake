@@ -323,6 +323,24 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::FulfillBounty { bounty } => {
             format!("FulfillBounty({})", entity_display_name(world, *bounty))
         }
+        GoalKind::PostBounty {
+            target,
+            posting_place,
+        } => {
+            format!(
+                "PostBounty({target:?} at {})",
+                entity_display_name(world, *posting_place)
+            )
+        }
+        GoalKind::PostNotice {
+            topic,
+            posting_place,
+        } => {
+            format!(
+                "PostNotice({topic:?} at {})",
+                entity_display_name(world, *posting_place)
+            )
+        }
         GoalKind::ShareBelief { listener, topic, communication_class } => {
             let listener_name = entity_display_name(world, *listener);
             let topic_str = format_tell_topic_brief(world, topic);
@@ -754,6 +772,21 @@ mod tests {
         assert_eq!(
             format_goal_kind(sim.state.world(), &GoalKind::FulfillBounty { bounty: id }),
             "FulfillBounty(Aster)"
+        );
+    }
+
+    #[test]
+    fn test_format_goal_kind_post_bounty() {
+        let (sim, id) = one_agent_scenario("Aster");
+        assert_eq!(
+            format_goal_kind(
+                sim.state.world(),
+                &GoalKind::PostBounty {
+                    target: worldwake_core::BountyTarget::EliminateEntity { target: id },
+                    posting_place: id,
+                }
+            ),
+            "PostBounty(EliminateEntity { target: EntityId { slot: 1, generation: 0 } } at Aster)"
         );
     }
 
