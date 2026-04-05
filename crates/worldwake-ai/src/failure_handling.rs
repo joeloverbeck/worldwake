@@ -151,7 +151,9 @@ fn derive_blocking_fact(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
-        | PlannerOpKind::ClaimBounty => {}
+        | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => {}
     }
 
     if danger_too_high(view, agent) {
@@ -399,7 +401,9 @@ fn classify_input_failure(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
-        | PlannerOpKind::ClaimBounty => None,
+        | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))
@@ -426,7 +430,9 @@ fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep
         | PlannerOpKind::Bury
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
-        | PlannerOpKind::ClaimBounty => view.entity_kind(target).is_none(),
+        | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => view.entity_kind(target).is_none(),
         PlannerOpKind::Attack | PlannerOpKind::Defend => {
             if view.entity_kind(target).is_none() || view.is_dead(target) {
                 return true;
@@ -701,7 +707,9 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
         | PlannerOpKind::EstablishCamp
-        | PlannerOpKind::Investigate => None,
+        | PlannerOpKind::Investigate
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => None,
         PlannerOpKind::Bury
         | PlannerOpKind::Consume
         | PlannerOpKind::QueueForFacilityUse
@@ -791,7 +799,9 @@ fn related_place(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
-        | PlannerOpKind::ClaimBounty => view.effective_place(agent),
+        | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => view.effective_place(agent),
     }
 }
 

@@ -323,22 +323,17 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::FulfillBounty { bounty } => {
             format!("FulfillBounty({})", entity_display_name(world, *bounty))
         }
-        GoalKind::PostBounty {
-            target,
-            posting_place,
-        } => {
+        GoalKind::PostBounty { posting, terms } => {
             format!(
-                "PostBounty({target:?} at {})",
-                entity_display_name(world, *posting_place)
+                "PostBounty({:?} at {})",
+                terms.target,
+                entity_display_name(world, posting.posting_place)
             )
         }
-        GoalKind::PostNotice {
-            topic,
-            posting_place,
-        } => {
+        GoalKind::PostNotice { posting, topic } => {
             format!(
                 "PostNotice({topic:?} at {})",
-                entity_display_name(world, *posting_place)
+                entity_display_name(world, posting.posting_place)
             )
         }
         GoalKind::ShareBelief { listener, topic, communication_class } => {
@@ -782,8 +777,20 @@ mod tests {
             format_goal_kind(
                 sim.state.world(),
                 &GoalKind::PostBounty {
-                    target: worldwake_core::BountyTarget::EliminateEntity { target: id },
-                    posting_place: id,
+                    posting: worldwake_core::ArtifactPostingContext {
+                        posting_place: id,
+                        issuing_authority: None,
+                        expires_at: None,
+                        jurisdiction: None,
+                    },
+                    terms: worldwake_core::BountyTerms {
+                        target: worldwake_core::BountyTarget::EliminateEntity { target: id },
+                        proof_requirement: worldwake_core::ProofRequirement::SelfReport,
+                        reward_commodity: CommodityKind::Coin,
+                        reward_quantity: Quantity(1),
+                        reward_source: worldwake_core::RewardSource::PersonalFunds { issuer: id },
+                        claim_place: id,
+                    },
                 }
             ),
             "PostBounty(EliminateEntity { target: EntityId { slot: 1, generation: 0 } } at Aster)"

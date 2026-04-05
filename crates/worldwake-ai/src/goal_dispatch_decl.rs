@@ -124,7 +124,8 @@ const FULFILL_BOUNTY_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::StockManagement,
     PlannerOpKind::ClaimBounty,
 ];
-const NO_OPS: &[PlannerOpKind] = &[];
+const POST_BOUNTY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::PostBounty];
+const POST_NOTICE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::PostNotice];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
 const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
@@ -288,14 +289,14 @@ static DECL_FULFILL_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
 static DECL_POST_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "PostBounty",
     provenance_family: None,
-    relevant_ops: NO_OPS,
+    relevant_ops: POST_BOUNTY_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
 };
 static DECL_POST_NOTICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "PostNotice",
     provenance_family: None,
-    relevant_ops: NO_OPS,
+    relevant_ops: POST_NOTICE_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
 };
@@ -407,8 +408,9 @@ mod tests {
     use super::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
     use worldwake_core::{
-        CommodityKind, CommodityPurpose, EntityId, GoalKind, HomeostaticNeedId, PunishmentKind,
-        Quantity, RecipeId, RecordEntryId, TellTopic, ViolationId,
+        ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommodityPurpose,
+        EntityId, GoalKind, HomeostaticNeedId, ProofRequirement, PunishmentKind, Quantity,
+        RecipeId, RecordEntryId, RewardSource, TellTopic, ViolationId,
     };
 
     const ALL_KEYS: &[GoalDispatchKey] = &[
@@ -504,12 +506,29 @@ mod tests {
             },
             GoalDispatchKey::FulfillBounty => GoalKind::FulfillBounty { bounty: target },
             GoalDispatchKey::PostBounty => GoalKind::PostBounty {
-                target: worldwake_core::BountyTarget::EliminateEntity { target },
-                posting_place: destination,
+                posting: ArtifactPostingContext {
+                    posting_place: destination,
+                    issuing_authority: None,
+                    expires_at: None,
+                    jurisdiction: None,
+                },
+                terms: BountyTerms {
+                    target: BountyTarget::EliminateEntity { target },
+                    proof_requirement: ProofRequirement::SelfReport,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(5),
+                    reward_source: RewardSource::PersonalFunds { issuer: office },
+                    claim_place: destination,
+                },
             },
             GoalDispatchKey::PostNotice => GoalKind::PostNotice {
+                posting: ArtifactPostingContext {
+                    posting_place: destination,
+                    issuing_authority: None,
+                    expires_at: None,
+                    jurisdiction: None,
+                },
                 topic: worldwake_core::NoticeTopic::ThreatWarning { place: destination },
-                posting_place: destination,
             },
             GoalDispatchKey::ShareBelief => GoalKind::ShareBelief {
                 listener: target,

@@ -18,18 +18,19 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
     build_believed_entity_state, build_prototype_world, prototype_place_entity,
-    test_utils::sample_trade_disposition_profile, ActionDefId, ArtifactKind, ArtifactState,
-    BelievedArtifactState, BelievedBountyTerms, BelievedEntityState, BlockedIntent,
-    BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, BountyTarget,
-    CarryCapacity, CauseRef, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
-    DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-    EpistemicDispositionProfile, EventLog, ContentionPolicy, ContentionQueue, ContentionGrant,
-    HomeostaticNeeds,
+    test_utils::sample_trade_disposition_profile, ActionDefId, ArtifactKind,
+    ArtifactPostingContext, ArtifactState, BelievedArtifactState, BelievedBountyTerms,
+    BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
+    BodyCostPerTick, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CauseRef,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, ControlSource, DeadAt,
+    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
+    DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+    EventLog, ContentionPolicy, ContentionQueue, ContentionGrant, HomeostaticNeeds,
     InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    PerceptionSource, Permille, Place, PlaceTag, PrototypePlace, Quantity, RecipeId,
-    ResourceSource, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
-    TravelEdge, TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
+    NoticeTopic, PerceptionSource, Permille, Place, PlaceTag, ProofRequirement,
+    PrototypePlace, Quantity, RecipeId, ResourceSource, RewardSource,
+    TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
+    TravelEdgeId, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker,
     WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
 };
 use worldwake_sim::{
@@ -7944,6 +7945,186 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
             && omission.reason
                 == crate::decision_trace::RootOperatorOmissionReason::NoMatchingActionDef
     }));
+}
+
+#[test]
+fn fulfill_post_notice_search_finds_travel_then_post_notice_progress_barrier() {
+    let actor = entity(1);
+    let origin = entity(10);
+    let posting_place = entity(11);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, origin, posting_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(posting_place, EntityKind::Place);
+    view.effective_places.insert(actor, origin);
+    view.entities_at.insert(origin, vec![actor]);
+    view.adjacent
+        .insert(origin, vec![(posting_place, NonZeroU32::new(1).unwrap())]);
+    view.adjacent
+        .insert(posting_place, vec![(origin, NonZeroU32::new(1).unwrap())]);
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(posting_place),
+        key: GoalKey::from(GoalKind::PostNotice {
+            posting: ArtifactPostingContext {
+                posting_place,
+                issuing_authority: None,
+                expires_at: Some(Tick(7)),
+                jurisdiction: Some(posting_place),
+            },
+            topic: NoticeTopic::ThreatWarning {
+                place: posting_place,
+            },
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([posting_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let mut expansions = Vec::new();
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ReasoningProfile::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut expansions),
+    );
+    let plan = match result {
+        PlanSearchResult::Found(plan) => plan,
+        other => panic!(
+            "search should find a Travel+PostNotice plan, got {other:?} with expansions {expansions:?}"
+        ),
+    };
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 2);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(plan.steps[1].op_kind, PlannerOpKind::PostNotice);
+    assert_eq!(
+        plan.steps[1]
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_post_notice),
+        Some(&worldwake_sim::PostNoticeActionPayload {
+            posting_place,
+            issuing_authority: None,
+            expires_at: Some(Tick(7)),
+            jurisdiction: Some(posting_place),
+            topic: NoticeTopic::ThreatWarning {
+                place: posting_place,
+            },
+        })
+    );
+}
+
+#[test]
+fn fulfill_post_bounty_search_finds_travel_then_post_bounty_progress_barrier() {
+    let actor = entity(1);
+    let origin = entity(10);
+    let posting_place = entity(11);
+    let target = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, origin, posting_place, target]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(posting_place, EntityKind::Place);
+    view.kinds.insert(target, EntityKind::Agent);
+    view.effective_places.insert(actor, origin);
+    view.effective_places.insert(target, posting_place);
+    view.entities_at.insert(origin, vec![actor]);
+    view.entities_at.insert(posting_place, vec![target]);
+    view.adjacent
+        .insert(origin, vec![(posting_place, NonZeroU32::new(1).unwrap())]);
+    view.adjacent
+        .insert(posting_place, vec![(origin, NonZeroU32::new(1).unwrap())]);
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(posting_place),
+        key: GoalKey::from(GoalKind::PostBounty {
+            posting: ArtifactPostingContext {
+                posting_place,
+                issuing_authority: None,
+                expires_at: Some(Tick(9)),
+                jurisdiction: Some(posting_place),
+            },
+            terms: BountyTerms {
+                target: BountyTarget::EliminateEntity { target },
+                proof_requirement: ProofRequirement::SelfReport,
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(12),
+                reward_source: RewardSource::PersonalFunds { issuer: actor },
+                claim_place: posting_place,
+            },
+        }),
+        evidence_entities: BTreeSet::from([target]),
+        evidence_places: BTreeSet::from([posting_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let mut expansions = Vec::new();
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ReasoningProfile::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut expansions),
+    );
+    let plan = match result {
+        PlanSearchResult::Found(plan) => plan,
+        other => panic!(
+            "search should find a Travel+PostBounty plan, got {other:?} with expansions {expansions:?}"
+        ),
+    };
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 2);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(plan.steps[1].op_kind, PlannerOpKind::PostBounty);
+    assert_eq!(
+        plan.steps[1]
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_post_bounty),
+        Some(&worldwake_sim::PostBountyActionPayload {
+            posting_place,
+            issuing_authority: None,
+            expires_at: Some(Tick(9)),
+            jurisdiction: Some(posting_place),
+            target: BountyTarget::EliminateEntity { target },
+            proof_requirement: ProofRequirement::SelfReport,
+            reward_commodity: CommodityKind::Coin,
+            reward_quantity: Quantity(12),
+            reward_source: RewardSource::PersonalFunds { issuer: actor },
+            claim_place: posting_place,
+        })
+    );
 }
 
 #[test]

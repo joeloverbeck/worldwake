@@ -21,9 +21,9 @@ use worldwake_core::{
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
     ConsultRecordActionPayload, DeclareSupportActionPayload, InvestigateActionPayload,
-    LootActionPayload, PressForceClaimActionPayload, PunishActionPayload, RecipeDefinition,
-    RecipeRegistry, RuntimeBeliefView, TellActionPayload, TradeActionPayload,
-    TransportActionPayload,
+    LootActionPayload, PostBountyActionPayload, PostNoticeActionPayload,
+    PressForceClaimActionPayload, PunishActionPayload, RecipeDefinition, RecipeRegistry,
+    RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -654,6 +654,35 @@ impl GoalKindPlannerExt for GoalKind {
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
             PlannerOpKind::Loot => build_loot_payload_override(targets),
+            PlannerOpKind::PostBounty => match self {
+                GoalKind::PostBounty { posting, terms } => {
+                    Ok(Some(ActionPayload::PostBounty(PostBountyActionPayload {
+                        posting_place: posting.posting_place,
+                        issuing_authority: posting.issuing_authority,
+                        expires_at: posting.expires_at,
+                        jurisdiction: posting.jurisdiction,
+                        target: terms.target,
+                        proof_requirement: terms.proof_requirement,
+                        reward_commodity: terms.reward_commodity,
+                        reward_quantity: terms.reward_quantity,
+                        reward_source: terms.reward_source,
+                        claim_place: terms.claim_place,
+                    })))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
+            PlannerOpKind::PostNotice => match self {
+                GoalKind::PostNotice { posting, topic } => {
+                    Ok(Some(ActionPayload::PostNotice(PostNoticeActionPayload {
+                        posting_place: posting.posting_place,
+                        issuing_authority: posting.issuing_authority,
+                        expires_at: posting.expires_at,
+                        jurisdiction: posting.jurisdiction,
+                        topic: *topic,
+                    })))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
             PlannerOpKind::MoveCargo => match self {
                 GoalKind::MoveCargo {
                     commodity,
@@ -906,6 +935,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
             | PlannerOpKind::ClaimBounty
+            | PlannerOpKind::PostBounty
+            | PlannerOpKind::PostNotice
             | PlannerOpKind::Attack
             | PlannerOpKind::Defend
             | PlannerOpKind::Patrol
@@ -966,6 +997,16 @@ impl GoalKindPlannerExt for GoalKind {
 
         if matches!(self, GoalKind::PunishAccused { .. })
             && matches!(step.op_kind, PlannerOpKind::Fine | PlannerOpKind::Exile)
+        {
+            return true;
+        }
+
+        if matches!(self, GoalKind::PostBounty { .. }) && step.op_kind == PlannerOpKind::PostBounty
+        {
+            return true;
+        }
+
+        if matches!(self, GoalKind::PostNotice { .. }) && step.op_kind == PlannerOpKind::PostNotice
         {
             return true;
         }
@@ -1234,8 +1275,9 @@ impl GoalKindPlannerExt for GoalKind {
                     _ => vec![terms.claim_place],
                 }
             }
-            GoalKind::PostBounty { posting_place, .. }
-            | GoalKind::PostNotice { posting_place, .. } => vec![*posting_place],
+            GoalKind::PostBounty { posting, .. } | GoalKind::PostNotice { posting, .. } => {
+                vec![posting.posting_place]
+            }
             GoalKind::LootCorpse { corpse } | GoalKind::BuryCorpse { corpse, .. } => {
                 state.effective_place(*corpse).into_iter().collect()
             }
@@ -1361,6 +1403,8 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Investigate
             | PlannerOpKind::AskWitness
             | PlannerOpKind::ClaimBounty
+            | PlannerOpKind::PostBounty
+            | PlannerOpKind::PostNotice
             | PlannerOpKind::Bury => {}
         }
 
@@ -1414,9 +1458,8 @@ impl GoalKindPlannerExt for GoalKind {
             }
             GoalKind::ShareBelief { listener, .. } => authoritative_targets.contains(listener),
             GoalKind::MoveCargo { destination, .. } => authoritative_targets.contains(destination),
-            GoalKind::PostBounty { posting_place, .. }
-            | GoalKind::PostNotice { posting_place, .. } => {
-                authoritative_targets.contains(posting_place)
+            GoalKind::PostBounty { posting, .. } | GoalKind::PostNotice { posting, .. } => {
+                authoritative_targets.contains(&posting.posting_place)
             }
         }
     }
@@ -2020,6 +2063,30 @@ impl GroundedGoal {
                 GoalKind::FulfillBounty { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
+            PlannerOpKind::PostBounty => match &self.key.kind {
+                GoalKind::PostBounty { posting, .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::ActorPlace]
+                    ) && actor_place == Some(posting.posting_place) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![posting.posting_place])
+                }
+                GoalKind::PostBounty { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::PostNotice => match &self.key.kind {
+                GoalKind::PostNotice { posting, .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::ActorPlace]
+                    ) && actor_place == Some(posting.posting_place) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![posting.posting_place])
+                }
+                GoalKind::PostNotice { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
             _ => RootCandidateSynthesis::UnsupportedGoalOp,
         }
     }
@@ -2056,17 +2123,18 @@ mod tests {
     use worldwake_core::ActionDomain;
     use worldwake_core::{
         test_utils::{entity_id, sample_trade_disposition_profile},
-        ActionDefId, ArtifactKind, ArtifactState, AskWitnessMemory, AskWitnessMemoryKey,
-        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState, AskWitnessMemory,
+        AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
-        CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        BountyTerms, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
         EpistemicDispositionProfile, EpistemicSubject, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PunishmentKind, Quantity,
-        RecipeId, RecordEntryId, RecordKind, ResourceSource, SuccessionLaw, TellTopic, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec,
-        WorkstationTag, Wound,
+        MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille,
+        ProofRequirement, PunishmentKind, Quantity, RecordEntryId, RecordKind, RecipeId,
+        ResourceSource, RewardSource, SuccessionLaw, TellTopic, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag,
+        Wound,
     };
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
@@ -3982,6 +4050,118 @@ mod tests {
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::Targets(vec![bounty])
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_post_notice_root_targets_when_colocated_with_posting_place() {
+        let posting_place = entity(10);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Place(posting_place),
+            key: GoalKey::from(GoalKind::PostNotice {
+                posting: ArtifactPostingContext {
+                    posting_place,
+                    issuing_authority: None,
+                    expires_at: Some(Tick(5)),
+                    jurisdiction: Some(posting_place),
+                },
+                topic: NoticeTopic::ThreatWarning {
+                    place: posting_place,
+                },
+            }),
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::from([posting_place]),
+        };
+        let def = ActionDef {
+            id: ActionDefId(13),
+            name: "post_notice".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::PostNotice,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(posting_place)),
+            RootCandidateSynthesis::Targets(vec![posting_place])
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(entity(99))),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_post_bounty_root_targets_when_colocated_with_posting_place() {
+        let posting_place = entity(10);
+        let target = entity(20);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Place(posting_place),
+            key: GoalKey::from(GoalKind::PostBounty {
+                posting: ArtifactPostingContext {
+                    posting_place,
+                    issuing_authority: None,
+                    expires_at: Some(Tick(6)),
+                    jurisdiction: Some(posting_place),
+                },
+                terms: BountyTerms {
+                    target: BountyTarget::EliminateEntity { target },
+                    proof_requirement: ProofRequirement::SelfReport,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(3),
+                    reward_source: RewardSource::PersonalFunds { issuer: entity(1) },
+                    claim_place: posting_place,
+                },
+            }),
+            evidence_entities: BTreeSet::from([target]),
+            evidence_places: BTreeSet::from([posting_place]),
+        };
+        let def = ActionDef {
+            id: ActionDefId(14),
+            name: "post_bounty".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::PostBounty,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(posting_place)),
+            RootCandidateSynthesis::Targets(vec![posting_place])
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(entity(99))),
+            RootCandidateSynthesis::NoSynthesisPath
         );
     }
 
@@ -8386,5 +8566,155 @@ mod tests {
         }
         .goal_relevant_places(&state, &RecipeRegistry::new());
         assert!(places.is_empty());
+    }
+
+    #[test]
+    fn post_bounty_builds_payload_override_from_goal_terms() {
+        let actor = entity(1);
+        let posting_place = entity(10);
+        let target = entity(20);
+        let authority = entity(30);
+        let snapshot = build_planning_snapshot(
+            &TestBeliefView::default(),
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([posting_place]),
+            0,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::PostBounty {
+            posting: ArtifactPostingContext {
+                posting_place,
+                issuing_authority: Some(authority),
+                expires_at: Some(Tick(12)),
+                jurisdiction: Some(posting_place),
+            },
+            terms: BountyTerms {
+                target: BountyTarget::EliminateEntity { target },
+                proof_requirement: ProofRequirement::SelfReport,
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(7),
+                reward_source: RewardSource::PersonalFunds { issuer: actor },
+                claim_place: posting_place,
+            },
+        };
+        let def = ActionDef {
+            id: ActionDefId(901),
+            name: "post_bounty".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::NonInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::PostBounty,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[], &def, &semantics)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            payload.as_post_bounty(),
+            Some(&worldwake_sim::PostBountyActionPayload {
+                posting_place,
+                issuing_authority: Some(authority),
+                expires_at: Some(Tick(12)),
+                jurisdiction: Some(posting_place),
+                target: BountyTarget::EliminateEntity { target },
+                proof_requirement: ProofRequirement::SelfReport,
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(7),
+                reward_source: RewardSource::PersonalFunds { issuer: actor },
+                claim_place: posting_place,
+            })
+        );
+    }
+
+    #[test]
+    fn post_notice_builds_payload_override_and_is_progress_barrier() {
+        let actor = entity(1);
+        let posting_place = entity(10);
+        let authority = entity(30);
+        let snapshot = build_planning_snapshot(
+            &TestBeliefView::default(),
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::from([posting_place]),
+            0,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::PostNotice {
+            posting: ArtifactPostingContext {
+                posting_place,
+                issuing_authority: Some(authority),
+                expires_at: Some(Tick(24)),
+                jurisdiction: Some(posting_place),
+            },
+            topic: NoticeTopic::ThreatWarning {
+                place: posting_place,
+            },
+        };
+        let def = ActionDef {
+            id: ActionDefId(902),
+            name: "post_notice".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::NonInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::PostNotice,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[], &def, &semantics)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            payload.as_post_notice(),
+            Some(&worldwake_sim::PostNoticeActionPayload {
+                posting_place,
+                issuing_authority: Some(authority),
+                expires_at: Some(Tick(24)),
+                jurisdiction: Some(posting_place),
+                topic: NoticeTopic::ThreatWarning {
+                    place: posting_place,
+                },
+            })
+        );
+        assert!(goal.is_progress_barrier(&PlannedStep {
+            def_id: def.id,
+            targets: Vec::new(),
+            payload_override: Some(payload),
+            op_kind: PlannerOpKind::PostNotice,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }));
     }
 }

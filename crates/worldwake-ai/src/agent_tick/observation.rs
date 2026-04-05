@@ -440,6 +440,8 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::Investigate
         | crate::PlannerOpKind::AskWitness
         | crate::PlannerOpKind::ClaimBounty
+        | crate::PlannerOpKind::PostBounty
+        | crate::PlannerOpKind::PostNotice
         | crate::PlannerOpKind::StaffMarket
         | crate::PlannerOpKind::StockManagement => {}
     }

@@ -181,8 +181,8 @@ pub use production::{
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use rights::{EffectiveRight, RightKind};
 pub use social_artifact::{
-    ArtifactHeader, ArtifactKind, ArtifactState, BountyTarget, BountyTerms, NoticeContent,
-    NoticeTopic, ProofRequirement, RewardSource,
+    ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactState, BountyTarget,
+    BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
 };
 pub use topology::{
     build_prototype_world, prototype_place_entity, Place, PlaceTag, PlaceTagSet, PrototypePlace,

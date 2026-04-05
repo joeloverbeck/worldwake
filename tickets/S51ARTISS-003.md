@@ -15,7 +15,7 @@ The planner can now plan for PostBounty/PostNotice goals (ticket 002) but no can
 1. Candidate generation at `crates/worldwake-ai/src/candidate_generation.rs` uses `generate_candidates_with_travel_horizon()` calling sequential `emit_*_candidates()` helpers. Pattern established for adding new emission functions.
 2. `GoalBeliefView` trait provides access to agent beliefs. Used by all emission functions. Believed entity states with `believed_artifact` field are available for checking existing bounties at places.
 3. `UtilityProfile.bounty_posting_weight` and `notice_posting_weight` added by ticket 001 — used for ranking and as zero-check gate.
-4. `GroundedGoal` wraps `GoalKind` with motive score and metadata. Posting motive context (institutional enforcement, personal vendetta, etc.) lives in the ranking score, not in GoalKind.
+4. `GroundedGoal` wraps `GoalKind` with motive score and metadata. Posting motive context lives in ranking rather than in `GoalKind`, while the lawful posting payload itself now lives in the corrected `GoalKind::PostBounty { posting, terms }` / `GoalKind::PostNotice { posting, topic }` substrate from `S51ARTISS-002`.
 5. Office holder detection: agent's believed institutional claims include `InstitutionalClaim::OfficeHolder` entries. Justice office holders can emit enforcement bounties and wanted notices.
 6. `ViolationId` at `crates/worldwake-core/src/violation.rs:17-20` exists for accusation references.
 7. Agent beliefs about danger come from perceived threats and threat-warning notices. `BelievedEntityState` tracks danger-relevant observations.
@@ -46,15 +46,15 @@ In `crates/worldwake-ai/src/candidate_generation.rs`:
 Check `bounty_posting_weight > 0` first (early exit if zero).
 
 **Institutional enforcement bounty**: Iterate agent's believed institutional claims. For each office-holder claim where unresolved accusations exist in beliefs:
-- Emit `PostBounty { target: EliminateEntity { target: accused }, posting_place }` where `posting_place` is the nearest believed place where posting is lawful.
+- Emit `PostBounty { posting, terms }` where `terms.target = EliminateEntity { target: accused }` and `posting.posting_place` is the nearest believed place where posting is lawful.
 - Rank: `bounty_posting_weight × accusation_severity`.
 
 **Economic delivery bounty**: If agent has `enterprise_weight > 0` and believes unsatisfied delivery demand:
-- Emit `PostBounty { target: DeliverCommodity { commodity, quantity, destination }, posting_place }`.
+- Emit `PostBounty { posting, terms }` where `terms.target = DeliverCommodity { commodity, quantity, destination }`.
 - Rank: `bounty_posting_weight × demand_urgency`.
 
 **Threat elimination bounty**: If agent has high `danger_weight` and believes a hostile entity threatens a known place:
-- Emit `PostBounty { target: EliminateEntity { target: threat }, posting_place }`.
+- Emit `PostBounty { posting, terms }` where `terms.target = EliminateEntity { target: threat }`.
 - Rank: `bounty_posting_weight × believed_danger`.
 
 ### 2. Add `emit_notice_posting_candidates()`
@@ -64,11 +64,11 @@ In `crates/worldwake-ai/src/candidate_generation.rs`:
 Check `notice_posting_weight > 0` first (early exit if zero).
 
 **Wanted notice**: For office holders with unresolved crime cases:
-- Emit `PostNotice { topic: Institutional { claim: Accusation { ... } }, posting_place }`.
+- Emit `PostNotice { posting, topic: Institutional { claim: Accusation { ... } } }`.
 - Rank: `notice_posting_weight × case_severity`.
 
 **Danger warning**: For agents with recent danger observation:
-- Emit `PostNotice { topic: ThreatWarning { place: dangerous_place }, posting_place }`.
+- Emit `PostNotice { posting, topic: ThreatWarning { place: dangerous_place } }`.
 - Rank: `notice_posting_weight × believed_threat_level`.
 
 ### 3. Wire into generate_candidates_with_travel_horizon()

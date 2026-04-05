@@ -28,6 +28,8 @@ pub enum PlannerOpKind {
     Loot,
     Bury,
     ClaimBounty,
+    PostBounty,
+    PostNotice,
     Tell,
     ConsultRecord,
     Attack,
@@ -120,6 +122,8 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Corpse, "loot") => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury") => Some(PlannerOpKind::Bury),
         (ActionDomain::Social, "claim_bounty") => Some(PlannerOpKind::ClaimBounty),
+        (ActionDomain::Social, "post_bounty") => Some(PlannerOpKind::PostBounty),
+        (ActionDomain::Social, "post_notice") => Some(PlannerOpKind::PostNotice),
         (ActionDomain::Social, "tell") => Some(PlannerOpKind::Tell),
         (ActionDomain::Social, "consult_record") => Some(PlannerOpKind::ConsultRecord),
         (ActionDomain::Social, "bribe") => Some(PlannerOpKind::Bribe),
@@ -217,6 +221,8 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             PlannerTransitionKind::GoalModelFallback,
         ),
         PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice
         | PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Attack
@@ -246,6 +252,8 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
         }
         PlannerOpKind::Tell
         | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend
         | PlannerOpKind::Accuse
@@ -1588,6 +1596,8 @@ mod tests {
             PlannerOpKind::Loot,
             PlannerOpKind::Bury,
             PlannerOpKind::ClaimBounty,
+            PlannerOpKind::PostBounty,
+            PlannerOpKind::PostNotice,
             PlannerOpKind::Tell,
             PlannerOpKind::ConsultRecord,
             PlannerOpKind::Attack,
@@ -1598,14 +1608,13 @@ mod tests {
             PlannerOpKind::AskWitness,
         ];
 
-        assert_eq!(all.len(), 24);
+        assert_eq!(all.len(), 26);
     }
 
     #[test]
     fn build_semantics_table_classifies_registered_planner_action_defs() {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
-        let intentionally_unclassified = ["post_bounty", "post_notice"];
         let semantics_by_name = defs
             .iter()
             .filter_map(|def| {
@@ -1635,6 +1644,8 @@ mod tests {
             ("loot", PlannerOpKind::Loot),
             ("bury", PlannerOpKind::Bury),
             ("claim_bounty", PlannerOpKind::ClaimBounty),
+            ("post_bounty", PlannerOpKind::PostBounty),
+            ("post_notice", PlannerOpKind::PostNotice),
             ("heal", PlannerOpKind::Heal),
             ("bribe", PlannerOpKind::Bribe),
             ("threaten", PlannerOpKind::Threaten),
@@ -1655,13 +1666,12 @@ mod tests {
             ("pick_up", PlannerTransitionKind::PickUpGroundLot),
             ("steal", PlannerTransitionKind::StealGroundLot),
             ("put_down", PlannerTransitionKind::PutDownGroundLot),
+            ("post_bounty", PlannerTransitionKind::GoalModelFallback),
+            ("post_notice", PlannerTransitionKind::GoalModelFallback),
         ];
         let unclassified = defs
             .iter()
-            .filter(|def| {
-                !table.contains_key(&def.id)
-                    && !intentionally_unclassified.contains(&def.name.as_str())
-            })
+            .filter(|def| !table.contains_key(&def.id))
             .map(|def| def.name.as_str())
             .collect::<Vec<_>>();
 
@@ -1669,10 +1679,6 @@ mod tests {
             unclassified.is_empty(),
             "unexpected unclassified actions: {unclassified:?}"
         );
-        for name in intentionally_unclassified {
-            assert!(defs.iter().any(|def| def.name == name));
-            assert!(!semantics_by_name.contains_key(name));
-        }
         assert!(defs.iter().any(|def| def.name == "tell"));
         for (name, op_kind) in expected_ops {
             assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);
