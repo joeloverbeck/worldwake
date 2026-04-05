@@ -171,7 +171,7 @@ impl AgentBeliefStore {
             )
         });
 
-        if profile.memory_capacity == 0 {
+        if profile.entity_memory_capacity == 0 {
             self.entity_claims.clear();
             self.known_entities.clear();
             return;
@@ -193,7 +193,7 @@ impl AgentBeliefStore {
         let excess = self
             .known_entities
             .len()
-            .saturating_sub(profile.memory_capacity as usize);
+            .saturating_sub(profile.entity_memory_capacity as usize);
         if excess == 0 {
             return;
         }
@@ -217,7 +217,7 @@ impl AgentBeliefStore {
     ) {
         let affected_entities = self.entity_claims.keys().copied().collect::<Vec<_>>();
 
-        if profile.memory_capacity == 0 {
+        if profile.entity_claim_capacity == 0 {
             self.entity_claims.clear();
             for entity in affected_entities {
                 self.known_entities.remove(&entity);
@@ -245,7 +245,7 @@ impl AgentBeliefStore {
                     std::cmp::Reverse(claim.claim_id),
                 )
             });
-            claims.truncate(profile.memory_capacity as usize);
+            claims.truncate(profile.entity_claim_capacity as usize);
             claims.sort_by_key(|claim| (claim.acquired_tick, claim.claim_id));
         }
 
@@ -1776,7 +1776,8 @@ pub enum MismatchKind {
 /// Per-agent parameters controlling belief retention and observation quality.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PerceptionProfile {
-    pub memory_capacity: u32,
+    pub entity_memory_capacity: u32,
+    pub entity_claim_capacity: u32,
     pub memory_retention_ticks: u64,
     pub observation_fidelity: Permille,
     pub confidence_policy: BeliefConfidencePolicy,
@@ -1790,7 +1791,8 @@ impl Component for PerceptionProfile {}
 impl Default for PerceptionProfile {
     fn default() -> Self {
         Self {
-            memory_capacity: 12,
+            entity_memory_capacity: 12,
+            entity_claim_capacity: 12,
             memory_retention_ticks: 48,
             observation_fidelity: Permille::new(875).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1888,9 +1890,14 @@ mod tests {
         }
     }
 
-    fn profile(memory_capacity: u32, memory_retention_ticks: u64) -> PerceptionProfile {
+    fn profile(
+        entity_memory_capacity: u32,
+        entity_claim_capacity: u32,
+        memory_retention_ticks: u64,
+    ) -> PerceptionProfile {
         PerceptionProfile {
-            memory_capacity,
+            entity_memory_capacity,
+            entity_claim_capacity,
             memory_retention_ticks,
             observation_fidelity: Permille::new(750).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -2805,7 +2812,7 @@ mod tests {
         store.update_entity(entity(2), sample_state(5, 2));
         store.update_entity(entity(4), sample_state(6, 3));
 
-        store.enforce_capacity(&profile(2, 100), Tick(20));
+        store.enforce_capacity(&profile(2, 8, 100), Tick(20));
 
         assert_eq!(store.known_entities.len(), 2);
         assert!(!store.known_entities.contains_key(&entity(2)));
@@ -2821,7 +2828,7 @@ mod tests {
         store.record_social_observation(sample_social_observation(3));
         store.record_social_observation(sample_social_observation(9));
 
-        store.enforce_capacity(&profile(10, 3), Tick(12));
+        store.enforce_capacity(&profile(10, 10, 3), Tick(12));
 
         assert!(!store.known_entities.contains_key(&entity(1)));
         assert!(store.known_entities.contains_key(&entity(2)));
@@ -2837,7 +2844,7 @@ mod tests {
         store.update_entity(entity(1), sample_state(10, 1));
         store.update_entity(entity(2), sample_state(11, 2));
 
-        store.enforce_capacity(&profile(0, 100), Tick(12));
+        store.enforce_capacity(&profile(0, 5, 100), Tick(12));
 
         assert!(store.known_entities.is_empty());
     }
@@ -2858,7 +2865,7 @@ mod tests {
         );
         store.update_entity(entity(1), sample_state(9, 1));
 
-        store.enforce_capacity(&profile(1, 100), Tick(12));
+        store.enforce_capacity(&profile(1, 8, 100), Tick(12));
 
         assert_eq!(store.known_entities.len(), 1);
         assert!(store.known_entities.contains_key(&entity(1)));
@@ -2892,7 +2899,7 @@ mod tests {
             ],
         );
 
-        store.enforce_entity_claim_capacity(&profile(5, 3), Tick(12));
+        store.enforce_entity_claim_capacity(&profile(8, 5, 3), Tick(12));
 
         assert_eq!(store.entity_claims.get(&entity(60)).unwrap().len(), 1);
         assert_eq!(
@@ -2937,7 +2944,7 @@ mod tests {
             ],
         );
 
-        store.enforce_entity_claim_capacity(&profile(2, 100), Tick(10));
+        store.enforce_entity_claim_capacity(&profile(8, 2, 100), Tick(10));
 
         let claims = store.entity_claims.get(&entity(61)).unwrap();
         assert_eq!(claims.len(), 2);
@@ -2967,16 +2974,111 @@ mod tests {
             )],
         );
 
-        store.enforce_entity_claim_capacity(&profile(3, 2), Tick(10));
+        store.enforce_entity_claim_capacity(&profile(8, 3, 2), Tick(10));
 
         assert!(!store.entity_claims.contains_key(&entity(62)));
         assert!(!store.known_entities.contains_key(&entity(62)));
     }
 
     #[test]
+    fn enforce_capacity_uses_entity_memory_capacity_not_claim_depth() {
+        let mut store = AgentBeliefStore::new();
+        for (slot, tick) in [(70_u32, 3_u64), (71_u32, 5_u64)] {
+            store.record_entity_claim(sample_claim(
+                u64::from(slot),
+                slot,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(entity(100 + slot))),
+                PerceptionSource::DirectObservation,
+                tick,
+                950,
+            ));
+            store.record_entity_claim(sample_claim(
+                u64::from(slot + 100),
+                slot,
+                EntityBeliefAspect::Alive,
+                ClaimValue::Bool(true),
+                PerceptionSource::DirectObservation,
+                tick,
+                950,
+            ));
+        }
+
+        store.enforce_capacity(&profile(1, 8, 100), Tick(10));
+
+        assert!(store.known_entities.contains_key(&entity(71)));
+        assert!(!store.known_entities.contains_key(&entity(70)));
+        assert!(store.entity_claims.contains_key(&entity(71)));
+        assert!(!store.entity_claims.contains_key(&entity(70)));
+    }
+
+    #[test]
+    fn enforce_entity_claim_capacity_uses_claim_depth_not_entity_memory_capacity() {
+        let mut store = claim_backed_store(
+            72,
+            vec![
+                sample_claim(
+                    1,
+                    72,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(10))),
+                    PerceptionSource::DirectObservation,
+                    7,
+                    900,
+                ),
+                sample_claim(
+                    2,
+                    72,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    8,
+                    950,
+                ),
+                sample_claim(
+                    3,
+                    72,
+                    EntityBeliefAspect::Activity,
+                    ClaimValue::Activity(Some(BelievedActivity {
+                        action_domain: ActionDomain::Trade,
+                        target: Some(entity(11)),
+                        observed_tick: Tick(9),
+                    })),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+            ],
+        );
+
+        store.enforce_entity_claim_capacity(&profile(1, 2, 100), Tick(10));
+
+        let claims = store.entity_claims.get(&entity(72)).unwrap();
+        assert_eq!(claims.len(), 2);
+        assert!(claims.iter().any(|claim| claim.aspect == EntityBeliefAspect::Alive));
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Activity)
+        );
+        assert_eq!(
+            store
+                .known_entities
+                .get(&entity(72))
+                .unwrap()
+                .believed_activity,
+            Some(BelievedActivity {
+                action_domain: ActionDomain::Trade,
+                target: Some(entity(11)),
+                observed_tick: Tick(9),
+            })
+        );
+    }
+
+    #[test]
     fn record_institutional_belief_enforces_capacity_deterministically() {
         let mut store = AgentBeliefStore::new();
-        let mut profile = profile(12, 100);
+        let mut profile = profile(12, 12, 100);
         profile.institutional_memory_capacity = 2;
 
         store.record_institutional_belief(
@@ -3024,7 +3126,7 @@ mod tests {
     #[test]
     fn record_institutional_belief_breaks_ties_by_key_then_position() {
         let mut store = AgentBeliefStore::new();
-        let mut profile = profile(12, 100);
+        let mut profile = profile(12, 12, 100);
         profile.institutional_memory_capacity = 2;
         let first_key = InstitutionalBeliefKey::FactionMembersOf {
             faction: entity(80),
@@ -3049,7 +3151,7 @@ mod tests {
     #[test]
     fn record_institutional_belief_clears_all_when_capacity_is_zero() {
         let mut store = AgentBeliefStore::new();
-        let mut profile = profile(12, 100);
+        let mut profile = profile(12, 12, 100);
         profile.institutional_memory_capacity = 0;
 
         store.record_institutional_belief(
@@ -3064,7 +3166,7 @@ mod tests {
     #[test]
     fn replace_institutional_belief_overwrites_existing_key_without_conflict() {
         let mut store = AgentBeliefStore::new();
-        let mut profile = profile(12, 100);
+        let mut profile = profile(12, 12, 100);
         profile.institutional_memory_capacity = 4;
         let office = entity(91);
         let supporter = entity(92);
@@ -3583,7 +3685,7 @@ mod tests {
 
     #[test]
     fn perception_profile_roundtrips_through_bincode() {
-        let profile = profile(12, 34);
+        let profile = profile(12, 7, 34);
 
         let bytes = bincode::serialize(&profile).unwrap();
         let roundtrip: PerceptionProfile = bincode::deserialize(&bytes).unwrap();
@@ -3967,7 +4069,7 @@ mod tests {
                 InstitutionalKnowledgeSource::WitnessedEvent,
                 8,
             ),
-            &profile(8, 100),
+            &profile(8, 8, 100),
         );
 
         assert_eq!(
@@ -4153,6 +4255,8 @@ mod tests {
         let profile = PerceptionProfile::default();
 
         assert_eq!(profile.confidence_policy, BeliefConfidencePolicy::default());
+        assert_eq!(profile.entity_memory_capacity, 12);
+        assert_eq!(profile.entity_claim_capacity, 12);
         assert_eq!(profile.institutional_memory_capacity, 20);
         assert_eq!(
             profile.consultation_speed_factor,

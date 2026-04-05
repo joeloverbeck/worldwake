@@ -1457,7 +1457,8 @@ mod tests {
                     txn.set_component_perception_profile(
                         agent,
                         PerceptionProfile {
-                            memory_capacity: 16,
+                            entity_memory_capacity: 16,
+                            entity_claim_capacity: 16,
                             memory_retention_ticks: 100,
                             observation_fidelity: pm(1000),
                             confidence_policy: BeliefConfidencePolicy::default(),

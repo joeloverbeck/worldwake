@@ -1044,7 +1044,8 @@ fn run_merchant_restock_return_stock_scenario(
     txn.set_component_perception_profile(
         merchant,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1618,7 +1619,8 @@ fn merchant_route_knowledge_alone_does_not_unlock_remote_restock() {
     txn.set_component_perception_profile(
         merchant,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),

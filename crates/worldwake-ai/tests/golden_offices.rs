@@ -70,7 +70,8 @@ fn build_simple_office_claim_scenario(
         &mut h.event_log,
         agent,
         PerceptionProfile {
-            memory_capacity: 32,
+            entity_memory_capacity: 32,
+            entity_claim_capacity: 32,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -218,7 +219,8 @@ fn social_supporter_utility(social: Permille) -> UtilityProfile {
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 32,
+        entity_memory_capacity: 32,
+        entity_claim_capacity: 32,
         memory_retention_ticks: 240,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),

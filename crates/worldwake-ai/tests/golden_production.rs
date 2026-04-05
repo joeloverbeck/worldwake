@@ -26,7 +26,8 @@ use worldwake_sim::{
 
 fn production_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 20,
+        entity_memory_capacity: 20,
+        entity_claim_capacity: 20,
         memory_retention_ticks: 100,
         observation_fidelity: pm(1000),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
@@ -816,7 +817,8 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         txn.set_component_perception_profile(
             crafter,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
@@ -2254,7 +2256,8 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
         txn.set_component_perception_profile(
             patient,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
@@ -2402,7 +2405,8 @@ fn run_local_detour_before_intended_action_scenario(
         txn.set_component_perception_profile(
             agent,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),

@@ -2437,7 +2437,8 @@ mod tests {
             txn.set_component_perception_profile(
                 listener,
                 PerceptionProfile {
-                    memory_capacity: 1,
+                    entity_memory_capacity: 1,
+                    entity_claim_capacity: 8,
                     memory_retention_ticks: 100,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),

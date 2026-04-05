@@ -184,7 +184,8 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
         &mut h.event_log,
         bob,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -377,7 +378,8 @@ fn run_exhausted_opportunity_switches_to_sibling_source(
         &mut h.event_log,
         agent,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1354,7 +1356,8 @@ fn golden_goal_switching_during_multi_leg_travel() {
         txn.set_component_perception_profile(
             agent,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -1703,7 +1706,8 @@ fn setup_multi_hop_travel_scenario(
     txn.set_component_perception_profile(
         agent,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 64,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -2042,7 +2046,8 @@ fn golden_utility_weight_diversity_in_need_selection() {
         txn.set_component_perception_profile(
             enterprise_driven,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),

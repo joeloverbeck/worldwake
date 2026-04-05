@@ -356,7 +356,8 @@ mod tests {
         tables.insert_perception_profile(
             entity(24),
             PerceptionProfile {
-                memory_capacity: 8,
+                entity_memory_capacity: 8,
+                entity_claim_capacity: 8,
                 memory_retention_ticks: 20,
                 observation_fidelity: Permille::new(900).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),

@@ -272,6 +272,7 @@ After the owned implementation is fully verified:
    - remaining work that needs its own ticket
 5. Do not silently broaden the current ticket during close-out just because the next fix is obvious. If the remaining work has its own architectural boundary, capture it as a follow-up ticket instead.
 - Keep scenario prose aligned with updated assertions so the documented contract stays traceable.
+- When the implemented ticket intentionally changes a contract still described in an active spec, update that active spec text in the same pass unless a named follow-up ticket explicitly owns the spec drift.
 
 #### Planner and AI proof
 

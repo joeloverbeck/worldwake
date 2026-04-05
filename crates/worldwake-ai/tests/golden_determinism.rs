@@ -240,7 +240,8 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
         &mut h.event_log,
         farmer,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -289,7 +290,8 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
         txn.set_component_perception_profile(
             merchant,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -593,7 +595,8 @@ fn build_commitment_preservation_scenario(seed: Seed) -> (GoldenHarness, worldwa
         &mut h.event_log,
         agent,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1071,7 +1074,8 @@ fn build_generalized_contention_roundtrip_scenario(
         &mut h.event_log,
         observer,
         PerceptionProfile {
-            memory_capacity: 20,
+            entity_memory_capacity: 20,
+            entity_claim_capacity: 20,
             memory_retention_ticks: 100,
             observation_fidelity: pm(1000),
             confidence_policy: BeliefConfidencePolicy::default(),

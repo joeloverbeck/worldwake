@@ -457,7 +457,8 @@ mod tests {
                 )]),
             }),
             ComponentValue::PerceptionProfile(PerceptionProfile {
-                memory_capacity: 16,
+                entity_memory_capacity: 16,
+                entity_claim_capacity: 16,
                 memory_retention_ticks: 64,
                 observation_fidelity: Permille::new(920).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),

@@ -1045,7 +1045,8 @@ mod tests {
     #[test]
     fn test_spawn_agent_with_profile_overrides() {
         let custom_perception = PerceptionProfile {
-            memory_capacity: 4,
+            entity_memory_capacity: 4,
+            entity_claim_capacity: 6,
             memory_retention_ticks: 16,
             observation_fidelity: Permille::new(900).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),

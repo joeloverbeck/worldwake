@@ -1112,7 +1112,8 @@ mod tests {
 
     fn profile(fidelity: u16) -> PerceptionProfile {
         PerceptionProfile {
-            memory_capacity: 8,
+            entity_memory_capacity: 8,
+            entity_claim_capacity: 8,
             memory_retention_ticks: 32,
             observation_fidelity: Permille::new(fidelity).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1918,7 +1919,8 @@ mod tests {
             txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
                 .unwrap();
             let mut observer_profile = profile(1000);
-            observer_profile.memory_capacity = 16;
+            observer_profile.entity_memory_capacity = 16;
+            observer_profile.entity_claim_capacity = 16;
             txn.set_component_perception_profile(observer, observer_profile)
                 .unwrap();
             let bread = txn
@@ -2004,7 +2006,8 @@ mod tests {
             txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
                 .unwrap();
             let mut observer_profile = profile(1000);
-            observer_profile.memory_capacity = 16;
+            observer_profile.entity_memory_capacity = 16;
+            observer_profile.entity_claim_capacity = 16;
             txn.set_component_perception_profile(observer, observer_profile)
                 .unwrap();
             let bread = txn
@@ -2786,7 +2789,8 @@ mod tests {
             txn.set_component_perception_profile(
                 observer,
                 PerceptionProfile {
-                    memory_capacity: 1,
+                    entity_memory_capacity: 1,
+                    entity_claim_capacity: 8,
                     memory_retention_ticks: 32,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),

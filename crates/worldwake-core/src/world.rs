@@ -740,7 +740,8 @@ mod tests {
 
     fn sample_perception_profile() -> PerceptionProfile {
         PerceptionProfile {
-            memory_capacity: 12,
+            entity_memory_capacity: 12,
+            entity_claim_capacity: 12,
             memory_retention_ticks: 48,
             observation_fidelity: Permille::new(875).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),

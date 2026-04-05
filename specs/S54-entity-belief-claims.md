@@ -163,7 +163,7 @@ All interaction through state. No cross-system direct calls.
 
 ## Profile-Driven Parameters
 
-No new profiles. Existing `PerceptionProfile` (`memory_capacity`, `retention_ticks`, `confidence_policy`) governs claim lifecycle.
+No new profiles. Existing `PerceptionProfile` (`entity_memory_capacity`, `entity_claim_capacity`, `memory_retention_ticks`, `confidence_policy`) governs claim lifecycle.
 
 ## Component Registration
 

@@ -281,7 +281,8 @@ mod tests {
 
     fn perception_profile(retention: u64) -> PerceptionProfile {
         PerceptionProfile {
-            memory_capacity: 12,
+            entity_memory_capacity: 12,
+            entity_claim_capacity: 12,
             memory_retention_ticks: retention,
             observation_fidelity: pm(1000),
             confidence_policy: BeliefConfidencePolicy::default(),

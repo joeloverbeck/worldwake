@@ -266,7 +266,8 @@ mod tests {
                         market_presence_ticks: 30,
                     ),
                     perception_profile: (
-                        memory_capacity: 6,
+                        entity_memory_capacity: 6,
+                        entity_claim_capacity: 9,
                         memory_retention_ticks: 24,
                         observation_fidelity: 900,
                         confidence_policy: (
@@ -362,7 +363,9 @@ mod tests {
         assert_eq!(merch.home_facility, Some("Town".to_string()));
         assert!(bob.trade_disposition.is_some());
         assert!(bob.perception_profile.is_some());
-        assert_eq!(bob.perception_profile.unwrap().memory_capacity, 6);
+        let perception = bob.perception_profile.unwrap();
+        assert_eq!(perception.entity_memory_capacity, 6);
+        assert_eq!(perception.entity_claim_capacity, 9);
         assert!(bob.drive_thresholds.is_some());
         assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
         assert!(bob.theft_disposition.is_some());

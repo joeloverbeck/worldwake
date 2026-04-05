@@ -982,7 +982,8 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, Entit
         txn.set_component_perception_profile(
             actor,
             PerceptionProfile {
-                memory_capacity: 12,
+                entity_memory_capacity: 12,
+                entity_claim_capacity: 12,
                 memory_retention_ticks: 64,
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -1088,7 +1089,8 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
         txn.set_component_perception_profile(
             actor,
             PerceptionProfile {
-                memory_capacity: 12,
+                entity_memory_capacity: 12,
+                entity_claim_capacity: 12,
                 memory_retention_ticks: 4,
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -5373,7 +5375,8 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
         txn.set_component_perception_profile(
             harness.actor,
             PerceptionProfile {
-                memory_capacity: 32,
+                entity_memory_capacity: 32,
+                entity_claim_capacity: 32,
                 memory_retention_ticks: 240,
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),

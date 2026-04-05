@@ -103,7 +103,8 @@ fn build_t22_topology() -> Topology {
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),

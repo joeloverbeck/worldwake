@@ -2589,7 +2589,8 @@ enum ContentionProjectionState {
 
 fn contention_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 20,
+        entity_memory_capacity: 20,
+        entity_claim_capacity: 20,
         memory_retention_ticks: 100,
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),

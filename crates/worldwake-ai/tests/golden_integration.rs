@@ -183,7 +183,8 @@ fn build_t20_topology() -> Topology {
 
 fn t20_default_perception() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 480,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -660,7 +661,8 @@ fn set_control_source(
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -1366,7 +1368,8 @@ fn build_t28_topology() -> Topology {
 
 fn t28_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -1886,7 +1889,8 @@ fn build_t29_topology() -> Topology {
 
 fn t29_default_perception() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -2751,7 +2755,8 @@ fn build_t21_topology() -> Topology {
 
 fn t21_default_perception() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 2880,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -3670,7 +3675,8 @@ fn build_t33_topology() -> Topology {
 
 fn t33_default_perception() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 2880,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -4486,7 +4492,8 @@ fn build_t22r_topology() -> Topology {
 
 fn t22r_perception() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 480,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -5376,7 +5383,8 @@ fn connect(topology: &mut Topology, base_id: u32, from: EntityId, to: EntityId, 
 
 fn s45_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),

@@ -1600,7 +1600,8 @@ mod tests {
             ..TellProfile::default()
         };
         let perception_profile = PerceptionProfile {
-            memory_capacity: 5,
+            entity_memory_capacity: 5,
+            entity_claim_capacity: 5,
             memory_retention_ticks: 17,
             observation_fidelity: pm(600),
             confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),

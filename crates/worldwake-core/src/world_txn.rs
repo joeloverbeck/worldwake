@@ -4552,7 +4552,8 @@ mod tests {
             .copied()
             .unwrap();
         let mut after = before;
-        after.memory_capacity += 3;
+        after.entity_memory_capacity += 3;
+        after.entity_claim_capacity += 5;
         after.observation_fidelity = Permille::new(990).unwrap();
 
         let mut txn = new_txn(&mut world);

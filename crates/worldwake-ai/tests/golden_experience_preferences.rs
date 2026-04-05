@@ -92,7 +92,8 @@ fn build_harness_with_topology(seed: Seed, topology: Topology) -> GoldenHarness 
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),

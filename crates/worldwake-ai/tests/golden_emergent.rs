@@ -35,7 +35,8 @@ use worldwake_sim::{
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -47,7 +48,8 @@ fn default_perception_profile() -> PerceptionProfile {
 
 fn blind_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 16,
+        entity_memory_capacity: 16,
+        entity_claim_capacity: 16,
         memory_retention_ticks: 240,
         observation_fidelity: pm(0),
         confidence_policy: BeliefConfidencePolicy::default(),

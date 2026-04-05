@@ -22,7 +22,8 @@ fn social_weighted_utility(weight: u16) -> UtilityProfile {
 
 fn blind_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 16,
+        entity_memory_capacity: 16,
+        entity_claim_capacity: 16,
         memory_retention_ticks: 240,
         observation_fidelity: pm(0),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
@@ -34,7 +35,8 @@ fn blind_perception_profile() -> PerceptionProfile {
 
 fn keen_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 32,
+        entity_memory_capacity: 32,
+        entity_claim_capacity: 32,
         memory_retention_ticks: 240,
         observation_fidelity: pm(1000),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),

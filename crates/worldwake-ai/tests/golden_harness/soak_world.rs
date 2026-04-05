@@ -125,7 +125,8 @@ pub fn build_t30_topology() -> Topology {
 
 pub fn t30_default_perception() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 40,
+        entity_memory_capacity: 40,
+        entity_claim_capacity: 40,
         memory_retention_ticks: 2000,
         observation_fidelity: pm(800),
         institutional_memory_capacity: 10,
