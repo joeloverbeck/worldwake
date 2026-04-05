@@ -11,6 +11,7 @@ pub mod bandit_camp_actions;
 pub mod combat;
 pub mod consult_record_actions;
 pub mod epistemic_actions;
+pub mod evidence_decay;
 mod evidence_support;
 mod experience_recording;
 pub mod facility_queue;
@@ -46,6 +47,7 @@ pub use combat::{
 };
 pub use consult_record_actions::register_consult_record_action;
 pub use epistemic_actions::register_ask_witness_action;
+pub use evidence_decay::evidence_decay_system;
 pub use facility_queue::contention_system;
 pub use facility_queue_actions::register_queue_for_facility_use_action;
 pub use investigate_actions::register_investigate_action;
@@ -83,5 +85,6 @@ pub fn dispatch_table() -> SystemDispatchTable {
         perception_system,
         bandit_camp_system,
         patrol_route_adaptation_system,
+        evidence_decay_system,
     ])
 }

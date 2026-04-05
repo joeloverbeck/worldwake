@@ -24,8 +24,10 @@ macro_rules! define_system_ids {
             ///   are visible to co-located observers in the same tick via `force_control_claims_for_event()`.
             ///   Without this ordering, `Perception` cannot project institutional beliefs from political events
             ///   (violates Principle 7: locality of information).
-            /// - `Perception` runs before `Patrol` so same-tick witnessed or told crime reports
-            ///   can reshape authoritative patrol routes before the next AI input cycle.
+            /// - `Perception` runs before `EvidenceDecay` so same-tick observers can still
+            ///   perceive fresh scene evidence before cleanup runs.
+            /// - `EvidenceDecay` runs before `Patrol` so authoritative route adaptation only sees
+            ///   scene evidence that remains live after the tick's decay boundary.
             ///
             /// Do not reorder this list casually. Any change here changes the simulation's causal sequencing.
             pub const ALL: [Self; define_system_ids!(@count $($variant),+)] = [$(Self::$variant),+];
@@ -60,6 +62,7 @@ define_system_ids! {
     (Perception, "perception"),
     (BanditCamp, "bandit_camp"),
     (Patrol, "patrol"),
+    (EvidenceDecay, "evidence_decay"),
 }
 
 impl fmt::Display for SystemId {
@@ -104,6 +107,7 @@ impl SystemManifest {
             SystemId::Contention,
             SystemId::Politics,
             SystemId::Perception,
+            SystemId::EvidenceDecay,
             SystemId::Patrol,
         ])
         .expect("canonical system order must not contain duplicates")
@@ -175,6 +179,7 @@ mod tests {
         assert_eq!(SystemId::BanditCamp.to_string(), "bandit_camp");
         assert_eq!(SystemId::Contention.to_string(), "contention");
         assert_eq!(SystemId::Perception.to_string(), "perception");
+        assert_eq!(SystemId::EvidenceDecay.to_string(), "evidence_decay");
         assert_eq!(SystemId::Politics.to_string(), "politics");
         assert_eq!(SystemId::Patrol.to_string(), "patrol");
     }
@@ -194,6 +199,7 @@ mod tests {
                 SystemId::Perception,
                 SystemId::BanditCamp,
                 SystemId::Patrol,
+                SystemId::EvidenceDecay,
             ]
         );
     }
@@ -258,6 +264,7 @@ mod tests {
                 SystemId::Contention,
                 SystemId::Politics,
                 SystemId::Perception,
+                SystemId::EvidenceDecay,
                 SystemId::Patrol,
             ]
         );
