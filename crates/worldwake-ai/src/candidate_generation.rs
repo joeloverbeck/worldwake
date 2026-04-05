@@ -31,8 +31,9 @@ use worldwake_core::{
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, OpportunityAnchor,
     OpportunityKey, PerceptionSource, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-    PunishmentKind, Quantity, RecordData, RecordKind, SocialObservation, SocialObservationDetail,
-    TellTopic, TheftFacts, Tick, ViolationId, ViolationKind, ViolationMemory,
+    PunishmentKind, Quantity, RecordData, RecordKind, RightKind, SocialObservation,
+    SocialObservationDetail, TellTopic, TheftFacts, Tick, ViolationId, ViolationKind,
+    ViolationMemory,
 };
 use worldwake_sim::{
     listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
@@ -776,6 +777,16 @@ fn emit_punishment_candidates(
             ctx.view.believed_office_holder(office),
             InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
         ) {
+            continue;
+        }
+        if !ctx
+            .view
+            .believed_rights(ctx.agent, accused)
+            .iter()
+            .any(|right| {
+                right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office)
+            })
+        {
             continue;
         }
 
@@ -4079,17 +4090,17 @@ mod tests {
         BelievedBountyTerms, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntent,
         BlockedIntentMemory, BlockerKey, BlockingFact, BodyPart, BountyTarget, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
-        DemandObservation, DemandObservationReason, DriveThresholds, EligibilityRule, EntityId,
-        EntityKind, EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeedId,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
-        PunishmentFineSelectionTrace, PunishmentFineTraceFacts, Quantity, RecipeId,
-        RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
-        SharedTellState, SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile,
-        TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause,
-        WoundId, OpportunityAnchor,
+        DemandObservation, DemandObservationReason, DriveThresholds, EffectiveRight,
+        EligibilityRule, EntityId, EntityKind, EpistemicDispositionProfile, GoalKey, GoalKind,
+        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute,
+        PerceptionSource, Permille, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
+        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
+        ResourceSource, RightKind, SharedTellState, SocialObservation, SocialObservationDetail,
+        TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, ViolationKind, ViolationMemory, WorkstationTag,
+        Wound, WoundCause, WoundId, OpportunityAnchor,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -4157,6 +4168,7 @@ mod tests {
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
         institutional_claims:
             BTreeMap<(EntityId, InstitutionalBeliefKey), Vec<BelievedInstitutionalClaim>>,
+        believed_rights: BTreeMap<(EntityId, EntityId), Vec<EffectiveRight>>,
         epistemic_disposition_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
         violation_disposition_profiles:
             BTreeMap<EntityId, worldwake_core::ViolationDispositionProfile>,
@@ -4229,6 +4241,7 @@ mod tests {
                 support_declarations: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
                 institutional_claims: BTreeMap::new(),
+                believed_rights: BTreeMap::new(),
                 epistemic_disposition_profiles: BTreeMap::new(),
                 violation_disposition_profiles: BTreeMap::new(),
                 theft_disposition_profiles: BTreeMap::new(),
@@ -4467,6 +4480,13 @@ mod tests {
 
         fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
             self.believed_owners.get(&entity).copied()
+        }
+
+        fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+            self.believed_rights
+                .get(&(actor, entity))
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
@@ -8852,6 +8872,13 @@ mod tests {
                 learned_at: Some(place),
             }],
         );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }],
+        );
         view.locally_observed_commodity_quantities
             .insert((agent, accused, CommodityKind::Coin), Quantity(10));
 
@@ -8934,6 +8961,13 @@ mod tests {
                 },
                 learned_tick: Tick(4),
                 learned_at: Some(place),
+            }],
+        );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
             }],
         );
         view.locally_observed_commodity_quantities
@@ -9038,6 +9072,13 @@ mod tests {
                 learned_at: Some(place),
             }],
         );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }],
+        );
         view.factions_by_member.insert(accused, vec![faction]);
         view.commodity_quantities
             .insert((accused, CommodityKind::Coin), Quantity(1));
@@ -9121,6 +9162,13 @@ mod tests {
                 },
                 learned_tick: Tick(4),
                 learned_at: Some(place),
+            }],
+        );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
             }],
         );
         view.commodity_quantities
@@ -9241,6 +9289,89 @@ mod tests {
                 }
             ),
             "report-only crime knowledge should not synthesize punishable consulted case targets"
+        );
+    }
+
+    #[test]
+    fn justice_candidates_do_not_emit_punishment_outside_jurisdiction() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let record = entity(4);
+        let seat = entity(10);
+        let outside = entity(12);
+        let faction = entity(11);
+        let accusation_entry = RecordEntryId(19);
+        let violation_id = worldwake_core::ViolationId(11);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: seat,
+            commodity: CommodityKind::Coin,
+            quantity: Quantity(8),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: entity(9),
+            accused,
+            violation_id,
+            theft,
+            effective_tick: Tick(3),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.effective_places.insert(agent, outside);
+        view.effective_places.insert(accused, outside);
+        view.justice_disposition_profiles
+            .insert(agent, default_justice_profile());
+        view.office_data
+            .insert(office, vacant_office("Magistrate", seat, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, seat, accusation_entry, claim),
+        );
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::CrimeCase {
+                    accused,
+                    violation_id,
+                },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(4),
+                learned_at: Some(seat),
+            }],
+        );
+        view.locally_observed_commodity_quantities
+            .insert((agent, accused, CommodityKind::Coin), Quantity(10));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            true,
+        );
+
+        assert!(
+            !result.candidates.iter().any(|candidate| matches!(
+                candidate.key.kind,
+                GoalKind::PunishAccused {
+                    accused: goal_accused,
+                    ..
+                } if goal_accused == accused
+            )),
+            "punishment should be withheld when the authority lacks believed jurisdiction"
         );
     }
 

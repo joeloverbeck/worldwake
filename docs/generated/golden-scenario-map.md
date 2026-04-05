@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 128
+- Scenario blocks with explicit metadata: 130
 - Files contributing scenario metadata: 20
-- Tests associated with scenario blocks: 281
+- Tests associated with scenario blocks: 285
 
 ## Scenario Inventory
 
@@ -57,7 +57,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `40` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:5980` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
 | `42` | Witness Deterrence Suppresses Theft Candidate | `golden_emergent.rs:6263` | `golden_witness_deterrence_suppresses_theft_candidate` | `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically` |
 | `41` | Exile Punishment When Fine Is Not Locally Collectible | `golden_emergent.rs:6519` | `golden_exile_punishment_when_fine_is_not_locally_collectible` | `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically` |
-| `43` | Dual Discovery Converges Without Double Accusation | `golden_emergent.rs:7078` | `golden_dual_discovery_converges_without_double_accusation` | `golden_dual_discovery_converges_without_double_accusation_replays_deterministically` |
+| `110` | Jurisdiction-Gated Punishment | `golden_emergent.rs:7387` | `golden_jurisdiction_gated_punishment` | `golden_jurisdiction_gated_punishment_replays_deterministically` |
+| `111` | Secondary-Jurisdiction Punishment Away From Office Seat | `golden_emergent.rs:7438` | `golden_secondary_jurisdiction_punishment` | `golden_secondary_jurisdiction_punishment_replays_deterministically` |
+| `43` | Dual Discovery Converges Without Double Accusation | `golden_emergent.rs:7478` | `golden_dual_discovery_converges_without_double_accusation` | `golden_dual_discovery_converges_without_double_accusation_replays_deterministically` |
 | `91` | Hostile Completed Travel Reweights the Next Route Choice | `golden_experience_preferences.rs:520` | `golden_hostile_completed_travel_flips_next_route_choice` | `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically` |
 | `92` | Combat-Aborted Travel Still Creates Hostile Route Memory | `golden_experience_preferences.rs:554` | `golden_combat_aborted_travel_flips_next_route_choice` | `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically` |
 | `93` | Preference Profiles Create Route Diversity From the Same Memory | `golden_experience_preferences.rs:585` | `golden_preference_profile_diversifies_route_selection` | `golden_preference_profile_diversifies_route_selection_replays_deterministically` |
@@ -65,12 +67,12 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `27` | Controlled Agent Death | `golden_integration.rs:1048` | `t27_controlled_agent_death_seed_1`<br>`t27_controlled_agent_death_seed_2` | — |
 | `28` | Pursuit Across Information Boundary | `golden_integration.rs:1314` | `t28_pursuit_information_boundary_seed_1`<br>`t28_pursuit_information_boundary_seed_2`<br>`t29_wrongful_accusation_seed_1`<br>`t29_wrongful_accusation_seed_2` | — |
 | `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2529` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
-| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3458` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
-| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4485` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
-| `105` | Social artifact bounty lifecycle closes canonically | `golden_integration.rs:6228` | `golden_s45_bounty_lifecycle` | `golden_s45_bounty_lifecycle_replays_deterministically` |
-| `106` | Expired bounty stays visible but no longer generates pursuit | `golden_integration.rs:6266` | `golden_s45_bounty_expiration_blocks_pursuit` | `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically` |
-| `108` | Delivery bounty closes through cargo movement and later claim | `golden_integration.rs:6303` | `golden_s49_delivery_bounty_lifecycle` | `golden_s49_delivery_bounty_lifecycle_replays_deterministically` |
-| `107` | Threat-warning notice flips the next route choice | `golden_integration.rs:6343` | `golden_s45_notice_warning_flips_route_choice` | `golden_s45_notice_warning_flips_route_choice_replays_deterministically` |
+| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3459` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
+| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4487` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
+| `105` | Social artifact bounty lifecycle closes canonically | `golden_integration.rs:6230` | `golden_s45_bounty_lifecycle` | `golden_s45_bounty_lifecycle_replays_deterministically` |
+| `106` | Expired bounty stays visible but no longer generates pursuit | `golden_integration.rs:6268` | `golden_s45_bounty_expiration_blocks_pursuit` | `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically` |
+| `108` | Delivery bounty closes through cargo movement and later claim | `golden_integration.rs:6305` | `golden_s49_delivery_bounty_lifecycle` | `golden_s49_delivery_bounty_lifecycle_replays_deterministically` |
+| `107` | Threat-warning notice flips the next route choice | `golden_integration.rs:6345` | `golden_s45_notice_warning_flips_route_choice` | `golden_s45_notice_warning_flips_route_choice_replays_deterministically` |
 | `75` | Displayed Lot Retains SaleListing Through Presence Cycle | `golden_merchant_selling.rs:392` | `staff_market_retains_displayed_listing_through_presence_cycle` | `staff_market_retains_displayed_listing_replays_deterministically` |
 | `76` | Buyer Trades Against Listed Lot | `golden_merchant_selling.rs:467` | `buyer_trades_against_listed_lot` | `buyer_trades_against_listed_lot_replays_deterministically` |
 | `77` | Unlisted Stock Not Sellable | `golden_merchant_selling.rs:579` | `unlisted_stock_not_sellable` | — |
@@ -801,9 +803,31 @@ It does not claim that planned spec scenarios already exist in live test source.
 - Replay tests: `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically`
 - All tests: `golden_exile_punishment_when_fine_is_not_locally_collectible`, `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically`
 
+### Scenario 110: Jurisdiction-Gated Punishment
+
+- Source: `golden_emergent.rs:7387`
+- GoalKinds: PunishAccused
+- ActionDomains: Social
+- Places: RulersHall, GeneralStore
+- Principles: 7, 12, 14, 24
+- Primary tests: `golden_jurisdiction_gated_punishment`
+- Replay tests: `golden_jurisdiction_gated_punishment_replays_deterministically`
+- All tests: `golden_jurisdiction_gated_punishment`, `golden_jurisdiction_gated_punishment_replays_deterministically`
+
+### Scenario 111: Secondary-Jurisdiction Punishment Away From Office Seat
+
+- Source: `golden_emergent.rs:7438`
+- GoalKinds: PunishAccused
+- ActionDomains: Social
+- Places: RulersHall, GeneralStore
+- Principles: 7, 23, 24, 26
+- Primary tests: `golden_secondary_jurisdiction_punishment`
+- Replay tests: `golden_secondary_jurisdiction_punishment_replays_deterministically`
+- All tests: `golden_secondary_jurisdiction_punishment`, `golden_secondary_jurisdiction_punishment_replays_deterministically`
+
 ### Scenario 43: Dual Discovery Converges Without Double Accusation
 
-- Source: `golden_emergent.rs:7078`
+- Source: `golden_emergent.rs:7478`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
 - ActionDomains: Transport, Social, Travel
@@ -932,7 +956,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 33: Office Vacancy → Patrol Gap → Crime Opportunity → Recovery
 
-- Source: `golden_integration.rs:3458`
+- Source: `golden_integration.rs:3459`
 - Systems: Succession, Combat, AI, Patrol, Transport, Perception, Travel
 - GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, StealItem
 - ActionDomains: Combat, Social, Travel, Transport, Epistemic (≥ 5 required)
@@ -950,7 +974,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
 
-- Source: `golden_integration.rs:4485`
+- Source: `golden_integration.rs:4487`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
 - GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Generic, Travel, Social, Production
@@ -968,7 +992,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 105: Social artifact bounty lifecycle closes canonically
 
-- Source: `golden_integration.rs:6228`
+- Source: `golden_integration.rs:6230`
 - Systems: Social artifact actions, Perception, AI, Travel, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel, Combat
@@ -986,7 +1010,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 106: Expired bounty stays visible but no longer generates pursuit
 
-- Source: `golden_integration.rs:6266`
+- Source: `golden_integration.rs:6268`
 - Systems: Social artifact actions, pre-action artifact lifecycle, Perception, AI
 - GoalKinds: FulfillBounty
 - ActionDomains: Social
@@ -1004,7 +1028,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 108: Delivery bounty closes through cargo movement and later claim
 
-- Source: `golden_integration.rs:6303`
+- Source: `golden_integration.rs:6305`
 - Systems: Social artifact actions, Perception, AI, Travel, Transport
 - GoalKinds: FulfillBounty, MoveCargo
 - ActionDomains: Social, Travel, Transport
@@ -1022,7 +1046,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 107: Threat-warning notice flips the next route choice
 
-- Source: `golden_integration.rs:6343`
+- Source: `golden_integration.rs:6345`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production

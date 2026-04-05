@@ -156,8 +156,9 @@ Also include:
 
 If a new gap spec was written:
 1. Add the proposed scenarios to the pending backlog in [docs/golden-e2e-coverage.md](../../../docs/golden-e2e-coverage.md).
-2. Cross-reference the new spec.
-3. If existing golden tests relevant to this area lack `// Scenario` metadata headers, add the missing headers with non-colliding scenario ids so the inventory tooling can track them.
+2. If the dashboard still lists an older pending gap whose spec is now archived or whose scenarios are already live in the suite, correct that stale pending entry first by moving it to the removed/completed backlog notes before adding the new gap.
+3. Cross-reference the new spec.
+4. If existing golden tests relevant to this area lack `// Scenario` metadata headers, add the missing headers with non-colliding scenario ids so the inventory tooling can track them.
 
 ## Report Format
 

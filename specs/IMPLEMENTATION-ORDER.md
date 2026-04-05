@@ -2,7 +2,8 @@
 
 ## Completed Work
 
-Phases 1–5 (E01–E22, FND-01, FND-02, S01–S49) completed.
+Phases 1–5 (E01–E22, FND-01, FND-02, S01–S49) completed.  
+Phase 6 has started, and [S50-rights-lattice.md](../archive/specs/S50-rights-lattice.md) plus its remaining golden closeout [S57-golden-gaps-S50.md](../archive/specs/S57-golden-gaps-S50.md) are now completed and archived.
 See `archive/` for detailed completion records.
 
 ---
@@ -14,7 +15,6 @@ Derived from external ChatGPT architecture assessment (`brainstorming/ai-archite
 ### Dependency Graph
 
 ```text
-S50 (independent — rights lattice)
 S51 (independent — artifact issuance goals)
 S52 (independent — evidence aftermath)
 S53 (independent — cognitive/execution split)
@@ -24,12 +24,15 @@ S56 (independent — perception exposure)
 S54 ──→ S55 (causal blocker invalidation benefits from richer belief claims)
 ```
 
-All specs except S55 are independent and can run in parallel. S55 benefits from S54's richer belief substrate but can also work with the current belief layer — the dependency is soft.
+Completed in this phase so far:
+- **S50**: Rights Lattice — completed and archived
+- **S57**: Rights lattice golden gap closeout — completed and archived
+
+The remaining active specs except S55 are independent and can run in parallel. S55 benefits from S54's richer belief substrate but can also work with the current belief layer — the dependency is soft.
 
 ### Active Execution Steps
 
 **Wave 1** (parallel, no deps):
-- **S50**: Rights Lattice — Separate `can_exercise_control()` into typed rights queries (physical, ownership, custody, office, jurisdiction). Add `JurisdictionScope` for office authority boundaries.
 - **S51**: Social Artifact Issuance Goals — Add `GoalKind::PostBounty` and `GoalKind::PostNotice` with belief-driven candidate generation. Agents autonomously post bounties and notices when motivated by institutional role, economic need, or threat awareness.
 - **S52**: Evidence Artifacts and Aftermath Materialization — Actions leave inspectable physical evidence (`SceneEvidence` component on places). Container tamper state, blood trails, disturbance markers. Evidence decays over time and is perceivable by co-located agents.
 - **S53**: Cognitive Profile vs Execution Budget — Split `ReasoningProfile` into `CognitiveProfile` (agent psychology) and `ExecutionBudget` (engine compression). Prevents performance tuning from silently changing agent identity.
@@ -41,7 +44,7 @@ All specs except S55 are independent and can run in parallel. S55 benefits from 
 
 ### Phase 6 Gate
 
-- [ ] Rights queries distinguish at least: physical possession, ownership, faction authority, office authority, jurisdictional authority
+- [x] Rights queries distinguish at least: physical possession, ownership, faction authority, office authority, jurisdictional authority
 - [ ] AI agents autonomously post at least one bounty or notice in a soak test (T30-equivalent)
 - [ ] Actions leave perceivable evidence at scene locations; evidence decays over time
 - [ ] `ReasoningProfile` fully replaced by `CognitiveProfile` + `ExecutionBudget` with no behavioral regression

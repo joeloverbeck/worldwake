@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 21
 - Files contributing `golden_*` tests: 21
-- Total `golden_*` tests: 296
+- Total `golden_*` tests: 300
 
 ## Per-File Inventory
 
@@ -18,7 +18,7 @@ Do not hand-edit it.
 | `golden_combat.rs` | 27 |
 | `golden_commodity_opportunity.rs` | 3 |
 | `golden_determinism.rs` | 12 |
-| `golden_emergent.rs` | 47 |
+| `golden_emergent.rs` | 51 |
 | `golden_experience_preferences.rs` | 6 |
 | `golden_integration.rs` | 24 |
 | `golden_merchant_selling.rs` | 20 |
@@ -175,6 +175,10 @@ Do not hand-edit it.
 - `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically`
 - `golden_exile_punishment_when_fine_is_not_locally_collectible`
 - `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically`
+- `golden_jurisdiction_gated_punishment`
+- `golden_jurisdiction_gated_punishment_replays_deterministically`
+- `golden_secondary_jurisdiction_punishment`
+- `golden_secondary_jurisdiction_punishment_replays_deterministically`
 - `golden_dual_discovery_converges_without_double_accusation`
 - `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
 

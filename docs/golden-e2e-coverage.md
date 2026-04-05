@@ -20,13 +20,11 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 ## Pending Backlog Summary
 
-1. **S48 Learned source reliability reroutes later acquisition after real failure** — [specs/S48-golden-gaps-S38.md](../specs/S48-golden-gaps-S38.md). The suite now fully covers S38 learned route memory (Scenarios 91-93), but it still lacks an end-to-end source-reliability chain showing that a real source-intrinsic acquisition failure records durable `SourceReliability` and changes the agent's later source choice when a lawful sibling source exists.
-2. **S49 Unified social artifact remaining E2E gaps** — [specs/S49-golden-gaps-S45.md](../specs/S49-golden-gaps-S45.md). The suite now proves elimination-bounty lifecycle, expiration, and threat-warning notice routing (Scenarios 105-107), but it still lacks end-to-end proof for delivery-bounty fulfillment and office-vacancy notice uptake through the artifact path.
+1. **S57 Rights lattice remaining E2E gap** — [specs/S57-golden-gaps-S50.md](../specs/S57-golden-gaps-S50.md). The suite now proves typed-rights-backed jurisdiction suppression through Scenario 110, but it still lacks an end-to-end golden showing that a single office can lawfully punish at a secondary place inside a multi-place jurisdiction while that place remains distinct from the office seat.
 
 ### Recommended Implementation Order
 
-- `S48` — closes the remaining S38 source-reliability golden gap.
-- `S49` — closes the remaining S45 delivery-bounty and vacancy-notice golden gaps after `S48`.
+- `S57` — closes the remaining S50 seat-vs-jurisdiction golden gap.
 
 ---
 
@@ -49,6 +47,10 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 ## Removed Backlog Items
 
 Items removed from the golden backlog with rationale (prevents duplicate coverage proposals):
+
+- **S49 Unified social artifact remaining E2E gaps** (removed 2026-04-05) — Implemented and archived as [archive/specs/S49-golden-gaps-S45.md](../archive/specs/S49-golden-gaps-S45.md). Scenario 108 in `golden_integration.rs` now proves delivery-bounty fulfillment and later claim with deterministic replay, and Scenario 109 in `golden_offices.rs` now proves office-vacancy notice uptake into political action without `consult_record`.
+
+- **S48 Learned source reliability reroutes later acquisition after real failure** (removed 2026-04-05) — Implemented and archived as [archive/specs/S48-golden-gaps-S38.md](../archive/specs/S48-golden-gaps-S38.md). The delivered golden now lives in `golden_trade.rs` as Scenario 94, where a real seller rejection records durable `SourceReliability` and reroutes later acquisition to a lawful sibling seller, matching the corrected archived proof boundary.
 
 - **S47 Hungry Merchant Eats Own Listed Sale Stock** (removed 2026-04-01) — Implemented as Scenario 87 in `golden_merchant_selling.rs` (`hungry_merchant_eats_listed_stock` plus deterministic replay). Also removed the blanket `sale_kinds` suppression in `candidate_generation.rs` that prevented merchants from considering consumption of their own sale stock. The ranking system now handles the survival-vs-enterprise tradeoff through `GoalPriorityClass`: `ConsumeOwnedCommodity` escalates with hunger pressure while `SellCommodity` stays at Medium, so merchants only eat sale stock when survival urgency exceeds enterprise value (High or Critical hunger bands).
 

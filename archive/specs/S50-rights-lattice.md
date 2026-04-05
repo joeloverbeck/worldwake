@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # S50: Rights Lattice — Ownership, Access, and Jurisdiction
 
 ## Summary
@@ -7,10 +9,6 @@ Add typed rights queries alongside `can_exercise_control()` so the justice syste
 ## Phase
 
 Phase 6: Architectural Substrates II
-
-## Status
-
-Draft
 
 ## Crates
 
@@ -183,3 +181,24 @@ This spec adds `effective_rights()` and `has_right()` alongside `can_exercise_co
 5. **Tie-breaking / arbitration**: N/A — rights queries are read-only; no contention. (P9)
 6. **Agent-visible aftermath**: Rights changes are relational, not physical. No physical aftermath (no blood trail, no disturbance). Institutional changes (office succession, jurisdiction change) propagate through existing institutional belief system. (P10)
 7. **Boundary processes**: N/A — rights are local to the simulated world. (P13)
+
+## Outcome
+
+- **Completion date**: 2026-04-05
+- **What changed**:
+  - added the shared rights substrate in `crates/worldwake-core/src/rights.rs` plus authoritative `effective_rights()` / `has_right()` queries in `crates/worldwake-core/src/world/ownership.rs`
+  - split `OfficeData` into `seat` plus multi-place `jurisdiction` in `crates/worldwake-core/src/offices.rs` and migrated office, justice, trace, planner, and save/load consumers onto that boundary
+  - added belief-facing `believed_rights()` in `crates/worldwake-sim/src/belief_view.rs` and `crates/worldwake-sim/src/per_agent_belief_view.rs`
+  - gated AI punishment generation on office-specific `JurisdictionalAuthority` in `crates/worldwake-ai/src/candidate_generation.rs`
+  - closed the golden proof surface with Scenario 110 in `crates/worldwake-ai/tests/golden_emergent.rs`, then wrote follow-up gap spec `specs/S57-golden-gaps-S50.md` for the remaining secondary-jurisdiction golden
+- **Deviations from original plan**:
+  - the implementation landed through four bounded tickets (`S50RIGLAT-001` through `S50RIGLAT-004`) rather than one monolithic change
+  - the office migration required an explicit `seat` / `jurisdiction` split instead of a pure `EntityId -> BTreeSet<EntityId>` field replacement
+  - the first live `JurisdictionalAuthority` result landed in the authoritative query layer before the belief-facing and golden slices
+- **Verification results**:
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-sim`
+  - `cargo test -p worldwake-ai`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace -q`
