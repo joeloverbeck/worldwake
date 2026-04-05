@@ -12,10 +12,10 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     AgentData, BeliefConfidencePolicy, BlockedIntentMemory, CombatProfile, CommodityKind,
-    ControlSource, DriveThresholds, EventTag, FactionPurpose, GoalKind, HomeostaticNeeds,
-    InstitutionalBeliefRead, MetabolismProfile, NoticeTopic, PerceptionProfile, PerceptionSource,
-    Permille, PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw, TellProfile, Tick,
-    UtilityProfile, hash_event_log, hash_world, prototype_place_entity,
+    ControlSource, DriveThresholds, EventTag, ExecutionBudget, FactionPurpose, GoalKind,
+    HomeostaticNeeds, InstitutionalBeliefRead, MetabolismProfile, NoticeTopic, PerceptionProfile,
+    PerceptionSource, Permille, PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw,
+    TellProfile, Tick, UtilityProfile, hash_event_log, hash_world, prototype_place_entity,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind, InputKind,
@@ -455,13 +455,13 @@ fn golden_bribe_support_coalition() {
         MetabolismProfile::default(),
         enterprise_weighted_utility(pm(900)),
     );
-    set_agent_reasoning_profile(
+    set_agent_execution_budget(
         &mut h.world,
         &mut h.event_log,
         agent_a,
-        worldwake_ai::ReasoningProfile {
+        ExecutionBudget {
             beam_width: 16,
-            ..worldwake_ai::ReasoningProfile::default()
+            ..ExecutionBudget::default()
         },
     );
     set_agent_perception_profile(
@@ -715,13 +715,13 @@ fn golden_threaten_with_courage_diversity() {
         MetabolismProfile::default(),
         enterprise_weighted_utility(pm(900)),
     );
-    set_agent_reasoning_profile(
+    set_agent_execution_budget(
         &mut h.world,
         &mut h.event_log,
         agent_a,
-        worldwake_ai::ReasoningProfile {
+        ExecutionBudget {
             beam_width: 16,
-            ..worldwake_ai::ReasoningProfile::default()
+            ..ExecutionBudget::default()
         },
     );
     set_agent_perception_profile(
@@ -2523,7 +2523,8 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
         &semantics_table,
         &h.defs,
         &h.handlers,
-        &ReasoningProfile::default(),
+        &worldwake_core::CognitiveProfile::from_reasoning_profile(&ReasoningProfile::default()),
+        &worldwake_core::ExecutionBudget::from_reasoning_profile(&ReasoningProfile::default()),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),

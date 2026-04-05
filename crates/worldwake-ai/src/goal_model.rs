@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose, EntityId,
-    EpistemicSubject, GoalKey, GoalKind, InstitutionalBeliefRead, OUTDOOR_RELIEF_TAGS, Permille,
-    PlaceTag, Quantity, ReasoningProfile, RecordKind, SuccessionLaw, WorkstationTag,
+    EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
+    OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
     belief_confidence,
 };
 use worldwake_sim::{
@@ -68,7 +68,7 @@ pub trait GoalKindPlannerExt {
         &self,
         state: &PlanningState<'_>,
         recipes: &RecipeRegistry,
-        budget: &ReasoningProfile,
+        execution_budget: &ExecutionBudget,
     ) -> Vec<EntityId>;
     /// Whether the given `op_kind` acting on `authoritative_targets` satisfies
     /// this goal's target-binding requirement.
@@ -1313,7 +1313,7 @@ impl GoalKindPlannerExt for GoalKind {
         &self,
         state: &PlanningState<'_>,
         recipes: &RecipeRegistry,
-        budget: &ReasoningProfile,
+        execution_budget: &ExecutionBudget,
     ) -> Vec<EntityId> {
         let actor = state.snapshot().actor();
         match self {
@@ -1325,7 +1325,7 @@ impl GoalKindPlannerExt for GoalKind {
                         state,
                         actor,
                         CommodityKind::Medicine,
-                        budget.max_prerequisite_locations,
+                        execution_budget.max_prerequisite_locations,
                     )
                 }
             }
@@ -1337,7 +1337,7 @@ impl GoalKindPlannerExt for GoalKind {
                     state,
                     actor,
                     std::iter::once(recipe),
-                    budget.max_prerequisite_locations,
+                    execution_budget.max_prerequisite_locations,
                 )
             }
             GoalKind::RestockCommodity { commodity } => prerequisite_places_for_recipe_inputs(
@@ -1352,7 +1352,7 @@ impl GoalKindPlannerExt for GoalKind {
                             .any(|(output, _)| *output == *commodity)
                     })
                     .map(|(_, recipe)| recipe),
-                budget.max_prerequisite_locations,
+                execution_budget.max_prerequisite_locations,
             ),
             GoalKind::ClaimOffice { office }
             | GoalKind::SupportCandidateForOffice { office, .. } => {
@@ -2122,7 +2122,6 @@ mod tests {
         PlannerTransitionKind, PlanningState, ReasoningProfile, build_planning_snapshot,
         build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
-        search_plan,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::{BTreeMap, BTreeSet};
@@ -2134,7 +2133,7 @@ mod tests {
         AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
         BountyTerms, CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        DemandObservationReason, DriveThresholds, EntityId, EntityKind, ExecutionBudget,
         EpistemicDispositionProfile, EpistemicSubject, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
         MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille, ProofRequirement,
@@ -2155,6 +2154,40 @@ mod tests {
     use worldwake_systems::build_full_action_registries;
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
+
+    fn execution_budget(reasoning: &ReasoningProfile) -> ExecutionBudget {
+        ExecutionBudget::from_reasoning_profile(reasoning)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn search_plan(
+        snapshot: &crate::PlanningSnapshot,
+        goal: &GroundedGoal,
+        semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+        registry: &ActionDefRegistry,
+        handlers: &worldwake_sim::ActionHandlerRegistry,
+        reasoning: &ReasoningProfile,
+        recipes: &RecipeRegistry,
+        blocked: &BlockedIntentMemory,
+        current_tick: Tick,
+        binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+        expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
+    ) -> crate::PlanSearchResult {
+        crate::search_plan(
+            snapshot,
+            goal,
+            semantics_table,
+            registry,
+            handlers,
+            &worldwake_core::CognitiveProfile::from_reasoning_profile(reasoning),
+            &execution_budget(reasoning),
+            recipes,
+            blocked,
+            current_tick,
+            binding_rejections,
+            expansion_summaries,
+        )
+    }
 
     fn vacant_office(title: &str, jurisdiction: EntityId, faction: EntityId) -> OfficeData {
         OfficeData {
@@ -4966,7 +4999,7 @@ mod tests {
             GoalKind::ClaimOffice { office }.prerequisite_places(
                 &state,
                 &RecipeRegistry::new(),
-                &ReasoningProfile::default()
+                &execution_budget(&ReasoningProfile::default())
             ),
             vec![archive]
         );
@@ -5626,7 +5659,7 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
         let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &ReasoningProfile::default());
+            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ReasoningProfile::default()));
 
         assert_eq!(places, vec![place_b]);
     }
@@ -5655,7 +5688,7 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
         let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &ReasoningProfile::default());
+            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ReasoningProfile::default()));
 
         assert!(places.is_empty());
     }
@@ -5712,7 +5745,7 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
         let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &ReasoningProfile::default());
+            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ReasoningProfile::default()));
 
         assert_eq!(places, vec![place_b]);
     }
@@ -5755,7 +5788,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default()),
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default())),
             vec![place_b]
         );
     }
@@ -5784,7 +5817,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert!(
-            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default())
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default()))
                 .is_empty()
         );
     }
@@ -5831,7 +5864,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default()),
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default())),
             vec![place_b]
         );
     }
@@ -5877,7 +5910,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default()),
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default())),
             vec![place_c]
         );
     }
@@ -5922,7 +5955,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default()),
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default())),
             vec![place_b]
         );
     }
@@ -5967,7 +6000,7 @@ mod tests {
         };
 
         assert!(
-            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default())
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default()))
                 .is_empty()
         );
     }
@@ -5998,7 +6031,7 @@ mod tests {
         };
 
         assert!(
-            goal.prerequisite_places(&state, &recipes, &ReasoningProfile::default())
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default()))
                 .is_empty()
         );
     }
@@ -6161,7 +6194,7 @@ mod tests {
         ];
 
         for goal in goals {
-            let _ = goal.prerequisite_places(&state, &recipes, &budget);
+            let _ = goal.prerequisite_places(&state, &recipes, &execution_budget(&budget));
         }
     }
 

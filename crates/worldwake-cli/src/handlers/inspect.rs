@@ -293,6 +293,35 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
             dep.bladder_critical_ticks
         );
     }
+    if let Some(cognitive) = world.get_component_cognitive_profile(entity) {
+        println!("  CognitiveProfile:");
+        println!(
+            "    candidates={}, depth={}, switch_margin={}",
+            cognitive.max_candidates_to_plan, cognitive.max_plan_depth, cognitive.switch_margin
+        );
+        println!(
+            "    transient_block={}, unknown_block={}, structural_block={}",
+            cognitive.transient_block_ticks,
+            cognitive.unknown_block_ticks,
+            cognitive.structural_block_ticks
+        );
+        println!(
+            "    initial_cooldown={}, max_cooldown={}",
+            cognitive.initial_cooldown_ticks, cognitive.max_cooldown_ticks
+        );
+    }
+    if let Some(execution_budget) = world.get_component_execution_budget(entity) {
+        println!("  ExecutionBudget:");
+        println!(
+            "    max_node_expansions={}, beam_width={}",
+            execution_budget.max_node_expansions, execution_budget.beam_width
+        );
+        println!(
+            "    snapshot_travel_horizon={}, max_prerequisite_locations={}",
+            execution_budget.snapshot_travel_horizon,
+            execution_budget.max_prerequisite_locations
+        );
+    }
     if let Some(bim) = world.get_component_blocked_intent_memory(entity) {
         println!("  BlockedIntentMemory: {} entries", bim.intents.len());
     }

@@ -1,5 +1,6 @@
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, FrameState, IntentionFrame, Permille, Tick,
+    ActiveGoal, BlockedIntentMemory, CauseRef, CognitiveProfile, EntityId, FrameState,
+    IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, Interruptibility, PerAgentBeliefView, RuntimeBeliefView,
@@ -13,8 +14,6 @@ use crate::{
     PlannedStep, RankedGoal, classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure,
     has_frame,
 };
-use worldwake_core::ReasoningProfile;
-
 use super::frame::progress_op_kinds;
 use super::observation::{InFlightReconciliation, reconcile_in_flight_state};
 use super::{
@@ -75,7 +74,8 @@ pub(super) fn handle_active_action_phase(
             ranked_candidates,
             blocked_memory,
             tick,
-            ctx.reasoning,
+            ctx.cognitive,
+            ctx.execution_budget,
             ctx.semantics_table,
             action_defs,
             action_handlers,
@@ -143,16 +143,16 @@ pub(super) fn effective_goal_switch_margin(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     jc: Option<&IntentionFrame>,
-    reasoning: &ReasoningProfile,
+    cognitive: &CognitiveProfile,
 ) -> Permille {
-    goal_switch_margin_details(view, agent, jc, reasoning).0
+    goal_switch_margin_details(view, agent, jc, cognitive).0
 }
 
 pub(super) fn goal_switch_margin_details(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     jc: Option<&IntentionFrame>,
-    reasoning: &ReasoningProfile,
+    cognitive: &CognitiveProfile,
 ) -> (Permille, FrameSwitchMarginSource) {
     if has_frame(jc) {
         let profile = view
@@ -165,7 +165,7 @@ pub(super) fn goal_switch_margin_details(
     }
 
     (
-        reasoning.switch_margin,
+        cognitive.switch_margin,
         FrameSwitchMarginSource::ReasoningProfile,
     )
 }
@@ -252,7 +252,7 @@ pub(super) fn handle_current_step_failure(
 ) -> Result<(), TickInputError> {
     let world = &mut *ctx.world;
     let event_log = &mut *ctx.event_log;
-    let reasoning = ctx.reasoning;
+    let cognitive = ctx.cognitive;
     let tick = ctx.tick;
     let view = PerAgentBeliefView::from_world(agent, world);
     let goal_key = active_goal.unwrap_or_else(|| {
@@ -274,7 +274,7 @@ pub(super) fn handle_current_step_failure(
         runtime,
         jc,
         blocked_memory,
-        reasoning,
+        cognitive,
     );
     runtime.step_in_flight = false;
     runtime.current_step_index = 0;

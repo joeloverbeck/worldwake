@@ -107,7 +107,8 @@ pub use ranking::{
 pub use search::{PlanSearchResult, search_plan};
 pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};
 pub use worldwake_core::{
-    CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, ReasoningProfile,
+    CognitiveProfile, CommodityPurpose, ExecutionBudget, GoalKey, GoalKind, OpportunityAnchor,
+    OpportunityKey, ReasoningProfile,
 };
 
 #[cfg(test)]

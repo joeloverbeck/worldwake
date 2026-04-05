@@ -1,9 +1,8 @@
 use super::candidates::relevant_action_defs;
 use super::{
-    FrontierEntry, SearchCandidate, SearchNode, build_successor, combined_relevant_places,
-    compare_search_nodes, compute_heuristic, prune_travel_away_from_goal, root_node,
-    search_candidate_from_planner, search_candidates, search_candidates_from_affordance,
-    search_plan,
+    FrontierEntry, SearchCandidate, SearchNode, compare_search_nodes, compute_heuristic,
+    prune_travel_away_from_goal, search_candidate_from_planner, search_candidates,
+    search_candidates_from_affordance,
 };
 use crate::goal_model::GoalKindPlannerExt;
 use crate::planner_ops::planner_only_candidates;
@@ -24,7 +23,7 @@ use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant, ContentionPolicy,
     ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
     DemandObservationReason, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-    EntityKind, EpistemicDispositionProfile, EventLog, HomeostaticNeeds, InTransitOnEdge,
+    EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget, HomeostaticNeeds, InTransitOnEdge,
     KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, PerceptionSource,
     Permille, Place, PlaceTag, ProofRequirement, PrototypePlace, Quantity, RecipeId,
     ResourceSource, RewardSource, TheftDispositionProfile, Tick, TickRange, Topology,
@@ -39,6 +38,78 @@ use worldwake_sim::{
     TradeActionPayload, TransportActionPayload, estimate_duration_from_beliefs,
 };
 use worldwake_systems::build_full_action_registries;
+
+fn execution_budget(reasoning: &ReasoningProfile) -> ExecutionBudget {
+    ExecutionBudget::from_reasoning_profile(reasoning)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_plan(
+    snapshot: &PlanningSnapshot,
+    goal: &GroundedGoal,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &worldwake_sim::ActionHandlerRegistry,
+    reasoning: &ReasoningProfile,
+    recipes: &RecipeRegistry,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
+    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
+) -> PlanSearchResult {
+    super::search_plan(
+        snapshot,
+        goal,
+        semantics_table,
+        registry,
+        handlers,
+        &worldwake_core::CognitiveProfile::from_reasoning_profile(reasoning),
+        &execution_budget(reasoning),
+        recipes,
+        blocked,
+        current_tick,
+        binding_rejections,
+        expansion_summaries,
+    )
+}
+
+fn build_successor<'snapshot>(
+    goal: &GroundedGoal,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    node: &SearchNode<'snapshot>,
+    candidate: &SearchCandidate,
+    recipes: &RecipeRegistry,
+    reasoning: &ReasoningProfile,
+) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
+    super::build_successor(
+        goal,
+        semantics_table,
+        registry,
+        node,
+        candidate,
+        recipes,
+        &execution_budget(reasoning),
+    )
+}
+
+fn combined_relevant_places(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
+    reasoning: &ReasoningProfile,
+) -> super::heuristic::CombinedRelevantPlaces {
+    super::combined_relevant_places(goal, state, recipes, &execution_budget(reasoning))
+}
+
+fn root_node<'snapshot>(
+    snapshot: &'snapshot PlanningSnapshot,
+    goal: &GroundedGoal,
+    recipes: &RecipeRegistry,
+    reasoning: &ReasoningProfile,
+) -> SearchNode<'snapshot> {
+    super::root_node(snapshot, goal, recipes, &execution_budget(reasoning))
+}
 
 struct TestBeliefView {
     current_tick: Tick,

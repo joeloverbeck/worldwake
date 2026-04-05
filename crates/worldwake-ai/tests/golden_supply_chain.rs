@@ -23,16 +23,16 @@ use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::{
     AgentTickDriver, CandidateEvidenceExclusionReason, CandidateEvidenceKind, DecisionOutcome,
-    PlannerOpKind, ReasoningProfile, SelectedPlanReplacementKind, SelectedPlanSource,
+    PlannerOpKind, SelectedPlanReplacementKind, SelectedPlanSource,
 };
 use worldwake_core::{
     BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
-    DemandObservationReason, EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeeds,
-    KnownRecipes, MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource,
-    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile,
-    UtilityProfile, WorkstationTag, build_believed_entity_state, hash_event_log, hash_world,
-    prototype_place_entity, total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation,
+    DemandObservationReason, EpistemicDispositionProfile, ExecutionBudget, GoalKey, GoalKind,
+    HomeostaticNeeds, KnownRecipes, MerchandiseProfile, MetabolismProfile, PerceptionProfile,
+    PerceptionSource, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
+    TradeDispositionProfile, UtilityProfile, WorkstationTag, build_believed_entity_state,
+    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
+    total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::{ActionTraceDetail, ActionTraceKind, RecipeDefinition, RecipeRegistry};
 
@@ -378,13 +378,13 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         },
         KnownRecipes::with([harvest_firewood_recipe, bake_bread_recipe]),
     );
-    set_agent_reasoning_profile(
+    set_agent_cognitive_profile(
         &mut h.world,
         &mut h.event_log,
         merchant,
-        ReasoningProfile {
+        worldwake_core::CognitiveProfile {
             max_plan_depth: 12,
-            ..ReasoningProfile::default()
+            ..worldwake_core::CognitiveProfile::default()
         },
     );
     {
@@ -766,14 +766,22 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         },
         KnownRecipes::with([harvest_firewood_recipe, bake_bread_recipe]),
     );
-    set_agent_reasoning_profile(
+    set_agent_cognitive_profile(
         &mut h.world,
         &mut h.event_log,
         merchant,
-        ReasoningProfile {
+        worldwake_core::CognitiveProfile {
             max_plan_depth: 12,
+            ..worldwake_core::CognitiveProfile::default()
+        },
+    );
+    set_agent_execution_budget(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        ExecutionBudget {
             max_node_expansions: 1024,
-            ..ReasoningProfile::default()
+            ..ExecutionBudget::default()
         },
     );
     {
@@ -1224,14 +1232,22 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
             ..UtilityProfile::default()
         },
     );
-    set_agent_reasoning_profile(
+    set_agent_cognitive_profile(
         &mut h.world,
         &mut h.event_log,
         merchant,
-        ReasoningProfile {
+        worldwake_core::CognitiveProfile {
             max_plan_depth: 10,
+            ..worldwake_core::CognitiveProfile::default()
+        },
+    );
+    set_agent_execution_budget(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        ExecutionBudget {
             max_node_expansions: 1024,
-            ..ReasoningProfile::default()
+            ..ExecutionBudget::default()
         },
     );
     let witness = seed_agent(

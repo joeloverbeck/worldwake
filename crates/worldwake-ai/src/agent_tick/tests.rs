@@ -30,18 +30,19 @@ use std::path::PathBuf;
 use worldwake_core::{
     ActionDefId, BanditFactionPolicy, BeliefConfidencePolicy, BelievedInstitutionalClaim,
     BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart,
-    CarryCapacity, CauseRef, CommodityKind, ContentionGrant, ContentionIntents, ContentionPolicy,
-    ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
+    CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents,
+    ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
     DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
-    EventPayload, FrameState, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
-    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
-    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
-    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
-    build_believed_entity_state, build_prototype_world,
+    EventPayload, ExecutionBudget, FrameState, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile,
+    IntentionDomain, IntentionFrame, KnownRecipes, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent, RecipeId, RecordData,
+    RecordKind, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
+    ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
+    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
+    build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -85,6 +86,14 @@ fn patrol_profile(base_dwell_ticks: u32, vigilance: u16, motive: u16) -> PatrolP
         route_adaptation_sensitivity: Permille::new(1000).unwrap(),
         patrol_motive_weight: Permille::new(motive).unwrap(),
     }
+}
+
+fn cognitive(reasoning: &ReasoningProfile) -> CognitiveProfile {
+    CognitiveProfile::from_reasoning_profile(reasoning)
+}
+
+fn execution_budget(reasoning: &ReasoningProfile) -> ExecutionBudget {
+    ExecutionBudget::from_reasoning_profile(reasoning)
 }
 
 impl Harness {
@@ -1717,17 +1726,17 @@ fn effective_goal_switch_margin_uses_route_margin_for_any_intention_frame() {
     });
 
     assert_eq!(
-        effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &budget),
+        effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &cognitive(&budget)),
         Permille::new(300).unwrap()
     );
     // Planless commitment (same jc, no plan on runtime) still has route margin.
     assert_eq!(
-        effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &budget),
+        effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &cognitive(&budget)),
         Permille::new(300).unwrap()
     );
     // No commitment => budget default.
     assert_eq!(
-        effective_goal_switch_margin(&view, actor, None, &budget),
+        effective_goal_switch_margin(&view, actor, None, &cognitive(&budget)),
         budget.switch_margin
     );
 }
@@ -1763,7 +1772,7 @@ fn effective_goal_switch_margin_panics_when_committed_agent_lacks_intention_prof
         patience_limit: 10,
     });
 
-    let _ = effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &budget);
+    let _ = effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &cognitive(&budget));
 }
 
 #[test]
@@ -2011,7 +2020,8 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         ReasoningProfile::default().switch_margin,
         UtilityProfile::default().side_benefit_weight,
         Tick(2),
-        &ReasoningProfile::default(),
+        &cognitive(&ReasoningProfile::default()),
+        &execution_budget(&ReasoningProfile::default()),
         &semantics,
         &harness.defs,
         &harness.handlers,
@@ -2571,7 +2581,7 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
         actor,
         &step,
         Tick(9),
-        &ReasoningProfile::default(),
+        &cognitive(&ReasoningProfile::default()),
     );
     assert!(handled);
     let updated_jc = updated_jc.expect("commitment should persist with incremented blocked ticks");
@@ -2650,7 +2660,7 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
         actor,
         &step,
         Tick(9),
-        &budget,
+        &cognitive(&budget),
     );
     assert!(handled);
     assert_eq!(runtime.current_plan, None);
@@ -3332,7 +3342,8 @@ fn goal_stability_across_cargo_materialization_continuity() {
         budget.switch_margin,
         utility.side_benefit_weight,
         Tick(1),
-        &budget,
+        &cognitive(&budget),
+        &execution_budget(&budget),
         &semantics,
         &harness.defs,
         &harness.handlers,
@@ -3434,7 +3445,8 @@ fn goal_stability_across_cargo_materialization_continuity() {
         budget.switch_margin,
         utility.side_benefit_weight,
         Tick(2),
-        &budget,
+        &cognitive(&budget),
+        &execution_budget(&budget),
         &semantics,
         &harness.defs,
         &harness.handlers,
@@ -4710,7 +4722,8 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             budget.switch_margin,
             utility.side_benefit_weight,
             Tick(1),
-            &budget,
+            &cognitive(&budget),
+            &execution_budget(&budget),
             &semantics,
             &harness.defs,
             &harness.handlers,
@@ -4797,7 +4810,8 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             budget.switch_margin,
             utility.side_benefit_weight,
             Tick(2),
-            &budget,
+            &cognitive(&budget),
+            &execution_budget(&budget),
             &semantics,
             &harness.defs,
             &harness.handlers,

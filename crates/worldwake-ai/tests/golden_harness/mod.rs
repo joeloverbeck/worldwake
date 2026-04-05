@@ -22,8 +22,8 @@ use worldwake_core::{
     EventRecord, EventTag, EventView, FactionData, FactionPurpose, HomeostaticNeeds,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
     LoadUnits, MetabolismProfile, OfficeData, OfficeForceProfile, OfficeForceState,
-    PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, ReasoningProfile,
-    RecipeId, RecordData, RecordKind, RelationDelta, RelationValue, ResourceSource, Seed,
+    PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, RecordData,
+    RecordKind, RelationDelta, RelationValue, ResourceSource, Seed,
     SharedTellState, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
     ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
     WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
@@ -260,15 +260,27 @@ pub fn set_agent_perception_profile(
     commit_txn(txn, event_log);
 }
 
-pub fn set_agent_reasoning_profile(
+pub fn set_agent_cognitive_profile(
     world: &mut World,
     event_log: &mut EventLog,
     agent: EntityId,
-    reasoning_profile: ReasoningProfile,
+    cognitive_profile: worldwake_core::CognitiveProfile,
 ) {
     let mut txn = new_txn(world, 0);
-    txn.set_component_reasoning_profile(agent, reasoning_profile)
-        .expect("golden harness should keep reasoning profiles writable");
+    txn.set_component_cognitive_profile(agent, cognitive_profile)
+        .expect("golden harness should keep cognitive profiles writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn set_agent_execution_budget(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    execution_budget: worldwake_core::ExecutionBudget,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_component_execution_budget(agent, execution_budget)
+        .expect("golden harness should keep execution budgets writable");
     commit_txn(txn, event_log);
 }
 

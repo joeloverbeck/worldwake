@@ -635,10 +635,14 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &semantics,
         &h.defs,
         &h.handlers,
-        &ReasoningProfile {
+        &worldwake_core::CognitiveProfile::from_reasoning_profile(&ReasoningProfile {
             max_plan_depth: 6,
             ..ReasoningProfile::default()
-        },
+        }),
+        &worldwake_core::ExecutionBudget::from_reasoning_profile(&ReasoningProfile {
+            max_plan_depth: 6,
+            ..ReasoningProfile::default()
+        }),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -651,7 +655,8 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &semantics,
         &h.defs,
         &h.handlers,
-        &ReasoningProfile::default(),
+        &worldwake_core::CognitiveProfile::from_reasoning_profile(&ReasoningProfile::default()),
+        &worldwake_core::ExecutionBudget::from_reasoning_profile(&ReasoningProfile::default()),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),

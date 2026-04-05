@@ -4,7 +4,7 @@ use crate::{
     shared_collections::SharedVec,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, EntityId, ReasoningProfile};
+use worldwake_core::{ActionDefId, EntityId, ExecutionBudget};
 use worldwake_sim::RecipeRegistry;
 
 use super::{SearchCandidate, SearchNode};
@@ -35,35 +35,40 @@ pub(super) struct CombinedRelevantPlaces {
     pub(super) guidance_trace: Option<crate::decision_trace::PrerequisiteGuidanceTrace>,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn combined_relevant_places(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
-    budget: &ReasoningProfile,
+    execution_budget: &ExecutionBudget,
 ) -> CombinedRelevantPlaces {
-    combined_relevant_places_internal(goal, state, recipes, budget, false)
+    combined_relevant_places_internal(goal, state, recipes, execution_budget, false)
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn combined_relevant_places_with_guidance(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
-    budget: &ReasoningProfile,
+    execution_budget: &ExecutionBudget,
 ) -> CombinedRelevantPlaces {
-    combined_relevant_places_internal(goal, state, recipes, budget, true)
+    combined_relevant_places_internal(goal, state, recipes, execution_budget, true)
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn combined_relevant_places_internal(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
-    budget: &ReasoningProfile,
+    execution_budget: &ExecutionBudget,
     include_guidance_trace: bool,
 ) -> CombinedRelevantPlaces {
     let mut places = goal.key.kind.goal_relevant_places(state, recipes);
     let goal_relevant_places_for_trace = include_guidance_trace.then(|| places.clone());
     let base_len = places.len();
-    let prerequisite_places = goal.key.kind.prerequisite_places(state, recipes, budget);
+    let prerequisite_places =
+        goal.key.kind
+            .prerequisite_places(state, recipes, execution_budget);
     let prerequisite_places_for_trace = include_guidance_trace.then(|| prerequisite_places.clone());
     for place in prerequisite_places {
         if !places.contains(&place) {
@@ -93,14 +98,15 @@ fn combined_relevant_places_internal(
     }
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn root_node<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
     goal: &GroundedGoal,
     recipes: &RecipeRegistry,
-    budget: &ReasoningProfile,
+    execution_budget: &ExecutionBudget,
 ) -> SearchNode<'snapshot> {
     let state = PlanningState::new(snapshot);
-    let combined_places = combined_relevant_places(goal, &state, recipes, budget);
+    let combined_places = combined_relevant_places(goal, &state, recipes, execution_budget);
     let heuristic_ticks = compute_heuristic(snapshot, &state, &combined_places.places);
     SearchNode {
         state,

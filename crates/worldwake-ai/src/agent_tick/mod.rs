@@ -43,8 +43,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, BlockingFact, ContentionIntents, ControlSource, EntityId, IntentionFrame,
-    ReasoningProfile, Tick,
+    ActionDefId, BlockingFact, CognitiveProfile, ContentionIntents, ControlSource, EntityId,
+    ExecutionBudget, IntentionFrame, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -129,12 +129,12 @@ impl AgentTickDriver {
         let runtime = self.runtime_by_agent.get(&agent)?;
         let frame = world.get_component_intention_frame(agent);
         let view = PerAgentBeliefView::from_world(agent, world);
-        let reasoning = world
-            .get_component_reasoning_profile(agent)
+        let cognitive = world
+            .get_component_cognitive_profile(agent)
             .cloned()
-            .unwrap_or_else(|| panic!("AI agent {agent} lacks ReasoningProfile"));
+            .unwrap_or_else(|| panic!("AI agent {agent} lacks CognitiveProfile"));
         let (effective_switch_margin, switch_margin_source) =
-            goal_switch_margin_details(&view, agent, frame, &reasoning);
+            goal_switch_margin_details(&view, agent, frame, &cognitive);
         Some(FrameDebugSnapshot {
             runtime: frame_runtime_snapshot(frame, runtime),
             effective_switch_margin,
@@ -253,7 +253,8 @@ pub(super) struct AgentTickContext<'a> {
     pub(super) action_handlers: &'a ActionHandlerRegistry,
     pub(super) recipe_registry: &'a RecipeRegistry,
     pub(super) semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
-    pub(super) reasoning: &'a ReasoningProfile,
+    pub(super) cognitive: &'a CognitiveProfile,
+    pub(super) execution_budget: &'a ExecutionBudget,
     pub(super) tick: Tick,
 }
 
@@ -283,11 +284,16 @@ impl AutonomousController for AgentTickDriver {
         let _ = self.semantics_table(ctx.action_defs);
         let semantics_table = &self.semantics_cache.as_ref().unwrap().1;
         let tracing = self.trace_sink.is_some();
-        let reasoning = ctx
+        let cognitive = ctx
             .world
-            .get_component_reasoning_profile(agent)
+            .get_component_cognitive_profile(agent)
             .cloned()
-            .unwrap_or_else(|| panic!("AI agent {agent} lacks ReasoningProfile"));
+            .unwrap_or_else(|| panic!("AI agent {agent} lacks CognitiveProfile"));
+        let execution_budget = ctx
+            .world
+            .get_component_execution_budget(agent)
+            .cloned()
+            .unwrap_or_else(|| panic!("AI agent {agent} lacks ExecutionBudget"));
         let trace = process_agent(
             &mut AgentTickContext {
                 world: ctx.world,
@@ -298,7 +304,8 @@ impl AutonomousController for AgentTickDriver {
                 action_handlers: ctx.action_handlers,
                 recipe_registry: ctx.recipe_registry,
                 semantics_table,
-                reasoning: &reasoning,
+                cognitive: &cognitive,
+                execution_budget: &execution_budget,
                 tick: ctx.tick,
             },
             &mut self.runtime_by_agent,
@@ -327,7 +334,8 @@ fn process_agent(
     let action_handlers = ctx.action_handlers;
     let recipe_registry = ctx.recipe_registry;
     let semantics_table = ctx.semantics_table;
-    let reasoning = ctx.reasoning;
+    let cognitive = ctx.cognitive;
+    let execution_budget = ctx.execution_budget;
     let tick = ctx.tick;
 
     let mut blocked_memory = ctx
@@ -460,7 +468,7 @@ fn process_agent(
         ctx.event_log,
         agent,
         tick,
-        reasoning.structural_block_ticks,
+        cognitive.structural_block_ticks,
     )?;
 
     // ── Pre-planning assumption evaluation ──
@@ -498,7 +506,7 @@ fn process_agent(
                         view.effective_place(agent),
                         &mut blocked_memory,
                         tick,
-                        reasoning.structural_block_ticks,
+                        cognitive.structural_block_ticks,
                     );
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
@@ -526,8 +534,8 @@ fn process_agent(
             recipe_registry,
             utility: &utility,
             tick,
-            travel_horizon: reasoning.snapshot_travel_horizon,
-            structural_block_ticks: reasoning.structural_block_ticks,
+            travel_horizon: execution_budget.snapshot_travel_horizon,
+            structural_block_ticks: cognitive.structural_block_ticks,
         },
         tracing,
     );
@@ -609,9 +617,9 @@ fn process_agent(
             action_defs,
             recipe_registry,
         );
-        effective_goal_switch_margin(&view, agent, jc, reasoning)
+        effective_goal_switch_margin(&view, agent, jc, cognitive)
     };
-    let default_switch_margin = reasoning.switch_margin;
+    let default_switch_margin = cognitive.switch_margin;
 
     // ── Active-action path: interrupt evaluation ──
     let outcome_trace = if let Some(active_action) = active_action {
@@ -686,7 +694,8 @@ fn process_agent(
                 frame_switch_margin,
                 utility.side_benefit_weight,
                 tick,
-                reasoning,
+                cognitive,
+                execution_budget,
                 semantics_table,
                 action_defs,
                 action_handlers,
@@ -892,7 +901,7 @@ fn process_agent(
             &mut blocked_memory,
             runtime,
             tick,
-            reasoning.structural_block_ticks,
+            cognitive.structural_block_ticks,
         );
         if exhausted {
             let frame_ref = current_frame.as_ref().unwrap();

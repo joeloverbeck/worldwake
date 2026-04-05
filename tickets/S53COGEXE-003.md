@@ -8,11 +8,11 @@
 
 ## Problem
 
-ReasoningProfile has zero consumers after ticket 002 but still exists as a component type and is registered in the component schema. Per Principle 28 (No Backward Compatibility), the dead type must be removed. The coexistence save format from ticket 001 still persists all three components, so this ticket cleans that format up to the final split-only shape.
+After ticket 002, `ReasoningProfile` no longer drives the live production AI decision pipeline, but it still exists as an authoritative component type, remains registered in the component schema, and still appears in temporary test/public/setup compatibility surfaces. Per Principle 28 (No Backward Compatibility), that legacy carrier must now be removed completely. The coexistence save format from ticket 001 still persists all three components, so this ticket cleans that format up to the final split-only shape.
 
 ## Assumption Reassessment (2026-04-05)
 
-1. After ticket 002, zero files read ReasoningProfile — confirmed by design (002 migrates all 13 consumers).
+1. After ticket 002, zero live production AI readers should remain on `ReasoningProfile`, but test-only compatibility helpers, public re-exports, and CLI scenario/persistence setup may still mention it until this cleanup ticket lands.
 2. `ReasoningProfile` registered in `component_schema.rs` on `EntityKind::Agent` — must be removed.
 3. `reasoning_profile.rs` module in worldwake-core — must be removed.
 4. `AgentDef.reasoning_profile: Option<ReasoningProfile>` in CLI scenario types — must be removed.
@@ -25,7 +25,7 @@ ReasoningProfile has zero consumers after ticket 002 but still exists as a compo
 
 1. Clean P28 removal — no aliases, no deprecated wrappers. The old type is deleted, not hidden.
 2. Save migration is a one-way transform at load time: read coexistence-format saves containing `ReasoningProfile` plus the split profiles, drop the old component, and keep the split profiles as authoritative. The old coexistence format is consumed, not preserved.
-3. After this ticket, the codebase has no reference to ReasoningProfile anywhere.
+3. After this ticket, the codebase has no reference to `ReasoningProfile` anywhere, including temporary test wrappers, public re-exports, and CLI setup/persistence surfaces that remained transitional after ticket 002.
 
 ## Verification Layers
 

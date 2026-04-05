@@ -7,12 +7,13 @@ use crate::{
 };
 use heuristic::{combined_relevant_places, compute_heuristic};
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, ReasoningProfile};
+use worldwake_core::{ActionDefId, ExecutionBudget};
 use worldwake_sim::{ActionDefRegistry, RecipeRegistry, RuntimeBeliefView};
 
 use super::heuristic;
 
 #[cfg(test)]
+#[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn build_successor<'snapshot>(
     goal: &GroundedGoal,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -20,7 +21,7 @@ pub(super) fn build_successor<'snapshot>(
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
     recipes: &RecipeRegistry,
-    budget: &ReasoningProfile,
+    execution_budget: &ExecutionBudget,
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
     build_successor_detailed(
         goal,
@@ -29,11 +30,12 @@ pub(super) fn build_successor<'snapshot>(
         node,
         candidate,
         recipes,
-        budget,
+        execution_budget,
     )
     .ok()
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn build_successor_detailed<'snapshot>(
     goal: &GroundedGoal,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -41,7 +43,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
     recipes: &RecipeRegistry,
-    budget: &ReasoningProfile,
+    execution_budget: &ExecutionBudget,
 ) -> Result<
     (Option<PlanTerminalKind>, SearchNode<'snapshot>),
     crate::decision_trace::RootCandidateSkipReason,
@@ -147,7 +149,8 @@ pub(super) fn build_successor_detailed<'snapshot>(
         .search_cost
         .checked_add(search_step_cost)
         .ok_or(crate::decision_trace::RootCandidateSkipReason::TotalDurationOverflow)?;
-    let combined_places = combined_relevant_places(goal, &transition.state, recipes, budget);
+    let combined_places =
+        combined_relevant_places(goal, &transition.state, recipes, execution_budget);
     let heuristic_ticks = compute_heuristic(
         node.state.snapshot(),
         &transition.state,

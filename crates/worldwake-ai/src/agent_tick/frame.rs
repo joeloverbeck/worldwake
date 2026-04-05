@@ -4,8 +4,8 @@ use crate::{
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, EntityId, FrameAssumption,
-    FrameClearReason, FrameState, IntentionDomain, IntentionFrame, Permille, ReasoningProfile,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CognitiveProfile, EntityId,
+    FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame, Permille,
     SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
@@ -140,7 +140,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
     agent: EntityId,
     step: &PlannedStep,
     tick: Tick,
-    reasoning: &ReasoningProfile,
+    cognitive: &CognitiveProfile,
 ) -> (bool, Option<IntentionFrame>) {
     if step.op_kind != crate::PlannerOpKind::Travel
         || !has_active_frame_travel(
@@ -180,7 +180,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
             blocking_fact: worldwake_core::BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: tick,
-            expires_tick: tick + u64::from(reasoning.structural_block_ticks),
+            expires_tick: tick + u64::from(cognitive.structural_block_ticks),
         });
         runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
         None

@@ -1,4 +1,4 @@
-//! Golden tests proving per-agent reasoning diversity via `ReasoningProfile`.
+//! Golden tests proving per-agent reasoning diversity via split execution budgets.
 
 mod golden_harness;
 
@@ -6,7 +6,7 @@ use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     BeliefConfidencePolicy, CommodityKind, EntityId, HomeostaticNeeds, KnownRecipes,
-    MetabolismProfile, PerceptionProfile, Quantity, ReasoningProfile, Seed, StateHash, Tick,
+    ExecutionBudget, MetabolismProfile, PerceptionProfile, Quantity, Seed, StateHash, Tick,
     UtilityProfile, WorkstationTag, hash_event_log, hash_world,
 };
 
@@ -46,7 +46,7 @@ fn configure_perception(h: &mut GoldenHarness, agent: EntityId) {
 
 fn setup_search_depth_harness(
     seed: Seed,
-    reasoning_profile: ReasoningProfile,
+    execution_budget: ExecutionBudget,
 ) -> (GoldenHarness, EntityId) {
     let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
     let bread_recipe = h
@@ -66,7 +66,7 @@ fn setup_search_depth_harness(
         KnownRecipes::with([bread_recipe]),
     );
     configure_perception(&mut h, baker);
-    set_agent_reasoning_profile(&mut h.world, &mut h.event_log, baker, reasoning_profile);
+    set_agent_execution_budget(&mut h.world, &mut h.event_log, baker, execution_budget);
 
     place_workstation(
         &mut h.world,
@@ -96,13 +96,13 @@ fn setup_search_depth_harness(
 }
 
 fn run_search_depth_hashes(seed: Seed) -> (StateHash, StateHash, StateHash, StateHash) {
-    let tight_reasoning = ReasoningProfile {
+    let tight_reasoning = ExecutionBudget {
         max_node_expansions: 2,
-        ..ReasoningProfile::default()
+        ..ExecutionBudget::default()
     };
     let (mut tight, _tight_agent) = setup_search_depth_harness(seed, tight_reasoning);
     let (mut thorough, _thorough_agent) =
-        setup_search_depth_harness(seed, ReasoningProfile::default());
+        setup_search_depth_harness(seed, ExecutionBudget::default());
 
     tight.step_once();
     thorough.step_once();
@@ -132,7 +132,7 @@ fn run_search_depth_hashes(seed: Seed) -> (StateHash, StateHash, StateHash, Stat
 //
 // Setup: Two isolated harness runs share the same baker, recipe registry,
 //   remote firewood input, beliefs, and RNG seed. The only difference is
-//   `ReasoningProfile.max_node_expansions`: tight budget `2` vs default.
+//   `ExecutionBudget.max_node_expansions`: tight budget `2` vs default.
 //
 // Proves: Per-agent reasoning style changes which multi-step plan search can
 //   actually select. The default budget finds the remote input -> return ->
@@ -146,13 +146,13 @@ fn run_search_depth_hashes(seed: Seed) -> (StateHash, StateHash, StateHash, Stat
 #[test]
 fn search_depth_divergence() {
     let seed = Seed([32; 32]);
-    let tight_reasoning = ReasoningProfile {
+    let tight_reasoning = ExecutionBudget {
         max_node_expansions: 2,
-        ..ReasoningProfile::default()
+        ..ExecutionBudget::default()
     };
     let (mut tight_h, tight_agent) = setup_search_depth_harness(seed, tight_reasoning);
     let (mut thorough_h, thorough_agent) =
-        setup_search_depth_harness(seed, ReasoningProfile::default());
+        setup_search_depth_harness(seed, ExecutionBudget::default());
 
     tight_h.step_once();
     thorough_h.step_once();

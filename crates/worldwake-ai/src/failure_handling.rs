@@ -1,7 +1,7 @@
 use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact, CommodityKind,
-    EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, ReasoningProfile, Tick,
+    BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
+    CognitiveProfile, CommodityKind, EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -29,7 +29,7 @@ pub fn handle_plan_failure(
     runtime: &mut AgentDecisionRuntime,
     jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
-    reasoning: &ReasoningProfile,
+    cognitive: &CognitiveProfile,
 ) {
     runtime.current_plan = None;
     if jc.is_some() {
@@ -46,7 +46,7 @@ pub fn handle_plan_failure(
         context.execution_failure,
     );
     let expires_tick =
-        context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, reasoning));
+        context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, cognitive));
 
     let blocker_key = BlockerKey {
         goal_key: context.goal_key,
@@ -803,14 +803,14 @@ fn related_place(
     }
 }
 
-fn blocking_fact_ttl(fact: BlockingFact, reasoning: &ReasoningProfile) -> u32 {
+fn blocking_fact_ttl(fact: BlockingFact, cognitive: &CognitiveProfile) -> u32 {
     match fact {
         BlockingFact::SellerOutOfStock
         | BlockingFact::WorkstationBusy
         | BlockingFact::ReservationConflict
         | BlockingFact::ExclusiveFacilityUnavailable
-        | BlockingFact::TargetGone => reasoning.transient_block_ticks,
-        BlockingFact::Unknown => reasoning.unknown_block_ticks,
+        | BlockingFact::TargetGone => cognitive.transient_block_ticks,
+        BlockingFact::Unknown => cognitive.unknown_block_ticks,
         BlockingFact::NoKnownPath
         | BlockingFact::NoKnownSeller
         | BlockingFact::TooExpensive
@@ -821,7 +821,7 @@ fn blocking_fact_ttl(fact: BlockingFact, reasoning: &ReasoningProfile) -> u32 {
         | BlockingFact::CombatTooRisky
         | BlockingFact::PatienceExhausted
         | BlockingFact::AssumptionFailed
-        | BlockingFact::NoBuyer => reasoning.structural_block_ticks,
+        | BlockingFact::NoBuyer => cognitive.structural_block_ticks,
     }
 }
 
@@ -838,12 +838,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
+        CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        CommodityPurpose, DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState,
+        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource,
+        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -1099,6 +1099,10 @@ mod tests {
         }
     }
 
+    fn cognitive(reasoning: &ReasoningProfile) -> CognitiveProfile {
+        CognitiveProfile::from_reasoning_profile(reasoning)
+    }
+
     fn entity(slot: u32) -> EntityId {
         EntityId {
             slot,
@@ -1295,7 +1299,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
-            &ReasoningProfile::default(),
+            &cognitive(&ReasoningProfile::default()),
         );
 
         assert_eq!(runtime.current_plan, None);
@@ -1562,7 +1566,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
-            &budget,
+            &cognitive(&budget),
         );
 
         assert_eq!(runtime.current_plan, None);
@@ -1637,15 +1641,15 @@ mod tests {
         let budget = ReasoningProfile::default();
 
         assert_eq!(
-            blocking_fact_ttl(BlockingFact::SellerOutOfStock, &budget),
+            blocking_fact_ttl(BlockingFact::SellerOutOfStock, &cognitive(&budget)),
             budget.transient_block_ticks
         );
         assert_eq!(
-            blocking_fact_ttl(BlockingFact::NoKnownSeller, &budget),
+            blocking_fact_ttl(BlockingFact::NoKnownSeller, &cognitive(&budget)),
             budget.structural_block_ticks
         );
         assert_eq!(
-            blocking_fact_ttl(BlockingFact::Unknown, &budget),
+            blocking_fact_ttl(BlockingFact::Unknown, &cognitive(&budget)),
             budget.unknown_block_ticks
         );
     }
@@ -1653,7 +1657,7 @@ mod tests {
     #[test]
     fn unknown_blocker_uses_dedicated_ttl() {
         let budget = ReasoningProfile::default();
-        let ttl = blocking_fact_ttl(BlockingFact::Unknown, &budget);
+        let ttl = blocking_fact_ttl(BlockingFact::Unknown, &cognitive(&budget));
         assert_eq!(ttl, 5);
         assert_ne!(ttl, budget.transient_block_ticks);
     }
@@ -1670,7 +1674,7 @@ mod tests {
         ];
         for fact in transient_facts {
             assert_eq!(
-                blocking_fact_ttl(fact, &budget),
+                blocking_fact_ttl(fact, &cognitive(&budget)),
                 20,
                 "{fact:?} should still use transient_block_ticks (20)"
             );
@@ -1713,7 +1717,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
-            &budget,
+            &cognitive(&budget),
         );
 
         let intent = blocked.intents.values().next().unwrap();

@@ -40,7 +40,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             agent,
             step,
             tick,
-            ctx.reasoning,
+            ctx.cognitive,
         );
         *jc = updated_jc;
         if handled {
@@ -75,7 +75,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             agent,
             step,
             tick,
-            ctx.reasoning,
+            ctx.cognitive,
         );
         *jc = updated_jc;
         if handled {

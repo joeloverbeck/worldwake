@@ -5,9 +5,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-    IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, ReasoningProfile, Tick,
-    UniqueItemKind, Wound,
+    ActionDefId, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
+    HomeostaticNeeds, IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity,
+    Tick, UniqueItemKind, Wound,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -93,7 +93,7 @@ impl ExhaustionEntry {
         invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
         baseline: ExhaustionBaseline,
         current_tick: Tick,
-        reasoning: &ReasoningProfile,
+        cognitive: &CognitiveProfile,
     ) -> Self {
         let mut entry = Self {
             retry_state: ExhaustionRetryState::BudgetRetryPending,
@@ -102,7 +102,7 @@ impl ExhaustionEntry {
             next_retry_tick: None,
             consecutive_failures: 0,
         };
-        entry.record_budget_exhaustion(current_tick, reasoning);
+        entry.record_budget_exhaustion(current_tick, cognitive);
         entry
     }
 
@@ -121,14 +121,14 @@ impl ExhaustionEntry {
         matches!(self.retry_state, ExhaustionRetryState::FrontierExhausted)
     }
 
-    pub fn record_budget_exhaustion(&mut self, current_tick: Tick, reasoning: &ReasoningProfile) {
+    pub fn record_budget_exhaustion(&mut self, current_tick: Tick, cognitive: &CognitiveProfile) {
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
         let shift = u32::from(self.consecutive_failures.saturating_sub(1).min(6));
-        let cooldown = reasoning
+        let cooldown = cognitive
             .initial_cooldown_ticks
             .checked_shl(shift)
             .unwrap_or(u32::MAX)
-            .min(reasoning.max_cooldown_ticks);
+            .min(cognitive.max_cooldown_ticks);
         self.next_retry_tick = Some(Tick(current_tick.0.saturating_add(u64::from(cooldown))));
         self.retry_state = ExhaustionRetryState::BudgetRetryPending;
     }
@@ -282,9 +282,9 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        BodyPart, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-        IntentionDomain, IntentionFrame, PatrolRoute, Quantity, Tick, UniqueItemKind, Wound,
-        WoundCause, WoundId,
+        BodyPart, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
+        HomeostaticNeeds, IntentionDomain, IntentionFrame, PatrolRoute, Quantity, Tick,
+        UniqueItemKind, Wound, WoundCause, WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -337,6 +337,10 @@ mod tests {
             stalled_ticks: 0,
             patience_limit: 30,
         }
+    }
+
+    fn cognitive(reasoning: &ReasoningProfile) -> CognitiveProfile {
+        CognitiveProfile::from_reasoning_profile(reasoning)
     }
 
     #[test]
@@ -531,7 +535,7 @@ mod tests {
             vec![ExhaustionInvalidationCondition::PositionChanged],
             ExhaustionBaseline::default(),
             Tick(7),
-            &budget,
+            &cognitive(&budget),
         );
 
         assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
@@ -549,19 +553,19 @@ mod tests {
         let mut entry =
             ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());
 
-        entry.record_budget_exhaustion(Tick(1), &budget);
+        entry.record_budget_exhaustion(Tick(1), &cognitive(&budget));
         assert_eq!(entry.consecutive_failures, 1);
         assert_eq!(entry.next_retry_tick, Some(Tick(5)));
 
-        entry.record_budget_exhaustion(Tick(5), &budget);
+        entry.record_budget_exhaustion(Tick(5), &cognitive(&budget));
         assert_eq!(entry.consecutive_failures, 2);
         assert_eq!(entry.next_retry_tick, Some(Tick(13)));
 
-        entry.record_budget_exhaustion(Tick(13), &budget);
+        entry.record_budget_exhaustion(Tick(13), &cognitive(&budget));
         assert_eq!(entry.consecutive_failures, 3);
         assert_eq!(entry.next_retry_tick, Some(Tick(29)));
 
-        entry.record_budget_exhaustion(Tick(29), &budget);
+        entry.record_budget_exhaustion(Tick(29), &cognitive(&budget));
         assert_eq!(entry.consecutive_failures, 4);
         assert_eq!(entry.next_retry_tick, Some(Tick(45)));
     }
