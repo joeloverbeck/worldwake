@@ -14,7 +14,7 @@ use worldwake_core::{
     RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
     RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
     TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -253,6 +253,10 @@ pub trait GoalBeliefView {
         None
     }
     fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+        let _ = agent;
+        None
+    }
+    fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
         let _ = agent;
         None
     }
@@ -528,6 +532,10 @@ pub trait RuntimeBeliefView {
         None
     }
     fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+        let _ = agent;
+        None
+    }
+    fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
         let _ = agent;
         None
     }
@@ -1212,6 +1220,13 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::PreferenceProfile> {
                 $crate::RuntimeBeliefView::preference_profile(self, agent)
+            }
+
+            fn utility_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::UtilityProfile> {
+                $crate::RuntimeBeliefView::utility_profile(self, agent)
             }
 
             fn wounds(&self, agent: worldwake_core::EntityId) -> Vec<worldwake_core::Wound> {

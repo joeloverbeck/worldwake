@@ -15,8 +15,8 @@ use worldwake_core::{
     Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
     RecordedViolation, ResourceSource, RouteExperience, SocialObservation, SourceReliability,
     StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
-    danger_ratio_permille, is_incapacitated, load_of_entity,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
+    World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -930,6 +930,12 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_preference_profile(agent).copied())
+            .flatten()
+    }
+
+    fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_utility_profile(agent).cloned())
             .flatten()
     }
 

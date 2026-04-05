@@ -26,14 +26,15 @@ use worldwake_core::{
     classify_communication,
     current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
-    BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory, CommodityKind,
-    CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, GoalKey, GoalKind,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, OfficeData, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-    PunishmentKind, Quantity, RecordData, RecordKind, RightKind, SocialObservation,
-    SocialObservationDetail, TellTopic, TheftFacts, Tick, ViolationId, ViolationKind,
-    ViolationMemory,
+    ArtifactPostingContext, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
+    BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule,
+    EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
+    PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
+    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
+    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
+    UtilityProfile, ViolationId, ViolationKind, ViolationMemory,
 };
 use worldwake_sim::{
     listener_aware_tell_topic_selection, GoalBeliefView, RecipeDefinition, RecipeRegistry,
@@ -245,6 +246,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_production_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
     emit_enterprise_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_bounty_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_artifact_posting_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_crime_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
@@ -261,6 +263,10 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         diagnostics,
         pending_violations,
     }
+}
+
+fn utility_profile_for_goal_generation(ctx: &GenerationContext<'_>) -> UtilityProfile {
+    ctx.view.utility_profile(ctx.agent).unwrap_or_default()
 }
 
 fn filter_blocked_candidates(
@@ -534,6 +540,179 @@ fn emit_bounty_candidates(
             }
         }
     }
+}
+
+fn emit_artifact_posting_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    emit_bounty_posting_candidates(candidates, diagnostics, ctx);
+    emit_notice_posting_candidates(candidates, diagnostics, ctx);
+}
+
+fn emit_bounty_posting_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let utility = utility_profile_for_goal_generation(ctx);
+    if utility.bounty_posting_weight.value() == 0 {
+        return;
+    }
+
+    let current_crime_case_claims =
+        current_institutional_belief_topics(ctx.view.known_institutional_beliefs(ctx.agent));
+    for belief in current_crime_case_claims {
+        let (
+            InstitutionalClaim::Accusation {
+                accused,
+                theft,
+                violation_id: _,
+                ..
+            },
+            InstitutionalKnowledgeSource::RecordConsultation { record, entry_id: _ },
+        ) = (belief.claim, belief.source)
+        else {
+            continue;
+        };
+
+        if !ctx.view.is_alive(accused) {
+            continue;
+        }
+
+        let Some(record_data) = ctx.view.record_data(record) else {
+            continue;
+        };
+        if record_data.record_kind != RecordKind::CrimeRegister {
+            continue;
+        }
+        let office = record_data.issuer;
+        let Some(office_data) = ctx.view.office_data(office) else {
+            continue;
+        };
+        if !matches!(
+            ctx.view.believed_office_holder(office),
+            InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
+        ) {
+            continue;
+        }
+        if !ctx
+            .view
+            .believed_rights(ctx.agent, accused)
+            .iter()
+            .any(|right| {
+                right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office)
+            })
+        {
+            continue;
+        }
+        if theft.quantity == Quantity(0) {
+            continue;
+        }
+
+        let posting_place = office_data.seat;
+        let mut evidence = Evidence::with_entity(accused);
+        evidence.entities.extend([office, record, theft.missing_entity]);
+        evidence.places.extend([posting_place, theft.expected_place]);
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled {
+            trace
+                .knowledge_path
+                .institutional_beliefs
+                .push(InstitutionalBeliefProvenance {
+                    claim: belief.claim,
+                    source: belief.source,
+                    learned_tick: belief.learned_tick,
+                    learned_at: belief.learned_at,
+                });
+        }
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::PostBounty {
+                posting: ArtifactPostingContext {
+                    posting_place,
+                    issuing_authority: Some(office),
+                    expires_at: None,
+                    jurisdiction: Some(posting_place),
+                },
+                terms: BountyTerms {
+                    target: BountyTarget::EliminateEntity { target: accused },
+                    proof_requirement: ProofRequirement::PhysicalEvidence,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: theft.quantity,
+                    reward_source: RewardSource::InstitutionalTreasury {
+                        treasury_entity: office,
+                    },
+                    claim_place: posting_place,
+                },
+            },
+            OpportunityAnchor::Entity(accused),
+            evidence,
+            trace,
+        );
+    }
+}
+
+fn emit_notice_posting_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let utility = utility_profile_for_goal_generation(ctx);
+    if utility.notice_posting_weight.value() == 0 {
+        return;
+    }
+
+    let Some(place) = ctx.place else {
+        return;
+    };
+    let Some(thresholds) = ctx.view.drive_thresholds(ctx.agent) else {
+        return;
+    };
+    let danger_pressure = derive_danger_pressure(ctx.view, ctx.agent);
+    if danger_pressure < thresholds.danger.high() {
+        return;
+    }
+
+    let mut evidence = Evidence::with_place(place);
+    evidence
+        .entities
+        .extend(ctx.view.visible_hostiles_for(ctx.agent));
+    evidence
+        .entities
+        .extend(ctx.view.current_attackers_of(ctx.agent));
+    if evidence.entities.is_empty() {
+        return;
+    }
+
+    let mut trace = EvidenceTrace::default();
+    if ctx.tracing_enabled {
+        let wound_count = ctx.view.wounds(ctx.agent).len() as u16;
+        trace
+            .knowledge_path
+            .self_knowledge
+            .push(SelfKnowledgeProvenance::OwnWounds { count: wound_count });
+    }
+
+    emit_candidate_with_trace(
+        candidates,
+        diagnostics,
+        GoalKind::PostNotice {
+            posting: ArtifactPostingContext {
+                posting_place: place,
+                issuing_authority: None,
+                expires_at: None,
+                jurisdiction: Some(place),
+            },
+            topic: NoticeTopic::ThreatWarning { place },
+        },
+        OpportunityAnchor::Place(place),
+        evidence,
+        trace,
+    );
 }
 
 fn delivery_bounty_gap(
@@ -4086,21 +4265,23 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, ArtifactKind, ArtifactState, BelievedArtifactState,
-        BelievedBountyTerms, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntent,
-        BlockedIntentMemory, BlockerKey, BlockingFact, BodyPart, BountyTarget, CombatProfile,
+        AgentBeliefStore, ArtifactKind, ArtifactPostingContext, ArtifactState,
+        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey,
+        BlockingFact, BodyPart, BountyTarget, BountyTerms, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
         DemandObservation, DemandObservationReason, DriveThresholds, EffectiveRight,
         EligibilityRule, EntityId, EntityKind, EpistemicDispositionProfile, GoalKey, GoalKind,
         HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute,
-        PerceptionSource, Permille, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
-        ResourceSource, RightKind, SharedTellState, SocialObservation, SocialObservationDetail,
+        MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, PatrolProfile,
+        PatrolRoute, PerceptionSource, Permille, ProofRequirement,
+        PunishmentFineSelectionTrace, PunishmentFineTraceFacts, Quantity, RecipeId,
+        RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
+        RewardSource, RightKind, SharedTellState, SocialObservation, SocialObservationDetail,
         TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, ViolationKind, ViolationMemory, WorkstationTag,
-        Wound, WoundCause, WoundId, OpportunityAnchor,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationKind, ViolationMemory,
+        WorkstationTag, Wound, WoundCause, WoundId, OpportunityAnchor,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -4145,6 +4326,7 @@ mod tests {
         sources_at: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+        utility_profiles: BTreeMap<EntityId, UtilityProfile>,
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
         belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
@@ -4221,6 +4403,7 @@ mod tests {
                 sources_at: BTreeMap::new(),
                 demand_memory: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
+                utility_profiles: BTreeMap::new(),
                 corpses_at: BTreeMap::new(),
                 belief_stores: BTreeMap::new(),
                 beliefs: BTreeMap::new(),
@@ -4568,6 +4751,10 @@ mod tests {
 
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
+        }
+
+        fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
+            self.utility_profiles.get(&agent).cloned()
         }
 
         fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
@@ -9452,6 +9639,289 @@ mod tests {
                 } if goal_accused == accused
             )),
             "punishment should be withheld when neither fine nor exile can be bound lawfully"
+        );
+    }
+
+    #[test]
+    fn posting_candidates_emit_institutional_bounty_from_consulted_accusation() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let record = entity(4);
+        let seat = entity(10);
+        let faction = entity(11);
+        let violation_id = worldwake_core::ViolationId(12);
+        let accusation_entry = RecordEntryId(21);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: seat,
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(6),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: entity(9),
+            accused,
+            violation_id,
+            theft,
+            effective_tick: Tick(3),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                bounty_posting_weight: pm(700),
+                ..UtilityProfile::default()
+            },
+        );
+        view.office_data
+            .insert(office, vacant_office("Magistrate", seat, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, seat, accusation_entry, claim),
+        );
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::CrimeCase {
+                    accused,
+                    violation_id,
+                },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(4),
+                learned_at: Some(seat),
+            }],
+        );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::PostBounty {
+                posting: ArtifactPostingContext {
+                    posting_place: seat,
+                    issuing_authority: Some(office),
+                    expires_at: None,
+                    jurisdiction: Some(seat),
+                },
+                terms: BountyTerms {
+                    target: BountyTarget::EliminateEntity { target: accused },
+                    proof_requirement: ProofRequirement::PhysicalEvidence,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(6),
+                    reward_source: RewardSource::InstitutionalTreasury {
+                        treasury_entity: office,
+                    },
+                    claim_place: seat,
+                },
+            }
+        ));
+    }
+
+    #[test]
+    fn posting_candidates_suppress_bounty_when_bounty_weight_is_zero() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let record = entity(4);
+        let seat = entity(10);
+        let faction = entity(11);
+        let violation_id = worldwake_core::ViolationId(13);
+        let accusation_entry = RecordEntryId(22);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: seat,
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(6),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: entity(9),
+            accused,
+            violation_id,
+            theft,
+            effective_tick: Tick(3),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                bounty_posting_weight: pm(0),
+                ..UtilityProfile::default()
+            },
+        );
+        view.office_data
+            .insert(office, vacant_office("Magistrate", seat, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, seat, accusation_entry, claim),
+        );
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::CrimeCase {
+                    accused,
+                    violation_id,
+                },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(4),
+                learned_at: Some(seat),
+            }],
+        );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            !result
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate.key.kind, GoalKind::PostBounty { .. })),
+            "zero bounty posting weight should suppress posting candidates",
+        );
+    }
+
+    #[test]
+    fn posting_candidates_emit_threat_warning_notice_for_high_local_danger() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let place = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, hostile]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(hostile, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(hostile, place);
+        view.entities_at.insert(place, vec![agent, hostile]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                notice_posting_weight: pm(700),
+                ..UtilityProfile::default()
+            },
+        );
+        view.hostiles.insert(agent, vec![hostile]);
+        view.attackers.insert(agent, vec![hostile]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::PostNotice {
+                posting: ArtifactPostingContext {
+                    posting_place: place,
+                    issuing_authority: None,
+                    expires_at: None,
+                    jurisdiction: Some(place),
+                },
+                topic: NoticeTopic::ThreatWarning { place },
+            }
+        ));
+    }
+
+    #[test]
+    fn posting_candidates_suppress_notice_when_notice_weight_is_zero() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let place = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, hostile]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(hostile, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(hostile, place);
+        view.entities_at.insert(place, vec![agent, hostile]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                notice_posting_weight: pm(0),
+                ..UtilityProfile::default()
+            },
+        );
+        view.hostiles.insert(agent, vec![hostile]);
+        view.attackers.insert(agent, vec![hostile]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            !result
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate.key.kind, GoalKind::PostNotice { .. })),
+            "zero notice posting weight should suppress posting candidates",
         );
     }
 
