@@ -8,15 +8,15 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
     CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityValuationProfile, ControlSource, DemandObservation, DriveThresholds, EntityId,
-    EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, PreferenceProfile,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceSource,
-    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
-    load_of_entity,
+    CommodityValuationProfile, ControlSource, DemandObservation, DriveThresholds, EffectiveRight,
+    EntityId, EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+    Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
+    RecordedViolation, ResourceSource, RouteExperience, SocialObservation, SourceReliability,
+    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, World, Wound,
+    danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -677,6 +677,15 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         let accessible =
             self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
         accessible.then(|| self.world.owner_of(entity)).flatten()
+    }
+
+    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+        let accessible =
+            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
+        if !accessible {
+            return Vec::new();
+        }
+        self.world.effective_rights(actor, entity)
     }
 
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
@@ -1448,10 +1457,10 @@ mod tests {
     use worldwake_core::{
         ActionDefId, ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
         BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind, ControlSource,
-        EdgeExperience, EntityId, EntityKind, EventLog, FactionData, FactionPurpose,
-        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, FactionData,
+        FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille, Place, PlaceTag,
-        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
+        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, RightKind,
         ResourceSource, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
         ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
@@ -3210,6 +3219,107 @@ mod tests {
         assert_eq!(
             RuntimeBeliefView::believed_owner_of(&view, lot),
             Some(agent)
+        );
+    }
+
+    #[test]
+    fn believed_rights_returns_rights_for_known_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(3), place, Some(agent))
+                .unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(lot, entity_belief(place, true, 3, 2));
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        assert_eq!(
+            RuntimeBeliefView::believed_rights(&view, agent, lot),
+            vec![EffectiveRight {
+                kind: RightKind::Ownership,
+                via: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn believed_rights_returns_empty_for_unknown_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            let lot = txn
+                .create_item_lot_with_owner(CommodityKind::Bread, Quantity(1), place, Some(other))
+                .unwrap();
+            commit_txn(txn);
+            (agent, other, lot)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert!(RuntimeBeliefView::believed_rights(&view, other, lot).is_empty());
+    }
+
+    #[test]
+    fn believed_rights_surfaces_jurisdiction_without_control() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let seat = places[0];
+        let jurisdiction_place = *places.get(1).unwrap_or(&seat);
+        let (observer, holder, office, item) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Marshal", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, seat).unwrap();
+            txn.set_ground_location(holder, seat).unwrap();
+            let office = txn.create_office("Marshal Seat").unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "Marshal".to_string(),
+                    seat,
+                    jurisdiction: BTreeSet::from([seat, jurisdiction_place]),
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 8,
+                    vacancy_since: None,
+                },
+            )
+            .unwrap();
+            create_record(&mut txn, seat, observer, RecordKind::OfficeRegister);
+            txn.assign_office(office, holder).unwrap();
+            let item = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(item, jurisdiction_place).unwrap();
+            commit_txn(txn);
+            (observer, holder, office, item)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(item, entity_belief(jurisdiction_place, true, 0, 2));
+
+        let view = PerAgentBeliefView::new(observer, &world, &beliefs);
+        assert!(!RuntimeBeliefView::can_control(&view, holder, item));
+        assert_eq!(
+            RuntimeBeliefView::believed_rights(&view, holder, item),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }]
         );
     }
 

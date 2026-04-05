@@ -7,7 +7,7 @@ use worldwake_core::{
     ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, CommodityValuationProfile, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge,
+    EffectiveRight, EntityId, EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
     PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
@@ -135,6 +135,10 @@ pub trait GoalBeliefView {
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
+    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+        let _ = (actor, entity);
+        Vec::new()
+    }
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
     fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
         let _ = facility;
@@ -447,6 +451,10 @@ pub trait RuntimeBeliefView {
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
+    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+        let _ = (actor, entity);
+        Vec::new()
+    }
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
     fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
         let _ = facility;
@@ -954,6 +962,14 @@ macro_rules! impl_goal_belief_view {
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityId> {
                 $crate::RuntimeBeliefView::believed_owner_of(self, entity)
+            }
+
+            fn believed_rights(
+                &self,
+                actor: worldwake_core::EntityId,
+                entity: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EffectiveRight> {
+                $crate::RuntimeBeliefView::believed_rights(self, actor, entity)
             }
 
             fn workstation_tag(
