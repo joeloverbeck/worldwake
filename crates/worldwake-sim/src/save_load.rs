@@ -3,7 +3,8 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 24;
+pub const SAVE_FORMAT_VERSION: u32 = 25;
+const COEXISTENCE_SAVE_FORMAT_VERSION: u32 = 24;
 const LEGACY_SAVE_FORMAT_VERSION: u32 = 5;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
@@ -128,6 +129,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>
 
     match found {
         LEGACY_SAVE_FORMAT_VERSION => load_legacy_v5(payload),
+        COEXISTENCE_SAVE_FORMAT_VERSION => load_coexistence_v24(payload),
         SAVE_FORMAT_VERSION => load_current_format(payload),
         _ => Err(SaveError::UnsupportedVersion {
             found,
@@ -140,6 +142,20 @@ fn load_legacy_v5(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), Sa
     let state = bincode::deserialize(bytes)
         .map_err(|error| SaveError::Deserialization(error.to_string()))?;
     Ok((state, None))
+}
+
+fn load_coexistence_v24(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
+    let (sim_payload, rest) = split_length_prefixed_payload(bytes, "simulation")?;
+    let state = legacy_v24::load_simulation_state(sim_payload)?;
+    let (runtime_payload, trailing) = split_length_prefixed_payload(rest, "runtime")?;
+    if !trailing.is_empty() {
+        return Err(SaveError::Deserialization(
+            "save data has trailing bytes after runtime payload".to_string(),
+        ));
+    }
+
+    let runtime = (!runtime_payload.is_empty()).then(|| runtime_payload.to_vec());
+    Ok((state, runtime))
 }
 
 fn load_current_format(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
@@ -187,10 +203,633 @@ fn split_length_prefixed_payload<'a>(
     Ok(rest.split_at(payload_len))
 }
 
+#[allow(clippy::wildcard_imports, clippy::zero_sized_map_values)]
+mod legacy_v24 {
+    use super::SaveError;
+    use crate::{
+        ControllerState, DeterministicRng, RecipeRegistry, ReplayState, Scheduler, SimulationState,
+    };
+    use serde::{Deserialize, Serialize};
+    use std::collections::BTreeMap;
+    use worldwake_core::*;
+
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    struct LegacyCombinedProfileV24 {
+        max_candidates_to_plan: u8,
+        max_plan_depth: u8,
+        snapshot_travel_horizon: u8,
+        max_prerequisite_locations: u8,
+        max_node_expansions: u16,
+        beam_width: u8,
+        switch_margin: Permille,
+        transient_block_ticks: u32,
+        unknown_block_ticks: u32,
+        structural_block_ticks: u32,
+        initial_cooldown_ticks: u32,
+        max_cooldown_ticks: u32,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    struct LegacyComponentTablesV24(
+        BTreeMap<EntityId, Name>,
+        BTreeMap<EntityId, AgentData>,
+        BTreeMap<EntityId, WoundList>,
+        BTreeMap<EntityId, CombatProfile>,
+        BTreeMap<EntityId, DeadAt>,
+        BTreeMap<EntityId, CombatStance>,
+        BTreeMap<EntityId, ContentionDispositionProfile>,
+        BTreeMap<EntityId, TheftDispositionProfile>,
+        BTreeMap<EntityId, JusticeDispositionProfile>,
+        BTreeMap<EntityId, UtilityProfile>,
+        BTreeMap<EntityId, CommodityValuationProfile>,
+        BTreeMap<EntityId, RouteExperience>,
+        BTreeMap<EntityId, SourceReliability>,
+        BTreeMap<EntityId, PreferenceProfile>,
+        BTreeMap<EntityId, PatrolRoute>,
+        BTreeMap<EntityId, PatrolProfile>,
+        BTreeMap<EntityId, OfficeData>,
+        BTreeMap<EntityId, OfficeForceProfile>,
+        BTreeMap<EntityId, OfficeForceState>,
+        BTreeMap<EntityId, FactionData>,
+        BTreeMap<EntityId, RecordData>,
+        BTreeMap<EntityId, ArtifactHeader>,
+        BTreeMap<EntityId, BountyTerms>,
+        BTreeMap<EntityId, NoticeContent>,
+        BTreeMap<EntityId, BlockedIntentMemory>,
+        BTreeMap<EntityId, AgentBeliefStore>,
+        BTreeMap<EntityId, PerceptionProfile>,
+        BTreeMap<EntityId, TellProfile>,
+        BTreeMap<EntityId, CommunicationProfile>,
+        BTreeMap<EntityId, LegacyCombinedProfileV24>,
+        BTreeMap<EntityId, CognitiveProfile>,
+        BTreeMap<EntityId, ExecutionBudget>,
+        BTreeMap<EntityId, DriveThresholds>,
+        BTreeMap<EntityId, HomeostaticNeeds>,
+        BTreeMap<EntityId, DeprivationExposure>,
+        BTreeMap<EntityId, MetabolismProfile>,
+        BTreeMap<EntityId, CarryCapacity>,
+        BTreeMap<EntityId, KnownRecipes>,
+        BTreeMap<EntityId, DemandMemory>,
+        BTreeMap<EntityId, TradeDispositionProfile>,
+        BTreeMap<EntityId, MerchandiseProfile>,
+        BTreeMap<EntityId, SubstitutePreferences>,
+        BTreeMap<EntityId, ContentionPolicy>,
+        BTreeMap<EntityId, ContentionQueue>,
+        BTreeMap<EntityId, WorkstationMarker>,
+        BTreeMap<EntityId, ResourceSource>,
+        BTreeMap<EntityId, ProductionOutputOwnershipPolicy>,
+        BTreeMap<EntityId, BanditCamp>,
+        BTreeMap<EntityId, SceneEvidence>,
+        BTreeMap<EntityId, BanditFactionPolicy>,
+        BTreeMap<EntityId, ProductionJob>,
+        BTreeMap<EntityId, InTransitOnEdge>,
+        BTreeMap<EntityId, ActiveGoal>,
+        BTreeMap<EntityId, ContentionIntents>,
+        BTreeMap<EntityId, IntentionFrame>,
+        BTreeMap<EntityId, IntentionDispositionProfile>,
+        BTreeMap<EntityId, ViolationMemory>,
+        BTreeMap<EntityId, ViolationDispositionProfile>,
+        BTreeMap<EntityId, EpistemicDispositionProfile>,
+        BTreeMap<EntityId, PursuitProfile>,
+        BTreeMap<EntityId, ItemLot>,
+        BTreeMap<EntityId, UniqueItem>,
+        BTreeMap<EntityId, Container>,
+        BTreeMap<EntityId, SaleListing>,
+        BTreeMap<EntityId, StockStoragePolicy>,
+        BTreeMap<EntityId, StockAssignment>,
+    );
+
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    struct CurrentComponentTablesWire(
+        BTreeMap<EntityId, Name>,
+        BTreeMap<EntityId, AgentData>,
+        BTreeMap<EntityId, WoundList>,
+        BTreeMap<EntityId, CombatProfile>,
+        BTreeMap<EntityId, DeadAt>,
+        BTreeMap<EntityId, CombatStance>,
+        BTreeMap<EntityId, ContentionDispositionProfile>,
+        BTreeMap<EntityId, TheftDispositionProfile>,
+        BTreeMap<EntityId, JusticeDispositionProfile>,
+        BTreeMap<EntityId, UtilityProfile>,
+        BTreeMap<EntityId, CommodityValuationProfile>,
+        BTreeMap<EntityId, RouteExperience>,
+        BTreeMap<EntityId, SourceReliability>,
+        BTreeMap<EntityId, PreferenceProfile>,
+        BTreeMap<EntityId, PatrolRoute>,
+        BTreeMap<EntityId, PatrolProfile>,
+        BTreeMap<EntityId, OfficeData>,
+        BTreeMap<EntityId, OfficeForceProfile>,
+        BTreeMap<EntityId, OfficeForceState>,
+        BTreeMap<EntityId, FactionData>,
+        BTreeMap<EntityId, RecordData>,
+        BTreeMap<EntityId, ArtifactHeader>,
+        BTreeMap<EntityId, BountyTerms>,
+        BTreeMap<EntityId, NoticeContent>,
+        BTreeMap<EntityId, BlockedIntentMemory>,
+        BTreeMap<EntityId, AgentBeliefStore>,
+        BTreeMap<EntityId, PerceptionProfile>,
+        BTreeMap<EntityId, TellProfile>,
+        BTreeMap<EntityId, CommunicationProfile>,
+        BTreeMap<EntityId, CognitiveProfile>,
+        BTreeMap<EntityId, ExecutionBudget>,
+        BTreeMap<EntityId, DriveThresholds>,
+        BTreeMap<EntityId, HomeostaticNeeds>,
+        BTreeMap<EntityId, DeprivationExposure>,
+        BTreeMap<EntityId, MetabolismProfile>,
+        BTreeMap<EntityId, CarryCapacity>,
+        BTreeMap<EntityId, KnownRecipes>,
+        BTreeMap<EntityId, DemandMemory>,
+        BTreeMap<EntityId, TradeDispositionProfile>,
+        BTreeMap<EntityId, MerchandiseProfile>,
+        BTreeMap<EntityId, SubstitutePreferences>,
+        BTreeMap<EntityId, ContentionPolicy>,
+        BTreeMap<EntityId, ContentionQueue>,
+        BTreeMap<EntityId, WorkstationMarker>,
+        BTreeMap<EntityId, ResourceSource>,
+        BTreeMap<EntityId, ProductionOutputOwnershipPolicy>,
+        BTreeMap<EntityId, BanditCamp>,
+        BTreeMap<EntityId, SceneEvidence>,
+        BTreeMap<EntityId, BanditFactionPolicy>,
+        BTreeMap<EntityId, ProductionJob>,
+        BTreeMap<EntityId, InTransitOnEdge>,
+        BTreeMap<EntityId, ActiveGoal>,
+        BTreeMap<EntityId, ContentionIntents>,
+        BTreeMap<EntityId, IntentionFrame>,
+        BTreeMap<EntityId, IntentionDispositionProfile>,
+        BTreeMap<EntityId, ViolationMemory>,
+        BTreeMap<EntityId, ViolationDispositionProfile>,
+        BTreeMap<EntityId, EpistemicDispositionProfile>,
+        BTreeMap<EntityId, PursuitProfile>,
+        BTreeMap<EntityId, ItemLot>,
+        BTreeMap<EntityId, UniqueItem>,
+        BTreeMap<EntityId, Container>,
+        BTreeMap<EntityId, SaleListing>,
+        BTreeMap<EntityId, StockStoragePolicy>,
+        BTreeMap<EntityId, StockAssignment>,
+    );
+
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    struct LegacyWorldV24(
+        EntityAllocator,
+        LegacyComponentTablesV24,
+        RelationTables,
+        Topology,
+    );
+
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    struct CurrentWorldWire(EntityAllocator, ComponentTables, RelationTables, Topology);
+
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    struct LegacySimulationStateV24(
+        LegacyWorldV24,
+        EventLog,
+        Scheduler,
+        RecipeRegistry,
+        ReplayState,
+        ControllerState,
+        DeterministicRng,
+    );
+
+    #[cfg(test)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    struct CurrentWorldCompatWire(
+        EntityAllocator,
+        CurrentComponentTablesWire,
+        RelationTables,
+        Topology,
+    );
+
+    #[cfg(test)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    struct CurrentSimulationStateWire(
+        CurrentWorldCompatWire,
+        EventLog,
+        Scheduler,
+        RecipeRegistry,
+        ReplayState,
+        ControllerState,
+        DeterministicRng,
+    );
+
+    pub(super) fn load_simulation_state(bytes: &[u8]) -> Result<SimulationState, SaveError> {
+        let legacy: LegacySimulationStateV24 = bincode::deserialize(bytes)
+            .map_err(|error| SaveError::Deserialization(error.to_string()))?;
+        legacy.into_current()
+    }
+
+    #[cfg(test)]
+    pub(super) fn save_bytes(
+        state: &SimulationState,
+        runtime: Option<&[u8]>,
+    ) -> Result<Vec<u8>, SaveError> {
+        let sim_payload = bincode::serialize(state)
+            .map_err(|error| SaveError::Serialization(error.to_string()))?;
+        let current: CurrentSimulationStateWire = bincode::deserialize(&sim_payload)
+            .map_err(|error| SaveError::Deserialization(error.to_string()))?;
+        let legacy = current.into_legacy();
+        let legacy_payload = bincode::serialize(&legacy)
+            .map_err(|error| SaveError::Serialization(error.to_string()))?;
+        let runtime_payload = runtime.unwrap_or_default();
+        let sim_payload_len = u64::try_from(legacy_payload.len()).map_err(|_| {
+            SaveError::Serialization("simulation payload exceeds u64 length".to_string())
+        })?;
+        let runtime_payload_len = u64::try_from(runtime_payload.len()).map_err(|_| {
+            SaveError::RuntimeSerialization("runtime payload exceeds u64 length".to_string())
+        })?;
+        let mut bytes = Vec::with_capacity(
+            super::SAVE_HEADER_LEN
+                + super::PAYLOAD_LEN_WIDTH * 2
+                + legacy_payload.len()
+                + runtime_payload.len(),
+        );
+        bytes.extend_from_slice(&super::SAVE_MAGIC);
+        bytes.extend_from_slice(&super::COEXISTENCE_SAVE_FORMAT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&sim_payload_len.to_le_bytes());
+        bytes.extend_from_slice(&legacy_payload);
+        bytes.extend_from_slice(&runtime_payload_len.to_le_bytes());
+        bytes.extend_from_slice(runtime_payload);
+        Ok(bytes)
+    }
+
+    impl LegacySimulationStateV24 {
+        fn into_current(self) -> Result<SimulationState, SaveError> {
+            let Self(
+                world,
+                event_log,
+                scheduler,
+                recipe_registry,
+                replay_state,
+                controller_state,
+                rng_state,
+            ) = self;
+            Ok(SimulationState::new(
+                world.into_current()?,
+                event_log,
+                scheduler,
+                recipe_registry,
+                replay_state,
+                controller_state,
+                rng_state,
+            ))
+        }
+    }
+
+    #[cfg(test)]
+    impl CurrentSimulationStateWire {
+        fn into_legacy(self) -> LegacySimulationStateV24 {
+            let Self(
+                world,
+                event_log,
+                scheduler,
+                recipe_registry,
+                replay_state,
+                controller_state,
+                rng_state,
+            ) = self;
+            LegacySimulationStateV24(
+                world.into_legacy(),
+                event_log,
+                scheduler,
+                recipe_registry,
+                replay_state,
+                controller_state,
+                rng_state,
+            )
+        }
+    }
+
+    #[cfg(test)]
+    impl CurrentWorldCompatWire {
+        fn into_legacy(self) -> LegacyWorldV24 {
+            let Self(allocator, components, relations, topology) = self;
+            LegacyWorldV24(allocator, components.into_legacy(), relations, topology)
+        }
+    }
+
+    impl LegacyWorldV24 {
+        fn into_current(self) -> Result<World, SaveError> {
+            let Self(allocator, components, relations, topology) = self;
+            let wire = CurrentWorldWire(allocator, components.into_current()?, relations, topology);
+            let bytes = bincode::serialize(&wire)
+                .map_err(|error| SaveError::Serialization(error.to_string()))?;
+            bincode::deserialize(&bytes).map_err(|error| SaveError::Deserialization(error.to_string()))
+        }
+    }
+
+    #[cfg(test)]
+    impl CurrentComponentTablesWire {
+        fn into_legacy(self) -> LegacyComponentTablesV24 {
+            let Self(
+                names,
+                agents,
+                wound_lists,
+                combat_profiles,
+                dead_ats,
+                combat_stances,
+                contention_disposition_profiles,
+                theft_disposition_profiles,
+                justice_disposition_profiles,
+                utility_profiles,
+                commodity_valuation_profiles,
+                route_experiences,
+                source_reliabilities,
+                preference_profiles,
+                patrol_routes,
+                patrol_profiles,
+                office_data,
+                office_force_profile,
+                office_force_state,
+                faction_data,
+                record_data,
+                artifact_headers,
+                bounty_terms,
+                notice_content,
+                blocked_intent_memories,
+                agent_belief_stores,
+                perception_profiles,
+                tell_profiles,
+                communication_profiles,
+                cognitive_profiles,
+                execution_budgets,
+                drive_thresholds,
+                homeostatic_needs,
+                deprivation_exposures,
+                metabolism_profiles,
+                carry_capacities,
+                known_recipes,
+                demand_memories,
+                trade_disposition_profiles,
+                merchandise_profiles,
+                substitute_preferences,
+                contention_policies,
+                contention_queues,
+                workstation_markers,
+                resource_sources,
+                production_output_ownership_policies,
+                bandit_camps,
+                scene_evidences,
+                bandit_faction_policies,
+                production_jobs,
+                in_transit_on_edges,
+                active_goals,
+                contention_intents,
+                intention_frames,
+                intention_disposition_profiles,
+                violation_memories,
+                violation_disposition_profiles,
+                epistemic_disposition_profiles,
+                pursuit_profiles,
+                item_lots,
+                unique_items,
+                containers,
+                sale_listings,
+                stock_storage_policies,
+                stock_assignments,
+            ) = self;
+            let legacy_profiles = cognitive_profiles
+                .iter()
+                .map(|(entity, cognitive)| {
+                    let execution = execution_budgets
+                        .get(entity)
+                        .expect("coexistence-format save requires execution budget for every cognitive profile");
+                    (
+                        *entity,
+                        LegacyCombinedProfileV24 {
+                            max_candidates_to_plan: cognitive.max_candidates_to_plan,
+                            max_plan_depth: cognitive.max_plan_depth,
+                            snapshot_travel_horizon: execution.snapshot_travel_horizon,
+                            max_prerequisite_locations: execution.max_prerequisite_locations,
+                            max_node_expansions: execution.max_node_expansions,
+                            beam_width: execution.beam_width,
+                            switch_margin: cognitive.switch_margin,
+                            transient_block_ticks: cognitive.transient_block_ticks,
+                            unknown_block_ticks: cognitive.unknown_block_ticks,
+                            structural_block_ticks: cognitive.structural_block_ticks,
+                            initial_cooldown_ticks: cognitive.initial_cooldown_ticks,
+                            max_cooldown_ticks: cognitive.max_cooldown_ticks,
+                        },
+                    )
+                })
+                .collect();
+            LegacyComponentTablesV24(
+                names,
+                agents,
+                wound_lists,
+                combat_profiles,
+                dead_ats,
+                combat_stances,
+                contention_disposition_profiles,
+                theft_disposition_profiles,
+                justice_disposition_profiles,
+                utility_profiles,
+                commodity_valuation_profiles,
+                route_experiences,
+                source_reliabilities,
+                preference_profiles,
+                patrol_routes,
+                patrol_profiles,
+                office_data,
+                office_force_profile,
+                office_force_state,
+                faction_data,
+                record_data,
+                artifact_headers,
+                bounty_terms,
+                notice_content,
+                blocked_intent_memories,
+                agent_belief_stores,
+                perception_profiles,
+                tell_profiles,
+                communication_profiles,
+                legacy_profiles,
+                cognitive_profiles,
+                execution_budgets,
+                drive_thresholds,
+                homeostatic_needs,
+                deprivation_exposures,
+                metabolism_profiles,
+                carry_capacities,
+                known_recipes,
+                demand_memories,
+                trade_disposition_profiles,
+                merchandise_profiles,
+                substitute_preferences,
+                contention_policies,
+                contention_queues,
+                workstation_markers,
+                resource_sources,
+                production_output_ownership_policies,
+                bandit_camps,
+                scene_evidences,
+                bandit_faction_policies,
+                production_jobs,
+                in_transit_on_edges,
+                active_goals,
+                contention_intents,
+                intention_frames,
+                intention_disposition_profiles,
+                violation_memories,
+                violation_disposition_profiles,
+                epistemic_disposition_profiles,
+                pursuit_profiles,
+                item_lots,
+                unique_items,
+                containers,
+                sale_listings,
+                stock_storage_policies,
+                stock_assignments,
+            )
+        }
+    }
+
+    impl LegacyComponentTablesV24 {
+        fn into_current(self) -> Result<ComponentTables, SaveError> {
+            let Self(
+                names,
+                agents,
+                wound_lists,
+                combat_profiles,
+                dead_ats,
+                combat_stances,
+                contention_disposition_profiles,
+                theft_disposition_profiles,
+                justice_disposition_profiles,
+                utility_profiles,
+                commodity_valuation_profiles,
+                route_experiences,
+                source_reliabilities,
+                preference_profiles,
+                patrol_routes,
+                patrol_profiles,
+                office_data,
+                office_force_profile,
+                office_force_state,
+                faction_data,
+                record_data,
+                artifact_headers,
+                bounty_terms,
+                notice_content,
+                blocked_intent_memories,
+                agent_belief_stores,
+                perception_profiles,
+                tell_profiles,
+                communication_profiles,
+                _legacy_profiles,
+                cognitive_profiles,
+                execution_budgets,
+                drive_thresholds,
+                homeostatic_needs,
+                deprivation_exposures,
+                metabolism_profiles,
+                carry_capacities,
+                known_recipes,
+                demand_memories,
+                trade_disposition_profiles,
+                merchandise_profiles,
+                substitute_preferences,
+                contention_policies,
+                contention_queues,
+                workstation_markers,
+                resource_sources,
+                production_output_ownership_policies,
+                bandit_camps,
+                scene_evidences,
+                bandit_faction_policies,
+                production_jobs,
+                in_transit_on_edges,
+                active_goals,
+                contention_intents,
+                intention_frames,
+                intention_disposition_profiles,
+                violation_memories,
+                violation_disposition_profiles,
+                epistemic_disposition_profiles,
+                pursuit_profiles,
+                item_lots,
+                unique_items,
+                containers,
+                sale_listings,
+                stock_storage_policies,
+                stock_assignments,
+            ) = self;
+            let wire = CurrentComponentTablesWire(
+                names,
+                agents,
+                wound_lists,
+                combat_profiles,
+                dead_ats,
+                combat_stances,
+                contention_disposition_profiles,
+                theft_disposition_profiles,
+                justice_disposition_profiles,
+                utility_profiles,
+                commodity_valuation_profiles,
+                route_experiences,
+                source_reliabilities,
+                preference_profiles,
+                patrol_routes,
+                patrol_profiles,
+                office_data,
+                office_force_profile,
+                office_force_state,
+                faction_data,
+                record_data,
+                artifact_headers,
+                bounty_terms,
+                notice_content,
+                blocked_intent_memories,
+                agent_belief_stores,
+                perception_profiles,
+                tell_profiles,
+                communication_profiles,
+                cognitive_profiles,
+                execution_budgets,
+                drive_thresholds,
+                homeostatic_needs,
+                deprivation_exposures,
+                metabolism_profiles,
+                carry_capacities,
+                known_recipes,
+                demand_memories,
+                trade_disposition_profiles,
+                merchandise_profiles,
+                substitute_preferences,
+                contention_policies,
+                contention_queues,
+                workstation_markers,
+                resource_sources,
+                production_output_ownership_policies,
+                bandit_camps,
+                scene_evidences,
+                bandit_faction_policies,
+                production_jobs,
+                in_transit_on_edges,
+                active_goals,
+                contention_intents,
+                intention_frames,
+                intention_disposition_profiles,
+                violation_memories,
+                violation_disposition_profiles,
+                epistemic_disposition_profiles,
+                pursuit_profiles,
+                item_lots,
+                unique_items,
+                containers,
+                sale_listings,
+                stock_storage_policies,
+                stock_assignments,
+            );
+            let bytes = bincode::serialize(&wire)
+                .map_err(|error| SaveError::Serialization(error.to_string()))?;
+            bincode::deserialize(&bytes).map_err(|error| SaveError::Deserialization(error.to_string()))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        LEGACY_SAVE_FORMAT_VERSION, SAVE_FORMAT_VERSION, SAVE_MAGIC, SaveError, load,
+        LEGACY_SAVE_FORMAT_VERSION, SAVE_FORMAT_VERSION, SAVE_MAGIC, SaveError, legacy_v24, load,
         load_from_bytes, save, save_to_bytes,
     };
     use crate::{
@@ -205,10 +844,10 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
         ActionDefId, ActionDomain, AgentBeliefStore, BelievedActivity, BelievedEntityState,
-        BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId, EventLog, EventPayload,
-        PendingEvent, PerceptionSource, Quantity, ReservationId, Seed, StateHash, Tick, TickRange,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_prototype_world,
+        BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind, ControlSource, EntityId,
+        EventLog, EventPayload, ExecutionBudget, PendingEvent, PerceptionSource, Quantity,
+        ReservationId, Seed, StateHash, Tick, TickRange, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -581,6 +1220,21 @@ mod tests {
         bytes
     }
 
+    fn set_agent_profiles(
+        state: &mut SimulationState,
+        agent: EntityId,
+        cognitive_profile: CognitiveProfile,
+        execution_budget: ExecutionBudget,
+    ) {
+        let (world, event_log, ..) = state.runtime_parts_mut();
+        let mut txn = new_txn(world, Tick(4), CauseRef::Bootstrap);
+        txn.set_component_cognitive_profile(agent, cognitive_profile)
+            .unwrap();
+        txn.set_component_execution_budget(agent, execution_budget)
+            .unwrap();
+        let _ = txn.commit(event_log);
+    }
+
     struct MockRuntime {
         bytes: Vec<u8>,
     }
@@ -687,6 +1341,44 @@ mod tests {
     }
 
     #[test]
+    fn load_migrates_coexistence_v24_format_to_split_profiles() {
+        let (mut state, actor, _, _) = populated_state();
+        let cognitive_profile = CognitiveProfile {
+            max_candidates_to_plan: 5,
+            max_plan_depth: 11,
+            switch_margin: worldwake_core::Permille::new(210).unwrap(),
+            transient_block_ticks: 17,
+            unknown_block_ticks: 8,
+            structural_block_ticks: 275,
+            initial_cooldown_ticks: 9,
+            max_cooldown_ticks: 120,
+        };
+        let execution_budget = ExecutionBudget {
+            max_node_expansions: 640,
+            beam_width: 13,
+            snapshot_travel_horizon: 8,
+            max_prerequisite_locations: 5,
+        };
+        set_agent_profiles(&mut state, actor, cognitive_profile, execution_budget);
+        let runtime_bytes = [4, 3, 2, 1];
+
+        let (restored, runtime_payload) =
+            load_from_bytes(&legacy_v24::save_bytes(&state, Some(&runtime_bytes)).unwrap())
+                .unwrap();
+
+        assert_eq!(restored, state);
+        assert_eq!(runtime_payload, Some(runtime_bytes.to_vec()));
+        assert_eq!(
+            restored.world().get_component_cognitive_profile(actor),
+            Some(&cognitive_profile)
+        );
+        assert_eq!(
+            restored.world().get_component_execution_budget(actor),
+            Some(&execution_budget)
+        );
+    }
+
+    #[test]
     fn load_rejects_wrong_magic() {
         let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
@@ -716,11 +1408,12 @@ mod tests {
     }
 
     #[test]
-    fn load_rejects_previous_current_version_after_schema_bump() {
+    fn load_rejects_unsupported_intermediate_version_after_schema_bump() {
         let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
+        let unsupported_version = LEGACY_SAVE_FORMAT_VERSION + 1;
         bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
-            .copy_from_slice(&(SAVE_FORMAT_VERSION - 1).to_le_bytes());
+            .copy_from_slice(&unsupported_version.to_le_bytes());
 
         let error = load_from_bytes(&bytes).unwrap_err();
 
@@ -729,7 +1422,7 @@ mod tests {
             SaveError::UnsupportedVersion {
                 found,
                 expected: SAVE_FORMAT_VERSION
-            } if found == SAVE_FORMAT_VERSION - 1
+            } if found == unsupported_version
         ));
     }
 

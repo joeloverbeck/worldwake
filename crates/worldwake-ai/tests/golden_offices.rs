@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 use golden_harness::*;
 use worldwake_ai::{
     DecisionOutcome, GoalKindPlannerExt, GroundedGoal, PlanSearchResult, PlannerOpKind,
-    PlanningState, ReasoningProfile, SelectedPlanSource, apply_hypothetical_transition,
-    build_planning_snapshot, build_semantics_table,
+    PlanningState, SelectedPlanSource, apply_hypothetical_transition, build_planning_snapshot,
+    build_semantics_table,
 };
 use worldwake_core::{
     AgentData, BeliefConfidencePolicy, BlockedIntentMemory, CombatProfile, CommodityKind,
@@ -2523,8 +2523,8 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
         &semantics_table,
         &h.defs,
         &h.handlers,
-        &worldwake_core::CognitiveProfile::from_reasoning_profile(&ReasoningProfile::default()),
-        &worldwake_core::ExecutionBudget::from_reasoning_profile(&ReasoningProfile::default()),
+        &worldwake_core::CognitiveProfile::default(),
+        &worldwake_core::ExecutionBudget::default(),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),

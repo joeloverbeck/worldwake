@@ -1,4 +1,4 @@
-use crate::{Component, Permille, ReasoningProfile};
+use crate::{Component, Permille};
 use serde::{Deserialize, Serialize};
 
 /// Stable per-agent cognitive reasoning parameters used by the AI layer.
@@ -16,22 +16,15 @@ pub struct CognitiveProfile {
 
 impl Default for CognitiveProfile {
     fn default() -> Self {
-        Self::from_reasoning_profile(&ReasoningProfile::default())
-    }
-}
-
-impl CognitiveProfile {
-    #[must_use]
-    pub fn from_reasoning_profile(reasoning: &ReasoningProfile) -> Self {
         Self {
-            max_candidates_to_plan: reasoning.max_candidates_to_plan,
-            max_plan_depth: reasoning.max_plan_depth,
-            switch_margin: reasoning.switch_margin,
-            transient_block_ticks: reasoning.transient_block_ticks,
-            unknown_block_ticks: reasoning.unknown_block_ticks,
-            structural_block_ticks: reasoning.structural_block_ticks,
-            initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
-            max_cooldown_ticks: reasoning.max_cooldown_ticks,
+            max_candidates_to_plan: 2,
+            max_plan_depth: 8,
+            switch_margin: Permille::new_unchecked(100),
+            transient_block_ticks: 20,
+            unknown_block_ticks: 5,
+            structural_block_ticks: 200,
+            initial_cooldown_ticks: 4,
+            max_cooldown_ticks: 64,
         }
     }
 }
@@ -41,9 +34,7 @@ impl Component for CognitiveProfile {}
 #[cfg(test)]
 mod tests {
     use super::CognitiveProfile;
-    use crate::{
-        ControlSource, EntityKind, ReasoningProfile, Tick, Topology, World, traits::Component,
-    };
+    use crate::{ControlSource, EntityKind, Tick, Topology, World, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
@@ -58,18 +49,17 @@ mod tests {
     }
 
     #[test]
-    fn cognitive_profile_default_matches_reasoning_profile_cognitive_fields() {
-        let reasoning = ReasoningProfile::default();
+    fn cognitive_profile_default_matches_split_defaults() {
         let profile = CognitiveProfile::default();
 
-        assert_eq!(profile.max_candidates_to_plan, reasoning.max_candidates_to_plan);
-        assert_eq!(profile.max_plan_depth, reasoning.max_plan_depth);
-        assert_eq!(profile.switch_margin, reasoning.switch_margin);
-        assert_eq!(profile.transient_block_ticks, reasoning.transient_block_ticks);
-        assert_eq!(profile.unknown_block_ticks, reasoning.unknown_block_ticks);
-        assert_eq!(profile.structural_block_ticks, reasoning.structural_block_ticks);
-        assert_eq!(profile.initial_cooldown_ticks, reasoning.initial_cooldown_ticks);
-        assert_eq!(profile.max_cooldown_ticks, reasoning.max_cooldown_ticks);
+        assert_eq!(profile.max_candidates_to_plan, 2);
+        assert_eq!(profile.max_plan_depth, 8);
+        assert_eq!(profile.switch_margin, crate::Permille::new(100).unwrap());
+        assert_eq!(profile.transient_block_ticks, 20);
+        assert_eq!(profile.unknown_block_ticks, 5);
+        assert_eq!(profile.structural_block_ticks, 200);
+        assert_eq!(profile.initial_cooldown_ticks, 4);
+        assert_eq!(profile.max_cooldown_ticks, 64);
     }
 
     #[test]

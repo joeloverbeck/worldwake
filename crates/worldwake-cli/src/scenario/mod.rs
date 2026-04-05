@@ -10,10 +10,10 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    CarryCapacity, CauseRef, CognitiveProfile, ControlSource, DeprivationExposure, EntityId,
-    EntityKind, EventLog, ExecutionBudget, LoadUnits, MerchandiseProfile, PatrolRoute, Place,
-    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-    WorkstationMarker, World, WorldTxn, hash_world,
+    CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
+    LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource, Seed, Tick, Topology,
+    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn,
+    hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -287,14 +287,8 @@ fn spawn_agent(
     txn.set_component_perception_profile(agent_id, perception)?;
     let tell = agent_def.tell_profile.unwrap_or_default();
     txn.set_component_tell_profile(agent_id, tell)?;
-    let reasoning = agent_def.reasoning_profile.clone().unwrap_or_default();
-    let cognitive = agent_def
-        .cognitive_profile
-        .unwrap_or_else(|| CognitiveProfile::from_reasoning_profile(&reasoning));
-    let execution_budget = agent_def
-        .execution_budget
-        .unwrap_or_else(|| ExecutionBudget::from_reasoning_profile(&reasoning));
-    txn.set_component_reasoning_profile(agent_id, reasoning)?;
+    let cognitive = agent_def.cognitive_profile.unwrap_or_default();
+    let execution_budget = agent_def.execution_budget.unwrap_or_default();
     txn.set_component_cognitive_profile(agent_id, cognitive)?;
     txn.set_component_execution_budget(agent_id, execution_budget)?;
     let epistemic = agent_def.epistemic_disposition.clone().unwrap_or_default();
@@ -488,9 +482,8 @@ mod tests {
         ControlSource, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
         HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
         PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PreferenceProfile,
-        PursuitProfile, Quantity, ReasoningProfile, SubstitutePreferences, TellProfile,
-        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
-        WorkstationTag,
+        PursuitProfile, Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+        ThresholdBand, TradeCategory, ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -505,7 +498,6 @@ mod tests {
             trade_disposition: None,
             perception_profile: None,
             tell_profile: None,
-            reasoning_profile: None,
             cognitive_profile: None,
             execution_budget: None,
             epistemic_disposition: None,
@@ -1023,10 +1015,6 @@ mod tests {
         assert_eq!(
             world.get_component_tell_profile(agent),
             Some(&TellProfile::default())
-        );
-        assert_eq!(
-            world.get_component_reasoning_profile(agent),
-            Some(&ReasoningProfile::default())
         );
         assert_eq!(
             world.get_component_cognitive_profile(agent),

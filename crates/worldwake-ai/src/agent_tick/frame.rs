@@ -61,7 +61,7 @@ pub(super) fn progress_op_kinds(domain: &IntentionDomain) -> &'static [PlannerOp
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FrameSwitchMarginSource {
-    ReasoningProfile,
+    CognitiveProfile,
     FrameProfile,
 }
 

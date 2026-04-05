@@ -166,7 +166,7 @@ pub(super) fn goal_switch_margin_details(
 
     (
         cognitive.switch_margin,
-        FrameSwitchMarginSource::ReasoningProfile,
+        FrameSwitchMarginSource::CognitiveProfile,
     )
 }
 

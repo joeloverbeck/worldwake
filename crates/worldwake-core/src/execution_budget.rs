@@ -1,4 +1,4 @@
-use crate::{Component, ReasoningProfile};
+use crate::Component;
 use serde::{Deserialize, Serialize};
 
 /// Stable per-agent execution bounds used to compress planner search.
@@ -12,18 +12,11 @@ pub struct ExecutionBudget {
 
 impl Default for ExecutionBudget {
     fn default() -> Self {
-        Self::from_reasoning_profile(&ReasoningProfile::default())
-    }
-}
-
-impl ExecutionBudget {
-    #[must_use]
-    pub fn from_reasoning_profile(reasoning: &ReasoningProfile) -> Self {
         Self {
-            max_node_expansions: reasoning.max_node_expansions,
-            beam_width: reasoning.beam_width,
-            snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
-            max_prerequisite_locations: reasoning.max_prerequisite_locations,
+            max_node_expansions: 224,
+            beam_width: 8,
+            snapshot_travel_horizon: 6,
+            max_prerequisite_locations: 3,
         }
     }
 }
@@ -33,7 +26,7 @@ impl Component for ExecutionBudget {}
 #[cfg(test)]
 mod tests {
     use super::ExecutionBudget;
-    use crate::{ControlSource, EntityKind, ReasoningProfile, Tick, Topology, World, traits::Component};
+    use crate::{ControlSource, EntityKind, Tick, Topology, World, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
@@ -48,17 +41,13 @@ mod tests {
     }
 
     #[test]
-    fn execution_budget_default_matches_reasoning_profile_engine_fields() {
-        let reasoning = ReasoningProfile::default();
+    fn execution_budget_default_matches_split_defaults() {
         let budget = ExecutionBudget::default();
 
-        assert_eq!(budget.max_node_expansions, reasoning.max_node_expansions);
-        assert_eq!(budget.beam_width, reasoning.beam_width);
-        assert_eq!(budget.snapshot_travel_horizon, reasoning.snapshot_travel_horizon);
-        assert_eq!(
-            budget.max_prerequisite_locations,
-            reasoning.max_prerequisite_locations
-        );
+        assert_eq!(budget.max_node_expansions, 224);
+        assert_eq!(budget.beam_width, 8);
+        assert_eq!(budget.snapshot_travel_horizon, 6);
+        assert_eq!(budget.max_prerequisite_locations, 3);
     }
 
     #[test]

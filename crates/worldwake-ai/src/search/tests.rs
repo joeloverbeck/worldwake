@@ -10,7 +10,7 @@ use crate::shared_collections::SharedVec;
 use crate::{
     CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanSearchResult, PlanTerminalKind,
     PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningEntityRef,
-    PlanningSnapshot, PlanningState, ReasoningProfile, build_planning_snapshot,
+    PlanningSnapshot, PlanningState, ProfileFixture, build_planning_snapshot,
     build_planning_snapshot_with_blocked_facility_uses, build_semantics_table,
 };
 use std::cmp::Ordering;
@@ -21,7 +21,7 @@ use worldwake_core::{
     BelievedBountyTerms, BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockerKey,
     BlockingFact, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CauseRef,
     CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant, ContentionPolicy,
-    ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
+    ContentionQueue, ControlSource, CognitiveProfile, DeadAt, DemandMemory, DemandObservation,
     DemandObservationReason, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
     EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget, HomeostaticNeeds, InTransitOnEdge,
     KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, PerceptionSource,
@@ -39,8 +39,26 @@ use worldwake_sim::{
 };
 use worldwake_systems::build_full_action_registries;
 
-fn execution_budget(reasoning: &ReasoningProfile) -> ExecutionBudget {
-    ExecutionBudget::from_reasoning_profile(reasoning)
+fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
+    CognitiveProfile {
+        max_candidates_to_plan: reasoning.max_candidates_to_plan,
+        max_plan_depth: reasoning.max_plan_depth,
+        switch_margin: reasoning.switch_margin,
+        transient_block_ticks: reasoning.transient_block_ticks,
+        unknown_block_ticks: reasoning.unknown_block_ticks,
+        structural_block_ticks: reasoning.structural_block_ticks,
+        initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
+        max_cooldown_ticks: reasoning.max_cooldown_ticks,
+    }
+}
+
+fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
+    ExecutionBudget {
+        max_node_expansions: reasoning.max_node_expansions,
+        beam_width: reasoning.beam_width,
+        snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
+        max_prerequisite_locations: reasoning.max_prerequisite_locations,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -50,7 +68,7 @@ fn search_plan(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &worldwake_sim::ActionHandlerRegistry,
-    reasoning: &ReasoningProfile,
+    reasoning: &ProfileFixture,
     recipes: &RecipeRegistry,
     blocked: &BlockedIntentMemory,
     current_tick: Tick,
@@ -63,7 +81,7 @@ fn search_plan(
         semantics_table,
         registry,
         handlers,
-        &worldwake_core::CognitiveProfile::from_reasoning_profile(reasoning),
+        &cognitive(reasoning),
         &execution_budget(reasoning),
         recipes,
         blocked,
@@ -80,7 +98,7 @@ fn build_successor<'snapshot>(
     node: &SearchNode<'snapshot>,
     candidate: &SearchCandidate,
     recipes: &RecipeRegistry,
-    reasoning: &ReasoningProfile,
+    reasoning: &ProfileFixture,
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
     super::build_successor(
         goal,
@@ -97,7 +115,7 @@ fn combined_relevant_places(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
-    reasoning: &ReasoningProfile,
+    reasoning: &ProfileFixture,
 ) -> super::heuristic::CombinedRelevantPlaces {
     super::combined_relevant_places(goal, state, recipes, &execution_budget(reasoning))
 }
@@ -106,7 +124,7 @@ fn root_node<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
     goal: &GroundedGoal,
     recipes: &RecipeRegistry,
-    reasoning: &ReasoningProfile,
+    reasoning: &ProfileFixture,
 ) -> SearchNode<'snapshot> {
     super::root_node(snapshot, goal, recipes, &execution_budget(reasoning))
 }
@@ -850,7 +868,7 @@ fn search_returns_one_step_consume_plan_for_local_food() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -962,7 +980,7 @@ fn search_returns_travel_then_consume_for_adjacent_food() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -1011,7 +1029,7 @@ fn search_returns_none_when_only_wrong_local_consumable_is_controllable() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -1094,7 +1112,7 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -1195,7 +1213,7 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -1284,7 +1302,7 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -1336,9 +1354,9 @@ fn search_respects_plan_depth_budget() {
     view.thresholds.insert(actor, DriveThresholds::default());
     let (registry, handlers) = build_registry();
     let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
-    let budget = ReasoningProfile {
+    let budget = ProfileFixture {
         max_plan_depth: 1,
-        ..ReasoningProfile::default()
+        ..ProfileFixture::default()
     };
     let plan = search_plan(
         &snapshot,
@@ -1390,9 +1408,9 @@ fn search_returns_none_when_node_expansion_budget_is_exhausted() {
     view.thresholds.insert(actor, DriveThresholds::default());
     let (registry, handlers) = build_registry();
     let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
-    let budget = ReasoningProfile {
+    let budget = ProfileFixture {
         max_node_expansions: 0,
-        ..ReasoningProfile::default()
+        ..ProfileFixture::default()
     };
     let plan = search_plan(
         &snapshot,
@@ -1447,9 +1465,9 @@ fn search_beam_width_1_prunes_viable_slower_branch() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile {
+        &ProfileFixture {
             beam_width: 1,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
@@ -1463,9 +1481,9 @@ fn search_beam_width_1_prunes_viable_slower_branch() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile {
+        &ProfileFixture {
             beam_width: 2,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
@@ -1531,9 +1549,9 @@ fn search_beam_width_widening_keeps_more_successors() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile {
+        &ProfileFixture {
             beam_width: 2,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
@@ -1547,9 +1565,9 @@ fn search_beam_width_widening_keeps_more_successors() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile {
+        &ProfileFixture {
             beam_width: 3,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
@@ -1613,10 +1631,10 @@ fn search_returns_none_when_large_beam_still_exhausts_node_budget() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile {
+        &ProfileFixture {
             beam_width: 3,
             max_node_expansions: 2,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
@@ -1630,10 +1648,10 @@ fn search_returns_none_when_large_beam_still_exhausts_node_budget() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile {
+        &ProfileFixture {
             beam_width: 3,
             max_node_expansions: 6,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
@@ -1677,9 +1695,9 @@ fn search_returns_none_when_plan_depth_is_zero() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile {
+        &ProfileFixture {
             max_plan_depth: 0,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
@@ -1750,7 +1768,7 @@ fn search_rejects_branch_when_duration_estimation_fails() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -1810,7 +1828,7 @@ fn search_returns_pick_up_goal_satisfaction_for_local_unpossessed_food_lot() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -1865,7 +1883,7 @@ fn search_returns_pick_up_goal_satisfaction_for_local_commodity_lot() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -1929,7 +1947,7 @@ fn search_returns_partial_pick_up_goal_satisfaction_for_local_food_lot() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -2023,7 +2041,7 @@ fn cargo_search_finds_pickup_then_travel_plan() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -2119,7 +2137,7 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -2232,7 +2250,7 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -2334,7 +2352,7 @@ fn sell_search_for_stored_home_stock_requires_stage_before_goal_satisfaction() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -2501,7 +2519,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         &node,
         pick_up,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     )
     .unwrap();
     assert_eq!(terminal, None);
@@ -2544,7 +2562,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         &after_pick_up,
         travel,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     )
     .unwrap();
 
@@ -2594,7 +2612,7 @@ fn search_uses_hypothetical_movement_to_reduce_local_danger() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -2649,7 +2667,7 @@ fn search_marks_leaf_combat_as_combat_commitment() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -2722,7 +2740,7 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
         &node,
         &candidate,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     )
     .unwrap();
 
@@ -2790,7 +2808,7 @@ fn build_successor_preserves_parent_steps_when_appending_child_step() {
         &node,
         &candidate,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     )
     .expect("defend successor should append a child step without mutating the parent");
 
@@ -2875,7 +2893,7 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
         &node,
         &candidate,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     )
     .expect("steal successor should estimate duration from the preserved theft profile");
 
@@ -2911,7 +2929,7 @@ fn build_successor_uses_transition_metadata_for_partial_pickup() {
         &node,
         &candidate,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     )
     .unwrap();
 
@@ -2947,7 +2965,7 @@ fn search_adds_put_down_candidate_for_directly_possessed_hypothetical_lot() {
         &node,
         &candidate,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     )
     .unwrap();
 
@@ -3038,7 +3056,7 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
         actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
 
     let plan = search_plan(
@@ -3047,7 +3065,7 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
         &semantics,
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -3274,7 +3292,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
         short_route_fixture.actor,
         &short_route_goal.evidence_entities,
         &short_route_goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
     let short_route_plan = search_plan(
         &short_route_snapshot,
@@ -3282,7 +3300,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
         &semantics,
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(1),
@@ -3317,7 +3335,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
         safe_route_fixture.actor,
         &safe_route_goal.evidence_entities,
         &safe_route_goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
     let safe_route_plan = search_plan(
         &safe_route_snapshot,
@@ -3325,7 +3343,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
         &semantics,
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(1),
@@ -3657,7 +3675,7 @@ fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
 
     let plan = search_plan(
@@ -3666,7 +3684,7 @@ fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
         &fixture.semantics,
         &fixture.registry,
         &fixture.handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -3711,7 +3729,7 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
 
     let plan = search_plan(
@@ -3720,7 +3738,7 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
         &fixture.semantics,
         &fixture.registry,
         &fixture.handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -3768,7 +3786,7 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
     let queue_def = fixture
         .registry
@@ -3784,7 +3802,7 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
             &snapshot,
             &goal,
             &RecipeRegistry::new(),
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
         ),
         &fixture.semantics,
         &fixture.registry,
@@ -3833,7 +3851,7 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
         &blocked,
         Tick(3),
     );
@@ -3851,7 +3869,7 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
             &snapshot,
             &goal,
             &RecipeRegistry::new(),
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
         ),
         &fixture.semantics,
         &fixture.registry,
@@ -3900,7 +3918,7 @@ fn search_trace_records_blocked_facility_use_root_filter() {
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
         &blocked,
         Tick(3),
     );
@@ -3918,7 +3936,7 @@ fn search_trace_records_blocked_facility_use_root_filter() {
         &fixture.semantics,
         &fixture.registry,
         &fixture.handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -4024,7 +4042,7 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
         &blocked,
         Tick(3),
     );
@@ -4035,7 +4053,7 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         &fixture.semantics,
         &fixture.registry,
         &fixture.handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -4074,7 +4092,7 @@ fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
     let state = PlanningState::new(&snapshot);
     let queue_affordance = Affordance {
@@ -4151,7 +4169,7 @@ fn corpse_loot_goal_searches_queue_step_before_loot_when_corpse_is_contention_ma
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
 
     let plan = search_plan(
@@ -4160,7 +4178,7 @@ fn corpse_loot_goal_searches_queue_step_before_loot_when_corpse_is_contention_ma
         &build_semantics_table(&fixture.registry),
         &fixture.registry,
         &fixture.handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -4192,7 +4210,7 @@ fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
     let state = PlanningState::new(&snapshot);
     let queue_affordance = Affordance {
@@ -4270,7 +4288,7 @@ fn corpse_bury_goal_searches_queue_step_before_bury_when_corpse_is_contention_ma
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
 
     let plan = search_plan(
@@ -4279,7 +4297,7 @@ fn corpse_bury_goal_searches_queue_step_before_bury_when_corpse_is_contention_ma
         &build_semantics_table(&fixture.registry),
         &fixture.registry,
         &fixture.handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -4310,7 +4328,7 @@ fn care_queue_affordance_expands_to_heal_and_filters_direct_heal_without_grant()
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
     let state = PlanningState::new(&snapshot);
     let queue_affordance = Affordance {
@@ -4411,7 +4429,7 @@ fn care_queue_affordance_does_not_expand_when_actor_cannot_currently_heal() {
         fixture.actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
     let state = PlanningState::new(&snapshot);
     let queue_affordance = Affordance {
@@ -4550,7 +4568,7 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         actor,
         &goal.evidence_entities,
         &goal.evidence_places,
-        ReasoningProfile::default().snapshot_travel_horizon,
+        ProfileFixture::default().snapshot_travel_horizon,
     );
     let state = PlanningState::new(&snapshot);
     let affordance = Affordance {
@@ -4968,7 +4986,7 @@ fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(10),
@@ -5186,7 +5204,7 @@ fn search_uses_shorter_route_when_no_danger_beliefs_exist() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(10),
@@ -5734,7 +5752,7 @@ fn combined_places_include_remote_medicine_lot_for_treat_wounds() {
         &goal,
         &state,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     );
 
     assert!(places.places.contains(&patient_place));
@@ -5799,7 +5817,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
         &node,
         &pick_up,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     )
     .expect("hypothetical pick_up should build a successor");
 
@@ -5807,7 +5825,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
         &goal,
         &successor.state,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     );
 
     assert_eq!(places.places, vec![patient_place]);
@@ -5836,7 +5854,7 @@ fn prune_travel_retains_remote_medicine_branch_for_treat_wounds() {
         &goal,
         &state,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     );
 
     let travel_patient_id = ActionDefId(500);
@@ -5895,7 +5913,7 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
         &snapshot,
         &goal,
         &RecipeRegistry::new(),
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
     );
 
     let rel_defs = relevant_action_defs(&goal, &semantics);
@@ -5969,7 +5987,7 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::StealItem { target_item }),
@@ -6036,7 +6054,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let accuse_goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Accuse {
@@ -6189,7 +6207,7 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
         key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
@@ -6355,7 +6373,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -6467,7 +6485,7 @@ fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_dea
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
         key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
@@ -6599,7 +6617,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
         key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
@@ -6732,7 +6750,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
         key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
@@ -6815,7 +6833,7 @@ fn test_binding_two_corpses_same_place() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -6899,7 +6917,7 @@ fn test_binding_two_hostiles_same_place() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -6975,7 +6993,7 @@ fn test_binding_flexible_goal_unaffected() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7037,7 +7055,7 @@ fn test_binding_rejection_trace_populated() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7147,7 +7165,7 @@ fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7243,7 +7261,7 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7336,9 +7354,9 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
 
     // Tight budget: only 2 expansions.  Expansion 1 finds the Trade
     // ProgressBarrier (deferred).  Expansion 2 exhausts the budget.
-    let tight_budget = ReasoningProfile {
+    let tight_budget = ProfileFixture {
         max_node_expansions: 2,
-        ..ReasoningProfile::default()
+        ..ProfileFixture::default()
     };
     let result = search_plan(
         &snapshot,
@@ -7455,7 +7473,7 @@ fn search_expansion_summaries_collected_when_tracing_enabled() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7504,7 +7522,7 @@ fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds()
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7566,7 +7584,7 @@ fn search_expansion_summaries_empty_when_tracing_disabled() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7618,9 +7636,9 @@ fn beam_truncation_visible_in_expansion_summary() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile {
+        &ProfileFixture {
             beam_width: 1,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
@@ -7747,7 +7765,7 @@ fn search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belie
         &semantics,
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7839,7 +7857,7 @@ fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_cer
         &semantics,
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7917,7 +7935,7 @@ fn planned_plan_carries_searched_opportunity_key() {
         &semantics,
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -7989,7 +8007,7 @@ fn search_trace_records_force_claim_root_candidate_outcomes() {
         &semantics,
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -8069,7 +8087,7 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -8144,7 +8162,7 @@ fn fulfill_post_notice_search_finds_travel_then_post_notice_progress_barrier() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -8237,7 +8255,7 @@ fn fulfill_post_bounty_search_finds_travel_then_post_bounty_progress_barrier() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -8320,7 +8338,7 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -8404,7 +8422,7 @@ fn search_trace_records_ask_witness_omission_when_no_stale_epistemic_subjects_ex
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(50),
@@ -8487,7 +8505,7 @@ fn search_trace_records_ask_witness_omission_when_no_witness_affordance_exists()
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(50),
@@ -8571,7 +8589,7 @@ fn search_trace_omits_trade_root_candidate_without_trade_disposition_profile() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -8633,7 +8651,7 @@ fn place_scoped_blocker_prunes_candidate_at_blocked_place() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -8665,7 +8683,7 @@ fn place_scoped_blocker_prunes_candidate_at_blocked_place() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &blocked,
         Tick(1),
@@ -8731,7 +8749,7 @@ fn place_scoped_blocker_does_not_prune_candidate_at_different_place() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &blocked,
         Tick(1),
@@ -8791,7 +8809,7 @@ fn travel_action_uses_destination_as_place_for_blocker_check() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -8823,7 +8841,7 @@ fn travel_action_uses_destination_as_place_for_blocker_check() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &blocked,
         Tick(1),
@@ -8888,7 +8906,7 @@ fn candidate_pruned_by_blocker_records_place_blocker_trace() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &blocked,
         Tick(1),
@@ -9011,7 +9029,7 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(10),
@@ -9112,7 +9130,7 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
         &build_semantics_table(&registry),
         &registry,
         &handlers,
-        &ReasoningProfile::default(),
+        &ProfileFixture::default(),
         &RecipeRegistry::new(),
         &BlockedIntentMemory::default(),
         Tick(10),

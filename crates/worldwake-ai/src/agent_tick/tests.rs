@@ -13,7 +13,7 @@ use super::{
     handle_recoverable_travel_step_blockage, persist_blocked_memory,
     plan_and_validate_next_step_traced, update_frame_for_adopted_plan,
 };
-use crate::ReasoningProfile;
+use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
@@ -88,12 +88,26 @@ fn patrol_profile(base_dwell_ticks: u32, vigilance: u16, motive: u16) -> PatrolP
     }
 }
 
-fn cognitive(reasoning: &ReasoningProfile) -> CognitiveProfile {
-    CognitiveProfile::from_reasoning_profile(reasoning)
+fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
+    CognitiveProfile {
+        max_candidates_to_plan: reasoning.max_candidates_to_plan,
+        max_plan_depth: reasoning.max_plan_depth,
+        switch_margin: reasoning.switch_margin,
+        transient_block_ticks: reasoning.transient_block_ticks,
+        unknown_block_ticks: reasoning.unknown_block_ticks,
+        structural_block_ticks: reasoning.structural_block_ticks,
+        initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
+        max_cooldown_ticks: reasoning.max_cooldown_ticks,
+    }
 }
 
-fn execution_budget(reasoning: &ReasoningProfile) -> ExecutionBudget {
-    ExecutionBudget::from_reasoning_profile(reasoning)
+fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
+    ExecutionBudget {
+        max_node_expansions: reasoning.max_node_expansions,
+        beam_width: reasoning.beam_width,
+        snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
+        max_prerequisite_locations: reasoning.max_prerequisite_locations,
+    }
 }
 
 impl Harness {
@@ -194,10 +208,12 @@ impl Harness {
         self.driver.runtime_by_agent.get(&self.actor)
     }
 
-    fn set_reasoning_profile(&mut self, agent: EntityId, reasoning: ReasoningProfile) {
+    fn set_profile_fixture(&mut self, agent: EntityId, profile: ProfileFixture) {
         let mut txn = new_txn(&mut self.world, 0);
-        txn.set_component_reasoning_profile(agent, reasoning)
-            .expect("test harness should keep reasoning profiles writable");
+        txn.set_component_cognitive_profile(agent, cognitive(&profile))
+            .expect("test harness should keep cognitive profiles writable");
+        txn.set_component_execution_budget(agent, execution_budget(&profile))
+            .expect("test harness should keep execution budgets writable");
         commit_txn(txn);
     }
 }
@@ -802,11 +818,11 @@ fn cargo_harness(possessed: bool) -> (Harness, EntityId, EntityId, EntityId) {
         driver: AgentTickDriver::new(),
         actor: actor.0,
     };
-    harness.set_reasoning_profile(
+    harness.set_profile_fixture(
         actor.0,
-        ReasoningProfile {
+        ProfileFixture {
             max_plan_depth: 3,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
     );
 
@@ -1156,8 +1172,8 @@ fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick,
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     )
@@ -1712,7 +1728,7 @@ fn effective_goal_switch_margin_uses_route_margin_for_any_intention_frame() {
         commit_txn(txn);
         actor
     };
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let view = PerAgentBeliefView::from_world(actor, &world);
     let jc_active = Some(IntentionFrame {
         goal: GoalKey::from(GoalKind::Sleep),
@@ -1759,7 +1775,7 @@ fn effective_goal_switch_margin_panics_when_committed_agent_lacks_intention_prof
             .unwrap();
         commit_txn(txn);
     }
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let view = PerAgentBeliefView::from_world(actor, &world);
     let jc_active = Some(IntentionFrame {
         goal: GoalKey::from(GoalKind::Sleep),
@@ -1808,8 +1824,8 @@ fn grant_arrival_marks_runtime_dirty_from_facility_access_snapshot() {
             recipe_registry: &harness.recipes,
             utility: &UtilityProfile::default(),
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -1845,7 +1861,7 @@ fn abandon_expired_facility_queues_removes_actor_from_authoritative_queue() {
             harness.actor,
             Tick(4),
             NonZeroU32::new(3).unwrap(),
-            ReasoningProfile::default().structural_block_ticks,
+            ProfileFixture::default().structural_block_ticks,
         )
         .unwrap()
     );
@@ -1899,7 +1915,7 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
             harness.actor,
             Tick(4),
             NonZeroU32::new(3).unwrap(),
-            ReasoningProfile::default().structural_block_ticks,
+            ProfileFixture::default().structural_block_ticks,
         )
         .unwrap()
     );
@@ -1990,8 +2006,8 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
             recipe_registry: &harness.recipes,
             utility: &UtilityProfile::default(),
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -2016,12 +2032,12 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         harness.actor,
         std::slice::from_ref(&goal),
         &blocked,
-        ReasoningProfile::default().switch_margin,
-        ReasoningProfile::default().switch_margin,
+        ProfileFixture::default().switch_margin,
+        ProfileFixture::default().switch_margin,
         UtilityProfile::default().side_benefit_weight,
         Tick(2),
-        &cognitive(&ReasoningProfile::default()),
-        &execution_budget(&ReasoningProfile::default()),
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
         &semantics,
         &harness.defs,
         &harness.handlers,
@@ -2091,8 +2107,8 @@ fn same_place_queue_invalidation_records_exclusive_facility_blocker() {
             recipe_registry: &harness.recipes,
             utility: &UtilityProfile::default(),
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -2169,8 +2185,8 @@ fn grant_loss_does_not_record_hard_blocker() {
             recipe_registry: &harness.recipes,
             utility: &UtilityProfile::default(),
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -2278,7 +2294,7 @@ fn frame_snapshot_reports_budget_margin_when_no_profile_override_applies() {
         commit_txn(txn);
         actor
     };
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let mut driver = AgentTickDriver::new();
     driver.runtime_by_agent.insert(
         actor,
@@ -2297,7 +2313,7 @@ fn frame_snapshot_reports_budget_margin_when_no_profile_override_applies() {
 
     assert_eq!(
         snapshot.switch_margin_source,
-        FrameSwitchMarginSource::ReasoningProfile
+        FrameSwitchMarginSource::CognitiveProfile
     );
     assert_eq!(snapshot.effective_switch_margin, budget.switch_margin);
     assert_eq!(snapshot.runtime.committed_destination, None);
@@ -2581,7 +2597,7 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
         actor,
         &step,
         Tick(9),
-        &cognitive(&ReasoningProfile::default()),
+        &cognitive(&ProfileFixture::default()),
     );
     assert!(handled);
     let updated_jc = updated_jc.expect("commitment should persist with incremented blocked ticks");
@@ -2649,7 +2665,7 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
         ..crate::AgentDecisionRuntime::default()
     };
     let mut blocked_memory = BlockedIntentMemory::default();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
 
     let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
         &view,
@@ -3176,9 +3192,9 @@ fn goal_stability_across_cargo_materialization_continuity() {
         commodity: CommodityKind::Bread,
         destination: destination_facility,
     });
-    let budget = ReasoningProfile {
+    let budget = ProfileFixture {
         max_plan_depth: 4,
-        ..ReasoningProfile::default()
+        ..ProfileFixture::default()
     };
     let semantics = crate::build_semantics_table(&harness.defs);
     let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
@@ -3505,8 +3521,8 @@ fn irrelevant_commodity_change_does_not_trigger_replan_for_sleep_goal() {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -3562,8 +3578,8 @@ fn relevant_commodity_change_triggers_replan_for_consume_goal() {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -3600,8 +3616,8 @@ fn no_plan_always_marks_runtime_dirty() {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick: Tick(1),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -3662,8 +3678,8 @@ fn patrol_route_change_marks_runtime_dirty() {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -4675,7 +4691,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         .get_component_utility_profile(harness.actor)
         .cloned()
         .unwrap_or_default();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let semantics = build_semantics_table(&harness.defs);
     let runtime = harness
         .driver
@@ -5725,7 +5741,7 @@ fn check_patience_exhaustion_creates_blocked_intent() {
     };
     let mut blocked_memory = BlockedIntentMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
 
     let exhausted = check_patience_exhaustion(
         &frame,
@@ -5875,7 +5891,7 @@ fn assumption_failure_creates_blocked_intent() {
         patience_limit: 30,
     };
     let mut blocked_memory = BlockedIntentMemory::default();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
 
     record_assumption_failure_blocked_intent(
         &frame,

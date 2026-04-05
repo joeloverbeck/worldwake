@@ -833,7 +833,7 @@ mod tests {
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
-        PlannerOpKind, PlanningEntityRef, ReasoningProfile,
+        PlannerOpKind, PlanningEntityRef, ProfileFixture,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1099,8 +1099,17 @@ mod tests {
         }
     }
 
-    fn cognitive(reasoning: &ReasoningProfile) -> CognitiveProfile {
-        CognitiveProfile::from_reasoning_profile(reasoning)
+    fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
+        CognitiveProfile {
+            max_candidates_to_plan: reasoning.max_candidates_to_plan,
+            max_plan_depth: reasoning.max_plan_depth,
+            switch_margin: reasoning.switch_margin,
+            transient_block_ticks: reasoning.transient_block_ticks,
+            unknown_block_ticks: reasoning.unknown_block_ticks,
+            structural_block_ticks: reasoning.structural_block_ticks,
+            initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
+            max_cooldown_ticks: reasoning.max_cooldown_ticks,
+        }
     }
 
     fn entity(slot: u32) -> EntityId {
@@ -1299,7 +1308,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
-            &cognitive(&ReasoningProfile::default()),
+            &cognitive(&ProfileFixture::default()),
         );
 
         assert_eq!(runtime.current_plan, None);
@@ -1313,7 +1322,7 @@ mod tests {
         assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(1)));
         assert_eq!(
             intent.expires_tick,
-            Tick(20 + u64::from(ReasoningProfile::default().transient_block_ticks))
+            Tick(20 + u64::from(ProfileFixture::default().transient_block_ticks))
         );
     }
 
@@ -1552,7 +1561,7 @@ mod tests {
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
         let mut blocked = BlockedIntentMemory::default();
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
 
         handle_plan_failure(
             &PlanFailureContext {
@@ -1638,7 +1647,7 @@ mod tests {
 
     #[test]
     fn blocking_fact_ttl_uses_budget_classification() {
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
 
         assert_eq!(
             blocking_fact_ttl(BlockingFact::SellerOutOfStock, &cognitive(&budget)),
@@ -1656,7 +1665,7 @@ mod tests {
 
     #[test]
     fn unknown_blocker_uses_dedicated_ttl() {
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
         let ttl = blocking_fact_ttl(BlockingFact::Unknown, &cognitive(&budget));
         assert_eq!(ttl, 5);
         assert_ne!(ttl, budget.transient_block_ticks);
@@ -1664,7 +1673,7 @@ mod tests {
 
     #[test]
     fn transient_blockers_unchanged_ttl() {
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
         let transient_facts = [
             BlockingFact::SellerOutOfStock,
             BlockingFact::WorkstationBusy,
@@ -1703,7 +1712,7 @@ mod tests {
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
         let mut blocked = BlockedIntentMemory::default();
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
 
         handle_plan_failure(
             &PlanFailureContext {

@@ -33,7 +33,6 @@ use crate::{
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
     },
     pursuit::PursuitProfile,
-    reasoning_profile::ReasoningProfile,
     social_artifact::{ArtifactHeader, BountyTerms, NoticeContent},
     trade::{
         DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy,

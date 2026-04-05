@@ -2119,7 +2119,7 @@ mod tests {
     };
     use crate::{
         CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics,
-        PlannerTransitionKind, PlanningState, ReasoningProfile, build_planning_snapshot,
+        PlannerTransitionKind, PlanningState, ProfileFixture, build_planning_snapshot,
         build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     };
@@ -2132,8 +2132,9 @@ mod tests {
         ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState, AskWitnessMemory,
         AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
-        BountyTerms, CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
-        DemandObservationReason, DriveThresholds, EntityId, EntityKind, ExecutionBudget,
+        BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        ExecutionBudget,
         EpistemicDispositionProfile, EpistemicSubject, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
         MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille, ProofRequirement,
@@ -2155,8 +2156,26 @@ mod tests {
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
-    fn execution_budget(reasoning: &ReasoningProfile) -> ExecutionBudget {
-        ExecutionBudget::from_reasoning_profile(reasoning)
+    fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
+        CognitiveProfile {
+            max_candidates_to_plan: reasoning.max_candidates_to_plan,
+            max_plan_depth: reasoning.max_plan_depth,
+            switch_margin: reasoning.switch_margin,
+            transient_block_ticks: reasoning.transient_block_ticks,
+            unknown_block_ticks: reasoning.unknown_block_ticks,
+            structural_block_ticks: reasoning.structural_block_ticks,
+            initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
+            max_cooldown_ticks: reasoning.max_cooldown_ticks,
+        }
+    }
+
+    fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
+        ExecutionBudget {
+            max_node_expansions: reasoning.max_node_expansions,
+            beam_width: reasoning.beam_width,
+            snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
+            max_prerequisite_locations: reasoning.max_prerequisite_locations,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2166,7 +2185,7 @@ mod tests {
         semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
         registry: &ActionDefRegistry,
         handlers: &worldwake_sim::ActionHandlerRegistry,
-        reasoning: &ReasoningProfile,
+        reasoning: &ProfileFixture,
         recipes: &RecipeRegistry,
         blocked: &BlockedIntentMemory,
         current_tick: Tick,
@@ -2179,7 +2198,7 @@ mod tests {
             semantics_table,
             registry,
             handlers,
-            &worldwake_core::CognitiveProfile::from_reasoning_profile(reasoning),
+            &cognitive(reasoning),
             &execution_budget(reasoning),
             recipes,
             blocked,
@@ -4999,7 +5018,7 @@ mod tests {
             GoalKind::ClaimOffice { office }.prerequisite_places(
                 &state,
                 &RecipeRegistry::new(),
-                &execution_budget(&ReasoningProfile::default())
+                &execution_budget(&ProfileFixture::default())
             ),
             vec![archive]
         );
@@ -5659,7 +5678,7 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
         let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ReasoningProfile::default()));
+            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ProfileFixture::default()));
 
         assert_eq!(places, vec![place_b]);
     }
@@ -5688,7 +5707,7 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
         let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ReasoningProfile::default()));
+            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ProfileFixture::default()));
 
         assert!(places.is_empty());
     }
@@ -5745,7 +5764,7 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
         let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ReasoningProfile::default()));
+            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ProfileFixture::default()));
 
         assert_eq!(places, vec![place_b]);
     }
@@ -5788,7 +5807,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default())),
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default())),
             vec![place_b]
         );
     }
@@ -5817,7 +5836,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default()))
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default()))
                 .is_empty()
         );
     }
@@ -5864,7 +5883,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default())),
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default())),
             vec![place_b]
         );
     }
@@ -5910,7 +5929,7 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default())),
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default())),
             vec![place_c]
         );
     }
@@ -5955,7 +5974,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default())),
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default())),
             vec![place_b]
         );
     }
@@ -6000,7 +6019,7 @@ mod tests {
         };
 
         assert!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default()))
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default()))
                 .is_empty()
         );
     }
@@ -6031,7 +6050,7 @@ mod tests {
         };
 
         assert!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ReasoningProfile::default()))
+            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default()))
                 .is_empty()
         );
     }
@@ -6126,7 +6145,7 @@ mod tests {
         let (view, actor, _place_a, place_b, _place_c) = spatial_view();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
         let recipes = RecipeRegistry::new();
 
         let goals: Vec<GoalKind> = vec![
@@ -7321,7 +7340,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -7404,7 +7423,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -7481,7 +7500,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -7534,7 +7553,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -7625,7 +7644,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(5),
@@ -7712,7 +7731,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(0),
@@ -7794,7 +7813,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(0),
@@ -7880,7 +7899,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(0),
@@ -7979,7 +7998,7 @@ mod tests {
             &build_semantics_table(&registry),
             &registry,
             &handlers,
-            &ReasoningProfile::default(),
+            &ProfileFixture::default(),
             &RecipeRegistry::new(),
             &BlockedIntentMemory::default(),
             Tick(0),

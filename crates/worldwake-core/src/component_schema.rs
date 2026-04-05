@@ -730,31 +730,6 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
-                reasoning_profiles,
-                ReasoningProfile,
-                insert_reasoning_profile,
-                get_reasoning_profile,
-                get_reasoning_profile_mut,
-                remove_reasoning_profile,
-                has_reasoning_profile,
-                iter_reasoning_profiles,
-                insert_component_reasoning_profile,
-                get_component_reasoning_profile,
-                get_component_reasoning_profile_mut,
-                remove_component_reasoning_profile,
-                has_component_reasoning_profile,
-                entities_with_reasoning_profile,
-                query_reasoning_profile,
-                count_with_reasoning_profile,
-                "ReasoningProfile",
-                |kind| kind == EntityKind::Agent,
-                ReasoningProfile,
-                crate::ReasoningProfile,
-                set_component_reasoning_profile,
-                clear_component_reasoning_profile,
-                txn_simple_set
-            }
-            {
                 cognitive_profiles,
                 CognitiveProfile,
                 insert_cognitive_profile,

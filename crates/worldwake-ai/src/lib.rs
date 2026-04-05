@@ -108,8 +108,45 @@ pub use search::{PlanSearchResult, search_plan};
 pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};
 pub use worldwake_core::{
     CognitiveProfile, CommodityPurpose, ExecutionBudget, GoalKey, GoalKind, OpportunityAnchor,
-    OpportunityKey, ReasoningProfile,
+    OpportunityKey,
 };
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProfileFixture {
+    pub max_candidates_to_plan: u8,
+    pub max_plan_depth: u8,
+    pub snapshot_travel_horizon: u8,
+    pub max_prerequisite_locations: u8,
+    pub max_node_expansions: u16,
+    pub beam_width: u8,
+    pub switch_margin: worldwake_core::Permille,
+    pub transient_block_ticks: u32,
+    pub unknown_block_ticks: u32,
+    pub structural_block_ticks: u32,
+    pub initial_cooldown_ticks: u32,
+    pub max_cooldown_ticks: u32,
+}
+
+#[cfg(test)]
+impl Default for ProfileFixture {
+    fn default() -> Self {
+        Self {
+            max_candidates_to_plan: 2,
+            max_plan_depth: 8,
+            snapshot_travel_horizon: 6,
+            max_prerequisite_locations: 3,
+            max_node_expansions: 224,
+            beam_width: 8,
+            switch_margin: worldwake_core::Permille::new_unchecked(100),
+            transient_block_ticks: 20,
+            unknown_block_ticks: 5,
+            structural_block_ticks: 200,
+            initial_cooldown_ticks: 4,
+            max_cooldown_ticks: 64,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

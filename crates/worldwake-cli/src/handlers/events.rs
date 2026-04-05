@@ -275,7 +275,6 @@ mod tests {
                 trade_disposition: None,
                 perception_profile: None,
                 tell_profile: None,
-                reasoning_profile: None,
                 cognitive_profile: None,
                 execution_budget: None,
                 epistemic_disposition: None,

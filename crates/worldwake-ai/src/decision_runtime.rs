@@ -277,7 +277,7 @@ mod tests {
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
         GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        ReasoningProfile,
+        ProfileFixture,
     };
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;
@@ -339,8 +339,17 @@ mod tests {
         }
     }
 
-    fn cognitive(reasoning: &ReasoningProfile) -> CognitiveProfile {
-        CognitiveProfile::from_reasoning_profile(reasoning)
+    fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
+        CognitiveProfile {
+            max_candidates_to_plan: reasoning.max_candidates_to_plan,
+            max_plan_depth: reasoning.max_plan_depth,
+            switch_margin: reasoning.switch_margin,
+            transient_block_ticks: reasoning.transient_block_ticks,
+            unknown_block_ticks: reasoning.unknown_block_ticks,
+            structural_block_ticks: reasoning.structural_block_ticks,
+            initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
+            max_cooldown_ticks: reasoning.max_cooldown_ticks,
+        }
     }
 
     #[test]
@@ -525,10 +534,10 @@ mod tests {
 
     #[test]
     fn budget_retry_pending_factory_sets_initial_cooldown_from_budget() {
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             initial_cooldown_ticks: 10,
             max_cooldown_ticks: 100,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
 
         let entry = ExhaustionEntry::budget_retry_pending(
@@ -545,10 +554,10 @@ mod tests {
 
     #[test]
     fn record_budget_exhaustion_doubles_cooldown_until_cap() {
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 16,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
         let mut entry =
             ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());

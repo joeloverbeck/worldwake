@@ -5,7 +5,7 @@ mod golden_harness;
 use golden_harness::*;
 use std::num::NonZeroU32;
 use worldwake_ai::{
-    DecisionOutcome, GoalKind, PlannerOpKind, PlanningEntityRef, PlanningState, ReasoningProfile,
+    DecisionOutcome, GoalKind, PlannerOpKind, PlanningEntityRef, PlanningState,
     apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
     generate_candidates, search_plan,
 };
@@ -635,14 +635,11 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &semantics,
         &h.defs,
         &h.handlers,
-        &worldwake_core::CognitiveProfile::from_reasoning_profile(&ReasoningProfile {
+        &worldwake_core::CognitiveProfile {
             max_plan_depth: 6,
-            ..ReasoningProfile::default()
-        }),
-        &worldwake_core::ExecutionBudget::from_reasoning_profile(&ReasoningProfile {
-            max_plan_depth: 6,
-            ..ReasoningProfile::default()
-        }),
+            ..worldwake_core::CognitiveProfile::default()
+        },
+        &worldwake_core::ExecutionBudget::default(),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -655,8 +652,8 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &semantics,
         &h.defs,
         &h.handlers,
-        &worldwake_core::CognitiveProfile::from_reasoning_profile(&ReasoningProfile::default()),
-        &worldwake_core::ExecutionBudget::from_reasoning_profile(&ReasoningProfile::default()),
+        &worldwake_core::CognitiveProfile::default(),
+        &worldwake_core::ExecutionBudget::default(),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),

@@ -13,7 +13,7 @@ use crate::{
     MetabolismProfile, Name, NoticeContent, OfficeData, OfficeForceProfile, OfficeForceState,
     PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PreferenceProfile,
     ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
-    ReasoningProfile, RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing,
+    RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing,
     SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences,
     TellProfile, TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem,
     UniqueItemKind, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
@@ -159,7 +159,6 @@ impl World {
             world.insert_component_agent_belief_store(entity, AgentBeliefStore::new())?;
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
-            world.insert_component_reasoning_profile(entity, ReasoningProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
             world.insert_component_execution_budget(entity, ExecutionBudget::default())?;
             world.insert_component_epistemic_disposition_profile(

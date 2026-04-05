@@ -1001,7 +1001,7 @@ mod tests {
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
         OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
-        PlannedStep, RankedGoal, ReasoningProfile, build_semantics_table,
+        PlannedStep, RankedGoal, ProfileFixture, build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
         feasibility::FeasibilityHint,
     };
@@ -1053,12 +1053,26 @@ mod tests {
         )
     }
 
-    fn cognitive(reasoning: &ReasoningProfile) -> CognitiveProfile {
-        CognitiveProfile::from_reasoning_profile(reasoning)
+    fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
+        CognitiveProfile {
+            max_candidates_to_plan: reasoning.max_candidates_to_plan,
+            max_plan_depth: reasoning.max_plan_depth,
+            switch_margin: reasoning.switch_margin,
+            transient_block_ticks: reasoning.transient_block_ticks,
+            unknown_block_ticks: reasoning.unknown_block_ticks,
+            structural_block_ticks: reasoning.structural_block_ticks,
+            initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
+            max_cooldown_ticks: reasoning.max_cooldown_ticks,
+        }
     }
 
-    fn execution_budget(reasoning: &ReasoningProfile) -> ExecutionBudget {
-        ExecutionBudget::from_reasoning_profile(reasoning)
+    fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
+        ExecutionBudget {
+            max_node_expansions: reasoning.max_node_expansions,
+            beam_width: reasoning.beam_width,
+            snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
+            max_prerequisite_locations: reasoning.max_prerequisite_locations,
+        }
     }
 
     fn acquire_goal(
@@ -1417,10 +1431,10 @@ mod tests {
                 evidence_places: BTreeSet::from([market]),
             }),
         ];
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             snapshot_travel_horizon: 0,
             max_candidates_to_plan: 2,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
 
         let plans = super::build_candidate_plans(
@@ -1501,10 +1515,10 @@ mod tests {
                 BTreeSet::from([origin]),
             )),
         ];
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
             max_candidates_to_plan: 2,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
 
         let plans = super::build_candidate_plans(
@@ -1592,10 +1606,10 @@ mod tests {
                 BTreeSet::from([origin]),
             )),
         ];
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
             max_candidates_to_plan: 2,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
         let exhausted = OpportunityKey {
             goal_key: ranked_candidates[0].grounded.key,
@@ -1770,10 +1784,10 @@ mod tests {
                 BTreeSet::from([origin]),
             )),
         ];
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
             max_candidates_to_plan: 2,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
         let mut runtime = AgentDecisionRuntime {
             dirty: DirtySet::NO_PLAN,
@@ -1893,9 +1907,9 @@ mod tests {
         assert_eq!(
             super::summarize_same_goal_planning_trace(
                 &ranked_candidates,
-                &cognitive(&ReasoningProfile {
+                &cognitive(&ProfileFixture {
                     max_candidates_to_plan: 3,
-                    ..ReasoningProfile::default()
+                    ..ProfileFixture::default()
                 }),
                 Tick(1),
                 &BTreeMap::new(),
@@ -1968,15 +1982,15 @@ mod tests {
             &ranked_candidates,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
-            &cognitive(&ReasoningProfile {
+            &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 2,
-                ..ReasoningProfile::default()
+                ..ProfileFixture::default()
             }),
-            &execution_budget(&ReasoningProfile {
+            &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 2,
-                ..ReasoningProfile::default()
+                ..ProfileFixture::default()
             }),
             &semantics,
             &defs,
@@ -1991,10 +2005,10 @@ mod tests {
         assert_eq!(
             super::summarize_same_goal_planning_trace(
                 &ranked_candidates,
-                &cognitive(&ReasoningProfile {
+                &cognitive(&ProfileFixture {
                     snapshot_travel_horizon: 4,
                     max_candidates_to_plan: 2,
-                    ..ReasoningProfile::default()
+                    ..ProfileFixture::default()
                 }),
                 Tick(1),
                 &BTreeMap::new(),
@@ -2113,11 +2127,11 @@ mod tests {
                 },
             ),
         ]);
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             snapshot_travel_horizon: 4,
             max_candidates_to_plan: 2,
             max_node_expansions: 0,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
 
         let plans = super::build_candidate_plans(
@@ -2200,7 +2214,7 @@ mod tests {
             &RecipeRegistry::new(),
             &plans,
             Tick(9),
-            &cognitive(&ReasoningProfile::default()),
+            &cognitive(&ProfileFixture::default()),
         );
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
@@ -2209,7 +2223,7 @@ mod tests {
         assert_eq!(
             entry.next_retry_tick,
             Some(Tick(
-                9 + u64::from(ReasoningProfile::default().initial_cooldown_ticks)
+                9 + u64::from(ProfileFixture::default().initial_cooldown_ticks)
             ))
         );
         assert_eq!(
@@ -2250,7 +2264,7 @@ mod tests {
             &RecipeRegistry::new(),
             &plans,
             Tick(9),
-            &cognitive(&ReasoningProfile::default()),
+            &cognitive(&ProfileFixture::default()),
         );
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
@@ -2271,10 +2285,10 @@ mod tests {
     #[test]
     fn record_exhausted_goals_doubles_cooldown_for_repeated_budget_retry_entries() {
         let goal = consume_opportunity(CommodityKind::Bread, OpportunityAnchor::None);
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
         let mut runtime = AgentDecisionRuntime::default();
         runtime.exhaustion_cache.insert(
@@ -2357,7 +2371,7 @@ mod tests {
             &RecipeRegistry::new(),
             &plans,
             Tick(10),
-            &cognitive(&ReasoningProfile::default()),
+            &cognitive(&ProfileFixture::default()),
         );
 
         assert!(!runtime.exhaustion_cache.contains_key(&solved_goal));
@@ -2393,7 +2407,7 @@ mod tests {
             &RecipeRegistry::new(),
             &plans,
             Tick(9),
-            &cognitive(&ReasoningProfile::default()),
+            &cognitive(&ProfileFixture::default()),
         );
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
@@ -2531,19 +2545,19 @@ mod tests {
             &ranked_candidates,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
-            &cognitive(&ReasoningProfile {
+            &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
                 // Zero makes any hidden retry-budget override observable.
                 max_node_expansions: 0,
-                ..ReasoningProfile::default()
+                ..ProfileFixture::default()
             }),
-            &execution_budget(&ReasoningProfile {
+            &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
                 // Zero makes any hidden retry-budget override observable.
                 max_node_expansions: 0,
-                ..ReasoningProfile::default()
+                ..ProfileFixture::default()
             }),
             &semantics,
             &defs,
@@ -2630,15 +2644,15 @@ mod tests {
             &ranked_candidates,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
-            &cognitive(&ReasoningProfile {
+            &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 2,
-                ..ReasoningProfile::default()
+                ..ProfileFixture::default()
             }),
-            &execution_budget(&ReasoningProfile {
+            &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 2,
-                ..ReasoningProfile::default()
+                ..ProfileFixture::default()
             }),
             &semantics,
             &defs,
@@ -2710,15 +2724,15 @@ mod tests {
             &ranked_candidates,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
-            &cognitive(&ReasoningProfile {
+            &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
-                ..ReasoningProfile::default()
+                ..ProfileFixture::default()
             }),
-            &execution_budget(&ReasoningProfile {
+            &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
-                ..ReasoningProfile::default()
+                ..ProfileFixture::default()
             }),
             &semantics,
             &defs,

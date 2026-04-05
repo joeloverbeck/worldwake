@@ -145,19 +145,21 @@
                 testimony_acceptance: 800,
                 gossip_acceptance: 350,
             ),
-            reasoning_profile: (
+            cognitive_profile: (
                 max_candidates_to_plan: 4,
                 max_plan_depth: 10,
-                snapshot_travel_horizon: 6,
-                max_prerequisite_locations: 3,
-                max_node_expansions: 300,
-                beam_width: 10,
                 switch_margin: 100,
                 transient_block_ticks: 20,
                 unknown_block_ticks: 5,
                 structural_block_ticks: 200,
                 initial_cooldown_ticks: 4,
                 max_cooldown_ticks: 64,
+            ),
+            execution_budget: (
+                snapshot_travel_horizon: 6,
+                max_prerequisite_locations: 3,
+                max_node_expansions: 300,
+                beam_width: 10,
             ),
             commodity_valuation: (
                 recipe_opportunity_depth: 2,

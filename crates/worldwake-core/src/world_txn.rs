@@ -1940,8 +1940,8 @@ mod tests {
         ExecutionBudget, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
         InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
         MerchandiseProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-        PatrolRoute, PerceptionProfile, PerceptionSource, PreferenceProfile, ReasoningProfile,
-        RecordData, RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
+        PatrolRoute, PerceptionProfile, PerceptionSource, PreferenceProfile, RecordData,
+        RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
         TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
@@ -2369,12 +2369,6 @@ mod tests {
                     component_kind: ComponentKind::CommunicationProfile,
                     before: None,
                     after: ComponentValue::CommunicationProfile(CommunicationProfile::default(),),
-                }),
-                StateDelta::Component(ComponentDelta::Set {
-                    entity: agent,
-                    component_kind: ComponentKind::ReasoningProfile,
-                    before: None,
-                    after: ComponentValue::ReasoningProfile(ReasoningProfile::default()),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

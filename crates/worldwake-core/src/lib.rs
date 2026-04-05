@@ -67,7 +67,6 @@ pub mod offices;
 pub mod patrol;
 pub mod production;
 pub mod pursuit;
-pub mod reasoning_profile;
 pub mod relations;
 pub mod rights;
 pub mod social_artifact;
@@ -182,7 +181,6 @@ pub use production::{
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
 };
 pub use pursuit::PursuitProfile;
-pub use reasoning_profile::ReasoningProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use rights::{EffectiveRight, RightKind};
 pub use social_artifact::{
