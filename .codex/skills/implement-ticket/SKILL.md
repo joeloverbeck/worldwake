@@ -258,6 +258,19 @@ cargo clippy --workspace --all-targets -- -D warnings
 - If the architecture change invalidates the old invariant, rewrite the scenario and update its header/comments.
 - When adding or renumbering `// Scenario N:` blocks, treat identifiers as repo-global. Pre-scan nearby or highest live IDs and resolve collisions.
 - After scenario metadata changes, refresh the generated golden inventory/docs as part of the verification surface.
+
+### 7. Close out the ticket honestly
+
+After the owned implementation is fully verified:
+
+1. Update the ticket's `Status` when repo policy and the current task imply the ticket is now complete. Do not mark it complete before the required verification surface has passed.
+2. If reassessment, implementation, or broad verification exposed an adjacent but out-of-scope contradiction, cleanup, or architectural compromise, create or update a follow-up ticket immediately instead of leaving the dependency implicit.
+3. Give each follow-up explicit `Deps` links to the implemented ticket and any still-pending sibling tickets or active specs it depends on.
+4. Distinguish clearly between:
+   - bugs fixed inside the current ticket
+   - compromises accepted to finish the current ticket safely
+   - remaining work that needs its own ticket
+5. Do not silently broaden the current ticket during close-out just because the next fix is obvious. If the remaining work has its own architectural boundary, capture it as a follow-up ticket instead.
 - Keep scenario prose aligned with updated assertions so the documented contract stays traceable.
 
 #### Planner and AI proof

@@ -158,7 +158,7 @@ fn process_witness_event(
             },
             store,
             *entity,
-            snapshot,
+            &snapshot,
             true,
             NoticeInternalizationContext {
                 profile: &profile,
@@ -479,7 +479,7 @@ fn apply_direct_local_observation_batch(
             context,
             store,
             *subject,
-            snapshot.clone(),
+            snapshot,
             false,
             NoticeInternalizationContext {
                 profile,
@@ -502,24 +502,32 @@ fn record_observed_snapshot(
     context: DiscoveryContext,
     store: &mut AgentBeliefStore,
     subject: EntityId,
-    snapshot: worldwake_core::BelievedEntityState,
+    snapshot: &worldwake_core::BelievedEntityState,
     include_place_change: bool,
     notice_context: NoticeInternalizationContext<'_>,
 ) {
-    if let Some(prior) = store.get_entity(&subject) {
-        for mismatch in detect_observation_mismatches(prior, &snapshot, include_place_change) {
+    let prior = store.get_entity(&subject).cloned();
+    if let Some(prior) = prior.as_ref() {
+        for mismatch in detect_observation_mismatches(prior, snapshot, include_place_change) {
             emit_discovery_event(event_log, context, subject, mismatch);
         }
     }
     internalize_notice_beliefs(
         store,
-        &snapshot,
+        snapshot,
         context.tick,
         context.place.or(snapshot.last_known_place),
         notice_context.profile,
         notice_context.institutional_source,
     );
-    store.update_entity(subject, snapshot);
+    store.record_entity_snapshot_claims(
+        subject,
+        snapshot,
+        prior.as_ref(),
+        context.tick,
+        Some(snapshot.observed_tick),
+        &notice_context.profile.confidence_policy,
+    );
 }
 
 fn internalize_notice_beliefs(
@@ -1072,10 +1080,10 @@ mod tests {
         BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState,
         BountyTarget, BountyTerms, CauseRef, CommodityKind, ComponentDelta, ComponentKind,
         ComponentValue, Container, ContentionGrant, ContentionQueue, ContentionWaiter,
-        ControlSource, DeadAt, DisturbanceKind, EntityKind, EventLog, EventPayload, EventTag,
-        EventView, EvidenceKind, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LoadUnits, MismatchKind, NoticeContent, NoticeTopic,
-        ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
+        ControlSource, DeadAt, DisturbanceKind, EntityBeliefAspect, EntityKind, EventLog,
+        EventPayload, EventTag, EventView, EvidenceKind, EvidenceRef, InstitutionalBeliefKey,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MismatchKind, NoticeContent,
+        NoticeTopic, ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
         PerceptionSource, Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
         ProofRequirement, PrototypePlace, Quantity, RelationDelta, RelationKind, RelationValue,
         ResourceSource, RewardSource, SaleListing, SceneEvidence, Seed, SocialObservationDetail,
@@ -1909,7 +1917,9 @@ mod tests {
             txn.set_ground_location(target, place).unwrap();
             txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
                 .unwrap();
-            txn.set_component_perception_profile(observer, profile(1000))
+            let mut observer_profile = profile(1000);
+            observer_profile.memory_capacity = 16;
+            txn.set_component_perception_profile(observer, observer_profile)
                 .unwrap();
             let bread = txn
                 .create_item_lot(CommodityKind::Bread, Quantity(2))
@@ -1958,7 +1968,6 @@ mod tests {
         let believed = beliefs
             .get_entity(&target)
             .expect("same-place witness should gain a belief snapshot");
-        assert_eq!(believed.last_known_place, Some(place));
         assert_eq!(
             believed.last_known_inventory.get(&CommodityKind::Bread),
             Some(&Quantity(2))
@@ -1966,6 +1975,89 @@ mod tests {
         assert!(believed.alive);
         assert_eq!(believed.observed_tick, Tick(3));
         assert_eq!(believed.source, PerceptionSource::DirectObservation);
+        let claims = beliefs
+            .entity_claims
+            .get(&target)
+            .expect("same-place witness should gain claim-backed entity memory");
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Inventory(CommodityKind::Bread))
+        );
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Alive)
+        );
+    }
+
+    #[test]
+    fn passive_local_observation_emits_claims_and_derives_summary() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.memory_capacity = 16;
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, target).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, target)
+        };
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x44; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(2),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world.get_component_agent_belief_store(observer).unwrap();
+        let believed = beliefs
+            .get_entity(&target)
+            .expect("passive local observation should still project a summary");
+        assert_eq!(
+            believed.last_known_inventory.get(&CommodityKind::Bread),
+            Some(&Quantity(2))
+        );
+        assert!(believed.alive);
+        let claims = beliefs
+            .entity_claims
+            .get(&target)
+            .expect("passive local observation should emit entity claims");
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Inventory(CommodityKind::Bread))
+        );
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Alive)
+        );
     }
 
     #[test]

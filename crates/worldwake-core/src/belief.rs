@@ -73,6 +73,51 @@ impl AgentBeliefStore {
         }
     }
 
+    pub fn record_entity_snapshot_claims(
+        &mut self,
+        subject: EntityId,
+        snapshot: &BelievedEntityState,
+        prior_summary: Option<&BelievedEntityState>,
+        current_tick: Tick,
+        claimed_event_tick: Option<Tick>,
+        policy: &BeliefConfidencePolicy,
+    ) {
+        let confidence = belief_confidence(&snapshot.source, 0, policy);
+        for (aspect, value) in entity_claims_for_snapshot(snapshot, prior_summary) {
+            self.record_entity_claim(EntityBeliefClaim {
+                claim_id: self.next_claim_id,
+                subject,
+                aspect,
+                value,
+                source: snapshot.source,
+                acquired_tick: current_tick,
+                claimed_event_tick,
+                confidence,
+            });
+        }
+        self.refresh_entity_summary_from_claims(subject, current_tick, policy);
+    }
+
+    pub fn refresh_entity_summary_from_claims(
+        &mut self,
+        subject: EntityId,
+        current_tick: Tick,
+        policy: &BeliefConfidencePolicy,
+    ) {
+        match self
+            .entity_claims
+            .get(&subject)
+            .and_then(|claims| derive_entity_summary(claims, current_tick, policy))
+        {
+            Some(summary) => {
+                self.known_entities.insert(subject, summary);
+            }
+            None => {
+                self.known_entities.remove(&subject);
+            }
+        }
+    }
+
     #[must_use]
     pub fn get_entity(&self, id: &EntityId) -> Option<&BelievedEntityState> {
         self.known_entities.get(id)
@@ -118,13 +163,6 @@ impl AgentBeliefStore {
     }
 
     pub fn enforce_capacity(&mut self, profile: &PerceptionProfile, current_tick: Tick) {
-        self.known_entities.retain(|_, state| {
-            within_retention_window(
-                state.observed_tick,
-                current_tick,
-                profile.memory_retention_ticks,
-            )
-        });
         self.social_observations.retain(|observation| {
             within_retention_window(
                 observation.observed_tick,
@@ -134,9 +172,23 @@ impl AgentBeliefStore {
         });
 
         if profile.memory_capacity == 0 {
+            self.entity_claims.clear();
             self.known_entities.clear();
             return;
         }
+
+        self.enforce_entity_claim_capacity(profile, current_tick);
+
+        self.known_entities.retain(|entity, state| {
+            if self.entity_claims.contains_key(entity) {
+                return true;
+            }
+            within_retention_window(
+                state.observed_tick,
+                current_tick,
+                profile.memory_retention_ticks,
+            )
+        });
 
         let excess = self
             .known_entities
@@ -152,9 +204,9 @@ impl AgentBeliefStore {
             .map(|(entity, state)| (state.observed_tick, *entity))
             .collect::<Vec<_>>();
         eviction_order.sort_unstable();
-
         for (_, entity) in eviction_order.into_iter().take(excess) {
             self.known_entities.remove(&entity);
+            self.entity_claims.remove(&entity);
         }
     }
 
@@ -597,6 +649,121 @@ impl AgentBeliefStore {
             .min()
             .map(|(_, key, index)| (key, index))
     }
+}
+
+fn entity_claims_for_snapshot(
+    snapshot: &BelievedEntityState,
+    prior_summary: Option<&BelievedEntityState>,
+) -> Vec<(EntityBeliefAspect, ClaimValue)> {
+    let mut claims = vec![(
+        EntityBeliefAspect::Location,
+        ClaimValue::Place(snapshot.last_known_place),
+    )];
+    if !snapshot.alive || prior_summary.is_none_or(|prior| prior.alive != snapshot.alive) {
+        claims.push((EntityBeliefAspect::Alive, ClaimValue::Bool(snapshot.alive)));
+    }
+    if !snapshot.wounds.is_empty() || prior_summary.is_some_and(|prior| !prior.wounds.is_empty()) {
+        claims.push((
+            EntityBeliefAspect::Wounded,
+            ClaimValue::WoundSnapshot(snapshot.wounds.clone()),
+        ));
+    }
+    if snapshot.believed_activity.is_some()
+        || prior_summary.is_some_and(|prior| prior.believed_activity.is_some())
+    {
+        claims.push((
+            EntityBeliefAspect::Activity,
+            ClaimValue::Activity(snapshot.believed_activity.clone()),
+        ));
+    }
+    if snapshot.workstation_tag.is_some()
+        || prior_summary.is_some_and(|prior| prior.workstation_tag.is_some())
+    {
+        claims.push((
+            EntityBeliefAspect::WorkstationPresent,
+            ClaimValue::WorkstationTag(snapshot.workstation_tag),
+        ));
+    }
+    if snapshot.believed_contention.is_some()
+        || prior_summary.is_some_and(|prior| prior.believed_contention.is_some())
+    {
+        claims.push((
+            EntityBeliefAspect::ContentionState,
+            ClaimValue::ContentionState(snapshot.believed_contention),
+        ));
+    }
+    if snapshot.believed_artifact.is_some()
+        || prior_summary.is_some_and(|prior| prior.believed_artifact.is_some())
+    {
+        claims.push((
+            EntityBeliefAspect::ArtifactState,
+            ClaimValue::ArtifactState(snapshot.believed_artifact.clone()),
+        ));
+    }
+    if snapshot.last_known_courage.is_some()
+        || prior_summary.is_some_and(|prior| prior.last_known_courage.is_some())
+    {
+        claims.push((
+            EntityBeliefAspect::Courage,
+            ClaimValue::Courage(snapshot.last_known_courage),
+        ));
+    }
+    if snapshot.believed_evidence.is_some()
+        || prior_summary.is_some_and(|prior| prior.believed_evidence.is_some())
+    {
+        claims.push((
+            EntityBeliefAspect::Evidence,
+            ClaimValue::EvidenceState(snapshot.believed_evidence.clone()),
+        ));
+    }
+
+    let mut commodities = snapshot
+        .last_known_inventory
+        .keys()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if let Some(prior) = prior_summary {
+        commodities.extend(prior.last_known_inventory.keys().copied());
+    }
+    for commodity in commodities {
+        claims.push((
+            EntityBeliefAspect::Inventory(commodity),
+            ClaimValue::Quantity(
+                snapshot
+                    .last_known_inventory
+                    .get(&commodity)
+                    .copied()
+                    .unwrap_or(Quantity(0)),
+            ),
+        ));
+    }
+
+    let prior_resource = prior_summary.and_then(|prior| {
+        prior
+            .resource_source
+            .as_ref()
+            .map(|source| source.commodity)
+    });
+    let current_resource = snapshot
+        .resource_source
+        .as_ref()
+        .map(|source| source.commodity);
+    if let Some(prior_commodity) = prior_resource
+        && current_resource != Some(prior_commodity)
+    {
+        claims.push((
+            EntityBeliefAspect::ResourceAvailable(prior_commodity),
+            ClaimValue::ResourceSource(None),
+        ));
+    }
+    if let Some(current_commodity) = current_resource {
+        claims.push((
+            EntityBeliefAspect::ResourceAvailable(current_commodity),
+            ClaimValue::ResourceSource(snapshot.resource_source.clone()),
+        ));
+    }
+
+    claims
 }
 
 impl Component for AgentBeliefStore {}
@@ -1367,7 +1534,9 @@ pub fn derive_entity_summary(
         believed_artifact: None,
         believed_contention: None,
         believed_evidence: None,
-        observed_tick: metadata_claim.acquired_tick,
+        observed_tick: metadata_claim
+            .claimed_event_tick
+            .unwrap_or(metadata_claim.acquired_tick),
         source: metadata_claim.source,
     };
 
@@ -1434,7 +1603,8 @@ fn effective_claim_confidence(
     current_tick: Tick,
     policy: &BeliefConfidencePolicy,
 ) -> u16 {
-    let staleness_ticks = current_tick.0.saturating_sub(claim.acquired_tick.0);
+    let staleness_anchor = claim.claimed_event_tick.unwrap_or(claim.acquired_tick);
+    let staleness_ticks = current_tick.0.saturating_sub(staleness_anchor.0);
     let staleness_penalty = u16::try_from(staleness_ticks)
         .unwrap_or(u16::MAX)
         .saturating_mul(policy.staleness_penalty_per_tick.value());
@@ -2226,6 +2396,253 @@ mod tests {
     }
 
     #[test]
+    fn derive_entity_summary_uses_claimed_event_tick_for_report_staleness() {
+        let claims = vec![
+            EntityBeliefClaim {
+                claim_id: ClaimId(1),
+                subject: entity(44),
+                aspect: EntityBeliefAspect::Location,
+                value: ClaimValue::Place(Some(entity(10))),
+                source: PerceptionSource::Report {
+                    from: entity(3),
+                    chain_len: 1,
+                },
+                acquired_tick: Tick(9),
+                claimed_event_tick: Some(Tick(1)),
+                confidence: Permille::new(900).unwrap(),
+            },
+            EntityBeliefClaim {
+                claim_id: ClaimId(2),
+                subject: entity(44),
+                aspect: EntityBeliefAspect::Location,
+                value: ClaimValue::Place(Some(entity(11))),
+                source: PerceptionSource::DirectObservation,
+                acquired_tick: Tick(7),
+                claimed_event_tick: Some(Tick(7)),
+                confidence: Permille::new(830).unwrap(),
+            },
+        ];
+
+        let summary = derive_entity_summary(&claims, Tick(10), &policy()).unwrap();
+
+        assert_eq!(summary.last_known_place, Some(entity(11)));
+        assert_eq!(summary.source, PerceptionSource::DirectObservation);
+    }
+
+    #[test]
+    fn record_entity_snapshot_claims_derives_summary_and_clears_absent_inventory() {
+        let subject = entity(42);
+        let mut store = AgentBeliefStore::new();
+        let mut prior_inventory = BTreeMap::new();
+        prior_inventory.insert(CommodityKind::Apple, Quantity(4));
+        prior_inventory.insert(CommodityKind::Bread, Quantity(2));
+        let prior = BelievedEntityState {
+            last_known_place: Some(entity(10)),
+            last_known_inventory: prior_inventory,
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(3),
+            source: PerceptionSource::DirectObservation,
+        };
+        store.update_entity(subject, prior.clone());
+
+        let mut snapshot_inventory = BTreeMap::new();
+        snapshot_inventory.insert(CommodityKind::Bread, Quantity(5));
+        let snapshot = BelievedEntityState {
+            last_known_place: Some(entity(11)),
+            last_known_inventory: snapshot_inventory,
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(8),
+            source: PerceptionSource::DirectObservation,
+        };
+
+        store.record_entity_snapshot_claims(
+            subject,
+            &snapshot,
+            Some(&prior),
+            Tick(8),
+            Some(Tick(8)),
+            &policy(),
+        );
+
+        let summary = store.get_entity(&subject).unwrap();
+        assert_eq!(summary.last_known_place, Some(entity(11)));
+        assert_eq!(
+            summary.last_known_inventory.get(&CommodityKind::Bread),
+            Some(&Quantity(5))
+        );
+        assert!(
+            !summary
+                .last_known_inventory
+                .contains_key(&CommodityKind::Apple)
+        );
+        assert_eq!(store.next_claim_id, ClaimId(3));
+        assert!(store.entity_claims[&subject].iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::Inventory(CommodityKind::Apple)
+                && claim.value == ClaimValue::Quantity(Quantity(0))
+        }));
+    }
+
+    #[test]
+    fn record_entity_snapshot_claims_clears_prior_resource_lane() {
+        let subject = entity(43);
+        let mut store = AgentBeliefStore::new();
+        let prior = BelievedEntityState {
+            last_known_place: Some(entity(10)),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: Some(ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(7),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: Some(Tick(2)),
+            }),
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(2),
+            source: PerceptionSource::DirectObservation,
+        };
+        store.update_entity(subject, prior.clone());
+
+        let snapshot = BelievedEntityState {
+            last_known_place: Some(entity(10)),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(6),
+            source: PerceptionSource::DirectObservation,
+        };
+
+        store.record_entity_snapshot_claims(
+            subject,
+            &snapshot,
+            Some(&prior),
+            Tick(6),
+            Some(Tick(6)),
+            &policy(),
+        );
+
+        let summary = store.get_entity(&subject).unwrap();
+        assert_eq!(summary.resource_source, None);
+        assert!(store.entity_claims[&subject].iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::ResourceAvailable(CommodityKind::Apple)
+                && claim.value == ClaimValue::ResourceSource(None)
+        }));
+    }
+
+    #[test]
+    fn record_entity_snapshot_claims_omits_empty_baseline_aspects_without_prior_state() {
+        let subject = entity(44);
+        let mut store = AgentBeliefStore::new();
+        let snapshot = BelievedEntityState {
+            last_known_place: Some(entity(10)),
+            last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(2))]),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(5),
+            source: PerceptionSource::DirectObservation,
+        };
+
+        store.record_entity_snapshot_claims(
+            subject,
+            &snapshot,
+            None,
+            Tick(5),
+            Some(Tick(5)),
+            &policy(),
+        );
+
+        let claims = &store.entity_claims[&subject];
+        assert_eq!(claims.len(), 3);
+        assert!(claims.iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::Location
+                && claim.value == ClaimValue::Place(Some(entity(10)))
+        }));
+        assert!(claims.iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::Alive && claim.value == ClaimValue::Bool(true)
+        }));
+        assert!(claims.iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::Inventory(CommodityKind::Bread)
+                && claim.value == ClaimValue::Quantity(Quantity(2))
+        }));
+    }
+
+    #[test]
+    fn record_entity_snapshot_claims_emits_alive_false_to_clear_prior_living_summary() {
+        let subject = entity(45);
+        let mut store = AgentBeliefStore::new();
+        let prior = BelievedEntityState {
+            last_known_place: Some(entity(10)),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(4),
+            source: PerceptionSource::DirectObservation,
+        };
+        let snapshot = BelievedEntityState {
+            alive: false,
+            observed_tick: Tick(5),
+            ..prior.clone()
+        };
+
+        store.record_entity_snapshot_claims(
+            subject,
+            &snapshot,
+            Some(&prior),
+            Tick(5),
+            Some(Tick(5)),
+            &policy(),
+        );
+
+        assert!(store.entity_claims[&subject].iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::Alive && claim.value == ClaimValue::Bool(false)
+        }));
+        assert!(!store.get_entity(&subject).unwrap().alive);
+    }
+
+    #[test]
     fn derive_entity_summary_breaks_ties_by_newer_tick_then_higher_claim_id() {
         let newer = sample_claim(
             2,
@@ -2423,6 +2840,30 @@ mod tests {
         store.enforce_capacity(&profile(0, 100), Tick(12));
 
         assert!(store.known_entities.is_empty());
+    }
+
+    #[test]
+    fn enforce_capacity_applies_global_entity_cap_after_claim_pruning() {
+        let mut store = claim_backed_store(
+            80,
+            vec![sample_claim(
+                1,
+                80,
+                EntityBeliefAspect::Alive,
+                ClaimValue::Bool(true),
+                PerceptionSource::DirectObservation,
+                5,
+                950,
+            )],
+        );
+        store.update_entity(entity(1), sample_state(9, 1));
+
+        store.enforce_capacity(&profile(1, 100), Tick(12));
+
+        assert_eq!(store.known_entities.len(), 1);
+        assert!(store.known_entities.contains_key(&entity(1)));
+        assert!(!store.known_entities.contains_key(&entity(80)));
+        assert!(!store.entity_claims.contains_key(&entity(80)));
     }
 
     #[test]

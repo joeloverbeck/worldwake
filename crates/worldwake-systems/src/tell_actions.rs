@@ -602,14 +602,19 @@ fn commit_tell(
                     };
                     let mut transferred = speaker_belief.clone();
                     transferred.source = degrade_source(speaker, speaker_belief.source);
-                    let should_update_entity =
-                        listener_beliefs
-                            .get_entity(&subject)
-                            .is_none_or(|existing| {
-                                existing.observed_tick < speaker_belief.observed_tick
-                            });
+                    let existing = listener_beliefs.get_entity(&subject).cloned();
+                    let should_update_entity = existing.as_ref().is_none_or(|existing| {
+                        existing.observed_tick < speaker_belief.observed_tick
+                    });
                     if should_update_entity {
-                        listener_beliefs.update_entity(subject, transferred);
+                        listener_beliefs.record_entity_snapshot_claims(
+                            subject,
+                            &transferred,
+                            existing.as_ref(),
+                            txn.tick(),
+                            Some(speaker_belief.observed_tick),
+                            &listener_perception.confidence_policy,
+                        );
                         listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
                         accepted_any = true;
                         belief_delta =
@@ -751,15 +756,15 @@ mod tests {
         ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
         BelievedInstitutionalClaim, BodyCostPerTick, CauseRef, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommunicationProfile, ControlSource,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView,
-        HeardBeliefDisposition, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-        InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OfficeData, PerceptionProfile, PerceptionSource,
-        Permille, Quantity, RecipeId, RecipientKnowledgeStatus, ResourceSource, Seed,
-        SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn, Wound, build_believed_entity_state, build_prototype_world,
-        to_shared_belief_snapshot,
+        DemandObservation, DriveThresholds, EntityBeliefAspect, EntityId, EntityKind, EventLog,
+        EventTag, EventView, HeardBeliefDisposition, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+        IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        PerceptionProfile, PerceptionSource, Permille, Quantity, RecipeId,
+        RecipientKnowledgeStatus, ResourceSource, Seed, SharedTellState, SuccessionLaw,
+        TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, Wound,
+        build_believed_entity_state, build_prototype_world, to_shared_belief_snapshot,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance, ActionPayload,
@@ -1886,6 +1891,20 @@ mod tests {
                 from: speaker,
                 chain_len: 1,
             }
+        );
+        let claims = listener_store
+            .entity_claims
+            .get(&subject)
+            .expect("accepted tell should emit entity claims for the listener");
+        assert!(claims.iter().any(|claim| claim.source
+            == PerceptionSource::Report {
+                from: speaker,
+                chain_len: 1,
+            }));
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Location)
         );
     }
 

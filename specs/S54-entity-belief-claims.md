@@ -132,14 +132,16 @@ fn derive_entity_summary(
 
 For each `EntityBeliefAspect`, pick the claim with highest confidence (recomputed with staleness via `policy.staleness_penalty_per_tick`). The winning claim's value populates the corresponding `BelievedEntityState` field. The winning claim's source and tick become the summary's `source` and `observed_tick`.
 
-### Perception Integration
+### Perception/Report Integration
 
-Perception system modified to emit claims instead of directly writing `BelievedEntityState`:
+The perception/report intake lane is modified to emit claims instead of directly writing `BelievedEntityState`:
 - `observe_passive_local_entities` (`perception.rs:205`) → emits `EntityBeliefClaim` per observed aspect
 - `process_witness_event` → emits claims from event state deltas
 - Tell acceptance → emits claims from speaker's claims (source chain incremented)
 
 After all claims are emitted, `derive_entity_summary` rebuilds `known_entities`.
+
+Other explicit belief-refresh paths such as investigation refresh, ask-witness transfer, and similar action-local belief updates are separate information carriers and may remain direct `known_entities` writers until a later cleanup ticket owns them. This spec’s S54 behavioral migration is only the passive-perception / witnessed-event / Tell lane.
 
 ### Memory Enforcement
 
@@ -151,7 +153,7 @@ After all claims are emitted, `derive_entity_summary` rebuilds `known_entities`.
 
 ## Cross-System Interactions (Principle 26)
 
-- **Perception** writes claims → derives summaries
+- **Perception/report intake** writes claims → derives summaries
 - **AI planner** reads `known_entities` (unchanged interface)
 - **Tell system** shares claims (source chain incremented)
 - **Decision traces** can now report "believed X because claim C from source S"
@@ -209,10 +211,10 @@ Claims naturally age through staleness penalty. When an agent re-perceives an en
 - H.12: No boundary/off-map interfaces.
 
 ### H.13 Invariants and regression
-- `known_entities` is always derivable from `entity_claims` — deleting and re-deriving must produce identical result
+- For entities owned by the perception/report claim lane, `known_entities` is always derivable from `entity_claims` — deleting and re-deriving must produce identical result
 - Claim eviction + re-derivation never produces a `known_entities` entry with no backing claim
 - `next_claim_id` is monotonically increasing per agent — never reused
-- Existing golden tests must pass unchanged (planner reads `known_entities` which is derived from claims carrying the same information)
+- Existing golden tests must pass unchanged (planner reads `known_entities`; claim-backed perception/report entities still carry the same information after derivation)
 
 ### H.14 Save/load
 `entity_claims` and `next_claim_id` persist through save/load in the current format. `known_entities` can be re-derived from claims at load time (or persisted as a cache for convenience — either approach is valid since the derivation is deterministic). SAVE_FORMAT_VERSION bump required when the persisted shape changes, but older save versions are not migrated.

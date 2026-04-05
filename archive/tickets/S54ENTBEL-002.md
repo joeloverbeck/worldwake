@@ -1,29 +1,31 @@
 # S54ENTBEL-002: Perception claim emission migration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — perception system refactored to emit claims, working-memory derivation, Tell acceptance
+**Engine Changes**: Yes — perception/report intake refactored to emit claims, working-memory derivation, Tell acceptance
 **Deps**: S54ENTBEL-001
 
 ## Problem
 
-Claim types and derivation exist (from 001) but perception still writes directly to `known_entities`. This ticket migrates all belief-writing paths (passive perception, witness events, Tell acceptance) to emit claims and derive summaries. After this ticket, `known_entities` is always derived from `entity_claims` — never written directly.
+Claim types and derivation exist (from 001) but the perception/report intake lane still writes directly to `known_entities`. This ticket migrates passive perception, witnessed event intake, and Tell acceptance to emit claims and derive summaries. After this ticket, `known_entities` is derived from `entity_claims` for that lane. Other explicit belief-refresh paths remain lawful direct writers and are deferred.
 
 ## Assumption Reassessment (2026-04-05)
 
 1. `observe_passive_local_entities` at `crates/worldwake-systems/src/perception.rs:205-257` currently calls `apply_direct_local_observation_batch` which calls `store.update_entity(subject, snapshot)`. This writes directly to `known_entities`. Confirmed.
 2. `process_witness_event` in perception — emits belief updates from witnessed events. Currently writes to `known_entities` via `update_entity`. Must be migrated to claim emission.
 3. Tell acceptance in `crates/worldwake-systems/src/tell_actions.rs` (or perception) — when agent hears a Tell, it accepts beliefs from the speaker. Currently writes to `known_entities`. Must be migrated to claim emission with `source: Report/Rumor` and incremented chain_len.
-4. `enforce_capacity` at `belief.rs:108` — after ticket 001, still operates on `known_entities` during the coexistence window. This ticket flips entity-memory retention over to `entity_claims` via `enforce_entity_claim_capacity`.
+4. `enforce_capacity` at `belief.rs:108` — after ticket 001, still operates on `known_entities` during the coexistence window. This ticket flips entity-memory retention over to `entity_claims` for claim-backed entities while preserving fallback retention for still-direct lanes.
 5. Ticket 001 already consumed the additive shape change and bumped `SAVE_FORMAT_VERSION` to 27. This ticket no longer owns any legacy-save migration path; behavior changes apply only to current-format worlds going forward.
 6. `derive_entity_summary` from ticket 001 rebuilds `known_entities` from claims. Called after all claim emission within a perception pass.
+7. Live production code still has other lawful direct `update_entity(...)` writers outside this ticket’s information path, including explicit investigation, ask-witness, production aftermath, combat aftermath, travel aftermath, transport aftermath, and trade aftermath. This ticket does not remove those direct writers.
 
 ## Architecture Check
 
-1. This is the behavioral migration. All three belief-writing paths (passive perception, witness events, Tell acceptance) are refactored to emit claims. After claim emission, `derive_entity_summary` rebuilds `known_entities`. The planner reads `known_entities` unchanged — zero planner changes.
+1. This is the behavioral migration for the perception/report lane only. Passive perception, witnessed event intake, and Tell acceptance are refactored to emit claims. After claim emission, `derive_entity_summary` rebuilds `known_entities`. The planner reads `known_entities` unchanged — zero planner changes.
 2. Migration is atomic per perception pass: all claims emitted → all summaries derived → planner reads. No intermediate state where some entities have claims and others don't.
-3. No legacy-save migration is introduced here. Current-format worlds transition through normal runtime behavior only.
+3. Other explicit belief-refresh actions remain outside this ticket. They can continue to use direct `known_entities` writes until a later cleanup ticket owns them.
+4. No legacy-save migration is introduced here. Current-format worlds transition through normal runtime behavior only.
 
 ## Verification Layers
 
@@ -50,7 +52,7 @@ Instead of calling `store.update_entity(subject, snapshot)`, decompose the obser
 - Append claims to `store.entity_claims`
 - Increment `store.next_claim_id` for each claim
 
-After all observations processed, call `derive_entity_summary` for each entity with claims and write results to `store.known_entities`.
+After all observations processed, call `derive_entity_summary` for each affected entity and update `store.known_entities`.
 
 ### 2. Refactor process_witness_event
 
@@ -65,11 +67,11 @@ In Tell acceptance path:
 - Append to listener's `entity_claims`
 - Re-derive affected entities in `known_entities`
 
-### 4. Replace enforce_capacity for entity beliefs
+### 4. Replace enforce_capacity for claim-backed entity beliefs
 
 In `crates/worldwake-core/src/belief.rs`:
-- `enforce_capacity` method: replace the `known_entities` eviction logic with a call to `enforce_entity_claim_capacity` (from 001)
-- After claim eviction, re-derive `known_entities` for affected entities
+- `enforce_capacity` method: run `enforce_entity_claim_capacity` (from 001) for claim-backed entities first
+- Preserve direct-write fallback eviction for entities that still have no backing claims
 - Keep non-entity-belief enforcement unchanged (social_observations, etc.)
 
 ## Files to Touch
@@ -101,11 +103,12 @@ In `crates/worldwake-core/src/belief.rs`:
 
 ### Invariants
 
-1. After this ticket, `known_entities` is NEVER written directly — always derived from `entity_claims`
+1. After this ticket, passive perception, witnessed event intake, and Tell acceptance no longer write `known_entities` directly — they emit claims and derive summaries
 2. Claim emission is atomic per perception pass — no partial claim states visible to planner
-3. `next_claim_id` monotonically increases across all claim emission paths
-4. No older save formats are accepted by this ticket
-5. SAVE_FORMAT_VERSION remains unchanged unless another persisted-shape change is introduced
+3. `next_claim_id` monotonically increases across all claim emission paths owned by this ticket
+4. Other explicit belief-refresh paths may still write `known_entities` directly until a later cleanup ticket owns them
+5. No older save formats are accepted by this ticket
+6. SAVE_FORMAT_VERSION remains unchanged unless another persisted-shape change is introduced
 
 ## Test Plan
 
@@ -122,3 +125,20 @@ In `crates/worldwake-core/src/belief.rs`:
 1. `cargo test -p worldwake-systems -- perception`
 2. `cargo test -p worldwake-ai` (golden tests verify behavioral equivalence)
 3. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+- Completed: 2026-04-05
+- What changed:
+  - Migrated passive perception, witnessed event intake, and Tell acceptance onto claim-backed entity belief recording.
+  - Updated `AgentBeliefStore` retention to enforce claim-backed entity handling before direct-only fallback memory handling.
+  - Fixed claim staleness to age reports from `claimed_event_tick` when present.
+  - Corrected snapshot claim emission so fresh observations preserve canonical summary facts without over-emitting default aspects.
+- Deviations from original plan:
+  - The ticket remained narrowed to the passive-perception / witnessed-event / Tell lane. Other lawful direct `update_entity(...)` writers were not migrated and remain deferred.
+  - Finishing the ticket required two migration bug fixes discovered during broad verification: sparse snapshot claim emission and correct `alive=false` claim emission on death refresh.
+  - The broader architectural follow-up to split cross-entity memory breadth from per-subject claim depth was not absorbed here; it is captured by `S54ENTBEL-004`.
+- Verification results:
+  - Focused regression coverage passed for core claim derivation and capacity handling, systems perception/Tell behavior, and AI merchant/combat goldens.
+  - `cargo test --workspace` passed.
+  - `cargo clippy --workspace --all-targets -- -D warnings` passed.
