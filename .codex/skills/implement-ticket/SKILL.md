@@ -38,7 +38,7 @@ Verify the ticket against the current codebase, not stale architectural memory. 
 - If a claimed divergence is proved at lower layers but not stably isolatable as a golden without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative.
 - For golden communication or information-path tickets, verify separately what actually degrades: provenance, confidence, communication class, eligibility, ranking, or another distinct mechanism.
 
-#### Shared type, serialization, and migration sweep
+#### Shared type, serialization, and persisted-shape sweep
 
 When shared types, serialized carriers, or persisted components change, sweep these surfaces:
 - Serialized fixtures, bundled scenarios, schema examples, and RON/JSON/YAML test inputs
@@ -48,11 +48,12 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - Save/load version boundaries and `SAVE_FORMAT_VERSION` gates
 - Crate-root re-exports and downstream imports for new shared types
 
-Specific migration checks:
-- When adding a migration path for an older save version, search for stale version-rejection tests. Distinguish versions that should now migrate from truly unsupported ones.
-- When reclassifying persisted fields between already-live carriers, inspect the immediately previous on-disk field ownership, not just the current type definitions. Decide whether the prior version needs its own legacy wire shape even if the carrier set is unchanged.
-- When introducing new persisted components alongside a legacy carrier, check coexistence coherence — decide whether new carriers derive from legacy during migration or every setup path migrates immediately.
-- When a staged migration moves consumers off a legacy carrier but a later ticket owns removing it, classify remaining references by surface: production reads, test-only helpers, public re-exports, setup fixtures. Eliminate production reads within the current ticket's boundary.
+Specific persisted-shape checks:
+- Worldwake does not support legacy saves by default. When persisted shape changes, update the current save format and keep older versions rejected unless the user explicitly asks for compatibility work.
+- When removing or reclassifying persisted fields, search for stale tests, helpers, or docs that still assume older save versions load successfully. Rewrite them to reflect current-format-only support.
+- When adding persisted fields to an existing serialized component, make focused save tests populate those exact new fields with non-default values and assert them after roundtrip. Do not rely on broad equality proofs that can pass with the new fields left empty.
+- When introducing new persisted components alongside a temporary legacy carrier, keep the runtime boundary honest within the live current format, but do not add older-save migration paths unless the user explicitly requests them.
+- When a staged migration moves consumers off a legacy carrier but a later ticket owns removing it, classify remaining references by surface: production reads, test-only helpers, public re-exports, setup fixtures. Eliminate production reads within the current ticket's boundary without introducing legacy-save compatibility.
 
 #### Helper, math, and default validation
 

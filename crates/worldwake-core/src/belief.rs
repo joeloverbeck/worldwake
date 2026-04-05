@@ -1,10 +1,10 @@
 //! Authoritative belief and perception state for E14.
 
 use crate::{
-    ActionDomain, BelievedInstitutionalClaim, CommodityKind, Component, EntityId, EvidenceKind,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
-    WorkstationTag, World, Wound,
+    ActionDomain, BelievedInstitutionalClaim, ClaimId, ClaimValue, CommodityKind, Component,
+    EntityBeliefAspect, EntityBeliefClaim, EntityId, EvidenceKind, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity,
+    ResourceSource, TheftFacts, Tick, WorkstationTag, World, Wound,
     social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
 use serde::{Deserialize, Serialize};
@@ -38,6 +38,10 @@ enum InstitutionalTellTopicKey {
 /// Per-agent subjective view of observed entities and social evidence.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AgentBeliefStore {
+    #[serde(default)]
+    pub entity_claims: BTreeMap<EntityId, Vec<EntityBeliefClaim>>,
+    #[serde(default)]
+    pub next_claim_id: ClaimId,
     pub known_entities: BTreeMap<EntityId, BelievedEntityState>,
     pub social_observations: Vec<SocialObservation>,
     pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
@@ -50,6 +54,14 @@ impl AgentBeliefStore {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn record_entity_claim(&mut self, claim: EntityBeliefClaim) {
+        self.next_claim_id = ClaimId(claim.claim_id.0.saturating_add(1).max(self.next_claim_id.0));
+        self.entity_claims
+            .entry(claim.subject)
+            .or_default()
+            .push(claim);
     }
 
     pub fn update_entity(&mut self, id: EntityId, state: BelievedEntityState) {
@@ -143,6 +155,61 @@ impl AgentBeliefStore {
 
         for (_, entity) in eviction_order.into_iter().take(excess) {
             self.known_entities.remove(&entity);
+        }
+    }
+
+    pub fn enforce_entity_claim_capacity(
+        &mut self,
+        profile: &PerceptionProfile,
+        current_tick: Tick,
+    ) {
+        let affected_entities = self.entity_claims.keys().copied().collect::<Vec<_>>();
+
+        if profile.memory_capacity == 0 {
+            self.entity_claims.clear();
+            for entity in affected_entities {
+                self.known_entities.remove(&entity);
+            }
+            return;
+        }
+
+        for claims in self.entity_claims.values_mut() {
+            claims.retain(|claim| {
+                within_retention_window(
+                    claim.acquired_tick,
+                    current_tick,
+                    profile.memory_retention_ticks,
+                )
+            });
+
+            claims.sort_by_key(|claim| {
+                (
+                    std::cmp::Reverse(effective_claim_confidence(
+                        claim,
+                        current_tick,
+                        &profile.confidence_policy,
+                    )),
+                    std::cmp::Reverse(claim.acquired_tick),
+                    std::cmp::Reverse(claim.claim_id),
+                )
+            });
+            claims.truncate(profile.memory_capacity as usize);
+            claims.sort_by_key(|claim| (claim.acquired_tick, claim.claim_id));
+        }
+
+        self.entity_claims.retain(|_, claims| !claims.is_empty());
+
+        for entity in affected_entities {
+            match self.entity_claims.get(&entity).and_then(|claims| {
+                derive_entity_summary(claims, current_tick, &profile.confidence_policy)
+            }) {
+                Some(summary) => {
+                    self.known_entities.insert(entity, summary);
+                }
+                None => {
+                    self.known_entities.remove(&entity);
+                }
+            }
         }
     }
 
@@ -1260,6 +1327,120 @@ pub fn build_believed_entity_state(
     })
 }
 
+#[must_use]
+pub fn derive_entity_summary(
+    claims: &[EntityBeliefClaim],
+    current_tick: Tick,
+    policy: &BeliefConfidencePolicy,
+) -> Option<BelievedEntityState> {
+    let mut winners = BTreeMap::<EntityBeliefAspect, &EntityBeliefClaim>::new();
+
+    for claim in claims {
+        match winners.entry(claim.aspect) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(claim);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if claim_rank(claim, current_tick, policy)
+                    > claim_rank(entry.get(), current_tick, policy)
+                {
+                    entry.insert(claim);
+                }
+            }
+        }
+    }
+
+    let metadata_claim = winners
+        .values()
+        .copied()
+        .max_by_key(|claim| claim_rank(claim, current_tick, policy))?;
+
+    let mut summary = BelievedEntityState {
+        last_known_place: None,
+        last_known_inventory: BTreeMap::new(),
+        workstation_tag: None,
+        resource_source: None,
+        alive: true,
+        wounds: Vec::new(),
+        last_known_courage: None,
+        believed_activity: None,
+        believed_artifact: None,
+        believed_contention: None,
+        believed_evidence: None,
+        observed_tick: metadata_claim.acquired_tick,
+        source: metadata_claim.source,
+    };
+
+    for (aspect, claim) in winners {
+        match (aspect, &claim.value) {
+            (EntityBeliefAspect::Location, ClaimValue::Place(place)) => {
+                summary.last_known_place = *place;
+            }
+            (EntityBeliefAspect::Inventory(commodity), ClaimValue::Quantity(quantity)) => {
+                if *quantity > Quantity(0) {
+                    summary.last_known_inventory.insert(commodity, *quantity);
+                } else {
+                    summary.last_known_inventory.remove(&commodity);
+                }
+            }
+            (EntityBeliefAspect::Alive, ClaimValue::Bool(alive)) => {
+                summary.alive = *alive;
+            }
+            (EntityBeliefAspect::Wounded, ClaimValue::WoundSnapshot(wounds)) => {
+                summary.wounds.clone_from(wounds);
+            }
+            (EntityBeliefAspect::Activity, ClaimValue::Activity(activity)) => {
+                summary.believed_activity.clone_from(activity);
+            }
+            (EntityBeliefAspect::WorkstationPresent, ClaimValue::WorkstationTag(tag)) => {
+                summary.workstation_tag = *tag;
+            }
+            (EntityBeliefAspect::ResourceAvailable(_), ClaimValue::ResourceSource(source)) => {
+                summary.resource_source.clone_from(source);
+            }
+            (EntityBeliefAspect::ContentionState, ClaimValue::ContentionState(contention)) => {
+                summary.believed_contention = *contention;
+            }
+            (EntityBeliefAspect::ArtifactState, ClaimValue::ArtifactState(artifact)) => {
+                summary.believed_artifact.clone_from(artifact);
+            }
+            (EntityBeliefAspect::Courage, ClaimValue::Courage(courage)) => {
+                summary.last_known_courage = *courage;
+            }
+            (EntityBeliefAspect::Evidence, ClaimValue::EvidenceState(evidence)) => {
+                summary.believed_evidence.clone_from(evidence);
+            }
+            _ => {}
+        }
+    }
+
+    Some(summary)
+}
+
+fn claim_rank(
+    claim: &EntityBeliefClaim,
+    current_tick: Tick,
+    policy: &BeliefConfidencePolicy,
+) -> (u16, Tick, ClaimId) {
+    (
+        effective_claim_confidence(claim, current_tick, policy),
+        claim.acquired_tick,
+        claim.claim_id,
+    )
+}
+
+fn effective_claim_confidence(
+    claim: &EntityBeliefClaim,
+    current_tick: Tick,
+    policy: &BeliefConfidencePolicy,
+) -> u16 {
+    let staleness_ticks = current_tick.0.saturating_sub(claim.acquired_tick.0);
+    let staleness_penalty = u16::try_from(staleness_ticks)
+        .unwrap_or(u16::MAX)
+        .saturating_mul(policy.staleness_penalty_per_tick.value());
+    claim.confidence.value().saturating_sub(staleness_penalty)
+}
+
 /// How the agent acquired a belief snapshot.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum PerceptionSource {
@@ -1514,14 +1695,16 @@ mod tests {
         SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
         SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        recipient_knowledge_status, share_equivalent, to_shared_belief_snapshot,
+        derive_entity_summary, recipient_knowledge_status, share_equivalent,
+        to_shared_belief_snapshot,
     };
     use crate::{
         ActionDefId, ActionDomain, BelievedArtifactState, BelievedBountyTerms,
-        BelievedInstitutionalClaim, BodyPart, CommodityKind, ControlSource, DeadAt,
-        DisturbanceKind, EntityId, EntityKind, EvidenceKind, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-        Permille, Quantity, SceneEvidence, TheftFacts, Tick, World, Wound, WoundCause, WoundId,
+        BelievedInstitutionalClaim, BodyPart, ClaimId, ClaimValue, CommodityKind, ControlSource,
+        DeadAt, DisturbanceKind, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
+        EvidenceKind, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, NoticeTopic, Permille, Quantity, ResourceSource,
+        SceneEvidence, TheftFacts, Tick, WorkstationTag, World, Wound, WoundCause, WoundId,
         WoundList, build_prototype_world, current_institutional_belief_topics,
         institutional_claim_same_memory_lane, traits::Component,
     };
@@ -1599,6 +1782,43 @@ mod tests {
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
         }
+    }
+
+    fn sample_claim(
+        claim_id: u64,
+        subject: u32,
+        aspect: EntityBeliefAspect,
+        value: ClaimValue,
+        source: PerceptionSource,
+        acquired_tick: u64,
+        confidence: u16,
+    ) -> EntityBeliefClaim {
+        EntityBeliefClaim {
+            claim_id: ClaimId(claim_id),
+            subject: entity(subject),
+            aspect,
+            value,
+            source,
+            acquired_tick: Tick(acquired_tick),
+            claimed_event_tick: None,
+            confidence: Permille::new(confidence).unwrap(),
+        }
+    }
+
+    fn claim_backed_store(entity_id: u32, claims: Vec<EntityBeliefClaim>) -> AgentBeliefStore {
+        let mut store = AgentBeliefStore::new();
+        let subject = entity(entity_id);
+        store.entity_claims.insert(subject, claims);
+        store.known_entities.insert(
+            subject,
+            derive_entity_summary(
+                store.entity_claims.get(&subject).unwrap(),
+                Tick(10),
+                &policy(),
+            )
+            .unwrap(),
+        );
+        store
     }
 
     fn sample_social_observation(observed_tick: u64) -> SocialObservation {
@@ -1830,12 +2050,232 @@ mod tests {
     fn new_creates_empty_store() {
         let store = AgentBeliefStore::new();
 
+        assert!(store.entity_claims.is_empty());
+        assert_eq!(store.next_claim_id, ClaimId(0));
         assert!(store.known_entities.is_empty());
         assert!(store.social_observations.is_empty());
         assert!(store.told_beliefs.is_empty());
         assert!(store.heard_beliefs.is_empty());
         assert!(store.asked_witnesses.is_empty());
         assert!(store.institutional_beliefs.is_empty());
+    }
+
+    #[test]
+    fn derive_entity_summary_returns_none_for_empty_claims() {
+        assert_eq!(derive_entity_summary(&[], Tick(10), &policy()), None);
+    }
+
+    #[test]
+    fn derive_entity_summary_projects_single_claims_into_summary() {
+        let claims = vec![
+            sample_claim(
+                1,
+                40,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(entity(10))),
+                PerceptionSource::DirectObservation,
+                7,
+                950,
+            ),
+            sample_claim(
+                2,
+                40,
+                EntityBeliefAspect::Alive,
+                ClaimValue::Bool(true),
+                PerceptionSource::DirectObservation,
+                7,
+                950,
+            ),
+            sample_claim(
+                3,
+                40,
+                EntityBeliefAspect::Inventory(CommodityKind::Apple),
+                ClaimValue::Quantity(Quantity(4)),
+                PerceptionSource::DirectObservation,
+                7,
+                950,
+            ),
+            sample_claim(
+                4,
+                40,
+                EntityBeliefAspect::Wounded,
+                ClaimValue::WoundSnapshot(vec![sample_wound(2, 7)]),
+                PerceptionSource::DirectObservation,
+                7,
+                950,
+            ),
+            sample_claim(
+                5,
+                40,
+                EntityBeliefAspect::WorkstationPresent,
+                ClaimValue::WorkstationTag(Some(WorkstationTag::Mill)),
+                PerceptionSource::DirectObservation,
+                7,
+                950,
+            ),
+            sample_claim(
+                6,
+                40,
+                EntityBeliefAspect::ResourceAvailable(CommodityKind::Apple),
+                ClaimValue::ResourceSource(Some(ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(5),
+                    max_quantity: Quantity(9),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: Some(Tick(6)),
+                })),
+                PerceptionSource::DirectObservation,
+                7,
+                950,
+            ),
+        ];
+
+        let summary = derive_entity_summary(&claims, Tick(10), &policy()).unwrap();
+
+        assert_eq!(summary.last_known_place, Some(entity(10)));
+        assert_eq!(
+            summary.last_known_inventory.get(&CommodityKind::Apple),
+            Some(&Quantity(4))
+        );
+        assert!(summary.alive);
+        assert_eq!(summary.wounds, vec![sample_wound(2, 7)]);
+        assert_eq!(summary.workstation_tag, Some(WorkstationTag::Mill));
+        assert_eq!(
+            summary.resource_source,
+            Some(ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(5),
+                max_quantity: Quantity(9),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: Some(Tick(6)),
+            })
+        );
+        assert_eq!(summary.observed_tick, Tick(7));
+        assert_eq!(summary.source, PerceptionSource::DirectObservation);
+    }
+
+    #[test]
+    fn derive_entity_summary_prefers_highest_effective_confidence_per_aspect() {
+        let claims = vec![
+            sample_claim(
+                1,
+                41,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(entity(10))),
+                PerceptionSource::Report {
+                    from: entity(2),
+                    chain_len: 1,
+                },
+                7,
+                650,
+            ),
+            sample_claim(
+                2,
+                41,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(entity(11))),
+                PerceptionSource::DirectObservation,
+                7,
+                900,
+            ),
+        ];
+
+        let summary = derive_entity_summary(&claims, Tick(10), &policy()).unwrap();
+
+        assert_eq!(summary.last_known_place, Some(entity(11)));
+        assert_eq!(summary.observed_tick, Tick(7));
+        assert_eq!(summary.source, PerceptionSource::DirectObservation);
+    }
+
+    #[test]
+    fn derive_entity_summary_applies_staleness_before_selecting_winner() {
+        let claims = vec![
+            sample_claim(
+                1,
+                42,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(entity(10))),
+                PerceptionSource::DirectObservation,
+                1,
+                900,
+            ),
+            sample_claim(
+                2,
+                42,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(entity(11))),
+                PerceptionSource::Report {
+                    from: entity(3),
+                    chain_len: 1,
+                },
+                9,
+                820,
+            ),
+        ];
+
+        let summary = derive_entity_summary(&claims, Tick(10), &policy()).unwrap();
+
+        assert_eq!(summary.last_known_place, Some(entity(11)));
+        assert_eq!(
+            summary.source,
+            PerceptionSource::Report {
+                from: entity(3),
+                chain_len: 1
+            }
+        );
+    }
+
+    #[test]
+    fn derive_entity_summary_breaks_ties_by_newer_tick_then_higher_claim_id() {
+        let newer = sample_claim(
+            2,
+            43,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(11))),
+            PerceptionSource::Report {
+                from: entity(4),
+                chain_len: 1,
+            },
+            9,
+            700,
+        );
+        let older = sample_claim(
+            1,
+            43,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(10))),
+            PerceptionSource::DirectObservation,
+            7,
+            700,
+        );
+        let tied_newer_low_id = sample_claim(
+            3,
+            43,
+            EntityBeliefAspect::Alive,
+            ClaimValue::Bool(true),
+            PerceptionSource::DirectObservation,
+            9,
+            700,
+        );
+        let tied_newer_high_id = sample_claim(
+            4,
+            43,
+            EntityBeliefAspect::Alive,
+            ClaimValue::Bool(false),
+            PerceptionSource::DirectObservation,
+            9,
+            700,
+        );
+
+        let summary = derive_entity_summary(
+            &[older, newer, tied_newer_low_id, tied_newer_high_id],
+            Tick(9),
+            &policy(),
+        )
+        .unwrap();
+
+        assert_eq!(summary.last_known_place, Some(entity(11)));
+        assert!(!summary.alive);
     }
 
     #[test]
@@ -1983,6 +2423,113 @@ mod tests {
         store.enforce_capacity(&profile(0, 100), Tick(12));
 
         assert!(store.known_entities.is_empty());
+    }
+
+    #[test]
+    fn enforce_entity_claim_capacity_evicts_claims_beyond_retention_ticks() {
+        let mut store = claim_backed_store(
+            60,
+            vec![
+                sample_claim(
+                    1,
+                    60,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(10))),
+                    PerceptionSource::DirectObservation,
+                    1,
+                    950,
+                ),
+                sample_claim(
+                    2,
+                    60,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+            ],
+        );
+
+        store.enforce_entity_claim_capacity(&profile(5, 3), Tick(12));
+
+        assert_eq!(store.entity_claims.get(&entity(60)).unwrap().len(), 1);
+        assert_eq!(
+            store.entity_claims.get(&entity(60)).unwrap()[0].claim_id,
+            ClaimId(2)
+        );
+        assert!(store.known_entities.contains_key(&entity(60)));
+    }
+
+    #[test]
+    fn enforce_entity_claim_capacity_evicts_lowest_confidence_and_rederives_summary() {
+        let mut store = claim_backed_store(
+            61,
+            vec![
+                sample_claim(
+                    1,
+                    61,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(10))),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    900,
+                ),
+                sample_claim(
+                    2,
+                    61,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(11))),
+                    PerceptionSource::DirectObservation,
+                    10,
+                    950,
+                ),
+                sample_claim(
+                    3,
+                    61,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    10,
+                    950,
+                ),
+            ],
+        );
+
+        store.enforce_entity_claim_capacity(&profile(2, 100), Tick(10));
+
+        let claims = store.entity_claims.get(&entity(61)).unwrap();
+        assert_eq!(claims.len(), 2);
+        assert!(!claims.iter().any(|claim| claim.claim_id == ClaimId(1)));
+        assert_eq!(
+            store
+                .known_entities
+                .get(&entity(61))
+                .unwrap()
+                .last_known_place,
+            Some(entity(11))
+        );
+    }
+
+    #[test]
+    fn enforce_entity_claim_capacity_removes_summary_when_last_claim_is_evicted() {
+        let mut store = claim_backed_store(
+            62,
+            vec![sample_claim(
+                1,
+                62,
+                EntityBeliefAspect::Alive,
+                ClaimValue::Bool(true),
+                PerceptionSource::DirectObservation,
+                1,
+                950,
+            )],
+        );
+
+        store.enforce_entity_claim_capacity(&profile(3, 2), Tick(10));
+
+        assert!(!store.entity_claims.contains_key(&entity(62)));
+        assert!(!store.known_entities.contains_key(&entity(62)));
     }
 
     #[test]
@@ -2606,6 +3153,15 @@ mod tests {
     #[test]
     fn agent_belief_store_roundtrips_through_bincode_with_institutional_beliefs() {
         let mut store = AgentBeliefStore::new();
+        store.record_entity_claim(sample_claim(
+            1,
+            1,
+            EntityBeliefAspect::Alive,
+            ClaimValue::Bool(true),
+            PerceptionSource::DirectObservation,
+            7,
+            950,
+        ));
         store.update_entity(entity(1), sample_state(7, 2));
         store.institutional_beliefs.insert(
             InstitutionalBeliefKey::OfficeHolderOf { office: entity(50) },
@@ -2662,6 +3218,37 @@ mod tests {
         let roundtrip: TellProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn entity_belief_claim_roundtrips_through_bincode() {
+        let claim = sample_claim(
+            8,
+            77,
+            EntityBeliefAspect::Evidence,
+            ClaimValue::EvidenceState(Some(BelievedEvidenceState {
+                entries: vec![BelievedEvidenceEntry {
+                    kind: EvidenceKind::DisturbanceMarker {
+                        place: entity(78),
+                        kind: DisturbanceKind::ForcedEntry,
+                        created_at: Tick(6),
+                    },
+                    freshness: Tick(6),
+                }],
+                observed_tick: Tick(8),
+            })),
+            PerceptionSource::Report {
+                from: entity(55),
+                chain_len: 1,
+            },
+            8,
+            730,
+        );
+
+        let bytes = bincode::serialize(&claim).unwrap();
+        let roundtrip: EntityBeliefClaim = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, claim);
     }
 
     #[test]

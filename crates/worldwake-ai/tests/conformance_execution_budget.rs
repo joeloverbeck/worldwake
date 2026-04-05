@@ -13,8 +13,8 @@ use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, GoalKey, GoalKind, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     BeliefConfidencePolicy, CognitiveProfile, CommodityKind, EntityId, ExecutionBudget,
-    HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity,
-    ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
+    HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity, ResourceSource,
+    Seed, Tick, UtilityProfile, WorkstationTag,
 };
 
 fn minimum_bundle_cognitive() -> CognitiveProfile {
@@ -51,22 +51,23 @@ fn planning_trace_at(
     }
 }
 
-fn selected_goal_sequence(h: &mut GoldenHarness, agent: EntityId, steps: u64) -> Vec<Option<GoalKey>> {
+fn selected_goal_sequence(
+    h: &mut GoldenHarness,
+    agent: EntityId,
+    steps: u64,
+) -> Vec<Option<GoalKey>> {
     let mut sequence = Vec::new();
     for tick in 0..steps {
         h.step_once();
         sequence.push(
-            planning_trace_at(h, agent, Tick(tick)).and_then(|planning| planning.selection.selected_goal()),
+            planning_trace_at(h, agent, Tick(tick))
+                .and_then(|planning| planning.selection.selected_goal()),
         );
     }
     sequence
 }
 
-fn selected_plan_ops(
-    h: &GoldenHarness,
-    agent: EntityId,
-    tick: Tick,
-) -> Option<Vec<PlannerOpKind>> {
+fn selected_plan_ops(h: &GoldenHarness, agent: EntityId, tick: Tick) -> Option<Vec<PlannerOpKind>> {
     planning_trace_at(h, agent, tick)?
         .selection
         .selected_plan
@@ -351,11 +352,8 @@ fn conformance_snapshot_horizon_is_behavior_changing() {
         CognitiveProfile::default(),
         ExecutionBudget::default(),
     );
-    let (mut reduced, reduced_agent) = setup_remote_acquire_harness(
-        seed,
-        tight_snapshot_cognitive(),
-        ExecutionBudget::default(),
-    );
+    let (mut reduced, reduced_agent) =
+        setup_remote_acquire_harness(seed, tight_snapshot_cognitive(), ExecutionBudget::default());
 
     baseline.step_once();
     reduced.step_once();
@@ -391,13 +389,13 @@ fn conformance_snapshot_horizon_is_behavior_changing() {
 #[test]
 fn conformance_max_node_expansions_is_behavior_changing() {
     let seed = Seed([83; 32]);
-    let (mut tight, tight_agent) = setup_bounded_multistep_harness(
+    let (mut tight, tight_agent) =
+        setup_bounded_multistep_harness(seed, tight_search_cognitive(), ExecutionBudget::default());
+    let (mut thorough, thorough_agent) = setup_bounded_multistep_harness(
         seed,
-        tight_search_cognitive(),
+        CognitiveProfile::default(),
         ExecutionBudget::default(),
     );
-    let (mut thorough, thorough_agent) =
-        setup_bounded_multistep_harness(seed, CognitiveProfile::default(), ExecutionBudget::default());
 
     tight.step_once();
     thorough.step_once();

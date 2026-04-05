@@ -7,18 +7,18 @@ use worldwake_sim::{
     SchedulerActionRuntime, TickInputError,
 };
 
+use super::frame::progress_op_kinds;
+use super::observation::{InFlightReconciliation, reconcile_in_flight_state};
+use super::{
+    AgentTickContext, FrameSwitchMarginSource, build_candidate_plans, persist_blocked_memory,
+    selection_candidates,
+};
 use crate::DirtySet;
 use crate::failure_handling::ExecutionFailure;
 use crate::{
     AgentDecisionRuntime, DecisionContext, InterruptDecision, PlanFailureContext, PlanTerminalKind,
     PlannedStep, RankedGoal, classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure,
     has_frame,
-};
-use super::frame::progress_op_kinds;
-use super::observation::{InFlightReconciliation, reconcile_in_flight_state};
-use super::{
-    AgentTickContext, FrameSwitchMarginSource, build_candidate_plans, persist_blocked_memory,
-    selection_candidates,
 };
 
 pub(super) fn active_action_for_agent(

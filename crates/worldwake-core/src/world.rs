@@ -2,22 +2,21 @@
 
 use crate::{
     ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, BanditCamp, BanditFactionPolicy,
-    BlockedIntentMemory, BountyTerms, CarryCapacity, CombatProfile, CombatStance, CommodityKind,
-    CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
-    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
-    CognitiveProfile, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator,
+    BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance,
+    CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables,
+    ComponentValue, Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
+    ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator,
     EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
-    FactionData, HomeostaticNeeds,
-    InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
-    JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+    FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame,
+    ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
     MetabolismProfile, Name, NoticeContent, OfficeData, OfficeForceProfile, OfficeForceState,
     PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PreferenceProfile,
     ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
-    RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing,
-    SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences,
-    TellProfile, TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
-    WorkstationMarker, WorldError, WoundList, component_schema::with_component_schema_entries,
+    RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence,
+    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
+    WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -713,6 +712,8 @@ mod tests {
             },
         );
         AgentBeliefStore {
+            entity_claims: BTreeMap::new(),
+            next_claim_id: crate::ClaimId(0),
             known_entities,
             social_observations: Vec::new(),
             told_beliefs: BTreeMap::new(),

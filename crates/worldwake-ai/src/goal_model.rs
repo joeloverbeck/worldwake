@@ -2134,13 +2134,13 @@ mod tests {
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
         BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        ExecutionBudget,
-        EpistemicDispositionProfile, EpistemicSubject, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille, ProofRequirement,
-        PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource,
-        RewardSource, SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
+        EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille,
+        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
+        ResourceSource, RewardSource, SuccessionLaw, TellTopic, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag,
+        Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
     use worldwake_sim::PressForceClaimActionPayload;
@@ -5677,8 +5677,11 @@ mod tests {
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
-        let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ProfileFixture::default()));
+        let places = goal.prerequisite_places(
+            &state,
+            &RecipeRegistry::new(),
+            &execution_budget(&ProfileFixture::default()),
+        );
 
         assert_eq!(places, vec![place_b]);
     }
@@ -5706,8 +5709,11 @@ mod tests {
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
-        let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ProfileFixture::default()));
+        let places = goal.prerequisite_places(
+            &state,
+            &RecipeRegistry::new(),
+            &execution_budget(&ProfileFixture::default()),
+        );
 
         assert!(places.is_empty());
     }
@@ -5763,8 +5769,11 @@ mod tests {
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::TreatWounds { patient };
-        let places =
-            goal.prerequisite_places(&state, &RecipeRegistry::new(), &execution_budget(&ProfileFixture::default()));
+        let places = goal.prerequisite_places(
+            &state,
+            &RecipeRegistry::new(),
+            &execution_budget(&ProfileFixture::default()),
+        );
 
         assert_eq!(places, vec![place_b]);
     }
@@ -5807,7 +5816,11 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default())),
+            goal.prerequisite_places(
+                &state,
+                &recipes,
+                &execution_budget(&ProfileFixture::default())
+            ),
             vec![place_b]
         );
     }
@@ -5836,8 +5849,12 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default()))
-                .is_empty()
+            goal.prerequisite_places(
+                &state,
+                &recipes,
+                &execution_budget(&ProfileFixture::default())
+            )
+            .is_empty()
         );
     }
 
@@ -5883,7 +5900,11 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default())),
+            goal.prerequisite_places(
+                &state,
+                &recipes,
+                &execution_budget(&ProfileFixture::default())
+            ),
             vec![place_b]
         );
     }
@@ -5929,7 +5950,11 @@ mod tests {
         let goal = GoalKind::ProduceCommodity { recipe_id };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default())),
+            goal.prerequisite_places(
+                &state,
+                &recipes,
+                &execution_budget(&ProfileFixture::default())
+            ),
             vec![place_c]
         );
     }
@@ -5974,7 +5999,11 @@ mod tests {
         };
 
         assert_eq!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default())),
+            goal.prerequisite_places(
+                &state,
+                &recipes,
+                &execution_budget(&ProfileFixture::default())
+            ),
             vec![place_b]
         );
     }
@@ -6019,8 +6048,12 @@ mod tests {
         };
 
         assert!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default()))
-                .is_empty()
+            goal.prerequisite_places(
+                &state,
+                &recipes,
+                &execution_budget(&ProfileFixture::default())
+            )
+            .is_empty()
         );
     }
 
@@ -6050,8 +6083,12 @@ mod tests {
         };
 
         assert!(
-            goal.prerequisite_places(&state, &recipes, &execution_budget(&ProfileFixture::default()))
-                .is_empty()
+            goal.prerequisite_places(
+                &state,
+                &recipes,
+                &execution_budget(&ProfileFixture::default())
+            )
+            .is_empty()
         );
     }
 

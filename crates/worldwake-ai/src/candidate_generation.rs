@@ -4505,6 +4505,8 @@ mod tests {
                         .keys()
                         .any(|(claim_agent, _)| *claim_agent == agent);
                 has_any_subjective_memory.then(|| AgentBeliefStore {
+                    entity_claims: BTreeMap::new(),
+                    next_claim_id: worldwake_core::ClaimId(0),
                     known_entities: self
                         .beliefs
                         .get(&agent)

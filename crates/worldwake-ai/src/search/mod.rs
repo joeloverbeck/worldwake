@@ -154,12 +154,7 @@ pub fn search_plan(
             &relevant_defs,
         );
         let combined_places = if expansion_summaries.is_some() {
-            combined_relevant_places_with_guidance(
-                goal,
-                &node.state,
-                recipes,
-                execution_budget,
-            )
+            combined_relevant_places_with_guidance(goal, &node.state, recipes, execution_budget)
         } else {
             combined_relevant_places(goal, &node.state, recipes, execution_budget)
         };

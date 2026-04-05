@@ -842,8 +842,8 @@ mod tests {
         CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
         CommodityPurpose, DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState,
         GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource,
-        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,

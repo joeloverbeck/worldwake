@@ -207,10 +207,7 @@ pub(super) fn determine_selected_plan_source(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref
-)]
+#[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
 pub(super) fn build_candidate_plans(
     world: &worldwake_core::World,
     scheduler: &Scheduler,
@@ -540,10 +537,7 @@ fn clear_current_plan(
         .map(|candidate| candidate.priority_class);
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref
-)]
+#[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
 pub(super) fn plan_and_validate_next_step(
     world: &worldwake_core::World,
     scheduler: &Scheduler,
@@ -609,7 +603,15 @@ pub(super) fn plan_and_validate_next_step(
         );
 
         // Record newly exhausted goals for next tick.
-        record_exhausted_goals(runtime, &view, agent, recipe_registry, &plans, tick, cognitive);
+        record_exhausted_goals(
+            runtime,
+            &view,
+            agent,
+            recipe_registry,
+            &plans,
+            tick,
+            cognitive,
+        );
         for plan in &plans {
             if plan.result.is_found() {
                 runtime.exhaustion_cache.remove(&plan.opportunity);
@@ -808,7 +810,15 @@ pub(super) fn plan_and_validate_next_step_traced(
             &runtime.exhaustion_cache,
         );
 
-        record_exhausted_goals(runtime, &view, agent, recipe_registry, &plans, tick, cognitive);
+        record_exhausted_goals(
+            runtime,
+            &view,
+            agent,
+            recipe_registry,
+            &plans,
+            tick,
+            cognitive,
+        );
         for plan in &plans {
             if plan.result.is_found() {
                 runtime.exhaustion_cache.remove(&plan.opportunity);
@@ -1001,7 +1011,7 @@ mod tests {
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
         OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
-        PlannedStep, RankedGoal, ProfileFixture, build_semantics_table,
+        PlannedStep, ProfileFixture, RankedGoal, build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
         feasibility::FeasibilityHint,
     };
@@ -1010,8 +1020,7 @@ mod tests {
         ActionDefId, ActionDomain, CauseRef, CognitiveProfile, CommodityKind, CommodityPurpose,
         ControlSource, EventLog, ExecutionBudget, HomeostaticNeeds, MerchandiseProfile, Permille,
         Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-        World, WorldTxn,
-        build_prototype_world,
+        World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeRegistry, Scheduler,

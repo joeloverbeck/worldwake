@@ -5,6 +5,7 @@ use crate::{
     bandit_camp::{BanditCamp, BanditFactionPolicy},
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocked_intent::BlockedIntentMemory,
+    cognitive_profile::CognitiveProfile,
     combat::{CombatProfile, CombatStance, DeadAt},
     communication::CommunicationProfile,
     component_schema::with_component_schema_entries,
@@ -12,7 +13,6 @@ use crate::{
     contention::{
         ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
     },
-    cognitive_profile::CognitiveProfile,
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
@@ -202,6 +202,8 @@ mod tests {
 
     fn sample_roundtrip_belief_store() -> AgentBeliefStore {
         AgentBeliefStore {
+            entity_claims: BTreeMap::new(),
+            next_claim_id: crate::ClaimId(0),
             known_entities: BTreeMap::from([(
                 entity(23),
                 BelievedEntityState {

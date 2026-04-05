@@ -31,6 +31,7 @@ pub mod belief;
 pub mod blocked_intent;
 pub mod canonical;
 pub mod cause;
+pub mod cognitive_profile;
 pub mod combat;
 pub mod communication;
 pub mod component_schema;
@@ -39,11 +40,11 @@ pub mod components;
 pub mod conservation;
 pub mod contention;
 pub mod control;
-pub mod cognitive_profile;
 pub mod crime;
 pub mod delta;
 pub mod drives;
 pub mod entity;
+pub mod entity_belief_claim;
 pub mod epistemic;
 pub mod error;
 pub mod event_log;
@@ -109,6 +110,7 @@ pub use canonical::{
     hash_world,
 };
 pub use cause::CauseRef;
+pub use cognitive_profile::CognitiveProfile;
 pub use combat::{CombatProfile, CombatStance, DeadAt};
 pub use communication::{CommunicationClass, CommunicationProfile, classify_communication};
 pub use component_tables::ComponentTables;
@@ -121,7 +123,6 @@ pub use contention::{
     ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
     ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter, QueuedContentionIntent,
 };
-pub use cognitive_profile::CognitiveProfile;
 pub use control::ControlSource;
 pub use crime::{
     JusticeDispositionProfile, PunishmentFineSelectionTrace, PunishmentFineStartFailureTrace,
@@ -133,6 +134,7 @@ pub use delta::{
 };
 pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
+pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBeliefClaim};
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
 pub use error::WorldError;
 pub use event_log::EventLog;

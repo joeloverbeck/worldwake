@@ -66,9 +66,10 @@ fn combined_relevant_places_internal(
     let mut places = goal.key.kind.goal_relevant_places(state, recipes);
     let goal_relevant_places_for_trace = include_guidance_trace.then(|| places.clone());
     let base_len = places.len();
-    let prerequisite_places =
-        goal.key.kind
-            .prerequisite_places(state, recipes, execution_budget);
+    let prerequisite_places = goal
+        .key
+        .kind
+        .prerequisite_places(state, recipes, execution_budget);
     let prerequisite_places_for_trace = include_guidance_trace.then(|| prerequisite_places.clone());
     for place in prerequisite_places {
         if !places.contains(&place) {

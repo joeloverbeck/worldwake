@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
-    HomeostaticNeeds, IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity,
-    Tick, UniqueItemKind, Wound,
+    HomeostaticNeeds, IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, Tick,
+    UniqueItemKind, Wound,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

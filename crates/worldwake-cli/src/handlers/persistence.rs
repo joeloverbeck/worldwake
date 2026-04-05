@@ -192,10 +192,7 @@ mod tests {
             beam_width: 16,
             ..ExecutionBudget::default()
         };
-        let sim = build_test_sim_with_profiles(
-            Some(cognitive_profile),
-            Some(execution_budget),
-        );
+        let sim = build_test_sim_with_profiles(Some(cognitive_profile), Some(execution_budget));
         let agent = sim
             .controller_state()
             .controlled_entity()
