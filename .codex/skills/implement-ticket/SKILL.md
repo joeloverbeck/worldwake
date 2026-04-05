@@ -186,6 +186,7 @@ When a ticket is an explicit staged extraction step, temporary duplicated logic 
 12. When a ticket turns an action from single-shot validation into a staged lifecycle, prove each phase separately: start admission, intermediate local-state evolution, commit conditions, and abort-side aftermath. Do not assume start-time validation and post-abort consequences share the same proof boundary.
 13. When a ticket splits previously uniform behavior into class-, variant-, or profile-specific rules, search for existing focused tests that currently compress those cases into one expectation and rewrite them into explicit per-case proofs instead of only adding new tests alongside stale broad assertions.
 14. When a ticket makes a new planner-visible operator lawful for an existing goal family, sweep the planner contract end to end: goal dispatch or relevant-op declarations, progress-barrier rules, goal-model expectations, and search/planner-root tests. Do not stop at affordance or candidate-generation changes if the goal family still advertises the old operator set.
+15. When one existing goal family spans multiple target subtypes, fulfillment modes, or domain variants, verify operator availability per subtype instead of only at the family-wide declaration level. Check whether stale operators from one subtype still leak into candidate generation, root synthesis, or goal-model admission for another subtype once the family broadens.
 
 ### 6. Verify at the right boundary
 
@@ -253,6 +254,8 @@ When adding start-failure aftermath recording before action instantiation, check
 When a ticket claims cross-layer valuation agreement, explicitly check whether the shared scorer is computing marginal value over the actor's current accessible stock, especially when the proof depends on current-vs-receipt or retain-vs-transfer snapshots.
 
 When a ticket changes whether an action should be available at all, include at least one focused proof that goes through real affordance enumeration rather than only constructing action instances directly.
+
+For exact-bound planner-root candidates, do not treat target binding as the whole contract when operator legality also depends on intermediate goal state. Verify whether synthesized or affordance-backed root candidates need an additional stateful availability gate so exact-bound actions do not surface before their prerequisite progress has actually been achieved.
 
 When a valid architecture change makes an existing golden scenario stale, update the golden to prove the new lawful contract rather than preserving outdated failure reasons, plan shapes, or scenario narratives.
 

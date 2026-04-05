@@ -1130,6 +1130,109 @@ mod tests {
     }
 
     #[test]
+    fn condition_changed_bounty_state_detects_non_active_delivery_bounty() {
+        let agent = entity(1);
+        let bounty = entity(2);
+        let issuer = entity(3);
+        let claim_place = entity(4);
+        let active_view = MockView {
+            beliefs: vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination: claim_place,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(10),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: worldwake_core::Tick(2),
+                    }),
+                    believed_contention: None,
+                    observed_tick: worldwake_core::Tick(2),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+            ..MockView::default()
+        };
+
+        assert!(!condition_changed(
+            &ExhaustionInvalidationCondition::BountyStateChanged(bounty),
+            &ExhaustionBaseline::default(),
+            &active_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+
+        let withdrawn_view = MockView {
+            beliefs: vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Withdrawn,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination: claim_place,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(10),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: worldwake_core::Tick(2),
+                    }),
+                    believed_contention: None,
+                    observed_tick: worldwake_core::Tick(2),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+            ..MockView::default()
+        };
+
+        assert!(condition_changed(
+            &ExhaustionInvalidationCondition::BountyStateChanged(bounty),
+            &ExhaustionBaseline::default(),
+            &withdrawn_view,
+            agent,
+            false,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
     fn condition_changed_position_detects_settled_arrival_delta() {
         let agent = entity(1);
         let baseline_place = entity(2);

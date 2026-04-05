@@ -666,6 +666,7 @@ pub enum RootCandidateFilterReason {
     BindingMismatch {
         required_target: Option<EntityId>,
     },
+    GoalUnavailable,
     BlockedFacilityUse {
         facility: EntityId,
         intended_action: ActionDefId,

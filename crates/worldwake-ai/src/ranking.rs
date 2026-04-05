@@ -4876,6 +4876,42 @@ mod tests {
     }
 
     #[test]
+    fn fulfill_delivery_bounty_uses_same_enterprise_weighted_reward_motive() {
+        let agent = entity(1);
+        let bounty = entity(2);
+        let issuer = entity(3);
+        let claim_place = entity(5);
+        let mut view = base_view(agent);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                bounty,
+                believed_bounty_state(
+                    issuer,
+                    claim_place,
+                    BountyTarget::DeliverCommodity {
+                        commodity: CommodityKind::Bread,
+                        quantity: Quantity(3),
+                        destination: claim_place,
+                    },
+                    250,
+                ),
+            )],
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::FulfillBounty { bounty })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].motive_score, 50_000);
+    }
+
+    #[test]
     fn explain_ranked_goal_order_reports_priority_class_for_political_over_social() {
         use crate::feasibility::FeasibilityHint;
 

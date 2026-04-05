@@ -119,6 +119,8 @@ const BURY_OPS: &[PlannerOpKind] = &[PlannerOpKind::QueueForFacilityUse, Planner
 const FULFILL_BOUNTY_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::Attack,
+    PlannerOpKind::MoveCargo,
+    PlannerOpKind::StockManagement,
     PlannerOpKind::ClaimBounty,
 ];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];

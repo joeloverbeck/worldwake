@@ -250,6 +250,21 @@ pub(super) fn search_candidates(
             continue;
         }
 
+        if !goal
+            .key
+            .kind
+            .candidate_is_available(&node.state, semantics.op_kind)
+        {
+            update_root_candidate_outcome(
+                &mut root_candidates,
+                trace_index,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::GoalUnavailable,
+                ),
+            );
+            continue;
+        }
+
         if let Some((place, blocking_fact)) = candidate_blocked_by_place(
             &candidate,
             goal,
