@@ -39,6 +39,7 @@ pub mod components;
 pub mod conservation;
 pub mod contention;
 pub mod control;
+pub mod cognitive_profile;
 pub mod crime;
 pub mod delta;
 pub mod drives;
@@ -49,6 +50,7 @@ pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
 pub mod evidence;
+pub mod execution_budget;
 pub mod experience;
 pub mod factions;
 pub mod goal;
@@ -120,6 +122,7 @@ pub use contention::{
     ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
     ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter, QueuedContentionIntent,
 };
+pub use cognitive_profile::CognitiveProfile;
 pub use control::ControlSource;
 pub use crime::{
     JusticeDispositionProfile, PunishmentFineSelectionTrace, PunishmentFineStartFailureTrace,
@@ -137,6 +140,7 @@ pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
 pub use evidence::{DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence};
+pub use execution_budget::ExecutionBudget;
 pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
     SourceReliability, danger_ratio_permille, failure_ratio_permille,

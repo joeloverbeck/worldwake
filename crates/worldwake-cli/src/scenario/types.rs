@@ -7,12 +7,13 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    CarryCapacity, CombatProfile, CommodityValuationProfile, CommunicationProfile,
-    ContentionDispositionProfile, ControlSource, DriveThresholds, EpistemicDispositionProfile,
-    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, MetabolismProfile,
-    PatrolProfile, PerceptionProfile, PreferenceProfile, PursuitProfile, Quantity,
-    ReasoningProfile, SubstitutePreferences, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    CarryCapacity, CognitiveProfile, CombatProfile, CommodityValuationProfile,
+    CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
+    EpistemicDispositionProfile, ExecutionBudget, HomeostaticNeeds,
+    IntentionDispositionProfile, JusticeDispositionProfile, MetabolismProfile, PatrolProfile,
+    PerceptionProfile, PreferenceProfile, PursuitProfile, Quantity, ReasoningProfile,
+    SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag,
     items::CommodityKind, topology::PlaceTag,
 };
 
@@ -73,6 +74,10 @@ pub struct AgentDef {
     pub tell_profile: Option<TellProfile>,
     #[serde(default)]
     pub reasoning_profile: Option<ReasoningProfile>,
+    #[serde(default)]
+    pub cognitive_profile: Option<CognitiveProfile>,
+    #[serde(default)]
+    pub execution_budget: Option<ExecutionBudget>,
     #[serde(default)]
     pub epistemic_disposition: Option<EpistemicDispositionProfile>,
     #[serde(default)]
@@ -409,6 +414,8 @@ mod tests {
         assert!(agent.perception_profile.is_none());
         assert!(agent.tell_profile.is_none());
         assert!(agent.reasoning_profile.is_none());
+        assert!(agent.cognitive_profile.is_none());
+        assert!(agent.execution_budget.is_none());
         assert!(agent.epistemic_disposition.is_none());
         assert!(agent.intention_disposition.is_none());
         assert!(agent.communication_profile.is_none());

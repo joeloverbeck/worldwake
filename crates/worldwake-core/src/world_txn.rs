@@ -1936,13 +1936,13 @@ mod tests {
     use super::WorldTxn;
     use crate::{
         AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
-        CommunicationProfile, DemandMemory, EpistemicDispositionProfile, FactionData,
-        FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-        InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
-        OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-        PerceptionSource, PreferenceProfile, ReasoningProfile, RecordData, RecordEntryId,
-        RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile,
-        UtilityProfile,
+        CognitiveProfile, CommunicationProfile, DemandMemory, EpistemicDispositionProfile,
+        ExecutionBudget, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
+        InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
+        MerchandiseProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
+        PatrolRoute, PerceptionProfile, PerceptionSource, PreferenceProfile, ReasoningProfile,
+        RecordData, RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
+        TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2375,6 +2375,18 @@ mod tests {
                     component_kind: ComponentKind::ReasoningProfile,
                     before: None,
                     after: ComponentValue::ReasoningProfile(ReasoningProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::CognitiveProfile,
+                    before: None,
+                    after: ComponentValue::CognitiveProfile(CognitiveProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::ExecutionBudget,
+                    before: None,
+                    after: ComponentValue::ExecutionBudget(ExecutionBudget::default()),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

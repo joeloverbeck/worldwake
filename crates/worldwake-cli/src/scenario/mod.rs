@@ -10,10 +10,10 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
-    LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource, Seed, Tick, Topology,
-    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn,
-    hash_world,
+    CarryCapacity, CauseRef, CognitiveProfile, ControlSource, DeprivationExposure, EntityId,
+    EntityKind, EventLog, ExecutionBudget, LoadUnits, MerchandiseProfile, PatrolRoute, Place,
+    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
+    WorkstationMarker, World, WorldTxn, hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -288,7 +288,15 @@ fn spawn_agent(
     let tell = agent_def.tell_profile.unwrap_or_default();
     txn.set_component_tell_profile(agent_id, tell)?;
     let reasoning = agent_def.reasoning_profile.clone().unwrap_or_default();
+    let cognitive = agent_def
+        .cognitive_profile
+        .unwrap_or_else(|| CognitiveProfile::from_reasoning_profile(&reasoning));
+    let execution_budget = agent_def
+        .execution_budget
+        .unwrap_or_else(|| ExecutionBudget::from_reasoning_profile(&reasoning));
     txn.set_component_reasoning_profile(agent_id, reasoning)?;
+    txn.set_component_cognitive_profile(agent_id, cognitive)?;
+    txn.set_component_execution_budget(agent_id, execution_budget)?;
     let epistemic = agent_def.epistemic_disposition.clone().unwrap_or_default();
     txn.set_component_epistemic_disposition_profile(agent_id, epistemic)?;
     let intention = agent_def.intention_disposition.clone().unwrap_or_default();
@@ -475,13 +483,14 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
-        BeliefConfidencePolicy, CarryCapacity, CommodityKind, CommodityValuationProfile,
-        CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
-        EpistemicDispositionProfile, HomeostaticNeeds, IntentionDispositionProfile,
-        JusticeDispositionProfile, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile,
-        Permille, PreferenceProfile, PursuitProfile, Quantity, ReasoningProfile,
-        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WorkstationTag,
+        BeliefConfidencePolicy, CarryCapacity, CognitiveProfile, CommodityKind,
+        CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
+        ControlSource, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
+        HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
+        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PreferenceProfile,
+        PursuitProfile, Quantity, ReasoningProfile, SubstitutePreferences, TellProfile,
+        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
+        WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -497,6 +506,8 @@ mod tests {
             perception_profile: None,
             tell_profile: None,
             reasoning_profile: None,
+            cognitive_profile: None,
+            execution_budget: None,
             epistemic_disposition: None,
             intention_disposition: None,
             communication_profile: None,
@@ -1016,6 +1027,14 @@ mod tests {
         assert_eq!(
             world.get_component_reasoning_profile(agent),
             Some(&ReasoningProfile::default())
+        );
+        assert_eq!(
+            world.get_component_cognitive_profile(agent),
+            Some(&CognitiveProfile::default())
+        );
+        assert_eq!(
+            world.get_component_execution_budget(agent),
+            Some(&ExecutionBudget::default())
         );
         assert_eq!(
             world.get_component_epistemic_disposition_profile(agent),

@@ -67,8 +67,9 @@ pub fn handle_load(
 mod tests {
     use super::*;
     use worldwake_core::{
-        CauseRef, ControlSource, EventLog, ReasoningProfile, Seed, StateHash, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn, build_prototype_world,
+        CauseRef, CognitiveProfile, ControlSource, EventLog, ExecutionBudget, ReasoningProfile,
+        Seed, StateHash, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
     };
     use worldwake_sim::SaveableRuntime;
     use worldwake_sim::{
@@ -96,6 +97,16 @@ mod tests {
         );
         let agent_id = txn.create_agent("TestAgent", ControlSource::Ai).unwrap();
         if let Some(reasoning_profile) = reasoning_profile {
+            txn.set_component_cognitive_profile(
+                agent_id,
+                CognitiveProfile::from_reasoning_profile(&reasoning_profile),
+            )
+            .unwrap();
+            txn.set_component_execution_budget(
+                agent_id,
+                ExecutionBudget::from_reasoning_profile(&reasoning_profile),
+            )
+            .unwrap();
             txn.set_component_reasoning_profile(agent_id, reasoning_profile)
                 .unwrap();
         }
@@ -209,6 +220,16 @@ mod tests {
             loaded_sim.world().get_component_reasoning_profile(agent),
             Some(&profile),
             "agent reasoning profile should persist across save/load"
+        );
+        assert_eq!(
+            loaded_sim.world().get_component_cognitive_profile(agent),
+            Some(&CognitiveProfile::from_reasoning_profile(&profile)),
+            "agent cognitive profile should persist across save/load"
+        );
+        assert_eq!(
+            loaded_sim.world().get_component_execution_budget(agent),
+            Some(&ExecutionBudget::from_reasoning_profile(&profile)),
+            "agent execution budget should persist across save/load"
         );
     }
 
