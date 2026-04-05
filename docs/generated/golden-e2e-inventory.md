@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 21
 - Files contributing `golden_*` tests: 21
-- Total `golden_*` tests: 294
+- Total `golden_*` tests: 296
 
 ## Per-File Inventory
 
@@ -22,7 +22,7 @@ Do not hand-edit it.
 | `golden_experience_preferences.rs` | 6 |
 | `golden_integration.rs` | 24 |
 | `golden_merchant_selling.rs` | 20 |
-| `golden_offices.rs` | 22 |
+| `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
 | `golden_production.rs` | 28 |
 | `golden_pursuit.rs` | 6 |
@@ -261,6 +261,8 @@ Do not hand-edit it.
 - `golden_contested_force_claim_resolves_after_yield_replays_deterministically`
 - `golden_force_control_locality_requires_tell`
 - `golden_force_control_locality_requires_tell_replays_deterministically`
+- `golden_vacancy_notice_unlocks_political_action_without_record_consult`
+- `golden_vacancy_notice_unlocks_political_action_without_record_consult_replays_deterministically`
 
 ### `golden_patrol.rs`
 

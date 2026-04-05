@@ -1,6 +1,6 @@
 # S49GOLGAP-002: Vacancy-notice political uptake golden
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -29,6 +29,13 @@ Scenario 73 (`golden_offices.rs:1265`) proves remote record consultation as the 
 2. The test must ensure the claimant has NO pre-seeded office-holder belief and NO consulted office register — political action is unlocked solely through artifact perception.
 3. No backward-compatibility shims.
 
+### Reassessment Note (2026-04-05)
+
+- **Ticket says**: only `crates/worldwake-ai/tests/golden_offices.rs` changes are needed.
+- **Live code has**: this ticket adds a new repo-global `// Scenario` block in an existing golden file, and the repo requires `python3 scripts/golden_inventory.py --write --check-docs` whenever scenario metadata changes.
+- **Correction applied**: added the generated golden docs and inventory refresh to the owned file and verification surfaces.
+- **Why safe**: this is a mechanical docs-sync correction required by the live golden workflow, not a change to the ticket’s architecture boundary.
+
 ## Verification Layers
 
 1. Notice perception → belief store assertion (`believed_artifact` with `NoticeTopic::OfficeVacancy`)
@@ -36,6 +43,7 @@ Scenario 73 (`golden_offices.rs:1265`) proves remote record consultation as the 
 3. Political candidate emitted without `consult_record` → decision trace (ClaimOffice or SupportCandidateForOffice appears) + action trace absence (no consult_record action started)
 4. Local political action starts or commits → action trace (political action committed through normal politics surface)
 5. Cross-layer: artifact perception (systems) → institutional belief (core) → candidate generation (AI) → political action (systems)
+6. Generated golden inventory/docs reflect the new scenario ownership and numbering
 
 ## What to Change
 
@@ -66,6 +74,9 @@ Same scenario with identical seed — assert identical outcome.
 ## Files to Touch
 
 - `crates/worldwake-ai/tests/golden_offices.rs` (modify)
+- `docs/generated/golden-coverage-matrix.md` (generated)
+- `docs/generated/golden-e2e-inventory.md` (generated)
+- `docs/generated/golden-scenario-map.md` (generated)
 
 ## Out of Scope
 
@@ -83,6 +94,7 @@ Same scenario with identical seed — assert identical outcome.
 2. Deterministic replay companion produces identical outcome
 3. No consult_record action in action trace for the claimant
 4. Existing suite: `cargo test --workspace`
+5. Generated inventory/docs refreshed and in sync with the new scenario numbering
 
 ### Invariants
 
@@ -99,5 +111,24 @@ Same scenario with identical seed — assert identical outcome.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai -- golden_offices`
-2. `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test -p worldwake-ai --test golden_offices`
+2. `python3 scripts/golden_inventory.py --write --check-docs`
+3. `cargo test --workspace`
+4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+- **Completion date**: 2026-04-05
+- **What changed**:
+  - Added Scenario 109 in `crates/worldwake-ai/tests/golden_offices.rs` proving that a locally posted `OfficeVacancy` notice is perceived as a social artifact, internalized into the institutional-belief lane as certain vacancy knowledge, and then unlocks ordinary political action without `consult_record`.
+  - Added the deterministic replay companion for the same vacancy-notice political uptake scenario.
+  - Refreshed generated golden coverage docs in `docs/generated/golden-coverage-matrix.md`, `docs/generated/golden-e2e-inventory.md`, and `docs/generated/golden-scenario-map.md`.
+- **Deviations from original plan**:
+  - No production-code expansion was needed. The ticket remained on the intended golden-only boundary after reassessment confirmed the live perception and political-planning substrate already supported notice-derived vacancy certainty.
+  - The golden setup kept the claimant non-AI until notice perception landed, then resumed AI control so the scenario proved the notice-derived information path directly instead of relying on pre-seeded vacancy beliefs.
+- **Verification results**:
+  - `cargo test -p worldwake-ai --test golden_offices golden_vacancy_notice_unlocks_political_action_without_record_consult -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_offices`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo test --workspace -q`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

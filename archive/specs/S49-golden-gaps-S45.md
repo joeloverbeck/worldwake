@@ -1,5 +1,7 @@
 # S49: Golden Gaps — Unified Social Artifact Model
 
+**Status**: COMPLETED
+
 ## Summary
 
 Post-implementation golden gap analysis for S45 (Unified Social Artifact Model). The live suite now proves elimination-bounty lifecycle, bounty expiration, and threat-warning route diversion through Scenarios 105-107, but two materially different S45 emergence chains remain unproved at golden E2E level:
@@ -157,3 +159,20 @@ This proves that notice artifacts are not just readable metadata. A posted vacan
 3. Both primary scenarios include deterministic replay companions
 4. Conservation holds for the delivery-bounty reward path
 5. Assertions use the strongest honest surfaces available: authoritative world state for durable outcomes, action traces for lifecycle order, decision traces for candidate or plan-shape claims
+
+## Outcome
+
+- **Completion date**: 2026-04-05
+- **What changed**:
+  - Scenario 108 in `crates/worldwake-ai/tests/golden_integration.rs` now proves delivery-bounty fulfillment from local artifact perception through lawful cargo movement, later claim at a distinct `claim_place`, reward transfer from a real reserved lot, and deterministic replay.
+  - Scenario 109 in `crates/worldwake-ai/tests/golden_offices.rs` now proves that a locally posted `OfficeVacancy` notice is perceived as a social artifact, internalized into the institutional-belief lane as certain vacancy knowledge, and then unlocks ordinary political action without `consult_record`, also with deterministic replay.
+  - Generated golden coverage docs were refreshed to include both new scenario blocks and the final S49 ownership surface.
+- **Deviations from original plan**:
+  - `S49GOLGAP-001` absorbed a bounded planner fix in `crates/worldwake-ai/src/goal_model.rs` plus focused regressions in `crates/worldwake-ai/src/search/tests.rs` when the lawful distinct-`claim_place` golden exposed a real lower-layer contract gap.
+  - `S49GOLGAP-002` remained on the intended golden-only boundary after reassessment confirmed the live notice-perception and political-planning substrate already supported notice-derived vacancy certainty.
+- **Verification results**:
+  - `cargo test -p worldwake-ai --test golden_integration`
+  - `cargo test -p worldwake-ai --test golden_offices`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo test --workspace -q`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

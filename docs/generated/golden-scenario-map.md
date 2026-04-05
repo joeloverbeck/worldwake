@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 127
+- Scenario blocks with explicit metadata: 128
 - Files contributing scenario metadata: 20
-- Tests associated with scenario blocks: 279
+- Tests associated with scenario blocks: 281
 
 ## Scenario Inventory
 
@@ -89,17 +89,18 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
 | `11b` | Deterministic Replay | `golden_offices.rs:152` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:190` | `golden_competing_claims_with_loyal_supporter` | — |
-| `13` | Bribe -> Support Coalition (Full-Quantity Transfer) | `golden_offices.rs:390` | `golden_bribe_support_coalition`<br>`bench_branchy_office_coalition` | — |
-| `14` | Threaten with Courage Diversity (Principle 20) | `golden_offices.rs:636` | `golden_threaten_with_courage_diversity` | — |
-| `15` | Travel to Distant Jurisdiction for Office Claim | `golden_offices.rs:936` | `golden_travel_to_distant_jurisdiction_for_claim` | — |
-| `16` | Political Office Facts Remain Local Until Belief Update | `golden_offices.rs:1049` | `golden_information_locality_for_political_facts` | `golden_information_locality_for_political_facts_replays_deterministically` |
-| `73` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1265` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
-| `34` | Knowledge Asymmetry Race | `golden_offices.rs:1563` | `golden_knowledge_asymmetry_race_informed_wins_office` | `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` |
-| `17` | Survival Pressure Suppresses Political Goals | `golden_offices.rs:1927` | `golden_survival_pressure_suppresses_political_goals` | `golden_survival_pressure_suppresses_political_goals_replays_deterministically` |
-| `18` | Faction Eligibility Filters Office Claim | `golden_offices.rs:2129` | `golden_faction_eligibility_filters_office_claim` | — |
-| `19` | Force Succession Requires Explicit Claim And Installs Sole Controller | `golden_offices.rs:2290` | `golden_force_claim_ai_installation` | `golden_force_claim_ai_installation_replays_deterministically` |
-| `71` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2674` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
-| `72` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2939` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
+| `13` | Bribe -> Support Coalition (Full-Quantity Transfer) | `golden_offices.rs:419` | `golden_bribe_support_coalition`<br>`bench_branchy_office_coalition` | — |
+| `14` | Threaten with Courage Diversity (Principle 20) | `golden_offices.rs:665` | `golden_threaten_with_courage_diversity` | — |
+| `15` | Travel to Distant Jurisdiction for Office Claim | `golden_offices.rs:965` | `golden_travel_to_distant_jurisdiction_for_claim` | — |
+| `16` | Political Office Facts Remain Local Until Belief Update | `golden_offices.rs:1078` | `golden_information_locality_for_political_facts` | `golden_information_locality_for_political_facts_replays_deterministically` |
+| `73` | Remote Record Travel + Consultation + Political Action | `golden_offices.rs:1294` | `golden_remote_record_consultation_political_action` | `golden_remote_record_consultation_political_action_replays_deterministically` |
+| `34` | Knowledge Asymmetry Race | `golden_offices.rs:1592` | `golden_knowledge_asymmetry_race_informed_wins_office` | `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically` |
+| `17` | Survival Pressure Suppresses Political Goals | `golden_offices.rs:1956` | `golden_survival_pressure_suppresses_political_goals` | `golden_survival_pressure_suppresses_political_goals_replays_deterministically` |
+| `18` | Faction Eligibility Filters Office Claim | `golden_offices.rs:2158` | `golden_faction_eligibility_filters_office_claim` | — |
+| `19` | Force Succession Requires Explicit Claim And Installs Sole Controller | `golden_offices.rs:2319` | `golden_force_claim_ai_installation` | `golden_force_claim_ai_installation_replays_deterministically` |
+| `71` | Contested Force Claim Resolves Only After Yield | `golden_offices.rs:2703` | `golden_contested_force_claim_resolves_after_yield` | `golden_contested_force_claim_resolves_after_yield_replays_deterministically` |
+| `72` | Force Control Knowledge Stays Local Until Tell | `golden_offices.rs:2968` | `golden_force_control_locality_requires_tell` | `golden_force_control_locality_requires_tell_replays_deterministically` |
+| `109` | Vacancy notice unlocks political action without record consult | `golden_offices.rs:3268` | `golden_vacancy_notice_unlocks_political_action_without_record_consult` | `golden_vacancy_notice_unlocks_political_action_without_record_consult_replays_deterministically` |
 | `52` | Patrol Cycle Wraps Route | `golden_patrol.rs:302` | `golden_patrol_cycle_wraps_route` | `golden_patrol_cycle_wraps_route_replays_deterministically` |
 | `53` | Patrol Interruption Preserves Waypoint Until Resume | `golden_patrol.rs:333` | `golden_patrol_interruption_preserves_waypoint_until_resume` | — |
 | `54` | Patrol Belief Urgency Scales From Local Crime And Vacancy | `golden_patrol.rs:471` | `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy` | — |
@@ -1278,7 +1279,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 
-- Source: `golden_offices.rs:390`
+- Source: `golden_offices.rs:419`
 - Systems: Bribe, Succession, AI, Conservation
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1296,7 +1297,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:636`
+- Source: `golden_offices.rs:665`
 - Systems: Threaten, Succession, AI
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1314,7 +1315,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:936`
+- Source: `golden_offices.rs:965`
 - Systems: Travel, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1332,7 +1333,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:1049`
+- Source: `golden_offices.rs:1078`
 - Systems: AI, Travel, Succession, Political actions, Perception
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1350,7 +1351,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 73: Remote Record Travel + Consultation + Political Action
 
-- Source: `golden_offices.rs:1265`
+- Source: `golden_offices.rs:1294`
 - Systems: AI, Travel, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1368,7 +1369,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 34: Knowledge Asymmetry Race
 
-- Source: `golden_offices.rs:1563`
+- Source: `golden_offices.rs:1592`
 - Systems: AI, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1386,7 +1387,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1927`
+- Source: `golden_offices.rs:1956`
 - Systems: Needs, AI, Succession, Political actions
 - GoalKinds: ClaimOffice, ConsumeOwnedCommodity
 - ActionDomains: Needs, Generic
@@ -1404,7 +1405,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:2129`
+- Source: `golden_offices.rs:2158`
 - Systems: Factions, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1422,7 +1423,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
 
-- Source: `golden_offices.rs:2290`
+- Source: `golden_offices.rs:2319`
 - Systems: AI, Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1440,7 +1441,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 71: Contested Force Claim Resolves Only After Yield
 
-- Source: `golden_offices.rs:2674`
+- Source: `golden_offices.rs:2703`
 - Systems: Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1458,7 +1459,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
-- Source: `golden_offices.rs:2939`
+- Source: `golden_offices.rs:2968`
 - Systems: Force-control succession, Tell, Perception
 - GoalKinds: ClaimOffice, ShareBelief
 - ActionDomains: Generic, Social
@@ -1473,6 +1474,24 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Proves**: Same-place witness acquires ForceControllerOf belief from public event. Remote agent does not learn the fact from world existence alone (Principle 7). A committed tell relays the belief to the remote listener.
 
 **Cross-system chain**: Public force-control event -> witness institutional belief update -> remote ignorance preserved -> tell commit -> remote belief update.
+
+### Scenario 109: Vacancy notice unlocks political action without record consult
+
+- Source: `golden_offices.rs:3268`
+- Systems: Social artifact actions, Perception, Institutional beliefs, AI, Political actions, Succession
+- GoalKinds: ClaimOffice
+- ActionDomains: Social, Generic
+- Places: VillageSquare
+- Principles: 7, 12, 18, 25
+- Primary tests: `golden_vacancy_notice_unlocks_political_action_without_record_consult`
+- Replay tests: `golden_vacancy_notice_unlocks_political_action_without_record_consult_replays_deterministically`
+- All tests: `golden_vacancy_notice_unlocks_political_action_without_record_consult`, `golden_vacancy_notice_unlocks_political_action_without_record_consult_replays_deterministically`
+
+**Setup**: A human issuer and a non-AI claimant are co-located with a vacant support-law office at VillageSquare. The claimant has no seeded office- holder belief and no pre-consulted office register. The issuer posts an `OfficeVacancy` notice locally, the claimant perceives it, internalizes vacancy certainty through the notice path, then AI resumes.
+
+**Proves**: The notice-artifact path can unlock ordinary political action without `consult_record` or Tell. The claimant perceives the notice, records a direct-observation vacancy belief, generates `ClaimOffice`, commits `declare_support`, and becomes office holder through the normal succession surface.
+
+**Cross-system chain**: post_notice -> local perception stores believed_artifact vacancy -> institutional belief becomes Certain(None) via DirectObservation -> AI generates ClaimOffice -> declare_support commits without consult_record -> succession installs claimant.
 
 ### Scenario 52: Patrol Cycle Wraps Route
 
