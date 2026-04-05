@@ -1417,10 +1417,14 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(terms) = believed_bounty_terms(state, *bounty) else {
                     return false;
                 };
+                let actor_at_claim_place =
+                    state.effective_place(state.snapshot().actor()) == Some(terms.claim_place);
                 match terms.target {
                     BountyTarget::EliminateEntity { target } => match op_kind {
                         PlannerOpKind::Attack => !state.is_dead(target),
-                        PlannerOpKind::ClaimBounty => state.is_dead(target),
+                        PlannerOpKind::ClaimBounty => {
+                            state.is_dead(target) && actor_at_claim_place
+                        }
                         PlannerOpKind::MoveCargo | PlannerOpKind::StockManagement => false,
                         _ => true,
                     },
@@ -1437,7 +1441,8 @@ impl GoalKindPlannerExt for GoalKind {
                             commodity,
                             quantity,
                         )
-                        .is_none(),
+                        .is_none()
+                            && actor_at_claim_place,
                         _ => true,
                     },
                 }

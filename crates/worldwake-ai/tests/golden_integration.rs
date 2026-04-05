@@ -5216,6 +5216,7 @@ const PLACE_S45_MARKET: EntityId = entity(822);
 const PLACE_S45_WARNED_ROAD: EntityId = entity(823);
 const PLACE_S45_SAFE_ROUTE: EntityId = entity(824);
 const PLACE_S45_ORCHARD: EntityId = entity(825);
+const PLACE_S45_GRANARY: EntityId = entity(826);
 
 fn connect(topology: &mut Topology, base_id: u32, from: EntityId, to: EntityId, ticks: u32) {
     topology
@@ -5258,6 +5259,12 @@ fn build_s45_bounty_topology() -> Topology {
             place("S45 Issuer Home", &[PlaceTag::Village]),
         )
         .unwrap();
+    topology
+        .add_place(
+            PLACE_S45_GRANARY,
+            place("S45 Granary", &[PlaceTag::Village, PlaceTag::Store]),
+        )
+        .unwrap();
     connect(
         &mut topology,
         920,
@@ -5271,6 +5278,13 @@ fn build_s45_bounty_topology() -> Topology {
         PLACE_S45_TOWN_SQUARE,
         PLACE_S45_ISSUER_HOME,
         1,
+    );
+    connect(
+        &mut topology,
+        936,
+        PLACE_S45_TOWN_SQUARE,
+        PLACE_S45_GRANARY,
+        2,
     );
     topology
 }
@@ -5780,6 +5794,270 @@ fn run_s45_bounty_expiration(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+fn run_s45_delivery_bounty_lifecycle(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = build_harness_with_topology(seed, build_s45_bounty_topology());
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let issuer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S49 Delivery Issuer",
+        PLACE_S45_TOWN_SQUARE,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, issuer, ControlSource::Human, 0);
+
+    let courier = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S49 Courier",
+        PLACE_S45_TOWN_SQUARE,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        enterprise_weighted_utility(pm(900)),
+    );
+    set_control_source(&mut h, courier, ControlSource::None, 0);
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        courier,
+        s45_perception_profile(),
+    );
+
+    let reward_lot = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let lot = txn.create_item_lot(CommodityKind::Coin, Quantity(10)).unwrap();
+        txn.set_ground_location(lot, PLACE_S45_TOWN_SQUARE).unwrap();
+        txn.set_owner(lot, issuer).unwrap();
+        txn.set_possessor(lot, issuer).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        lot
+    };
+    let delivery_lot = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let lot = txn.create_item_lot(CommodityKind::Grain, Quantity(3)).unwrap();
+        txn.set_ground_location(lot, PLACE_S45_TOWN_SQUARE).unwrap();
+        txn.set_owner(lot, courier).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        lot
+    };
+    let total_coin_before = total_authoritative_commodity_quantity(&h.world, CommodityKind::Coin);
+    let total_grain_before =
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Grain);
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        courier,
+        Tick(0),
+        PerceptionSource::Inference,
+    );
+
+    request_action_with_payload(
+        &mut h,
+        issuer,
+        "post_bounty",
+        vec![PLACE_S45_TOWN_SQUARE],
+        Some(ActionPayload::PostBounty(PostBountyActionPayload {
+            posting_place: PLACE_S45_TOWN_SQUARE,
+            issuing_authority: None,
+            expires_at: Some(Tick(120)),
+            jurisdiction: None,
+            target: BountyTarget::DeliverCommodity {
+                commodity: CommodityKind::Grain,
+                quantity: Quantity(3),
+                destination: PLACE_S45_GRANARY,
+            },
+            proof_requirement: ProofRequirement::SelfReport,
+            reward_commodity: CommodityKind::Coin,
+            reward_quantity: Quantity(10),
+            reward_source: RewardSource::ReservedLot { lot: reward_lot },
+            claim_place: PLACE_S45_ISSUER_HOME,
+        })),
+    );
+
+    let mut bounty = None;
+    let mut courier_ai_enabled = false;
+    let mut issuer_relocated = false;
+    let mut courier_saw_bounty = false;
+    let mut courier_selected_bounty = false;
+    let mut delivered_tick = None;
+    let mut claim_tick = None;
+
+    for _ in 0..220 {
+        h.step_once();
+        if bounty.is_none() {
+            bounty = find_first_social_artifact(&h.world, ArtifactKind::Bounty);
+        }
+        if bounty.is_some() && !issuer_relocated {
+            let relocation_tick = h.scheduler.current_tick().0;
+            let mut txn = new_txn(&mut h.world, relocation_tick);
+            txn.set_ground_location(issuer, PLACE_S45_ISSUER_HOME).unwrap();
+            commit_txn(txn, &mut h.event_log);
+            set_control_source(&mut h, issuer, ControlSource::None, relocation_tick);
+            issuer_relocated = true;
+        }
+        if let Some(seen_bounty) = bounty {
+            let courier_believes_bounty = agent_belief_about(&h.world, courier, seen_bounty)
+                .and_then(|belief| belief.believed_artifact.as_ref())
+                .is_some_and(|artifact| {
+                    artifact.kind == ArtifactKind::Bounty
+                        && artifact.state == ArtifactState::Active
+                        && artifact.bounty_terms.as_ref().is_some_and(|terms| {
+                            matches!(
+                                terms.target,
+                                BountyTarget::DeliverCommodity {
+                                    commodity: CommodityKind::Grain,
+                                    quantity: Quantity(3),
+                                    destination: PLACE_S45_GRANARY,
+                                }
+                            ) && terms.claim_place == PLACE_S45_ISSUER_HOME
+                        })
+                });
+            courier_saw_bounty |= courier_believes_bounty;
+            if courier_believes_bounty && !courier_ai_enabled {
+                let ai_tick = h.scheduler.current_tick().0;
+                set_control_source(&mut h, courier, ControlSource::Ai, ai_tick);
+                courier_ai_enabled = true;
+            }
+        }
+
+        if let (Some(seen_bounty), Some(trace_sink)) = (bounty, h.driver.trace_sink()) {
+            courier_selected_bounty |= trace_sink.traces_for(courier).into_iter().any(|trace| {
+                matches!(
+                    &trace.outcome,
+                    DecisionOutcome::Planning(planning)
+                        if planning.selection.selected_goal_is(
+                            GoalKey::from(GoalKind::FulfillBounty { bounty: seen_bounty }),
+                        )
+                )
+            });
+        }
+
+        if delivered_tick.is_none()
+            && h.world.controlled_commodity_quantity_at_place(
+                courier,
+                PLACE_S45_GRANARY,
+                CommodityKind::Grain,
+            ) >= Quantity(3)
+        {
+            delivered_tick = Some(h.scheduler.current_tick());
+        }
+
+        if let Some(sink) = h.action_trace_sink() {
+            if let Some(event) = sink.events_for(courier).iter().find(|event| {
+                event.action_name == "claim_bounty"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }) {
+                claim_tick = Some(event.tick);
+                break;
+            }
+        }
+    }
+
+    let bounty = bounty.expect("delivery-bounty scenario should create one social artifact");
+    assert!(
+        h.action_trace_sink()
+            .expect("action tracing enabled")
+            .events_for(issuer)
+            .iter()
+            .any(|event| {
+                event.action_name == "post_bounty"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
+        "issuer should commit post_bounty"
+    );
+
+    assert!(
+        courier_saw_bounty,
+        "courier should perceive the posted delivery bounty as a believed artifact"
+    );
+    assert!(
+        courier_selected_bounty,
+        "courier should select FulfillBounty from the perceived delivery bounty"
+    );
+
+    let courier_events = h
+        .action_trace_sink()
+        .expect("action tracing enabled")
+        .events_for(courier);
+    let traveled_to_granary = courier_events.iter().any(|event| {
+        event.action_name == "travel"
+            && matches!(
+                &event.kind,
+                ActionTraceKind::Started { targets } if targets == &vec![PLACE_S45_GRANARY]
+            )
+    });
+    assert!(
+        traveled_to_granary,
+        "courier should travel to the delivery destination"
+    );
+
+    let delivered_tick =
+        delivered_tick.expect("delivery bounty should place the required grain at the destination");
+    let courier_trace_summaries = trace_summaries(&h, courier);
+    let courier_action_summaries = courier_events
+        .iter()
+        .map(|event| format!("{:?} {} {:?}", event.tick, event.action_name, event.kind))
+        .collect::<Vec<_>>();
+    let claim_tick = claim_tick.unwrap_or_else(|| {
+        panic!(
+            "courier should eventually claim the bounty reward; decision_traces={courier_trace_summaries:?}; action_traces={courier_action_summaries:?}"
+        )
+    });
+    assert!(
+        delivered_tick < claim_tick,
+        "claim_bounty must commit after the delivery gap closes"
+    );
+    assert_eq!(
+        h.world.controlled_commodity_quantity_at_place(
+            courier,
+            PLACE_S45_GRANARY,
+            CommodityKind::Grain,
+        ),
+        Quantity(3),
+        "courier should still control the delivered grain at the destination after claiming"
+    );
+    assert_eq!(
+        h.world.effective_place(delivery_lot),
+        Some(PLACE_S45_GRANARY),
+        "the delivered grain lot should remain at the destination"
+    );
+    assert_eq!(
+        h.world.effective_place(courier),
+        Some(PLACE_S45_ISSUER_HOME),
+        "courier should end the scenario at the distinct claim place"
+    );
+    assert_eq!(
+        h.world.get_component_artifact_header(bounty).unwrap().state,
+        ArtifactState::Fulfilled,
+        "successful delivery claim should mark the bounty fulfilled"
+    );
+    assert_eq!(
+        h.world.controlled_commodity_quantity(courier, CommodityKind::Coin),
+        Quantity(10),
+        "courier should receive the full reserved reward"
+    );
+    assert_eq!(
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Coin),
+        total_coin_before,
+        "claiming the delivery bounty must conserve total coin"
+    );
+    assert_eq!(
+        total_authoritative_commodity_quantity(&h.world, CommodityKind::Grain),
+        total_grain_before,
+        "delivery completion must conserve total grain"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 fn baseline_notice_route_destination(seed: Seed) -> Option<EntityId> {
     let mut h = build_harness_with_topology(seed, build_s45_notice_topology());
     let _orchard = s45_place_orchard_source(&mut h);
@@ -6018,6 +6296,46 @@ fn golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically() {
     assert_eq!(
         first, second,
         "S45 bounty expiration scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 108: Delivery bounty closes through cargo movement and later claim
+// ---------------------------------------------------------------------------
+//
+// Systems: Social artifact actions, Perception, AI, Travel, Transport
+// GoalKinds: FulfillBounty, MoveCargo
+// ActionDomains: Social, Travel, Transport
+// Places: S45 Town Square, S45 Granary, S45 Issuer Home
+// Principles: 4, 7, 14, 25, 26
+//
+// Setup: Human issuer at Town Square posts a delivery bounty for 3 Grain to
+//   Granary with a real 10-coin reserved reward lot and claim place at Issuer
+//   Home. AI courier starts co-located with the posting and already controls a
+//   local grain lot, but stays non-AI until the posted bounty is perceived.
+//
+// Proves: Delivery bounties are not decorative claim shells. A perceived bounty
+//   can drive ordinary cargo movement to the destination, leave the delivered
+//   lot behind there, and only then unlock the later `claim_bounty` reward
+//   transfer at a different claim place.
+//
+// Chain: post_bounty -> local perception updates believed_artifact ->
+//   FulfillBounty selected -> travel to delivery destination -> delivered grain
+//   remains at destination -> travel to claim place -> claim_bounty transfers
+//   reward -> bounty fulfilled.
+
+#[test]
+fn golden_s49_delivery_bounty_lifecycle() {
+    let _ = run_s45_delivery_bounty_lifecycle(Seed([111; 32]));
+}
+
+#[test]
+fn golden_s49_delivery_bounty_lifecycle_replays_deterministically() {
+    let first = run_s45_delivery_bounty_lifecycle(Seed([112; 32]));
+    let second = run_s45_delivery_bounty_lifecycle(Seed([112; 32]));
+    assert_eq!(
+        first, second,
+        "S49 delivery bounty lifecycle scenario should replay deterministically"
     );
 }
 

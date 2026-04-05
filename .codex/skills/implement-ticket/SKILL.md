@@ -187,6 +187,7 @@ When a ticket is an explicit staged extraction step, temporary duplicated logic 
 13. When a ticket splits previously uniform behavior into class-, variant-, or profile-specific rules, search for existing focused tests that currently compress those cases into one expectation and rewrite them into explicit per-case proofs instead of only adding new tests alongside stale broad assertions.
 14. When a ticket makes a new planner-visible operator lawful for an existing goal family, sweep the planner contract end to end: goal dispatch or relevant-op declarations, progress-barrier rules, goal-model expectations, and search/planner-root tests. Do not stop at affordance or candidate-generation changes if the goal family still advertises the old operator set.
 15. When one existing goal family spans multiple target subtypes, fulfillment modes, or domain variants, verify operator availability per subtype instead of only at the family-wide declaration level. Check whether stale operators from one subtype still leak into candidate generation, root synthesis, or goal-model admission for another subtype once the family broadens.
+16. When a goal family ends in a place-sensitive terminal action such as `claim_bounty`, do not let focused tests cover only the degenerate same-place shape unless the ticket explicitly owns only that case. If the spec or ticket depends on a distinct terminal place, add focused planner/root coverage for both target satisfaction and return-to-terminal-place legality so root availability does not silently assume co-location.
 
 ### 6. Verify at the right boundary
 
@@ -258,6 +259,8 @@ When a ticket changes whether an action should be available at all, include at l
 For exact-bound planner-root candidates, do not treat target binding as the whole contract when operator legality also depends on intermediate goal state. Verify whether synthesized or affordance-backed root candidates need an additional stateful availability gate so exact-bound actions do not surface before their prerequisite progress has actually been achieved.
 
 When a valid architecture change makes an existing golden scenario stale, update the golden to prove the new lawful contract rather than preserving outdated failure reasons, plan shapes, or scenario narratives.
+
+When a golden transport, delivery, or claim chain is ultimately about durable world-state aftermath, avoid over-specifying intermediate substeps such as a particular `put_down` or travel-start trace unless that substep is itself the owned contract. Prefer authoritative destination state, claim-place state, conservation, and the terminal action-order boundary, then tighten intermediate trace assertions only when the scenario really exists to prove that lower layer.
 
 When a new or corrected golden still fails after the scenario setup is made lawful, reassess whether the golden has exposed a missing lower-layer contract rather than mere fixture fallout. If it has, fix the production boundary, add focused proof at that lower layer, and only then finalize the golden closeout instead of treating the failure as golden-only churn.
 

@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 126
+- Scenario blocks with explicit metadata: 127
 - Files contributing scenario metadata: 20
-- Tests associated with scenario blocks: 277
+- Tests associated with scenario blocks: 279
 
 ## Scenario Inventory
 
@@ -67,9 +67,10 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2529` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
 | `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3458` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
 | `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4485` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
-| `105` | Social artifact bounty lifecycle closes canonically | `golden_integration.rs:5950` | `golden_s45_bounty_lifecycle` | `golden_s45_bounty_lifecycle_replays_deterministically` |
-| `106` | Expired bounty stays visible but no longer generates pursuit | `golden_integration.rs:5988` | `golden_s45_bounty_expiration_blocks_pursuit` | `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically` |
-| `107` | Threat-warning notice flips the next route choice | `golden_integration.rs:6025` | `golden_s45_notice_warning_flips_route_choice` | `golden_s45_notice_warning_flips_route_choice_replays_deterministically` |
+| `105` | Social artifact bounty lifecycle closes canonically | `golden_integration.rs:6228` | `golden_s45_bounty_lifecycle` | `golden_s45_bounty_lifecycle_replays_deterministically` |
+| `106` | Expired bounty stays visible but no longer generates pursuit | `golden_integration.rs:6266` | `golden_s45_bounty_expiration_blocks_pursuit` | `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically` |
+| `108` | Delivery bounty closes through cargo movement and later claim | `golden_integration.rs:6303` | `golden_s49_delivery_bounty_lifecycle` | `golden_s49_delivery_bounty_lifecycle_replays_deterministically` |
+| `107` | Threat-warning notice flips the next route choice | `golden_integration.rs:6343` | `golden_s45_notice_warning_flips_route_choice` | `golden_s45_notice_warning_flips_route_choice_replays_deterministically` |
 | `75` | Displayed Lot Retains SaleListing Through Presence Cycle | `golden_merchant_selling.rs:392` | `staff_market_retains_displayed_listing_through_presence_cycle` | `staff_market_retains_displayed_listing_replays_deterministically` |
 | `76` | Buyer Trades Against Listed Lot | `golden_merchant_selling.rs:467` | `buyer_trades_against_listed_lot` | `buyer_trades_against_listed_lot_replays_deterministically` |
 | `77` | Unlisted Stock Not Sellable | `golden_merchant_selling.rs:579` | `unlisted_stock_not_sellable` | — |
@@ -966,7 +967,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 105: Social artifact bounty lifecycle closes canonically
 
-- Source: `golden_integration.rs:5950`
+- Source: `golden_integration.rs:6228`
 - Systems: Social artifact actions, Perception, AI, Travel, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel, Combat
@@ -984,7 +985,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 106: Expired bounty stays visible but no longer generates pursuit
 
-- Source: `golden_integration.rs:5988`
+- Source: `golden_integration.rs:6266`
 - Systems: Social artifact actions, pre-action artifact lifecycle, Perception, AI
 - GoalKinds: FulfillBounty
 - ActionDomains: Social
@@ -1000,9 +1001,27 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 **Cross-system chain**: post_bounty -> pre-action expiry tick flips ArtifactState::Expired -> observer perceives expired belief -> AI resumes -> no bounty candidate.
 
+### Scenario 108: Delivery bounty closes through cargo movement and later claim
+
+- Source: `golden_integration.rs:6303`
+- Systems: Social artifact actions, Perception, AI, Travel, Transport
+- GoalKinds: FulfillBounty, MoveCargo
+- ActionDomains: Social, Travel, Transport
+- Places: S45 Town Square, S45 Granary, S45 Issuer Home
+- Principles: 4, 7, 14, 25, 26
+- Primary tests: `golden_s49_delivery_bounty_lifecycle`
+- Replay tests: `golden_s49_delivery_bounty_lifecycle_replays_deterministically`
+- All tests: `golden_s49_delivery_bounty_lifecycle`, `golden_s49_delivery_bounty_lifecycle_replays_deterministically`
+
+**Setup**: Human issuer at Town Square posts a delivery bounty for 3 Grain to Granary with a real 10-coin reserved reward lot and claim place at Issuer Home. AI courier starts co-located with the posting and already controls a local grain lot, but stays non-AI until the posted bounty is perceived.
+
+**Proves**: Delivery bounties are not decorative claim shells. A perceived bounty can drive ordinary cargo movement to the destination, leave the delivered lot behind there, and only then unlock the later `claim_bounty` reward transfer at a different claim place.
+
+**Cross-system chain**: post_bounty -> local perception updates believed_artifact -> FulfillBounty selected -> travel to delivery destination -> delivered grain remains at destination -> travel to claim place -> claim_bounty transfers reward -> bounty fulfilled.
+
 ### Scenario 107: Threat-warning notice flips the next route choice
 
-- Source: `golden_integration.rs:6025`
+- Source: `golden_integration.rs:6343`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production

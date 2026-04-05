@@ -56,13 +56,13 @@ This proves that delivery bounties are not decorative claim shells. A posted soc
 
 - **Principle 4**: reward transfers from a real reserved lot
 - **Principle 7**: bounty knowledge still arrives through local artifact perception
-- **Principle 12**: delivery uses canonical cargo and claim paths rather than a separate bounty subsystem
+- **Principle 26**: delivery uses canonical cargo and claim paths rather than a separate bounty subsystem
 - **Principle 25**: the bounty remains a first-class world artifact with stable identity, destination, and claim place
 
 ### Why It Is Not A Duplicate
 
 - **Scenario 105** proves elimination-bounty combat and later claim, not delivery-side cargo progression.
-- Focused planner tests from `S45UNISOCART-007` prove lower-layer operator admission and search shape, but there is still no end-to-end golden that shows delivery completion and later claim in one world chain.
+- Focused planner tests from `S45UNISOCART-007` (`archive/tickets/S45UNISOCART-007.md`) prove lower-layer operator admission and search shape, but there is still no end-to-end golden that shows delivery completion and later claim in one world chain.
 
 ## Scenario: Vacancy Notice Unlocks Political Action Without Record Consult
 
@@ -106,7 +106,7 @@ This proves that notice artifacts are not just readable metadata. A posted vacan
 ### Foundation Principle Alignment
 
 - **Principle 7**: political knowledge arrives through local perception of the posted artifact
-- **Principle 12**: notice artifacts feed the existing institutional-belief and political-action lanes rather than a duplicate special-case planner hook
+- **Principle 26**: notice artifacts feed the existing institutional-belief and political-action lanes rather than a duplicate special-case planner hook
 - **Principle 18**: the notice persists as world state and has real downstream consequences
 - **Principle 25**: notices are first-class social artifacts whose discovery can alter future behavior
 
@@ -140,7 +140,7 @@ This proves that notice artifacts are not just readable metadata. A posted vacan
   - political candidate appears without `consult_record`
   - local political action starts or commits through the normal politics surface
 
-**Files**: `crates/worldwake-ai/tests/golden_integration.rs` or `crates/worldwake-ai/tests/golden_offices.rs`
+**Files**: `crates/worldwake-ai/tests/golden_offices.rs`
 **Effort**: Medium
 
 ## Tests

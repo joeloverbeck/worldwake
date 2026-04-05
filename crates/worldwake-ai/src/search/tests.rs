@@ -6095,24 +6095,38 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
     let issuer = entity(3);
     let origin = entity(10);
     let destination = entity(11);
+    let claim_place = entity(12);
     let bread = entity(20);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, bounty, origin, destination, bread]);
+    view.alive
+        .extend([actor, bounty, origin, destination, claim_place, bread]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(bounty, EntityKind::SocialArtifact);
     view.kinds.insert(origin, EntityKind::Place);
     view.kinds.insert(destination, EntityKind::Place);
+    view.kinds.insert(claim_place, EntityKind::Place);
     view.kinds.insert(bread, EntityKind::ItemLot);
     view.effective_places.insert(actor, origin);
-    view.effective_places.insert(bounty, destination);
+    view.effective_places.insert(bounty, origin);
     view.effective_places.insert(bread, origin);
     view.entities_at.insert(origin, vec![actor, bread]);
     view.entities_at.insert(destination, vec![bounty]);
+    view.entities_at.insert(claim_place, Vec::new());
     view.adjacent
         .insert(origin, vec![(destination, NonZeroU32::new(2).unwrap())]);
     view.adjacent
-        .insert(destination, vec![(origin, NonZeroU32::new(2).unwrap())]);
+        .insert(
+            destination,
+            vec![
+                (origin, NonZeroU32::new(2).unwrap()),
+                (claim_place, NonZeroU32::new(1).unwrap()),
+            ],
+        );
+    view.adjacent.insert(
+        claim_place,
+        vec![(destination, NonZeroU32::new(1).unwrap())],
+    );
     view.lot_commodities.insert(bread, CommodityKind::Bread);
     view.commodity_quantities
         .insert((bread, CommodityKind::Bread), Quantity(3));
@@ -6147,7 +6161,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
                             },
                             reward_commodity: CommodityKind::Coin,
                             reward_quantity: Quantity(25),
-                            claim_place: destination,
+                            claim_place,
                         }),
                         notice_topic: None,
                         observed_tick: Tick(1),
@@ -6184,7 +6198,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
         &view,
         actor,
         &BTreeSet::from([bounty, bread]),
-        &BTreeSet::from([origin, destination]),
+        &BTreeSet::from([origin, destination, claim_place]),
         1,
     );
     let (registry, handlers) = build_registry();
@@ -6194,7 +6208,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
             anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
             key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
             evidence_entities: BTreeSet::from([bounty, bread]),
-            evidence_places: BTreeSet::from([origin, destination]),
+            evidence_places: BTreeSet::from([origin, destination, claim_place]),
         },
         &build_semantics_table(&registry),
         &registry,
@@ -6216,6 +6230,24 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
     assert!(
         plan.steps.iter().any(|step| step.op_kind == PlannerOpKind::Travel),
         "delivery bounty plan should use travel"
+    );
+    assert!(
+        plan.steps
+            .iter()
+            .filter(|step| step.op_kind == PlannerOpKind::Travel)
+            .count()
+            >= 2,
+        "delivery bounty plan should travel once to deliver and again to reach the claim place"
+    );
+    assert!(
+        plan.steps.iter().any(|step| {
+            step.op_kind == PlannerOpKind::Travel
+                && step.targets
+                    == vec![crate::planning_state::PlanningEntityRef::Authoritative(
+                        claim_place,
+                    )]
+        }),
+        "delivery bounty plan should include travel to the distinct claim place before claim"
     );
     assert_eq!(
         plan.steps.last().map(|step| step.op_kind),
@@ -6451,6 +6483,140 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
                 .is_some_and(|def| def.name == "claim_bounty")
         }),
         "delivery bounty should not surface claim_bounty before the delivery gap is closed"
+    );
+}
+
+#[test]
+fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_claim_place() {
+    let actor = entity(1);
+    let bounty = entity(2);
+    let issuer = entity(3);
+    let destination = entity(11);
+    let claim_place = entity(12);
+    let bread = entity(20);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, bounty, issuer, destination, claim_place, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(bounty, EntityKind::SocialArtifact);
+    view.kinds.insert(issuer, EntityKind::Agent);
+    view.kinds.insert(destination, EntityKind::Place);
+    view.kinds.insert(claim_place, EntityKind::Place);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, destination);
+    view.effective_places.insert(bounty, claim_place);
+    view.effective_places.insert(issuer, claim_place);
+    view.effective_places.insert(bread, destination);
+    view.entities_at.insert(destination, vec![actor, bread]);
+    view.entities_at.insert(claim_place, vec![bounty, issuer]);
+    view.controllable.insert((actor, bread));
+    view.carry_capacities.insert(actor, LoadUnits(6));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(3));
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![
+            (
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::DeliverCommodity {
+                                commodity: CommodityKind::Bread,
+                                quantity: Quantity(3),
+                                destination,
+                            },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(25),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: PerceptionSource::DirectObservation,
+                },
+            ),
+            (
+                bread,
+                BelievedEntityState {
+                    last_known_place: Some(destination),
+                    last_known_inventory: BTreeMap::from([(
+                        CommodityKind::Bread,
+                        Quantity(3),
+                    )]),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: PerceptionSource::DirectObservation,
+                },
+            ),
+        ],
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([bounty, bread]),
+        &BTreeSet::from([destination, claim_place]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = ReasoningProfile::default();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+        key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+        evidence_entities: BTreeSet::from([bounty, bread]),
+        evidence_places: BTreeSet::from([destination, claim_place]),
+    };
+
+    let node = root_node(&snapshot, &goal, &recipes, &budget);
+    let rel_defs = relevant_action_defs(&goal, &semantics);
+    let candidates = search_candidates(
+        &goal,
+        &node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        &rel_defs,
+    );
+
+    assert!(
+        !candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "claim_bounty")
+        }),
+        "delivery bounty should not surface claim_bounty until the actor reaches claim_place"
     );
 }
 
