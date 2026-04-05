@@ -144,6 +144,8 @@ fn goal_specific_feasibility(
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }
             | GoalKind::FulfillBounty { .. }
+            | GoalKind::PostBounty { .. }
+            | GoalKind::PostNotice { .. }
             | GoalKind::StealItem { .. },
         ) => None,
         (FeasibilityStrategy::SellCheck, GoalKind::SellCommodity { commodity }) => {
@@ -264,10 +266,11 @@ mod tests {
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BeliefConfidencePolicy, BlockedIntent, BlockerKey, BlockingFact,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, IntentionDomain, IntentionFrame,
-        LoadUnits, MerchandiseProfile, PunishmentKind, RecipeId, ResourceSource, TellTopic, Tick,
+        ArtifactPostingContext, BeliefConfidencePolicy, BlockedIntent, BlockerKey, BlockingFact,
+        BountyTarget, BountyTerms, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
+        IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile, NoticeTopic,
+        PunishmentKind, Quantity, RecipeId, ResourceSource, RewardSource, TellTopic, Tick,
         UniqueItemKind, ViolationId, WorkstationTag,
     };
 
@@ -899,6 +902,52 @@ mod tests {
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
         assert_eq!(hint, FeasibilityHint::Uncertain);
+    }
+
+    #[test]
+    fn posting_goals_with_no_opinion_strategy_return_uncertain_instead_of_panicking() {
+        let view = MockView::default();
+        let blocked = empty_blocked_memory();
+        let place = entity(30);
+        let office = entity(31);
+        let target = entity(32);
+
+        let post_bounty = ranked_goal(GoalKind::PostBounty {
+            posting: ArtifactPostingContext {
+                posting_place: place,
+                issuing_authority: Some(office),
+                expires_at: None,
+                jurisdiction: Some(place),
+            },
+            terms: BountyTerms {
+                target: BountyTarget::EliminateEntity { target },
+                proof_requirement: worldwake_core::ProofRequirement::PhysicalEvidence,
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(5),
+                reward_source: RewardSource::InstitutionalTreasury {
+                    treasury_entity: office,
+                },
+                claim_place: place,
+            },
+        });
+        let post_notice = ranked_goal(GoalKind::PostNotice {
+            posting: ArtifactPostingContext {
+                posting_place: place,
+                issuing_authority: None,
+                expires_at: None,
+                jurisdiction: Some(place),
+            },
+            topic: NoticeTopic::ThreatWarning { place },
+        });
+
+        assert_eq!(
+            feasibility_hint(&view, AGENT, &post_bounty, &blocked, None, Tick(1)),
+            FeasibilityHint::Uncertain
+        );
+        assert_eq!(
+            feasibility_hint(&view, AGENT, &post_notice, &blocked, None, Tick(1)),
+            FeasibilityHint::Uncertain
+        );
     }
 
     // ── Test 21: Default uncertain ──

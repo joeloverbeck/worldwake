@@ -5,6 +5,7 @@
 // and resource sources.  Designed to exercise all CLI commands.
 //
 // Updated 2026-04-05: Added bounty_posting_weight and notice_posting_weight to all UtilityProfiles (S51ARTISS-001).
+//   Tuned Guard Theron as an explicit posting-capable showcase agent (S51ARTISS-004).
 //   Added Forge at Hearthstone Inn and Medicine/Bow items for commodity variety.
 // Updated 2026-04-03: S44 — Added universal and role-specific profiles to exercise
 //   agent diversity: perception, tell, reasoning, communication, drive thresholds,
@@ -276,8 +277,8 @@
                 social_weight: 300,
                 activity_awareness_weight: 400,
                 side_benefit_weight: 500,
-                bounty_posting_weight: 0,
-                notice_posting_weight: 0,
+                bounty_posting_weight: 700,
+                notice_posting_weight: 900,
                 courage: 850,
                 care_weight: 400,
             ),

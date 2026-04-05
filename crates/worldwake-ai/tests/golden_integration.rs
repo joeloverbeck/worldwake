@@ -40,15 +40,16 @@ use std::collections::BTreeSet;
 use worldwake_ai::{AgentTickDriver, CommodityPurpose, DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, AgentData,
+    verify_authoritative_conservation, AgentData, AgentBeliefStore, BelievedInstitutionalClaim,
     ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
-    BountyTarget, CombatProfile, CommodityKind, Container, ControlSource, DeadAt, DemandMemory,
-    DemandObservation, DemandObservationReason, EligibilityRule, EntityId,
-    FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
+    BountyTarget, BountyTerms, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
+    DemandMemory, DemandObservation, DemandObservationReason, EffectiveRight, EligibilityRule,
+    EntityId, FactionPurpose, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim,
     InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile,
     MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute, PerceptionProfile,
     PerceptionSource, PlaceTag, ProductionOutputOwner, ProofRequirement, PursuitProfile,
-    Quantity, RecordData, RecordKind, ResourceSource, RewardSource, Seed,
+    Quantity, RecordData, RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, Seed,
     SocialObservationDetail, StateHash, SuccessionLaw, TellProfile, TellTopic,
     TheftDispositionProfile, TheftFacts, Tick, Topology, TradeDispositionProfile, TravelEdge,
     TravelEdgeId, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
@@ -6226,6 +6227,296 @@ fn run_s45_notice_discovery(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+fn run_s51_autonomous_bounty_posting(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = build_harness_with_topology(seed, build_s45_bounty_topology());
+    h.enable_action_tracing();
+    h.enable_request_resolution_tracing();
+    h.driver.enable_tracing();
+
+    let issuer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S51 Magistrate",
+        PLACE_S45_TOWN_SQUARE,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            bounty_posting_weight: pm(1000),
+            ..UtilityProfile::default()
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        s45_perception_profile(),
+    );
+
+    let accused = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S51 Accused Poacher",
+        PLACE_S45_WILDERNESS,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, accused, ControlSource::None, 0);
+
+    let faction = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let faction = txn.create_faction("S51 Town Watch").unwrap();
+        commit_txn(txn, &mut h.event_log);
+        faction
+    };
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "S51 Magistrate Office",
+        PLACE_S45_TOWN_SQUARE,
+        SuccessionLaw::Support,
+        8,
+        vec![EligibilityRule::FactionMember(faction)],
+    );
+    let violation_id = worldwake_core::ViolationId(51);
+    let accusation_entry = RecordEntryId(0);
+    let accusation_claim = InstitutionalClaim::Accusation {
+        accuser: issuer,
+        accused,
+        violation_id,
+        theft: TheftFacts {
+            missing_entity: entity(829),
+            expected_place: PLACE_S45_TOWN_SQUARE,
+            commodity: CommodityKind::Coin,
+            quantity: Quantity(6),
+        },
+        effective_tick: Tick(0),
+    };
+    let crime_register = {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.assign_office(office, issuer).unwrap();
+        txn.add_member(issuer, faction).unwrap();
+        txn.set_component_office_data(
+            office,
+            worldwake_core::OfficeData {
+                title: "S51 Magistrate Office".to_string(),
+                seat: PLACE_S45_TOWN_SQUARE,
+                jurisdiction: BTreeSet::from([PLACE_S45_TOWN_SQUARE, PLACE_S45_WILDERNESS]),
+                succession_law: SuccessionLaw::Support,
+                eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
+                succession_period_ticks: 8,
+                vacancy_since: None,
+            },
+        )
+        .unwrap();
+        let crime_register = txn
+            .create_record(RecordData {
+                record_kind: RecordKind::CrimeRegister,
+                home_place: PLACE_S45_TOWN_SQUARE,
+                issuer: office,
+                consultation_ticks: 1,
+                max_entries_per_consult: 8,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })
+            .unwrap();
+        txn.append_record_entry(crime_register, accusation_claim)
+            .unwrap();
+        let treasury_lot = txn.create_item_lot(CommodityKind::Coin, Quantity(6)).unwrap();
+        txn.set_ground_location(treasury_lot, PLACE_S45_TOWN_SQUARE)
+            .unwrap();
+        txn.set_owner(treasury_lot, office).unwrap();
+        txn.set_possessor(treasury_lot, office).unwrap();
+        commit_txn(txn, &mut h.event_log);
+        crime_register
+    };
+
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        accused,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        PLACE_S45_TOWN_SQUARE,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        office,
+        Some(issuer),
+        Tick(0),
+        InstitutionalKnowledgeSource::SelfDeclaration,
+        Some(PLACE_S45_TOWN_SQUARE),
+    );
+    {
+        let mut store = h
+            .world
+            .get_component_agent_belief_store(issuer)
+            .cloned()
+            .unwrap_or_else(AgentBeliefStore::new);
+        let profile = h
+            .world
+            .get_component_perception_profile(issuer)
+            .copied()
+            .unwrap_or_default();
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::CrimeCase {
+                accused,
+                violation_id,
+            },
+            BelievedInstitutionalClaim {
+                claim: accusation_claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record: crime_register,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(0),
+                learned_at: Some(PLACE_S45_TOWN_SQUARE),
+            },
+            &profile,
+        );
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_agent_belief_store(issuer, store).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let expected_goal = GoalKey::from(GoalKind::PostBounty {
+        posting: worldwake_core::ArtifactPostingContext {
+            posting_place: PLACE_S45_TOWN_SQUARE,
+            issuing_authority: Some(office),
+            expires_at: None,
+            jurisdiction: Some(PLACE_S45_TOWN_SQUARE),
+        },
+        terms: BountyTerms {
+            target: BountyTarget::EliminateEntity { target: accused },
+            proof_requirement: ProofRequirement::PhysicalEvidence,
+            reward_commodity: CommodityKind::Coin,
+            reward_quantity: Quantity(6),
+            reward_source: RewardSource::InstitutionalTreasury {
+                treasury_entity: office,
+            },
+            claim_place: PLACE_S45_TOWN_SQUARE,
+        },
+    });
+
+    let mut bounty = None;
+    let mut selected_bounty = false;
+    let mut committed_bounty = false;
+    for _ in 0..12 {
+        h.step_once();
+        if bounty.is_none() {
+            bounty = find_first_social_artifact(&h.world, ArtifactKind::Bounty);
+        }
+        let belief_store = h
+            .world
+            .get_component_agent_belief_store(issuer)
+            .expect("issuer should retain a belief store");
+        let view = PerAgentBeliefView::new(issuer, &h.world, belief_store);
+        let believed_rights =
+            worldwake_sim::RuntimeBeliefView::believed_rights(&view, issuer, accused);
+        assert!(
+            believed_rights.iter().any(|right| {
+                *right
+                    == EffectiveRight {
+                        kind: RightKind::JurisdictionalAuthority,
+                        via: Some(office),
+                    }
+            }),
+            "issuer should see jurisdictional authority over the accused through the office"
+        );
+        if let Some(trace_sink) = h.driver.trace_sink() {
+            selected_bounty |= trace_sink.traces_for(issuer).into_iter().any(|trace| {
+                matches!(
+                    &trace.outcome,
+                    DecisionOutcome::Planning(planning)
+                        if planning.selection.selected_goal_is(expected_goal)
+                )
+            });
+        }
+        committed_bounty |= h.action_trace_sink().is_some_and(|sink| {
+            sink.events_for(issuer).iter().any(|event| {
+                event.action_name == "post_bounty"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            })
+        });
+        if bounty.is_some() && selected_bounty && committed_bounty {
+            break;
+        }
+    }
+
+    let summaries = trace_summaries(&h, issuer);
+    let action_summaries = h.action_trace_sink().map_or_else(Vec::new, |sink| {
+        sink.events_for(issuer)
+            .into_iter()
+            .map(worldwake_sim::ActionTraceEvent::summary)
+            .collect::<Vec<_>>()
+    });
+    let request_summaries = h.request_resolution_trace_sink().map_or_else(Vec::new, |sink| {
+        sink.events_for(issuer)
+            .into_iter()
+            .map(worldwake_sim::RequestResolutionTraceEvent::summary)
+            .collect::<Vec<_>>()
+    });
+    assert!(
+        selected_bounty,
+        "issuer should select PostBounty from the consulted accusation belief; traces={summaries:?}; request_traces={request_summaries:?}; action_traces={action_summaries:?}"
+    );
+    assert!(
+        committed_bounty,
+        "issuer should commit post_bounty after selecting the institutional goal; traces={summaries:?}; request_traces={request_summaries:?}; action_traces={action_summaries:?}"
+    );
+
+    let bounty = bounty.expect("autonomous bounty posting should create a bounty artifact");
+    assert_eq!(
+        h.world.get_component_artifact_header(bounty).unwrap().kind,
+        ArtifactKind::Bounty,
+        "the created social artifact should be a bounty"
+    );
+    assert_eq!(
+        h.world.get_component_artifact_header(bounty).unwrap().state,
+        ArtifactState::Active,
+        "the autonomous institutional bounty should remain active after posting"
+    );
+    assert_eq!(
+        h.world.effective_place(issuer),
+        Some(PLACE_S45_TOWN_SQUARE),
+        "the issuer should post at the office seat without a travel detour"
+    );
+
+    let believed_bounty = agent_belief_about(&h.world, issuer, bounty)
+        .and_then(|belief| belief.believed_artifact.as_ref());
+    assert!(
+        believed_bounty.is_some_and(|artifact| {
+            artifact.kind == ArtifactKind::Bounty
+                && artifact.state == ArtifactState::Active
+                && artifact.bounty_terms.as_ref().is_some_and(|terms| {
+                    terms.claim_place == PLACE_S45_TOWN_SQUARE
+                        && terms.reward_commodity == CommodityKind::Coin
+                        && terms.reward_quantity == Quantity(6)
+                        && matches!(
+                            terms.target,
+                            BountyTarget::EliminateEntity { target } if target == accused
+                        )
+                })
+        }),
+        "issuer should retain a believed active bounty after the autonomous post"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 105: Social artifact bounty lifecycle closes canonically
 // ---------------------------------------------------------------------------
@@ -6376,5 +6667,44 @@ fn golden_s45_notice_warning_flips_route_choice_replays_deterministically() {
     assert_eq!(
         first, second,
         "S45 threat-warning notice scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 112: Autonomous institutional bounty posts from consulted accusation
+// ---------------------------------------------------------------------------
+//
+// Systems: Social artifact actions, Beliefs, AI, Offices
+// GoalKinds: PostBounty
+// ActionDomains: Social
+// Places: S45 Town Square, S45 Wilderness
+// Principles: 7, 14, 23, 25
+//
+// Setup: AI magistrate holds an office at Town Square with non-zero
+//   `bounty_posting_weight`, real office treasury coins, and a consulted crime-
+//   register accusation belief against an accused poacher in the office's
+//   jurisdiction. No manual action request is used.
+//
+// Proves: Autonomous artifact issuance is live end to end for the first
+//   institutional bounty family. A consulted accusation belief plus matching
+//   jurisdiction rights can produce a selected `PostBounty` goal, commit
+//   `post_bounty`, and materialize an active bounty artifact through the
+//   normal AI pipeline.
+//
+// Chain: consulted accusation belief -> AI selects PostBounty -> post_bounty
+//   commits -> active bounty entity exists with institutional treasury terms.
+
+#[test]
+fn golden_s51_autonomous_bounty_posting() {
+    let _ = run_s51_autonomous_bounty_posting(Seed([113; 32]));
+}
+
+#[test]
+fn golden_s51_autonomous_bounty_posting_replays_deterministically() {
+    let first = run_s51_autonomous_bounty_posting(Seed([114; 32]));
+    let second = run_s51_autonomous_bounty_posting(Seed([114; 32]));
+    assert_eq!(
+        first, second,
+        "S51 autonomous bounty posting scenario should replay deterministically"
     );
 }

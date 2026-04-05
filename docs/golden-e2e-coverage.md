@@ -20,11 +20,11 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 ## Pending Backlog Summary
 
-1. **S57 Rights lattice remaining E2E gap** — [specs/S57-golden-gaps-S50.md](../specs/S57-golden-gaps-S50.md). The suite now proves typed-rights-backed jurisdiction suppression through Scenario 110, but it still lacks an end-to-end golden showing that a single office can lawfully punish at a secondary place inside a multi-place jurisdiction while that place remains distinct from the office seat.
+1. **S58 Artifact-issuance remaining E2E gap** — [specs/S58-golden-gaps-S51.md](../specs/S58-golden-gaps-S51.md). The suite now proves manual notice downstream effects through Scenario 107 and autonomous institutional bounty issuance through Scenario 112, but it still lacks an end-to-end golden showing that an AI agent autonomously posts a high-danger `ThreatWarning` notice and that the posted artifact later reroutes another agent's travel choice.
 
 ### Recommended Implementation Order
 
-- `S57` — closes the remaining S50 seat-vs-jurisdiction golden gap.
+- `S58` — closes the remaining S51 autonomous-notice golden gap.
 
 ---
 
@@ -49,6 +49,8 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 Items removed from the golden backlog with rationale (prevents duplicate coverage proposals):
 
 - **S49 Unified social artifact remaining E2E gaps** (removed 2026-04-05) — Implemented and archived as [archive/specs/S49-golden-gaps-S45.md](../archive/specs/S49-golden-gaps-S45.md). Scenario 108 in `golden_integration.rs` now proves delivery-bounty fulfillment and later claim with deterministic replay, and Scenario 109 in `golden_offices.rs` now proves office-vacancy notice uptake into political action without `consult_record`.
+
+- **S57 Rights lattice remaining E2E gap** (removed 2026-04-05) — Implemented and archived as [archive/specs/S57-golden-gaps-S50.md](../archive/specs/S57-golden-gaps-S50.md). Scenario 111 in `golden_emergent.rs` now proves punishment at a secondary jurisdiction place distinct from the office seat, with deterministic replay.
 
 - **S48 Learned source reliability reroutes later acquisition after real failure** (removed 2026-04-05) — Implemented and archived as [archive/specs/S48-golden-gaps-S38.md](../archive/specs/S48-golden-gaps-S38.md). The delivered golden now lives in `golden_trade.rs` as Scenario 94, where a real seller rejection records durable `SourceReliability` and reroutes later acquisition to a lawful sibling seller, matching the corrected archived proof boundary.
 

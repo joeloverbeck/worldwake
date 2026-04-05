@@ -7,8 +7,9 @@ use crate::{
 use std::collections::BTreeSet;
 use worldwake_core::{belief_confidence, EntityId, GoalKind, Tick};
 use worldwake_sim::{
-    get_affordances_for_defs, requested_affordance_matches, ActionDefRegistry,
-    ActionHandlerRegistry, Affordance, RuntimeBeliefView, TargetSpec,
+    evaluate_constraint, evaluate_precondition, get_affordances_for_defs,
+    requested_affordance_matches, ActionDefRegistry, ActionHandlerRegistry, Affordance,
+    RuntimeBeliefView, TargetSpec,
 };
 
 #[must_use]
@@ -44,7 +45,42 @@ pub fn revalidate_next_step(
                 view,
             )
         });
-    affordance_match || revalidate_exact_target_step(view, actor, step, &targets, def, handler)
+    affordance_match
+        || revalidate_best_effort_payload_override_step(view, actor, step, &targets, def, handler)
+        || revalidate_exact_target_step(view, actor, step, &targets, def, handler)
+}
+
+fn revalidate_best_effort_payload_override_step(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    step: &PlannedStep,
+    targets: &[EntityId],
+    def: &worldwake_sim::ActionDef,
+    handler: &worldwake_sim::ActionHandler,
+) -> bool {
+    let Some(payload_override) = step.payload_override.as_ref() else {
+        return false;
+    };
+    if !matches!(def.payload, worldwake_sim::ActionPayload::None) {
+        return false;
+    }
+    if !def
+        .actor_constraints
+        .iter()
+        .all(|constraint| evaluate_constraint(constraint, actor, view))
+    {
+        return false;
+    }
+    if !def
+        .preconditions
+        .iter()
+        .copied()
+        .all(|precondition| evaluate_precondition(precondition, actor, targets, view))
+    {
+        return false;
+    }
+
+    (handler.payload_override_is_valid)(def, actor, targets, payload_override, view)
 }
 
 fn revalidate_exact_target_step(
@@ -738,6 +774,61 @@ mod tests {
         (registry, handlers)
     }
 
+    fn posting_payload_override_is_valid(
+        def: &ActionDef,
+        _actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+        view: &dyn RuntimeBeliefView,
+    ) -> bool {
+        if def.name != "post_bounty:test" {
+            return false;
+        }
+        let Some(payload) = payload.as_post_bounty() else {
+            return false;
+        };
+        let Some(posting_place) = targets.first().copied() else {
+            return false;
+        };
+        posting_place == payload.posting_place
+            && view.entity_kind(posting_place) == Some(EntityKind::Place)
+            && view.entity_kind(payload.claim_place) == Some(EntityKind::Place)
+    }
+
+    fn build_explicit_payload_registry() -> (ActionDefRegistry, ActionHandlerRegistry) {
+        let mut registry = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(
+            ActionHandler::new(noop_start, noop_tick, noop_commit, noop_abort)
+                .with_affordance_payloads(|_, _, _, _| Vec::new())
+                .with_payload_override_validator(posting_payload_override_is_valid),
+        );
+        registry.register(ActionDef {
+            id: ActionDefId(0),
+            name: "post_bounty:test".to_string(),
+            domain: worldwake_core::ActionDomain::Social,
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::ActorPlace],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::Place,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        });
+        (registry, handlers)
+    }
+
     fn sample_step(def_id: ActionDefId, target: EntityId) -> PlannedStep {
         PlannedStep {
             def_id,
@@ -1005,6 +1096,52 @@ mod tests {
         };
 
         let (registry, handlers) = build_specific_entity_payload_registry();
+        assert!(revalidate_next_step(
+            &view,
+            actor,
+            &step,
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        ));
+    }
+
+    #[test]
+    fn explicit_payload_variant_steps_revalidate_via_best_effort_fallback() {
+        let actor = entity(1);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+
+        let step = PlannedStep {
+            def_id: ActionDefId(0),
+            targets: vec![PlanningEntityRef::Authoritative(place)],
+            payload_override: Some(ActionPayload::PostBounty(
+                worldwake_sim::PostBountyActionPayload {
+                    posting_place: place,
+                    issuing_authority: None,
+                    expires_at: None,
+                    jurisdiction: Some(place),
+                    target: worldwake_core::BountyTarget::EliminateEntity {
+                        target: entity(2),
+                    },
+                    proof_requirement: worldwake_core::ProofRequirement::PhysicalEvidence,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(3),
+                    reward_source: worldwake_core::RewardSource::PersonalFunds { issuer: actor },
+                    claim_place: place,
+                },
+            )),
+            op_kind: PlannerOpKind::PostBounty,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
+
+        let (registry, handlers) = build_explicit_payload_registry();
         assert!(revalidate_next_step(
             &view,
             actor,

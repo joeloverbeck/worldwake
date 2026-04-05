@@ -1,9 +1,9 @@
 # S51ARTISS-004: Scenario tuning and golden closeout for artifact issuance
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — scenario profile tuning and golden closeout
+**Engine Changes**: Yes — bounded AI feasibility completion, scenario profile tuning, and golden closeout
 **Deps**: S51ARTISS-005
 
 ## Problem
@@ -17,37 +17,45 @@ After the S51 core, planner, candidate-generation, and ranking-activation slices
 3. `crates/worldwake-ai/tests/golden_offices.rs` owns office-vacancy notice uptake into political action (Scenario 109), but that suite is narrower and office-specific. The general S51 posting closeout should reuse `golden_integration.rs` instead of fragmenting ownership.
 4. Archived `S51ARTISS-003` made lawful posting candidates emit, but it intentionally left posting ranking at zero motive. Correction applied: this closeout ticket now depends on `S51ARTISS-005`, which owns the ranking/selection activation needed before showcase or golden proof can honestly claim autonomous posting behavior is live.
 5. `S51ARTISS-001` already landed bounded `format_goal_kind()` support while sweeping exhaustive downstream handling for the new goal variants. Correction applied: CLI first-render ownership is no longer part of this ticket.
+6. Focused closeout verification exposed one remaining production contradiction: `PostBounty` / `PostNotice` now lawfully emit and rank, but `crates/worldwake-ai/src/feasibility.rs` still treats those goal kinds as unreachable under `FeasibilityStrategy::NoOpinion`, panicking when autonomous posting reaches the admission layer. Correction applied: this ticket now owns the bounded feasibility completion required for truthful end-to-end posting proof.
 
 ## Architecture Check
 
 1. Reusing `golden_integration.rs` keeps issuance proof on the canonical social-artifact lifecycle suite instead of creating a duplicate posting-only golden file.
 2. Scenario tuning belongs with the end-to-end closeout once posting behavior is actually live; landing non-zero showcase weights before ranking activation exists would add noise without proving anything.
-3. `format_goal_kind()` already acknowledges the new goal variants, so this ticket can stay focused on making posting behavior intentionally visible in the showcase scenario and proving it end to end.
-4. No backward-compatibility shims.
+3. The closeout golden must use the full live AI admission path. If autonomous posting reaches feasibility and still panics or lawlessly short-circuits there, this ticket owns the bounded fix instead of papering over it with a weaker scenario.
+4. `format_goal_kind()` already acknowledges the new goal variants, so this ticket can stay focused on making posting behavior intentionally visible in the showcase scenario and proving it end to end.
+5. No backward-compatibility shims.
 
 ## Verification Layers
 
 1. CLI evaluation scenario intentionally configures at least one autonomous posting agent -> authoritative RON world-init surface
 2. Autonomous posting goal generation occurs from belief-driven motivation -> decision trace in golden
-3. `post_bounty` / `post_notice` commits and creates the expected social artifact -> action trace + authoritative world state in golden
-4. Generated golden inventory/docs remain aligned after new scenario metadata -> `python3 scripts/golden_inventory.py --write --check-docs`
+3. Autonomous posting survives the feasibility/admission layer without panic or hidden special-casing -> focused AI test plus golden execution
+4. `post_bounty` / `post_notice` commits and creates the expected social artifact -> action trace + authoritative world state in golden
+5. Generated golden inventory/docs remain aligned after new scenario metadata -> `python3 scripts/golden_inventory.py --write --check-docs`
 
 ## What to Change
 
-### 1. Tune the active showcase scenario
+### 1. Complete the live AI admission path for posting goals
+
+In `crates/worldwake-ai/src/feasibility.rs`, make the existing `FeasibilityStrategy::NoOpinion` path lawfully admit the live `PostBounty` and `PostNotice` goal families instead of panicking once autonomous posting reaches feasibility.
+
+### 2. Tune the active showcase scenario
 
 In `scenarios/cli-evaluation.ron`, give at least one agent non-zero `bounty_posting_weight` and/or `notice_posting_weight` once the S51 stack is live.
 
-### 2. Add end-to-end issuance goldens
+### 3. Add end-to-end issuance goldens
 
 In `crates/worldwake-ai/tests/golden_integration.rs`, add the strongest honest closeout scenarios for autonomous artifact issuance on the existing social-artifact suite. Reuse the current artifact helpers/harnesses rather than creating a new posting-specific golden file.
 
-### 3. Refresh generated golden docs
+### 4. Refresh generated golden docs
 
 Run `python3 scripts/golden_inventory.py --write --check-docs` after landing any new `// Scenario` blocks.
 
 ## Files to Touch
 
+- `crates/worldwake-ai/src/feasibility.rs` (modify)
 - `scenarios/cli-evaluation.ron` (modify)
 - `crates/worldwake-ai/tests/golden_integration.rs` (modify)
 - `docs/generated/golden-coverage-matrix.md` (modify)
@@ -61,6 +69,7 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` after landing any
 - Planner ops and dispatch wiring — ticket 002
 - Candidate emission — archived `S51ARTISS-003`
 - Ranking activation for posting goals — `S51ARTISS-005`
+- Broad planner/candidate/ranking refactors outside the bounded posting-feasibility completion
 - Artifact revocation, reposting, or maintenance flows
 
 ## Acceptance Criteria
@@ -68,21 +77,24 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` after landing any
 ### Tests That Must Pass
 
 1. At least one golden proves autonomous posting from belief-driven motivation through committed artifact creation
-2. Generated golden docs refresh cleanly
-3. Existing suite: `cargo test --workspace`
+2. Posting goals no longer panic when they reach feasibility in the live AI pipeline
+3. Generated golden docs refresh cleanly
+4. Existing suite: `cargo test --workspace`
 
 ### Invariants
 
 1. Golden proof reuses the canonical existing social-artifact suite rather than a duplicate posting-only file
 2. Showcase scenario weights remain explicit and intentional rather than relying on hidden defaults
 3. Posting proof stays belief-driven and artifact creation remains authoritative world state
+4. The feasibility fix remains a bounded admission-path completion, not a new special-case posting shortcut
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/tests/golden_integration.rs` — autonomous artifact-issuance golden scenario(s)
-2. `docs/generated/golden-coverage-matrix.md`, `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-map.md` — generated refresh after scenario metadata changes
+1. `crates/worldwake-ai/src/feasibility.rs` — focused posting-feasibility regression coverage
+2. `crates/worldwake-ai/tests/golden_integration.rs` — autonomous artifact-issuance golden scenario(s)
+3. `docs/generated/golden-coverage-matrix.md`, `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-map.md` — generated refresh after scenario metadata changes
 
 ### Commands
 
@@ -90,3 +102,22 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` after landing any
 2. `python3 scripts/golden_inventory.py --write --check-docs`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed: 2026-04-05
+
+- Landed the bounded AI admission-path completion for posting goals in `crates/worldwake-ai/src/feasibility.rs` and `crates/worldwake-ai/src/plan_revalidation.rs`. `PostBounty` / `PostNotice` no longer panic under `FeasibilityStrategy::NoOpinion`, and posting steps with lawful payload overrides now survive AI step revalidation when runtime best-effort request resolution would accept them.
+- Tuned `scenarios/cli-evaluation.ron` so the active showcase scenario now includes an explicit posting-capable agent with non-zero `bounty_posting_weight` and `notice_posting_weight`.
+- Added Scenario 112 in `crates/worldwake-ai/tests/golden_integration.rs`, proving end-to-end autonomous institutional bounty posting from consulted accusation belief through selected `PostBounty`, committed `post_bounty`, and active bounty artifact creation.
+- Refreshed `docs/generated/golden-coverage-matrix.md`, `docs/generated/golden-e2e-inventory.md`, and `docs/generated/golden-scenario-map.md` after the new scenario metadata landed.
+- Ticket scope broadened during implementation from a golden/showcase closeout into a bounded AI admission-path completion plus closeout once live verification showed autonomous posting was still being dropped before request resolution.
+
+Verification:
+- `cargo test -p worldwake-ai posting_goals_with_no_opinion_strategy_return_uncertain_instead_of_panicking -- --nocapture`
+- `cargo test -p worldwake-ai explicit_payload_variant_steps_revalidate_via_best_effort_fallback -- --nocapture`
+- `cargo test -p worldwake-ai autonomous_bounty_posting -- --nocapture`
+- `cargo test -p worldwake-ai --test golden_integration`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

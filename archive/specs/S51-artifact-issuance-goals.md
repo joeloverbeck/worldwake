@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # S51: Social Artifact Issuance Goals
 
 ## Summary
@@ -7,10 +9,6 @@ Add AI goal generation for *creating* social artifacts (bounties, notices), not 
 ## Phase
 
 Phase 6: Architectural Substrates II
-
-## Status
-
-Draft
 
 ## Crates
 
@@ -203,3 +201,19 @@ No new persistent state beyond what S45 already handles. GoalKind variants are t
 - PostNotice goal generated (decision trace)
 - `post_notice` action committed (action trace)
 - SocialArtifact entity created with ThreatWarning topic (authoritative world state)
+
+## Outcome
+
+Completed: 2026-04-05
+
+Implemented via `S51ARTISS-001` through `S51ARTISS-005`. The delivered S51 slice now includes the shared posting-goal substrate (`GoalKind::PostBounty` / `GoalKind::PostNotice`, posting utility weights, and lawful posting terms), live planner support, belief-driven candidate generation, selection activation, bounded AI admission-path completion for payload-override posting steps, and autonomous institutional bounty posting proof in `crates/worldwake-ai/tests/golden_integration.rs` as Scenario 112.
+
+The main scope correction during implementation was that S51 could not honestly land all originally sketched posting families at once. The first live autonomous closeout is the institutional accusation-backed bounty path, while the remaining autonomous threat-warning notice golden gap is tracked separately in `specs/S58-golden-gaps-S51.md`. Existing manual and focused notice coverage remains intact.
+
+Verification:
+- `cargo test -p worldwake-core`
+- `cargo test -p worldwake-ai`
+- `cargo test -p worldwake-ai --test golden_integration`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`
