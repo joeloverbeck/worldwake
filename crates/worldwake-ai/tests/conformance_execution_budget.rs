@@ -12,17 +12,30 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, GoalKey, GoalKind, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
-    BeliefConfidencePolicy, CommodityKind, EntityId, ExecutionBudget, HomeostaticNeeds,
-    KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, Tick,
-    UtilityProfile, WorkstationTag,
+    BeliefConfidencePolicy, CognitiveProfile, CommodityKind, EntityId, ExecutionBudget,
+    HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity,
+    ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
 };
 
-fn minimum_bundle_budget() -> ExecutionBudget {
-    ExecutionBudget {
-        max_node_expansions: 50,
-        beam_width: 3,
+fn minimum_bundle_cognitive() -> CognitiveProfile {
+    CognitiveProfile {
         snapshot_travel_horizon: 2,
-        max_prerequisite_locations: 1,
+        max_node_expansions: 50,
+        ..CognitiveProfile::default()
+    }
+}
+
+fn tight_search_cognitive() -> CognitiveProfile {
+    CognitiveProfile {
+        max_node_expansions: 2,
+        ..CognitiveProfile::default()
+    }
+}
+
+fn tight_snapshot_cognitive() -> CognitiveProfile {
+    CognitiveProfile {
+        snapshot_travel_horizon: 2,
+        ..CognitiveProfile::default()
     }
 }
 
@@ -78,7 +91,11 @@ fn configure_perception(h: &mut GoldenHarness, agent: EntityId) {
     );
 }
 
-fn setup_local_consume_harness(seed: Seed, execution_budget: ExecutionBudget) -> (GoldenHarness, EntityId) {
+fn setup_local_consume_harness(
+    seed: Seed,
+    cognitive_profile: CognitiveProfile,
+    execution_budget: ExecutionBudget,
+) -> (GoldenHarness, EntityId) {
     let mut h = GoldenHarness::new(seed);
     let agent = seed_agent(
         &mut h.world,
@@ -89,6 +106,7 @@ fn setup_local_consume_harness(seed: Seed, execution_budget: ExecutionBudget) ->
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
+    set_agent_cognitive_profile(&mut h.world, &mut h.event_log, agent, cognitive_profile);
     set_agent_execution_budget(&mut h.world, &mut h.event_log, agent, execution_budget);
     give_commodity(
         &mut h.world,
@@ -111,6 +129,7 @@ fn setup_local_consume_harness(seed: Seed, execution_budget: ExecutionBudget) ->
 
 fn setup_remote_acquire_harness(
     seed: Seed,
+    cognitive_profile: CognitiveProfile,
     execution_budget: ExecutionBudget,
 ) -> (GoldenHarness, EntityId) {
     let mut h = GoldenHarness::new(seed);
@@ -123,6 +142,7 @@ fn setup_remote_acquire_harness(
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
+    set_agent_cognitive_profile(&mut h.world, &mut h.event_log, agent, cognitive_profile);
     set_agent_execution_budget(&mut h.world, &mut h.event_log, agent, execution_budget);
     place_workstation_with_source(
         &mut h.world,
@@ -151,6 +171,7 @@ fn setup_remote_acquire_harness(
 
 fn setup_bounded_multistep_harness(
     seed: Seed,
+    cognitive_profile: CognitiveProfile,
     execution_budget: ExecutionBudget,
 ) -> (GoldenHarness, EntityId) {
     let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
@@ -171,6 +192,7 @@ fn setup_bounded_multistep_harness(
         KnownRecipes::with([bread_recipe]),
     );
     configure_perception(&mut h, baker);
+    set_agent_cognitive_profile(&mut h.world, &mut h.event_log, baker, cognitive_profile);
     set_agent_execution_budget(&mut h.world, &mut h.event_log, baker, execution_budget);
 
     place_workstation(
@@ -217,8 +239,19 @@ fn setup_bounded_multistep_harness(
 #[test]
 fn conformance_minimum_bundle_preserves_immediate_local_consume_sequence() {
     let seed = Seed([81; 32]);
-    let (mut baseline, baseline_agent) = setup_local_consume_harness(seed, ExecutionBudget::default());
-    let (mut minimum, minimum_agent) = setup_local_consume_harness(seed, minimum_bundle_budget());
+    let (mut baseline, baseline_agent) = setup_local_consume_harness(
+        seed,
+        CognitiveProfile::default(),
+        ExecutionBudget::default(),
+    );
+    let (mut minimum, minimum_agent) = setup_local_consume_harness(
+        seed,
+        minimum_bundle_cognitive(),
+        ExecutionBudget {
+            beam_width: 3,
+            max_prerequisite_locations: 1,
+        },
+    );
 
     let baseline_sequence = selected_goal_sequence(&mut baseline, baseline_agent, 3);
     let minimum_sequence = selected_goal_sequence(&mut minimum, minimum_agent, 3);
@@ -257,9 +290,13 @@ fn conformance_beam_width_and_prerequisite_limit_preserve_bounded_multistep_sele
     ];
 
     for (label, budget) in cases {
-        let (mut baseline, baseline_agent) =
-            setup_bounded_multistep_harness(seed, ExecutionBudget::default());
-        let (mut reduced, reduced_agent) = setup_bounded_multistep_harness(seed, budget);
+        let (mut baseline, baseline_agent) = setup_bounded_multistep_harness(
+            seed,
+            CognitiveProfile::default(),
+            ExecutionBudget::default(),
+        );
+        let (mut reduced, reduced_agent) =
+            setup_bounded_multistep_harness(seed, CognitiveProfile::default(), budget);
 
         baseline.step_once();
         reduced.step_once();
@@ -309,14 +346,15 @@ fn conformance_beam_width_and_prerequisite_limit_preserve_bounded_multistep_sele
 #[test]
 fn conformance_snapshot_horizon_is_behavior_changing() {
     let seed = Seed([84; 32]);
-    let (mut baseline, baseline_agent) =
-        setup_remote_acquire_harness(seed, ExecutionBudget::default());
+    let (mut baseline, baseline_agent) = setup_remote_acquire_harness(
+        seed,
+        CognitiveProfile::default(),
+        ExecutionBudget::default(),
+    );
     let (mut reduced, reduced_agent) = setup_remote_acquire_harness(
         seed,
-        ExecutionBudget {
-            snapshot_travel_horizon: 2,
-            ..ExecutionBudget::default()
-        },
+        tight_snapshot_cognitive(),
+        ExecutionBudget::default(),
     );
 
     baseline.step_once();
@@ -355,13 +393,11 @@ fn conformance_max_node_expansions_is_behavior_changing() {
     let seed = Seed([83; 32]);
     let (mut tight, tight_agent) = setup_bounded_multistep_harness(
         seed,
-        ExecutionBudget {
-            max_node_expansions: 2,
-            ..ExecutionBudget::default()
-        },
+        tight_search_cognitive(),
+        ExecutionBudget::default(),
     );
     let (mut thorough, thorough_agent) =
-        setup_bounded_multistep_harness(seed, ExecutionBudget::default());
+        setup_bounded_multistep_harness(seed, CognitiveProfile::default(), ExecutionBudget::default());
 
     tight.step_once();
     thorough.step_once();

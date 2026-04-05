@@ -126,7 +126,7 @@ pub fn search_plan(
         if node.steps.len() >= usize::from(cognitive.max_plan_depth) {
             continue;
         }
-        if expansions >= execution_budget.max_node_expansions {
+        if expansions >= cognitive.max_node_expansions {
             if let Some(barrier_plan) = best_barrier {
                 return PlanSearchResult::Found(Box::new(barrier_plan));
             }

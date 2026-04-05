@@ -534,7 +534,7 @@ fn process_agent(
             recipe_registry,
             utility: &utility,
             tick,
-            travel_horizon: execution_budget.snapshot_travel_horizon,
+            travel_horizon: cognitive.snapshot_travel_horizon,
             structural_block_ticks: cognitive.structural_block_ticks,
         },
         tracing,

@@ -4,18 +4,14 @@ use serde::{Deserialize, Serialize};
 /// Stable per-agent execution bounds used to compress planner search.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ExecutionBudget {
-    pub max_node_expansions: u16,
     pub beam_width: u8,
-    pub snapshot_travel_horizon: u8,
     pub max_prerequisite_locations: u8,
 }
 
 impl Default for ExecutionBudget {
     fn default() -> Self {
         Self {
-            max_node_expansions: 224,
             beam_width: 8,
-            snapshot_travel_horizon: 6,
             max_prerequisite_locations: 3,
         }
     }
@@ -44,18 +40,14 @@ mod tests {
     fn execution_budget_default_matches_split_defaults() {
         let budget = ExecutionBudget::default();
 
-        assert_eq!(budget.max_node_expansions, 224);
         assert_eq!(budget.beam_width, 8);
-        assert_eq!(budget.snapshot_travel_horizon, 6);
         assert_eq!(budget.max_prerequisite_locations, 3);
     }
 
     #[test]
     fn execution_budget_roundtrips_through_bincode() {
         let budget = ExecutionBudget {
-            max_node_expansions: 512,
             beam_width: 11,
-            snapshot_travel_horizon: 5,
             max_prerequisite_locations: 4,
         };
 
@@ -72,7 +64,7 @@ mod tests {
             .create_agent("Planner", ControlSource::Ai, Tick(1))
             .unwrap();
         let budget = ExecutionBudget {
-            max_node_expansions: 400,
+            beam_width: 12,
             ..ExecutionBudget::default()
         };
 

@@ -384,6 +384,7 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         merchant,
         worldwake_core::CognitiveProfile {
             max_plan_depth: 12,
+            max_node_expansions: 1024,
             ..worldwake_core::CognitiveProfile::default()
         },
     );
@@ -779,10 +780,7 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         &mut h.world,
         &mut h.event_log,
         merchant,
-        ExecutionBudget {
-            max_node_expansions: 1024,
-            ..ExecutionBudget::default()
-        },
+        ExecutionBudget::default(),
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
@@ -1238,6 +1236,7 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         merchant,
         worldwake_core::CognitiveProfile {
             max_plan_depth: 10,
+            max_node_expansions: 1024,
             ..worldwake_core::CognitiveProfile::default()
         },
     );
@@ -1245,10 +1244,7 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         &mut h.world,
         &mut h.event_log,
         merchant,
-        ExecutionBudget {
-            max_node_expansions: 1024,
-            ..ExecutionBudget::default()
-        },
+        ExecutionBudget::default(),
     );
     let witness = seed_agent(
         &mut h.world,

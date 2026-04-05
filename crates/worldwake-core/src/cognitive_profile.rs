@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct CognitiveProfile {
     pub max_candidates_to_plan: u8,
     pub max_plan_depth: u8,
+    pub snapshot_travel_horizon: u8,
+    pub max_node_expansions: u16,
     pub switch_margin: Permille,
     pub transient_block_ticks: u32,
     pub unknown_block_ticks: u32,
@@ -19,6 +21,8 @@ impl Default for CognitiveProfile {
         Self {
             max_candidates_to_plan: 2,
             max_plan_depth: 8,
+            snapshot_travel_horizon: 6,
+            max_node_expansions: 224,
             switch_margin: Permille::new_unchecked(100),
             transient_block_ticks: 20,
             unknown_block_ticks: 5,
@@ -54,6 +58,8 @@ mod tests {
 
         assert_eq!(profile.max_candidates_to_plan, 2);
         assert_eq!(profile.max_plan_depth, 8);
+        assert_eq!(profile.snapshot_travel_horizon, 6);
+        assert_eq!(profile.max_node_expansions, 224);
         assert_eq!(profile.switch_margin, crate::Permille::new(100).unwrap());
         assert_eq!(profile.transient_block_ticks, 20);
         assert_eq!(profile.unknown_block_ticks, 5);
@@ -67,6 +73,8 @@ mod tests {
         let profile = CognitiveProfile {
             max_candidates_to_plan: 3,
             max_plan_depth: 10,
+            snapshot_travel_horizon: 9,
+            max_node_expansions: 512,
             switch_margin: crate::Permille::new(175).unwrap(),
             transient_block_ticks: 12,
             unknown_block_ticks: 9,

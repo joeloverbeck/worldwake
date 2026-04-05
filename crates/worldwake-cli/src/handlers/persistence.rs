@@ -183,13 +183,13 @@ mod tests {
         let cognitive_profile = CognitiveProfile {
             max_plan_depth: 12,
             max_candidates_to_plan: 4,
+            snapshot_travel_horizon: 9,
+            max_node_expansions: 1024,
             switch_margin: worldwake_core::Permille::new(175).unwrap(),
             ..CognitiveProfile::default()
         };
         let execution_budget = ExecutionBudget {
             beam_width: 16,
-            max_node_expansions: 1024,
-            snapshot_travel_horizon: 9,
             ..ExecutionBudget::default()
         };
         let sim = build_test_sim_with_profiles(

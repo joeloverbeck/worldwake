@@ -477,6 +477,8 @@ mod tests {
             ComponentValue::CognitiveProfile(CognitiveProfile {
                 max_candidates_to_plan: 3,
                 max_plan_depth: 9,
+                snapshot_travel_horizon: 5,
+                max_node_expansions: 320,
                 switch_margin: Permille::new(175).unwrap(),
                 transient_block_ticks: 12,
                 unknown_block_ticks: 6,
@@ -485,9 +487,7 @@ mod tests {
                 max_cooldown_ticks: 90,
             }),
             ComponentValue::ExecutionBudget(ExecutionBudget {
-                max_node_expansions: 320,
                 beam_width: 11,
-                snapshot_travel_horizon: 5,
                 max_prerequisite_locations: 4,
             }),
             ComponentValue::DriveThresholds(DriveThresholds::default()),

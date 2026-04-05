@@ -300,6 +300,10 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
             cognitive.max_candidates_to_plan, cognitive.max_plan_depth, cognitive.switch_margin
         );
         println!(
+            "    snapshot_travel_horizon={}, max_node_expansions={}",
+            cognitive.snapshot_travel_horizon, cognitive.max_node_expansions
+        );
+        println!(
             "    transient_block={}, unknown_block={}, structural_block={}",
             cognitive.transient_block_ticks,
             cognitive.unknown_block_ticks,
@@ -313,13 +317,8 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
     if let Some(execution_budget) = world.get_component_execution_budget(entity) {
         println!("  ExecutionBudget:");
         println!(
-            "    max_node_expansions={}, beam_width={}",
-            execution_budget.max_node_expansions, execution_budget.beam_width
-        );
-        println!(
-            "    snapshot_travel_horizon={}, max_prerequisite_locations={}",
-            execution_budget.snapshot_travel_horizon,
-            execution_budget.max_prerequisite_locations
+            "    beam_width={}, max_prerequisite_locations={}",
+            execution_budget.beam_width, execution_budget.max_prerequisite_locations
         );
     }
     if let Some(bim) = world.get_component_blocked_intent_memory(entity) {

@@ -31,7 +31,7 @@ If working inside a worktree (e.g., `.claude/worktrees/<name>/`), ALL file paths
 
 ## Process
 
-Follow these 8 steps in order. Do not skip any step.
+Follow these 9 steps in order. Do not skip any step.
 
 ---
 
@@ -67,6 +67,8 @@ Common redundancy patterns to watch for:
 - The same corrective action described in multiple workflow phases
 - "Do not X" warnings scattered across unrelated sections
 - File/field lists repeated in multiple contexts (e.g., "update Files to Touch, Verification Layers, Test Plan" appearing 3+ times)
+
+When the same technique or surface list appears at multiple workflow phases with genuinely different purposes (check vs. include in scope vs. implement), define the shared content once at its most natural location and replace other instances with cross-references. This is not pure redundancy removal — it is factoring out a shared reference.
 
 ---
 
@@ -108,7 +110,7 @@ For each scattered decision path:
 1. **Collect all mentions** of the decision/escalation pattern
 2. **Unify** into a single explicit structure: a decision table, a "when X → do Y" list, or a flowchart-style description
 3. **Place** the unified structure at the most relevant workflow phase
-4. **Replace scattered mentions** with brief cross-references to the unified structure (e.g., "See Section N for contradiction handling")
+4. **Replace scattered mentions** with brief cross-references to the unified structure. Use descriptive section references (e.g., "see Section 3, Escalation decision tree") over bare section numbers, since numbers may shift in future consolidation passes.
 5. **Record** the clarification for the diff summary
 
 ---
@@ -138,7 +140,13 @@ The rewritten file must:
 
 ---
 
-### Step 8: Diff Summary
+### Step 8: Spot-Check Preservation
+
+After writing, spot-check 3-5 unique instructions from the original (preferring instructions from different sections) to confirm each survives in the consolidated output. If any instruction was lost, restore it before presenting the diff summary.
+
+---
+
+### Step 9: Diff Summary
 
 After writing, present a structured summary in the conversation:
 
@@ -161,6 +169,7 @@ After writing, present a structured summary in the conversation:
 
 ### Wording Tightened
 - <N> instructions shortened for conciseness (no semantic changes)
+- Examples: "<before>" → "<after>" (include 2-3 representative samples)
 ```
 
 Do NOT commit. Leave the file for user review via `git diff`.

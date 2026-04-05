@@ -50,6 +50,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 
 Specific migration checks:
 - When adding a migration path for an older save version, search for stale version-rejection tests. Distinguish versions that should now migrate from truly unsupported ones.
+- When reclassifying persisted fields between already-live carriers, inspect the immediately previous on-disk field ownership, not just the current type definitions. Decide whether the prior version needs its own legacy wire shape even if the carrier set is unchanged.
 - When introducing new persisted components alongside a legacy carrier, check coexistence coherence — decide whether new carriers derive from legacy during migration or every setup path migrates immediately.
 - When a staged migration moves consumers off a legacy carrier but a later ticket owns removing it, classify remaining references by surface: production reads, test-only helpers, public re-exports, setup fixtures. Eliminate production reads within the current ticket's boundary.
 

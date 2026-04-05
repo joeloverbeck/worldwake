@@ -1,6 +1,6 @@
 # S53COGEXE-005: Reclassify behavior-changing ExecutionBudget fields as cognitive
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — split-profile field reclassification across core types, AI consumers, scenario/save surfaces, and conformance proofs
@@ -120,3 +120,24 @@ In `crates/worldwake-ai/tests/conformance_execution_budget.rs` and any directly 
 1. `cargo test -p worldwake-ai --test conformance_execution_budget -- --nocapture`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+- Completed: 2026-04-05
+- Landed the reclassification boundary the ticket owns:
+  - `max_node_expansions` and `snapshot_travel_horizon` now live on `CognitiveProfile`
+  - `ExecutionBudget` now keeps only `beam_width` and `max_prerequisite_locations`
+- Updated live AI consumers, CLI/scenario authorship surfaces, and focused fixtures so production reads and authored setup match the corrected split.
+- Bumped `SAVE_FORMAT_VERSION` to `26` and added explicit migration coverage for both:
+  - coexistence `24 -> 26`
+  - prior split-only `25 -> 26`, where the moved fields were still serialized under `ExecutionBudget`
+- Kept the conformance proof honest: `conformance_execution_budget.rs` now validates only the remaining engine fields while preserving explicit divergence proofs for the reclassified fields.
+- Deviation from original plan:
+  - the user-supplied spec glob `specs/S54-cognitive*` did not exist; implementation was reassessed against the live active spec `specs/S53-cognitive-execution-split.md`
+  - the active spec still contains the pre-reclassification classification table and should be reconciled during spec handoff/archival
+- Verification:
+  - `cargo test -p worldwake-sim -- save`
+  - `cargo test -p worldwake-ai --test conformance_execution_budget -- --nocapture`
+  - `cargo run -p worldwake-cli -- scenarios/cli-evaluation.ron --exec quit`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

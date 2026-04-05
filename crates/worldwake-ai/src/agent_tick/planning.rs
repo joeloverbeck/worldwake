@@ -267,7 +267,7 @@ pub(super) fn build_candidate_plans(
             agent,
             &ranked.grounded.evidence_entities,
             &ranked.grounded.evidence_places,
-            execution_budget.snapshot_travel_horizon,
+            cognitive.snapshot_travel_horizon,
             blocked_memory,
             current_tick,
         );
@@ -1057,6 +1057,8 @@ mod tests {
         CognitiveProfile {
             max_candidates_to_plan: reasoning.max_candidates_to_plan,
             max_plan_depth: reasoning.max_plan_depth,
+            snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
+            max_node_expansions: reasoning.max_node_expansions,
             switch_margin: reasoning.switch_margin,
             transient_block_ticks: reasoning.transient_block_ticks,
             unknown_block_ticks: reasoning.unknown_block_ticks,
@@ -1068,9 +1070,7 @@ mod tests {
 
     fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
         ExecutionBudget {
-            max_node_expansions: reasoning.max_node_expansions,
             beam_width: reasoning.beam_width,
-            snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_prerequisite_locations: reasoning.max_prerequisite_locations,
         }
     }
