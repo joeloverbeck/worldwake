@@ -10,7 +10,7 @@ Phase 6: Architectural Substrates II
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -251,3 +251,23 @@ Evidence is created at action commit time (same tick as the action effect). Evid
 - Guard perceives evidence (belief store — `believed_evidence` populated)
 - Guard generates `InvestigateViolation` candidate (decision trace)
 - Evidence decays after `decay_ticks` (authoritative world state — evidence removed)
+
+## Outcome
+
+- Completed: 2026-04-05
+- Landed the S52 ticket chain:
+  - `S52EVIDAFT-001` added the core evidence substrate (`EvidenceEntryId`, `DisturbanceKind`, `EvidenceKind`, `EvidenceEntry`, `SceneEvidence`) and registered `SceneEvidence` on places.
+  - `S52EVIDAFT-002` added authoritative aftermath emission for contained/displayed theft, fatal combat, travel departure, and wilderness relief.
+  - `S52EVIDAFT-003` added canonical evidence decay via `SystemId::EvidenceDecay`.
+  - `S52EVIDAFT-004` added `BelievedEvidenceState`, explicit current-place evidence perception, and investigation-time place-belief refresh.
+  - `S52EVIDAFT-005` added Scenario 114 in `crates/worldwake-ai/tests/golden_integration.rs`, proving theft evidence emission, local perception, mismatch-driven investigation selection, decay of theft residue, and deterministic replay.
+- Generated golden docs were refreshed and now record Scenario 114 in the coverage matrix, scenario map, and inventory.
+- Deviation from original plan: the spec's broader prose about “evidence-driven candidate generation,” accusation-strength integration, generic same-place place iteration, and direct downstream uses for `BloodTrail`/`MovementTrace` did not all land in S52. The implemented boundary is narrower and honest: evidence is stored, perceived, refreshed through investigation, and proven in the theft-evidence golden, while `InvestigateViolation` generation remains mismatch-driven in the live AI.
+- Verification:
+  - `cargo test -p worldwake-core`
+  - `cargo test -p worldwake-systems`
+  - `cargo test -p worldwake-ai golden_s52_theft_evidence_discovery -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_integration`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`
