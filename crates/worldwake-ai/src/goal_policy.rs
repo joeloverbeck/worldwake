@@ -3,7 +3,7 @@
 
 use crate::goal_model::GoalPriorityClass;
 use crate::interrupts::InterruptTrigger;
-use worldwake_core::{CommodityPurpose, CommunicationClass, GoalKind};
+use worldwake_core::{CommodityPurpose, CommunicationClass, GoalKind, NoticeTopic};
 
 // ---------------------------------------------------------------------------
 // DecisionContext
@@ -152,7 +152,11 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         | GoalKind::ProduceCommodity { .. }
         | GoalKind::SellCommodity { .. }
         | GoalKind::RestockCommodity { .. }
-        | GoalKind::MoveCargo { .. } => GoalFamilyPolicy {
+        | GoalKind::MoveCargo { .. }
+        | GoalKind::PostNotice {
+            topic: NoticeTopic::ThreatWarning { .. },
+            ..
+        } => GoalFamilyPolicy {
             suppression: SuppressionRule::Never,
             penalty_interrupt: PenaltyInterruptEligibility::Never,
             free_interrupt: FreeInterruptRole::Normal,
@@ -235,8 +239,8 @@ pub fn evaluate_suppression(kind: &GoalKind, context: &DecisionContext) -> GoalP
 mod tests {
     use super::*;
     use worldwake_core::{
-        CommodityKind, CommodityPurpose, EntityId, GoalKind, PunishmentKind, Quantity, RecipeId,
-        ViolationId,
+        ArtifactPostingContext, CommodityKind, CommodityPurpose, EntityId, GoalKind, NoticeTopic,
+        PunishmentKind, Quantity, RecipeId, ViolationId,
     };
 
     // Helpers
@@ -760,6 +764,32 @@ mod tests {
             })
             .free_interrupt,
             FreeInterruptRole::Normal,
+        );
+    }
+
+    #[test]
+    fn threat_warning_notice_remains_available_under_high_danger() {
+        let ctx = DecisionContext {
+            max_self_care_class: GoalPriorityClass::Low,
+            danger_class: GoalPriorityClass::High,
+        };
+
+        assert_eq!(
+            evaluate_suppression(
+                &GoalKind::PostNotice {
+                    posting: ArtifactPostingContext {
+                        posting_place: dummy_entity(),
+                        issuing_authority: None,
+                        expires_at: None,
+                        jurisdiction: Some(dummy_entity()),
+                    },
+                    topic: NoticeTopic::ThreatWarning {
+                        place: dummy_entity(),
+                    },
+                },
+                &ctx
+            ),
+            GoalPolicyOutcome::Available,
         );
     }
 
