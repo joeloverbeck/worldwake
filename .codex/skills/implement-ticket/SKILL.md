@@ -259,6 +259,8 @@ For exact-bound planner-root candidates, do not treat target binding as the whol
 
 When a valid architecture change makes an existing golden scenario stale, update the golden to prove the new lawful contract rather than preserving outdated failure reasons, plan shapes, or scenario narratives.
 
+When a new or corrected golden still fails after the scenario setup is made lawful, reassess whether the golden has exposed a missing lower-layer contract rather than mere fixture fallout. If it has, fix the production boundary, add focused proof at that lower layer, and only then finalize the golden closeout instead of treating the failure as golden-only churn.
+
 If the architecture change invalidates the old scenario invariant itself rather than just a timing detail or output shape, rewrite the scenario to prove the new contract and update the scenario header/comments to match.
 
 When adding or renumbering a `// Scenario N:` block in a golden file, treat scenario identifiers as repo-global. Pre-scan nearby or highest live scenario IDs when practical, and be prepared to resolve collisions before the golden inventory refresh can pass.

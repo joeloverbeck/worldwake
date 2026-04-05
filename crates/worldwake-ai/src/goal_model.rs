@@ -480,6 +480,34 @@ impl GoalKindPlannerExt for GoalKind {
         def: &ActionDef,
         semantics: &PlannerOpSemantics,
     ) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+        if let GoalKind::FulfillBounty { bounty } = self {
+            if matches!(semantics.op_kind, PlannerOpKind::Attack | PlannerOpKind::ClaimBounty) {
+                let Some(terms) = believed_bounty_terms(state, *bounty) else {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                };
+                match (semantics.op_kind, terms.target) {
+                    (PlannerOpKind::Attack, BountyTarget::EliminateEntity { target }) => {
+                        let Some(actual_target) = targets.first().copied() else {
+                            return Err(GoalPayloadOverrideError::MissingTarget);
+                        };
+                        if actual_target != target || state.is_dead(target) {
+                            return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                        }
+                        return Ok(Some(ActionPayload::Combat(CombatActionPayload {
+                            target: actual_target,
+                            weapon: worldwake_core::CombatWeaponRef::Unarmed,
+                        })));
+                    }
+                    (PlannerOpKind::ClaimBounty, BountyTarget::EliminateEntity { target }) => {
+                        if !state.is_dead(target) {
+                            return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         if let Some(payload) = payload_override_from_affordance(self, affordance_payload)? {
             if semantics.op_kind == PlannerOpKind::ConsultRecord {
                 let Some(record) = payload.as_consult_record().map(|consult| consult.record) else {
@@ -1390,9 +1418,12 @@ impl GoalKindPlannerExt for GoalKind {
                     return false;
                 };
                 match terms.target {
-                    BountyTarget::EliminateEntity { .. } => {
-                        !matches!(op_kind, PlannerOpKind::MoveCargo | PlannerOpKind::StockManagement)
-                    }
+                    BountyTarget::EliminateEntity { target } => match op_kind {
+                        PlannerOpKind::Attack => !state.is_dead(target),
+                        PlannerOpKind::ClaimBounty => state.is_dead(target),
+                        PlannerOpKind::MoveCargo | PlannerOpKind::StockManagement => false,
+                        _ => true,
+                    },
                     BountyTarget::DeliverCommodity {
                         commodity,
                         quantity,
@@ -7922,6 +7953,81 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert!(GoalKind::FulfillBounty { bounty }.is_satisfied(&state));
+    }
+
+    #[test]
+    fn fulfill_bounty_elimination_availability_switches_from_attack_to_claim_after_target_death() {
+        let actor = entity_id(1, 0);
+        let bounty = entity_id(2, 0);
+        let issuer = entity_id(3, 0);
+        let claim_place = entity_id(4, 0);
+        let target = entity_id(5, 0);
+        let goal = GoalKind::FulfillBounty { bounty };
+
+        let mut live_view = TestBeliefView::default();
+        live_view.alive.insert(actor);
+        live_view.alive.insert(target);
+        live_view.kinds.insert(actor, EntityKind::Agent);
+        live_view.kinds.insert(target, EntityKind::Agent);
+        live_view.kinds.insert(bounty, EntityKind::SocialArtifact);
+        live_view.effective_places.insert(actor, claim_place);
+        live_view.effective_places.insert(target, claim_place);
+        live_view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                bounty,
+                BelievedEntityState {
+                    last_known_place: Some(claim_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: Some(BelievedArtifactState {
+                        kind: ArtifactKind::Bounty,
+                        state: ArtifactState::Active,
+                        issuer,
+                        expires_at: None,
+                        bounty_terms: Some(BelievedBountyTerms {
+                            target: BountyTarget::EliminateEntity { target },
+                            reward_commodity: CommodityKind::Coin,
+                            reward_quantity: Quantity(20),
+                            claim_place,
+                        }),
+                        notice_topic: None,
+                        observed_tick: Tick(1),
+                    }),
+                    believed_contention: None,
+                    observed_tick: Tick(1),
+                    source: worldwake_core::PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        let live_snapshot = build_planning_snapshot(
+            &live_view,
+            actor,
+            &BTreeSet::from([bounty, target]),
+            &BTreeSet::from([claim_place]),
+            1,
+        );
+        let live_state = PlanningState::new(&live_snapshot);
+        assert!(goal.candidate_is_available(&live_state, PlannerOpKind::Attack));
+        assert!(!goal.candidate_is_available(&live_state, PlannerOpKind::ClaimBounty));
+
+        let mut dead_view = live_view;
+        dead_view.alive.remove(&target);
+        let dead_snapshot = build_planning_snapshot(
+            &dead_view,
+            actor,
+            &BTreeSet::from([bounty, target]),
+            &BTreeSet::from([claim_place]),
+            1,
+        );
+        let dead_state = PlanningState::new(&dead_snapshot);
+        assert!(!goal.candidate_is_available(&dead_state, PlannerOpKind::Attack));
+        assert!(goal.candidate_is_available(&dead_state, PlannerOpKind::ClaimBounty));
     }
 
     #[test]

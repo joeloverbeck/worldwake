@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 123
+- Scenario blocks with explicit metadata: 126
 - Files contributing scenario metadata: 20
-- Tests associated with scenario blocks: 271
+- Tests associated with scenario blocks: 277
 
 ## Scenario Inventory
 
@@ -52,21 +52,24 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `35` | Same-Place Concurrent Violations Stay Distinct | `golden_emergent.rs:4254` | `golden_same_place_concurrent_violations_stay_distinct` | `golden_same_place_concurrent_violations_stay_distinct_replays_deterministically` |
 | `36` | Entity Missing Triggers Investigation | `golden_emergent.rs:4634` | `golden_entity_missing_triggers_investigation` | `golden_entity_missing_triggers_investigation_replays_deterministically` |
 | `37` | Theft Leads Owner To Local Suspected Theft Discovery | `golden_emergent.rs:4869` | `golden_theft_leads_owner_to_local_suspected_theft_discovery` | `golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically` |
-| `38` | Witnessed Theft Enables Accusation Chain | `golden_emergent.rs:5247` | `golden_witnessed_theft_accusation_chain` | `golden_witnessed_theft_accusation_chain_replays_deterministically` |
-| `39` | Traceability Explains Stale Fine Branch | `golden_emergent.rs:5675` | `golden_traceability_explains_stale_fine_branch_without_source_diving` | — |
-| `40` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:5979` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
-| `42` | Witness Deterrence Suppresses Theft Candidate | `golden_emergent.rs:6262` | `golden_witness_deterrence_suppresses_theft_candidate` | `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically` |
-| `41` | Exile Punishment When Fine Is Not Locally Collectible | `golden_emergent.rs:6511` | `golden_exile_punishment_when_fine_is_not_locally_collectible` | `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically` |
-| `43` | Dual Discovery Converges Without Double Accusation | `golden_emergent.rs:7070` | `golden_dual_discovery_converges_without_double_accusation` | `golden_dual_discovery_converges_without_double_accusation_replays_deterministically` |
-| `91` | Hostile Completed Travel Reweights the Next Route Choice | `golden_experience_preferences.rs:519` | `golden_hostile_completed_travel_flips_next_route_choice` | `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically` |
-| `92` | Combat-Aborted Travel Still Creates Hostile Route Memory | `golden_experience_preferences.rs:553` | `golden_combat_aborted_travel_flips_next_route_choice` | `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically` |
-| `93` | Preference Profiles Create Route Diversity From the Same Memory | `golden_experience_preferences.rs:584` | `golden_preference_profile_diversifies_route_selection` | `golden_preference_profile_diversifies_route_selection_replays_deterministically` |
-| `20` | Apple Stockout → Carrier Reroute → Supply Chain Disruption | `golden_integration.rs:86` | `t20_apple_stockout_seed_1`<br>`t20_apple_stockout_seed_2`<br>`t24_player_replacement_seed_1`<br>`t24_player_replacement_seed_2` | — |
-| `27` | Controlled Agent Death | `golden_integration.rs:1005` | `t27_controlled_agent_death_seed_1`<br>`t27_controlled_agent_death_seed_2` | — |
-| `28` | Pursuit Across Information Boundary | `golden_integration.rs:1271` | `t28_pursuit_information_boundary_seed_1`<br>`t28_pursuit_information_boundary_seed_2`<br>`t29_wrongful_accusation_seed_1`<br>`t29_wrongful_accusation_seed_2` | — |
-| `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2486` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
-| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3415` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
-| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4442` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
+| `38` | Witnessed Theft Enables Accusation Chain | `golden_emergent.rs:5248` | `golden_witnessed_theft_accusation_chain` | `golden_witnessed_theft_accusation_chain_replays_deterministically` |
+| `39` | Traceability Explains Stale Fine Branch | `golden_emergent.rs:5676` | `golden_traceability_explains_stale_fine_branch_without_source_diving` | — |
+| `40` | Supply Depletion Enables ShareBelief | `golden_emergent.rs:5980` | `golden_supply_depletion_enables_share_belief` | `golden_supply_depletion_enables_share_belief_replays_deterministically` |
+| `42` | Witness Deterrence Suppresses Theft Candidate | `golden_emergent.rs:6263` | `golden_witness_deterrence_suppresses_theft_candidate` | `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically` |
+| `41` | Exile Punishment When Fine Is Not Locally Collectible | `golden_emergent.rs:6519` | `golden_exile_punishment_when_fine_is_not_locally_collectible` | `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically` |
+| `43` | Dual Discovery Converges Without Double Accusation | `golden_emergent.rs:7078` | `golden_dual_discovery_converges_without_double_accusation` | `golden_dual_discovery_converges_without_double_accusation_replays_deterministically` |
+| `91` | Hostile Completed Travel Reweights the Next Route Choice | `golden_experience_preferences.rs:520` | `golden_hostile_completed_travel_flips_next_route_choice` | `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically` |
+| `92` | Combat-Aborted Travel Still Creates Hostile Route Memory | `golden_experience_preferences.rs:554` | `golden_combat_aborted_travel_flips_next_route_choice` | `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically` |
+| `93` | Preference Profiles Create Route Diversity From the Same Memory | `golden_experience_preferences.rs:585` | `golden_preference_profile_diversifies_route_selection` | `golden_preference_profile_diversifies_route_selection_replays_deterministically` |
+| `20` | Apple Stockout → Carrier Reroute → Supply Chain Disruption | `golden_integration.rs:88` | `t20_apple_stockout_seed_1`<br>`t20_apple_stockout_seed_2`<br>`t24_player_replacement_seed_1`<br>`t24_player_replacement_seed_2` | — |
+| `27` | Controlled Agent Death | `golden_integration.rs:1048` | `t27_controlled_agent_death_seed_1`<br>`t27_controlled_agent_death_seed_2` | — |
+| `28` | Pursuit Across Information Boundary | `golden_integration.rs:1314` | `t28_pursuit_information_boundary_seed_1`<br>`t28_pursuit_information_boundary_seed_2`<br>`t29_wrongful_accusation_seed_1`<br>`t29_wrongful_accusation_seed_2` | — |
+| `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2529` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
+| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3458` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
+| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4485` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
+| `105` | Social artifact bounty lifecycle closes canonically | `golden_integration.rs:5950` | `golden_s45_bounty_lifecycle` | `golden_s45_bounty_lifecycle_replays_deterministically` |
+| `106` | Expired bounty stays visible but no longer generates pursuit | `golden_integration.rs:5988` | `golden_s45_bounty_expiration_blocks_pursuit` | `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically` |
+| `107` | Threat-warning notice flips the next route choice | `golden_integration.rs:6025` | `golden_s45_notice_warning_flips_route_choice` | `golden_s45_notice_warning_flips_route_choice_replays_deterministically` |
 | `75` | Displayed Lot Retains SaleListing Through Presence Cycle | `golden_merchant_selling.rs:392` | `staff_market_retains_displayed_listing_through_presence_cycle` | `staff_market_retains_displayed_listing_replays_deterministically` |
 | `76` | Buyer Trades Against Listed Lot | `golden_merchant_selling.rs:467` | `buyer_trades_against_listed_lot` | `buyer_trades_against_listed_lot_replays_deterministically` |
 | `77` | Unlisted Stock Not Sellable | `golden_merchant_selling.rs:579` | `unlisted_stock_not_sellable` | — |
@@ -738,7 +741,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 38: Witnessed Theft Enables Accusation Chain
 
-- Source: `golden_emergent.rs:5247`
+- Source: `golden_emergent.rs:5248`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -750,7 +753,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 39: Traceability Explains Stale Fine Branch
 
-- Source: `golden_emergent.rs:5675`
+- Source: `golden_emergent.rs:5676`
 - Systems: AI, Institutions, Justice, Action Trace
 - GoalKinds: PunishAccused
 - ActionDomains: Social
@@ -762,7 +765,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 40: Supply Depletion Enables ShareBelief
 
-- Source: `golden_emergent.rs:5979`
+- Source: `golden_emergent.rs:5980`
 - Systems: Perception, AI, Generic Actions, Social Tell
 - GoalKinds: ShareBelief, InvestigateViolation
 - ActionDomains: Generic, Social
@@ -774,7 +777,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 42: Witness Deterrence Suppresses Theft Candidate
 
-- Source: `golden_emergent.rs:6262`
+- Source: `golden_emergent.rs:6263`
 - Systems: AI, Perception, Needs
 - GoalKinds: ConsumeOwnedCommodity (NOT StealItem)
 - ActionDomains: Needs
@@ -786,7 +789,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
 
-- Source: `golden_emergent.rs:6511`
+- Source: `golden_emergent.rs:6519`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -798,7 +801,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 43: Dual Discovery Converges Without Double Accusation
 
-- Source: `golden_emergent.rs:7070`
+- Source: `golden_emergent.rs:7078`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
 - ActionDomains: Transport, Social, Travel
@@ -810,7 +813,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
-- Source: `golden_experience_preferences.rs:519`
+- Source: `golden_experience_preferences.rs:520`
 - Systems: Travel, learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -825,7 +828,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 
-- Source: `golden_experience_preferences.rs:553`
+- Source: `golden_experience_preferences.rs:554`
 - Systems: Travel, interrupt/abort, learned route experience, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -840,7 +843,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 
-- Source: `golden_experience_preferences.rs:584`
+- Source: `golden_experience_preferences.rs:585`
 - Systems: learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -855,7 +858,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 20: Apple Stockout → Carrier Reroute → Supply Chain Disruption
 
-- Source: `golden_integration.rs:86`
+- Source: `golden_integration.rs:88`
 - Systems: Needs, Trade, Travel, Combat, Production
 - GoalKinds: ConsumeOwnedCommodity, RestockCommodity, AcquireCommodity
 - ActionDomains: Needs, Trade, Travel, Combat (≥ 4 required)
@@ -873,7 +876,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 27: Controlled Agent Death
 
-- Source: `golden_integration.rs:1005`
+- Source: `golden_integration.rs:1048`
 - Systems: Combat, AI, Needs
 - GoalKinds: EngageHostile
 - ActionDomains: Combat
@@ -891,10 +894,10 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 28: Pursuit Across Information Boundary
 
-- Source: `golden_integration.rs:1271`
+- Source: `golden_integration.rs:1314`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
-- ActionDomains: Transport, Epistemic, Social, Generic (≥ 4 required)
+- ActionDomains: Transport, Social (≥ 2 required)
 - Places: Market, Storehouse, Tavern, GuardPost (4-place topology)
 - Principles: 1, 7, 10, 14, 16
 - Primary tests: `t28_pursuit_information_boundary_seed_1`, `t28_pursuit_information_boundary_seed_2`, `t29_wrongful_accusation_seed_1`, `t29_wrongful_accusation_seed_2`
@@ -909,7 +912,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 21: Ruler Death → Office Vacancy → Patrol Gap → Route Predation
 
-- Source: `golden_integration.rs:2486`
+- Source: `golden_integration.rs:2529`
 - Systems: Succession, Combat, AI, Needs, Patrol, Trade, Travel
 - GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, EngageHostile
 - ActionDomains: Combat, Social, Travel, Needs (≥ 4 required)
@@ -927,7 +930,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 33: Office Vacancy → Patrol Gap → Crime Opportunity → Recovery
 
-- Source: `golden_integration.rs:3415`
+- Source: `golden_integration.rs:3458`
 - Systems: Succession, Combat, AI, Patrol, Transport, Perception, Travel
 - GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, StealItem
 - ActionDomains: Combat, Social, Travel, Transport, Epistemic (≥ 5 required)
@@ -945,7 +948,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
 
-- Source: `golden_integration.rs:4442`
+- Source: `golden_integration.rs:4485`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
 - GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Generic, Travel, Social, Production
@@ -960,6 +963,60 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Proves**: 1. Camp destruction → diaspora → regrouping → EstablishBanditCamp at rally point is a continuous emergent chain. 2. Raids from the reconstituted camp location are lawful combat from new-camp faction entities, not old-camp remnants. 3. Merchant route adaptation is belief-driven (Principle 14): the merchant reroutes only after receiving danger information via social tell, not from any omniscient danger cache. 4. Conservation holds for all commodity types throughout the chain.
 
 **Cross-system chain**: guard attack -> camp destruction -> bandit flee -> regroup at rally -> establish new camp -> traveler arrives -> raid at rally -> witness observes -> witness tells merchant -> merchant reroutes via safe route -> downstream supply delay.
+
+### Scenario 105: Social artifact bounty lifecycle closes canonically
+
+- Source: `golden_integration.rs:5950`
+- Systems: Social artifact actions, Perception, AI, Travel, Combat
+- GoalKinds: FulfillBounty
+- ActionDomains: Social, Travel, Combat
+- Places: S45 Town Square, S45 Wilderness
+- Principles: 4, 7, 14, 20, 25
+- Primary tests: `golden_s45_bounty_lifecycle`
+- Replay tests: `golden_s45_bounty_lifecycle_replays_deterministically`
+- All tests: `golden_s45_bounty_lifecycle`, `golden_s45_bounty_lifecycle_replays_deterministically`
+
+**Setup**: Human issuer at Town Square posts an elimination bounty with a real 10-coin reward lot and `SelfReport` proof. AI hunter starts co-located with the posting, already believes the target lives in Wilderness, and has high enterprise weight. The target is a non-moving hostile at Wilderness.
+
+**Proves**: Posted bounties are real first-class world entities that can be perceived, pursued from belief, fulfilled through ordinary combat/travel, and claimed for a conserved reward transfer without a quest-only shortcut.
+
+**Cross-system chain**: post_bounty -> local perception updates believed_artifact -> FulfillBounty selected -> travel to target belief -> attack kills target -> travel to claim place -> claim_bounty transfers reward -> bounty fulfilled.
+
+### Scenario 106: Expired bounty stays visible but no longer generates pursuit
+
+- Source: `golden_integration.rs:5988`
+- Systems: Social artifact actions, pre-action artifact lifecycle, Perception, AI
+- GoalKinds: FulfillBounty
+- ActionDomains: Social
+- Places: S45 Town Square
+- Principles: 7, 8, 9, 14, 25
+- Primary tests: `golden_s45_bounty_expiration_blocks_pursuit`
+- Replay tests: `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically`
+- All tests: `golden_s45_bounty_expiration_blocks_pursuit`, `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically`
+
+**Setup**: Human issuer posts a short-lived elimination bounty at Town Square. Observer stands co-located with perception but `ControlSource::None` until after the expiry tick, then resumes AI control once the artifact is already expired and still present in the world.
+
+**Proves**: Expiration is authoritative world timing, not a late cleanup. The expired artifact remains perceivable as world state, but `FulfillBounty` does not regenerate once the observer returns to the AI pipeline.
+
+**Cross-system chain**: post_bounty -> pre-action expiry tick flips ArtifactState::Expired -> observer perceives expired belief -> AI resumes -> no bounty candidate.
+
+### Scenario 107: Threat-warning notice flips the next route choice
+
+- Source: `golden_integration.rs:6025`
+- Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Social, Travel, Production
+- Places: S45 Market, S45 Warned Road, S45 Safe Route, S45 Orchard
+- Principles: 7, 14, 18, 25
+- Primary tests: `golden_s45_notice_warning_flips_route_choice`
+- Replay tests: `golden_s45_notice_warning_flips_route_choice_replays_deterministically`
+- All tests: `golden_s45_notice_warning_flips_route_choice`, `golden_s45_notice_warning_flips_route_choice_replays_deterministically`
+
+**Setup**: Hungry traveler at Market knows the Orchard apple source and would normally take the shorter route through Warned Road. A human issuer posts a `ThreatWarning` notice at Market for Warned Road while the traveler is still non-AI but perceiving locally.
+
+**Proves**: Notices are not decorative snapshots. Local perception captures the warning as `believed_artifact`, and that belief changes the next search- selected travel branch through the live route-threat surface.
+
+**Cross-system chain**: post_notice -> local perception stores believed_artifact warning -> AI resumes with same orchard knowledge -> apple-acquisition planning reroutes from the shorter warned road to the safer branch.
 
 ### Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 

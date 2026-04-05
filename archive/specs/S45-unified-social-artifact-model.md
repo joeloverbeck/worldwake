@@ -1,5 +1,7 @@
 # S45: Unified Social Artifact Model
 
+**Status**: COMPLETED
+
 ## Summary
 
 Introduce a first-class social artifact substrate that gives bounties, warrants, contracts, notices, debts, and obligations the same structural treatment currently reserved for institutional records (offices, factions, crime registers). Today social processes beyond crime/justice/politics are absent: there is no way to post a bounty, issue a warrant, file a debt, publish a notice, or create a contract as a world entity. FOUNDATIONS IV.25 is explicit: "There is no special quest system. There are only world entities and records that people create, discover, believe, dispute, ignore, accept, or fulfill."
@@ -476,3 +478,19 @@ All future types reuse `ArtifactHeader` + type-specific content components. The 
 - Save/load round-trip preserves all artifact entities and components.
 - Conservation invariants hold — bounty rewards transfer from real sources.
 - `cargo clippy --workspace` clean.
+
+## Outcome
+
+Completed on 2026-04-05.
+
+The S45 chain shipped first-class `SocialArtifact` entities and the end-to-end runtime/AI/golden substrate around them. The delivered model includes `ArtifactHeader`, `BountyTerms`, `NoticeContent`, `BelievedArtifactState`, pre-action artifact expiry, `post_bounty`, `post_notice`, and stable-identity `claim_bounty`, plus `GoalKind::FulfillBounty` for both elimination and delivery bounties. Artifact knowledge now survives the shared belief carrier, institutional and office-vacancy notices reuse the existing institutional-belief lane, and active threat-warning notices feed the existing route-threat reader so they produce real travel behavior.
+
+The final implementation also closed the full S45 golden surface. Scenario 105 proves bounty lifecycle from posting through pursuit, claim, and reward conservation; Scenario 106 proves pre-action expiry blocks pursuit while leaving the artifact visible; Scenario 107 proves notice discovery can flip route choice through the landed warning-consumption path. Generated golden inventory docs were refreshed as part of the closeout.
+
+The archived implementation boundary is slightly narrower and more explicit than the original draft in a few places. Delivery-bounty AI pursuit landed through follow-up ticket `S45UNISOCART-007` before the final golden closeout. Notice internalization reused existing lawful belief/read lanes rather than inventing a new place-belief or shortage-economy substrate: `Institutional` and `OfficeVacancy` notices became live through institutional beliefs, `ThreatWarning` became behaviorally meaningful through route threat, and `CommodityShortage` remains artifact metadata only. The golden bounty lifecycle closed on the shipped elimination/self-report path rather than a broader physical-proof variant.
+
+Verification passed through:
+- `cargo test -p worldwake-ai --test golden_integration`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

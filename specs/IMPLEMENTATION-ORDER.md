@@ -213,7 +213,8 @@ S42 ✅ (no deps — per-agent reasoning style completed)
 S43 ✅ (no deps — communication type differentiation completed)
 S42 ✅, S43 ✅ ──→ S44 ✅ (scenario profile completeness completed)
 S44-generalized-contention-substrate ✅ (duplicate S-number in historical planning material; completed independently of scenario-profile completeness)
-S45 remains the next active Phase 5 spec
+S45 ✅ (unified social artifact model completed)
+S45 ✅ ──→ S49 (active golden-gap follow-up for remaining S45 delivery-bounty and office-vacancy notice coverage)
 
 S20 ✅ (structural cleanup completed — groundwork for S21–S28)
 S26 ✅ (planner conformance tests completed — 32 tests across all action families)
@@ -489,13 +490,19 @@ Derived from the external ChatGPT architecture review (`brainstorming/improvemen
   - corpse, care, facility, and ground unique-item contention now resolve through the shared substrate
   - contention state is visible through affordances, beliefs, perception, and save/load, with golden closure in Scenarios 101-104
 
-**Step 19** (next active Phase 5 step):
-- **S45**: Unified Social Artifact Model
-  - First-class `SocialArtifact` entities: bounties, notices (warrants, contracts, debts in future)
-  - Shared `ArtifactHeader` (issuer, authority, jurisdiction, expiration, state) + typed content
-  - Physical presence at posting places; locality-respecting perception
-  - Initial types: Bounty (with terms, proof, reward source, claim competition) and Notice
-  - FND IV.25 alignment: social artifacts are world entities, not quest pipelines
+**Step 19** (now complete):
+- **S45**: Unified Social Artifact Model — ✅ COMPLETED
+  - archived spec: `archive/specs/S45-unified-social-artifact-model.md`
+  - established first-class `SocialArtifact` entities with shared `ArtifactHeader`, `BountyTerms`, `NoticeContent`, and `BelievedArtifactState`
+  - shipped `post_bounty`, `post_notice`, stable-identity `claim_bounty`, and pre-action artifact expiry
+  - completed AI pursuit for elimination and delivery bounties through `GoalKind::FulfillBounty`
+  - closed the S45 golden surface through Scenarios 105-107 and refreshed generated golden coverage docs
+
+**Step 20** (active follow-up golden coverage step):
+- **S49**: Golden Gaps — Unified Social Artifact Model
+  - active spec: `specs/S49-golden-gaps-S45.md`
+  - remaining S45 golden closure now focuses on delivery-bounty end-to-end proof and office-vacancy notice political uptake
+  - follow-up coverage depends on the completed S45 artifact, perception, and planner substrate rather than adding new core social-artifact architecture
 
 Dependency graph:
 ```
@@ -503,7 +510,8 @@ S42 ✅ (no deps, parallel)
 S43 ✅ (no deps, parallel)
 S42 ✅, S43 ✅ ──→ S44 ✅
 S44-generalized-contention-substrate ✅ (duplicate S-number; completed in parallel planning history)
-S45 (next active Phase 5 spec)
+S45 ✅
+S45 ✅ ──→ S49 (active golden-gap follow-up)
 ```
 
 #### Phase 5 Gate
@@ -511,9 +519,9 @@ S45 (next active Phase 5 spec)
 - [x] Alarm-class communication survives stress suppression while gossip is suppressed (S43)
 - [x] Scenario-spawned agents receive the full universal/role-specific profile substrate, and known-agent universal profile reads no longer hide missing-state bugs (S44)
 - [x] Generalized contention resolves contested corpse, facility, care, and unique-item access through inspectable queue/grant/race world state, including perception and save/load closure (`S44-generalized-contention-substrate.md`)
-- [ ] End-to-end bounty lifecycle: post → perceive → pursue → claim → reward (S45)
-- [ ] All Phase 4 and 4+ gate criteria still hold
-- [ ] `cargo test --workspace` passes
+- [x] End-to-end bounty lifecycle: post → perceive → pursue → claim → reward (S45)
+- [x] All Phase 4 and 4+ gate criteria still hold
+- [x] `cargo test --workspace` passes
 
 ---
 
@@ -552,7 +560,7 @@ E17 is intentionally absent from the table below because its completed spec now 
 | ~~`S43-communication-type-differentiation.md`~~ | 5 | 17 | ✅ COMPLETED |
 | ~~`S44-scenario-profile-completeness.md`~~ | 5 | 18 | ✅ COMPLETED |
 | ~~`S44-generalized-contention-substrate.md`~~ | 5 | 18 | ✅ COMPLETED |
-| `S45-unified-social-artifact-model.md` | 5 | 19 | none |
+| `S49-golden-gaps-S45.md` | 5 | 20 | S45 |
 
 ## Crate Dependency Graph
 
@@ -577,4 +585,4 @@ worldwake-cli:     depends on worldwake-core, worldwake-sim, worldwake-systems, 
 | 3+: AI Architecture Overhaul | S20–S37 | Honest causal state, general intentions, refined diagnostics, planning performance, opportunity identity, epistemic actions, observable activity, declarative registration, cooldown exhaustion | ✅ COMPLETED |
 | 4: Adaptation & Integration | E18–E20, S40, E22 | Full integration, all scenarios | ✅ COMPLETED |
 | 4+: Economy & AI Preferences | S04–S06, S10, S38–S39, S48 | Merchant economy depth, learned preferences, side-benefit scoring, S38 golden closeout | ✅ COMPLETED |
-| 5: Architectural Substrates | S42–S45 plus duplicate-id `S44-generalized-contention-substrate` | Agent reasoning diversity, communication types, scenario profile completeness, generalized contention, social artifacts | IN PROGRESS (S42, S43, both S44 specs, and generalized contention complete; S45 pending) |
+| 5: Architectural Substrates | S42–S45 plus duplicate-id `S44-generalized-contention-substrate`, with S49 golden-gap follow-up | Agent reasoning diversity, communication types, scenario profile completeness, generalized contention, social artifacts | IN PROGRESS (S42, S43, both S44 specs, generalized contention, and S45 complete; S49 golden-gap follow-up active) |

@@ -5990,12 +5990,14 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
     let actor = entity(1);
     let bounty = entity(2);
     let issuer = entity(3);
+    let target = entity(4);
     let claim_place = entity(10);
 
     let mut view = TestBeliefView::default();
     view.alive.insert(actor);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(bounty, EntityKind::SocialArtifact);
+    view.kinds.insert(target, EntityKind::Agent);
     view.effective_places.insert(actor, claim_place);
     view.effective_places.insert(bounty, claim_place);
     view.entities_at.insert(claim_place, vec![actor, bounty]);
@@ -6018,7 +6020,7 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
                     issuer,
                     expires_at: None,
                     bounty_terms: Some(BelievedBountyTerms {
-                        target: BountyTarget::EliminateEntity { target: entity(4) },
+                        target: BountyTarget::EliminateEntity { target },
                         reward_commodity: CommodityKind::Coin,
                         reward_quantity: Quantity(25),
                         claim_place,
@@ -6036,7 +6038,7 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
     let snapshot = build_planning_snapshot(
         &view,
         actor,
-        &BTreeSet::from([bounty]),
+        &BTreeSet::from([bounty, target]),
         &BTreeSet::from([claim_place]),
         1,
     );
@@ -6218,6 +6220,105 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
     assert_eq!(
         plan.steps.last().map(|step| step.op_kind),
         Some(PlannerOpKind::ClaimBounty)
+    );
+}
+
+#[test]
+fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_death() {
+    let actor = entity(1);
+    let bounty = entity(2);
+    let issuer = entity(3);
+    let claim_place = entity(10);
+    let target = entity(11);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, issuer, target, claim_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(issuer, EntityKind::Agent);
+    view.kinds.insert(target, EntityKind::Agent);
+    view.kinds.insert(bounty, EntityKind::SocialArtifact);
+    view.kinds.insert(claim_place, EntityKind::Place);
+    view.effective_places.insert(actor, claim_place);
+    view.effective_places.insert(issuer, claim_place);
+    view.effective_places.insert(target, claim_place);
+    view.effective_places.insert(bounty, claim_place);
+    view.entities_at
+        .insert(claim_place, vec![actor, issuer, target, bounty]);
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(
+            bounty,
+            BelievedEntityState {
+                last_known_place: Some(claim_place),
+                last_known_inventory: BTreeMap::new(),
+                workstation_tag: None,
+                resource_source: None,
+                alive: true,
+                wounds: Vec::new(),
+                last_known_courage: None,
+                believed_activity: None,
+                believed_artifact: Some(BelievedArtifactState {
+                    kind: ArtifactKind::Bounty,
+                    state: ArtifactState::Active,
+                    issuer,
+                    expires_at: None,
+                    bounty_terms: Some(BelievedBountyTerms {
+                        target: BountyTarget::EliminateEntity { target },
+                        reward_commodity: CommodityKind::Coin,
+                        reward_quantity: Quantity(25),
+                        claim_place,
+                    }),
+                    notice_topic: None,
+                    observed_tick: Tick(1),
+                }),
+                believed_contention: None,
+                observed_tick: Tick(1),
+                source: PerceptionSource::DirectObservation,
+            },
+        )],
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([bounty, target, issuer]),
+        &BTreeSet::from([claim_place]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = ReasoningProfile::default();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
+        key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
+        evidence_entities: BTreeSet::from([bounty, target]),
+        evidence_places: BTreeSet::from([claim_place]),
+    };
+
+    let node = root_node(&snapshot, &goal, &recipes, &budget);
+    let rel_defs = relevant_action_defs(&goal, &semantics);
+    let candidates = search_candidates(
+        &goal,
+        &node,
+        &semantics,
+        &registry,
+        &handlers,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+        &rel_defs,
+    );
+
+    assert!(
+        !candidates.iter().any(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "claim_bounty")
+        }),
+        "elimination bounty should not surface claim_bounty before the target is dead"
     );
 }
 
