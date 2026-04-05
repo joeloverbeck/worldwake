@@ -29,13 +29,17 @@ If this command fails, stop and report the error. Do not analyze stale generated
 2. Search `specs/` first, then `archive/specs/` if needed. If the user names a specific canonical spec path, accept that live path wherever it currently resides and note separately whether the spec is still active or already archived instead of treating location alone as the completion signal.
 3. If multiple specs match, stop and ask the user to disambiguate.
 4. Read the resolved spec completely.
-5. Read:
+5. If the resolved spec still lives in `specs/` but the implementation is already complete, explicitly decide whether it is:
+   - still the active roadmap authority for unfinished behavior, or
+   - implemented but stale prose that has not yet been archived or reconciled
+   In the second case, prefer the live code, generated golden coverage, and the completed ticket/archive chain over broader unlanded behavior claims in the spec text when judging gaps.
+6. Read:
    - [docs/golden-e2e-coverage.md](../../../docs/golden-e2e-coverage.md)
    - [docs/generated/golden-e2e-inventory.md](../../../docs/generated/golden-e2e-inventory.md)
    - [docs/generated/golden-scenario-map.md](../../../docs/generated/golden-scenario-map.md)
    - [docs/generated/golden-coverage-matrix.md](../../../docs/generated/golden-coverage-matrix.md)
    - [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
-6. Review the current codebase state for the implemented spec:
+7. Review the current codebase state for the implemented spec:
    - goal kinds
    - action domains
    - action definitions and handlers
