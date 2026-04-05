@@ -618,16 +618,17 @@ mod tests {
         AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
         BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
         ControlSource, DeadAt, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds,
-        EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData, FactionPurpose,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
-        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+        EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData,
+        FactionPurpose, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
+        InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits,
+        LotOperation, MerchandiseProfile,
         MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
         CommunicationProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob, PursuitProfile,
         ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
         ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw, TellProfile,
         TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
         UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
-        WoundCause, WoundList,
+        WoundCause, WoundList, RightKind,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3698,6 +3699,220 @@ mod tests {
 
         assert!(world.can_exercise_control(actor, satchel).is_ok());
         assert!(world.can_exercise_control(actor, bread).is_ok());
+    }
+
+    #[test]
+    fn effective_rights_possession() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let possessor = world
+            .create_agent("Bram", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+
+        world.set_possessor(item, possessor).unwrap();
+
+        assert_eq!(
+            world.effective_rights(possessor, item),
+            vec![EffectiveRight {
+                kind: RightKind::PhysicalPossession,
+                via: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_ownership() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let owner = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+
+        world.set_owner(item, owner).unwrap();
+
+        assert_eq!(
+            world.effective_rights(owner, item),
+            vec![EffectiveRight {
+                kind: RightKind::Ownership,
+                via: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_faction_authority() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let member = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_owner(item, faction).unwrap();
+        world.add_member(member, faction).unwrap();
+
+        assert_eq!(
+            world.effective_rights(member, item),
+            vec![EffectiveRight {
+                kind: RightKind::FactionAuthority,
+                via: Some(faction),
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_office_authority() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_office("Mayor", Tick(1)).unwrap();
+        let holder = world
+            .create_agent("Bram", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_owner(item, office).unwrap();
+        world.assign_office(office, holder).unwrap();
+
+        assert_eq!(
+            world.effective_rights(holder, item),
+            vec![EffectiveRight {
+                kind: RightKind::OfficeAuthority,
+                via: Some(office),
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_container_access() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world
+            .topology()
+            .place_ids()
+            .next()
+            .expect("prototype world provides at least one place");
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let satchel = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(20),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: true,
+                },
+                Tick(2),
+            )
+            .unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_ground_location(actor, place).unwrap();
+        world.set_ground_location(satchel, place).unwrap();
+        world.set_possessor(satchel, actor).unwrap();
+        world.put_into_container(bread, satchel).unwrap();
+
+        assert_eq!(
+            world.effective_rights(actor, bread),
+            vec![EffectiveRight {
+                kind: RightKind::ContainerAccess,
+                via: Some(satchel),
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_no_rights() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+
+        assert!(world.effective_rights(actor, item).is_empty());
+    }
+
+    #[test]
+    fn effective_rights_does_not_surface_jurisdictional_authority_yet() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_office("Mayor", Tick(1)).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.assign_office(office, holder).unwrap();
+
+        assert!(!world.has_right(holder, item, RightKind::JurisdictionalAuthority));
+        assert!(
+            world
+                .effective_rights(holder, item)
+                .iter()
+                .all(|right| right.kind != RightKind::JurisdictionalAuthority)
+        );
+    }
+
+    #[test]
+    fn has_right_consistency() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world
+            .topology()
+            .place_ids()
+            .next()
+            .expect("prototype world provides at least one place");
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let satchel = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(20),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: true,
+                },
+                Tick(2),
+            )
+            .unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_ground_location(actor, place).unwrap();
+        world.set_ground_location(satchel, place).unwrap();
+        world.set_possessor(satchel, actor).unwrap();
+        world.put_into_container(bread, satchel).unwrap();
+
+        let rights = world.effective_rights(actor, bread);
+        for kind in [
+            RightKind::PhysicalPossession,
+            RightKind::Ownership,
+            RightKind::FactionAuthority,
+            RightKind::OfficeAuthority,
+            RightKind::JurisdictionalAuthority,
+            RightKind::ContainerAccess,
+        ] {
+            assert_eq!(
+                world.has_right(actor, bread, kind),
+                rights.iter().any(|right| right.kind == kind)
+            );
+        }
+        assert_eq!(
+            !rights.is_empty(),
+            world.can_exercise_control(actor, bread).is_ok()
+        );
     }
 
     #[test]

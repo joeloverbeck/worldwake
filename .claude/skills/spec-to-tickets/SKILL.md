@@ -40,7 +40,7 @@ Before decomposing, validate the spec's assumptions against the actual codebase:
 - **Grep** for types, functions, and modules the spec references — confirm they are real and current
 - **Flag** any stale assumptions, missing files, or renamed entities
 - If you find discrepancies, present them to the user before proceeding
-- If `/reassess-spec` was run on this spec in the current session and all findings were resolved, Step 2 validation may be abbreviated to a spot-check of key references rather than a full re-validation
+- If `/reassess-spec` was run on this spec in the current session and all findings were resolved, Step 2 validation may be abbreviated to a spot-check of key references rather than a full re-validation. An abbreviated spot-check should verify at least: (a) the spec's primary type/function references still exist at the stated paths, (b) `SAVE_FORMAT_VERSION` hasn't changed since reassessment, and (c) no new files in `specs/` reference the same types. 3-5 targeted greps is sufficient.
 
 ### Step 3: Decompose the Spec
 
@@ -58,10 +58,10 @@ Analyze the spec and identify discrete work units:
 **Before writing any ticket files**, present a numbered summary table:
 
 ```
-| # | Ticket ID | Title | Effort | Deps |
-|---|-----------|-------|--------|------|
-| 1 | <NS>-001  | ...   | Small  | None |
-| 2 | <NS>-002  | ...   | Medium | 001  |
+| # | Ticket ID | Title | Scope | Effort | Deps |
+|---|-----------|-------|-------|--------|------|
+| 1 | <NS>-001  | ...   | <5-10 word scope> | Small  | None |
+| 2 | <NS>-002  | ...   | <5-10 word scope> | Medium | 001  |
 | ...
 ```
 
