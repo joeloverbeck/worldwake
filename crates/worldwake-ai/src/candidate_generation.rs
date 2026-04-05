@@ -18,6 +18,7 @@ use crate::{
         SelfKnowledgeProvenance,
     },
     pressure::is_bandit_raid_deterred_by_wounds,
+    route_threat::strongest_threat_warning_place,
     theft::assess_theft_deterrence,
     GroundedGoal,
 };
@@ -666,26 +667,43 @@ fn emit_notice_posting_candidates(
         return;
     }
 
-    let Some(place) = ctx.place else {
+    let Some(posting_place) = ctx.place else {
         return;
     };
     let Some(thresholds) = ctx.view.drive_thresholds(ctx.agent) else {
         return;
     };
-    let danger_pressure = derive_danger_pressure(ctx.view, ctx.agent);
-    if danger_pressure < thresholds.danger.high() {
+    let Some((warned_place, threat_signal)) = strongest_threat_warning_place(ctx.view, ctx.agent)
+    else {
+        return;
+    };
+    if threat_signal < thresholds.danger.high() {
         return;
     }
 
-    let mut evidence = Evidence::with_place(place);
-    evidence
-        .entities
-        .extend(ctx.view.visible_hostiles_for(ctx.agent));
-    evidence
-        .entities
-        .extend(ctx.view.current_attackers_of(ctx.agent));
-    if evidence.entities.is_empty() {
-        return;
+    let mut evidence = Evidence::with_place(posting_place);
+    evidence.places.insert(warned_place);
+    evidence.entities.extend(
+        ctx.view
+            .known_entity_beliefs(ctx.agent)
+            .into_iter()
+            .filter(|(_entity, belief)| belief.last_known_place == Some(warned_place))
+            .filter(|(_entity, belief)| {
+                belief
+                    .believed_activity
+                    .as_ref()
+                    .is_some_and(|activity| activity.action_domain == worldwake_core::ActionDomain::Combat)
+                    || (belief.alive && !belief.wounds.is_empty())
+            })
+            .map(|(entity, _belief)| entity),
+    );
+    if warned_place == posting_place {
+        evidence
+            .entities
+            .extend(ctx.view.visible_hostiles_for(ctx.agent));
+        evidence
+            .entities
+            .extend(ctx.view.current_attackers_of(ctx.agent));
     }
 
     let mut trace = EvidenceTrace::default();
@@ -702,14 +720,14 @@ fn emit_notice_posting_candidates(
         diagnostics,
         GoalKind::PostNotice {
             posting: ArtifactPostingContext {
-                posting_place: place,
+                posting_place,
                 issuing_authority: None,
                 expires_at: None,
-                jurisdiction: Some(place),
+                jurisdiction: Some(posting_place),
             },
-            topic: NoticeTopic::ThreatWarning { place },
+            topic: NoticeTopic::ThreatWarning { place: warned_place },
         },
-        OpportunityAnchor::Place(place),
+        OpportunityAnchor::Place(posting_place),
         evidence,
         trace,
     );
@@ -9876,6 +9894,72 @@ mod tests {
                     jurisdiction: Some(place),
                 },
                 topic: NoticeTopic::ThreatWarning { place },
+            }
+        ));
+    }
+
+    #[test]
+    fn posting_candidates_emit_threat_warning_notice_for_remote_warned_place_from_belief() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let posting_place = entity(10);
+        let warned_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, hostile]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(hostile, EntityKind::Agent);
+        view.effective_places.insert(agent, posting_place);
+        view.entities_at.insert(posting_place, vec![agent]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                notice_posting_weight: pm(700),
+                ..UtilityProfile::default()
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                hostile,
+                BelievedEntityState {
+                    last_known_place: Some(warned_place),
+                    believed_activity: Some(worldwake_core::BelievedActivity {
+                        action_domain: worldwake_core::ActionDomain::Combat,
+                        target: Some(agent),
+                        observed_tick: Tick(5),
+                    }),
+                    observed_tick: Tick(5),
+                    ..believed_state(5, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::PostNotice {
+                posting: ArtifactPostingContext {
+                    posting_place,
+                    issuing_authority: None,
+                    expires_at: None,
+                    jurisdiction: Some(posting_place),
+                },
+                topic: NoticeTopic::ThreatWarning {
+                    place: warned_place
+                },
             }
         ));
     }

@@ -5,6 +5,7 @@ use crate::{
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression,
     pressure::is_bandit_raid_deterred_by_wounds,
+    route_threat::threat_warning_signal_for_place,
     theft::assess_theft_deterrence,
     DecisionContext, GoalKindPlannerExt, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
     RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
@@ -820,28 +821,23 @@ fn post_notice_motive(
     posting: worldwake_core::ArtifactPostingContext,
     topic: NoticeTopic,
 ) -> u32 {
-    let NoticeTopic::ThreatWarning { place } = topic else {
+    let NoticeTopic::ThreatWarning { place: warned_place } = topic else {
         return 0;
     };
-    if posting.issuing_authority.is_some() || posting.posting_place != place {
+    if posting.issuing_authority.is_some() {
         return 0;
     }
-    if context.view.effective_place(context.agent) != Some(place) {
+    if context.view.effective_place(context.agent) != Some(posting.posting_place) {
         return 0;
     }
     let Some(thresholds) = context.thresholds else {
         return 0;
     };
-    if context.danger_pressure < thresholds.danger.high() {
+    let threat_signal = threat_warning_signal_for_place(context.view, context.agent, warned_place);
+    if threat_signal < thresholds.danger.high() {
         return 0;
     }
-    if context.view.visible_hostiles_for(context.agent).is_empty()
-        && context.view.current_attackers_of(context.agent).is_empty()
-    {
-        return 0;
-    }
-
-    score_product(context.utility.notice_posting_weight, context.danger_pressure)
+    score_product(context.utility.notice_posting_weight, threat_signal)
 }
 
 fn belief_pressure_from_state(
@@ -2418,6 +2414,57 @@ mod tests {
         let expected_motive = super::score_product(
             utility.notice_posting_weight,
             super::derive_danger_pressure(&view, agent),
+        );
+        assert_eq!(outcome.zero_motive, Vec::<GoalKey>::new());
+        assert_eq!(outcome.ranked.len(), 1);
+        assert_eq!(outcome.ranked[0].priority_class, GoalPriorityClass::Medium);
+        assert_eq!(outcome.ranked[0].motive_score, expected_motive);
+    }
+
+    #[test]
+    fn post_notice_goal_has_non_zero_motive_for_remote_warned_place_from_belief() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let posting_place = entity(99);
+        let warned_place = entity(100);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.thresholds.insert(agent, thresholds);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                hostile,
+                observed_activity_state(warned_place, ActionDomain::Combat, Some(agent)),
+            )],
+        );
+
+        let mut utility = utility();
+        utility.notice_posting_weight = pm(700);
+
+        let outcome = rank(
+            &[goal_at_place(
+                GoalKind::PostNotice {
+                    posting: ArtifactPostingContext {
+                        posting_place,
+                        issuing_authority: None,
+                        expires_at: None,
+                        jurisdiction: Some(posting_place),
+                    },
+                    topic: NoticeTopic::ThreatWarning {
+                        place: warned_place,
+                    },
+                },
+                posting_place,
+            )],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+        );
+
+        let expected_motive = super::score_product(
+            utility.notice_posting_weight,
+            crate::route_threat::threat_warning_signal_for_place(&view, agent, warned_place),
         );
         assert_eq!(outcome.zero_motive, Vec::<GoalKey>::new());
         assert_eq!(outcome.ranked.len(), 1);

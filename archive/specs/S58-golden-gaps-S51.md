@@ -1,5 +1,7 @@
 # S58: Golden Gaps — Artifact Issuance Goals
 
+**Status**: COMPLETED
+
 ## Summary
 
 Post-implementation golden gap analysis for S51 (Social Artifact Issuance Goals). The live suite now proves autonomous institutional bounty posting through Scenario 112, manual threat-warning notice downstream route change through Scenario 107, and notice-driven political uptake through Scenario 109. One materially different S51 emergence chain remains unproved at golden E2E level:
@@ -87,3 +89,23 @@ This proves the remaining autonomous issuance half of S51's current live contrac
 2. The same scenario proves a downstream planning consequence from the posted artifact, not just artifact existence
 3. The scenario includes a deterministic replay companion
 4. Assertions use the strongest honest surfaces available: decision traces for posting selection, action traces for notice commit, and plan/route proof for the downstream reroute
+
+## Outcome
+
+- **Completed**: 2026-04-05
+- **What changed**:
+  - Landed the bounded AI production fix needed for the spec’s intended contract: autonomous `ThreatWarning` producers no longer require `posting_place == warned_place`, and now support locally posting about a different believed dangerous place.
+  - Added focused AI proof in `crates/worldwake-ai/src/candidate_generation.rs` and `crates/worldwake-ai/src/ranking.rs` for remote warned-place notice emission and motive.
+  - Added Scenario 113 plus deterministic replay coverage in `crates/worldwake-ai/tests/golden_integration.rs`, proving the full chain from autonomous notice selection and committed `post_notice` through downstream local perception and route reroute.
+  - Refreshed generated golden coverage docs in `docs/generated/golden-coverage-matrix.md`, `docs/generated/golden-e2e-inventory.md`, and `docs/generated/golden-scenario-map.md`.
+- **Deviations from original plan**:
+  - The original gap spec implied a golden-only closeout, but implementation showed the live producer contract was narrower than the existing downstream route-threat consumer, so the work had to absorb a bounded AI semantic-parity fix before the golden could honestly pass.
+  - The final scenario isolated autonomous notice posting by suppressing a lawful competing `ShareBelief` branch in the harness and by seeding explicit remembered combat-activity belief to provide enough remote threat substrate.
+- **Verification**:
+  - `cargo test -p worldwake-ai posting_candidates_emit_threat_warning_notice_for_remote_warned_place_from_belief -- --nocapture`
+  - `cargo test -p worldwake-ai post_notice_goal_has_non_zero_motive_for_remote_warned_place_from_belief -- --nocapture`
+  - `cargo test -p worldwake-ai golden_s58_autonomous_notice_reroutes_later_travel -- --nocapture`
+  - `cargo test -p worldwake-ai`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`

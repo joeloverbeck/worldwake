@@ -3,7 +3,7 @@
 ## Completed Work
 
 Phases 1–5 (E01–E22, FND-01, FND-02, S01–S49) completed.  
-Phase 6 has started, and [S50-rights-lattice.md](../archive/specs/S50-rights-lattice.md), [S51-artifact-issuance-goals.md](../archive/specs/S51-artifact-issuance-goals.md), and S50's remaining golden closeout [S57-golden-gaps-S50.md](../archive/specs/S57-golden-gaps-S50.md) are now completed and archived.
+Phase 6 has started, and [S50-rights-lattice.md](../archive/specs/S50-rights-lattice.md), [S51-artifact-issuance-goals.md](../archive/specs/S51-artifact-issuance-goals.md), S50's remaining golden closeout [S57-golden-gaps-S50.md](../archive/specs/S57-golden-gaps-S50.md), and S51's remaining golden closeout [S58-golden-gaps-S51.md](../archive/specs/S58-golden-gaps-S51.md) are now completed and archived.
 See `archive/` for detailed completion records.
 
 ---
@@ -27,8 +27,9 @@ Completed in this phase so far:
 - **S50**: Rights Lattice — completed and archived
 - **S51**: Social Artifact Issuance Goals — completed and archived
 - **S57**: Rights lattice golden gap closeout — completed and archived
+- **S58**: Artifact issuance golden gap closeout — completed and archived
 
-The remaining active specs except S55 are independent and can run in parallel. S55 benefits from S54's richer belief substrate but can also work with the current belief layer — the dependency is soft. Remaining S51 golden follow-up coverage is tracked separately in [S58-golden-gaps-S51.md](./S58-golden-gaps-S51.md).
+The remaining active specs except S55 are independent and can run in parallel. S55 benefits from S54's richer belief substrate but can also work with the current belief layer — the dependency is soft.
 
 ### Active Execution Steps
 

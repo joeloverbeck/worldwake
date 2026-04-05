@@ -40,7 +40,8 @@ use std::collections::BTreeSet;
 use worldwake_ai::{AgentTickDriver, CommodityPurpose, DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, AgentData, AgentBeliefStore, BelievedInstitutionalClaim,
+    verify_authoritative_conservation, AgentData, AgentBeliefStore, BelievedActivity,
+    BelievedInstitutionalClaim,
     ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
     BountyTarget, BountyTerms, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
     DemandMemory, DemandObservation, DemandObservationReason, EffectiveRight, EligibilityRule,
@@ -6517,6 +6518,217 @@ fn run_s51_autonomous_bounty_posting(seed: Seed) -> (StateHash, StateHash) {
     )
 }
 
+fn run_s58_autonomous_notice_reroute(seed: Seed) -> (StateHash, StateHash) {
+    assert_eq!(
+        baseline_notice_route_destination(Seed([seed.0[0].wrapping_add(1); 32])),
+        Some(PLACE_S45_WARNED_ROAD),
+        "without an autonomous warning notice, the shorter road should remain the initial apple-acquisition route"
+    );
+
+    let mut h = build_harness_with_topology(seed, build_s45_notice_topology());
+    let orchard = s45_place_orchard_source(&mut h);
+    h.enable_action_tracing();
+    h.driver.enable_tracing();
+
+    let issuer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S58 Warning Issuer",
+        PLACE_S45_MARKET,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            notice_posting_weight: pm(1000),
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        s45_perception_profile(),
+    );
+
+    let hostile = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S58 Roadside Ambusher",
+        PLACE_S45_WARNED_ROAD,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, hostile, ControlSource::None, 0);
+
+    let traveler = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S58 Traveler",
+        PLACE_S45_MARKET,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, traveler, ControlSource::None, 0);
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        s45_perception_profile(),
+    );
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        traveler,
+        Tick(0),
+        PerceptionSource::Inference,
+    );
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        hostile,
+        worldwake_core::BelievedEntityState {
+            last_known_place: Some(PLACE_S45_WARNED_ROAD),
+            last_known_inventory: std::collections::BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: Some(BelievedActivity {
+                action_domain: worldwake_core::ActionDomain::Combat,
+                target: Some(issuer),
+                observed_tick: Tick(0),
+            }),
+            believed_artifact: None,
+            believed_contention: None,
+            observed_tick: Tick(0),
+            source: PerceptionSource::DirectObservation,
+        },
+    );
+
+    let expected_goal = GoalKey::from(GoalKind::PostNotice {
+        posting: worldwake_core::ArtifactPostingContext {
+            posting_place: PLACE_S45_MARKET,
+            issuing_authority: None,
+            expires_at: None,
+            jurisdiction: Some(PLACE_S45_MARKET),
+        },
+        topic: NoticeTopic::ThreatWarning {
+            place: PLACE_S45_WARNED_ROAD,
+        },
+    });
+
+    let mut notice = None;
+    let mut selected_notice = false;
+    let mut committed_notice = false;
+    let mut traveler_saw_notice = false;
+    for _ in 0..12 {
+        h.step_once();
+        if notice.is_none() {
+            notice = find_first_social_artifact(&h.world, ArtifactKind::Notice);
+        }
+        if let Some(trace_sink) = h.driver.trace_sink() {
+            selected_notice |= trace_sink.traces_for(issuer).into_iter().any(|trace| {
+                matches!(
+                    &trace.outcome,
+                    DecisionOutcome::Planning(planning)
+                        if planning.selection.selected_goal_is(expected_goal)
+                )
+            });
+        }
+        committed_notice |= h.action_trace_sink().is_some_and(|sink| {
+            sink.events_for(issuer).iter().any(|event| {
+                event.action_name == "post_notice"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            })
+        });
+        traveler_saw_notice = notice.is_some_and(|artifact| {
+            agent_belief_about(&h.world, traveler, artifact)
+                .and_then(|belief| belief.believed_artifact.as_ref())
+                .is_some_and(|artifact_state| {
+                    artifact_state.kind == ArtifactKind::Notice
+                        && artifact_state.state == ArtifactState::Active
+                        && artifact_state.notice_topic
+                            == Some(NoticeTopic::ThreatWarning {
+                                place: PLACE_S45_WARNED_ROAD,
+                            })
+                })
+        });
+        if notice.is_some() && selected_notice && committed_notice && traveler_saw_notice {
+            break;
+        }
+    }
+
+    let summaries = trace_summaries(&h, issuer);
+    let action_summaries = h.action_trace_sink().map_or_else(Vec::new, |sink| {
+        sink.events_for(issuer)
+            .into_iter()
+            .map(worldwake_sim::ActionTraceEvent::summary)
+            .collect::<Vec<_>>()
+    });
+    assert!(
+        selected_notice,
+        "issuer should select PostNotice autonomously from the warned-road danger belief; traces={summaries:?}; action_traces={action_summaries:?}"
+    );
+    assert!(
+        committed_notice,
+        "issuer should commit post_notice after selecting the autonomous warning goal; traces={summaries:?}; action_traces={action_summaries:?}"
+    );
+    let notice = notice.expect("autonomous notice posting should create a notice artifact");
+    assert!(
+        traveler_saw_notice,
+        "traveler should perceive the autonomous warning notice before route selection"
+    );
+    assert_eq!(
+        h.world.get_component_artifact_header(notice).unwrap().kind,
+        ArtifactKind::Notice,
+        "the created social artifact should be a notice"
+    );
+    assert_eq!(
+        h.world.effective_place(issuer),
+        Some(PLACE_S45_MARKET),
+        "the issuer should post the warning at the market while warning about the road"
+    );
+    assert!(
+        h.world
+            .get_component_agent_data(issuer)
+            .is_some_and(|data| data.control_source == ControlSource::Ai),
+        "the issuer should remain AI-controlled for the autonomous notice path"
+    );
+    assert!(
+        h.world
+            .get_component_agent_belief_store(traveler)
+            .is_some_and(|store| store.known_entities.contains_key(&orchard)),
+        "traveler should retain orchard knowledge so the route flip tests notice uptake, not source ignorance"
+    );
+
+    let ai_tick = h.scheduler.current_tick().0;
+    set_control_source(&mut h, traveler, ControlSource::Ai, ai_tick);
+
+    let mut selected_destination = None;
+    for _ in 0..8 {
+        h.step_once();
+        selected_destination = latest_selected_apple_travel_destination(&h, traveler);
+        if selected_destination.is_some() {
+            break;
+        }
+    }
+    let traveler_summaries = trace_summaries(&h, traveler);
+    assert_eq!(
+        selected_destination,
+        Some(PLACE_S45_SAFE_ROUTE),
+        "after perceiving the autonomous warning notice, the first search-selected apple trip should begin via the safe route; traces={traveler_summaries:?}"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 105: Social artifact bounty lifecycle closes canonically
 // ---------------------------------------------------------------------------
@@ -6706,5 +6918,46 @@ fn golden_s51_autonomous_bounty_posting_replays_deterministically() {
     assert_eq!(
         first, second,
         "S51 autonomous bounty posting scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 113: Autonomous threat-warning notice reroutes later travel
+// ---------------------------------------------------------------------------
+//
+// Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
+// GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
+// ActionDomains: Social, Travel, Production
+// Places: S45 Market, S45 Warned Road, S45 Safe Route, S45 Orchard
+// Principles: 1, 7, 14, 25
+//
+// Setup: AI issuer at Market has non-zero `notice_posting_weight` and a live
+//   remembered hostile belief at Warned Road. The issuer autonomously posts a
+//   `ThreatWarning` notice at Market about Warned Road while the traveler is
+//   still non-AI but perceiving locally at Market.
+//
+// Proves: Autonomous notice issuance now closes the remaining S51 notice path
+//   honestly. The issuer can lawfully select and commit `PostNotice` for a
+//   warned place distinct from the posting place, and the downstream traveler
+//   later reroutes away from the shorter warned branch through the existing
+//   local artifact-belief and route-threat path.
+//
+// Chain: remembered danger belief -> AI selects PostNotice -> post_notice
+//   commits at Market -> traveler locally perceives believed_artifact warning ->
+//   AI resumes with same orchard knowledge -> apple-acquisition planning
+//   reroutes from Warned Road to Safe Route.
+
+#[test]
+fn golden_s58_autonomous_notice_reroutes_later_travel() {
+    let _ = run_s58_autonomous_notice_reroute(Seed([115; 32]));
+}
+
+#[test]
+fn golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically() {
+    let first = run_s58_autonomous_notice_reroute(Seed([116; 32]));
+    let second = run_s58_autonomous_notice_reroute(Seed([116; 32]));
+    assert_eq!(
+        first, second,
+        "S58 autonomous warning notice scenario should replay deterministically"
     );
 }

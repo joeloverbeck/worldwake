@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 131
+- Scenario blocks with explicit metadata: 132
 - Files contributing scenario metadata: 20
-- Tests associated with scenario blocks: 287
+- Tests associated with scenario blocks: 289
 
 ## Scenario Inventory
 
@@ -63,17 +63,18 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `91` | Hostile Completed Travel Reweights the Next Route Choice | `golden_experience_preferences.rs:520` | `golden_hostile_completed_travel_flips_next_route_choice` | `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically` |
 | `92` | Combat-Aborted Travel Still Creates Hostile Route Memory | `golden_experience_preferences.rs:554` | `golden_combat_aborted_travel_flips_next_route_choice` | `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically` |
 | `93` | Preference Profiles Create Route Diversity From the Same Memory | `golden_experience_preferences.rs:585` | `golden_preference_profile_diversifies_route_selection` | `golden_preference_profile_diversifies_route_selection_replays_deterministically` |
-| `20` | Apple Stockout → Carrier Reroute → Supply Chain Disruption | `golden_integration.rs:89` | `t20_apple_stockout_seed_1`<br>`t20_apple_stockout_seed_2`<br>`t24_player_replacement_seed_1`<br>`t24_player_replacement_seed_2` | — |
-| `27` | Controlled Agent Death | `golden_integration.rs:1049` | `t27_controlled_agent_death_seed_1`<br>`t27_controlled_agent_death_seed_2` | — |
-| `28` | Pursuit Across Information Boundary | `golden_integration.rs:1315` | `t28_pursuit_information_boundary_seed_1`<br>`t28_pursuit_information_boundary_seed_2`<br>`t29_wrongful_accusation_seed_1`<br>`t29_wrongful_accusation_seed_2` | — |
-| `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2530` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
-| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3460` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
-| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4488` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
-| `105` | Social artifact bounty lifecycle closes canonically | `golden_integration.rs:6521` | `golden_s45_bounty_lifecycle` | `golden_s45_bounty_lifecycle_replays_deterministically` |
-| `106` | Expired bounty stays visible but no longer generates pursuit | `golden_integration.rs:6559` | `golden_s45_bounty_expiration_blocks_pursuit` | `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically` |
-| `108` | Delivery bounty closes through cargo movement and later claim | `golden_integration.rs:6596` | `golden_s49_delivery_bounty_lifecycle` | `golden_s49_delivery_bounty_lifecycle_replays_deterministically` |
-| `107` | Threat-warning notice flips the next route choice | `golden_integration.rs:6636` | `golden_s45_notice_warning_flips_route_choice` | `golden_s45_notice_warning_flips_route_choice_replays_deterministically` |
-| `112` | Autonomous institutional bounty posts from consulted accusation | `golden_integration.rs:6674` | `golden_s51_autonomous_bounty_posting` | `golden_s51_autonomous_bounty_posting_replays_deterministically` |
+| `20` | Apple Stockout → Carrier Reroute → Supply Chain Disruption | `golden_integration.rs:90` | `t20_apple_stockout_seed_1`<br>`t20_apple_stockout_seed_2`<br>`t24_player_replacement_seed_1`<br>`t24_player_replacement_seed_2` | — |
+| `27` | Controlled Agent Death | `golden_integration.rs:1050` | `t27_controlled_agent_death_seed_1`<br>`t27_controlled_agent_death_seed_2` | — |
+| `28` | Pursuit Across Information Boundary | `golden_integration.rs:1316` | `t28_pursuit_information_boundary_seed_1`<br>`t28_pursuit_information_boundary_seed_2`<br>`t29_wrongful_accusation_seed_1`<br>`t29_wrongful_accusation_seed_2` | — |
+| `21` | Ruler Death → Office Vacancy → Patrol Gap → Route Predation | `golden_integration.rs:2531` | `t21_ruler_death_patrol_gap_seed_1`<br>`t21_ruler_death_patrol_gap_seed_2` | — |
+| `33` | Office Vacancy → Patrol Gap → Crime Opportunity → Recovery | `golden_integration.rs:3461` | `t33_vacancy_crime_recovery_seed_1`<br>`t33_vacancy_crime_recovery_seed_2` | — |
+| `50` | Bandit Camp Destruction → Diaspora → Reconstitution → | `golden_integration.rs:4489` | `t22_camp_reconstitution_seed_1`<br>`t22_camp_reconstitution_seed_2` | — |
+| `105` | Social artifact bounty lifecycle closes canonically | `golden_integration.rs:6733` | `golden_s45_bounty_lifecycle` | `golden_s45_bounty_lifecycle_replays_deterministically` |
+| `106` | Expired bounty stays visible but no longer generates pursuit | `golden_integration.rs:6771` | `golden_s45_bounty_expiration_blocks_pursuit` | `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically` |
+| `108` | Delivery bounty closes through cargo movement and later claim | `golden_integration.rs:6808` | `golden_s49_delivery_bounty_lifecycle` | `golden_s49_delivery_bounty_lifecycle_replays_deterministically` |
+| `107` | Threat-warning notice flips the next route choice | `golden_integration.rs:6848` | `golden_s45_notice_warning_flips_route_choice` | `golden_s45_notice_warning_flips_route_choice_replays_deterministically` |
+| `112` | Autonomous institutional bounty posts from consulted accusation | `golden_integration.rs:6886` | `golden_s51_autonomous_bounty_posting` | `golden_s51_autonomous_bounty_posting_replays_deterministically` |
+| `113` | Autonomous threat-warning notice reroutes later travel | `golden_integration.rs:6925` | `golden_s58_autonomous_notice_reroutes_later_travel` | `golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically` |
 | `75` | Displayed Lot Retains SaleListing Through Presence Cycle | `golden_merchant_selling.rs:392` | `staff_market_retains_displayed_listing_through_presence_cycle` | `staff_market_retains_displayed_listing_replays_deterministically` |
 | `76` | Buyer Trades Against Listed Lot | `golden_merchant_selling.rs:467` | `buyer_trades_against_listed_lot` | `buyer_trades_against_listed_lot_replays_deterministically` |
 | `77` | Unlisted Stock Not Sellable | `golden_merchant_selling.rs:579` | `unlisted_stock_not_sellable` | — |
@@ -885,7 +886,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 20: Apple Stockout → Carrier Reroute → Supply Chain Disruption
 
-- Source: `golden_integration.rs:89`
+- Source: `golden_integration.rs:90`
 - Systems: Needs, Trade, Travel, Combat, Production
 - GoalKinds: ConsumeOwnedCommodity, RestockCommodity, AcquireCommodity
 - ActionDomains: Needs, Trade, Travel, Combat (≥ 4 required)
@@ -903,7 +904,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 27: Controlled Agent Death
 
-- Source: `golden_integration.rs:1049`
+- Source: `golden_integration.rs:1050`
 - Systems: Combat, AI, Needs
 - GoalKinds: EngageHostile
 - ActionDomains: Combat
@@ -921,7 +922,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 28: Pursuit Across Information Boundary
 
-- Source: `golden_integration.rs:1315`
+- Source: `golden_integration.rs:1316`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social (≥ 2 required)
@@ -939,7 +940,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 21: Ruler Death → Office Vacancy → Patrol Gap → Route Predation
 
-- Source: `golden_integration.rs:2530`
+- Source: `golden_integration.rs:2531`
 - Systems: Succession, Combat, AI, Needs, Patrol, Trade, Travel
 - GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, EngageHostile
 - ActionDomains: Combat, Social, Travel, Needs (≥ 4 required)
@@ -957,7 +958,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 33: Office Vacancy → Patrol Gap → Crime Opportunity → Recovery
 
-- Source: `golden_integration.rs:3460`
+- Source: `golden_integration.rs:3461`
 - Systems: Succession, Combat, AI, Patrol, Transport, Perception, Travel
 - GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, StealItem
 - ActionDomains: Combat, Social, Travel, Transport, Epistemic (≥ 5 required)
@@ -975,7 +976,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
 
-- Source: `golden_integration.rs:4488`
+- Source: `golden_integration.rs:4489`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
 - GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Generic, Travel, Social, Production
@@ -993,7 +994,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 105: Social artifact bounty lifecycle closes canonically
 
-- Source: `golden_integration.rs:6521`
+- Source: `golden_integration.rs:6733`
 - Systems: Social artifact actions, Perception, AI, Travel, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel, Combat
@@ -1011,7 +1012,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 106: Expired bounty stays visible but no longer generates pursuit
 
-- Source: `golden_integration.rs:6559`
+- Source: `golden_integration.rs:6771`
 - Systems: Social artifact actions, pre-action artifact lifecycle, Perception, AI
 - GoalKinds: FulfillBounty
 - ActionDomains: Social
@@ -1029,7 +1030,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 108: Delivery bounty closes through cargo movement and later claim
 
-- Source: `golden_integration.rs:6596`
+- Source: `golden_integration.rs:6808`
 - Systems: Social artifact actions, Perception, AI, Travel, Transport
 - GoalKinds: FulfillBounty, MoveCargo
 - ActionDomains: Social, Travel, Transport
@@ -1047,7 +1048,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 107: Threat-warning notice flips the next route choice
 
-- Source: `golden_integration.rs:6636`
+- Source: `golden_integration.rs:6848`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production
@@ -1065,7 +1066,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 112: Autonomous institutional bounty posts from consulted accusation
 
-- Source: `golden_integration.rs:6674`
+- Source: `golden_integration.rs:6886`
 - Systems: Social artifact actions, Beliefs, AI, Offices
 - GoalKinds: PostBounty
 - ActionDomains: Social
@@ -1080,6 +1081,24 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Proves**: Autonomous artifact issuance is live end to end for the first institutional bounty family. A consulted accusation belief plus matching jurisdiction rights can produce a selected `PostBounty` goal, commit `post_bounty`, and materialize an active bounty artifact through the normal AI pipeline.
 
 **Cross-system chain**: consulted accusation belief -> AI selects PostBounty -> post_bounty commits -> active bounty entity exists with institutional treasury terms.
+
+### Scenario 113: Autonomous threat-warning notice reroutes later travel
+
+- Source: `golden_integration.rs:6925`
+- Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
+- GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
+- ActionDomains: Social, Travel, Production
+- Places: S45 Market, S45 Warned Road, S45 Safe Route, S45 Orchard
+- Principles: 1, 7, 14, 25
+- Primary tests: `golden_s58_autonomous_notice_reroutes_later_travel`
+- Replay tests: `golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically`
+- All tests: `golden_s58_autonomous_notice_reroutes_later_travel`, `golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically`
+
+**Setup**: AI issuer at Market has non-zero `notice_posting_weight` and a live remembered hostile belief at Warned Road. The issuer autonomously posts a `ThreatWarning` notice at Market about Warned Road while the traveler is still non-AI but perceiving locally at Market.
+
+**Proves**: Autonomous notice issuance now closes the remaining S51 notice path honestly. The issuer can lawfully select and commit `PostNotice` for a warned place distinct from the posting place, and the downstream traveler later reroutes away from the shorter warned branch through the existing local artifact-belief and route-threat path.
+
+**Cross-system chain**: remembered danger belief -> AI selects PostNotice -> post_notice commits at Market -> traveler locally perceives believed_artifact warning -> AI resumes with same orchard knowledge -> apple-acquisition planning reroutes from Warned Road to Safe Route.
 
 ### Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 

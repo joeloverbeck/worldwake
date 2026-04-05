@@ -1,11 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::PlanningSnapshot;
+use crate::{derive_danger_pressure, PlanningSnapshot};
 use worldwake_core::{
     belief_confidence, ActionDomain, ArtifactKind, ArtifactState, BeliefConfidencePolicy,
     BelievedArtifactState, BelievedEntityState, EntityId, NoticeTopic, Permille,
     SocialObservation, SocialObservationKind, Tick,
 };
+use worldwake_sim::GoalBeliefView;
 
 fn place_threat_estimate_from_memory(
     current_tick: Tick,
@@ -127,6 +128,58 @@ pub(crate) fn route_threat_estimate(
         edge_from,
         edge_to,
     )
+}
+
+pub(crate) fn threat_warning_signal_for_place(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+) -> Permille {
+    let entity_beliefs = view
+        .known_entity_beliefs(agent)
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    let social_observations = view.known_social_observations(agent);
+    let remembered = place_threat_estimate_from_memory(
+        view.current_tick(),
+        view.belief_confidence_policy(agent),
+        &entity_beliefs,
+        &social_observations,
+        place,
+    );
+    let local_live = if view.effective_place(agent) == Some(place) {
+        derive_danger_pressure(view, agent)
+    } else {
+        Permille::new_unchecked(0)
+    };
+
+    remembered.max(local_live)
+}
+
+pub(crate) fn strongest_threat_warning_place(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+) -> Option<(EntityId, Permille)> {
+    let mut candidate_places = BTreeSet::new();
+    if let Some(current_place) = view.effective_place(agent) {
+        candidate_places.insert(current_place);
+    }
+    for (_entity, belief) in view.known_entity_beliefs(agent) {
+        if let Some(place) = belief.last_known_place {
+            candidate_places.insert(place);
+        }
+    }
+    for observation in view.known_social_observations(agent) {
+        candidate_places.insert(observation.place);
+    }
+
+    candidate_places
+        .into_iter()
+        .filter_map(|place| {
+            let signal = threat_warning_signal_for_place(view, agent, place);
+            (signal.value() > 0).then_some((place, signal))
+        })
+        .max_by_key(|(place, signal)| (signal.value(), place.slot, place.generation))
 }
 
 pub(crate) fn perceived_direct_travel_cost_from_memory(
