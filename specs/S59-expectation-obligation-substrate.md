@@ -166,18 +166,9 @@ pub struct LastSeenMemory {
 }
 ```
 
-### 4. Search Intent and Outcome Types
+### 4. Search Outcome Types
 
 ```rust
-/// What the searcher is looking for and where.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum SearchTarget {
-    /// Search for a specific missing entity.
-    MissingEntity { entity: EntityId, last_seen_place: Option<EntityId> },
-    /// Search a route segment for signs of someone.
-    RouteSearch { from: EntityId, to: EntityId },
-}
-
 /// Result of a search action at a specific place.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SearchResult {
@@ -210,13 +201,13 @@ All actions registered through the standard `ActionDef` + `ActionHandler` patter
 - **Domain**: `ActionDomain::Social`
 
 #### `ask_about_person`
-- **Preconditions**: Actor is co-located with another agent. Actor has a `SearchTarget`.
+- **Preconditions**: Actor is co-located with another agent. Actor has an overdue expectation for the missing subject, and the action payload binds `{ target, subject }` directly.
 - **Duration**: Short (conversation action).
-- **Effect**: Target agent checks their `LastSeenMemory` for the subject. If they have a record, they share it via the existing Tell mechanism. Actor updates their `LastSeenMemory`.
+- **Effect**: Target agent checks their `LastSeenMemory` for the subject. The actor always records the query in existing `AskWitnessMemory`. If the target has a positive record, the actor updates their own `LastSeenMemory` through direct hearsay transfer.
 - **Domain**: `ActionDomain::Epistemic`
 
 #### `search_place`
-- **Preconditions**: Actor is at the place to search. Actor has a `SearchTarget`.
+- **Preconditions**: Actor is at the place to search. The action binds the missing subject directly from overdue-expectation search context and/or planner goal binding, not from a stored `SearchTarget` carrier.
 - **Duration**: Medium (investigation action, similar to existing investigate).
 - **Effect**: Checks for the target entity at the place. Checks `SceneEvidence` for relevant traces. Produces `SearchResult`. Updates `LastSeenMemory` and `ExpectationRecord`.
 - **Domain**: `ActionDomain::Epistemic`
@@ -310,11 +301,11 @@ These methods are required for `emit_search_candidates()` in candidate generatio
 
 1. **Missing downstream consequence addressed**: Agents currently have no proactive mechanism to mark that someone should have arrived but has not. The global overdue-maintenance slice marks the record past due by clock, while later locality-sensitive search/report behavior still requires physically grounded observation, travel, and communication.
 
-2. **New entities/relations/records**: `ExpectationRecord`, `LastSeenRecord`, `ExpectationStore` (component), `LastSeenMemory` (component), `SearchTarget`, `SearchResult`.
+2. **New entities/relations/records**: `ExpectationRecord`, `LastSeenRecord`, `ExpectationStore` (component), `LastSeenMemory` (component), `SearchResult`.
 
 3. **Actions that mutate them**: `report_missing` (creates violation + institutional record), `ask_about_person` (shares/updates LastSeenMemory), `search_place` (produces SearchResult, updates ExpectationRecord), `escort_to_safety` (moves entities), `report_found` (resolves expectation, updates records).
 
-4. **Information production and travel**: Overdue state begins as an authoritative clock transition on the owner's stored expectation record. Last-seen records propagate through Tell/SocialObservation. Search results are local to the searcher and shared via report_found. Missing-person confirmation is not global.
+4. **Information production and travel**: Overdue state begins as an authoritative clock transition on the owner's stored expectation record. Last-seen records propagate through direct observation and dedicated `ask_about_person` hearsay transfer; later report/search aftermath still travels through ordinary local communication and observation rather than global confirmation. Search results are local to the searcher and shared through later runtime/report actions. Missing-person confirmation is not global.
 
 5. **Conserved quantities**: None directly. Expectations are informational records, not physical goods.
 
@@ -370,7 +361,7 @@ Both components added to `AgentDef` in `crates/worldwake-cli/src/scenario/types.
 | Evidence (S52) | `search_place` reads `SceneEvidence` at the searched location for relevant traces | State-mediated |
 | Care (E12) | `escort_to_safety` hands off wounded entity to existing care queue via `queue_for_care_target` | State-mediated |
 | Justice (E17) | `report_missing` to an office creates institutional record through existing crime register | State-mediated |
-| Social (Tell) | `ask_about_person` and `report_found` use existing Tell mechanism for information propagation | State-mediated |
+| Social (Tell) | Later `report_found` communication can reuse existing Tell/social channels; `ask_about_person` already transfers positive last-seen information through its dedicated typed action path | State-mediated |
 | Corpse handling | Finding a dead body during search triggers existing corpse observation and handling cascade | State-mediated |
 
 ## Profile-Driven Parameters
