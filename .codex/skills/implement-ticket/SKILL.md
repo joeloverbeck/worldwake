@@ -142,6 +142,8 @@ If the active ticket predates the current template and does not already have an 
 
 When a correction changes the real fallout surface, update every affected ticket section (`What to Change`, `Files to Touch`, `Verification Layers`, `Test Plan`), not just one list.
 
+When reassessment converts a ticket into a reassessment-only, doc-only, or no-production-change completion, remove leftover placeholder scaffolding from acceptance criteria, verification, test-plan, and command sections so the finished ticket does not mix resolved scope with pre-reassessment TODO text.
+
 Treat a stale acceptance criterion, scenario assertion surface, or proof target as a low-risk auto-correction only when the live symbols and behavior make the narrower honest contract directionally unambiguous. In that case, record: ticket says / live contract has / correction applied / why safe, and update the acceptance text plus any affected proof-surface sections in the same pass.
 
 #### Escalation decision tree
