@@ -96,6 +96,7 @@ Specific persisted-shape checks:
 
 - For component-registration tickets, check hardcoded schema inventories, sample `ComponentValue` enumerations, and manifest-style tests.
 - When registering a new authoritative component, search for hand-maintained `ComponentKind` inventories and sample builders outside the registration macro.
+- When a scenario ticket adds authoritative components to places, verify whether place entities are topology-owned and created before `World::new(topology)`. If so, land component assignment in the bootstrap `WorldTxn` phase rather than the topology builder.
 - When renaming or replacing an authoritative identifier, search display strings, manifest inventories, serialized name surfaces, and identity-assertion tests.
 - When adding or reordering a `SystemId`, verify separately whether runtime dispatch uses a dense ordinal (`SystemId::ALL`) vs. a distinct manifest (`SystemManifest::canonical()`). Update each independently.
 - When introducing a new shared type alongside an existing model family, include crate-root re-exports and downstream imports in the sweep.

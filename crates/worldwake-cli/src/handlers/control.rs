@@ -157,6 +157,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Village".into(),
                 tags: vec![PlaceTag::Village],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![
@@ -406,6 +407,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Market".into(),
                 tags: vec![PlaceTag::Village],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![

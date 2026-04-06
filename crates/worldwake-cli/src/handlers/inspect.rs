@@ -651,10 +651,12 @@ mod tests {
                 PlaceDef {
                     name: "Market Square".into(),
                     tags: vec![PlaceTag::Village, PlaceTag::Store],
+                    visibility_profile: None,
                 },
                 PlaceDef {
                     name: "Dark Forest".into(),
                     tags: vec![PlaceTag::Forest],
+                    visibility_profile: None,
                 },
             ],
             edges: vec![EdgeDef {

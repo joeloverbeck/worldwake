@@ -11,9 +11,10 @@ use worldwake_core::{
     CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
     EpistemicDispositionProfile, ExecutionBudget, HomeostaticNeeds, IntentionDispositionProfile,
     JusticeDispositionProfile, MetabolismProfile, PatrolProfile, PerceptionProfile,
-    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
-    WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
+    SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag, items::CommodityKind,
+    topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -39,6 +40,8 @@ pub struct PlaceDef {
     pub name: String,
     #[serde(default)]
     pub tags: Vec<PlaceTag>,
+    #[serde(default)]
+    pub visibility_profile: Option<PlaceVisibilityProfile>,
 }
 
 /// A travel edge connecting two places.
@@ -164,6 +167,7 @@ fn default_true() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use worldwake_core::Permille;
 
     /// Deserialize with RON extensions that the scenario loader will use.
     fn from_ron_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> T {
@@ -190,6 +194,7 @@ mod tests {
         assert_eq!(def.places.len(), 1);
         assert_eq!(def.places[0].name, "Village");
         assert_eq!(def.places[0].tags, vec![PlaceTag::Village]);
+        assert_eq!(def.places[0].visibility_profile, None);
         assert!(def.edges.is_empty());
         assert_eq!(def.agents.len(), 1);
         assert_eq!(def.agents[0].name, "Alice");
@@ -389,6 +394,49 @@ mod tests {
         assert_eq!(def.facilities[0].workstation, WorkstationTag::Forge);
         assert_eq!(def.resource_sources.len(), 1);
         assert_eq!(def.resource_sources[0].capacity, Quantity(20));
+    }
+
+    #[test]
+    fn test_place_def_deserializes_visibility_profile() {
+        let ron_str = r#"(
+            seed: 7,
+            places: [
+                (
+                    name: "Forest",
+                    tags: [Forest],
+                    visibility_profile: (
+                        base_concealment: 400,
+                    ),
+                ),
+            ],
+            agents: [
+                (name: "Scout", location: "Forest", control: Ai),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(
+            def.places[0].visibility_profile,
+            Some(PlaceVisibilityProfile {
+                base_concealment: Permille::new(400).unwrap(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_place_def_visibility_profile_defaults_to_none() {
+        let ron_str = r#"(
+            seed: 8,
+            places: [
+                (name: "Square", tags: [Village]),
+            ],
+            agents: [
+                (name: "Watcher", location: "Square", control: Ai),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(def.places[0].visibility_profile, None);
     }
 
     #[test]
