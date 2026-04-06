@@ -23,6 +23,8 @@ python3 scripts/golden_inventory.py --write --check-docs
 
 If this command fails, stop and report the error. Do not analyze stale generated docs.
 
+Exception: if the refresh fails because live `golden_*` source has missing or duplicate `// Scenario` metadata that the inventory tool reports directly, fix that local metadata problem first, rerun the command, and only stop if the refresh still fails or the failure is not clearly a local mechanical annotation issue.
+
 ### 2. Load context
 
 1. Resolve the completed spec from the provided spec identifier or spec path.

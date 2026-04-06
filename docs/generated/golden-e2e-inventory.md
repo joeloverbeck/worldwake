@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 21
 - Files contributing `golden_*` tests: 21
-- Total `golden_*` tests: 306
+- Total `golden_*` tests: 307
 
 ## Per-File Inventory
 
@@ -29,7 +29,7 @@ Do not hand-edit it.
 | `golden_reasoning_diversity.rs` | 2 |
 | `golden_resilience.rs` | 2 |
 | `golden_soak.rs` | 1 |
-| `golden_social.rs` | 17 |
+| `golden_social.rs` | 18 |
 | `golden_supply_chain.rs` | 2 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 11 |
@@ -358,6 +358,7 @@ Do not hand-edit it.
 - `golden_alarm_survives_stress_suppression`
 - `golden_class_aware_acceptance`
 - `golden_alarm_relay_through_stressed_intermediary`
+- `golden_contradictory_location_claims_coexist_and_direct_observation_wins`
 
 ### `golden_supply_chain.rs`
 
