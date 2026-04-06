@@ -141,7 +141,8 @@ pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBel
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
 pub use expectation::{
     ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord, ExpectationState,
-    LastSeenProvenance, LastSeenRecord, SearchCondition, SearchResult, SearchTarget,
+    ExpectationStore, LastSeenMemory, LastSeenProvenance, LastSeenRecord, SearchCondition,
+    SearchResult, SearchTarget,
 };
 pub use error::WorldError;
 pub use event_log::EventLog;

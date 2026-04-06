@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 28;
+pub const SAVE_FORMAT_VERSION: u32 = 29;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -197,9 +197,11 @@ mod tests {
     use worldwake_core::{
         ActionDefId, ActionDomain, AgentBeliefStore, BelievedActivity, BelievedEntityState,
         BodyCostPerTick, CauseRef, ClaimId, ClaimValue, CommodityKind, ControlSource,
-        EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload, PendingEvent,
-        PerceptionSource, Quantity, ReservationId, Seed, StateHash, Tick, TickRange,
-        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload, ExpectationBasis,
+        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, PendingEvent, PerceptionSource, Quantity,
+        ReservationId, Seed, StateHash, Tick, TickRange, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn,
         build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
@@ -340,6 +342,42 @@ mod tests {
             .unwrap();
         belief_txn
             .set_component_preference_profile(actor, sample_preference_profile())
+            .unwrap();
+        let mut expectation_store = ExpectationStore::default();
+        expectation_store.records.insert(
+            ExpectationId(1),
+            ExpectationRecord {
+                id: ExpectationId(1),
+                owner: actor,
+                subject: target,
+                expected_place: belief_place,
+                deadline_tick: Tick(8),
+                grace_ticks: 3,
+                basis: ExpectationBasis::RoutineReturn,
+                state: ExpectationState::Active,
+                created_tick: Tick(2),
+            },
+        );
+        belief_txn
+            .set_component_expectation_store(actor, expectation_store)
+            .unwrap();
+        belief_txn
+            .set_component_last_seen_memory(
+                actor,
+                LastSeenMemory {
+                    records: std::collections::BTreeMap::from([(
+                        target,
+                        LastSeenRecord {
+                            subject: target,
+                            place: belief_place,
+                            observed_tick: Tick(3),
+                            source: actor,
+                            provenance: LastSeenProvenance::DirectObservation,
+                        },
+                    )]),
+                    capacity: 7,
+                },
+            )
             .unwrap();
         let _ = belief_txn.commit(&mut event_log);
         let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
@@ -635,6 +673,40 @@ mod tests {
         assert_eq!(restored_claims[0].claim_id, ClaimId(1));
         assert_eq!(restored_claims[1].claim_id, ClaimId(2));
         assert_eq!(restored_belief.next_claim_id, ClaimId(3));
+        let restored_belief_place = restored_summary.last_known_place.unwrap();
+        let restored_expectation_store = restored
+            .world()
+            .get_component_expectation_store(actor)
+            .unwrap();
+        assert_eq!(
+            restored_expectation_store.records.get(&ExpectationId(1)),
+            Some(&ExpectationRecord {
+                id: ExpectationId(1),
+                owner: actor,
+                subject: target,
+                expected_place: restored_belief_place,
+                deadline_tick: Tick(8),
+                grace_ticks: 3,
+                basis: ExpectationBasis::RoutineReturn,
+                state: ExpectationState::Active,
+                created_tick: Tick(2),
+            })
+        );
+        let restored_last_seen_memory = restored
+            .world()
+            .get_component_last_seen_memory(actor)
+            .unwrap();
+        assert_eq!(restored_last_seen_memory.capacity, 7);
+        assert_eq!(
+            restored_last_seen_memory.records.get(&target),
+            Some(&LastSeenRecord {
+                subject: target,
+                place: restored_belief_place,
+                observed_tick: Tick(3),
+                source: actor,
+                provenance: LastSeenProvenance::DirectObservation,
+            })
+        );
     }
 
     #[test]

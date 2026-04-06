@@ -1,7 +1,8 @@
 //! Expectation, last-seen, and search substrate types shared across crates.
 
-use crate::{CommodityKind, EntityId, EvidenceKind, Quantity, Tick};
+use crate::{CommodityKind, Component, EntityId, EvidenceKind, Quantity, Tick};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 
 /// Unique identifier for an expectation record.
@@ -67,6 +68,24 @@ pub struct ExpectationRecord {
     pub created_tick: Tick,
 }
 
+/// Per-agent store of active expectations about other entities.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ExpectationStore {
+    pub records: BTreeMap<ExpectationId, ExpectationRecord>,
+    pub(crate) next_expectation_id: ExpectationId,
+}
+
+impl Default for ExpectationStore {
+    fn default() -> Self {
+        Self {
+            records: BTreeMap::new(),
+            next_expectation_id: ExpectationId(0),
+        }
+    }
+}
+
+impl Component for ExpectationStore {}
+
 /// A record of when and where an entity was last seen, with provenance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LastSeenRecord {
@@ -76,6 +95,24 @@ pub struct LastSeenRecord {
     pub source: EntityId,
     pub provenance: LastSeenProvenance,
 }
+
+/// Per-agent store of last-seen records for known entities.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LastSeenMemory {
+    pub records: BTreeMap<EntityId, LastSeenRecord>,
+    pub capacity: u16,
+}
+
+impl Default for LastSeenMemory {
+    fn default() -> Self {
+        Self {
+            records: BTreeMap::new(),
+            capacity: 20,
+        }
+    }
+}
+
+impl Component for LastSeenMemory {}
 
 /// Source provenance for a last-seen record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -128,10 +165,15 @@ pub enum SearchCondition {
 mod tests {
     use super::{
         ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord, ExpectationState,
-        LastSeenProvenance, LastSeenRecord, SearchCondition, SearchResult, SearchTarget,
+        ExpectationStore, LastSeenMemory, LastSeenProvenance, LastSeenRecord, SearchCondition,
+        SearchResult, SearchTarget,
     };
-    use crate::{CommodityKind, EntityId, EvidenceKind, Quantity, Tick};
+    use crate::{
+        CauseRef, CommodityKind, Component, ControlSource, EntityId, EventLog, EvidenceKind,
+        Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+    };
     use serde::{de::DeserializeOwned, Serialize};
+    use std::collections::BTreeMap;
     use std::fmt::{Debug, Display};
 
     fn entity(slot: u32) -> EntityId {
@@ -146,6 +188,7 @@ mod tests {
     fn assert_copy_value_bounds<T: Copy + Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
     fn assert_display_bounds<T: Display>() {}
+    fn assert_component_bounds<T: Component>() {}
 
     fn assert_roundtrip<T>(value: &T)
     where
@@ -163,12 +206,16 @@ mod tests {
         assert_copy_value_bounds::<ExpectationOutcome>();
         assert_copy_value_bounds::<ExpectationState>();
         assert_copy_value_bounds::<ExpectationRecord>();
+        assert_value_bounds::<ExpectationStore>();
         assert_copy_value_bounds::<LastSeenProvenance>();
         assert_copy_value_bounds::<LastSeenRecord>();
+        assert_value_bounds::<LastSeenMemory>();
         assert_copy_value_bounds::<SearchCondition>();
         assert_copy_value_bounds::<SearchTarget>();
         assert_value_bounds::<SearchResult>();
         assert_display_bounds::<ExpectationId>();
+        assert_component_bounds::<ExpectationStore>();
+        assert_component_bounds::<LastSeenMemory>();
     }
 
     #[test]
@@ -245,5 +292,117 @@ mod tests {
             ],
         });
         assert_roundtrip(&SearchResult::NothingFound);
+    }
+
+    #[test]
+    fn expectation_components_default_to_empty_agent_state() {
+        let expectation_store = ExpectationStore::default();
+        assert!(expectation_store.records.is_empty());
+        assert_eq!(expectation_store.next_expectation_id, ExpectationId(0));
+
+        let last_seen_memory = LastSeenMemory::default();
+        assert!(last_seen_memory.records.is_empty());
+        assert_eq!(last_seen_memory.capacity, 20);
+    }
+
+    #[test]
+    fn create_agent_seeds_default_expectation_components() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+
+        assert_eq!(
+            txn.get_component_expectation_store(agent),
+            Some(&ExpectationStore::default())
+        );
+        assert_eq!(
+            txn.get_component_last_seen_memory(agent),
+            Some(&LastSeenMemory::default())
+        );
+    }
+
+    #[test]
+    fn expectation_component_setters_roundtrip_through_world_api() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let mut event_log = EventLog::new();
+
+        let agent = {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(1),
+                CauseRef::Bootstrap,
+                None,
+                None,
+                VisibilitySpec::Hidden,
+                WitnessData::default(),
+            );
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let _ = txn.commit(&mut event_log);
+            agent
+        };
+
+        let expectation_store = ExpectationStore {
+            records: BTreeMap::from([(
+                ExpectationId(1),
+                ExpectationRecord {
+                    id: ExpectationId(1),
+                    owner: agent,
+                    subject: entity(20),
+                    expected_place: entity(21),
+                    deadline_tick: Tick(30),
+                    grace_ticks: 4,
+                    basis: ExpectationBasis::RoutineReturn,
+                    state: ExpectationState::Active,
+                    created_tick: Tick(10),
+                },
+            )]),
+            next_expectation_id: ExpectationId(2),
+        };
+        let last_seen_memory = LastSeenMemory {
+            records: BTreeMap::from([(
+                entity(22),
+                LastSeenRecord {
+                    subject: entity(22),
+                    place: entity(23),
+                    observed_tick: Tick(12),
+                    source: agent,
+                    provenance: LastSeenProvenance::DirectObservation,
+                },
+            )]),
+            capacity: 7,
+        };
+
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(13),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.set_component_expectation_store(agent, expectation_store.clone())
+            .unwrap();
+        txn.set_component_last_seen_memory(agent, last_seen_memory.clone())
+            .unwrap();
+        let _ = txn.commit(&mut event_log);
+
+        assert_eq!(
+            world.get_component_expectation_store(agent),
+            Some(&expectation_store)
+        );
+        assert_eq!(
+            world.get_component_last_seen_memory(agent),
+            Some(&last_seen_memory)
+        );
     }
 }

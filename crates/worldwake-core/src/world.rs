@@ -7,8 +7,9 @@ use crate::{
     ComponentValue, Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
     ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator,
     EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
-    FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame,
-    ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+    ExpectationStore, FactionData, HomeostaticNeeds, InTransitOnEdge,
+    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile,
+    KnownRecipes, LastSeenMemory, LoadUnits, LotOperation, MerchandiseProfile,
     MetabolismProfile, Name, NoticeContent, OfficeData, OfficeForceProfile, OfficeForceState,
     PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet,
     PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
@@ -157,6 +158,8 @@ impl World {
             world.insert_component_name(entity, Name(name.to_string()))?;
             world.insert_component_agent_data(entity, AgentData { control_source })?;
             world.insert_component_agent_belief_store(entity, AgentBeliefStore::new())?;
+            world.insert_component_expectation_store(entity, ExpectationStore::default())?;
+            world.insert_component_last_seen_memory(entity, LastSeenMemory::default())?;
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;

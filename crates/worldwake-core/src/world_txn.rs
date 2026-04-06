@@ -1952,10 +1952,10 @@ mod tests {
     };
     use crate::{
         BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
-        DeprivationExposure, EntityId, EntityKind, HomeostaticNeeds, LoadUnits, LotOperation, Name,
-        Permille, Place, PlaceTag, PlaceVisibilityProfile, Quantity, ReservationId,
-        ReservationRecord, ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World,
-        WorldError,
+        DeprivationExposure, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds,
+        LastSeenMemory, LoadUnits, LotOperation, Name, Permille, Place, PlaceTag,
+        PlaceVisibilityProfile, Quantity, ReservationId, ReservationRecord, ResourceSource, Tick,
+        TickRange, Topology, UniqueItemKind, World, WorldError,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
@@ -2358,6 +2358,18 @@ mod tests {
                     component_kind: ComponentKind::AgentBeliefStore,
                     before: None,
                     after: ComponentValue::AgentBeliefStore(AgentBeliefStore::new()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::ExpectationStore,
+                    before: None,
+                    after: ComponentValue::ExpectationStore(ExpectationStore::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::LastSeenMemory,
+                    before: None,
+                    after: ComponentValue::LastSeenMemory(LastSeenMemory::default()),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

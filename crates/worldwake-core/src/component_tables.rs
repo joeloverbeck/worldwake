@@ -16,6 +16,7 @@ use crate::{
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
+    expectation::{ExpectationStore, LastSeenMemory},
     evidence::SceneEvidence,
     execution_budget::ExecutionBudget,
     experience::{PreferenceProfile, RouteExperience, SourceReliability},
