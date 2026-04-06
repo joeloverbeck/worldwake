@@ -20,10 +20,13 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
+For trivial single-file additive tickets, scale the reassessment down deliberately: read the ticket, cited references, and owned symbol/file; confirm the dependency path is present; and run a narrow existence/fallout sweep for prior implementation or obvious constructor/usage fallout. Do not skip reassessment, but do not force the full matrix when the owned surface is genuinely small and local.
+
 #### Reference and baseline validation
 
 - Referenced files, types, functions, modules, commands, and tests exist.
 - When the ticket's owned surface is partially landed in the worktree, treat the live state as baseline; limit edits to the missing slice.
+- Check whether the active ticket file is tracked or untracked in the current worktree before recording reassessment notes or close-out edits. Untracked ticket drafts are valid active state, but treat diff/readback expectations accordingly.
 - Cross-check `Deps` against `What to Change` for additive tickets that assume earlier slices landed.
 - When roadmap summary, active spec, and live ticket disagree, compare all three and record which is authoritative.
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
@@ -314,6 +317,8 @@ If the user asked only for implementation or analysis, do not archive. Keep fact
 - For implementation-only completion, set `Status: COMPLETED` on the active ticket once the required verification surface has passed.
 - Append factual close-out notes to the active ticket using the same minimal structure expected later at archival: `## Outcome`, verification results, and any explicit deviations from the original ticket wording or scope that were accepted during reassessment.
 - If the active ticket is short-form or pre-template, add only the minimum missing sections needed to make reassessment and close-out traceable. The usual minimum is `## Assumption Reassessment`, `## Outcome`, optional `## Deviations`, and `## Verification Result`.
+
+Default assumption: unless the user explicitly asks to archive, says "full ticket completion," or otherwise requests the archival workflow, treat the task as implementation-only and do not archive in this turn.
 
 Before finishing:
 - Re-check `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff. Remove reassessment-only fallout that did not become real edits.

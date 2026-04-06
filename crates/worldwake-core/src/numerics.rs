@@ -25,6 +25,8 @@ impl fmt::Display for LoadUnits {
 pub struct Permille(u16);
 
 impl Permille {
+    pub const ZERO: Self = Self(0);
+
     /// Create a new `Permille` value, returning an error if out of range.
     pub fn new(value: u16) -> Result<Self, &'static str> {
         if value > 1000 {
@@ -115,6 +117,13 @@ mod tests {
     fn permille_unchecked_compile_time() {
         const P: Permille = Permille::new_unchecked(500);
         assert_eq!(P.value(), 500);
+    }
+
+    #[test]
+    fn permille_zero_constant() {
+        const ZERO: Permille = Permille::ZERO;
+        assert_eq!(ZERO.value(), 0);
+        assert_eq!(ZERO, Permille::new_unchecked(0));
     }
 
     #[test]
