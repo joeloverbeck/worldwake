@@ -38,6 +38,7 @@ The semantic gap: "owning the commodity" is not the same as "having consumed it 
 2. An agent that owns a consumable commodity AND has the corresponding need elevated actually dispatches the consume action (eat/drink)
 3. All existing golden tests continue to pass (especially `golden_thirst_driven_acquisition`)
 4. The fix correctly distinguishes "possession for future consumption" from "consumption to satisfy current need"
+5. Scenario 84 in `golden_merchant_selling.rs` can be tightened to assert `saw_staff_market` (currently asserts only travel + arrival due to this same terminal issue blocking `staff_market` dispatch)
 
 ## Investigation Pointers
 
