@@ -709,21 +709,19 @@ impl<'snapshot> PlanningState<'snapshot> {
         let Some(thresholds) = self.drive_thresholds(actor) else {
             return self;
         };
-
-        match commodity {
-            CommodityKind::Bread | CommodityKind::Apple | CommodityKind::Grain => {
+        if let Some(profile) = commodity.spec().consumable_profile {
+            if profile.hunger_relief_per_unit.value() > 0 {
                 needs.hunger = thresholds
                     .hunger
                     .low()
                     .saturating_sub(Permille::new(1).unwrap());
             }
-            CommodityKind::Water => {
+            if profile.thirst_relief_per_unit.value() > 0 {
                 needs.thirst = thresholds
                     .thirst
                     .low()
                     .saturating_sub(Permille::new(1).unwrap());
             }
-            _ => {}
         }
 
         self.needs_overrides.insert(actor, needs);
@@ -2982,6 +2980,18 @@ mod tests {
                 .hunger
                 < thresholds.hunger.low()
         );
+    }
+
+    #[test]
+    fn consume_override_applies_all_relieved_drive_bands_for_multi_effect_food() {
+        let (view, actor, _town, _field, _bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot).consume_commodity(CommodityKind::Apple);
+        let thresholds = RuntimeBeliefView::drive_thresholds(&state, actor).unwrap();
+        let needs = RuntimeBeliefView::homeostatic_needs(&state, actor).unwrap();
+
+        assert!(needs.hunger < thresholds.hunger.low());
+        assert!(needs.thirst < thresholds.thirst.low());
     }
 
     #[test]

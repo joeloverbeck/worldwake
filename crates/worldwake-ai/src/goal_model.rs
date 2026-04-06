@@ -802,14 +802,21 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => state,
             },
-            PlannerOpKind::Sleep => update_actor_needs(state, |needs, thresholds| {
-                needs.fatigue = below_medium(thresholds.fatigue.medium());
+            PlannerOpKind::Sleep => {
+                let Some(mut needs) = state.homeostatic_needs(actor) else {
+                    return state;
+                };
+                let Some(profile) = state.metabolism_profile(actor) else {
+                    return state;
+                };
+                needs.fatigue = needs.fatigue.saturating_sub(profile.rest_efficiency);
+                state.with_homeostatic_needs(actor, needs)
+            }
+            PlannerOpKind::Relieve => update_actor_needs(state, |needs, _thresholds| {
+                needs.bladder = Permille::new_unchecked(0);
             }),
-            PlannerOpKind::Relieve => update_actor_needs(state, |needs, thresholds| {
-                needs.bladder = below_medium(thresholds.bladder.medium());
-            }),
-            PlannerOpKind::Wash => update_actor_needs(state, |needs, thresholds| {
-                needs.dirtiness = below_medium(thresholds.dirtiness.medium());
+            PlannerOpKind::Wash => update_actor_needs(state, |needs, _thresholds| {
+                needs.dirtiness = Permille::new_unchecked(0);
             }),
             PlannerOpKind::Heal => match self {
                 GoalKind::TreatWounds { patient } => {
@@ -1075,13 +1082,16 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(thresholds) = state.drive_thresholds(actor) else {
                     return false;
                 };
-                match commodity {
-                    CommodityKind::Bread | CommodityKind::Apple | CommodityKind::Grain => {
-                        needs.hunger < thresholds.hunger.medium()
-                    }
-                    CommodityKind::Water => needs.thirst < thresholds.thirst.medium(),
-                    _ => false,
-                }
+                commodity
+                    .spec()
+                    .consumable_profile
+                    .is_some_and(|profile| {
+                        let relieves_hunger = profile.hunger_relief_per_unit.value() > 0
+                            && needs.hunger >= thresholds.hunger.low();
+                        let relieves_thirst = profile.thirst_relief_per_unit.value() > 0
+                            && needs.thirst >= thresholds.thirst.low();
+                        !(relieves_hunger || relieves_thirst)
+                    })
             }
             GoalKind::AcquireCommodity { commodity, purpose } => match purpose {
                 CommodityPurpose::SelfConsume
@@ -1093,15 +1103,15 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Sleep => state
                 .homeostatic_needs(actor)
                 .zip(state.drive_thresholds(actor))
-                .is_some_and(|(needs, thresholds)| needs.fatigue < thresholds.fatigue.medium()),
+                .is_some_and(|(needs, thresholds)| needs.fatigue < thresholds.fatigue.low()),
             GoalKind::Relieve => state
                 .homeostatic_needs(actor)
                 .zip(state.drive_thresholds(actor))
-                .is_some_and(|(needs, thresholds)| needs.bladder < thresholds.bladder.medium()),
+                .is_some_and(|(needs, thresholds)| needs.bladder < thresholds.bladder.low()),
             GoalKind::Wash => state
                 .homeostatic_needs(actor)
                 .zip(state.drive_thresholds(actor))
-                .is_some_and(|(needs, thresholds)| needs.dirtiness < thresholds.dirtiness.medium()),
+                .is_some_and(|(needs, thresholds)| needs.dirtiness < thresholds.dirtiness.low()),
             GoalKind::EngageHostile { target } | GoalKind::RaidTarget { target } => {
                 state.is_dead(*target)
             }
@@ -1885,10 +1895,6 @@ fn apply_threaten_for_office<'s>(
     } else {
         state
     }
-}
-
-fn below_medium(medium: Permille) -> Permille {
-    medium.saturating_sub(Permille::new(1).unwrap())
 }
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -4612,12 +4618,122 @@ mod tests {
 
         view.needs.insert(
             actor,
+            HomeostaticNeeds::new(pm(400), pm(0), pm(700), pm(0), pm(0)),
+        );
+        let low_band_snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let low_band_state = PlanningState::new(&low_band_snapshot);
+        assert!(
+            !goal.is_satisfied(&low_band_state),
+            "ConsumeOwnedCommodity must remain unsatisfied in the [low, medium) hunger band so search cannot return a zero-step root success"
+        );
+
+        view.needs.insert(
+            actor,
             HomeostaticNeeds::new(pm(100), pm(0), pm(700), pm(0), pm(0)),
         );
         let satiated_snapshot =
             build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
         let satiated_state = PlanningState::new(&satiated_snapshot);
         assert!(goal.is_satisfied(&satiated_state));
+    }
+
+    #[test]
+    fn consume_goal_remains_unsatisfied_when_multi_relief_food_can_still_reduce_thirst() {
+        let (mut view, actor, _seller) = base_view();
+        let goal = GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Apple,
+        };
+
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(184), pm(586), pm(700), pm(0), pm(0)),
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let state = PlanningState::new(&snapshot);
+
+        assert!(
+            !goal.is_satisfied(&state),
+            "Apple still relieves thirst in this state, so ConsumeOwnedCommodity(Apple) must not clear at the root node"
+        );
+    }
+
+    #[test]
+    fn self_care_goals_remain_unsatisfied_in_low_band() {
+        let (mut view, actor, _seller) = base_view();
+        let thresholds = DriveThresholds::default();
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(
+                pm(0),
+                pm(0),
+                thresholds.fatigue.low(),
+                thresholds.bladder.low(),
+                thresholds.dirtiness.low(),
+            ),
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let state = PlanningState::new(&snapshot);
+
+        assert!(
+            !GoalKind::Sleep.is_satisfied(&state),
+            "Sleep must remain unsatisfied in the [low, medium) fatigue band"
+        );
+        assert!(
+            !GoalKind::Relieve.is_satisfied(&state),
+            "Relieve must remain unsatisfied in the [low, medium) bladder band"
+        );
+        assert!(
+            !GoalKind::Wash.is_satisfied(&state),
+            "Wash must remain unsatisfied in the [low, medium) dirtiness band"
+        );
+
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(
+                pm(0),
+                pm(0),
+                thresholds.fatigue.low().saturating_sub(pm(1)),
+                thresholds.bladder.low().saturating_sub(pm(1)),
+                thresholds.dirtiness.low().saturating_sub(pm(1)),
+            ),
+        );
+        let relieved_snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let relieved_state = PlanningState::new(&relieved_snapshot);
+
+        assert!(GoalKind::Sleep.is_satisfied(&relieved_state));
+        assert!(GoalKind::Relieve.is_satisfied(&relieved_state));
+        assert!(GoalKind::Wash.is_satisfied(&relieved_state));
+    }
+
+    #[test]
+    fn sleep_planner_transition_accumulates_rest_efficiency_until_low_band_clears() {
+        let (mut view, actor, _seller) = base_view();
+        view.needs.insert(
+            actor,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(350), pm(0), pm(0)),
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let state = PlanningState::new(&snapshot);
+
+        let once = GoalKind::Sleep.apply_planner_step(state, PlannerOpKind::Sleep, &[], None);
+        assert_eq!(once.homeostatic_needs(actor).unwrap().fatigue, pm(330));
+        assert!(
+            !GoalKind::Sleep.is_satisfied(&once),
+            "one sleep tick should not falsely satisfy fatigue=350 under the low-band contract"
+        );
+
+        let twice = GoalKind::Sleep.apply_planner_step(once, PlannerOpKind::Sleep, &[], None);
+        assert_eq!(twice.homeostatic_needs(actor).unwrap().fatigue, pm(310));
+        assert!(!GoalKind::Sleep.is_satisfied(&twice));
+
+        let thrice = GoalKind::Sleep.apply_planner_step(twice, PlannerOpKind::Sleep, &[], None);
+        assert_eq!(thrice.homeostatic_needs(actor).unwrap().fatigue, pm(290));
+        assert!(GoalKind::Sleep.is_satisfied(&thrice));
     }
 
     #[test]

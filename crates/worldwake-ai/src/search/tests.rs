@@ -6974,7 +6974,7 @@ fn test_binding_flexible_goal_unaffected() {
     view.entities_at.insert(town, vec![actor]);
     view.needs.insert(
         actor,
-        HomeostaticNeeds::new(pm(0), pm(0), pm(800), pm(0), pm(0)),
+        HomeostaticNeeds::new(pm(0), pm(0), pm(300), pm(0), pm(0)),
     );
     view.thresholds.insert(actor, DriveThresholds::default());
 
@@ -7007,7 +7007,9 @@ fn test_binding_flexible_goal_unaffected() {
         None,
     );
 
-    let plan = result.into_plan().expect("search should find a sleep plan");
+    let plan = result
+        .into_plan()
+        .expect("search should find a low-band sleep plan");
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Sleep);
     assert!(
         rejections.is_empty(),
