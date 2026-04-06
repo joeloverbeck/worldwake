@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, NoticeTopic,
-    ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource, TellTopic,
-    Tick, UniqueItemKind, ViolationId, WorkstationTag,
+    ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, ExpectationId,
+    NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId,
+    RewardSource, TellTopic, Tick, UniqueItemKind, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -27,6 +27,7 @@ pub enum ActionPayload {
     Loot(LootActionPayload),
     Investigate(InvestigateActionPayload),
     AskWitness(AskWitnessPayload),
+    ReportMissing(ReportMissingActionPayload),
     QueueForFacilityUse(QueueForFacilityUsePayload),
     StaffMarket(StaffMarketPayload),
     PostBounty(PostBountyActionPayload),
@@ -187,6 +188,14 @@ impl ActionPayload {
     }
 
     #[must_use]
+    pub const fn as_report_missing(&self) -> Option<&ReportMissingActionPayload> {
+        match self {
+            Self::ReportMissing(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub const fn as_staff_market(&self) -> Option<&StaffMarketPayload> {
         match self {
             Self::StaffMarket(payload) => Some(payload),
@@ -323,6 +332,11 @@ pub struct AskWitnessPayload {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct ReportMissingActionPayload {
+    pub expectation_id: ExpectationId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct QueueForFacilityUsePayload {
     pub intended_action: ActionDefId,
 }
@@ -363,14 +377,15 @@ mod tests {
         DeclareSupportActionPayload, EstablishCampActionPayload, HarvestActionPayload,
         InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
         PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
-        QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload, ThreatenActionPayload,
-        TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
+        QueueForFacilityUsePayload, ReportMissingActionPayload, StaffMarketPayload,
+        TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        YieldForceClaimActionPayload,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{
-        ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, NoticeTopic,
-        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource,
-        TellTopic, Tick, UniqueItemKind, ViolationId, WorkstationTag,
+        ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, ExpectationId,
+        NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId,
+        RewardSource, TellTopic, Tick, UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -568,6 +583,12 @@ mod tests {
         }
     }
 
+    fn sample_report_missing_payload() -> ReportMissingActionPayload {
+        ReportMissingActionPayload {
+            expectation_id: ExpectationId(42),
+        }
+    }
+
     fn sample_post_bounty_payload() -> PostBountyActionPayload {
         PostBountyActionPayload {
             posting_place: EntityId {
@@ -660,6 +681,7 @@ mod tests {
         assert_traits::<CombatActionPayload>();
         assert_traits::<LootActionPayload>();
         assert_traits::<InvestigateActionPayload>();
+        assert_traits::<ReportMissingActionPayload>();
         assert_traits::<QueueForFacilityUsePayload>();
         assert_traits::<AskWitnessPayload>();
         assert_traits::<StaffMarketPayload>();
@@ -686,6 +708,7 @@ mod tests {
         let declare_support = ActionPayload::DeclareSupport(sample_declare_support_payload());
         let press_force_claim = ActionPayload::PressForceClaim(sample_press_force_claim_payload());
         let yield_force_claim = ActionPayload::YieldForceClaim(sample_yield_force_claim_payload());
+        let report_missing = ActionPayload::ReportMissing(sample_report_missing_payload());
 
         assert_eq!(
             consult.as_consult_record(),
@@ -748,6 +771,7 @@ mod tests {
         assert_eq!(threaten.as_transport(), None);
         assert_eq!(threaten.as_craft(), None);
         assert_eq!(threaten.as_trade(), None);
+        assert_eq!(threaten.as_report_missing(), None);
 
         assert_eq!(accuse.as_consult_record(), None);
         assert_eq!(accuse.as_tell(), None);
@@ -756,6 +780,7 @@ mod tests {
         assert_eq!(accuse.as_accuse(), Some(&sample_accuse_payload()));
         assert_eq!(accuse.as_punish(), None);
         assert_eq!(accuse.as_establish_camp(), None);
+        assert_eq!(accuse.as_report_missing(), None);
 
         assert_eq!(punish.as_consult_record(), None);
         assert_eq!(punish.as_tell(), None);
@@ -840,6 +865,15 @@ mod tests {
             Some(&sample_yield_force_claim_payload())
         );
         assert_eq!(yield_force_claim.as_harvest(), None);
+
+        assert_eq!(report_missing.as_consult_record(), None);
+        assert_eq!(report_missing.as_tell(), None);
+        assert_eq!(report_missing.as_accuse(), None);
+        assert_eq!(
+            report_missing.as_report_missing(),
+            Some(&sample_report_missing_payload())
+        );
+        assert_eq!(report_missing.as_queue_for_facility_use(), None);
     }
 
     #[test]
@@ -908,6 +942,7 @@ mod tests {
         let investigate = ActionPayload::Investigate(sample_investigate_payload());
         let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
         let ask_witness = ActionPayload::AskWitness(sample_ask_witness_payload());
+        let report_missing = ActionPayload::ReportMissing(sample_report_missing_payload());
         let post_bounty = ActionPayload::PostBounty(sample_post_bounty_payload());
         let post_notice = ActionPayload::PostNotice(sample_post_notice_payload());
 
@@ -995,13 +1030,22 @@ mod tests {
             ask_witness.as_ask_witness(),
             Some(&sample_ask_witness_payload())
         );
+        assert_eq!(ask_witness.as_report_missing(), None);
         assert_eq!(ask_witness.as_post_bounty(), None);
         assert_eq!(ask_witness.as_post_notice(), None);
+
+        assert_eq!(
+            report_missing.as_report_missing(),
+            Some(&sample_report_missing_payload())
+        );
+        assert_eq!(report_missing.as_post_bounty(), None);
+        assert_eq!(report_missing.as_ask_witness(), None);
 
         assert_eq!(
             post_bounty.as_post_bounty(),
             Some(&sample_post_bounty_payload())
         );
+        assert_eq!(post_bounty.as_report_missing(), None);
         assert_eq!(post_bounty.as_post_notice(), None);
         assert_eq!(post_bounty.as_trade(), None);
 
@@ -1009,6 +1053,7 @@ mod tests {
             post_notice.as_post_notice(),
             Some(&sample_post_notice_payload())
         );
+        assert_eq!(post_notice.as_report_missing(), None);
         assert_eq!(post_notice.as_post_bounty(), None);
         assert_eq!(post_notice.as_tell(), None);
     }
@@ -1034,6 +1079,7 @@ mod tests {
         assert_eq!(none.as_investigate(), None);
         assert_eq!(none.as_queue_for_facility_use(), None);
         assert_eq!(none.as_ask_witness(), None);
+        assert_eq!(none.as_report_missing(), None);
         assert_eq!(none.as_post_bounty(), None);
         assert_eq!(none.as_post_notice(), None);
     }

@@ -172,6 +172,8 @@ When the ticket inherits broader spec language, distinguish the end-state archit
 
 When the parent spec describes an eventual causal story but the current ticket only owns substrate or maintenance scaffolding, keep those separate explicitly. If the spec's end-state locality or behavior prose is broader than the live mechanism this ticket can honestly land, narrow the ticket to the current owned mechanism and name the deferred downstream behavior instead of over-claiming the present slice.
 
+When a ticket bundles multiple deliverables and reassessment narrows the ticket to only one lawful slice, verify explicitly that every removed deliverable is still owned by an existing active ticket. If any removed deliverable no longer has a live owner, create the follow-up ticket before coding instead of leaving that work implicit.
+
 If the ticket's requested invariant exposes a production contradiction, correct the scope first.
 
 #### Golden scope narrowing

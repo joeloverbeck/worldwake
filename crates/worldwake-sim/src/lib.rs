@@ -71,8 +71,9 @@ pub use action_payload::{
     ConsultRecordActionPayload, CraftActionPayload, DeclareSupportActionPayload,
     EstablishCampActionPayload, HarvestActionPayload, InvestigateActionPayload, LootActionPayload,
     PostBountyActionPayload, PostNoticeActionPayload, PressForceClaimActionPayload,
-    PunishActionPayload, QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload,
-    ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+    PunishActionPayload, QueueForFacilityUsePayload, ReportMissingActionPayload,
+    StaffMarketPayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+    TransportActionPayload,
     YieldForceClaimActionPayload,
 };
 pub use action_semantics::{

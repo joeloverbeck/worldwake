@@ -10,8 +10,9 @@ use crate::{
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, InstitutionalClaim, PunishmentFineStartFailureTrace,
-    PunishmentFineTraceFacts, PunishmentKind, RecordKind, TellTopic, Tick, ViolationId, World,
+    ActionDefId, CommodityKind, EntityId, ExpectationId, InstitutionalClaim,
+    PunishmentFineStartFailureTrace, PunishmentFineTraceFacts, PunishmentKind, RecordKind,
+    TellTopic, Tick, ViolationId, World,
 };
 
 /// A single action lifecycle event recorded during `step_tick()`.
@@ -40,6 +41,9 @@ pub enum ActionTraceDetail {
         target: EntityId,
         topic_entity: Option<EntityId>,
         topic_commodity: Option<CommodityKind>,
+    },
+    ReportMissing {
+        expectation_id: ExpectationId,
     },
 }
 
@@ -357,6 +361,9 @@ impl ActionTraceDetail {
                 topic_entity: payload.topic_entity,
                 topic_commodity: payload.topic_commodity,
             }),
+            ActionPayload::ReportMissing(payload) => Some(Self::ReportMissing {
+                expectation_id: payload.expectation_id,
+            }),
             ActionPayload::None
             | ActionPayload::ConsultRecord(_)
             | ActionPayload::Bribe(_)
@@ -397,6 +404,9 @@ impl ActionTraceDetail {
                 format!(
                     "ask_witness target {target} entity {topic_entity:?} commodity {topic_commodity:?}"
                 )
+            }
+            Self::ReportMissing { expectation_id } => {
+                format!("report_missing expectation {expectation_id}")
             }
         }
     }
@@ -719,6 +729,20 @@ mod tests {
     }
 
     #[test]
+    fn detail_from_payload_extracts_report_missing_identity() {
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::ReportMissing(
+                crate::ReportMissingActionPayload {
+                    expectation_id: worldwake_core::ExpectationId(9),
+                }
+            )),
+            Some(ActionTraceDetail::ReportMissing {
+                expectation_id: worldwake_core::ExpectationId(9),
+            })
+        );
+    }
+
+    #[test]
     fn summary_includes_typed_detail_when_present() {
         let listener = EntityId {
             slot: 7,
@@ -857,6 +881,24 @@ mod tests {
         assert!(summary.contains("ask_witness target"));
         assert!(summary.contains(&target.to_string()));
         assert!(summary.contains("Apple"));
+    }
+
+    #[test]
+    fn summary_includes_report_missing_detail_when_present() {
+        let committed = sample_event(
+            2,
+            ActionTraceKind::Committed {
+                instance_id: ActionInstanceId(1),
+                outcome: CommitOutcome::empty(),
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::ReportMissing {
+            expectation_id: worldwake_core::ExpectationId(12),
+        }));
+
+        let summary = committed.summary();
+        assert!(summary.contains("committed"));
+        assert!(summary.contains("report_missing expectation exp12"));
     }
 
     #[test]
