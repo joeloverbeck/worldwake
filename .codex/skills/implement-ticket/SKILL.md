@@ -69,6 +69,7 @@ Specific persisted-shape checks:
 #### Action and behavior domain checks
 
 - When a ticket mixes action admission rules with periodic maintenance behavior, identify which layer already owns each invariant.
+- When a system or maintenance ticket claims a new transition-specific event/log surface, verify first whether ordinary `WorldTxn` component-delta events are already the canonical carrier. Do not widen scope to a bespoke event payload unless the live codebase actually needs a new carrier.
 - When attaching aftermath or evidence to an existing action family, verify whether the handler spans multiple custody, location, or target subcases. Narrow to the applicable subtype.
 - When the ticket relies on passive perception of place-bound state, verify the place entity is observed through the same path as co-located entities. If not, correct the ticket to own the explicit current-place projection path.
 - When the ticket changes contested access to a scarce affordance, decide explicitly whether the domain uses pure race resolution or lawful waiting via queue/grant/reservation. Surface contradictions with 1-3-1.
@@ -168,6 +169,8 @@ Separate:
 - explicit out-of-scope work
 
 When the ticket inherits broader spec language, distinguish the end-state architecture claim from the narrower contract this ticket owns after reassessment. Do not keep proof surface broad just because the parent spec states the larger destination.
+
+When the parent spec describes an eventual causal story but the current ticket only owns substrate or maintenance scaffolding, keep those separate explicitly. If the spec's end-state locality or behavior prose is broader than the live mechanism this ticket can honestly land, narrow the ticket to the current owned mechanism and name the deferred downstream behavior instead of over-claiming the present slice.
 
 If the ticket's requested invariant exposes a production contradiction, correct the scope first.
 
