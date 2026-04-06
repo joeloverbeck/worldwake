@@ -9,7 +9,7 @@ use golden_harness::*;
 use worldwake_ai::{
     AgentDecisionRuntime, CommodityPurpose, DecisionOutcome, ExhaustionBaseline, ExhaustionEntry,
     ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind, OpportunityAnchor,
-    OpportunityKey, PlannerOpKind, SelectedPlanSource,
+    OpportunityKey, PlanTerminalKind, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
     BeliefConfidencePolicy, CommodityKind, FrameState, HomeostaticNeeds,
@@ -1040,7 +1040,7 @@ impl TripleNeedScenario {
             &mut harness.event_log,
             "Nia",
             VILLAGE_SQUARE,
-            HomeostaticNeeds::new(pm(900), pm(900), pm(920), pm(0), pm(0)),
+            HomeostaticNeeds::new(pm(900), pm(900), pm(320), pm(0), pm(0)),
             MetabolismProfile::default(),
             UtilityProfile {
                 hunger_weight: pm(800),
@@ -1091,7 +1091,7 @@ impl TripleNeedScenario {
     fn run(&mut self) -> TripleNeedMilestones {
         let mut milestones = TripleNeedMilestones::default();
 
-        for tick in 0..100 {
+        for tick in 0..200 {
             self.harness.step_once();
             self.capture_first_action(&mut milestones);
             self.assert_local_supply_conservation();
@@ -2252,10 +2252,6 @@ fn golden_trace_enabled_scenario() {
 //   falls back to hunger-relief -> agent eats or sleeps.
 
 #[test]
-#[ignore = "TK-2: ConsumeOwnedCommodity terminal considers possession as goal-satisfied \
-    (0 steps), so agent never dispatches eat. Root cause: planner terminal condition \
-    for ConsumeOwnedCommodity checks commodity ownership, not consumption. \
-    See tickets/TK-2-consume-owned-terminal.md"]
 fn golden_fallback_to_addressable_need_when_top_need_unsatisfiable() {
     let mut h = GoldenHarness::new(Seed([100; 32]));
 
@@ -2289,6 +2285,7 @@ fn golden_fallback_to_addressable_need_when_top_need_unsatisfiable() {
 
     h.driver.enable_tracing();
 
+    let initial_apples = h.agent_commodity_qty(agent, CommodityKind::Apple);
     let mut ate = false;
     let mut slept = false;
     let mut max_idle = 0u32;
@@ -2314,6 +2311,13 @@ fn golden_fallback_to_addressable_need_when_top_need_unsatisfiable() {
             false
         };
 
+        if h.agent_commodity_qty(agent, CommodityKind::Apple) < initial_apples {
+            ate = true;
+        }
+        if h.agent_active_action_name(agent) == Some("sleep") {
+            slept = true;
+        }
+
         if had_action {
             consecutive_idle = 0;
         } else {
@@ -2326,12 +2330,49 @@ fn golden_fallback_to_addressable_need_when_top_need_unsatisfiable() {
         }
     }
 
+    let decision_summaries = h
+        .driver
+        .trace_sink()
+        .map(|sink| {
+            sink.traces_for(agent)
+                .into_iter()
+                .map(|trace| format!("{:?}: {}", trace.tick, trace.outcome.summary()))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    let zero_step_self_care = h
+        .driver
+        .trace_sink()
+        .map(|sink| {
+            sink.traces_for(agent)
+                .into_iter()
+                .filter_map(|trace| {
+                    let DecisionOutcome::Planning(planning) = &trace.outcome else {
+                        return None;
+                    };
+                    let selected_goal = planning.selection.selected_goal()?;
+                    let selected_plan = planning.selection.selected_plan.as_ref()?;
+                    (matches!(selected_goal.kind, GoalKind::Sleep | GoalKind::Relieve)
+                        && selected_plan.terminal_kind == PlanTerminalKind::GoalSatisfied
+                        && selected_plan.steps.is_empty())
+                    .then(|| format!("{:?}: {}", trace.tick, trace.outcome.summary()))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
     assert!(
         ate || slept,
-        "Agent with unsatisfiable thirst should still eat or sleep — got neither in 200 ticks (max idle streak: {max_idle})"
+        "Agent with unsatisfiable thirst should still eat or sleep — got neither in 200 ticks (max idle streak: {max_idle})\n{decision_summaries}"
     );
     assert!(
         max_idle < 100,
-        "Agent should not be idle for 100+ consecutive ticks, was idle for {max_idle}"
+        "Agent should not be idle for 100+ consecutive ticks before falling back to an addressable need, was idle for {max_idle}\n{decision_summaries}"
+    );
+    assert!(
+        zero_step_self_care.is_empty(),
+        "low-band Sleep/Relieve goals must not collapse into zero-step GoalSatisfied selections:\n{}",
+        zero_step_self_care.join("\n")
     );
 }

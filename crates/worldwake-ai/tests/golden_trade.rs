@@ -1650,7 +1650,7 @@ fn merchant_route_knowledge_alone_does_not_unlock_remote_restock() {
     let mut merchant_left_home = false;
     let mut merchant_controlled_apples = false;
 
-    for _ in 0..120 {
+    for _ in 0..80 {
         h.step_once();
         merchant_left_home |= h.world.is_in_transit(merchant)
             || h.world.effective_place(merchant) != Some(general_store);

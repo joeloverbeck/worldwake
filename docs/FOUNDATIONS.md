@@ -210,6 +210,8 @@ Goals name desired world conditions, not privileged one-step solutions. Reaching
 
 The implementation may evolve — GOAP, utility systems, BDI, HTN, or hybrids are all acceptable — but the standard does not change: decisions must be explainable as what this agent, with this belief state and these priorities, would try to do.
 
+Any planner formalism may encode only reusable lawful affordances, decomposition knowledge, or search control. It may not encode plot progression, scene-specific rails, target-specific success paths, or hidden exception logic that bypasses ordinary world causality. HTN methods, utility bonuses, candidate filters, and behavior tree branches are acceptable only when they express how this kind of agent pursues this kind of world condition under these beliefs — not how a desired story beat is supposed to happen.
+
 To remain tractable, agents may use agent-local summaries, heuristics, and bounded lookahead derived from their accessible belief state. These abstractions are legal because they are part of the agent’s reasoning apparatus, not substitutes for authoritative world state. They must remain explainable in terms of what this agent has perceived, remembered, been told, or inferred.
 
 **Test**: For any decision, you must be able to explain it as “Agent X chose Y because they believed Z and cared about Q.” If the explanation is “the behavior tree hit this node” or “the quest logic told them to,” the design violates this principle.
@@ -231,6 +233,16 @@ Agents in the same role must differ in needs, skills, values, loyalties, courage
 Homogeneous populations collapse into herd behavior and single-path outcomes. Diversity is not garnish. It is one of the engines of emergence.
 
 **Test**: Two agents with the same role and similar beliefs should still sometimes choose differently because they are not the same person.
+
+### 22A. Learning, Habits, and Preference Shifts Are Concrete State
+
+Agents may adapt through experience, but adaptation and learning must occur through explicit state change: memory update, skill change, trust revision, habit reinforcement, blocked-intent record, source reliability shift, route preference, institutional doctrine, or similar concrete state. Learning may change what an agent notices, prefers, avoids, retries, or suppresses.
+
+These learned structures must have accountable origin, scope, and decay. The model should be able to say what experience produced the update, when it was acquired, whose state it belongs to, what can revise it, and how it fades or is overwritten.
+
+Agent-local learned summaries are legal even when abstract — route danger expectation, seller reliability, social trust, habit strength — because they are not world truth. They are fallible decision state owned by a particular agent or institution. What is forbidden is hidden global adaptation that silently rewrites behavior for drama or convenience.
+
+**Test**: If the explanation for a changed future choice is only “the AI learned,” without an inspectable experience path and a concrete stored update, the design is cheating.
 
 ### 23. Roles, Offices, and Institutions Are World State
 
@@ -268,6 +280,16 @@ A bounty is a public offer or institutional order with an issuer, conditions, re
 If these are only UI abstractions or hidden controller state, emergence dies.
 
 **Test**: If a bounty can exist without an issuer, a record, a place, conditions, and a possible reward source, it is not a world object — it is scripted content.
+
+### 25A. Artifact Lifecycle, Visibility, and Actionability Are Distinct
+
+Records and artifacts can remain real after they stop authorizing action. A bounty may be expired yet still posted. A sale listing may persist until invalidated by departure, death, or unstaging. A warning may remain visible after the threat has moved. Evidence may decay before it disappears.
+
+Every artifact class must declare its lifecycle states, transitions, timestamps, invalidators, observers, and legal effects. Existence, visibility, credibility, legality, and actionability are separate axes. Do not collapse them into a single boolean.
+
+Lifecycle transitions must occur through explicit world processes: expiry, fulfillment, revocation, destruction, supersession, departure, death, adjudication, consultation, or decay. Cleanup code may remove representation only after the world meaning of the state transition already exists.
+
+**Test**: If removing an artifact’s active effect requires deleting the artifact itself, or if an artifact can keep generating lawful action after its basis ended because the model knows only “exists/does not exist,” the artifact model is too crude.
 
 ---
 
@@ -321,24 +343,37 @@ The answers must be reconstructable from state, beliefs, records, and causal his
 
 **Test**: For any nontrivial event chain, you must be able to inspect both the causal path and the knowledge path separately.
 
+### 29A. Causal History Is Authoritative, Append-Only, and Queryable
+
+Meaningful world changes must leave stable historical records. Events may be summarized, indexed, or compacted for storage, but the authoritative history must behave as append-only: later evidence may supersede an earlier claim, refute a belief, or close a case, yet it does not erase that the earlier event, claim, belief, or judgment occurred.
+
+History must preserve enough structure to answer provenance questions over entities, activities, and responsible agents: what happened, when, where, who acted, what prior event or state it depended on, and what aftermath or records it created. Debug traces are not enough if they are optional, transient, or outside the authoritative model.
+
+This applies equally to social and physical history. A false accusation remains part of history after exoneration. An expired bounty remains a record of having once been active. A looted corpse still has a prior holder chain. A canceled plan still has a blocker or invalidator.
+
+**Test**: If a later state can only be explained by reading ad hoc logs or source code, or if contradicting later facts require rewriting prior history instead of appending new history, the model is not explainable enough.
+
 ### 30. Every New System Spec Must Declare Its Causal Hooks
 
 Every system proposal must explicitly state:
-1. what concrete entities, relations, and records it introduces,
-2. what actions or world processes mutate them,
-3. what information it produces, how that information travels, and who can observe it,
-4. what quantities it conserves, transfers, transforms, creates, or destroys, and by what source/sink paths,
-5. what scarce capacities, exclusive affordances, reservations, queues, or claims it introduces, and how contention, expiry, and invalidation work,
-6. what partial failures and aftermath states it creates,
-7. what positive feedback loops it amplifies,
-8. what physical dampeners limit those loops,
-9. what derived views or optimizations are allowed,
-10. how agents can become wrong about it, how they can correct those errors, and what provenance or freshness markers matter,
-11. what temporal and spatial resolution it assumes, what scheduling regime it depends on, and how simultaneity and tie-breaking are resolved,
-12. what boundary conditions, external drivers, or off-map interfaces affect it, and how those inputs are represented, delayed, observed, and rate-limited,
-13. what target patterns, invariants, regression cases, and falsification checks will be used to tell whether the system is behaving credibly,
-14. and what must survive save/load, replay, and offscreen compression without changing world meaning.
-15. and what must survive save/load, replay, and offscreen compression without changing world meaning.
+1. what specific missing downstream consequence, scenario class, or target pattern motivates the system, and why existing systems cannot already produce it,
+2. what concrete entities, relations, and records it introduces,
+3. what actions or world processes mutate them,
+4. what information it produces, how that information travels, and who can observe it,
+5. what quantities it conserves, transfers, transforms, creates, or destroys, and by what source/sink paths,
+6. what scarce capacities, exclusive affordances, reservations, queues, or claims it introduces, and how contention, expiry, and invalidation work,
+7. what partial failures, degraded states, and aftermath it creates,
+8. what positive feedback loops it amplifies,
+9. what physical dampeners limit those loops,
+10. what agent-local or institutional learning, memory, habit, trust, reliability, or preference updates it creates, how those updates are acquired, revised, and decay, and which of them are summaries versus authoritative state,
+11. how agents can become wrong about it, how they can correct those errors, and what provenance, freshness, or source-chain markers matter,
+12. what lifecycle states its entities and artifacts can occupy, what transitions move them between states, and how visibility, legality, and actionability differ across those states,
+13. what temporal and spatial resolution it assumes, what scheduling regime it depends on, and how simultaneity and tie-breaking are resolved,
+14. what boundary conditions, external drivers, or off-map interfaces affect it, and how those inputs are represented, delayed, observed, and rate-limited,
+15. what derived views, caches, or optimizations are allowed and what authoritative source state they derive from,
+16. what causal records, event identities, and provenance links it emits so later inspection can reconstruct both the causal path and the knowledge path,
+17. what target patterns, invariants, regression cases, and falsification checks will be used to tell whether the system is behaving credibly,
+18. and what must survive save/load, replay, and offscreen compression without changing world meaning.
 
 If a proposed system cannot answer those questions, it is not specified well enough to join this simulation.
 
@@ -346,7 +381,7 @@ If a proposed system cannot answer those questions, it is not specified well eno
 
 ### 31. Validation and Falsification Are First-Class
 
-Interesting-looking output is not evidence that the model is right. Every subsystem and every scenario class must declare the patterns it is supposed to reproduce, the artifacts it must never produce, the parameters most likely to destabilize it, and the traces by which developers will detect failure.
+Interesting-looking output is not evidence that the model is right. Every subsystem and every scenario class must declare multiple independent patterns where possible — from local traces to aggregate world behavior — the artifacts it must never produce, the parameters most likely to destabilize it, and the traces by which developers will detect failure.
 
 Canonical scenario success is necessary but insufficient. The architecture must also support adversarial sampling, sensitivity sweeps, causal trace inspection, and comparison against simplified referents or prior implementations when appropriate.
 

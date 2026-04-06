@@ -40,11 +40,11 @@
         (from: "Hearthstone Inn", to: "Golden Fields", travel_ticks: 8, bidirectional: true),
     ],
     agents: [
-        // Human-controlled protagonist at village — sharp-eyed, trusts alarms
+        // AI protagonist at village — sharp-eyed, trusts alarms
         (
             name: "Kael",
             location: "Thornwall Village",
-            control: Human,
+            control: Ai,
             needs: (
                 hunger: 500,
                 thirst: 300,

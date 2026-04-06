@@ -103,7 +103,8 @@ pub use belief::{
     tell_subject_is_directly_observable_by_listener, to_shared_belief_snapshot,
 };
 pub use blocked_intent::{
-    BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
+    BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
+    BlockingFact, ClearingBaseline,
 };
 pub use canonical::{
     CanonicalError, StateHash, canonical_bytes, hash_bytes, hash_event_log, hash_serializable,

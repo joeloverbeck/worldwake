@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use worldwake_ai::AgentTickDriver;
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
-use worldwake_core::{EntityId, EventId, EventView};
+use worldwake_core::{EntityId, EntityKind, EventId, EventView};
 use worldwake_sim::{
     ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
     InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink,
@@ -389,6 +389,7 @@ fn format_report(
     event_log: &worldwake_core::EventLog,
     action_trace: &ActionTraceSink,
     perception_trace: &PerceptionTraceSink,
+    world: &worldwake_core::World,
 ) -> String {
     let mut out = String::new();
 
@@ -640,9 +641,64 @@ fn format_report(
 
     // Action trace summary
     writeln!(out, "### Action Trace Summary\n").unwrap();
-    writeln!(out, "Total action trace events: {}\n", action_trace.events().len()).unwrap();
+    writeln!(
+        out,
+        "Total action trace events: {}\n",
+        action_trace.events().len()
+    )
+    .unwrap();
+
+    // Per-agent action timeline (100-tick bins), counting only Started + StartFailed
+    writeln!(out, "#### Per-Agent Action Timeline (100-tick bins)\n").unwrap();
+    for (agent_id, agent_name) in agents {
+        let agent_events = action_trace.events_for(*agent_id);
+        // Filter to Started and StartFailed (agent decisions)
+        let decision_events: Vec<_> = agent_events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.kind,
+                    ActionTraceKind::Started { .. } | ActionTraceKind::StartFailed { .. }
+                )
+            })
+            .collect();
+        if decision_events.is_empty() {
+            continue;
+        }
+
+        writeln!(out, "**{agent_name} ({agent_id})**\n").unwrap();
+        writeln!(out, "| Ticks | Actions |").unwrap();
+        writeln!(out, "|-------|---------|").unwrap();
+
+        // Group by 100-tick bin
+        let mut bins: BTreeMap<u64, BTreeMap<&str, u32>> = BTreeMap::new();
+        for event in &decision_events {
+            let bin = event.tick.0 / 100;
+            *bins
+                .entry(bin)
+                .or_default()
+                .entry(&event.action_name)
+                .or_insert(0) += 1;
+        }
+
+        for (bin, action_counts) in &bins {
+            let lo = bin * 100;
+            let hi = lo + 99;
+            let mut pairs: Vec<_> = action_counts.iter().collect();
+            pairs.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+            let cells: Vec<String> = pairs
+                .iter()
+                .map(|(name, count)| format!("{name}\u{00d7}{count}"))
+                .collect();
+            writeln!(out, "| {lo}\u{2013}{hi} | {} |", cells.join(", ")).unwrap();
+        }
+
+        writeln!(out).unwrap();
+    }
+
+    // Raw tail of action trace events
+    writeln!(out, "#### Raw Action Trace (last 50 events)\n").unwrap();
     writeln!(out, "```").unwrap();
-    // Show last 50 action trace events
     let at_events = action_trace.events();
     let at_start = at_events.len().saturating_sub(50);
     for event in &at_events[at_start..] {
@@ -665,6 +721,200 @@ fn format_report(
         writeln!(out, "{}", event.summary()).unwrap();
     }
     writeln!(out, "```\n").unwrap();
+
+    // Section 5: Per-Agent Belief Summary
+    writeln!(out, "## Section 5 — Per-Agent Belief Summary\n").unwrap();
+    for (agent_id, agent_name) in agents {
+        writeln!(out, "### {agent_name}\n").unwrap();
+
+        let Some(store) = world.get_component_agent_belief_store(*agent_id) else {
+            writeln!(out, "No belief store.\n").unwrap();
+            continue;
+        };
+
+        // Count known entities by kind
+        let total_known = store.known_entities.len();
+        let mut agents_count: u32 = 0;
+        let mut places_count: u32 = 0;
+        let mut items_count: u32 = 0;
+        let mut other_count: u32 = 0;
+        for known_id in store.known_entities.keys() {
+            match world.entity_kind(*known_id) {
+                Some(EntityKind::Agent) => agents_count += 1,
+                Some(EntityKind::Place) => places_count += 1,
+                Some(EntityKind::ItemLot | EntityKind::UniqueItem) => items_count += 1,
+                _ => other_count += 1,
+            }
+        }
+        writeln!(out, "**Known entities**: {total_known}").unwrap();
+        writeln!(out, "- Agents: {agents_count}").unwrap();
+        writeln!(out, "- Places: {places_count}").unwrap();
+        writeln!(out, "- Items: {items_count}").unwrap();
+        if other_count > 0 {
+            writeln!(out, "- Other: {other_count}").unwrap();
+        }
+        writeln!(out).unwrap();
+
+        // Group known entities by believed location
+        let mut by_place: BTreeMap<Option<EntityId>, Vec<EntityId>> = BTreeMap::new();
+        for (known_id, state) in &store.known_entities {
+            by_place
+                .entry(state.last_known_place)
+                .or_default()
+                .push(*known_id);
+        }
+        if !by_place.is_empty() {
+            writeln!(out, "**Believed entity locations**:").unwrap();
+            for (place_opt, entities) in &by_place {
+                let place_label = match place_opt {
+                    Some(pid) => entity_display_name(world, *pid),
+                    None => "Unknown location".to_string(),
+                };
+                // Aggregate item lots by commodity, list non-items individually
+                let mut commodity_totals: BTreeMap<String, u64> = BTreeMap::new();
+                let mut non_item_names: Vec<String> = Vec::new();
+                for id in entities {
+                    if let Some(lot) = world.get_component_item_lot(*id) {
+                        *commodity_totals
+                            .entry(format!("{:?}", lot.commodity))
+                            .or_insert(0) += u64::from(lot.quantity.0);
+                    } else {
+                        non_item_names.push(entity_display_name(world, *id));
+                    }
+                }
+                let mut parts: Vec<String> = Vec::new();
+                parts.extend(non_item_names);
+                for (commodity, total) in &commodity_totals {
+                    parts.push(format!("{total}\u{00d7} {commodity}"));
+                }
+                writeln!(out, "- {place_label}: {}", parts.join(", ")).unwrap();
+            }
+            writeln!(out).unwrap();
+        }
+
+        // Social observations
+        writeln!(
+            out,
+            "**Social observations**: {}",
+            store.social_observations.len()
+        )
+        .unwrap();
+
+        // Told beliefs with unique counterparties
+        let told_count = store.told_beliefs.len();
+        let told_counterparties: BTreeSet<EntityId> = store
+            .told_beliefs
+            .keys()
+            .map(|k| k.counterparty)
+            .collect();
+        if told_counterparties.is_empty() {
+            writeln!(out, "**Told beliefs**: {told_count}").unwrap();
+        } else {
+            let cp_names: Vec<String> = told_counterparties
+                .iter()
+                .map(|id| entity_display_name(world, *id))
+                .collect();
+            writeln!(
+                out,
+                "**Told beliefs**: {told_count} (counterparties: {})",
+                cp_names.join(", ")
+            )
+            .unwrap();
+        }
+
+        // Heard beliefs
+        writeln!(
+            out,
+            "**Heard beliefs**: {}",
+            store.heard_beliefs.len()
+        )
+        .unwrap();
+
+        // Institutional beliefs
+        writeln!(
+            out,
+            "**Institutional beliefs**: {}",
+            store.institutional_beliefs.len()
+        )
+        .unwrap();
+
+        writeln!(out).unwrap();
+    }
+
+    // Section 6: End-State Inventory & Resources
+    writeln!(out, "## Section 6 — End-State Inventory & Resources\n").unwrap();
+
+    // Agent Inventories
+    writeln!(out, "### Agent Inventories\n").unwrap();
+    for (agent_id, agent_name) in agents {
+        let possessions = world.possessions_of(*agent_id);
+        if possessions.is_empty() {
+            writeln!(out, "**{agent_name}**: (empty)\n").unwrap();
+        } else {
+            // Group item lots by commodity, collect non-lot items separately
+            let mut commodity_totals: BTreeMap<String, u64> = BTreeMap::new();
+            let mut non_lot_items: Vec<String> = Vec::new();
+            for entity in &possessions {
+                if let Some(lot) = world.get_component_item_lot(*entity) {
+                    *commodity_totals
+                        .entry(format!("{:?}", lot.commodity))
+                        .or_insert(0) += u64::from(lot.quantity.0);
+                } else {
+                    non_lot_items.push(entity_display_name(world, *entity));
+                }
+            }
+            let mut parts: Vec<String> = Vec::new();
+            for (commodity, total) in &commodity_totals {
+                parts.push(format!("{total}\u{00d7} {commodity}"));
+            }
+            parts.extend(non_lot_items);
+            writeln!(out, "**{agent_name}**: {}\n", parts.join(", ")).unwrap();
+        }
+    }
+
+    // Place Contents
+    writeln!(out, "### Place Contents\n").unwrap();
+    for (place_id, place_name) in places {
+        let ground = world.ground_entities_at(*place_id);
+        if ground.is_empty() {
+            writeln!(out, "**{place_name} ({place_id})**: (empty)\n").unwrap();
+        } else {
+            // Aggregate item lots by commodity, list non-items individually
+            let mut commodity_totals: BTreeMap<String, u64> = BTreeMap::new();
+            let mut non_item_entries: Vec<String> = Vec::new();
+            for entity in &ground {
+                if let Some(lot) = world.get_component_item_lot(*entity) {
+                    *commodity_totals
+                        .entry(format!("{:?}", lot.commodity))
+                        .or_insert(0) += u64::from(lot.quantity.0);
+                } else {
+                    let name = entity_display_name(world, *entity);
+                    let annotation = match world.entity_kind(*entity) {
+                        Some(EntityKind::Agent) => " (agent)".to_string(),
+                        Some(EntityKind::Facility) => {
+                            if let Some(ws) = world.get_component_workstation_marker(*entity) {
+                                format!(" ({:?})", ws.0)
+                            } else if let Some(rs) =
+                                world.get_component_resource_source(*entity)
+                            {
+                                format!(" (resource: {:?})", rs.commodity)
+                            } else {
+                                " (facility)".to_string()
+                            }
+                        }
+                        _ => String::new(),
+                    };
+                    non_item_entries.push(format!("{name}{annotation}"));
+                }
+            }
+            let mut parts: Vec<String> = Vec::new();
+            parts.extend(non_item_entries);
+            for (commodity, total) in &commodity_totals {
+                parts.push(format!("{total}\u{00d7} {commodity}"));
+            }
+            writeln!(out, "**{place_name} ({place_id})**: {}\n", parts.join(", ")).unwrap();
+        }
+    }
 
     out
 }
@@ -876,6 +1126,7 @@ fn main() {
         sim.event_log(),
         &action_trace,
         &perception_trace,
+        sim.world(),
     );
 
     // Ensure parent directory exists

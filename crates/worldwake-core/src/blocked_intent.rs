@@ -1,6 +1,9 @@
 //! Authoritative blocked-intent memory stored on agents.
 
-use crate::{ActionDefId, CommodityKind, Component, EntityId, GoalKey, Tick, UniqueItemKind};
+use crate::{
+    ActionDefId, CommodityKind, Component, EntityId, GoalKey, Permille, Quantity, Tick,
+    UniqueItemKind,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -78,6 +81,10 @@ impl BlockedIntentMemory {
             .retain(|_, intent| intent.expires_tick > current_tick);
     }
 
+    pub fn sweep_cleared(&mut self, mut is_cleared: impl FnMut(&BlockedIntent) -> bool) {
+        self.intents.retain(|_, intent| !is_cleared(intent));
+    }
+
     pub fn clear_for(&mut self, key: &BlockerKey) {
         self.intents.remove(key);
     }
@@ -121,12 +128,56 @@ fn matches_scope(
 impl Component for BlockedIntentMemory {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum BlockerClearingCondition {
+    CommodityAvailabilityChanged {
+        commodity: CommodityKind,
+        place: EntityId,
+    },
+    InventoryChanged {
+        commodity: CommodityKind,
+    },
+    UniqueItemAcquired {
+        kind: UniqueItemKind,
+    },
+    PathDiscovered {
+        destination: EntityId,
+    },
+    EntityReappeared {
+        entity: EntityId,
+    },
+    DangerReduced {
+        place: EntityId,
+    },
+    ContentionChanged {
+        facility: EntityId,
+    },
+    TtlOnly,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ClearingBaseline {
+    CommodityQuantity {
+        quantity: Quantity,
+    },
+    InventoryQuantity {
+        quantity: Quantity,
+    },
+    UniqueItemCount(u32),
+    PathKnown(bool),
+    EntityBelieved(bool),
+    DangerLevel(Permille),
+    ContentionPosition(Option<u32>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BlockedIntent {
     pub blocker_key: BlockerKey,
     pub blocking_fact: BlockingFact,
     pub diagnostic_context: Option<BlockerDiagnostic>,
     pub observed_tick: Tick,
     pub expires_tick: Tick,
+    pub clearing_condition: BlockerClearingCondition,
+    pub baseline_snapshot: Option<ClearingBaseline>,
 }
 
 impl BlockedIntent {
@@ -165,9 +216,12 @@ pub enum BlockingFact {
 
 #[cfg(test)]
 mod tests {
-    use super::{BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact};
+    use super::{
+        BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic,
+        BlockerKey, BlockingFact, ClearingBaseline,
+    };
     use crate::{
-        ActionDefId, CommodityKind, GoalKind, Tick, UniqueItemKind,
+        ActionDefId, CommodityKind, GoalKind, Quantity, Tick, UniqueItemKind,
         test_utils::{entity_id, sample_blocked_intent, sample_blocker_key, sample_goal_key},
         traits::Component,
     };
@@ -178,6 +232,8 @@ mod tests {
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
+    fn assert_copy_value_bounds<T: Copy + Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
+
     fn make_intent(key: BlockerKey, fact: BlockingFact, expires: Tick) -> BlockedIntent {
         BlockedIntent {
             blocker_key: key,
@@ -185,6 +241,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: expires,
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         }
     }
 
@@ -192,10 +250,18 @@ mod tests {
     fn blocked_intent_types_satisfy_required_bounds() {
         assert_component_bounds::<BlockedIntentMemory>();
         assert_value_bounds::<BlockedIntentMemory>();
-        assert_value_bounds::<BlockedIntent>();
+        assert_copy_value_bounds::<BlockedIntent>();
+        assert_copy_value_bounds::<BlockerClearingCondition>();
+        assert_copy_value_bounds::<ClearingBaseline>();
         assert_value_bounds::<BlockingFact>();
         assert_value_bounds::<BlockerKey>();
         assert_value_bounds::<BlockerDiagnostic>();
+    }
+
+    #[test]
+    fn blocker_clearing_condition_and_baseline_satisfy_required_bounds() {
+        assert_copy_value_bounds::<BlockerClearingCondition>();
+        assert_copy_value_bounds::<ClearingBaseline>();
     }
 
     #[test]
@@ -281,6 +347,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(11),
             expires_tick: Tick(19),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         };
         let mut memory = BlockedIntentMemory::default();
         memory.record(original);
@@ -417,7 +485,15 @@ mod tests {
     #[test]
     fn blocked_intent_memory_roundtrips_through_bincode() {
         let mut memory = BlockedIntentMemory::default();
-        memory.record(sample_blocked_intent());
+        let mut intent = sample_blocked_intent();
+        intent.clearing_condition = BlockerClearingCondition::CommodityAvailabilityChanged {
+            commodity: CommodityKind::Bread,
+            place: entity_id(12, 0),
+        };
+        intent.baseline_snapshot = Some(ClearingBaseline::CommodityQuantity {
+            quantity: Quantity(7),
+        });
+        memory.record(intent);
 
         let bytes = bincode::serialize(&memory).unwrap();
         let roundtrip: BlockedIntentMemory = bincode::deserialize(&bytes).unwrap();
@@ -564,6 +640,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(100),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         };
         assert!(intent.blocks_goal_generation());
     }
@@ -576,8 +654,47 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(100),
+            clearing_condition: BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         };
         assert!(intent.blocks_goal_generation());
+    }
+
+    #[test]
+    fn sweep_cleared_removes_matching_entries() {
+        let retained_key = BlockerKey {
+            goal_key: crate::GoalKey::from(GoalKind::ReduceDanger),
+            place: None,
+            target: None,
+            action_def: None,
+        };
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(sample_blocked_intent());
+        memory.record(make_intent(retained_key, BlockingFact::Unknown, Tick(50)));
+
+        memory.sweep_cleared(|intent| {
+            matches!(
+                intent.clearing_condition,
+                BlockerClearingCondition::CommodityAvailabilityChanged { .. }
+            )
+        });
+
+        assert_eq!(memory.intents.len(), 1);
+        assert!(memory.intents.contains_key(&retained_key));
+    }
+
+    #[test]
+    fn sweep_cleared_retains_non_matching_entries() {
+        let mut memory = BlockedIntentMemory::default();
+        memory.record(make_intent(
+            sample_blocker_key(),
+            BlockingFact::NoKnownPath,
+            Tick(50),
+        ));
+
+        memory.sweep_cleared(|_| false);
+
+        assert_eq!(memory.intents.len(), 1);
     }
 
     #[test]
@@ -605,4 +722,5 @@ mod tests {
         // NOT blocked at place_b — pursuit to a different believed place is allowed.
         assert!(!memory.is_blocked(&key, Some(place_b), Some(target), None, Tick(5)));
     }
+
 }

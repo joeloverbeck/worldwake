@@ -1591,6 +1591,8 @@ fn record_sell_blocked_intent(
         diagnostic_context: None,
         observed_tick: current_tick,
         expires_tick: Tick(current_tick.0 + u64::from(blocking_period)),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
     let _ = txn.set_component_blocked_intent_memory(actor, memory);
 }

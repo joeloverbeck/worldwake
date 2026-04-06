@@ -45,7 +45,17 @@ cargo run -p worldwake-cli --bin observer -- <scenario_path> --ticks <N> --outpu
 ### Step 3: Read the Dump
 
 1. Read `reports/simulation-observer-dump.md`.
-2. If the file exceeds 500 lines, read Section 1 (Run Metadata) and Section 3 (Anomaly Flags) first, then per-agent summaries for flagged agents, then the Action Trace Summary and Perception Trace Summary sections (needed for LLM-only smells 7-10).
+2. If the file exceeds 500 lines, read Section 1 (Run Metadata) and Section 2 (Per-Agent Summaries) first, then Section 3 (Anomaly Flags), then Sections 4-6 (traces, beliefs, inventory) as needed for LLM-only smells 7-10.
+
+The dump has 6 sections:
+- Section 1: Run Metadata (scenario, seed, ticks, agents, places)
+- Section 2: Per-Agent Summary (actions, perception, needs, locations, idle ticks)
+- Section 3: Anomaly Flags (mechanically detected smells)
+- Section 4: Raw Event Sample (first/last 100 events, per-agent action timeline histograms in 100-tick bins, raw tail traces)
+- Section 5: Per-Agent Belief Summary (known entities, believed locations, social/told/heard/institutional beliefs)
+- Section 6: End-State Inventory & Resources (agent possessions, place contents)
+
+The per-agent action timeline in Section 4 shows action counts binned by 100-tick windows, making it easy to identify when behavioral transitions occur (e.g., when an agent stops eating and enters a sleep-only loop). Cross-reference these transition points with needs trajectory and anomaly tick ranges.
 
 ### Step 4: Behavioral Smell Analysis
 
@@ -69,11 +79,11 @@ Analyze the dump for all 10 smell categories. For each, state whether the smell 
 
 7. **Impossible knowledge** -- Cross-reference action traces with perception traces. Did an agent act on information about an entity they never observed and never heard about through Tell/AskWitness? Check: agent's action targets vs. entities in their perception trace.
 
-8. **Belief staleness** -- Compare the agent's end-state behavior with events they witnessed. Are they making decisions based on outdated information when fresh data was available? **Note**: The dump does not include per-agent belief snapshots. If belief data is unavailable, mark this smell as INCONCLUSIVE and note the limitation in the Trace Quality Assessment section rather than speculating.
+8. **Belief staleness** -- Cross-reference the agent's belief summary (Section 5) with their action traces, perception traces, and the end-state inventory (Section 6). Check: does the agent believe resources exist at locations they haven't visited recently? Do their believed entity locations match current placement? Are they failing to act on resource knowledge (e.g., believing food exists at a place but never traveling there)? Compare the agent's known entities with entities they could have observed -- are there gaps suggesting failed or missed perceptions? If the belief summary is sparse (few known entities), note the limitation rather than speculating.
 
 9. **Social isolation** -- Check location tracking: if agents are co-located for extended periods (20+ ticks) with no Tell, AskWitness, or Trade actions between them, flag it.
 
-10. **Economic stagnation** -- Check for agents with unmet needs (hunger/thirst > 500 permille) in locations with resource sources or commodity stocks, but no harvest/craft/trade actions attempted.
+10. **Economic stagnation** -- Check for agents with unmet needs (hunger/thirst > 500 permille) in locations with resource sources or commodity stocks (use Section 6 to verify what resources actually exist at each place), but no harvest/craft/trade actions attempted. Cross-reference agent beliefs (Section 5) with actual place contents (Section 6) to determine whether the agent knows about available resources.
 
 The per-agent summary also includes a "Ticks above 750‰" line for each need, providing concrete data for smells 5-6 and supporting LLM analysis of smells 8-10.
 
@@ -95,7 +105,7 @@ Write `reports/simulation-observer-report.md` with this structure:
 **Root cause hypothesis**: [your analysis of why this is happening]
 **Confidence**: [how confident you are this is a real issue vs. expected behavior]
 
-[Repeat for each detected smell]
+[Repeat for all 10 smell categories regardless of severity. NONE findings should be brief (1-2 sentences confirming no detection). INCONCLUSIVE findings should explain the data limitation.]
 
 ## Cross-Cutting Patterns
 [Patterns that span multiple smells or agents -- e.g., "Agent X has both stuck behavior AND ignored needs, suggesting a planning failure"]

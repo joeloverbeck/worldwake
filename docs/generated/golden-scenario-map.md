@@ -23,10 +23,10 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `5` | Blocked Intent Memory with TTL Expiry | `golden_ai_decisions.rs:659` | `golden_blocked_intent_memory_with_ttl_expiry` | — |
 | `7` | Deprivation Cascade | `golden_ai_decisions.rs:748` | `golden_deprivation_cascade`<br>`golden_thirst_driven_acquisition`<br>`golden_wash_action`<br>`golden_three_way_need_competition`<br>`golden_bladder_relief_with_travel`<br>`golden_goal_switching_during_multi_leg_travel`<br>`golden_multi_hop_travel_plan`<br>`golden_spatial_multi_hop_plan` | `golden_spatial_multi_hop_plan_replays_deterministically` |
 | `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1945` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario` | — |
-| `2c-self` | Wounded agent self-treats with medicine | `golden_care.rs:761` | `golden_self_care_with_medicine` | `golden_self_care_with_medicine_replays_deterministically` |
-| `2c-self-acquire` | Wounded agent acquires ground medicine, self-treats | `golden_care.rs:867` | `golden_self_care_acquires_ground_medicine` | `golden_self_care_acquires_ground_medicine_replays_deterministically` |
-| `2c-report` | Indirect wound report does NOT trigger care goal | `golden_care.rs:955` | `golden_indirect_report_does_not_trigger_care` | `golden_indirect_report_does_not_trigger_care_replays_deterministically` |
-| `2c-invalidation` | Care goal invalidates when patient self-heals | `golden_care.rs:1062` | `golden_care_goal_invalidation_when_patient_heals`<br>`golden_care_pre_start_wound_disappearance_records_blocker` | `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`<br>`golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically` |
+| `2c-self` | Wounded agent self-treats with medicine | `golden_care.rs:765` | `golden_self_care_with_medicine` | `golden_self_care_with_medicine_replays_deterministically` |
+| `2c-self-acquire` | Wounded agent acquires ground medicine, self-treats | `golden_care.rs:871` | `golden_self_care_acquires_ground_medicine` | `golden_self_care_acquires_ground_medicine_replays_deterministically` |
+| `2c-report` | Indirect wound report does NOT trigger care goal | `golden_care.rs:959` | `golden_indirect_report_does_not_trigger_care` | `golden_indirect_report_does_not_trigger_care_replays_deterministically` |
+| `2c-invalidation` | Care goal invalidates when patient self-heals | `golden_care.rs:1066` | `golden_care_goal_invalidation_when_patient_heals`<br>`golden_care_pre_start_wound_disappearance_records_blocker` | `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`<br>`golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically` |
 | `8b` | Corpse Burial | `golden_combat.rs:749` | `golden_bury_corpse` | — |
 | `7f` | ReduceDanger Defensive Mitigation | `golden_combat.rs:1450` | `golden_reduce_danger_defensive_mitigation`<br>`golden_defend_replans_after_finite_stance_expires`<br>`golden_defend_changed_conditions` | `golden_defend_changed_conditions_replays_deterministically` |
 | `7g` | Wound Bleed, Clotting, and Natural Recovery | `golden_combat.rs:1669` | `golden_wound_bleed_clotting_natural_recovery` | `golden_wound_bleed_clotting_natural_recovery_replays_deterministically` |
@@ -276,7 +276,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2c-self: Wounded agent self-treats with medicine
 
-- Source: `golden_care.rs:761`
+- Source: `golden_care.rs:765`
 - Systems: AI, Care, Combat
 - GoalKinds: TreatWounds(self)
 - ActionDomains: Care
@@ -294,7 +294,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2c-self-acquire: Wounded agent acquires ground medicine, self-treats
 
-- Source: `golden_care.rs:867`
+- Source: `golden_care.rs:871`
 - Systems: AI, Care, Transport, Combat
 - GoalKinds: TreatWounds(self)
 - ActionDomains: Care, Transport
@@ -311,7 +311,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2c-report: Indirect wound report does NOT trigger care goal
 
-- Source: `golden_care.rs:955`
+- Source: `golden_care.rs:959`
 - Systems: AI, Care, Perception
 - GoalKinds: TreatWounds(other)
 - ActionDomains: Care
@@ -329,7 +329,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 2c-invalidation: Care goal invalidates when patient self-heals
 
-- Source: `golden_care.rs:1062`
+- Source: `golden_care.rs:1066`
 - Systems: AI, Care, Combat
 - GoalKinds: TreatWounds(other), TreatWounds(self)
 - ActionDomains: Care

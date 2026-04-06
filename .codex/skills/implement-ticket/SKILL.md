@@ -76,6 +76,7 @@ Specific persisted-shape checks:
 - When the ticket asks an existing query to distinguish new enum variants, verify the current read surface exposes enough information. If not, correct the ticket to include read-surface widening.
 - When the ticket depends on UtilityProfile or disposition gating, verify the belief/read trait exposes that carrier. If the gate exists only on authoritative components, correct the ticket to include read-surface widening.
 - When the ticket claims a goal family should become behaviorally selectable, check the full AI admission path: candidate generation, goal-policy suppression, ranking, selection. A variant emitted only under conditions a suppression rule blocks requires ticket correction.
+- When a ticket audits threshold alignment between candidate emission and goal satisfaction, also inspect the matching hypothetical planner transition for that goal family. Record whether one step or repeated steps are supposed to clear the relevant band, and correct the ticket if `apply_planner_step` still models a different contract than runtime execution.
 - When making a payload-override action live through the AI pipeline, compare planner-step revalidation against runtime request resolution. Correct admission-path mismatches before treating failures as golden-only.
 - When adding a typed query alongside an existing boolean helper, verify boolean equivalence. If typed results can be present while the boolean stays false, correct invariants and proofs.
 - When the ticket gates behavior on a typed right from a specific provenance source, verify whether right existence alone is lawful or the producing carrier is part of the contract.
@@ -125,8 +126,13 @@ Update the ticket immediately (without stopping) when the correction is mechanic
 - Component-registration fallout from live macro expansion or schema discovery
 
 Record each auto-correction: ticket says / live code has / correction applied / why safe.
+Place these notes directly under the ticket's `Assumption Reassessment` section as numbered entries so later review can see what changed and why.
+
+If the active ticket predates the current template and does not already have an `Assumption Reassessment` section, add one before recording reassessment notes. Do not force the full template onto a short active ticket unless the missing sections are needed to keep the live scope honest.
 
 When a correction changes the real fallout surface, update every affected ticket section (`What to Change`, `Files to Touch`, `Verification Layers`, `Test Plan`), not just one list.
+
+Treat a stale acceptance criterion, scenario assertion surface, or proof target as a low-risk auto-correction only when the live symbols and behavior make the narrower honest contract directionally unambiguous. In that case, record: ticket says / live contract has / correction applied / why safe, and update the acceptance text plus any affected proof-surface sections in the same pass.
 
 #### Escalation decision tree
 
@@ -167,6 +173,7 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 #### Type-change scope
 
 When shared types change, include the sweep surfaces from Section 2 ("Shared type, serialization, and migration sweep") in the task list. Additional scope guidance:
+- Before editing, run a concrete constructor/shape sweep for the changed type across workspace crates (for example `rg -n 'BlockedIntent \\{' crates`), then rerun the same sweep before final verification to confirm no live literal or helper was missed.
 - When behavior moves between carriers, rewrite setup paths onto the new authoritative carrier rather than only deleting the stale field.
 - When a constructor begins seeding defaults it previously omitted, reassess tests proving "missing component" behavior — prefer rewriting to the new constructor contract.
 - When new components participate in persisted world state, expand save/load fixture builders so persistence tests actually serialize and deserialize the new components.
@@ -296,7 +303,7 @@ For migrations moving config/profile state from driver-global to per-entity comp
 4. Add harness helpers for per-entity profile injection when repeated setup would sprawl
 5. Rerun both tests and CI-matching clippy after the API reshape
 
-### 7. Close the loop on the ticket
+### 8. Close the loop on the ticket
 
 If the user asked for full ticket completion, archive per [docs/archival-workflow.md](../../../docs/archival-workflow.md):
 - Mark completion status accurately
@@ -304,11 +311,35 @@ If the user asked for full ticket completion, archive per [docs/archival-workflo
 - Note approved partial completion; create follow-up tickets when required
 
 If the user asked only for implementation or analysis, do not archive. Keep factual completion details current for a later archival pass.
+- For implementation-only completion, set `Status: COMPLETED` on the active ticket once the required verification surface has passed.
+- Append factual close-out notes to the active ticket using the same minimal structure expected later at archival: `## Outcome`, verification results, and any explicit deviations from the original ticket wording or scope that were accepted during reassessment.
+- If the active ticket is short-form or pre-template, add only the minimum missing sections needed to make reassessment and close-out traceable. The usual minimum is `## Assumption Reassessment`, `## Outcome`, optional `## Deviations`, and `## Verification Result`.
 
 Before finishing:
 - Re-check `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff. Remove reassessment-only fallout that did not become real edits.
+- If reassessment or verification changed the semantic contract the ticket describes, also re-check `Problem`, `Architecture Check`, and `Acceptance Criteria` so the ticket's narrative matches the landed behavior rather than an earlier draft.
 - Re-check inline code snippets, example signatures, or API sketches against the final landed shape.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
+
+Minimal active-ticket close-out shape:
+
+```markdown
+## Outcome
+
+Completed on YYYY-MM-DD.
+
+- What changed
+- Any bounded deviation from the original ticket wording
+
+## Deviations
+
+- Optional: semantic or scope correction accepted during reassessment/verification
+
+## Verification Result
+
+- Passed `<command 1>`
+- Passed `<command 2>`
+```
 
 ## Guardrails
 

@@ -1234,7 +1234,7 @@ fn move_cargo_then_sell_commodity_plan_shape() {
         merchant_utility(),
         KnownRecipes::new(),
     );
-    give_commodity(
+    let stock_lot = give_commodity(
         &mut h.world,
         &mut h.event_log,
         merchant,
@@ -1301,24 +1301,17 @@ fn move_cargo_then_sell_commodity_plan_shape() {
     // The merchant should eventually travel to home_facility and start staff_market.
     let mut saw_travel = false;
     let mut arrived_at_home = false;
-    let mut saw_staff_market = false;
+    let mut lot_listed_at_home = false;
     for _ in 0..120 {
         h.step_once();
         saw_travel |= h.agent_active_action_name(merchant) == Some("travel");
         arrived_at_home |= h.world.effective_place(merchant) == Some(VILLAGE_SQUARE);
-        if let Some(sink) = h.action_trace_sink() {
-            saw_staff_market |= sink.events_for(merchant).iter().any(|e| {
-                e.action_name == "staff_market" && matches!(e.kind, ActionTraceKind::Started { .. })
-            });
-        }
-        if saw_staff_market {
+        lot_listed_at_home |= h.world.get_component_sale_listing(stock_lot).is_some()
+            && h.world.effective_place(stock_lot) == Some(VILLAGE_SQUARE);
+        if lot_listed_at_home {
             break;
         }
     }
-    // TK-3 fix: prerequisite_places for SellCommodity now guides travel to home_facility.
-    // The merchant should travel and arrive at home. staff_market dispatch is blocked by
-    // TK-2 (ConsumeOwnedCommodity terminal treats possession as goal-satisfied).
-    // Once TK-2 is fixed, tighten this to require saw_staff_market.
     assert!(
         saw_travel,
         "merchant at remote place should travel toward home_facility"
@@ -1326,6 +1319,10 @@ fn move_cargo_then_sell_commodity_plan_shape() {
     assert!(
         arrived_at_home,
         "merchant should arrive at home_facility place (travel={saw_travel})"
+    );
+    assert!(
+        lot_listed_at_home,
+        "merchant should reach home and get bread listed for sale there (travel={saw_travel}, arrived={arrived_at_home})"
     );
 }
 
