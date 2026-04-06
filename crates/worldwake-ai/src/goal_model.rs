@@ -1368,6 +1368,13 @@ impl GoalKindPlannerExt for GoalKind {
                     .map(|(_, home_place, _)| vec![home_place])
                     .unwrap_or_default()
             }
+            GoalKind::SellCommodity { .. } => state
+                .merchandise_profile(actor)
+                .and_then(|p| p.home_facility)
+                .and_then(|facility| state.effective_place(facility))
+                .filter(|home_place| state.effective_place(actor) != Some(*home_place))
+                .into_iter()
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -6090,6 +6097,76 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn prerequisite_places_sell_commodity_returns_home_facility_when_remote() {
+        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
+        // Create a facility entity at place_b
+        let facility = entity(70);
+        view.alive.insert(facility);
+        view.kinds.insert(facility, EntityKind::Facility);
+        view.effective_places.insert(facility, place_b);
+        view.entities_at.entry(place_b).or_default().push(facility);
+        view.merchandise_profiles.insert(
+            actor,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(facility),
+            },
+        );
+
+        // Include facility in evidence so the snapshot knows its effective_place
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([facility]),
+            &BTreeSet::new(),
+            3,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let places = goal.prerequisite_places(
+            &state,
+            &RecipeRegistry::new(),
+            &execution_budget(&ProfileFixture::default()),
+        );
+
+        // Actor at place_a, facility at place_b → should return place_b
+        assert_eq!(places, vec![place_b]);
+    }
+
+    #[test]
+    fn prerequisite_places_sell_commodity_empty_when_at_home() {
+        let (mut view, actor, place_a, _place_b, _place_c) = spatial_view();
+        // Create facility at same place as actor (place_a)
+        let facility = entity(71);
+        view.alive.insert(facility);
+        view.kinds.insert(facility, EntityKind::Facility);
+        view.effective_places.insert(facility, place_a);
+        view.merchandise_profiles.insert(
+            actor,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(facility),
+            },
+        );
+
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let places = goal.prerequisite_places(
+            &state,
+            &RecipeRegistry::new(),
+            &execution_budget(&ProfileFixture::default()),
+        );
+
+        // Actor already at home facility → no prerequisite places
+        assert!(places.is_empty());
     }
 
     #[test]

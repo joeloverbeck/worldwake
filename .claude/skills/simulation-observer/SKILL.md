@@ -6,7 +6,7 @@ user-invocable: true
 
 # Simulation Observer
 
-Run a scenario headlessly via the observer binary, read the structured dump, perform LLM-driven behavioral analysis across 9 smell categories, and write a narrative report.
+Run a scenario headlessly via the observer binary, read the structured dump, perform behavioral analysis across 10 smell categories (6 mechanical + 4 LLM-only), and write a narrative report.
 
 ## Invocation
 
@@ -45,11 +45,11 @@ cargo run -p worldwake-cli --bin observer -- <scenario_path> --ticks <N> --outpu
 ### Step 3: Read the Dump
 
 1. Read `reports/simulation-observer-dump.md`.
-2. If the file exceeds 500 lines, read Section 1 (Run Metadata) and Section 3 (Anomaly Flags) first, then selectively read per-agent summaries for agents mentioned in anomalies.
+2. If the file exceeds 500 lines, read Section 1 (Run Metadata) and Section 3 (Anomaly Flags) first, then per-agent summaries for flagged agents, then the Action Trace Summary and Perception Trace Summary sections (needed for LLM-only smells 7-10).
 
 ### Step 4: Behavioral Smell Analysis
 
-Analyze the dump for all 9 smell categories. For each, state whether the smell was detected, its severity (CRITICAL / HIGH / MEDIUM / LOW / NONE), and your reasoning.
+Analyze the dump for all 10 smell categories. For each, state whether the smell was detected, its severity (CRITICAL / HIGH / MEDIUM / LOW / NONE), and your reasoning.
 
 **Mechanically flagged smells** (already in Section 3 -- add narrative context and root-cause hypotheses):
 
@@ -61,17 +61,21 @@ Analyze the dump for all 9 smell categories. For each, state whether the smell w
 
 4. **Failed action spirals** -- Agent keeps attempting actions that fail validation. What precondition is failing? Is the agent's belief stale about the precondition?
 
+5. **Sustained critical needs** -- A need stays above 750 permille for 100+ consecutive ticks. The anomaly includes the tick range. Cross-reference with the agent's actions during that range to determine whether the need was truly ignored or simply unsatisfiable (no resource available).
+
+6. **Unaddressed needs** -- Need average exceeds 750 permille but no corresponding relief action (eat/drink/sleep/toilet/wash) was ever attempted. This strongly suggests a missing affordance or planner gap -- the agent never even tried to address the need.
+
 **LLM-only smells** (cross-reference dump sections to detect):
 
-5. **Impossible knowledge** -- Cross-reference action traces with perception traces. Did an agent act on information about an entity they never observed and never heard about through Tell/AskWitness? Check: agent's action targets vs. entities in their perception trace.
+7. **Impossible knowledge** -- Cross-reference action traces with perception traces. Did an agent act on information about an entity they never observed and never heard about through Tell/AskWitness? Check: agent's action targets vs. entities in their perception trace.
 
-6. **Ignored urgent needs** -- Cross-reference needs trajectory with action choices. If any need exceeds 750 permille for 5+ consecutive ticks while the agent is doing unrelated actions (not eating, not drinking, not resting, etc.), flag it.
+8. **Belief staleness** -- Compare the agent's end-state behavior with events they witnessed. Are they making decisions based on outdated information when fresh data was available? **Note**: The dump does not include per-agent belief snapshots. If belief data is unavailable, mark this smell as INCONCLUSIVE and note the limitation in the Trace Quality Assessment section rather than speculating.
 
-7. **Belief staleness** -- Compare the agent's end-state behavior with events they witnessed. Are they making decisions based on outdated information when fresh data was available?
+9. **Social isolation** -- Check location tracking: if agents are co-located for extended periods (20+ ticks) with no Tell, AskWitness, or Trade actions between them, flag it.
 
-8. **Social isolation** -- Check location tracking: if agents are co-located for extended periods (20+ ticks) with no Tell, AskWitness, or Trade actions between them, flag it.
+10. **Economic stagnation** -- Check for agents with unmet needs (hunger/thirst > 500 permille) in locations with resource sources or commodity stocks, but no harvest/craft/trade actions attempted.
 
-9. **Economic stagnation** -- Check for agents with unmet needs (hunger/thirst > 500 permille) in locations with resource sources or commodity stocks, but no harvest/craft/trade actions attempted.
+The per-agent summary also includes a "Ticks above 750‰" line for each need, providing concrete data for smells 5-6 and supporting LLM analysis of smells 8-10.
 
 ### Step 5: Write Report
 
@@ -103,7 +107,7 @@ Write `reports/simulation-observer-report.md` with this structure:
 - Clean agents: [list]
 
 ## Trace Quality Assessment
-[Does the dump provide enough information to confidently assess all 9 smells? What additional trace data would help? Are there blind spots?]
+[Does the dump provide enough information to confidently assess all 10 smells? What additional trace data would help? Are there blind spots?]
 ```
 
 ### Step 6: Clean Up
