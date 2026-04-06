@@ -68,12 +68,8 @@ pub fn handle_plan_failure(
     } else {
         None
     };
-    let (clearing_condition, baseline_snapshot) = derive_clearing_condition(
-        context.view,
-        context.agent,
-        blocking_fact,
-        &blocker_key,
-    );
+    let (clearing_condition, baseline_snapshot) =
+        derive_clearing_condition(context.view, context.agent, blocking_fact, &blocker_key);
 
     blocked_memory.record(BlockedIntent {
         blocker_key,
@@ -629,9 +625,7 @@ fn derive_clearing_condition(
             }),
         ),
         BlockingFact::MissingInput(commodity) => (
-            BlockerClearingCondition::InventoryChanged {
-                commodity,
-            },
+            BlockerClearingCondition::InventoryChanged { commodity },
             Some(ClearingBaseline::InventoryQuantity {
                 quantity: view.commodity_quantity(agent, commodity),
             }),
@@ -697,7 +691,8 @@ fn derive_clearing_condition(
             )
         }
         BlockingFact::SourceDepleted => {
-            let (Some(commodity), Some(place)) = (blocker_key.goal_key.commodity, blocker_key.place)
+            let (Some(commodity), Some(place)) =
+                (blocker_key.goal_key.commodity, blocker_key.place)
             else {
                 return (BlockerClearingCondition::TtlOnly, None);
             };
@@ -727,13 +722,10 @@ fn is_blocker_cleared(
             BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place },
             Some(ClearingBaseline::CommodityQuantity { quantity: baseline }),
         ) => match blocker.blocking_fact {
-            BlockingFact::SellerOutOfStock => blocker
-                .blocker_key
-                .target
-                .is_some_and(|seller| {
-                    view.entity_kind(seller).is_some()
-                        && view.commodity_quantity(seller, *commodity) > Quantity(0)
-                }),
+            BlockingFact::SellerOutOfStock => blocker.blocker_key.target.is_some_and(|seller| {
+                view.entity_kind(seller).is_some()
+                    && view.commodity_quantity(seller, *commodity) > Quantity(0)
+            }),
             BlockingFact::SourceDepleted => blocker
                 .blocker_key
                 .target
@@ -980,11 +972,11 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerKey,
-        BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile, ContentionGrant,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant,
+        DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
+        HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -1508,12 +1500,8 @@ mod tests {
             action_def: Some(ActionDefId(1)),
         };
 
-        let (condition, baseline) = derive_clearing_condition(
-            &view,
-            agent,
-            BlockingFact::SellerOutOfStock,
-            &blocker_key,
-        );
+        let (condition, baseline) =
+            derive_clearing_condition(&view, agent, BlockingFact::SellerOutOfStock, &blocker_key);
 
         assert_eq!(
             condition,
@@ -1621,7 +1609,10 @@ mod tests {
         };
 
         for (fact, key) in [
-            (BlockingFact::Unknown, sample_blocker_key_for(GoalKey::from(GoalKind::Sleep))),
+            (
+                BlockingFact::Unknown,
+                sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+            ),
             (
                 BlockingFact::PatienceExhausted,
                 sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
@@ -1721,7 +1712,10 @@ mod tests {
             condition,
             BlockerClearingCondition::ContentionChanged { facility }
         );
-        assert_eq!(baseline, Some(ClearingBaseline::ContentionPosition(Some(2))));
+        assert_eq!(
+            baseline,
+            Some(ClearingBaseline::ContentionPosition(Some(2)))
+        );
     }
 
     #[test]
@@ -1867,7 +1861,11 @@ mod tests {
             baseline_snapshot: None,
         };
 
-        assert!(is_blocker_cleared(&TestBeliefView::default(), agent, &blocker));
+        assert!(is_blocker_cleared(
+            &TestBeliefView::default(),
+            agent,
+            &blocker
+        ));
     }
 
     #[test]
@@ -1910,7 +1908,11 @@ mod tests {
             baseline_snapshot: None,
         };
 
-        assert!(!is_blocker_cleared(&TestBeliefView::default(), agent, &blocker));
+        assert!(!is_blocker_cleared(
+            &TestBeliefView::default(),
+            agent,
+            &blocker
+        ));
     }
 
     #[test]
@@ -2444,10 +2446,11 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(30),
-            clearing_condition: worldwake_core::BlockerClearingCondition::CommodityAvailabilityChanged {
-                commodity: CommodityKind::Bread,
-                place,
-            },
+            clearing_condition:
+                worldwake_core::BlockerClearingCondition::CommodityAvailabilityChanged {
+                    commodity: CommodityKind::Bread,
+                    place,
+                },
             baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
                 quantity: Quantity(0),
             }),

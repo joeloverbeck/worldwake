@@ -156,12 +156,8 @@ pub enum BlockerClearingCondition {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ClearingBaseline {
-    CommodityQuantity {
-        quantity: Quantity,
-    },
-    InventoryQuantity {
-        quantity: Quantity,
-    },
+    CommodityQuantity { quantity: Quantity },
+    InventoryQuantity { quantity: Quantity },
     UniqueItemCount(u32),
     PathKnown(bool),
     EntityBelieved(bool),
@@ -722,5 +718,4 @@ mod tests {
         // NOT blocked at place_b — pursuit to a different believed place is allowed.
         assert!(!memory.is_blocked(&key, Some(place_b), Some(target), None, Tick(5)));
     }
-
 }

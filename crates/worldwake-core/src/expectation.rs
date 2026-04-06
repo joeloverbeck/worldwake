@@ -172,7 +172,7 @@ mod tests {
         CauseRef, CommodityKind, Component, ControlSource, EntityId, EventLog, EvidenceKind,
         Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
     use std::fmt::{Debug, Display};
 

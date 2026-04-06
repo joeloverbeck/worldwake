@@ -1082,16 +1082,13 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(thresholds) = state.drive_thresholds(actor) else {
                     return false;
                 };
-                commodity
-                    .spec()
-                    .consumable_profile
-                    .is_some_and(|profile| {
-                        let relieves_hunger = profile.hunger_relief_per_unit.value() > 0
-                            && needs.hunger >= thresholds.hunger.low();
-                        let relieves_thirst = profile.thirst_relief_per_unit.value() > 0
-                            && needs.thirst >= thresholds.thirst.low();
-                        !(relieves_hunger || relieves_thirst)
-                    })
+                commodity.spec().consumable_profile.is_some_and(|profile| {
+                    let relieves_hunger = profile.hunger_relief_per_unit.value() > 0
+                        && needs.hunger >= thresholds.hunger.low();
+                    let relieves_thirst = profile.thirst_relief_per_unit.value() > 0
+                        && needs.thirst >= thresholds.thirst.low();
+                    !(relieves_hunger || relieves_thirst)
+                })
             }
             GoalKind::AcquireCommodity { commodity, purpose } => match purpose {
                 CommodityPurpose::SelfConsume

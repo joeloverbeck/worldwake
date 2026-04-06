@@ -201,8 +201,7 @@ mod tests {
         ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, LastSeenMemory,
         LastSeenProvenance, LastSeenRecord, PendingEvent, PerceptionSource, Quantity,
         ReservationId, Seed, StateHash, Tick, TickRange, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn,
-        build_prototype_world,
+        WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },

@@ -9,9 +9,8 @@ use worldwake_core::{
     EntityBeliefAspect, EntityBeliefClaim, EntityId, EventTag, EventView, EvidenceRef, GoalKind,
     HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity, ResourceSource,
     Seed, SharedTellState, SocialObservation, SocialObservationDetail, SocialObservationKind,
-    TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile, WorkstationTag,
-    belief_confidence, build_believed_entity_state, hash_event_log, hash_world,
-    verify_authoritative_conservation,
+    TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile, WorkstationTag, belief_confidence,
+    build_believed_entity_state, hash_event_log, hash_world, verify_authoritative_conservation,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionTraceKind, CommitTraceData, InputKind,
@@ -212,12 +211,15 @@ fn entity_location_claims(
     store: &worldwake_core::AgentBeliefStore,
     subject: EntityId,
 ) -> Vec<&EntityBeliefClaim> {
-    store.entity_claims.get(&subject).map_or_else(Vec::new, |claims| {
-        claims
-            .iter()
-            .filter(|claim| claim.aspect == EntityBeliefAspect::Location)
-            .collect()
-    })
+    store
+        .entity_claims
+        .get(&subject)
+        .map_or_else(Vec::new, |claims| {
+            claims
+                .iter()
+                .filter(|claim| claim.aspect == EntityBeliefAspect::Location)
+                .collect()
+        })
 }
 
 fn witnessed_conflict(

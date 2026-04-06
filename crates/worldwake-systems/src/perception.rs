@@ -47,16 +47,15 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
     let event_ids = event_log.events_at_tick(tick).to_vec();
     let mut updated_stores = BTreeMap::<EntityId, AgentBeliefStore>::new();
 
-    let direct_local_batches =
-        observe_passive_local_entities(
-            world,
-            event_log,
-            tick,
-            rng,
-            active_actions,
-            action_defs,
-            &mut updated_stores,
-        );
+    let direct_local_batches = observe_passive_local_entities(
+        world,
+        event_log,
+        tick,
+        rng,
+        active_actions,
+        action_defs,
+        &mut updated_stores,
+    );
     observe_active_actions(
         world,
         tick,
@@ -832,7 +831,9 @@ fn active_attention_cost(
     action_defs: &ActionDefRegistry,
 ) -> Permille {
     for instance in active_actions.values() {
-        if instance.actor == agent && let Some(def) = action_defs.get(instance.def_id) {
+        if instance.actor == agent
+            && let Some(def) = action_defs.get(instance.def_id)
+        {
             return def.attention_cost;
         }
     }
@@ -1170,15 +1171,15 @@ mod tests {
         BountyTarget, BountyTerms, CauseRef, CommodityKind, ComponentDelta, ComponentKind,
         ComponentValue, Container, ContentionGrant, ContentionQueue, ContentionWaiter,
         ControlSource, DeadAt, DisturbanceKind, EntityBeliefAspect, EntityKind, EventLog,
-        EventPayload, EventTag, EventView, EvidenceKind, EvidenceRef, InstitutionalBeliefKey,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MismatchKind, NoticeContent,
-        NoticeTopic, ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
-        PerceptionSource, Permille, PlaceVisibilityProfile, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace, Quantity,
-        RelationDelta, RelationKind, RelationValue, ResourceSource, RewardSource, SaleListing,
-        SceneEvidence, Seed, SocialObservationDetail, SocialObservationKind, StateDelta,
-        StockAssignment, StockAssignmentKind, TheftFacts, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, HomeostaticNeeds,
+        EventPayload, EventTag, EventView, EvidenceKind, EvidenceRef, HomeostaticNeeds,
+        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
+        MismatchKind, NoticeContent, NoticeTopic, ObservedEntitySnapshot, OfficeForceState,
+        PendingEvent, PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace,
+        Quantity, RelationDelta, RelationKind, RelationValue, ResourceSource, RewardSource,
+        SaleListing, SceneEvidence, Seed, SocialObservationDetail, SocialObservationKind,
+        StateDelta, StockAssignment, StockAssignmentKind, TheftFacts, Tick, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
         build_observed_entity_snapshot, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
@@ -1386,9 +1387,7 @@ mod tests {
         };
         let mut action_defs = ActionDefRegistry::new();
         let def_id = register_test_action(&mut action_defs, ActionDomain::Combat, "fight");
-        action_defs
-            .get(def_id)
-            .expect("test action should exist");
+        action_defs.get(def_id).expect("test action should exist");
         let active_actions = BTreeMap::from([(
             ActionInstanceId(0),
             active_instance(def_id, actor, vec![target]),
@@ -5181,11 +5180,8 @@ mod tests {
                 .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
-            txn.set_component_homeostatic_needs(
-                observer,
-                HomeostaticNeeds::new_sated(),
-            )
-            .unwrap();
+            txn.set_component_homeostatic_needs(observer, HomeostaticNeeds::new_sated())
+                .unwrap();
             txn.set_component_place_visibility_profile(
                 place,
                 PlaceVisibilityProfile {

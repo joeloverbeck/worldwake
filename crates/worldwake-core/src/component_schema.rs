@@ -1864,7 +1864,10 @@ mod tests {
         world
             .insert_component_place_visibility_profile(place, profile.clone())
             .unwrap();
-        assert_eq!(world.get_component_place_visibility_profile(place), Some(&profile));
+        assert_eq!(
+            world.get_component_place_visibility_profile(place),
+            Some(&profile)
+        );
         assert!(world.has_component_place_visibility_profile(place));
         assert_eq!(world.count_with_place_visibility_profile(), 1);
 

@@ -2335,7 +2335,8 @@ mod tests {
             let _ = txn.commit(&mut log);
         }
         assert_eq!(
-            world.get_component_agent_belief_store(speaker)
+            world
+                .get_component_agent_belief_store(speaker)
                 .unwrap()
                 .get_entity(&subject)
                 .unwrap()
@@ -2365,14 +2366,17 @@ mod tests {
             claim.source == PerceptionSource::Rumor { chain_len: 2 }
                 && claim.value == worldwake_core::ClaimValue::Place(Some(place))
         }));
-        assert!(location_claims.iter().any(|claim| {
-            claim.source
-                == PerceptionSource::Report {
-                    from: speaker,
-                    chain_len: 1,
-                }
-                && claim.value == worldwake_core::ClaimValue::Place(None)
-        }), "claims={claims:?}");
+        assert!(
+            location_claims.iter().any(|claim| {
+                claim.source
+                    == PerceptionSource::Report {
+                        from: speaker,
+                        chain_len: 1,
+                    }
+                    && claim.value == worldwake_core::ClaimValue::Place(None)
+            }),
+            "claims={claims:?}"
+        );
         let summary = listener_store.get_entity(&subject).unwrap();
         assert_eq!(summary.last_known_place, None);
         assert_eq!(

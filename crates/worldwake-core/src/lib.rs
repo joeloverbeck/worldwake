@@ -46,13 +46,13 @@ pub mod drives;
 pub mod entity;
 pub mod entity_belief_claim;
 pub mod epistemic;
-pub mod expectation;
 pub mod error;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
 pub mod evidence;
 pub mod execution_budget;
+pub mod expectation;
 pub mod experience;
 pub mod factions;
 pub mod goal;
@@ -65,8 +65,8 @@ pub mod items;
 pub mod load;
 pub mod needs;
 pub mod numerics;
-pub mod offices;
 pub mod observation_context;
+pub mod offices;
 pub mod patrol;
 pub mod production;
 pub mod pursuit;
@@ -139,17 +139,17 @@ pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBeliefClaim};
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
-pub use expectation::{
-    ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord, ExpectationState,
-    ExpectationStore, LastSeenMemory, LastSeenProvenance, LastSeenRecord, SearchCondition,
-    SearchResult, SearchTarget,
-};
 pub use error::WorldError;
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
 pub use evidence::{DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence};
 pub use execution_budget::ExecutionBudget;
+pub use expectation::{
+    ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord, ExpectationState,
+    ExpectationStore, LastSeenMemory, LastSeenProvenance, LastSeenRecord, SearchCondition,
+    SearchResult, SearchTarget,
+};
 pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
     SourceReliability, danger_ratio_permille, failure_ratio_permille,
@@ -182,10 +182,10 @@ pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
 pub use numerics::{LoadUnits, Permille, Quantity};
+pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
-pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use patrol::{PatrolProfile, PatrolRoute};
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,

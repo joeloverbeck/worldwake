@@ -294,11 +294,11 @@ Each variant needs planner semantics entries in `build_semantics_table()` defini
 New methods on `GoalBeliefView` trait (`crates/worldwake-sim/src/belief_view.rs`):
 
 ```rust
-fn expectation_store(&self, agent: EntityId) -> Option<&ExpectationStore> {
+fn expectation_store(&self, agent: EntityId) -> Option<ExpectationStore> {
     let _ = agent;
     None
 }
-fn last_seen_memory(&self, agent: EntityId) -> Option<&LastSeenMemory> {
+fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
     let _ = agent;
     None
 }

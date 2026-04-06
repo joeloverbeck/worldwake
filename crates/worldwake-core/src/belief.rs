@@ -3055,7 +3055,11 @@ mod tests {
 
         let claims = store.entity_claims.get(&entity(72)).unwrap();
         assert_eq!(claims.len(), 2);
-        assert!(claims.iter().any(|claim| claim.aspect == EntityBeliefAspect::Alive));
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Alive)
+        );
         assert!(
             claims
                 .iter()

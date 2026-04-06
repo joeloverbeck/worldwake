@@ -105,6 +105,7 @@ Specific persisted-shape checks:
 #### Trait surface checks
 
 - When extending a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or generated surfaces. Distinguish the canonical consumer boundary from implementation-detail mirrors.
+- If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself rather than assuming the downstream consumer crate named in the ticket is the only edit surface.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
 
 #### Repo rules

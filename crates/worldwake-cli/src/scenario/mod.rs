@@ -493,9 +493,9 @@ mod tests {
         ControlSource, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
         ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
         LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
-        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
-        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
-        TradeCategory, ViolationDispositionProfile, WorkstationTag,
+        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
+        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {

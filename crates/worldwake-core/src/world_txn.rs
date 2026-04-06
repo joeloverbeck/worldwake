@@ -4046,7 +4046,8 @@ mod tests {
     }
 
     #[test]
-    fn set_component_place_visibility_profile_records_component_delta_and_updates_world_on_commit() {
+    fn set_component_place_visibility_profile_records_component_delta_and_updates_world_on_commit()
+    {
         let mut world = World::new(test_topology()).unwrap();
         let place = entity(2);
         let before = sample_place_visibility_profile();
@@ -4076,7 +4077,10 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas().len(), 1);
-        assert_eq!(world.get_component_place_visibility_profile(place), Some(&after));
+        assert_eq!(
+            world.get_component_place_visibility_profile(place),
+            Some(&after)
+        );
     }
 
     #[test]
@@ -5195,7 +5199,8 @@ mod tests {
     }
 
     #[test]
-    fn clear_component_place_visibility_profile_records_removed_delta_and_updates_world_on_commit() {
+    fn clear_component_place_visibility_profile_records_removed_delta_and_updates_world_on_commit()
+    {
         let mut world = World::new(test_topology()).unwrap();
         let place = entity(2);
         let before = sample_place_visibility_profile();
