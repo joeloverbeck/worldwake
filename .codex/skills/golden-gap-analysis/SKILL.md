@@ -38,7 +38,8 @@ Exception: if the refresh fails because live `golden_*` source has missing or du
 6. Read:
    - [docs/golden-e2e-coverage.md](../../../docs/golden-e2e-coverage.md)
    - [docs/generated/golden-e2e-inventory.md](../../../docs/generated/golden-e2e-inventory.md)
-   - [docs/generated/golden-scenario-map.md](../../../docs/generated/golden-scenario-map.md)
+   - [docs/generated/golden-scenario-index.md](../../../docs/generated/golden-scenario-index.md)
+   - Per-file details in [docs/generated/golden-scenario-details/](../../../docs/generated/golden-scenario-details/)
    - [docs/generated/golden-coverage-matrix.md](../../../docs/generated/golden-coverage-matrix.md)
    - [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
 7. Review the current codebase state for the implemented spec:
@@ -96,7 +97,7 @@ If the subtype exists only as stored metadata with no live consumer yet, treat i
 ### 6. Deduplicate aggressively
 
 For each candidate scenario, verify it is not already covered by:
-1. existing scenarios in [docs/generated/golden-scenario-map.md](../../../docs/generated/golden-scenario-map.md)
+1. existing scenarios in [docs/generated/golden-scenario-index.md](../../../docs/generated/golden-scenario-index.md) and per-file details in [docs/generated/golden-scenario-details/](../../../docs/generated/golden-scenario-details/)
 2. rejected scenarios in [docs/golden-e2e-coverage.md](../../../docs/golden-e2e-coverage.md)
 3. removed backlog items in [docs/golden-e2e-coverage.md](../../../docs/golden-e2e-coverage.md)
 4. relevant live `golden_*` suites when the generated docs alone are too coarse to tell whether the candidate proves a materially distinct contract

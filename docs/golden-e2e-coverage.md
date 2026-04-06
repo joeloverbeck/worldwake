@@ -11,7 +11,7 @@
 The mechanical coverage data is generated from structured source annotations. Do not duplicate it here.
 
 - **Test inventory**: [generated/golden-e2e-inventory.md](generated/golden-e2e-inventory.md) — per-file counts and `golden_*` name lists.
-- **Scenario map**: [generated/golden-scenario-map.md](generated/golden-scenario-map.md) — scenario identifiers, titles, metadata, Setup/Proves/Chain prose, and owning tests.
+- **Scenario index**: [generated/golden-scenario-index.md](generated/golden-scenario-index.md) — gameplay-level scenario overview (identifiers, titles, metadata, Setup/Proves/Chain prose). For test-name-level detail, see [generated/golden-scenario-details/](generated/golden-scenario-details/).
 - **Coverage matrix**: [generated/golden-coverage-matrix.md](generated/golden-coverage-matrix.md) — GoalKind, ActionDomain, Systems, Topology, and Foundation Principles tables.
 
 Regenerate/validate all with `python3 scripts/golden_inventory.py --write --check-docs`.

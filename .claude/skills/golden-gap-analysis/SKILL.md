@@ -37,7 +37,7 @@ Read ALL of the following files completely:
    - "Removed Backlog Items" section
    - "Pending Backlog Summary" section
 3. **Test inventory**: `docs/generated/golden-e2e-inventory.md`
-4. **Scenario map**: `docs/generated/golden-scenario-map.md`
+4. **Scenario index**: `docs/generated/golden-scenario-index.md` (gameplay overview) and per-file details in `docs/generated/golden-scenario-details/`
 5. **Coverage matrix**: `docs/generated/golden-coverage-matrix.md`
 6. **Foundations**: `docs/FOUNDATIONS.md`
 
@@ -75,7 +75,7 @@ The highest-value golden tests are those that demonstrate **emergent behavior ac
 ### Step 4: Mandatory Deduplication
 
 Before proposing any scenario, verify it is NOT already covered by:
-1. **Existing scenarios** in `docs/generated/golden-scenario-map.md`
+1. **Existing scenarios** in `docs/generated/golden-scenario-index.md` and per-file details in `docs/generated/golden-scenario-details/`
 2. **Rejected scenarios** in the "Evaluated and Rejected Scenarios" section of `docs/golden-e2e-coverage.md`
 3. **Removed backlog items** in the "Removed Backlog Items" section of `docs/golden-e2e-coverage.md`
 

@@ -44,9 +44,9 @@ Read ALL of these files before any analysis:
 1. **The assessment document** (from the argument) — read the entire file
 2. **`docs/FOUNDATIONS.md`** — architectural commandments. Skip if read earlier in this session and not modified since.
 3. **`docs/spec-drafting-rules.md`** — spec format requirements. Skip if read earlier in this session and not modified since.
-4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. Also determine the highest completed phase number for use in Phase 3.
+4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. Also determine the highest completed phase number for use in Phase 3. If the file does not exist in `specs/`, check `archive/specs/IMPLEMENTATION-ORDER*.md` for the most recently archived version and read that instead.
 
-**Pre-flight check**: If `specs/IMPLEMENTATION-ORDER.md` exists, warn the user that Phase 3 will overwrite it with a fresh file containing only the new phase. Suggest archiving or backing it up before proceeding (see `docs/archival-workflow.md`). If the user has not archived it, ask whether to continue.
+**Pre-flight check**: If `specs/IMPLEMENTATION-ORDER.md` exists in `specs/`, warn the user that Phase 3 will overwrite it with a fresh file containing only the new phase. Suggest archiving or backing it up before proceeding (see `docs/archival-workflow.md`). If the user has not archived it, ask whether to continue. If the file was already archived (read from `archive/`), skip this warning.
 
 #### Step 2: Extract Proposals
 
@@ -65,14 +65,18 @@ From the assessment document, extract every distinct proposal. For each proposal
 For each proposal, validate the assessment's assumptions against the actual codebase:
 
 1. **Grep/Glob** for types, functions, files, and components the proposal references. Confirm they exist and have the shape the assessment assumes. The external LLM may have outdated or inaccurate assumptions about the codebase.
-2. **Check if already addressed**: Some proposals may describe problems that have already been fixed in recent work. Cross-reference against completed specs in `specs/IMPLEMENTATION-ORDER.md`.
+2. **Check if already addressed**: Some proposals may describe problems that have already been fixed in recent work. Cross-reference against completed specs in `specs/IMPLEMENTATION-ORDER.md` (or its archived equivalent if already archived).
 3. **Verify FOUNDATIONS alignment**: Confirm the proposal's cited FOUNDATIONS principles are correct (right number, right name). Check whether the proposal itself would violate any principles it doesn't cite.
 4. **Assess benefit**: Would this change create meaningful downstream consequences (Principle 5)? Or is it "nice to have" without real emergent payoff?
 5. **Check for overlap with active specs**: Glob `specs/S*.md` and check whether any existing active spec already covers the proposal's scope. If so, classify as Reject with reason "already covered by S{N}."
 
 When the proposal count is large (>5), use up to 3 Explore agents in parallel to validate different proposal groups simultaneously. Provide each agent with the proposals it should validate and the checklist above. Group proposals by codebase area (e.g., AI/planner proposals together, perception proposals together, ECS/core proposals together) so each agent can efficiently share grep context. If proposals span many areas, group by estimated validation complexity instead.
 
-#### Step 4: Classify Each Proposal
+#### Step 4: Auto-Detect Next S-Number
+
+Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. Increment by 1 for the first new spec. This is needed before presenting the triage report so that spec number assignments are concrete.
+
+#### Step 5: Classify Each Proposal
 
 For each proposal, assign one of three classifications:
 
@@ -80,7 +84,7 @@ For each proposal, assign one of three classifications:
 - **Reject**: The proposal's assumptions are wrong (already addressed, codebase differs from what assessment assumes), it violates FOUNDATIONS, or it fails YAGNI (no meaningful downstream consequences). Record: the specific reason for rejection.
 - **Scope-Down**: The core idea is valuable but the proposal is too ambitious or mixes concerns. Record: what the reduced spec would cover, what is deferred to later.
 
-#### Step 5: Present Triage Report
+#### Step 6: Present Triage Report
 
 Present the triage to the user in a structured format:
 
@@ -118,10 +122,6 @@ If the user reclassifies proposals (e.g., "accept P5 too" or "reject P2"), updat
 
 After the triage is approved:
 
-#### Step 6: Auto-Detect Next S-Number
-
-Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. Increment by 1 for the first new spec, continue sequentially.
-
 #### Step 7: Write Draft Specs
 
 For each accepted or scoped-down proposal, write a draft spec to `specs/S{next}-{short-name}.md`. Use lowercase-kebab-case for `{short-name}`. Name should describe the deliverable, not the problem. Match existing spec naming patterns (e.g., `S42-per-agent-reasoning-style`, `S44-generalized-contention-substrate`). Avoid abstract names like `belief-improvement` — prefer concrete names like `entity-belief-claims`.
@@ -144,7 +144,7 @@ Each spec MUST follow project conventions from `docs/spec-drafting-rules.md`:
 
 These are **draft specs**. They contain the architectural shape and key deliverables but expect a `/reassess-spec` pass before ticket decomposition. Do not attempt exhaustive codebase validation of every reference — that is reassess-spec's job.
 
-When writing multiple specs (>3), use Explore agents in parallel to trace codebase references for different specs simultaneously.
+When writing multiple specs (>3) and the existing context from Phase 1 is insufficient to write them confidently, use Explore agents in parallel to trace additional codebase references for different specs simultaneously.
 
 #### Step 8: Verify and Present Written Specs
 
@@ -215,10 +215,12 @@ S50, S51 (parallel)
 ...
 
 ### Phase Gate
-- [ ] <gate criterion 1>
-- [ ] <gate criterion 2>
+- [ ] All specs reassessed and ticket-decomposed
+- [ ] All wave specs implemented and passing golden E2E tests
+- [ ] Canonical regressions addressed by this phase fully producible
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [ ] `cargo test --workspace` passing
 - [ ] Golden E2E coverage for each new spec's core behavior
-- ...
 ```
 
 Match the existing style from the current `specs/IMPLEMENTATION-ORDER.md` but start fresh — do not carry forward completed work details beyond the one-line reference.

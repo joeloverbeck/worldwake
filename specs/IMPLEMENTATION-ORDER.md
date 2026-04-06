@@ -1,0 +1,67 @@
+# Implementation Order & Dependency Graph
+
+## Completed Work
+
+Phases 1–6 (E01–E22, FND-01, FND-02, S01–S58) completed.
+See `archive/` for detailed completion records.
+
+---
+
+## Phase 7: Consequence Carriers
+
+Derived from external gameplay assessment (`brainstorming/prioritary-gameplay-systems.md`) validated against the actual codebase and `docs/FOUNDATIONS.md`. These specs add missing carriers of consequence that widen the causal graph — expectation tracking, persistent sites, predator ecology, boundary processes, contested justice, scarcity response, social aftermath, and settlement decline.
+
+### Dependency Graph
+
+```text
+S59 (independent)     S60 (independent)     S62 (independent)
+     │                     │
+     │                     ├── S61 (needs S60 for dens)
+     ├── S63 (needs S59)   │
+     │                     │
+S59 ─┤                     │
+S63 ─┼── S65 (needs S59, S63)
+     │
+S62 ──── S64 (needs S62 for boundary pressure)
+     │
+S60 ─┤
+S64 ─┼── S66 (needs S60, S64, S65)
+S65 ─┘
+```
+
+### Active Execution Steps
+
+**Wave 1** (parallel, no deps):
+- **S59**: Expectation and Obligation Substrate — time-bounded expectations, overdue detection, search/rescue actions, last-seen propagation
+- **S60**: Persistent Site Occupancy — site profiles with sublocations, occupancy claims, site traces, BanditCamp migration
+- **S62**: Boundary Processes and Remote Shocks — source regions, boundary channels, scheduled inflows, disruption mechanics
+
+**Wave 2** (after Wave 1):
+- **S61**: Predator Ecology and Dens — predator agents with territory, hunger-driven roaming, den habitation, carcass/track evidence
+  - depends on S60 (dens use site occupancy model)
+- **S63**: Contested Evidence and Warrants — warrants, detention, case records, alibi, evidence contest, wrongful-accusation correction
+  - depends on S59 (overdue expectations feed into suspicion/accusation)
+
+**Wave 3** (after Wave 2):
+- **S64**: Scarcity Response — Debt, Rationing, and Substitution — borrowing/lending, ration orders, hoarding, sale refusal, substitute purchasing
+  - depends on S62 (boundary shocks create the upstream shortage pressure)
+- **S65**: Social Aftermath Memory — provenance-tracked grudges, gratitude, kin bonds, revenge, protection, favoritism
+  - depends on S59 (rescue creates gratitude edges), S63 (wrongful accusation creates grudges)
+
+**Wave 4** (after Wave 3):
+- **S66**: Settlement Decline and Reoccupation — household departure, facility closure, building vacancy, squatter reoccupation, institutional degradation
+  - depends on S60 (vacant buildings as occupyable sites), S64 (scarcity pressure drives departure), S65 (social bonds anchor or repel)
+
+### Phase 7 Gate
+
+- [ ] All 8 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [ ] Wave 1 specs implemented and passing golden E2E tests
+- [ ] Wave 2 specs implemented and passing golden E2E tests
+- [ ] Wave 3 specs implemented and passing golden E2E tests
+- [ ] Wave 4 specs implemented and passing golden E2E tests
+- [ ] Canonical regression A (beast starvation → bounty → hunt) fully producible
+- [ ] Canonical regression G (false rumor → wrongful accusation → correction) fully producible
+- [ ] Canonical regression H (remote shock → local shortage → adaptation) fully producible
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [ ] `cargo test --workspace` passing
+- [ ] Golden E2E coverage for each new spec's core behavior
