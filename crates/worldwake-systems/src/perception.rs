@@ -3,10 +3,10 @@ use worldwake_core::{
     AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, CauseRef, ComponentDelta,
     ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload, EventTag,
     EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, MismatchKind, NoticeTopic, PendingEvent, PerceptionSource,
-    RelationDelta, RelationValue, SocialObservation, SocialObservationDetail,
-    SocialObservationKind, StateDelta, TheftFacts, VisibilitySpec, WitnessData, World, WorldTxn,
-    build_believed_entity_state,
+    InstitutionalKnowledgeSource, MismatchKind, NoticeTopic, ObservationContext, PendingEvent,
+    PerceptionSource, Permille, RelationDelta, RelationValue, SocialObservation,
+    SocialObservationDetail, SocialObservationKind, StateDelta, TheftFacts, VisibilitySpec,
+    WitnessData, World, WorldTxn, build_believed_entity_state,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionInstance, ActionInstanceId, PerceptionTraceEvent, SystemError,
@@ -48,7 +48,15 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
     let mut updated_stores = BTreeMap::<EntityId, AgentBeliefStore>::new();
 
     let direct_local_batches =
-        observe_passive_local_entities(world, event_log, tick, rng, &mut updated_stores);
+        observe_passive_local_entities(
+            world,
+            event_log,
+            tick,
+            rng,
+            active_actions,
+            action_defs,
+            &mut updated_stores,
+        );
     observe_active_actions(
         world,
         tick,
@@ -70,6 +78,8 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
                 world,
                 event_log,
                 rng,
+                active_actions,
+                action_defs,
                 &mut updated_stores,
                 perception_trace.as_deref_mut(),
                 tick,
@@ -110,6 +120,8 @@ fn process_witness_event(
     world: &World,
     event_log: &mut EventLog,
     rng: &mut worldwake_sim::DeterministicRng,
+    active_actions: &BTreeMap<ActionInstanceId, ActionInstance>,
+    action_defs: &ActionDefRegistry,
     updated_stores: &mut BTreeMap<EntityId, AgentBeliefStore>,
     mut perception_trace: Option<&mut worldwake_sim::PerceptionTraceSink>,
     tick: worldwake_core::Tick,
@@ -122,7 +134,16 @@ fn process_witness_event(
     let Some(profile) = world.get_component_perception_profile(witness).copied() else {
         return;
     };
-    let passed = passes_observation_check(profile.observation_fidelity.value(), rng);
+    let effective_fidelity = effective_observation_fidelity(
+        world,
+        witness,
+        record.place_id(),
+        profile,
+        active_actions,
+        action_defs,
+    )
+    .value();
+    let passed = passes_observation_check(effective_fidelity, rng);
     if !passed {
         if let Some(ref mut sink) = perception_trace {
             sink.record(PerceptionTraceEvent {
@@ -130,6 +151,7 @@ fn process_witness_event(
                 sequence_in_tick: 0,
                 observer: witness,
                 event_id,
+                effective_fidelity,
                 observation_passed: false,
                 entity_observations: vec![],
                 institutional_claims: vec![],
@@ -193,6 +215,7 @@ fn process_witness_event(
             sequence_in_tick: 0,
             observer: witness,
             event_id,
+            effective_fidelity,
             observation_passed: true,
             entity_observations: traced_entities,
             institutional_claims: institutional_claims.to_vec(),
@@ -207,6 +230,8 @@ fn observe_passive_local_entities(
     event_log: &mut EventLog,
     tick: worldwake_core::Tick,
     rng: &mut worldwake_sim::DeterministicRng,
+    active_actions: &BTreeMap<ActionInstanceId, ActionInstance>,
+    action_defs: &ActionDefRegistry,
     updated_stores: &mut BTreeMap<EntityId, AgentBeliefStore>,
 ) -> BTreeMap<EntityId, DirectLocalObservationBatch> {
     let mut batches = BTreeMap::new();
@@ -230,13 +255,22 @@ fn observe_passive_local_entities(
             .get_component_agent_belief_store(agent)
             .cloned()
             .unwrap_or_default();
+        let effective_fidelity = effective_observation_fidelity(
+            world,
+            agent,
+            Some(place),
+            profile,
+            active_actions,
+            action_defs,
+        )
+        .value();
         let Some(batch) = collect_direct_local_observation_batch(
             world,
             agent,
             place,
             colocated_entities,
             tick,
-            profile.observation_fidelity.value(),
+            effective_fidelity,
             rng,
             &base_store,
         ) else {
@@ -783,6 +817,58 @@ fn passes_observation_check(fidelity: u16, rng: &mut worldwake_sim::Deterministi
     }
 }
 
+fn fatigue_observation_penalty(fatigue: Permille) -> Permille {
+    if fatigue.value() <= 500 {
+        Permille::ZERO
+    } else {
+        let penalty = (u32::from(fatigue.value()) - 500) * 300 / 500;
+        Permille::new_unchecked(penalty as u16)
+    }
+}
+
+fn active_attention_cost(
+    agent: EntityId,
+    active_actions: &BTreeMap<ActionInstanceId, ActionInstance>,
+    action_defs: &ActionDefRegistry,
+) -> Permille {
+    for instance in active_actions.values() {
+        if instance.actor == agent && let Some(def) = action_defs.get(instance.def_id) {
+            return def.attention_cost;
+        }
+    }
+    Permille::ZERO
+}
+
+fn effective_observation_fidelity(
+    world: &World,
+    observer: EntityId,
+    place: Option<EntityId>,
+    profile: worldwake_core::PerceptionProfile,
+    active_actions: &BTreeMap<ActionInstanceId, ActionInstance>,
+    action_defs: &ActionDefRegistry,
+) -> Permille {
+    let fatigue_penalty = world
+        .get_component_homeostatic_needs(observer)
+        .map_or(Permille::ZERO, |needs| {
+            fatigue_observation_penalty(needs.fatigue)
+        });
+    let occupancy_penalty = active_attention_cost(observer, active_actions, action_defs);
+    let place_concealment = place.and_then(|place| {
+        world
+            .get_component_place_visibility_profile(place)
+            .map(|profile| profile.base_concealment)
+    });
+
+    ObservationContext {
+        base_fidelity: profile.observation_fidelity,
+        fatigue_penalty,
+        occupancy_penalty,
+        place_concealment: place_concealment.unwrap_or(Permille::ZERO),
+        entity_concealment: Permille::ZERO,
+    }
+    .effective_fidelity()
+}
+
 fn social_observations_for_event(
     world: &World,
     record: &impl EventView,
@@ -1070,7 +1156,10 @@ fn institutional_claim_from_delta(
 
 #[cfg(test)]
 mod tests {
-    use super::{perception_system, resolve_witnesses, social_kind, social_observations_for_event};
+    use super::{
+        active_attention_cost, fatigue_observation_penalty, perception_system, resolve_witnesses,
+        social_kind, social_observations_for_event,
+    };
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1084,11 +1173,12 @@ mod tests {
         EventPayload, EventTag, EventView, EvidenceKind, EvidenceRef, InstitutionalBeliefKey,
         InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MismatchKind, NoticeContent,
         NoticeTopic, ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
-        PerceptionSource, Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        ProofRequirement, PrototypePlace, Quantity, RelationDelta, RelationKind, RelationValue,
-        ResourceSource, RewardSource, SaleListing, SceneEvidence, Seed, SocialObservationDetail,
-        SocialObservationKind, StateDelta, StockAssignment, StockAssignmentKind, TheftFacts, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        PerceptionSource, Permille, PlaceVisibilityProfile, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace, Quantity,
+        RelationDelta, RelationKind, RelationValue, ResourceSource, RewardSource, SaleListing,
+        SceneEvidence, Seed, SocialObservationDetail, SocialObservationKind, StateDelta,
+        StockAssignment, StockAssignmentKind, TheftFacts, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, HomeostaticNeeds,
         build_observed_entity_snapshot, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
@@ -1251,6 +1341,120 @@ mod tests {
             observed_tick: Tick(2),
         });
         state
+    }
+
+    #[test]
+    fn fatigue_observation_penalty_matches_spec_thresholds() {
+        assert_eq!(fatigue_observation_penalty(Permille::ZERO), Permille::ZERO);
+        assert_eq!(
+            fatigue_observation_penalty(Permille::new(500).unwrap()),
+            Permille::ZERO
+        );
+        assert_eq!(
+            fatigue_observation_penalty(Permille::new(1000).unwrap()),
+            Permille::new(300).unwrap()
+        );
+    }
+
+    #[test]
+    fn active_attention_cost_returns_zero_without_active_action() {
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        assert_eq!(
+            active_attention_cost(
+                worldwake_core::EntityId {
+                    slot: 1,
+                    generation: 0,
+                },
+                &active_actions,
+                &action_defs,
+            ),
+            Permille::ZERO
+        );
+    }
+
+    #[test]
+    fn active_attention_cost_returns_registered_action_attention_cost() {
+        let actor = worldwake_core::EntityId {
+            slot: 3,
+            generation: 0,
+        };
+        let target = worldwake_core::EntityId {
+            slot: 4,
+            generation: 0,
+        };
+        let mut action_defs = ActionDefRegistry::new();
+        let def_id = register_test_action(&mut action_defs, ActionDomain::Combat, "fight");
+        action_defs
+            .get(def_id)
+            .expect("test action should exist");
+        let active_actions = BTreeMap::from([(
+            ActionInstanceId(0),
+            active_instance(def_id, actor, vec![target]),
+        )]);
+        let expected = Permille::new(650).unwrap();
+
+        let mut updated_defs = ActionDefRegistry::new();
+        updated_defs.register(ActionDef {
+            attention_cost: expected,
+            ..action_defs.get(def_id).unwrap().clone()
+        });
+
+        assert_eq!(
+            active_attention_cost(actor, &active_actions, &updated_defs),
+            expected
+        );
+    }
+
+    #[test]
+    fn passive_perception_respects_place_visibility_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+
+        let (observer, subject) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let subject = txn.create_agent("Subject", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(subject, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            txn.set_component_place_visibility_profile(
+                place,
+                PlaceVisibilityProfile {
+                    base_concealment: Permille::new(1000).unwrap(),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, subject)
+        };
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x90; 32]));
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world.get_component_agent_belief_store(observer).unwrap();
+        assert!(
+            beliefs.get_entity(&subject).is_none(),
+            "full place concealment should reduce effective fidelity to zero"
+        );
     }
 
     #[test]
@@ -4958,7 +5162,80 @@ mod tests {
             "trace should record failed observation check"
         );
         assert!(!events[0].observation_passed);
+        assert_eq!(events[0].effective_fidelity, 0);
         assert!(events[0].institutional_claims.is_empty());
+    }
+
+    #[test]
+    fn trace_records_modulated_effective_fidelity_for_witness_events() {
+        use worldwake_sim::PerceptionTraceSink;
+
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+
+        let (observer, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            txn.set_component_homeostatic_needs(
+                observer,
+                HomeostaticNeeds::new_sated(),
+            )
+            .unwrap();
+            txn.set_component_place_visibility_profile(
+                place,
+                PlaceVisibilityProfile {
+                    base_concealment: Permille::new(1000).unwrap(),
+                },
+            )
+            .unwrap();
+            let office = txn.create_office("Council").unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, office)
+        };
+
+        let mut event_log = EventLog::new();
+        emit_political_relation_event(
+            &mut event_log,
+            Tick(3),
+            place,
+            None,
+            vec![office, observer],
+            vec![StateDelta::Relation(RelationDelta::Added {
+                relation_kind: RelationKind::OfficeHolder,
+                relation: RelationValue::OfficeHolder {
+                    office,
+                    holder: observer,
+                },
+            })],
+        );
+
+        let mut rng = DeterministicRng::new(Seed([13; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+        let mut trace_sink = PerceptionTraceSink::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: Some(&mut trace_sink),
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let event = trace_sink.events_for(observer)[0];
+        assert_eq!(event.effective_fidelity, 0);
+        assert!(!event.observation_passed);
     }
 
     #[test]

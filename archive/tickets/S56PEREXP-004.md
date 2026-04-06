@@ -1,9 +1,9 @@
 # S56PEREXP-004: Integrate perception modulation into perception system
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes ��� perception system internals, function signatures
+**Engine Changes**: Yes — perception system internals, function signatures, perception trace metadata
 **Deps**: S56PEREXP-002, S56PEREXP-003
 
 ## Problem
@@ -20,6 +20,8 @@ The perception system currently uses a flat `observation_fidelity` roll for all 
 6. `world.get_component_place_visibility_profile(place)` will be available after S56PEREXP-003.
 7. The `ActionInstance` struct has an `actor` field (EntityId) and `def_id` field (ActionDefId) — confirmed from `observe_active_actions` usage at perception.rs:337-346.
 8. Cross-system ticket: perception reads from needs system (fatigue), action framework (attention_cost), and topology (place concealment). All reads are state-mediated (P26).
+9. `SystemExecutionContext.action_defs` is `&ActionDefRegistry`, not a raw `BTreeMap<ActionDefId, ActionDef>`. Helper signature examples should use the live registry type.
+10. `PerceptionTraceEvent` lives in `crates/worldwake-sim/src/perception_trace.rs` and currently records witnessed-event observation outcomes only. Extending that trace with `effective_fidelity` is in scope; adding passive-local observation tracing would be a broader trace-surface change and is out of scope for this ticket.
 
 ## Architecture Check
 
@@ -56,7 +58,7 @@ fn fatigue_observation_penalty(fatigue: Permille) -> Permille {
 fn active_attention_cost(
     agent: EntityId,
     active_actions: &BTreeMap<ActionInstanceId, ActionInstance>,
-    action_defs: &BTreeMap<ActionDefId, ActionDef>,
+    action_defs: &ActionDefRegistry,
 ) -> Permille {
     for instance in active_actions.values() {
         if instance.actor == agent {
@@ -105,11 +107,12 @@ Same pattern as above at line 125.
 
 ### 6. Update `PerceptionTraceEvent` for debugging
 
-Include the effective fidelity value in trace output so debugging can distinguish "missed because low base fidelity" from "missed because fatigued in concealed location." This may require adding a field to `PerceptionTraceEvent` or adjusting trace recording.
+Include the effective fidelity value in witnessed-event trace output so debugging can distinguish "missed because low base fidelity" from "missed because fatigued in a concealed location" for the existing `PerceptionTraceEvent` surface.
 
 ## Files to Touch
 
 - `crates/worldwake-systems/src/perception.rs` (modify)
+- `crates/worldwake-sim/src/perception_trace.rs` (modify)
 
 ## Out of Scope
 
@@ -139,10 +142,28 @@ Include the effective fidelity value in trace output so debugging can distinguis
 
 ### New/Modified Tests
 
-1. `crates/worldwake-systems/src/perception.rs` (inline tests) — unit tests for `fatigue_observation_penalty` and `active_attention_cost`
+1. `crates/worldwake-systems/src/perception.rs` (inline tests) — unit tests for `fatigue_observation_penalty` and `active_attention_cost`, plus focused perception integration coverage for concealment / witnessed-event modulation
+2. `crates/worldwake-sim/src/perception_trace.rs` — update trace tests for the new `effective_fidelity` field
 
 ### Commands
 
 1. `cargo test -p worldwake-systems -- perception`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-06.
+
+- Added perception-context modulation in `crates/worldwake-systems/src/perception.rs` for both passive local observation and witnessed-event processing, using `ObservationContext` plus new `fatigue_observation_penalty`, `active_attention_cost`, and shared effective-fidelity computation.
+- Applied place concealment, fatigue, and active-action attention cost as multiplicative reductions on the existing observation gate without changing the underlying random check contract.
+- Extended `crates/worldwake-sim/src/perception_trace.rs` with an `effective_fidelity` field so witnessed-event trace entries now report the actual modulated fidelity used for that observation check.
+- Added focused helper tests, passive concealment integration coverage, and a witnessed-event trace assertion proving modulated fidelity reaches the trace/debug surface.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-sim -- perception_trace`
+- Passed `cargo test -p worldwake-systems -- perception`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
