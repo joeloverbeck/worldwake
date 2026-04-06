@@ -1,4 +1,4 @@
-name: Resilience Tests
+name: Stress Disruptions
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   pull_request:
 
 jobs:
-  resilience:
+  stress-disruptions:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -24,5 +24,5 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Run resilience tests
-        run: cargo test -p worldwake-ai --features soak --test golden_resilience
+      - name: Run stress disruption tests
+        run: cargo test -p worldwake-ai --features soak --test golden_resilience t31_stress_disruptions

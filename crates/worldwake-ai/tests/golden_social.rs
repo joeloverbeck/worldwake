@@ -3042,7 +3042,7 @@ fn golden_alarm_relay_through_stressed_intermediary() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 101: Contradictory location claims coexist and direct observation wins
+// Scenario 115: Contradictory location claims coexist and direct observation wins
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]

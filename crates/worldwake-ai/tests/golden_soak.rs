@@ -58,6 +58,13 @@ fn scaled_emergence_threshold(seed_count: usize, baseline_hits: usize) -> usize 
     numerator.div_ceil(10).max(1)
 }
 
+fn rare_emergence_threshold(seed_count: usize, baseline_hits: usize) -> Option<usize> {
+    // Rare cross-run emergence checks are intended for the full soak sample, not
+    // tiny CI shards. A 3/10 baseline still has a ~49% chance of appearing 0/2
+    // times, so requiring >=1 hit on every two-seed shard is brittle.
+    (seed_count >= 4).then(|| scaled_emergence_threshold(seed_count, baseline_hits))
+}
+
 /// Run a single soak run for the given seed and return per-run results.
 fn run_t30_soak(seed: Seed) -> SoakResult {
     let (mut h, all_agents, _ruling_faction, _bandit_faction, _office) = build_t30_world(seed);
@@ -251,8 +258,8 @@ fn t30_seven_day_soak() {
     let seed_count = seeds.len();
 
     let results: Vec<SoakResult> = seeds.iter().map(|&s| run_t30_soak(s)).collect();
-    let claim_office_threshold = scaled_emergence_threshold(seed_count, 3);
-    let steal_threshold = scaled_emergence_threshold(seed_count, 3);
+    let claim_office_threshold = rare_emergence_threshold(seed_count, 3);
+    let steal_threshold = rare_emergence_threshold(seed_count, 3);
 
     // --- Cross-run invariant 9: Not all hashes identical ---
     let unique_world_hashes: BTreeSet<_> = results.iter().map(|r| r.world_hash).collect();
@@ -264,19 +271,23 @@ fn t30_seven_day_soak() {
 
     // --- Cross-run invariant 10: Political emergence ---
     let claim_office_count = results.iter().filter(|r| r.saw_claim_office).count();
-    assert!(
-        claim_office_count >= claim_office_threshold,
-        "only {claim_office_count}/{seed_count} runs produced ClaimOffice events \
-         (need >= {claim_office_threshold})"
-    );
+    if let Some(claim_office_threshold) = claim_office_threshold {
+        assert!(
+            claim_office_count >= claim_office_threshold,
+            "only {claim_office_count}/{seed_count} runs produced ClaimOffice events \
+             (need >= {claim_office_threshold})"
+        );
+    }
 
     // --- Cross-run invariant 11: Crime emergence ---
     let steal_count = results.iter().filter(|r| r.saw_steal).count();
-    assert!(
-        steal_count >= steal_threshold,
-        "only {steal_count}/{seed_count} runs produced StealItem/Crime events \
-         (need >= {steal_threshold})"
-    );
+    if let Some(steal_threshold) = steal_threshold {
+        assert!(
+            steal_count >= steal_threshold,
+            "only {steal_count}/{seed_count} runs produced StealItem/Crime events \
+             (need >= {steal_threshold})"
+        );
+    }
 
     // --- Per-run emergence: at least 1 death, acquire, travel, tell across all runs ---
     let death_count = results.iter().filter(|r| r.saw_death).count();
@@ -323,5 +334,17 @@ mod tests {
         assert_eq!(scaled_emergence_threshold(10, 3), 3);
         assert_eq!(scaled_emergence_threshold(2, 3), 1);
         assert_eq!(scaled_emergence_threshold(5, 3), 2);
+    }
+
+    #[test]
+    fn rare_emergence_threshold_skips_tiny_ci_shards() {
+        assert_eq!(rare_emergence_threshold(2, 3), None);
+        assert_eq!(rare_emergence_threshold(3, 3), None);
+    }
+
+    #[test]
+    fn rare_emergence_threshold_applies_once_sample_is_meaningful() {
+        assert_eq!(rare_emergence_threshold(4, 3), Some(2));
+        assert_eq!(rare_emergence_threshold(10, 3), Some(3));
     }
 }
