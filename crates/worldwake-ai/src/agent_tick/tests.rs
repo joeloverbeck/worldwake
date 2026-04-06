@@ -4072,6 +4072,8 @@ fn persist_blocked_memory_commits_changed_component() {
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(7),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
 
     persist_blocked_memory(

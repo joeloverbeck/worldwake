@@ -181,6 +181,8 @@ pub(super) fn handle_recoverable_travel_step_blockage(
             diagnostic_context: None,
             observed_tick: tick,
             expires_tick: tick + u64::from(cognitive.structural_block_ticks),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
         runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
         None
@@ -399,6 +401,8 @@ pub(super) fn check_patience_exhaustion(
         diagnostic_context: None,
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
     runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
     runtime.current_plan = None;
@@ -428,6 +432,8 @@ pub(super) fn record_assumption_failure_blocked_intent(
         diagnostic_context: None,
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
 }
 

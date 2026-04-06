@@ -89,6 +89,8 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
                 diagnostic_context: None,
                 observed_tick: tick,
                 expires_tick: tick + u64::from(structural_block_ticks),
+                clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+                baseline_snapshot: None,
             });
         }
 

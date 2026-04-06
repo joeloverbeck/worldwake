@@ -6296,6 +6296,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(10),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
 
         let candidates =
@@ -6355,6 +6357,8 @@ mod tests {
                 diagnostic_context: None,
                 observed_tick: Tick(1),
                 expires_tick: Tick(10),
+                clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+                baseline_snapshot: None,
             });
         }
 
@@ -6430,6 +6434,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(10),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
 
         let result = generate_candidates_with_travel_horizon(
@@ -6871,6 +6877,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(10),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
 
         let candidates =
@@ -10144,6 +10152,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(10),
             expires_tick: Tick(20),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
 
         let blocked_candidates =
@@ -13126,6 +13136,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(3),
             expires_tick: Tick(100),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
 
         let vm = ViolationMemory::default();
@@ -13499,6 +13511,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(99),
             expires_tick: Tick(200),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
 
         let candidates = generate_candidates_with_travel_horizon(
@@ -13829,6 +13843,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(100),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
 
         let candidates =

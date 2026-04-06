@@ -4,13 +4,13 @@
 //! deterministic testing.
 
 use crate::{
-    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind,
-    CommodityPurpose, CommodityValuationProfile, ContentionDispositionProfile, DemandMemory,
-    DemandObservation, DemandObservationReason, EdgeExperience, EntityId, GoalKey, GoalKind,
-    MerchandiseProfile, Permille, PreferenceProfile, Quantity, ReliabilityRecord, RouteExperience,
-    Seed, SourceKey, SourceReliability, StockAssignment, StockAssignmentKind, StockStoragePolicy,
-    SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, TravelEdgeId,
-    UtilityProfile,
+    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerKey,
+    BlockingFact, ClearingBaseline, CommodityKind, CommodityPurpose, CommodityValuationProfile,
+    ContentionDispositionProfile, DemandMemory, DemandObservation, DemandObservationReason,
+    EdgeExperience, EntityId, GoalKey, GoalKind, MerchandiseProfile, Permille, PreferenceProfile,
+    Quantity, ReliabilityRecord, RouteExperience, Seed, SourceKey, SourceReliability,
+    StockAssignment, StockAssignmentKind, StockStoragePolicy, SubstitutePreferences, Tick,
+    TradeCategory, TradeDispositionProfile, TravelEdgeId, UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{NonZeroU8, NonZeroU32};
@@ -186,6 +186,13 @@ pub fn sample_blocked_intent() -> BlockedIntent {
         diagnostic_context: None,
         observed_tick: Tick(10),
         expires_tick: Tick(15),
+        clearing_condition: BlockerClearingCondition::CommodityAvailabilityChanged {
+            commodity: CommodityKind::Bread,
+            place: entity_id(3, 0),
+        },
+        baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
+            quantity: Quantity(2),
+        }),
     }
 }
 

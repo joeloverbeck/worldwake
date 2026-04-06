@@ -3844,6 +3844,8 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(20),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot_with_blocked_facility_uses(
@@ -3911,6 +3913,8 @@ fn search_trace_records_blocked_facility_use_root_filter() {
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(20),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot_with_blocked_facility_uses(
@@ -4035,6 +4039,8 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(20),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot_with_blocked_facility_uses(
@@ -8676,6 +8682,8 @@ fn place_scoped_blocker_prunes_candidate_at_blocked_place() {
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(100),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
     let with_blocker = search_plan(
         &snapshot,
@@ -8742,6 +8750,8 @@ fn place_scoped_blocker_does_not_prune_candidate_at_different_place() {
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(100),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
     let result = search_plan(
         &snapshot,
@@ -8834,6 +8844,8 @@ fn travel_action_uses_destination_as_place_for_blocker_check() {
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(100),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
     let with_blocker = search_plan(
         &snapshot,
@@ -8897,6 +8909,8 @@ fn candidate_pruned_by_blocker_records_place_blocker_trace() {
         diagnostic_context: None,
         observed_tick: Tick(0),
         expires_tick: Tick(100),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
 
     let mut summaries = Vec::new();

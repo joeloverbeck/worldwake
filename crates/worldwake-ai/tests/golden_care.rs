@@ -349,6 +349,8 @@ fn setup_remote_ground_medicine_care_scenario(
             diagnostic_context: None,
             observed_tick: Tick(0),
             expires_tick: Tick(200),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
         blocked.record(BlockedIntent {
             blocker_key: BlockerKey {
@@ -365,6 +367,8 @@ fn setup_remote_ground_medicine_care_scenario(
             diagnostic_context: None,
             observed_tick: Tick(0),
             expires_tick: Tick(200),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
         let mut txn = new_txn(&mut h.world, 0);
         txn.set_component_blocked_intent_memory(healer, blocked)

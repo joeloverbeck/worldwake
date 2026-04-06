@@ -31,7 +31,8 @@ Read `reports/simulation-observer-report.md`.
 1. Read `docs/FOUNDATIONS.md` -- needed to evaluate whether findings violate foundational principles.
 2. List the `specs/` directory to know which specs exist.
 3. List the `tickets/` directory to check for existing related tickets.
-4. Read `docs/spec-drafting-rules.md` for spec change proposals.
+4. List and grep `crates/worldwake-ai/tests/golden_*.rs` for existing tests related to the findings -- needed to avoid proposing duplicate golden tests and to reference the `GoldenHarness` setup pattern.
+5. Read `docs/spec-drafting-rules.md` -- only if any spec changes will be proposed. Skip if all findings map to golden tests or tickets.
 
 ### Step 3: Classify Each Finding
 
@@ -49,6 +50,8 @@ For each finding in the observer report (each smell with severity above NONE), d
 - Which section needs the change
 - What the change should accomplish
 - Whether this needs a new spec instead of modifying an existing one
+
+**Symptom of another finding** -- If a finding is a downstream symptom of a higher-severity finding (e.g., sleep loops caused by dehydration), note it as "deferred to [root finding]" rather than proposing independent remediation. Include these in a "Findings Not Requiring Remediation" table at the end of the report with the reason for deferral. Revisit after the root cause is fixed.
 
 **Ticket** -- Use when the finding points to a concrete bug or missing feature that doesn't require spec-level design work. Propose:
 - A ticket title and description

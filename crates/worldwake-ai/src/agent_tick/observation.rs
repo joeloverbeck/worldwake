@@ -265,6 +265,8 @@ pub(super) fn handle_facility_queue_transitions(
                         diagnostic_context: None,
                         observed_tick: tick,
                         expires_tick: tick + u64::from(phase.structural_block_ticks),
+                        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+                        baseline_snapshot: None,
                     });
                     changed = true;
                 }

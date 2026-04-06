@@ -1,7 +1,8 @@
 use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
-    CognitiveProfile, CommodityKind, EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
+    BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
+    BlockingFact, CognitiveProfile, CommodityKind, EntityId, GoalKey, GoalKind, IntentionFrame,
+    Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -74,6 +75,8 @@ pub fn handle_plan_failure(
         diagnostic_context,
         observed_tick: context.current_tick,
         expires_tick,
+        clearing_condition: BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
     });
     runtime.dirty.insert(DirtySet::REPLAN_SIGNAL);
 }
@@ -85,9 +88,7 @@ pub fn clear_resolved_blockers(
     current_tick: Tick,
 ) {
     blocked_memory.expire(current_tick);
-    blocked_memory
-        .intents
-        .retain(|_, intent| !blocker_resolved(view, agent, intent));
+    blocked_memory.sweep_cleared(|intent| blocker_resolved(view, agent, intent));
 }
 
 fn derive_blocking_fact(
@@ -1768,6 +1769,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(30),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
         let bk2 = BlockerKey {
             goal_key: GoalKey::from(GoalKind::ProduceCommodity {
@@ -1783,6 +1786,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(30),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
         let bk3 = BlockerKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
@@ -1796,6 +1801,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(5),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
 
         clear_resolved_blockers(&view, agent, &mut blocked, Tick(10));
@@ -1855,6 +1862,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(5),
             expires_tick: Tick(50),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         });
 
         // The blocker should NOT auto-resolve even though the target entity

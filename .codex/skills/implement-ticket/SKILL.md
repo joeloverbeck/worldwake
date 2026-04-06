@@ -125,6 +125,7 @@ Update the ticket immediately (without stopping) when the correction is mechanic
 - Component-registration fallout from live macro expansion or schema discovery
 
 Record each auto-correction: ticket says / live code has / correction applied / why safe.
+Place these notes directly under the ticket's `Assumption Reassessment` section as numbered entries so later review can see what changed and why.
 
 When a correction changes the real fallout surface, update every affected ticket section (`What to Change`, `Files to Touch`, `Verification Layers`, `Test Plan`), not just one list.
 
@@ -167,6 +168,7 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 #### Type-change scope
 
 When shared types change, include the sweep surfaces from Section 2 ("Shared type, serialization, and migration sweep") in the task list. Additional scope guidance:
+- Before editing, run a concrete constructor/shape sweep for the changed type across workspace crates (for example `rg -n 'BlockedIntent \\{' crates`), then rerun the same sweep before final verification to confirm no live literal or helper was missed.
 - When behavior moves between carriers, rewrite setup paths onto the new authoritative carrier rather than only deleting the stale field.
 - When a constructor begins seeding defaults it previously omitted, reassess tests proving "missing component" behavior — prefer rewriting to the new constructor contract.
 - When new components participate in persisted world state, expand save/load fixture builders so persistence tests actually serialize and deserialize the new components.
@@ -296,7 +298,7 @@ For migrations moving config/profile state from driver-global to per-entity comp
 4. Add harness helpers for per-entity profile injection when repeated setup would sprawl
 5. Rerun both tests and CI-matching clippy after the API reshape
 
-### 7. Close the loop on the ticket
+### 8. Close the loop on the ticket
 
 If the user asked for full ticket completion, archive per [docs/archival-workflow.md](../../../docs/archival-workflow.md):
 - Mark completion status accurately

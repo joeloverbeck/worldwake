@@ -556,6 +556,8 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: expires,
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
         }
     }
 
