@@ -4,7 +4,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use worldwake_core::{ActionDefId, ActionDomain, BodyCostPerTick, EventTag, VisibilitySpec};
+use worldwake_core::{
+    ActionDefId, ActionDomain, BodyCostPerTick, EventTag, Permille, VisibilitySpec,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActionDef {
@@ -17,6 +19,7 @@ pub struct ActionDef {
     pub reservation_requirements: Vec<ReservationReq>,
     pub duration: DurationExpr,
     pub body_cost_per_tick: BodyCostPerTick,
+    pub attention_cost: Permille,
     pub interruptibility: Interruptibility,
     pub commit_conditions: Vec<Precondition>,
     pub visibility: VisibilitySpec,
@@ -77,6 +80,7 @@ mod tests {
                 Permille::new(0).unwrap(),
                 Permille::new(1).unwrap(),
             ),
+            attention_cost: Permille::ZERO,
             interruptibility: Interruptibility::InterruptibleWithPenalty,
             commit_conditions: vec![Precondition::TargetKind {
                 target_index: 0,
@@ -108,6 +112,7 @@ mod tests {
             reservation_requirements,
             duration,
             body_cost_per_tick,
+            attention_cost,
             interruptibility,
             commit_conditions,
             visibility,
@@ -125,6 +130,7 @@ mod tests {
         let _: Vec<ReservationReq> = reservation_requirements;
         let _: DurationExpr = duration;
         let _: BodyCostPerTick = body_cost_per_tick;
+        let _: Permille = attention_cost;
         let _: Interruptibility = interruptibility;
         let _: Vec<Precondition> = commit_conditions;
         let _: VisibilitySpec = visibility;

@@ -1953,8 +1953,9 @@ mod tests {
     use crate::{
         BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
         DeprivationExposure, EntityId, EntityKind, HomeostaticNeeds, LoadUnits, LotOperation, Name,
-        Permille, Place, PlaceTag, Quantity, ReservationId, ReservationRecord, ResourceSource,
-        Tick, TickRange, Topology, UniqueItemKind, World, WorldError,
+        Permille, Place, PlaceTag, PlaceVisibilityProfile, Quantity, ReservationId,
+        ReservationRecord, ResourceSource, Tick, TickRange, Topology, UniqueItemKind, World,
+        WorldError,
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
@@ -2036,6 +2037,12 @@ mod tests {
             abandonment_grace_ticks: std::num::NonZeroU32::new(5).unwrap(),
             flee_wound_threshold: Permille::new(650).unwrap(),
             rally_place: Some(entity(62)),
+        }
+    }
+
+    fn sample_place_visibility_profile() -> PlaceVisibilityProfile {
+        PlaceVisibilityProfile {
+            base_concealment: Permille::new(375).unwrap(),
         }
     }
 
@@ -4027,6 +4034,40 @@ mod tests {
     }
 
     #[test]
+    fn set_component_place_visibility_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let before = sample_place_visibility_profile();
+        let after = PlaceVisibilityProfile {
+            base_concealment: Permille::new(640).unwrap(),
+        };
+        world
+            .insert_component_place_visibility_profile(place, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_place_visibility_profile(place, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: place,
+                component_kind: ComponentKind::PlaceVisibilityProfile,
+                before: Some(ComponentValue::PlaceVisibilityProfile(before)),
+                after: ComponentValue::PlaceVisibilityProfile(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_place_visibility_profile(place), Some(&after));
+    }
+
+    #[test]
     fn set_component_carry_capacity_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -5139,6 +5180,35 @@ mod tests {
 
         assert_eq!(record.state_deltas().len(), 1);
         assert_eq!(world.get_component_bandit_faction_policy(faction), None);
+    }
+
+    #[test]
+    fn clear_component_place_visibility_profile_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let before = sample_place_visibility_profile();
+        world
+            .insert_component_place_visibility_profile(place, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_place_visibility_profile(place).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: place,
+                component_kind: ComponentKind::PlaceVisibilityProfile,
+                before: ComponentValue::PlaceVisibilityProfile(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_place_visibility_profile(place), None);
     }
 
     #[test]

@@ -1012,6 +1012,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: crate::DurationExpr::Fixed(std::num::NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: crate::Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,

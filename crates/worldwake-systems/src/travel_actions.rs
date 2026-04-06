@@ -43,6 +43,7 @@ pub fn register_travel_actions(
         reservation_requirements: Vec::new(),
         duration: DurationExpr::TravelToTarget { target_index: 0 },
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: Permille::new_unchecked(100),
         interruptibility: Interruptibility::InterruptibleWithPenalty,
         commit_conditions: vec![
             Precondition::TargetExists(0),

@@ -27,6 +27,7 @@ use crate::{
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
+    observation_context::PlaceVisibilityProfile,
     patrol::{PatrolProfile, PatrolRoute},
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,

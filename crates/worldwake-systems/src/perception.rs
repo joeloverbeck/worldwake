@@ -1208,6 +1208,7 @@ mod tests {
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
             duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::TargetExists(0)],
             visibility: VisibilitySpec::SamePlace,

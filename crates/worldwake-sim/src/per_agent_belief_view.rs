@@ -1604,6 +1604,7 @@ mod tests {
             reservation_requirements: Vec::<ReservationReq>::new(),
             duration: DurationExpr::CombatWeapon,
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,

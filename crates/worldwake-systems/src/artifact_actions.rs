@@ -101,6 +101,7 @@ fn post_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandle
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,
@@ -139,6 +140,7 @@ fn post_notice_action_def(id: worldwake_core::ActionDefId, handler: ActionHandle
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,
@@ -180,6 +182,7 @@ fn claim_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandl
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,

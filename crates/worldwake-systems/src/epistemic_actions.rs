@@ -54,6 +54,7 @@ fn ask_witness_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDe
         reservation_requirements: Vec::new(),
         duration: DurationExpr::ActorWitnessQueryDisposition,
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: preconditions,
         visibility: VisibilitySpec::SamePlace,

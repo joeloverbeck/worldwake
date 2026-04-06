@@ -55,6 +55,7 @@ fn consult_record_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
         reservation_requirements: Vec::new(),
         duration: DurationExpr::ConsultRecord { target_index: 0 },
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,

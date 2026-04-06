@@ -177,6 +177,7 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 
 When shared types change, include the sweep surfaces from Section 2 ("Shared type, serialization, and migration sweep") in the task list. Additional scope guidance:
 - Before editing, run a concrete constructor/shape sweep for the changed type across workspace crates (for example `rg -n 'BlockedIntent \\{' crates`), then rerun the same sweep before final verification to confirm no live literal or helper was missed.
+- For broad shared-struct shape changes, it is acceptable to land the shared type first and then use sequential `cargo build` / `cargo test` compile failures to enumerate the remaining fallout. Prefer this over guessing when the compiler can authoritatively surface every missing literal or helper site.
 - When behavior moves between carriers, rewrite setup paths onto the new authoritative carrier rather than only deleting the stale field.
 - When a constructor begins seeding defaults it previously omitted, reassess tests proving "missing component" behavior — prefer rewriting to the new constructor contract.
 - When new components participate in persisted world state, expand save/load fixture builders so persistence tests actually serialize and deserialize the new components.

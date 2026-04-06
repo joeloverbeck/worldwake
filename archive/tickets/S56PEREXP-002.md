@@ -1,6 +1,6 @@
 # S56PEREXP-002: Add `attention_cost` field to `ActionDef`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — ActionDef struct, all action registration sites, test helpers
@@ -13,10 +13,10 @@ S56 requires perception modulation based on the active action's attention demand
 ## Assumption Reassessment (2026-04-06)
 
 1. `ActionDef` at `crates/worldwake-sim/src/action_def.rs:10` has 14 fields. Adding `attention_cost: Permille` makes 15. Derives: `Clone, Debug, Eq, PartialEq, Serialize, Deserialize`.
-2. ~30 `register_*` functions in `crates/worldwake-systems/src/` construct `ActionDef` struct literals. All must include the new field.
+2. Workspace sweep via `rg -n 'ActionDef \\{' crates` shows `ActionDef` struct literals in `worldwake-systems`, `worldwake-sim`, and `worldwake-ai` test/planning helpers. The ticket's listed files cover the current live surface except `planner_ops.rs`, which uses `ActionDefRegistry` but does not construct `ActionDef` literals directly.
 3. ~4 `sample_action_def` test helpers in `crates/worldwake-sim/src/` (action_def.rs, action_def_registry.rs, affordance.rs, affordance_query.rs) must include the new field.
 4. `ActionDef` struct literals also exist in `crates/worldwake-ai/src/` (goal_model.rs, planning_state.rs, decision_trace.rs, plan_revalidation.rs) — test/planning helpers.
-5. `SAVE_FORMAT_VERSION` is 28. Adding a field to `ActionDef` changes the serialized format of `ActionDefRegistry`. Since action defs are code-defined (rebuilt on startup), not persisted in save files, no version bump is needed — but verify this assumption against `save_load.rs`.
+5. `SAVE_FORMAT_VERSION` is 28. `crates/worldwake-sim/src/save_load.rs` serializes `SimulationState` plus optional runtime bytes; it does not serialize an `ActionDefRegistry`. No save-format version bump is needed for this ticket.
 6. Single-crate boundary change (`worldwake-sim`) with downstream consumers in `worldwake-systems` and `worldwake-ai`.
 
 ## Architecture Check
@@ -35,7 +35,7 @@ S56 requires perception modulation based on the active action's attention demand
 
 ### 1. Add field to `ActionDef`
 
-In `crates/worldwake-sim/src/action_def.rs`, add after `handler`:
+In `crates/worldwake-sim/src/action_def.rs`, add alongside the other action-shape fields near `body_cost_per_tick` / `interruptibility`:
 
 ```rust
 pub attention_cost: Permille,
@@ -160,3 +160,17 @@ Add `attention_cost: Permille::ZERO` to struct literals in:
 1. `cargo build --workspace`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-06.
+
+- Added `attention_cost: Permille` to `ActionDef` in `crates/worldwake-sim/src/action_def.rs` and updated the core `ActionDef` tests to require the field.
+- Set per-action `attention_cost` values across `worldwake-systems` registrations using the ticket's launch guidance: combat 400‰, production 200‰, travel/transport/patrol 100‰, and non-occupying domains 0‰.
+- Updated all remaining `ActionDef` literals in `worldwake-sim` and `worldwake-ai` helper/test surfaces to include `attention_cost: Permille::ZERO` so the new field stays additive until later S56 integration tickets consume it.
+
+## Verification Result
+
+- Passed `cargo build --workspace`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

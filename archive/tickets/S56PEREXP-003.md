@@ -1,6 +1,6 @@
 # S56PEREXP-003: Add `ObservationContext` type and `PlaceVisibilityProfile` component
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new component in ECS, new type in core
@@ -138,3 +138,17 @@ Ensure `PlaceVisibilityProfile` is imported (or use path) in:
 1. `cargo test -p worldwake-core -- observation_context`
 2. `cargo test -p worldwake-core`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-06.
+
+- Added `ObservationContext` and `PlaceVisibilityProfile` in `crates/worldwake-core/src/observation_context.rs`, including the spec-defined multiplicative `effective_fidelity()` computation and focused arithmetic coverage.
+- Exported both types from `crates/worldwake-core/src/lib.rs`, registered `PlaceVisibilityProfile` as a place-only authoritative component in `component_schema.rs`, and wired the new type through the macro-driven core surfaces in `delta.rs`, `world.rs`, and `component_tables.rs`.
+- Added explicit `PlaceVisibilityProfile` registration and `WorldTxn` set/clear tests so the new component is proven usable on `EntityKind::Place` and rejected on non-place entities.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core -- observation_context`
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

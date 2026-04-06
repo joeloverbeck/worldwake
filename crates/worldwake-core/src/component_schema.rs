@@ -1215,6 +1215,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                place_visibility_profiles,
+                PlaceVisibilityProfile,
+                insert_place_visibility_profile,
+                get_place_visibility_profile,
+                get_place_visibility_profile_mut,
+                remove_place_visibility_profile,
+                has_place_visibility_profile,
+                iter_place_visibility_profiles,
+                insert_component_place_visibility_profile,
+                get_component_place_visibility_profile,
+                get_component_place_visibility_profile_mut,
+                remove_component_place_visibility_profile,
+                has_component_place_visibility_profile,
+                entities_with_place_visibility_profile,
+                query_place_visibility_profile,
+                count_with_place_visibility_profile,
+                "PlaceVisibilityProfile",
+                |kind| kind == EntityKind::Place,
+                PlaceVisibilityProfile,
+                crate::PlaceVisibilityProfile,
+                set_component_place_visibility_profile,
+                clear_component_place_visibility_profile,
+                txn_simple_set
+            }
+            {
                 bandit_faction_policies,
                 BanditFactionPolicy,
                 insert_bandit_faction_policy,
@@ -1755,7 +1780,9 @@ pub(crate) use with_component_schema_entries;
 
 #[cfg(test)]
 mod tests {
-    use crate::{EntityKind, SceneEvidence, Tick, Topology, World, WorldError};
+    use crate::{
+        EntityKind, PlaceVisibilityProfile, SceneEvidence, Tick, Topology, World, WorldError,
+    };
 
     #[test]
     fn scene_evidence_is_registered_for_places_only() {
@@ -1771,6 +1798,28 @@ mod tests {
 
         let error = world
             .insert_component_scene_evidence(agent, SceneEvidence::default())
+            .unwrap_err();
+        assert!(matches!(error, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn place_visibility_profile_is_registered_for_places_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let place = world.create_entity(EntityKind::Place, Tick(1));
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = PlaceVisibilityProfile {
+            base_concealment: crate::Permille::new(375).unwrap(),
+        };
+
+        world
+            .insert_component_place_visibility_profile(place, profile.clone())
+            .unwrap();
+        assert_eq!(world.get_component_place_visibility_profile(place), Some(&profile));
+        assert!(world.has_component_place_visibility_profile(place));
+        assert_eq!(world.count_with_place_visibility_profile(), 1);
+
+        let error = world
+            .insert_component_place_visibility_profile(agent, profile)
             .unwrap_err();
         assert!(matches!(error, WorldError::InvalidOperation(_)));
     }

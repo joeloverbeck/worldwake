@@ -432,6 +432,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick,
+            attention_cost: Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::Hidden,

@@ -44,6 +44,7 @@ fn patrol_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         reservation_requirements: Vec::new(),
         duration: DurationExpr::ActorPatrolProfile,
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::new_unchecked(100),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::TargetExists(0),

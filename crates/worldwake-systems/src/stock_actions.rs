@@ -74,6 +74,7 @@ pub fn register_stock_actions(
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::InterruptibleWithPenalty,
             commit_conditions: vec![
                 Precondition::TargetExists(0),
@@ -103,6 +104,7 @@ pub fn register_stock_actions(
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::InterruptibleWithPenalty,
             commit_conditions: vec![
                 Precondition::TargetExists(0),
@@ -132,6 +134,7 @@ pub fn register_stock_actions(
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::InterruptibleWithPenalty,
             commit_conditions: vec![
                 Precondition::TargetExists(0),
@@ -165,6 +168,7 @@ pub fn register_stock_actions(
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::InterruptibleWithPenalty,
             commit_conditions: vec![
                 Precondition::TargetExists(0),
@@ -662,6 +666,7 @@ mod tests {
             reservation_requirements: vec![],
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![],
             visibility: VisibilitySpec::SamePlace,

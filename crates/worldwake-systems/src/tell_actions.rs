@@ -57,6 +57,7 @@ fn tell_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,

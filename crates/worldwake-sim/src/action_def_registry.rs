@@ -78,6 +78,7 @@ mod tests {
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
             duration: DurationExpr::Fixed(NonZeroU32::new(id.0 + 1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::TargetKind {
                 target_index: 0,

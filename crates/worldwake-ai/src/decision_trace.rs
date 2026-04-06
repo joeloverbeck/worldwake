@@ -3750,6 +3750,7 @@ mod tests {
                 reservation_requirements: vec![],
                 duration: worldwake_sim::DurationExpr::Fixed(std::num::NonZeroU32::new(1).unwrap()),
                 body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+                attention_cost: worldwake_core::Permille::ZERO,
                 interruptibility: worldwake_sim::Interruptibility::FreelyInterruptible,
                 commit_conditions: vec![],
                 visibility: worldwake_core::VisibilitySpec::SamePlace,

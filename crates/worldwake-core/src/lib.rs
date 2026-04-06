@@ -65,6 +65,7 @@ pub mod load;
 pub mod needs;
 pub mod numerics;
 pub mod offices;
+pub mod observation_context;
 pub mod patrol;
 pub mod production;
 pub mod pursuit;
@@ -178,6 +179,7 @@ pub use numerics::{LoadUnits, Permille, Quantity};
 pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
+pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use patrol::{PatrolProfile, PatrolRoute};
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
