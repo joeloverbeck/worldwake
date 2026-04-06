@@ -311,6 +311,7 @@ If the user asked only for implementation or analysis, do not archive. Keep fact
 
 Before finishing:
 - Re-check `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff. Remove reassessment-only fallout that did not become real edits.
+- If reassessment or verification changed the semantic contract the ticket describes, also re-check `Problem`, `Architecture Check`, and `Acceptance Criteria` so the ticket's narrative matches the landed behavior rather than an earlier draft.
 - Re-check inline code snippets, example signatures, or API sketches against the final landed shape.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
 
@@ -323,6 +324,10 @@ Completed on YYYY-MM-DD.
 
 - What changed
 - Any bounded deviation from the original ticket wording
+
+## Deviations
+
+- Optional: semantic or scope correction accepted during reassessment/verification
 
 ## Verification Result
 

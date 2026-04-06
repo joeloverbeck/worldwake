@@ -10,7 +10,7 @@ Phase 6: Architectural Substrates II
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -122,7 +122,7 @@ Both `BlockerClearingCondition` and `ClearingBaseline` must derive `Copy, Clone,
 | `TooExpensive` | `InventoryChanged { Coin }` | Agent's coin balance |
 | `MissingInput(kind)` | `InventoryChanged { kind }` | Agent's input quantity |
 | `MissingTool(kind)` | `UniqueItemAcquired { kind }` | Agent's unique item count |
-| `NoKnownSeller` | `EntityReappeared` or `CommodityAvailabilityChanged` | None |
+| `NoKnownSeller` | `CommodityAvailabilityChanged` | None |
 | `NoKnownPath` | `PathDiscovered` | false |
 | `TargetGone` (non-pursuit meanings such as care / danger reduction) | `EntityReappeared` | false |
 | `TargetGone` (pursuit-shaped `RaidTarget` / `EngageHostile`) | `TtlOnly` | N/A |
@@ -134,7 +134,7 @@ Both `BlockerClearingCondition` and `ClearingBaseline` must derive `Copy, Clone,
 
 ### Integration Strategy
 
-**Crate boundary constraint**: `BlockedIntentMemory` lives in `worldwake-core`, which cannot depend on `worldwake-sim` (where `GoalBeliefView` is defined). Therefore, condition evaluation logic must live in `worldwake-ai`.
+**Crate boundary constraint**: `BlockedIntentMemory` lives in `worldwake-core`, which cannot depend on `worldwake-sim` (where `RuntimeBeliefView` is defined). Therefore, condition evaluation logic must live in `worldwake-ai`.
 
 **Approach**: Add a generic `sweep_cleared` method on `BlockedIntentMemory` in `worldwake-core` that accepts a predicate closure:
 
@@ -155,25 +155,34 @@ The clearing predicate logic lives in `worldwake-ai`:
 /// In worldwake-ai
 fn is_blocker_cleared(
     blocker: &BlockedIntent,
-    view: &dyn GoalBeliefView,
+    view: &dyn RuntimeBeliefView,
     agent: EntityId,
 ) -> bool {
     match (&blocker.clearing_condition, &blocker.baseline_snapshot) {
         (CommodityAvailabilityChanged { commodity, place }, Some(ClearingBaseline::CommodityQuantity { quantity: baseline })) => {
-            let current = view.locally_observed_commodity_quantity(agent, *place, *commodity);
-            current != *baseline  // Quantity changed — condition may have cleared
+            match blocker.blocking_fact {
+                BlockingFact::SellerOutOfStock => /* seller now believed restocked */,
+                BlockingFact::SourceDepleted => /* source now believed replenished */,
+                _ => view.locally_observed_commodity_quantity(agent, *place, *commodity) != *baseline,
+            }
+        }
+        (CommodityAvailabilityChanged { commodity, place }, None) => {
+            /* NoKnownSeller: a non-self seller listing now exists at the place */
         }
         (InventoryChanged { commodity }, Some(ClearingBaseline::InventoryQuantity { quantity: baseline })) => {
-            let current = view.commodity_quantity(agent, *commodity);
-            current != *baseline
+            match blocker.blocking_fact {
+                BlockingFact::TooExpensive | BlockingFact::MissingInput(_) => /* agent now has > 0 of commodity */,
+                _ => view.commodity_quantity(agent, *commodity) != *baseline,
+            }
         }
         (UniqueItemAcquired { kind }, Some(ClearingBaseline::UniqueItemCount(baseline))) => {
-            let current = view.unique_item_count(agent, *kind);
-            current != *baseline
+            match blocker.blocking_fact {
+                BlockingFact::MissingTool(_) => /* agent now has > 0 of the tool kind */,
+                _ => view.unique_item_count(agent, *kind) != *baseline,
+            }
         }
         // ... other variants follow same pattern
-        (TtlOnly, _) => false,  // Only TTL clears this
-        (_, None) => false,      // Missing baseline — TTL fallback
+        _ => false,
     }
 }
 ```
@@ -204,10 +213,30 @@ No new components are introduced — the new types are fields on the existing `B
 ## Section H — Causal Hooks
 
 1. **Entities, relations, and records introduced** (P30.1): `BlockerClearingCondition` enum (8 variants including `UniqueItemAcquired`), `ClearingBaseline` enum (7 variants including `UniqueItemCount`). Both stored as fields on `BlockedIntent` within the existing `BlockedIntentMemory` component. No new components or relations.
-2. **Information path** (P30.3): Clearing evidence arrives through perception (observation, tell, record consultation). Blocker checks compare current beliefs against block-time baseline. The `sweep_cleared` method evaluates conditions via `GoalBeliefView` at the start of each agent tick.
+2. **Information path** (P30.3): Clearing evidence arrives through perception (observation, tell, record consultation). Blocker checks compare current beliefs against block-time baseline. The `sweep_cleared` method evaluates conditions via `RuntimeBeliefView` at the start of each agent tick.
 3. **Positive feedback** (P30.7): None. Clearing a blocker enables retrying a goal, which may succeed or re-block.
 4. **Dampeners** (P30.8): TTL fallback prevents indefinite blocking. Re-blocking on retry prevents infinite loops.
 5. **Stored vs derived** (P30.9): `clearing_condition` and `baseline_snapshot` are stored on `BlockedIntent`. Clearing evaluation is derived at query time from beliefs. The `sweep_cleared` call removes entries whose condition is met — the removal is a state mutation, but the decision to remove is derived.
-6. **Partial failures** (P30.6): If a baseline was not captured at block time (`baseline_snapshot: None`), the blocker falls back to TTL-only evaluation. This is safe because TTL always clears eventually.
-7. **Target patterns and invariants** (P30.13): Expected behaviors: (a) a blocker with `CommodityAvailabilityChanged` clears when the agent's belief about that commodity at the specified place changes from baseline; (b) a `TtlOnly` blocker clears only at TTL expiry; (c) a blocker with a missing baseline behaves as TtlOnly; (d) `sweep_cleared` never removes entries whose condition evaluates to not-cleared.
+6. **Partial failures** (P30.6): Unsupported missing baselines fall back to safe non-clearing behavior, so TTL still guarantees eventual recovery. A small number of lawful baseline-less conditions, such as `NoKnownSeller`, still clear through variant-specific evidence rather than waiting for TTL.
+7. **Target patterns and invariants** (P30.13): Expected behaviors: (a) a blocker with `CommodityAvailabilityChanged` clears when the relevant stored fact's belief contract is satisfied, which may be observed quantity change, seller restock, or source replenishment; (b) a `TtlOnly` blocker clears only at TTL expiry; (c) unsupported missing baselines do not spuriously clear; (d) `sweep_cleared` never removes entries whose condition evaluates to not-cleared.
 8. **Save/load/replay** (P30.14): New fields on `BlockedIntent` survive serialization via existing `Serialize/Deserialize` derives. `BlockerClearingCondition` and `ClearingBaseline` are deterministic value types (no closures, no runtime state). Replay produces identical clearing decisions given the same belief state.
+
+## Outcome
+
+Completed on 2026-04-06.
+
+Implemented across the S55 ticket chain by extending [crates/worldwake-core/src/blocked_intent.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/blocked_intent.rs) with stored blocker-clearing metadata plus `BlockedIntentMemory::sweep_cleared`, wiring blocker construction and evaluation in [crates/worldwake-ai/src/failure_handling.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/failure_handling.rs), and bumping [crates/worldwake-sim/src/save_load.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/save_load.rs) to `SAVE_FORMAT_VERSION = 28`.
+
+Deviation from the original draft: the final evaluator is still condition-driven at the stored-data boundary, but several blocker families remain fact-specific instead of collapsing to a single generic “baseline changed” rule. In particular, `NoKnownSeller` remains a lawful baseline-less branch, pursuit-shaped `TargetGone` remains TTL-only, and `TooExpensive`, `MissingInput(_)`, `MissingTool(_)`, and contention blockers preserve the already-proved recovery semantics required by the live golden suite.
+
+Verification results:
+
+1. `cargo test -p worldwake-core blocked_intent -- --nocapture`
+2. `cargo test -p worldwake-ai derive_clearing_condition -- --nocapture`
+3. `cargo test -p worldwake-ai is_blocker_cleared -- --nocapture`
+4. `cargo test -p worldwake-ai clear_resolved_blockers_removes_restored_and_expired_entries -- --nocapture`
+5. `cargo test -p worldwake-ai contested_harvest_start_failure_recovers_via_remote_fallback -- --nocapture`
+6. `cargo test -p worldwake-ai golden_trade_rejection_reroutes_to_reliable_seller -- --nocapture`
+7. `cargo test -p worldwake-ai`
+8. `cargo clippy --workspace --all-targets -- -D warnings`
+9. `cargo build --workspace`
