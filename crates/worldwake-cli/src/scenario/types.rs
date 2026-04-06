@@ -9,12 +9,12 @@ use serde::Deserialize;
 use worldwake_core::{
     CarryCapacity, CognitiveProfile, CombatProfile, CommodityValuationProfile,
     CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
-    EpistemicDispositionProfile, ExecutionBudget, HomeostaticNeeds, IntentionDispositionProfile,
-    JusticeDispositionProfile, MetabolismProfile, PatrolProfile, PerceptionProfile,
-    PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
-    SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, items::CommodityKind,
-    topology::PlaceTag,
+    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory,
+    MetabolismProfile, PatrolProfile, PerceptionProfile, PlaceVisibilityProfile,
+    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -86,6 +86,10 @@ pub struct AgentDef {
     pub communication_profile: Option<CommunicationProfile>,
     #[serde(default)]
     pub preference_profile: Option<PreferenceProfile>,
+    #[serde(default)]
+    pub expectation_store: Option<ExpectationStore>,
+    #[serde(default)]
+    pub last_seen_memory: Option<LastSeenMemory>,
     #[serde(default)]
     pub drive_thresholds: Option<DriveThresholds>,
     #[serde(default)]
@@ -467,6 +471,8 @@ mod tests {
         assert!(agent.intention_disposition.is_none());
         assert!(agent.communication_profile.is_none());
         assert!(agent.preference_profile.is_none());
+        assert!(agent.expectation_store.is_none());
+        assert!(agent.last_seen_memory.is_none());
         assert!(agent.drive_thresholds.is_none());
         assert!(agent.metabolism_profile.is_none());
         assert!(agent.carry_capacity.is_none());

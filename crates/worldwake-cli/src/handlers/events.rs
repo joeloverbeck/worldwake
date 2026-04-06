@@ -282,6 +282,8 @@ mod tests {
                 intention_disposition: None,
                 communication_profile: None,
                 preference_profile: None,
+                expectation_store: None,
+                last_seen_memory: None,
                 drive_thresholds: None,
                 metabolism_profile: None,
                 carry_capacity: None,

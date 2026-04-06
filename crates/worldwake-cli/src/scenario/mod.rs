@@ -306,6 +306,10 @@ fn spawn_agent(
     txn.set_component_communication_profile(agent_id, communication)?;
     let preference = agent_def.preference_profile.unwrap_or_default();
     txn.set_component_preference_profile(agent_id, preference)?;
+    let expectation_store = agent_def.expectation_store.clone().unwrap_or_default();
+    txn.set_component_expectation_store(agent_id, expectation_store)?;
+    let last_seen_memory = agent_def.last_seen_memory.clone().unwrap_or_default();
+    txn.set_component_last_seen_memory(agent_id, last_seen_memory)?;
 
     if let Some(ref combat) = agent_def.combat_profile {
         txn.set_component_combat_profile(agent_id, *combat)?;
@@ -487,11 +491,11 @@ mod tests {
         BeliefConfidencePolicy, CarryCapacity, CognitiveProfile, CommodityKind,
         CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
         ControlSource, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-        HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
-        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceVisibilityProfile,
-        PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
-        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
-        WorkstationTag,
+        ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+        LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
+        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
+        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
+        TradeCategory, ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -512,6 +516,8 @@ mod tests {
             intention_disposition: None,
             communication_profile: None,
             preference_profile: None,
+            expectation_store: None,
+            last_seen_memory: None,
             drive_thresholds: None,
             metabolism_profile: None,
             carry_capacity: None,
@@ -1107,6 +1113,56 @@ mod tests {
         assert_eq!(
             world.get_component_preference_profile(agent),
             Some(&PreferenceProfile::default())
+        );
+        assert_eq!(
+            world.get_component_expectation_store(agent),
+            Some(&ExpectationStore::default())
+        );
+        assert_eq!(
+            world.get_component_last_seen_memory(agent),
+            Some(&LastSeenMemory::default())
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_with_last_seen_memory_override() {
+        let custom_memory = LastSeenMemory {
+            records: BTreeMap::new(),
+            capacity: 50,
+        };
+        let custom_expectation_store = ExpectationStore::default();
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Home".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                expectation_store: Some(custom_expectation_store.clone()),
+                last_seen_memory: Some(custom_memory.clone()),
+                ..minimal_agent("Searcher", "Home", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_expectation_store(agent),
+            Some(&custom_expectation_store)
+        );
+        assert_eq!(
+            world.get_component_last_seen_memory(agent),
+            Some(&custom_memory)
         );
     }
 
