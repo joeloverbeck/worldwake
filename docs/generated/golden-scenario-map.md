@@ -8,9 +8,9 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ## Summary
 
-- Scenario blocks with explicit metadata: 134
-- Files contributing scenario metadata: 20
-- Tests associated with scenario blocks: 292
+- Scenario blocks with explicit metadata: 138
+- Files contributing scenario metadata: 21
+- Tests associated with scenario blocks: 297
 
 ## Scenario Inventory
 
@@ -22,7 +22,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `2` | Priority-Based Interrupt | `golden_ai_decisions.rs:546` | `golden_priority_based_interrupt` | — |
 | `5` | Blocked Intent Memory with TTL Expiry | `golden_ai_decisions.rs:659` | `golden_blocked_intent_memory_with_ttl_expiry` | — |
 | `7` | Deprivation Cascade | `golden_ai_decisions.rs:748` | `golden_deprivation_cascade`<br>`golden_thirst_driven_acquisition`<br>`golden_wash_action`<br>`golden_three_way_need_competition`<br>`golden_bladder_relief_with_travel`<br>`golden_goal_switching_during_multi_leg_travel`<br>`golden_multi_hop_travel_plan`<br>`golden_spatial_multi_hop_plan` | `golden_spatial_multi_hop_plan_replays_deterministically` |
-| `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1945` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario` | — |
+| `S02b` | Utility Weight Diversity in Need Selection (Principle 20) | `golden_ai_decisions.rs:1945` | `golden_utility_weight_diversity_in_need_selection`<br>`golden_trace_enabled_scenario`<br>`golden_fallback_to_addressable_need_when_top_need_unsatisfiable` | — |
 | `2c-self` | Wounded agent self-treats with medicine | `golden_care.rs:765` | `golden_self_care_with_medicine` | `golden_self_care_with_medicine_replays_deterministically` |
 | `2c-self-acquire` | Wounded agent acquires ground medicine, self-treats | `golden_care.rs:871` | `golden_self_care_acquires_ground_medicine` | `golden_self_care_acquires_ground_medicine_replays_deterministically` |
 | `2c-report` | Indirect wound report does NOT trigger care goal | `golden_care.rs:959` | `golden_indirect_report_does_not_trigger_care` | `golden_indirect_report_does_not_trigger_care_replays_deterministically` |
@@ -87,10 +87,10 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `82` | Seller Departure Invalidates Listing | `golden_merchant_selling.rs:1084` | `seller_departure_invalidates_listing` | — |
 | `83` | Dead Seller Invalidates Listing | `golden_merchant_selling.rs:1141` | `dead_seller_invalidates_listing` | — |
 | `84` | Remote Merchant Travels to Home Market to Sell | `golden_merchant_selling.rs:1213` | `move_cargo_then_sell_commodity_plan_shape` | — |
-| `85` | Demand Memory Raises Sell Ranking | `golden_merchant_selling.rs:1326` | `demand_memory_raises_sell_ranking` | — |
-| `86` | Planning State Preserves Listing Determinism | `golden_merchant_selling.rs:1398` | `planning_state_preserves_listing_determinism` | — |
-| `95` | Side-Benefit Selection Prefers Home Market Combined Trip | `golden_merchant_selling.rs:1415` | `combined_market_trip_selected_for_side_benefit` | `combined_market_trip_selected_for_side_benefit_replays_deterministically` |
-| `96` | Hungry Merchant Eats Own Listed Sale Stock | `golden_merchant_selling.rs:1780` | `hungry_merchant_eats_listed_stock` | `hungry_merchant_eats_listed_stock_replays_deterministically` |
+| `85` | Demand Memory Raises Sell Ranking | `golden_merchant_selling.rs:1330` | `demand_memory_raises_sell_ranking` | — |
+| `86` | Planning State Preserves Listing Determinism | `golden_merchant_selling.rs:1402` | `planning_state_preserves_listing_determinism` | — |
+| `95` | Side-Benefit Selection Prefers Home Market Combined Trip | `golden_merchant_selling.rs:1419` | `combined_market_trip_selected_for_side_benefit` | `combined_market_trip_selected_for_side_benefit_replays_deterministically` |
+| `96` | Hungry Merchant Eats Own Listed Sale Stock | `golden_merchant_selling.rs:1784` | `hungry_merchant_eats_listed_stock` | `hungry_merchant_eats_listed_stock_replays_deterministically` |
 | `11` | Simple Office Claim via DeclareSupport | `golden_offices.rs:28` | `golden_simple_office_claim_via_declare_support` | — |
 | `11b` | Deterministic Replay | `golden_offices.rs:153` | — | `golden_simple_office_claim_deterministic_replay` |
 | `12` | Competing Claims with Loyal Supporter | `golden_offices.rs:191` | `golden_competing_claims_with_loyal_supporter` | — |
@@ -112,6 +112,10 @@ It does not claim that planned spec scenarios already exist in live test source.
 | `55` | Patrol Route Adaptation Retargets After Local Report | `golden_patrol.rs:600` | `golden_patrol_route_adaptation_retargets_after_local_report` | — |
 | `56` | Patrol Locality Requires Guard-Local Report | `golden_patrol.rs:696` | `golden_patrol_locality_requires_guard_local_report` | — |
 | `57` | Patrol-Driven Crime Discovery Chain | `golden_patrol.rs:787` | `golden_patrol_driven_crime_discovery` | `golden_patrol_driven_crime_discovery_replays_deterministically` |
+| `116` | Concealment Reduces Witnessed-Event Fidelity | `golden_perception_exposure.rs:189` | `golden_concealment_reduces_witnessed_event_fidelity` | — |
+| `117` | Fatigue Reduces Witnessed-Event Fidelity | `golden_perception_exposure.rs:230` | `golden_fatigue_reduces_witnessed_event_fidelity` | — |
+| `118` | Attention Cost Reduces Witnessed-Event Fidelity | `golden_perception_exposure.rs:271` | `golden_attention_cost_reduces_witnessed_event_fidelity` | — |
+| `119` | Multiplicative Stacking | `golden_perception_exposure.rs:297` | `golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity` | — |
 | `3` | Resource Contention with Conservation | `golden_production.rs:2850` | `golden_resource_contention_with_conservation`<br>`golden_resource_exhaustion_race`<br>`golden_contested_harvest_start_failure_recovers_via_remote_fallback` | — |
 | `3b` | Observed Harvest Competition Redirects To Remote Sibling | `golden_production.rs:3005` | `golden_observed_harvest_competition_redirects_to_remote_sibling`<br>`golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`<br>`golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`<br>`golden_dead_agent_pruned_from_facility_queue` | `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically` |
 | `102` | Departed Waiter Pruned From Facility Queue | `golden_production.rs:3152` | `golden_departed_waiter_pruned_from_facility_queue`<br>`golden_facility_queue_patience_timeout`<br>`golden_local_detour_reuses_existing_grant_before_harvest`<br>`golden_materialized_output_ownership_prevents_theft` | `golden_facility_queue_patience_timeout_replays_deterministically` |
@@ -259,20 +263,20 @@ It does not claim that planned spec scenarios already exist in live test source.
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
 - Source: `golden_ai_decisions.rs:1945`
-- Systems: Needs, Enterprise, AI, Travel, Production
-- GoalKinds: ConsumeOwnedCommodity, RestockCommodity
-- ActionDomains: Needs, Travel, Production
+- Systems: Needs, AI
+- GoalKinds: ConsumeOwnedCommodity
+- ActionDomains: Needs
 - Places: VillageSquare, OrchardFarm
-- Principles: 20
-- Primary tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`
+- Principles: P20 (resource-bounded practical reasoning)
+- Primary tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
 - Replay tests: None
-- All tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`
+- All tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
 
-**Setup**: Two agents with identical initial conditions but divergent UtilityProfile weights. HungerDriven: critically hungry, hunger_weight=pm(800), enterprise_weight=pm(100), has bread. EnterpriseDriven: no hunger, hunger_weight=pm(100), enterprise_weight=pm(900), MerchandiseProfile(Apple).
+**Setup**: Single AI agent with high thirst (700) and moderate hunger (400). No Water items anywhere (thirst unsatisfiable). Apple available at location.
 
-**Proves**: HungerDriven eats locally. EnterpriseDriven leaves to pursue enterprise restock. Same world, different first choices from UtilityProfile weight divergence (Principle 20).
+**Proves**: when top-priority need (thirst) has no viable plan, agent falls back to next-best addressable need (hunger) instead of going idle indefinitely.
 
-**Cross-system chain**: UtilityProfile weights -> divergent candidate ranking -> HungerDriven selects ConsumeOwnedCommodity vs EnterpriseDriven selects RestockCommodity.
+**Cross-system chain**: unsatisfiable top need -> planner exhausts thirst-relief candidates -> falls back to hunger-relief -> agent eats or sleeps.
 
 ### Scenario 2c-self: Wounded agent self-treats with medicine
 
@@ -1256,7 +1260,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 85: Demand Memory Raises Sell Ranking
 
-- Source: `golden_merchant_selling.rs:1326`
+- Source: `golden_merchant_selling.rs:1330`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
@@ -1268,7 +1272,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 86: Planning State Preserves Listing Determinism
 
-- Source: `golden_merchant_selling.rs:1398`
+- Source: `golden_merchant_selling.rs:1402`
 - Systems: Trade, AI
 - Principles: P2
 - Primary tests: `planning_state_preserves_listing_determinism`
@@ -1279,7 +1283,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 95: Side-Benefit Selection Prefers Home Market Combined Trip
 
-- Source: `golden_merchant_selling.rs:1415`
+- Source: `golden_merchant_selling.rs:1419`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity, SellCommodity
 - ActionDomains: Travel, Trade
@@ -1292,7 +1296,7 @@ It does not claim that planned spec scenarios already exist in live test source.
 
 ### Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `golden_merchant_selling.rs:1780`
+- Source: `golden_merchant_selling.rs:1784`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)
@@ -1670,6 +1674,74 @@ It does not claim that planned spec scenarios already exist in live test source.
 **Setup**: One guard patrols between VillageSquare and GeneralStore. The guard begins with a stale direct belief that a bread lot is at GeneralStore. Before the guard arrives there, the lot is lawfully relocated to a different non-local place the guard cannot currently observe.
 
 **Proves**: Patrol creates lawful arrival, local perception detects the violated expectation as `EntityMissing`, AI selects `InvestigateViolation`, and the investigation records `WitnessedAbsence` without upgrading the incident to `SuspectedTheft` for a non-owner investigator.
+
+### Scenario 116: Concealment Reduces Witnessed-Event Fidelity
+
+- Source: `golden_perception_exposure.rs:189`
+- Systems: Needs, Perception
+- ActionDomains: Needs
+- Places: ForestPath
+- Principles: 7, 15, 16
+- Primary tests: `golden_concealment_reduces_witnessed_event_fidelity`
+- Replay tests: None
+- All tests: `golden_concealment_reduces_witnessed_event_fidelity`
+
+**Setup**: A human-controlled reliever triggers `relieve_wilderness` at ForestPath while a human-controlled observer with `observation_fidelity = 800` witnesses the event once in the open baseline and once with `PlaceVisibilityProfile(400)`.
+
+**Proves**: Place concealment lowers witnessed-event `effective_fidelity` from `800` to `480` in the real perception pipeline.
+
+**Cross-system chain**: same-place action request -> wilderness relief event -> perception witness resolution -> concealment modulation -> perception trace.
+
+### Scenario 117: Fatigue Reduces Witnessed-Event Fidelity
+
+- Source: `golden_perception_exposure.rs:230`
+- Systems: Needs, Perception
+- ActionDomains: Needs
+- Places: ForestPath
+- Principles: 2, 15, 16
+- Primary tests: `golden_fatigue_reduces_witnessed_event_fidelity`
+- Replay tests: None
+- All tests: `golden_fatigue_reduces_witnessed_event_fidelity`
+
+**Setup**: A human-controlled reliever triggers `relieve_wilderness` while a human-controlled observer with `observation_fidelity = 1000` witnesses the event once while rested and once with `fatigue = 800`.
+
+**Proves**: Observer fatigue reduces witnessed-event `effective_fidelity` from `1000` to `820` in the real perception pipeline.
+
+**Cross-system chain**: same-place action request -> wilderness relief event -> perception witness resolution -> fatigue modulation -> perception trace.
+
+### Scenario 118: Attention Cost Reduces Witnessed-Event Fidelity
+
+- Source: `golden_perception_exposure.rs:271`
+- Systems: Combat, Needs, Perception
+- ActionDomains: Combat, Needs
+- Places: ForestPath
+- Principles: 8, 15, 16, 26
+- Primary tests: `golden_attention_cost_reduces_witnessed_event_fidelity`
+- Replay tests: None
+- All tests: `golden_attention_cost_reduces_witnessed_event_fidelity`
+
+**Setup**: A human-controlled observer starts `defend` (attention cost `400`) before a co-located human-controlled reliever triggers `relieve_wilderness`, with baseline fidelity `1000`.
+
+**Proves**: An active combat action lawfully lowers the observer's witnessed-event `effective_fidelity` to `600`, and the scenario proves the active action through the real action trace rather than direct state editing.
+
+**Cross-system chain**: external defend request -> defend start -> same-place wilderness relief event -> perception witness resolution -> attention-cost modulation -> trace.
+
+### Scenario 119: Multiplicative Stacking
+
+- Source: `golden_perception_exposure.rs:297`
+- Systems: Combat, Needs, Perception
+- ActionDomains: Combat, Needs
+- Places: ForestPath
+- Principles: 2, 8, 11, 15, 16, 26
+- Primary tests: `golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity`
+- Replay tests: None
+- All tests: `golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity`
+
+**Setup**: A human-controlled observer with `observation_fidelity = 800`, `fatigue = 700`, active `defend` (`attention_cost = 400`), and `PlaceVisibilityProfile(400)` witnesses a co-located `relieve_wilderness` event.
+
+**Proves**: The full witnessed-event modulation chain composes multiplicatively to `effective_fidelity = 253`.
+
+**Cross-system chain**: defend start + fatigued observer + concealed place -> witnessed event -> perception witness resolution -> multiplicative modulation -> trace.
 
 ### Scenario 3: Resource Contention with Conservation
 

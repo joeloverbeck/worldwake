@@ -270,6 +270,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - When a golden transport/delivery/claim chain is about durable aftermath, avoid over-specifying intermediate substeps unless that substep is the owned contract.
 - When a golden still fails after lawful setup, reassess whether it exposed a missing lower-layer contract. Fix the production boundary first.
 - If the architecture change invalidates the old invariant, rewrite the scenario and update its header/comments.
+- When adding `// Scenario ...` metadata, keep `Setup`, `Proves`, and `Cross-system chain` entries in the generator-friendly live format used by current golden files. After regenerating docs, inspect the generated scenario-map prose for truncation or malformed wrapped fields before closing the ticket.
 - When adding or renumbering `// Scenario N:` blocks, treat identifiers as repo-global. Pre-scan nearby or highest live IDs and resolve collisions.
 - After scenario metadata changes, refresh the generated golden inventory/docs as part of the verification surface.
 

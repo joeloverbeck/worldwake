@@ -5,15 +5,15 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 21
-- Files contributing `golden_*` tests: 21
-- Total `golden_*` tests: 307
+- Golden test files: 22
+- Files contributing `golden_*` tests: 22
+- Total `golden_*` tests: 312
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
-| `golden_ai_decisions.rs` | 18 |
+| `golden_ai_decisions.rs` | 19 |
 | `golden_care.rs` | 18 |
 | `golden_combat.rs` | 27 |
 | `golden_commodity_opportunity.rs` | 3 |
@@ -24,6 +24,7 @@ Do not hand-edit it.
 | `golden_merchant_selling.rs` | 20 |
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
+| `golden_perception_exposure.rs` | 4 |
 | `golden_production.rs` | 28 |
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 2 |
@@ -55,6 +56,7 @@ Do not hand-edit it.
 - `golden_spatial_multi_hop_plan_replays_deterministically`
 - `golden_utility_weight_diversity_in_need_selection`
 - `golden_trace_enabled_scenario`
+- `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
 
 ### `golden_care.rs`
 
@@ -284,6 +286,13 @@ Do not hand-edit it.
 - `golden_patrol_locality_requires_guard_local_report`
 - `golden_patrol_driven_crime_discovery`
 - `golden_patrol_driven_crime_discovery_replays_deterministically`
+
+### `golden_perception_exposure.rs`
+
+- `golden_concealment_reduces_witnessed_event_fidelity`
+- `golden_fatigue_reduces_witnessed_event_fidelity`
+- `golden_attention_cost_reduces_witnessed_event_fidelity`
+- `golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity`
 
 ### `golden_production.rs`
 
