@@ -29,7 +29,7 @@ Draft
 ## Design Goals
 
 - Agents track time-bounded expectations about other entities: "courier should arrive at market by tick 300"
-- Overdue detection is local: the expectation owner checks at the expected place, not a global system
+- Global clock maintenance marks expectations overdue when their time window expires; later missing-person confirmation and response remain locality-sensitive
 - Search and rescue emerge from expectation violation, not from a dedicated mission system
 - Last-seen records propagate through existing social channels (tell, observation, rumor)
 - Reuses `EntityBeliefClaim`, `ViolationKind`, `SceneEvidence`, and care actions
@@ -48,7 +48,7 @@ Draft
 | P3 (Concrete State) | Expectations are stored records with subject, place, time window, and basis — not derived scores |
 | P4 (Persistent Identity) | Expectation records have stable identity and lifecycle (created, active, overdue, resolved, expired) |
 | P5 (Carriers of Consequence) | Expectations create downstream search, accusation, grief, institutional response |
-| P7 (Locality) | Overdue detection requires the owner to be at or observe the expected place. No global scanner |
+| P7 (Locality) | Global clock maintenance may mark an expectation overdue, but missing-person confirmation, search, and reporting still rely on owner-local observation, travel, and communication rather than omniscient lookup |
 | P8 (Preconditions and Duration) | Search actions have travel cost, duration, and occupy the searcher |
 | P10 (Aftermath) | Failed searches produce evidence (searched-and-found-nothing), successful searches produce rescue or recovery |
 | P14 (World ≠ Belief) | Expectations are belief-state (what an agent expects), not world truth |
@@ -262,8 +262,8 @@ A system function `check_overdue_expectations` registered as `SystemId::Expectat
 
 - For each agent with an `ExpectationStore`, scan active records.
 - If `current_tick > deadline_tick + grace_ticks` and state is `Active`, transition to `Overdue`.
-- This is a local operation — it does not check whether the subject is actually at the expected place. It only marks the expectation as past due based on the owner's clock.
-- The owner still needs to observe (or fail to observe) the subject to generate a violation.
+- This is a global per-tick maintenance operation over stored expectation records. It does not check whether the subject is actually at the expected place.
+- Locality-sensitive downstream behavior remains separate: the owner still needs to observe (or fail to observe) the subject, travel, ask, search, or report through normal world channels to generate violations and follow-on behavior.
 
 ### 8. PlannerOpKind Integration
 
@@ -308,13 +308,13 @@ These methods are required for `emit_search_candidates()` in candidate generatio
 
 ## FND-01 Section H — Causal Hooks Declaration
 
-1. **Missing downstream consequence addressed**: Agents currently have no proactive mechanism to notice that someone should have arrived but hasn't. Violation detection requires physically visiting the expected location and observing absence, which is too passive for time-critical obligations (patrol check-ins, delivery commitments, escort duties).
+1. **Missing downstream consequence addressed**: Agents currently have no proactive mechanism to mark that someone should have arrived but has not. The global overdue-maintenance slice marks the record past due by clock, while later locality-sensitive search/report behavior still requires physically grounded observation, travel, and communication.
 
 2. **New entities/relations/records**: `ExpectationRecord`, `LastSeenRecord`, `ExpectationStore` (component), `LastSeenMemory` (component), `SearchTarget`, `SearchResult`.
 
 3. **Actions that mutate them**: `report_missing` (creates violation + institutional record), `ask_about_person` (shares/updates LastSeenMemory), `search_place` (produces SearchResult, updates ExpectationRecord), `escort_to_safety` (moves entities), `report_found` (resolves expectation, updates records).
 
-4. **Information production and travel**: Overdue state is local to the expectation owner. Last-seen records propagate through Tell/SocialObservation. Search results are local to the searcher and shared via report_found. No global detection.
+4. **Information production and travel**: Overdue state begins as an authoritative clock transition on the owner's stored expectation record. Last-seen records propagate through Tell/SocialObservation. Search results are local to the searcher and shared via report_found. Missing-person confirmation is not global.
 
 5. **Conserved quantities**: None directly. Expectations are informational records, not physical goods.
 
@@ -332,13 +332,13 @@ These methods are required for `emit_search_candidates()` in candidate generatio
 
 12. **Lifecycle states**: ExpectationRecord: Active → Overdue → Resolved/Expired. LastSeenRecord: created, updated (newer sighting replaces older), evicted (capacity limit).
 
-13. **Temporal resolution**: Overdue detection runs once per tick as `SystemId::ExpectationCheck` after Perception in the canonical system order. Search actions have explicit tick durations. Grace period is tick-denominated (`u64`).
+13. **Temporal resolution**: Global overdue maintenance runs once per tick as `SystemId::ExpectationCheck` after Perception in the canonical system order. Search actions have explicit tick durations. Grace period is tick-denominated (`u64`).
 
 14. **Boundary conditions**: Expectations about entities that left the simulation boundary are resolved as `NotFound` after extended search. No special boundary logic needed — the entity is simply absent from all searched places.
 
 15. **Derived views**: None. All expectation and last-seen state is authoritative.
 
-16. **Causal records**: Search events logged with searcher, place, tick, and result. Expectation state transitions logged. Report_missing events logged with reporter and office.
+16. **Causal records**: Search events are logged with searcher, place, tick, and result. Expectation state transitions are recorded through the normal authoritative state-delta event path. `report_missing` events are logged with reporter and office.
 
 17. **Target patterns and regression cases**: Courier overdue → employer searches → finds wounded → escorts to safety. Merchant fails to return → stale rumor misdirects search → correction → re-search. Guard expected at checkpoint → missing → patrol gap discovered → institutional response.
 
@@ -348,7 +348,7 @@ These methods are required for `emit_search_candidates()` in candidate generatio
 
 `check_overdue_expectations` is registered as `SystemId::ExpectationCheck` and runs in the canonical system order after `Perception` and before `EvidenceDecay`.
 
-**Ordering rationale**: The system must run after Perception so that same-tick observations (e.g., the subject arriving just before the deadline) are reflected in belief state before overdue checks. It runs before EvidenceDecay so that overdue state is visible to same-tick downstream systems. It runs before goal generation (which occurs in the AI tick after all systems) so that newly-overdue expectations can immediately produce search/report goals.
+**Ordering rationale**: The system runs after Perception so same-tick belief updates finish before later systems and AI consume the newly overdue state. It runs before EvidenceDecay so overdue state is established before later cleanup, and before goal generation (which occurs in the AI tick after all systems) so newly overdue expectations can immediately feed later search/report candidate logic.
 
 A new `SystemId::ExpectationCheck` variant is added to the `define_system_ids!` macro in `system_manifest.rs`, and inserted into `SystemManifest::canonical()` between `Perception` and `EvidenceDecay`.
 
@@ -365,7 +365,7 @@ Both components added to `AgentDef` in `crates/worldwake-cli/src/scenario/types.
 
 | System | Interaction | Direction |
 |--------|-------------|-----------|
-| Perception (E14) | Observation updates `LastSeenMemory`; overdue detection reads perception results | State-mediated |
+| Perception (E14) | Observation updates `LastSeenMemory`; later search/report behavior consumes both perception results and overdue state | State-mediated |
 | Violation goals (S27) | `report_missing` creates `ViolationKind::EntityMissing` through existing violation framework | State-mediated |
 | Evidence (S52) | `search_place` reads `SceneEvidence` at the searched location for relevant traces | State-mediated |
 | Care (E12) | `escort_to_safety` hands off wounded entity to existing care queue via `queue_for_care_target` | State-mediated |

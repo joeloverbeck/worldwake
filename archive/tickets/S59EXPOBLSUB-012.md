@@ -1,6 +1,6 @@
 # S59EXPOBLSUB-012: Reconcile active S59 spec overdue-detection boundary
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -43,16 +43,11 @@ Update the spec's Design Goals, FOUNDATIONS/P7 language, Deliverable 7, temporal
 
 ### 3. Reconfirm downstream ownership in ticket chain
 
-If needed, apply factual wording updates to nearby active S59 tickets only where they still imply that overdue mutation itself is the locality-sensitive step.
+Reassess nearby active S59 tickets and update them only if they still imply that overdue mutation itself is the locality-sensitive step.
 
 ## Files to Touch
 
 - `specs/S59-expectation-obligation-substrate.md` (modify — reconcile overdue-detection boundary)
-- `tickets/S59EXPOBLSUB-007.md` (modify only if factual wording drift is discovered during reassessment)
-- `tickets/S59EXPOBLSUB-008.md` (modify only if factual wording drift is discovered during reassessment)
-- `tickets/S59EXPOBLSUB-009.md` (modify only if factual wording drift is discovered during reassessment)
-- `tickets/S59EXPOBLSUB-010.md` (modify only if factual wording drift is discovered during reassessment)
-- `tickets/S59EXPOBLSUB-011.md` (modify only if factual wording drift is discovered during reassessment)
 
 ## Out of Scope
 
@@ -82,3 +77,16 @@ If needed, apply factual wording updates to nearby active S59 tickets only where
 
 1. `rg -n "Overdue detection|ExpectationCheck|check_overdue_expectations|global scanner|owner checks" specs/S59-expectation-obligation-substrate.md tickets/S59EXPOBLSUB-0*.md`
 2. `cargo test -p worldwake-sim system_manifest && cargo test -p worldwake-systems expectation_check`
+
+## Outcome
+
+Completed on 2026-04-06.
+
+- Rewrote the active S59 spec so it now distinguishes global clock-driven overdue maintenance from later locality-sensitive search/report/violation behavior.
+- Updated the Design Goals, P7 alignment note, Deliverable 7, Section H causal-hook text, temporal-resolution wording, causal-record wording, ordering rationale, and cross-system interaction note to match the landed `ExpectationCheck` boundary.
+- Rechecked `S59EXPOBLSUB-007` through `S59EXPOBLSUB-011`; no ticket text changes were needed because those downstream tickets still correctly reserve the first live search/report/escort/candidate behavior.
+
+## Verification Result
+
+- Passed `rg -n "Overdue detection|ExpectationCheck|check_overdue_expectations|global scanner|owner checks" specs/S59-expectation-obligation-substrate.md tickets/S59EXPOBLSUB-0*.md`
+- Passed `cargo test -p worldwake-sim system_manifest && cargo test -p worldwake-systems expectation_check`
