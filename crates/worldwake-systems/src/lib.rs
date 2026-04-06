@@ -4,6 +4,7 @@
 //! Depends on `worldwake-core` and `worldwake-sim`.
 
 pub mod action_registry;
+pub mod ask_about_person_actions;
 pub mod artifact_actions;
 pub mod artifact_lifecycle;
 pub mod bandit_camp;
@@ -38,6 +39,7 @@ pub mod transport_actions;
 pub mod travel_actions;
 
 pub use action_registry::{ActionRegistries, build_full_action_registries, register_all_actions};
+pub use ask_about_person_actions::register_ask_about_person_action;
 pub use artifact_actions::register_artifact_actions;
 pub use artifact_lifecycle::artifact_lifecycle_system;
 pub use bandit_camp::bandit_camp_system;

@@ -27,6 +27,7 @@ pub enum ActionPayload {
     Loot(LootActionPayload),
     Investigate(InvestigateActionPayload),
     AskWitness(AskWitnessPayload),
+    AskAboutPerson(AskAboutPersonActionPayload),
     ReportMissing(ReportMissingActionPayload),
     QueueForFacilityUse(QueueForFacilityUsePayload),
     StaffMarket(StaffMarketPayload),
@@ -188,6 +189,14 @@ impl ActionPayload {
     }
 
     #[must_use]
+    pub const fn as_ask_about_person(&self) -> Option<&AskAboutPersonActionPayload> {
+        match self {
+            Self::AskAboutPerson(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub const fn as_report_missing(&self) -> Option<&ReportMissingActionPayload> {
         match self {
             Self::ReportMissing(payload) => Some(payload),
@@ -332,6 +341,12 @@ pub struct AskWitnessPayload {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct AskAboutPersonActionPayload {
+    pub target: EntityId,
+    pub subject: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct ReportMissingActionPayload {
     pub expectation_id: ExpectationId,
 }
@@ -372,8 +387,8 @@ pub struct PostNoticeActionPayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        AccuseActionPayload, ActionPayload, AskWitnessPayload, BribeActionPayload,
-        CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
+        AccuseActionPayload, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
+        BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
         DeclareSupportActionPayload, EstablishCampActionPayload, HarvestActionPayload,
         InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
         PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
@@ -583,6 +598,19 @@ mod tests {
         }
     }
 
+    fn sample_ask_about_person_payload() -> AskAboutPersonActionPayload {
+        AskAboutPersonActionPayload {
+            target: EntityId {
+                slot: 44,
+                generation: 0,
+            },
+            subject: EntityId {
+                slot: 45,
+                generation: 1,
+            },
+        }
+    }
+
     fn sample_report_missing_payload() -> ReportMissingActionPayload {
         ReportMissingActionPayload {
             expectation_id: ExpectationId(42),
@@ -681,6 +709,7 @@ mod tests {
         assert_traits::<CombatActionPayload>();
         assert_traits::<LootActionPayload>();
         assert_traits::<InvestigateActionPayload>();
+        assert_traits::<AskAboutPersonActionPayload>();
         assert_traits::<ReportMissingActionPayload>();
         assert_traits::<QueueForFacilityUsePayload>();
         assert_traits::<AskWitnessPayload>();
@@ -708,6 +737,7 @@ mod tests {
         let declare_support = ActionPayload::DeclareSupport(sample_declare_support_payload());
         let press_force_claim = ActionPayload::PressForceClaim(sample_press_force_claim_payload());
         let yield_force_claim = ActionPayload::YieldForceClaim(sample_yield_force_claim_payload());
+        let ask_about_person = ActionPayload::AskAboutPerson(sample_ask_about_person_payload());
         let report_missing = ActionPayload::ReportMissing(sample_report_missing_payload());
 
         assert_eq!(
@@ -866,6 +896,16 @@ mod tests {
         );
         assert_eq!(yield_force_claim.as_harvest(), None);
 
+        assert_eq!(ask_about_person.as_consult_record(), None);
+        assert_eq!(ask_about_person.as_tell(), None);
+        assert_eq!(ask_about_person.as_accuse(), None);
+        assert_eq!(
+            ask_about_person.as_ask_about_person(),
+            Some(&sample_ask_about_person_payload())
+        );
+        assert_eq!(ask_about_person.as_ask_witness(), None);
+        assert_eq!(ask_about_person.as_report_missing(), None);
+
         assert_eq!(report_missing.as_consult_record(), None);
         assert_eq!(report_missing.as_tell(), None);
         assert_eq!(report_missing.as_accuse(), None);
@@ -873,6 +913,7 @@ mod tests {
             report_missing.as_report_missing(),
             Some(&sample_report_missing_payload())
         );
+        assert_eq!(report_missing.as_ask_about_person(), None);
         assert_eq!(report_missing.as_queue_for_facility_use(), None);
     }
 
@@ -942,6 +983,7 @@ mod tests {
         let investigate = ActionPayload::Investigate(sample_investigate_payload());
         let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
         let ask_witness = ActionPayload::AskWitness(sample_ask_witness_payload());
+        let ask_about_person = ActionPayload::AskAboutPerson(sample_ask_about_person_payload());
         let report_missing = ActionPayload::ReportMissing(sample_report_missing_payload());
         let post_bounty = ActionPayload::PostBounty(sample_post_bounty_payload());
         let post_notice = ActionPayload::PostNotice(sample_post_notice_payload());
@@ -1030,9 +1072,17 @@ mod tests {
             ask_witness.as_ask_witness(),
             Some(&sample_ask_witness_payload())
         );
+        assert_eq!(ask_witness.as_ask_about_person(), None);
         assert_eq!(ask_witness.as_report_missing(), None);
         assert_eq!(ask_witness.as_post_bounty(), None);
         assert_eq!(ask_witness.as_post_notice(), None);
+
+        assert_eq!(
+            ask_about_person.as_ask_about_person(),
+            Some(&sample_ask_about_person_payload())
+        );
+        assert_eq!(ask_about_person.as_ask_witness(), None);
+        assert_eq!(ask_about_person.as_report_missing(), None);
 
         assert_eq!(
             report_missing.as_report_missing(),
@@ -1040,6 +1090,7 @@ mod tests {
         );
         assert_eq!(report_missing.as_post_bounty(), None);
         assert_eq!(report_missing.as_ask_witness(), None);
+        assert_eq!(report_missing.as_ask_about_person(), None);
 
         assert_eq!(
             post_bounty.as_post_bounty(),
@@ -1079,6 +1130,7 @@ mod tests {
         assert_eq!(none.as_investigate(), None);
         assert_eq!(none.as_queue_for_facility_use(), None);
         assert_eq!(none.as_ask_witness(), None);
+        assert_eq!(none.as_ask_about_person(), None);
         assert_eq!(none.as_report_missing(), None);
         assert_eq!(none.as_post_bounty(), None);
         assert_eq!(none.as_post_notice(), None);

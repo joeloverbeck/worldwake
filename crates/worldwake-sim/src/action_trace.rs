@@ -42,6 +42,10 @@ pub enum ActionTraceDetail {
         topic_entity: Option<EntityId>,
         topic_commodity: Option<CommodityKind>,
     },
+    AskAboutPerson {
+        target: EntityId,
+        subject: EntityId,
+    },
     ReportMissing {
         expectation_id: ExpectationId,
     },
@@ -361,6 +365,10 @@ impl ActionTraceDetail {
                 topic_entity: payload.topic_entity,
                 topic_commodity: payload.topic_commodity,
             }),
+            ActionPayload::AskAboutPerson(payload) => Some(Self::AskAboutPerson {
+                target: payload.target,
+                subject: payload.subject,
+            }),
             ActionPayload::ReportMissing(payload) => Some(Self::ReportMissing {
                 expectation_id: payload.expectation_id,
             }),
@@ -404,6 +412,9 @@ impl ActionTraceDetail {
                 format!(
                     "ask_witness target {target} entity {topic_entity:?} commodity {topic_commodity:?}"
                 )
+            }
+            Self::AskAboutPerson { target, subject } => {
+                format!("ask_about_person target {target} subject {subject}")
             }
             Self::ReportMissing { expectation_id } => {
                 format!("report_missing expectation {expectation_id}")
@@ -501,8 +512,9 @@ impl Default for ActionTraceSink {
 mod tests {
     use super::*;
     use crate::{
-        ActionAbortRequestReason, AskWitnessPayload, PunishActionPayload, RequestAttemptTrace,
-        RequestBindingKind, RequestProvenance, ResolvedRequestTrace, TellActionPayload,
+        ActionAbortRequestReason, AskAboutPersonActionPayload, AskWitnessPayload,
+        PunishActionPayload, RequestAttemptTrace, RequestBindingKind, RequestProvenance,
+        ResolvedRequestTrace, TellActionPayload,
     };
     use worldwake_core::{
         CauseRef, CommodityKind, ControlSource, EventLog, InstitutionalClaim,
@@ -729,6 +741,25 @@ mod tests {
     }
 
     #[test]
+    fn detail_from_payload_extracts_ask_about_person_identity() {
+        let target = EntityId {
+            slot: 9,
+            generation: 0,
+        };
+        let subject = EntityId {
+            slot: 10,
+            generation: 1,
+        };
+
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::AskAboutPerson(
+                AskAboutPersonActionPayload { target, subject }
+            )),
+            Some(ActionTraceDetail::AskAboutPerson { target, subject })
+        );
+    }
+
+    #[test]
     fn detail_from_payload_extracts_report_missing_identity() {
         assert_eq!(
             ActionTraceDetail::from_payload(&ActionPayload::ReportMissing(
@@ -768,6 +799,28 @@ mod tests {
         assert!(summary.contains("tell listener"));
         assert!(summary.contains(&listener.to_string()));
         assert!(summary.contains("EntityBelief"));
+    }
+
+    #[test]
+    fn summary_includes_ask_about_person_detail_when_present() {
+        let target = EntityId {
+            slot: 11,
+            generation: 0,
+        };
+        let subject = EntityId {
+            slot: 12,
+            generation: 0,
+        };
+        let event = sample_event(
+            6,
+            ActionTraceKind::Started {
+                targets: vec![target],
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::AskAboutPerson { target, subject }));
+
+        assert!(event.summary().contains("ask_about_person"));
+        assert!(event.summary().contains("subject"));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use crate::{
+    register_ask_about_person_action,
     register_accuse_action, register_artifact_actions, register_ask_witness_action,
     register_attack_action, register_bury_action, register_consult_record_action,
     register_craft_actions, register_defend_action, register_establish_camp_action,
@@ -49,6 +50,7 @@ pub fn register_all_actions(
     let _ = register_investigate_action(defs, handlers);
     let _ = register_patrol_action(defs, handlers);
     let _ = register_ask_witness_action(defs, handlers);
+    let _ = register_ask_about_person_action(defs, handlers);
     let _ = register_report_missing_action(defs, handlers);
     let _ = register_accuse_action(defs, handlers);
     let _ = register_fine_action(defs, handlers);
@@ -119,6 +121,7 @@ mod tests {
             "investigate",
             "patrol",
             "ask_witness",
+            "ask_about_person",
             "report_missing",
             "accuse",
             "fine",

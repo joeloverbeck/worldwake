@@ -18,6 +18,7 @@ Agents need to physically search a place for a missing person. The `search_place
 4. Existing `investigate` action at `crates/worldwake-systems/src/investigate_actions.rs` provides the closest pattern — medium-duration epistemic action that reads scene state.
 5. `SearchResult` and `SearchCondition` types from ticket 001 are the action's output types.
 6. World API provides `component_*` for checking entity presence at a place and reading wound/incapacitation state.
+7. Mismatch + correction from `S59EXPOBLSUB-008`: there is no live stored `SearchTarget` carrier on this branch. `search_place` must not gate on “actor has a SearchTarget” or enumerate from that nonexistent substrate. The honest boundary is a direct missing-subject payload derived from overdue-expectation search context and/or planner-goal binding.
 
 ## Architecture Check
 
@@ -40,16 +41,16 @@ Agents need to physically search a place for a missing person. The `search_place
 Create `crates/worldwake-systems/src/search_actions.rs`:
 
 - Domain: `ActionDomain::Epistemic`
-- Preconditions: Actor at the place to search. Actor has a SearchTarget.
+- Preconditions: Actor at the place to search. Payload binds the missing subject directly rather than depending on a stored `SearchTarget` component.
 - Duration: Medium (5-8 ticks, investigation action)
 - on_commit:
   1. Check if target entity is at the place (co-located entities)
   2. If found: determine condition (alive+healthy, wounded, incapacitated, dead) → produce SearchResult
   3. If not found: read SceneEvidence for relevant traces (blood trails, movement traces matching target) → produce SearchResult with evidence or NothingFound
-  4. Update actor's LastSeenMemory (if found: record sighting; if evidence: record partial info)
+  4. Update actor's LastSeenMemory (if found: record sighting; if evidence handling is still lawful after reassessment, record the bounded result on the canonical carrier)
   5. Update actor's ExpectationRecord if applicable (resolve with outcome)
 - Affordance targets: the place itself (self-targeted at current location)
-- Affordance payloads: enumerate from search targets with place candidates
+- Affordance payloads: enumerate from the live missing-subject search carrier chosen during implementation, not from `SearchTarget`
 
 ### 2. Register action
 
@@ -63,7 +64,7 @@ In `crates/worldwake-systems/src/action_registry.rs`, add `register_search_place
 
 ## Out of Scope
 
-- Route search (SearchTarget::RouteSearch) — the action handles place-level search only; route search emerges from sequential place searches via travel
+- Route-level multi-place search sequencing — the action handles place-level search only; broader route search emerges from sequential place searches via travel
 - escort_to_safety triggered by finding a wounded person — separate ticket 010
 - Candidate generation — ticket 011
 
@@ -86,7 +87,7 @@ In `crates/worldwake-systems/src/action_registry.rs`, add `register_search_place
 
 1. Search checks authoritative entity presence at the place (not belief state) — the actor is physically present and observing
 2. SceneEvidence is read, not modified (read-only access to S52 state)
-3. LastSeenMemory respects capacity bounds
+3. The action uses the canonical live missing-subject carrier chosen during implementation rather than introducing a parallel `SearchTarget` path
 
 ## Test Plan
 

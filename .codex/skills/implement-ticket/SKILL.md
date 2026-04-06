@@ -79,6 +79,7 @@ Specific persisted-shape checks:
 #### AI pipeline and affordance checks
 
 - When affordance generation depends on self-authoritative profile reads, verify those prerequisites in both production code and test harnesses.
+- When proving real affordance enumeration against co-located agents, items, or places, verify whether the affordance query also depends on the actor already believing those targets are present. If so, seed the corresponding belief/perception prerequisite in tests instead of assuming authoritative co-location alone will expose the affordance.
 - When the ticket asks an existing query to distinguish new enum variants, verify the current read surface exposes enough information. If not, correct the ticket to include read-surface widening.
 - When the ticket depends on UtilityProfile or disposition gating, verify the belief/read trait exposes that carrier. If the gate exists only on authoritative components, correct the ticket to include read-surface widening.
 - When the ticket claims a goal family should become behaviorally selectable, check the full AI admission path: candidate generation, goal-policy suppression, ranking, selection. A variant emitted only under conditions a suppression rule blocks requires ticket correction.
