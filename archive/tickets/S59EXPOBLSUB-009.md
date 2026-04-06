@@ -1,6 +1,6 @@
 # S59EXPOBLSUB-009: search_place action
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — new action in worldwake-systems
@@ -19,6 +19,8 @@ Agents need to physically search a place for a missing person. The `search_place
 5. `SearchResult` and `SearchCondition` types from ticket 001 are the action's output types.
 6. World API provides `component_*` for checking entity presence at a place and reading wound/incapacitation state.
 7. Mismatch + correction from `S59EXPOBLSUB-008`: there is no live stored `SearchTarget` carrier on this branch. `search_place` must not gate on “actor has a SearchTarget” or enumerate from that nonexistent substrate. The honest boundary is a direct missing-subject payload derived from overdue-expectation search context and/or planner-goal binding.
+8. `SearchTarget` still exists only as an unused shared type in `crates/worldwake-core/src/expectation.rs` and re-export in `crates/worldwake-core/src/lib.rs`; no live runtime consumer remains. This ticket can absorb that small cleanup while landing the direct-payload search path.
+9. The current branch has no generic search-result commit-trace carrier analogous to Tell. `SearchResult` can still be used internally to drive branch logic, but result-specific proof should stay on authoritative state plus action identity unless a later ticket explicitly widens the trace surface.
 
 ## Architecture Check
 
@@ -27,10 +29,10 @@ Agents need to physically search a place for a missing person. The `search_place
 
 ## Verification Layers
 
-1. Target found alive at place → SearchResult::FoundAlive with correct condition → action trace + authoritative world state
-2. Target found dead → SearchResult::FoundDead → action trace
-3. Target absent but evidence present → SearchResult::FoundEvidence → action trace
-4. Target absent and no evidence → SearchResult::NothingFound → action trace
+1. Target found alive at place → FoundAlive branch with correct condition → authoritative world state + action trace identity
+2. Target found dead → FoundDead branch → authoritative world state + action trace identity
+3. Target absent but evidence present → FoundEvidence branch → authoritative world state + action trace identity
+4. Target absent and no evidence → NothingFound branch → authoritative world state + action trace identity
 5. Expectation record updated on resolution → authoritative world state
 6. LastSeenMemory updated with search result → authoritative world state
 
@@ -52,12 +54,21 @@ Create `crates/worldwake-systems/src/search_actions.rs`:
 - Affordance targets: the place itself (self-targeted at current location)
 - Affordance payloads: enumerate from the live missing-subject search carrier chosen during implementation, not from `SearchTarget`
 
-### 2. Register action
+### 2. Remove dead `SearchTarget` substrate
+
+- Delete the unused `SearchTarget` type and its re-export/tests from `worldwake-core` so the shared search substrate matches the live direct-payload model.
+
+### 3. Register action
 
 In `crates/worldwake-systems/src/action_registry.rs`, add `register_search_place_action()` and update completeness test.
 
 ## Files to Touch
 
+- `crates/worldwake-core/src/expectation.rs` (modify — remove dead `SearchTarget`)
+- `crates/worldwake-core/src/lib.rs` (modify — remove re-export)
+- `crates/worldwake-sim/src/action_payload.rs` (modify — add direct search payload)
+- `crates/worldwake-sim/src/action_trace.rs` (modify — add search action identity detail)
+- `crates/worldwake-sim/src/lib.rs` (modify — export new payload type)
 - `crates/worldwake-systems/src/search_actions.rs` (new)
 - `crates/worldwake-systems/src/lib.rs` (modify — add module)
 - `crates/worldwake-systems/src/action_registry.rs` (modify — register + test)
@@ -72,22 +83,24 @@ In `crates/worldwake-systems/src/action_registry.rs`, add `register_search_place
 
 ### Tests That Must Pass
 
-1. Target entity present and healthy → FoundAlive { condition: Healthy }
-2. Target entity present and wounded → FoundAlive { condition: Wounded }
-3. Target entity dead at place → FoundDead
-4. Target absent, BloodTrail evidence present → FoundEvidence
-5. Target absent, no evidence → NothingFound
+1. Target entity present and healthy → FoundAlive branch with `Healthy` condition
+2. Target entity present and wounded/incapacitated → FoundAlive branch with wounded/unconscious condition
+3. Target entity dead at place → FoundDead branch
+4. Target absent, subject-specific evidence present → FoundEvidence branch
+5. Target absent, no relevant evidence → NothingFound branch
 6. Actor's LastSeenMemory updated after successful find
 7. Actor's ExpectationRecord resolved on find
 8. Action rejected when actor not at the search place
 9. Action registry completeness test includes "search_place"
-10. Existing suite: `cargo test -p worldwake-systems`
+10. `SearchTarget` no longer exists as a shared dead type on the current branch
+11. Existing suite: `cargo test -p worldwake-systems`
 
 ### Invariants
 
 1. Search checks authoritative entity presence at the place (not belief state) — the actor is physically present and observing
 2. SceneEvidence is read, not modified (read-only access to S52 state)
 3. The action uses the canonical live missing-subject carrier chosen during implementation rather than introducing a parallel `SearchTarget` path
+4. Result-specific branch proof does not invent a new generic search trace carrier on this ticket
 
 ## Test Plan
 
@@ -95,8 +108,33 @@ In `crates/worldwake-systems/src/action_registry.rs`, add `register_search_place
 
 1. `crates/worldwake-systems/src/search_actions.rs` — unit tests for all SearchResult branches
 2. `crates/worldwake-systems/src/action_registry.rs` — updated completeness test
+3. `crates/worldwake-core/src/expectation.rs` — shared-type roundtrip/bounds coverage after `SearchTarget` removal
+4. `crates/worldwake-sim/src/action_payload.rs` / `action_trace.rs` — new payload/detail roundtrip coverage
 
 ### Commands
 
 1. `cargo test -p worldwake-systems search`
-2. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+2. `cargo test -p worldwake-core expectation`
+3. `cargo test -p worldwake-sim action_payload`
+4. `cargo test -p worldwake-sim action_trace`
+5. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+- Completed on 2026-04-06.
+- Corrected the ticket before implementation: there was no live stored `SearchTarget` carrier and no lawful generic search-result commit trace on this branch, so the landed action uses direct subject payloads from overdue expectations and keeps result proof on authoritative state plus action identity.
+- Removed the dead `SearchTarget` shared substrate from `crates/worldwake-core/src/expectation.rs` and the corresponding re-export from `crates/worldwake-core/src/lib.rs`.
+- Added `SearchPlaceActionPayload` and `search_place` action-trace identity support in `crates/worldwake-sim/src/action_payload.rs`, `crates/worldwake-sim/src/action_trace.rs`, and `crates/worldwake-sim/src/lib.rs`.
+- Added `search_place` in `crates/worldwake-systems/src/search_actions.rs`, registered it through the systems catalog, and updated completeness coverage in `crates/worldwake-systems/src/action_registry.rs`.
+- The landed action enumerates overdue subjects at the actor's current place, uses `DurationExpr::ActorInvestigationDisposition`, resolves expectations only when the subject is actually found, records direct-observation `LastSeenMemory` on successful finds, and leaves overdue expectations untouched on evidence-only or empty search results.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core expectation`
+- Passed `cargo test -p worldwake-sim action_payload`
+- Passed `cargo test -p worldwake-sim action_trace`
+- Passed `cargo test -p worldwake-systems search_actions`
+- Passed `cargo test -p worldwake-systems action_registry`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

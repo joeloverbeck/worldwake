@@ -16,6 +16,7 @@ The S59 roadmap still needs the second half of the report lifecycle after `searc
 2. The current institutional substrate has no missing-person claim type, so any office-record path must either add one or explicitly narrow to an existing lawful carrier.
 3. `tell_actions.rs` already owns the canonical listener-memory update path for relayed beliefs/social observations; this ticket should reuse or extend that path instead of duplicating it.
 4. This ticket exists because `S59EXPOBLSUB-007` was narrowed to the first honest slice: overdue expectation -> local `ViolationMemory`.
+5. `S59EXPOBLSUB-009` has now landed `search_place` as a direct-subject action in `crates/worldwake-systems/src/search_actions.rs`, with `SearchPlaceActionPayload` and action-trace identity in `worldwake-sim`, expectation resolution on successful finds, and `LastSeenMemory` updates for found subjects. It still does not persist a reusable search-result/report carrier, so `report_found` must reassess from that narrower live boundary rather than assume a stored `SearchResult`.
 
 ## Architecture Check
 
@@ -43,7 +44,7 @@ The S59 roadmap still needs the second half of the report lifecycle after `searc
 
 ## Files to Touch
 
-- `TBD during reassessment after S59EXPOBLSUB-009`
+- Reassess from the landed `search_place` boundary in `crates/worldwake-systems/src/search_actions.rs`, plus any required report/result carrier files discovered during implementation.
 
 ## Out of Scope
 
@@ -66,7 +67,7 @@ The S59 roadmap still needs the second half of the report lifecycle after `searc
 
 ### New/Modified Tests
 
-1. To be defined after reassessment against the landed `search_place` carrier
+1. Focused runtime/action tests at the concrete report/result carrier chosen after reassessment against the landed `search_place` boundary
 
 ### Commands
 

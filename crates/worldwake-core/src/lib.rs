@@ -148,7 +148,7 @@ pub use execution_budget::ExecutionBudget;
 pub use expectation::{
     ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord, ExpectationState,
     ExpectationStore, LastSeenMemory, LastSeenProvenance, LastSeenRecord, SearchCondition,
-    SearchResult, SearchTarget,
+    SearchResult,
 };
 pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,

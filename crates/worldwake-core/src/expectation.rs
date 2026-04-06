@@ -124,19 +124,6 @@ pub enum LastSeenProvenance {
     },
 }
 
-/// What a searcher is looking for.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum SearchTarget {
-    MissingEntity {
-        entity: EntityId,
-        last_seen_place: Option<EntityId>,
-    },
-    RouteSearch {
-        from: EntityId,
-        to: EntityId,
-    },
-}
-
 /// Result of a search action at a specific place.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum SearchResult {
@@ -166,7 +153,7 @@ mod tests {
     use super::{
         ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord, ExpectationState,
         ExpectationStore, LastSeenMemory, LastSeenProvenance, LastSeenRecord, SearchCondition,
-        SearchResult, SearchTarget,
+        SearchResult,
     };
     use crate::{
         CauseRef, CommodityKind, Component, ControlSource, EntityId, EventLog, EvidenceKind,
@@ -211,7 +198,6 @@ mod tests {
         assert_copy_value_bounds::<LastSeenRecord>();
         assert_value_bounds::<LastSeenMemory>();
         assert_copy_value_bounds::<SearchCondition>();
-        assert_copy_value_bounds::<SearchTarget>();
         assert_value_bounds::<SearchResult>();
         assert_display_bounds::<ExpectationId>();
         assert_component_bounds::<ExpectationStore>();
@@ -267,10 +253,6 @@ mod tests {
 
     #[test]
     fn search_types_roundtrip_through_bincode() {
-        assert_roundtrip(&SearchTarget::MissingEntity {
-            entity: entity(10),
-            last_seen_place: Some(entity(11)),
-        });
         assert_roundtrip(&SearchCondition::Unconscious);
         assert_roundtrip(&SearchResult::FoundAlive {
             entity: entity(12),

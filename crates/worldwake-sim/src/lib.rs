@@ -70,10 +70,10 @@ pub use action_payload::{
     AccuseActionPayload, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
     BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
     DeclareSupportActionPayload, EstablishCampActionPayload, HarvestActionPayload,
-    InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
-    PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
-    QueueForFacilityUsePayload, ReportMissingActionPayload, StaffMarketPayload,
-    TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+    InvestigateActionPayload, LootActionPayload, PostBountyActionPayload, PostNoticeActionPayload,
+    PressForceClaimActionPayload, PunishActionPayload, QueueForFacilityUsePayload,
+    ReportMissingActionPayload, SearchPlaceActionPayload, StaffMarketPayload, TellActionPayload,
+    ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
     YieldForceClaimActionPayload,
 };
 pub use action_semantics::{

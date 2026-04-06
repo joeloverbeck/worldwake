@@ -230,11 +230,12 @@ Do not assume every schema macro reference needs a new import — verify actual 
 11. When adding, removing, or replacing an `EntityKind`, include kind-classification and lifecycle-routing helpers in the sweep.
 12. When adding a field to a shared model, search for hand-written constructors and test literals across sibling modules, including same-crate test modules.
 13. When turning a single-shot action into a staged lifecycle, prove each phase separately: start admission, intermediate evolution, commit conditions, abort aftermath.
-14. When splitting uniform behavior into variant-specific rules, rewrite existing compressed tests into per-case proofs.
-15. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, search tests.
-16. When one goal family spans multiple target subtypes, verify operator availability per subtype. Check for stale operators leaking across subtypes.
-17. When a goal family ends in a place-sensitive terminal action, add focused coverage for both target satisfaction and return-to-terminal-place legality.
-18. When a colocated leaf action becomes live, verify the colocated terminal case separately from travel-plus-leaf planning.
+14. When an action uses a profile-driven or expression-driven duration, make test helpers derive or tolerate the real completion window. Do not copy a nearby fixed-duration helper and assume the same tick cadence.
+15. When splitting uniform behavior into variant-specific rules, rewrite existing compressed tests into per-case proofs.
+16. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, search tests.
+17. When one goal family spans multiple target subtypes, verify operator availability per subtype. Check for stale operators leaking across subtypes.
+18. When a goal family ends in a place-sensitive terminal action, add focused coverage for both target satisfaction and return-to-terminal-place legality.
+19. When a colocated leaf action becomes live, verify the colocated terminal case separately from travel-plus-leaf planning.
 
 ### 6. Verify at the right boundary
 
@@ -339,6 +340,7 @@ Before finishing:
 - Re-check `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff. Remove reassessment-only fallout that did not become real edits.
 - If reassessment or verification changed the semantic contract the ticket describes, also re-check `Problem`, `Architecture Check`, and `Acceptance Criteria` so the ticket's narrative matches the landed behavior rather than an earlier draft.
 - Re-check inline code snippets, example signatures, or API sketches against the final landed shape.
+- If formatting was required in a dirty worktree, check immediately for formatter spillover into already-modified files outside the ticket's owned surface and call that out explicitly in close-out repo-state notes.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
 
 Minimal active-ticket close-out shape:

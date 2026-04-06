@@ -46,6 +46,9 @@ pub enum ActionTraceDetail {
         target: EntityId,
         subject: EntityId,
     },
+    SearchPlace {
+        subject: EntityId,
+    },
     ReportMissing {
         expectation_id: ExpectationId,
     },
@@ -369,6 +372,9 @@ impl ActionTraceDetail {
                 target: payload.target,
                 subject: payload.subject,
             }),
+            ActionPayload::SearchPlace(payload) => Some(Self::SearchPlace {
+                subject: payload.subject,
+            }),
             ActionPayload::ReportMissing(payload) => Some(Self::ReportMissing {
                 expectation_id: payload.expectation_id,
             }),
@@ -415,6 +421,9 @@ impl ActionTraceDetail {
             }
             Self::AskAboutPerson { target, subject } => {
                 format!("ask_about_person target {target} subject {subject}")
+            }
+            Self::SearchPlace { subject } => {
+                format!("search_place subject {subject}")
             }
             Self::ReportMissing { expectation_id } => {
                 format!("report_missing expectation {expectation_id}")
@@ -514,7 +523,7 @@ mod tests {
     use crate::{
         ActionAbortRequestReason, AskAboutPersonActionPayload, AskWitnessPayload,
         PunishActionPayload, RequestAttemptTrace, RequestBindingKind, RequestProvenance,
-        ResolvedRequestTrace, TellActionPayload,
+        ResolvedRequestTrace, SearchPlaceActionPayload, TellActionPayload,
     };
     use worldwake_core::{
         CauseRef, CommodityKind, ControlSource, EventLog, InstitutionalClaim,
@@ -760,6 +769,21 @@ mod tests {
     }
 
     #[test]
+    fn detail_from_payload_extracts_search_place_identity() {
+        let subject = EntityId {
+            slot: 11,
+            generation: 0,
+        };
+
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::SearchPlace(
+                SearchPlaceActionPayload { subject }
+            )),
+            Some(ActionTraceDetail::SearchPlace { subject })
+        );
+    }
+
+    #[test]
     fn detail_from_payload_extracts_report_missing_identity() {
         assert_eq!(
             ActionTraceDetail::from_payload(&ActionPayload::ReportMissing(
@@ -821,6 +845,27 @@ mod tests {
 
         assert!(event.summary().contains("ask_about_person"));
         assert!(event.summary().contains("subject"));
+    }
+
+    #[test]
+    fn summary_includes_search_place_detail_when_present() {
+        let subject = EntityId {
+            slot: 13,
+            generation: 0,
+        };
+        let event = sample_event(
+            7,
+            ActionTraceKind::Started {
+                targets: vec![EntityId {
+                    slot: 14,
+                    generation: 0,
+                }],
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::SearchPlace { subject }));
+
+        assert!(event.summary().contains("search_place"));
+        assert!(event.summary().contains(&subject.to_string()));
     }
 
     #[test]

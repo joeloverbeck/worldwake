@@ -186,10 +186,7 @@ mod tests {
         assert_eq!(SystemId::Contention.to_string(), "contention");
         assert_eq!(SystemId::Perception.to_string(), "perception");
         assert_eq!(SystemId::EvidenceDecay.to_string(), "evidence_decay");
-        assert_eq!(
-            SystemId::ExpectationCheck.to_string(),
-            "expectation_check"
-        );
+        assert_eq!(SystemId::ExpectationCheck.to_string(), "expectation_check");
         assert_eq!(SystemId::Politics.to_string(), "politics");
         assert_eq!(SystemId::Patrol.to_string(), "patrol");
     }

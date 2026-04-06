@@ -158,36 +158,36 @@ mod tests {
     fn overdue_store_for_tick_marks_only_active_records_past_grace() {
         let owner = entity(1);
         let store = expectation_store([
-                (
-                    ExpectationId(1),
-                    expectation_record(1, owner, ExpectationState::Active),
-                ),
-                (
-                    ExpectationId(2),
-                    ExpectationRecord {
-                        grace_ticks: 3,
-                        ..expectation_record(2, owner, ExpectationState::Active)
+            (
+                ExpectationId(1),
+                expectation_record(1, owner, ExpectationState::Active),
+            ),
+            (
+                ExpectationId(2),
+                ExpectationRecord {
+                    grace_ticks: 3,
+                    ..expectation_record(2, owner, ExpectationState::Active)
+                },
+            ),
+            (
+                ExpectationId(3),
+                expectation_record(3, owner, ExpectationState::Overdue),
+            ),
+            (
+                ExpectationId(4),
+                expectation_record(
+                    4,
+                    owner,
+                    ExpectationState::Resolved {
+                        outcome: worldwake_core::ExpectationOutcome::ReturnedLate,
                     },
                 ),
-                (
-                    ExpectationId(3),
-                    expectation_record(3, owner, ExpectationState::Overdue),
-                ),
-                (
-                    ExpectationId(4),
-                    expectation_record(
-                        4,
-                        owner,
-                        ExpectationState::Resolved {
-                            outcome: worldwake_core::ExpectationOutcome::ReturnedLate,
-                        },
-                    ),
-                ),
-                (
-                    ExpectationId(5),
-                    expectation_record(5, owner, ExpectationState::Expired),
-                ),
-            ]);
+            ),
+            (
+                ExpectationId(5),
+                expectation_record(5, owner, ExpectationState::Expired),
+            ),
+        ]);
 
         let updated = overdue_store_for_tick(&store, Tick(13)).unwrap();
 
@@ -219,12 +219,12 @@ mod tests {
     fn overdue_store_for_tick_returns_none_when_no_records_change() {
         let owner = entity(1);
         let store = expectation_store([(
-                ExpectationId(1),
-                ExpectationRecord {
-                    grace_ticks: 3,
-                    ..expectation_record(1, owner, ExpectationState::Active)
-                },
-            )]);
+            ExpectationId(1),
+            ExpectationRecord {
+                grace_ticks: 3,
+                ..expectation_record(1, owner, ExpectationState::Active)
+            },
+        )]);
 
         assert_eq!(overdue_store_for_tick(&store, Tick(13)), None);
     }
@@ -235,9 +235,9 @@ mod tests {
         let agent = seed_agent_with_store(
             &mut world,
             expectation_store([(
-                    ExpectationId(1),
-                    expectation_record(1, entity(1), ExpectationState::Active),
-                )]),
+                ExpectationId(1),
+                expectation_record(1, entity(1), ExpectationState::Active),
+            )]),
         );
         let mut event_log = EventLog::new();
         let mut rng = DeterministicRng::new(Seed([7; 32]));
@@ -255,7 +255,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_expectation_store(agent)
+            world
+                .get_component_expectation_store(agent)
                 .unwrap()
                 .records
                 .get(&ExpectationId(1))
@@ -273,12 +274,12 @@ mod tests {
         let agent = seed_agent_with_store(
             &mut world,
             expectation_store([(
-                    ExpectationId(1),
-                    ExpectationRecord {
-                        grace_ticks: 3,
-                        ..expectation_record(1, entity(1), ExpectationState::Active)
-                    },
-                )]),
+                ExpectationId(1),
+                ExpectationRecord {
+                    grace_ticks: 3,
+                    ..expectation_record(1, entity(1), ExpectationState::Active)
+                },
+            )]),
         );
         let mut event_log = EventLog::new();
         let mut rng = DeterministicRng::new(Seed([8; 32]));
@@ -296,7 +297,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_expectation_store(agent)
+            world
+                .get_component_expectation_store(agent)
                 .unwrap()
                 .records
                 .get(&ExpectationId(1))
@@ -313,9 +315,9 @@ mod tests {
         let agent = seed_agent_with_store(
             &mut world,
             expectation_store([(
-                    ExpectationId(1),
-                    expectation_record(1, entity(1), ExpectationState::Active),
-                )]),
+                ExpectationId(1),
+                expectation_record(1, entity(1), ExpectationState::Active),
+            )]),
         );
         let mut event_log = EventLog::new();
         let mut rng = DeterministicRng::new(Seed([9; 32]));
@@ -333,7 +335,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_expectation_store(agent)
+            world
+                .get_component_expectation_store(agent)
                 .unwrap()
                 .records
                 .get(&ExpectationId(1))

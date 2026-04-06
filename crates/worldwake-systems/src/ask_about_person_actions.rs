@@ -2,15 +2,15 @@ use std::collections::BTreeSet;
 
 use worldwake_core::{
     ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BodyCostPerTick, EntityId, EntityKind,
-    EventLog, EventTag, ExpectationRecord, ExpectationState, LastSeenMemory,
-    LastSeenProvenance, LastSeenRecord, VisibilitySpec, World, WorldTxn, is_incapacitated,
+    EventLog, EventTag, ExpectationRecord, ExpectationState, LastSeenMemory, LastSeenProvenance,
+    LastSeenRecord, VisibilitySpec, World, WorldTxn, is_incapacitated,
 };
 use worldwake_sim::{
-    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler,
-    ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, AskAboutPersonActionPayload, CommitOutcome, Constraint, DeterministicRng,
-    DurationExpr, Interruptibility, PerAgentBeliefView, Precondition, RuntimeBeliefView,
-    TargetSpec,
+    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
+    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
+    ActionProgress, ActionState, AskAboutPersonActionPayload, CommitOutcome, Constraint,
+    DeterministicRng, DurationExpr, Interruptibility, PerAgentBeliefView, Precondition,
+    RuntimeBeliefView, TargetSpec,
 };
 
 pub fn register_ask_about_person_action(
@@ -733,7 +733,9 @@ mod tests {
 
         let affordances = get_affordances(&view, actor, &defs, &handlers);
         assert!(
-            !affordances.iter().any(|affordance| affordance.def_id == def_id),
+            !affordances
+                .iter()
+                .any(|affordance| affordance.def_id == def_id),
             "recently asked witness lane should suppress ask_about_person affordances"
         );
     }
@@ -878,16 +880,17 @@ mod tests {
             .get_component_agent_belief_store(actor)
             .expect("actor should keep agent belief store");
         assert_eq!(
-            store.ask_witness_memory(
-                &AskWitnessMemoryKey {
-                    counterparty: witness,
-                    topic_entity: Some(subject),
-                    topic_commodity: None,
-                },
-                Tick(4),
-                12,
-            )
-            .map(|memory| memory.asked_tick),
+            store
+                .ask_witness_memory(
+                    &AskWitnessMemoryKey {
+                        counterparty: witness,
+                        topic_entity: Some(subject),
+                        topic_commodity: None,
+                    },
+                    Tick(4),
+                    12,
+                )
+                .map(|memory| memory.asked_tick),
             Some(Tick(4))
         );
     }

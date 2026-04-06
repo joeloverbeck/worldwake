@@ -118,7 +118,8 @@ fn enumerate_report_missing_payloads(
         return Vec::new();
     };
 
-    store.records
+    store
+        .records
         .values()
         .filter(|record| reportable_expectation(view, actor, record.id).is_some())
         .map(|record| {
@@ -180,7 +181,8 @@ fn start_report_missing(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<ActionState>, ActionError> {
-    let payload = report_missing_payload(&instance.payload).map_err(ActionError::PreconditionFailed)?;
+    let payload =
+        report_missing_payload(&instance.payload).map_err(ActionError::PreconditionFailed)?;
     let view = PerAgentBeliefView::from_world(instance.actor, txn);
     if reportable_expectation(&view, instance.actor, payload.expectation_id).is_none() {
         return Err(ActionError::PreconditionFailed(format!(
@@ -210,7 +212,8 @@ fn commit_report_missing(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let payload = report_missing_payload(&instance.payload).map_err(ActionError::PreconditionFailed)?;
+    let payload =
+        report_missing_payload(&instance.payload).map_err(ActionError::PreconditionFailed)?;
     let actor = instance.actor;
     let profile = txn
         .get_component_violation_disposition_profile(actor)
@@ -227,7 +230,10 @@ fn commit_report_missing(
         ))
     })?;
 
-    let mut memory = txn.get_component_violation_memory(actor).cloned().unwrap_or_default();
+    let mut memory = txn
+        .get_component_violation_memory(actor)
+        .cloned()
+        .unwrap_or_default();
     memory.record(
         ViolationKind::EntityMissing {
             entity: record.subject,
@@ -264,8 +270,8 @@ mod tests {
         ViolationDispositionProfile, ViolationMemory, build_prototype_world,
     };
     use worldwake_sim::{
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId, Affordance,
-        TickOutcome, get_affordances, start_action, tick_action,
+        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId, Affordance, TickOutcome,
+        get_affordances, start_action, tick_action,
     };
 
     fn pm(value: u16) -> worldwake_core::Permille {
@@ -342,7 +348,8 @@ mod tests {
 
     fn setup_fixture() -> (World, EntityId, EntityId, EntityId) {
         let mut world = World::new(build_prototype_world()).unwrap();
-        let place = worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::VillageSquare);
+        let place =
+            worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::VillageSquare);
         let actor;
         let subject;
         {
@@ -485,7 +492,9 @@ mod tests {
 
         let affordances = get_affordances(&view, actor, &defs, &handlers);
         assert!(
-            !affordances.iter().any(|affordance| affordance.def_id == def_id),
+            !affordances
+                .iter()
+                .any(|affordance| affordance.def_id == def_id),
             "active expectations should not produce report_missing affordances"
         );
     }
@@ -511,7 +520,9 @@ mod tests {
 
         let affordances = get_affordances(&view, actor, &defs, &handlers);
         assert!(
-            !affordances.iter().any(|affordance| affordance.def_id == def_id),
+            !affordances
+                .iter()
+                .any(|affordance| affordance.def_id == def_id),
             "duplicate active EntityMissing records should suppress report_missing affordances"
         );
     }
