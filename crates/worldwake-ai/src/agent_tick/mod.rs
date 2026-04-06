@@ -15,14 +15,14 @@ use execution::{
     persist_blocked_memory, persist_facility_queue_intents, persist_intention_frame, plan_finished,
 };
 use frame::{
-    apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
+    AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
     handle_recoverable_travel_step_blockage, populate_assumptions,
-    record_assumption_failure_blocked_intent, update_frame_for_adopted_plan, AssumptionEvalResult,
+    record_assumption_failure_blocked_intent, update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
-    reconcile_in_flight_state, refresh_runtime_for_read_phase, update_runtime_observation_snapshot,
-    InFlightReconciliation, ReadPhaseContext,
+    InFlightReconciliation, ReadPhaseContext, reconcile_in_flight_state,
+    refresh_runtime_for_read_phase, update_runtime_observation_snapshot,
 };
 use planning::{
     build_candidate_plans, plan_and_validate_next_step_traced, selection_candidates,
@@ -37,14 +37,14 @@ use crate::decision_trace::{
     UnknownBlockerTrace,
 };
 use crate::{
-    build_semantics_table, frame_runtime_snapshot, AgentDecisionRuntime, PlannerOpSemantics,
+    AgentDecisionRuntime, PlannerOpSemantics, build_semantics_table, frame_runtime_snapshot,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, BlockingFact, ControlSource, EntityId, ContentionIntents, IntentionFrame,
-    ReasoningProfile, Tick,
+    ActionDefId, BlockingFact, CognitiveProfile, ContentionIntents, ControlSource, EntityId,
+    ExecutionBudget, IntentionFrame, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -129,12 +129,12 @@ impl AgentTickDriver {
         let runtime = self.runtime_by_agent.get(&agent)?;
         let frame = world.get_component_intention_frame(agent);
         let view = PerAgentBeliefView::from_world(agent, world);
-        let reasoning = world
-            .get_component_reasoning_profile(agent)
+        let cognitive = world
+            .get_component_cognitive_profile(agent)
             .cloned()
-            .unwrap_or_else(|| panic!("AI agent {agent} lacks ReasoningProfile"));
+            .unwrap_or_else(|| panic!("AI agent {agent} lacks CognitiveProfile"));
         let (effective_switch_margin, switch_margin_source) =
-            goal_switch_margin_details(&view, agent, frame, &reasoning);
+            goal_switch_margin_details(&view, agent, frame, &cognitive);
         Some(FrameDebugSnapshot {
             runtime: frame_runtime_snapshot(frame, runtime),
             effective_switch_margin,
@@ -174,7 +174,10 @@ impl AgentTickDriver {
                 .retain(|(entity, _, _)| world.is_alive(*entity));
             runtime.last_patrol_route = runtime.last_patrol_route.take().filter(|route| {
                 route.current_index < route.assigned_places.len()
-                    && route.assigned_places.iter().all(|place| world.is_alive(*place))
+                    && route
+                        .assigned_places
+                        .iter()
+                        .all(|place| world.is_alive(*place))
             });
             runtime.dirty = crate::DirtySet::STRUCTURAL_MASK
                 | crate::DirtySet::SNAPSHOT_MASK
@@ -250,7 +253,8 @@ pub(super) struct AgentTickContext<'a> {
     pub(super) action_handlers: &'a ActionHandlerRegistry,
     pub(super) recipe_registry: &'a RecipeRegistry,
     pub(super) semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
-    pub(super) reasoning: &'a ReasoningProfile,
+    pub(super) cognitive: &'a CognitiveProfile,
+    pub(super) execution_budget: &'a ExecutionBudget,
     pub(super) tick: Tick,
 }
 
@@ -280,11 +284,16 @@ impl AutonomousController for AgentTickDriver {
         let _ = self.semantics_table(ctx.action_defs);
         let semantics_table = &self.semantics_cache.as_ref().unwrap().1;
         let tracing = self.trace_sink.is_some();
-        let reasoning = ctx
+        let cognitive = ctx
             .world
-            .get_component_reasoning_profile(agent)
+            .get_component_cognitive_profile(agent)
             .cloned()
-            .unwrap_or_else(|| panic!("AI agent {agent} lacks ReasoningProfile"));
+            .unwrap_or_else(|| panic!("AI agent {agent} lacks CognitiveProfile"));
+        let execution_budget = ctx
+            .world
+            .get_component_execution_budget(agent)
+            .cloned()
+            .unwrap_or_else(|| panic!("AI agent {agent} lacks ExecutionBudget"));
         let trace = process_agent(
             &mut AgentTickContext {
                 world: ctx.world,
@@ -295,7 +304,8 @@ impl AutonomousController for AgentTickDriver {
                 action_handlers: ctx.action_handlers,
                 recipe_registry: ctx.recipe_registry,
                 semantics_table,
-                reasoning: &reasoning,
+                cognitive: &cognitive,
+                execution_budget: &execution_budget,
                 tick: ctx.tick,
             },
             &mut self.runtime_by_agent,
@@ -324,7 +334,8 @@ fn process_agent(
     let action_handlers = ctx.action_handlers;
     let recipe_registry = ctx.recipe_registry;
     let semantics_table = ctx.semantics_table;
-    let reasoning = ctx.reasoning;
+    let cognitive = ctx.cognitive;
+    let execution_budget = ctx.execution_budget;
     let tick = ctx.tick;
 
     let mut blocked_memory = ctx
@@ -365,8 +376,13 @@ fn process_agent(
 
     // ── Dead-agent early return ──
     {
-        let view =
-            runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
+        let view = runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            action_defs,
+            recipe_registry,
+        );
         if view.is_dead(agent) || !view.is_alive(agent) {
             if current_frame.is_some() {
                 runtime.last_frame_clear_reason = Some(FrameClearReason::Death);
@@ -452,7 +468,7 @@ fn process_agent(
         ctx.event_log,
         agent,
         tick,
-        reasoning.structural_block_ticks,
+        cognitive.structural_block_ticks,
     )?;
 
     // ── Pre-planning assumption evaluation ──
@@ -463,8 +479,13 @@ fn process_agent(
             .as_ref()
             .is_some_and(|f| !matches!(f.state, worldwake_core::FrameState::Exhausted));
         if should_eval {
-            let view =
-                runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
+            let view = runtime_belief_view(
+                agent,
+                ctx.world,
+                ctx.scheduler,
+                action_defs,
+                recipe_registry,
+            );
             let frame = current_frame.as_mut().unwrap();
             frame.assumptions = populate_assumptions(&frame.domain, agent, &view);
             let eval = evaluate_assumptions(&frame.assumptions, &view, None);
@@ -485,7 +506,7 @@ fn process_agent(
                         view.effective_place(agent),
                         &mut blocked_memory,
                         tick,
-                        reasoning.structural_block_ticks,
+                        cognitive.structural_block_ticks,
                     );
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
@@ -513,8 +534,8 @@ fn process_agent(
             recipe_registry,
             utility: &utility,
             tick,
-            travel_horizon: reasoning.snapshot_travel_horizon,
-            structural_block_ticks: reasoning.structural_block_ticks,
+            travel_horizon: cognitive.snapshot_travel_horizon,
+            structural_block_ticks: cognitive.structural_block_ticks,
         },
         tracing,
     );
@@ -523,42 +544,42 @@ fn process_agent(
     // ── Deferred NoCriticalThreat evaluation ──
     // Now that ranked candidates are available, evaluate NoCriticalThreat
     // assumptions that were deferred in the pre-planning stage.
-    if let Some(frame) = current_frame.as_ref() {
-        if !matches!(frame.state, worldwake_core::FrameState::Exhausted) {
-            let has_no_critical_threat = frame
-                .assumptions
-                .iter()
-                .any(|a| matches!(a, worldwake_core::FrameAssumption::NoCriticalThreat));
-            if has_no_critical_threat {
-                let deferred_eval = evaluate_assumptions(
-                    &[worldwake_core::FrameAssumption::NoCriticalThreat],
-                    &runtime_belief_view(
-                        agent,
-                        ctx.world,
-                        ctx.scheduler,
-                        action_defs,
-                        recipe_registry,
-                    ),
-                    Some(&ranked_candidates),
+    if let Some(frame) = current_frame.as_ref()
+        && !matches!(frame.state, worldwake_core::FrameState::Exhausted)
+    {
+        let has_no_critical_threat = frame
+            .assumptions
+            .iter()
+            .any(|a| matches!(a, worldwake_core::FrameAssumption::NoCriticalThreat));
+        if has_no_critical_threat {
+            let deferred_eval = evaluate_assumptions(
+                &[worldwake_core::FrameAssumption::NoCriticalThreat],
+                &runtime_belief_view(
+                    agent,
+                    ctx.world,
+                    ctx.scheduler,
+                    action_defs,
+                    recipe_registry,
+                ),
+                Some(&ranked_candidates),
+            );
+            if matches!(
+                deferred_eval,
+                AssumptionEvalResult::RecoverableFailure(_) | AssumptionEvalResult::AllPass
+            ) {
+                let pre_state = frame.state;
+                current_frame = Some(apply_assumption_result(
+                    frame,
+                    &deferred_eval,
+                    tick,
+                    runtime,
+                ));
+                emit_assumption_transitions(
+                    &pre_state,
+                    &deferred_eval,
+                    tick,
+                    &mut frame_transitions,
                 );
-                if matches!(
-                    deferred_eval,
-                    AssumptionEvalResult::RecoverableFailure(_) | AssumptionEvalResult::AllPass
-                ) {
-                    let pre_state = frame.state;
-                    current_frame = Some(apply_assumption_result(
-                        frame,
-                        &deferred_eval,
-                        tick,
-                        runtime,
-                    ));
-                    emit_assumption_transitions(
-                        &pre_state,
-                        &deferred_eval,
-                        tick,
-                        &mut frame_transitions,
-                    );
-                }
             }
         }
     }
@@ -566,8 +587,13 @@ fn process_agent(
     // ── Feasibility annotation and re-sort ──
     let mut ranked_candidates = ranked_candidates;
     {
-        let view =
-            runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
+        let view = runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            action_defs,
+            recipe_registry,
+        );
         for ranked in &mut ranked_candidates {
             ranked.feasibility = crate::feasibility::feasibility_hint(
                 &view,
@@ -584,11 +610,16 @@ fn process_agent(
     let active_action = active_action_for_agent(ctx, agent);
     let frame_switch_margin = {
         let jc = ctx.world.get_component_intention_frame(agent);
-        let view =
-            runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
-        effective_goal_switch_margin(&view, agent, jc, reasoning)
+        let view = runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            action_defs,
+            recipe_registry,
+        );
+        effective_goal_switch_margin(&view, agent, jc, cognitive)
     };
-    let default_switch_margin = reasoning.switch_margin;
+    let default_switch_margin = cognitive.switch_margin;
 
     // ── Active-action path: interrupt evaluation ──
     let outcome_trace = if let Some(active_action) = active_action {
@@ -663,7 +694,8 @@ fn process_agent(
                 frame_switch_margin,
                 utility.side_benefit_weight,
                 tick,
-                reasoning,
+                cognitive,
+                execution_budget,
                 semantics_table,
                 action_defs,
                 action_handlers,
@@ -708,12 +740,11 @@ fn process_agent(
                 valid,
             );
 
-            if let Err(ref _e) = exec_result {
-                if let Some(et) = execution_trace.as_mut() {
-                    if !valid {
-                        et.failure = Some(ExecutionFailureReason::RevalidationFailed);
-                    }
-                }
+            if let Err(ref _e) = exec_result
+                && let Some(et) = execution_trace.as_mut()
+                && !valid
+            {
+                et.failure = Some(ExecutionFailureReason::RevalidationFailed);
             }
             exec_result?;
         }
@@ -729,12 +760,8 @@ fn process_agent(
                 );
                 let patrol = patrol_route_snapshot(&view, agent);
                 let place = view.effective_place(agent);
-                let affordances = worldwake_sim::get_affordances(
-                    &view,
-                    agent,
-                    action_defs,
-                    action_handlers,
-                );
+                let affordances =
+                    worldwake_sim::get_affordances(&view, agent, action_defs, action_handlers);
                 let trace = AffordanceTrace {
                     available: affordances
                         .iter()
@@ -861,15 +888,20 @@ fn process_agent(
 
     // ── Patience exhaustion → BlockedIntent + Exhausted state ──
     if patience_exhausted {
-        let view =
-            runtime_belief_view(agent, ctx.world, ctx.scheduler, action_defs, recipe_registry);
+        let view = runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            action_defs,
+            recipe_registry,
+        );
         let exhausted = check_patience_exhaustion(
             current_frame.as_ref().unwrap(),
             view.effective_place(agent),
             &mut blocked_memory,
             runtime,
             tick,
-            reasoning.structural_block_ticks,
+            cognitive.structural_block_ticks,
         );
         if exhausted {
             let frame_ref = current_frame.as_ref().unwrap();
@@ -911,10 +943,9 @@ fn process_agent(
             && !ft
                 .iter()
                 .any(|t| matches!(t, FrameTransitionKind::Cleared { .. }))
+            && let Some(reason) = runtime.last_frame_clear_reason
         {
-            if let Some(reason) = runtime.last_frame_clear_reason {
-                ft.push(FrameTransitionKind::Cleared { reason });
-            }
+            ft.push(FrameTransitionKind::Cleared { reason });
         }
     }
 

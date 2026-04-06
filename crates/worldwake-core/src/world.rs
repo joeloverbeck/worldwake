@@ -1,23 +1,22 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
-    ArtifactHeader, BountyTerms,
-    BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables,
-    ComponentValue, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
-    ContentionQueue, Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds,
-    EntityAllocator, EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId,
-    FactionData, HomeostaticNeeds, InTransitOnEdge,
-    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
-    LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PursuitProfile, ReasoningProfile,
-    PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, RecordData,
-    RelationTables, ResourceSource, SaleListing, StockAssignment, StockStoragePolicy,
-    RouteExperience, SourceReliability, SubstitutePreferences, TellProfile, TheftDispositionProfile,
-    Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
-    NoticeContent,
+    ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, BanditCamp, BanditFactionPolicy,
+    BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance,
+    CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables,
+    ComponentValue, Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
+    ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator,
+    EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
+    FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame,
+    ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+    MetabolismProfile, Name, NoticeContent, OfficeData, OfficeForceProfile, OfficeForceState,
+    PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PreferenceProfile,
+    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
+    RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence,
+    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
+    WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -30,7 +29,7 @@ mod reservations;
 mod social;
 
 macro_rules! world_component_api {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         $(
             #[allow(dead_code)]
             pub(crate) fn $insert_fn(
@@ -97,7 +96,7 @@ macro_rules! world_component_api {
 }
 
 macro_rules! world_component_value_api {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         pub(crate) fn component_values(&self, entity: EntityId) -> Vec<ComponentValue> {
             let mut values = Vec::new();
 
@@ -159,7 +158,8 @@ impl World {
             world.insert_component_agent_belief_store(entity, AgentBeliefStore::new())?;
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
-            world.insert_component_reasoning_profile(entity, ReasoningProfile::default())?;
+            world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
+            world.insert_component_execution_budget(entity, ExecutionBudget::default())?;
             world.insert_component_epistemic_disposition_profile(
                 entity,
                 EpistemicDispositionProfile::default(),
@@ -168,7 +168,8 @@ impl World {
                 entity,
                 IntentionDispositionProfile::default(),
             )?;
-            world.insert_component_communication_profile(entity, CommunicationProfile::default())?;
+            world
+                .insert_component_communication_profile(entity, CommunicationProfile::default())?;
             world.insert_component_preference_profile(entity, PreferenceProfile::default())?;
             Ok(())
         })
@@ -449,9 +450,9 @@ impl World {
     /// Returns `true` if the place has at least one tag present in the given `PlaceTagSet`.
     #[must_use]
     pub fn place_has_any_tag_in(&self, place: EntityId, tag_set: PlaceTagSet) -> bool {
-        self.topology.place(place).is_some_and(|place_data| {
-            place_data.tags.iter().any(|tag| tag_set.contains(*tag))
-        })
+        self.topology
+            .place(place)
+            .is_some_and(|place_data| place_data.tags.iter().any(|tag| tag_set.contains(*tag)))
     }
 
     pub fn archive_dependencies(
@@ -609,25 +610,25 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        build_prototype_world,
+        AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
+        BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
+        CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EffectiveRight, EntityId, EntityKind,
+        EpistemicDispositionProfile, EventId, FactionData, FactionPurpose, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
+        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
+        MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
+        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
+        ProvenanceEntry, PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind,
+        ReservationId, ReservationRecord, ResourceSource, RightKind, SubstitutePreferences,
+        SuccessionLaw, TellProfile, TheftDispositionProfile, Tick, TickRange, Topology,
+        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        WorkstationTag, WorldError, Wound, WoundCause, WoundList, build_prototype_world,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
-        AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
-        BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind, Container,
-        ControlSource, DeadAt, DemandMemory, DeprivationExposure, DeprivationKind, DriveThresholds,
-        EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData, FactionPurpose,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
-        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
-        MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-        CommunicationProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob, PursuitProfile,
-        ProvenanceEntry, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
-        ReservationRecord, ResourceSource, SubstitutePreferences, SuccessionLaw, TellProfile,
-        TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId,
-        UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound,
-        WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -705,11 +706,14 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(9),
                 source: PerceptionSource::DirectObservation,
             },
         );
         AgentBeliefStore {
+            entity_claims: BTreeMap::new(),
+            next_claim_id: crate::ClaimId(0),
             known_entities,
             social_observations: Vec::new(),
             told_beliefs: BTreeMap::new(),
@@ -736,7 +740,8 @@ mod tests {
 
     fn sample_perception_profile() -> PerceptionProfile {
         PerceptionProfile {
-            memory_capacity: 12,
+            entity_memory_capacity: 12,
+            entity_claim_capacity: 12,
             memory_retention_ticks: 48,
             observation_fidelity: Permille::new(875).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -886,7 +891,8 @@ mod tests {
     fn sample_office_data() -> OfficeData {
         OfficeData {
             title: "Ledger Hall".to_string(),
-            jurisdiction: entity(5),
+            seat: entity(5),
+            jurisdiction: BTreeSet::from([entity(5)]),
             succession_law: SuccessionLaw::Support,
             eligibility_rules: Vec::new(),
             succession_period_ticks: 12,
@@ -3701,6 +3707,262 @@ mod tests {
     }
 
     #[test]
+    fn effective_rights_possession() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let possessor = world
+            .create_agent("Bram", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+
+        world.set_possessor(item, possessor).unwrap();
+
+        assert_eq!(
+            world.effective_rights(possessor, item),
+            vec![EffectiveRight {
+                kind: RightKind::PhysicalPossession,
+                via: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_ownership() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let owner = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+
+        world.set_owner(item, owner).unwrap();
+
+        assert_eq!(
+            world.effective_rights(owner, item),
+            vec![EffectiveRight {
+                kind: RightKind::Ownership,
+                via: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_faction_authority() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let member = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_owner(item, faction).unwrap();
+        world.add_member(member, faction).unwrap();
+
+        assert_eq!(
+            world.effective_rights(member, item),
+            vec![EffectiveRight {
+                kind: RightKind::FactionAuthority,
+                via: Some(faction),
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_office_authority() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_office("Mayor", Tick(1)).unwrap();
+        let holder = world
+            .create_agent("Bram", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_owner(item, office).unwrap();
+        world.assign_office(office, holder).unwrap();
+
+        assert_eq!(
+            world.effective_rights(holder, item),
+            vec![EffectiveRight {
+                kind: RightKind::OfficeAuthority,
+                via: Some(office),
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_container_access() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world
+            .topology()
+            .place_ids()
+            .next()
+            .expect("prototype world provides at least one place");
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let satchel = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(20),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: true,
+                },
+                Tick(2),
+            )
+            .unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_ground_location(actor, place).unwrap();
+        world.set_ground_location(satchel, place).unwrap();
+        world.set_possessor(satchel, actor).unwrap();
+        world.put_into_container(bread, satchel).unwrap();
+
+        assert_eq!(
+            world.effective_rights(actor, bread),
+            vec![EffectiveRight {
+                kind: RightKind::ContainerAccess,
+                via: Some(satchel),
+            }]
+        );
+    }
+
+    #[test]
+    fn effective_rights_no_rights() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(2))
+            .unwrap();
+
+        assert!(world.effective_rights(actor, item).is_empty());
+    }
+
+    #[test]
+    fn effective_rights_surfaces_jurisdictional_authority_within_office_jurisdiction() {
+        let mut topology = Topology::new();
+        topology
+            .add_place(
+                entity(1),
+                Place {
+                    name: "Hall".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        topology
+            .add_place(
+                entity(2),
+                Place {
+                    name: "Gate".to_string(),
+                    capacity: None,
+                    tags: BTreeSet::new(),
+                },
+            )
+            .unwrap();
+        let mut world = World::new(topology).unwrap();
+        let office = world.create_office("Mayor", Tick(1)).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(3))
+            .unwrap();
+
+        world
+            .insert_component_office_data(
+                office,
+                OfficeData {
+                    title: "Mayor".to_string(),
+                    seat: entity(1),
+                    jurisdiction: BTreeSet::from([entity(1), entity(2)]),
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 8,
+                    vacancy_since: None,
+                },
+            )
+            .unwrap();
+        world.assign_office(office, holder).unwrap();
+        world.set_ground_location(item, entity(2)).unwrap();
+
+        assert!(world.has_right(holder, item, RightKind::JurisdictionalAuthority));
+        assert!(
+            world
+                .effective_rights(holder, item)
+                .contains(&EffectiveRight {
+                    kind: RightKind::JurisdictionalAuthority,
+                    via: Some(office),
+                })
+        );
+    }
+
+    #[test]
+    fn has_right_consistency() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world
+            .topology()
+            .place_ids()
+            .next()
+            .expect("prototype world provides at least one place");
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let satchel = world
+            .create_container(
+                Container {
+                    capacity: LoadUnits(20),
+                    allowed_commodities: None,
+                    allows_unique_items: true,
+                    allows_nested_containers: true,
+                },
+                Tick(2),
+            )
+            .unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(3))
+            .unwrap();
+
+        world.set_ground_location(actor, place).unwrap();
+        world.set_ground_location(satchel, place).unwrap();
+        world.set_possessor(satchel, actor).unwrap();
+        world.put_into_container(bread, satchel).unwrap();
+
+        let rights = world.effective_rights(actor, bread);
+        for kind in [
+            RightKind::PhysicalPossession,
+            RightKind::Ownership,
+            RightKind::FactionAuthority,
+            RightKind::OfficeAuthority,
+            RightKind::JurisdictionalAuthority,
+            RightKind::ContainerAccess,
+        ] {
+            assert_eq!(
+                world.has_right(actor, bread, kind),
+                rights.iter().any(|right| right.kind == kind)
+            );
+        }
+        assert_eq!(
+            world.can_exercise_control(actor, bread).is_ok(),
+            !rights.is_empty()
+        );
+        assert!(
+            !world.has_right(actor, bread, RightKind::JurisdictionalAuthority),
+            "container-mediated control should stay separate from jurisdictional authority"
+        );
+    }
+
+    #[test]
     fn controlled_aggregate_queries_include_lawful_unpossessed_owned_and_delegated_stock() {
         let mut world = World::new(Topology::new()).unwrap();
         let direct_owner = world
@@ -4687,7 +4949,10 @@ mod tests {
         world
             .insert_component_communication_profile(id, profile.clone())
             .unwrap();
-        assert_eq!(world.get_component_communication_profile(id), Some(&profile));
+        assert_eq!(
+            world.get_component_communication_profile(id),
+            Some(&profile)
+        );
         assert!(world.has_component_communication_profile(id));
         assert_eq!(
             world.query_communication_profile().collect::<Vec<_>>(),

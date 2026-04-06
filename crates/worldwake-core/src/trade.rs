@@ -130,7 +130,7 @@ mod tests {
         },
         traits::Component,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
     fn assert_component_bounds<T: Component>() {}

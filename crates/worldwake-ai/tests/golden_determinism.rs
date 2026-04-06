@@ -5,13 +5,13 @@ mod golden_harness;
 use golden_harness::*;
 use std::collections::BTreeMap;
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
     ActiveGoal, BeliefConfidencePolicy, BelievedContentionState, CommodityKind, ContentionGrant,
     ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, FrameAssumption, FrameState,
     GoalKey, GoalKind, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomain,
     IntentionDomainTag, IntentionFrame, MetabolismProfile, PerceptionProfile, PrototypePlace,
     Quantity, ResourceSource, Seed, StateHash, SuspensionReason, Tick, UtilityProfile,
-    WorkstationTag,
+    WorkstationTag, hash_event_log, hash_world, prototype_place_entity,
+    total_authoritative_commodity_quantity,
 };
 
 // ---------------------------------------------------------------------------
@@ -240,7 +240,8 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
         &mut h.event_log,
         farmer,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -289,7 +290,8 @@ fn build_world_runs_without_observers_scenario(seed: Seed) -> GoldenHarness {
         txn.set_component_perception_profile(
             merchant,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -593,7 +595,8 @@ fn build_commitment_preservation_scenario(seed: Seed) -> (GoldenHarness, worldwa
         &mut h.event_log,
         agent,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -645,16 +648,15 @@ fn run_commitment_preservation_scenario(seed: Seed) -> (StateHash, StateHash) {
     let mut save_tick = None;
     for tick in 0..30 {
         h.step_once();
-        if save_tick.is_none() {
-            if let Some(action_name) = h.agent_active_action_name(agent) {
-                if action_name == "travel" {
-                    // Found mid-travel — save after one more tick to be solidly
-                    // in the middle of a leg.
-                    h.step_once();
-                    save_tick = Some(tick + 2); // +1 for the extra step, +1 for 0-indexing
-                    break;
-                }
-            }
+        if save_tick.is_none()
+            && let Some(action_name) = h.agent_active_action_name(agent)
+            && action_name == "travel"
+        {
+            // Found mid-travel — save after one more tick to be solidly
+            // in the middle of a leg.
+            h.step_once();
+            save_tick = Some(tick + 2); // +1 for the extra step, +1 for 0-indexing
+            break;
         }
     }
     let save_tick = save_tick.expect("Agent should have started traveling within 30 ticks");
@@ -1072,7 +1074,8 @@ fn build_generalized_contention_roundtrip_scenario(
         &mut h.event_log,
         observer,
         PerceptionProfile {
-            memory_capacity: 20,
+            entity_memory_capacity: 20,
+            entity_claim_capacity: 20,
             memory_retention_ticks: 100,
             observation_fidelity: pm(1000),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1129,7 +1132,9 @@ fn build_generalized_contention_roundtrip_scenario(
                 expires_at: Tick(4),
             }),
         };
-        queue.enqueue(queued_actor, loot_action, Tick(0), None).unwrap();
+        queue
+            .enqueue(queued_actor, loot_action, Tick(0), None)
+            .unwrap();
         txn.set_component_contention_queue(corpse, queue).unwrap();
         txn.commit(&mut h.event_log);
     }
@@ -1145,7 +1150,8 @@ fn build_generalized_contention_roundtrip_scenario(
 }
 
 fn run_generalized_contention_roundtrip_scenario(seed: Seed) -> (StateHash, StateHash) {
-    let (h, corpse, observer, granted_actor) = build_generalized_contention_roundtrip_scenario(seed);
+    let (h, corpse, observer, granted_actor) =
+        build_generalized_contention_roundtrip_scenario(seed);
 
     let pre_policy = h
         .world

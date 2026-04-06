@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use worldwake_core::{CommodityKind, EntityId, Quantity, Tick, TradeRole, TravelEdgeId, ViolationId};
+use worldwake_core::{
+    CommodityKind, EntityId, Quantity, Tick, TradeRole, TravelEdgeId, ViolationId,
+};
 
 #[derive(
     Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize,
@@ -35,7 +37,7 @@ pub enum ActionState {
 #[cfg(test)]
 mod tests {
     use super::ActionState;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{EntityId, Quantity, Tick, TradeRole, TravelEdgeId, ViolationId};
 
     fn assert_traits<

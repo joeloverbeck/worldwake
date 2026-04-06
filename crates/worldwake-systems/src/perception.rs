@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    build_believed_entity_state, AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim,
-    CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog,
-    EventPayload, EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
+    AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, CauseRef, ComponentDelta,
+    ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload, EventTag,
+    EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, MismatchKind, NoticeTopic, PendingEvent, PerceptionSource,
     RelationDelta, RelationValue, SocialObservation, SocialObservationDetail,
     SocialObservationKind, StateDelta, TheftFacts, VisibilitySpec, WitnessData, World, WorldTxn,
+    build_believed_entity_state,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionInstance, ActionInstanceId, PerceptionTraceEvent, SystemError,
@@ -157,7 +158,7 @@ fn process_witness_event(
             },
             store,
             *entity,
-            snapshot,
+            &snapshot,
             true,
             NoticeInternalizationContext {
                 profile: &profile,
@@ -350,11 +351,11 @@ fn observe_active_actions(
             let current_activity = store
                 .get_entity(subject)
                 .and_then(|belief| belief.believed_activity.clone());
-            if current_activity != next_activity {
-                if let Some(belief) = store.known_entities.get_mut(subject) {
-                    belief.believed_activity = next_activity;
-                    changed = true;
-                }
+            if current_activity != next_activity
+                && let Some(belief) = store.known_entities.get_mut(subject)
+            {
+                belief.believed_activity = next_activity;
+                changed = true;
             }
         }
 
@@ -373,16 +374,12 @@ fn observe_active_actions(
                 if let Some(instance) = active_by_actor.get(subject) {
                     let is_travel = action_defs
                         .get(instance.def_id)
-                        .is_some_and(|def| {
-                            def.domain == worldwake_core::ActionDomain::Travel
-                        });
-                    if is_travel {
-                        if let Some(destination) = instance.targets.first().copied() {
-                            belief.last_known_place = Some(destination);
-                            belief.observed_tick = tick;
-                            belief.source = PerceptionSource::DirectObservation;
-                            changed = true;
-                        }
+                        .is_some_and(|def| def.domain == worldwake_core::ActionDomain::Travel);
+                    if is_travel && let Some(destination) = instance.targets.first().copied() {
+                        belief.last_known_place = Some(destination);
+                        belief.observed_tick = tick;
+                        belief.source = PerceptionSource::DirectObservation;
+                        changed = true;
                     }
                 }
             }
@@ -420,6 +417,14 @@ fn collect_direct_local_observation_batch(
         }
     }
 
+    if should_observe_current_place_entity(world, place, store)
+        && passes_observation_check(observation_fidelity, rng)
+        && let Some(snapshot) =
+            build_believed_entity_state(world, place, tick, PerceptionSource::DirectObservation)
+    {
+        observed_snapshots.insert(place, snapshot);
+    }
+
     let observed_entities = observed_snapshots.keys().copied().collect::<BTreeSet<_>>();
     let mut noticed_missing_subjects = BTreeSet::new();
     for (subject, belief) in &store.known_entities {
@@ -449,6 +454,18 @@ fn collect_direct_local_observation_batch(
     })
 }
 
+fn should_observe_current_place_entity(
+    world: &World,
+    place: EntityId,
+    store: &AgentBeliefStore,
+) -> bool {
+    world.get_component_scene_evidence(place).is_some()
+        || store
+            .get_entity(&place)
+            .and_then(|belief| belief.believed_evidence.as_ref())
+            .is_some()
+}
+
 fn apply_direct_local_observation_batch(
     event_log: &mut EventLog,
     context: DiscoveryContext,
@@ -462,7 +479,7 @@ fn apply_direct_local_observation_batch(
             context,
             store,
             *subject,
-            snapshot.clone(),
+            snapshot,
             false,
             NoticeInternalizationContext {
                 profile,
@@ -485,24 +502,32 @@ fn record_observed_snapshot(
     context: DiscoveryContext,
     store: &mut AgentBeliefStore,
     subject: EntityId,
-    snapshot: worldwake_core::BelievedEntityState,
+    snapshot: &worldwake_core::BelievedEntityState,
     include_place_change: bool,
     notice_context: NoticeInternalizationContext<'_>,
 ) {
-    if let Some(prior) = store.get_entity(&subject) {
-        for mismatch in detect_observation_mismatches(prior, &snapshot, include_place_change) {
+    let prior = store.get_entity(&subject).cloned();
+    if let Some(prior) = prior.as_ref() {
+        for mismatch in detect_observation_mismatches(prior, snapshot, include_place_change) {
             emit_discovery_event(event_log, context, subject, mismatch);
         }
     }
     internalize_notice_beliefs(
         store,
-        &snapshot,
+        snapshot,
         context.tick,
         context.place.or(snapshot.last_known_place),
         notice_context.profile,
         notice_context.institutional_source,
     );
-    store.update_entity(subject, snapshot);
+    store.record_entity_snapshot_claims(
+        subject,
+        snapshot,
+        prior.as_ref(),
+        context.tick,
+        Some(snapshot.observed_tick),
+        &notice_context.profile.confidence_policy,
+    );
 }
 
 fn internalize_notice_beliefs(
@@ -650,17 +675,15 @@ fn detect_observation_mismatches(
         }
     }
 
-    if include_place_change {
-        if let (Some(believed_place), Some(observed_place)) =
+    if include_place_change
+        && let (Some(believed_place), Some(observed_place)) =
             (prior.last_known_place, observed.last_known_place)
-        {
-            if believed_place != observed_place {
-                mismatches.push(MismatchKind::PlaceChanged {
-                    believed_place,
-                    observed_place,
-                });
-            }
-        }
+        && believed_place != observed_place
+    {
+        mismatches.push(MismatchKind::PlaceChanged {
+            believed_place,
+            observed_place,
+        });
     }
 
     mismatches
@@ -1052,20 +1075,21 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_observed_entity_snapshot, build_prototype_world, prototype_place_entity, ActionDefId,
-        ActionDomain, AgentBeliefStore, ArtifactHeader, ArtifactKind, ArtifactState, BanditCamp,
-        BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity,
-        BelievedContentionState, BelievedEntityState, BountyTarget, BountyTerms, CauseRef,
-        CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ContentionGrant,
-        ContentionQueue, ContentionWaiter, Container, ControlSource, DeadAt, EntityKind,
-        EventLog, EventPayload, EventTag, EventView, EvidenceRef, InstitutionalBeliefKey,
+        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactHeader, ArtifactKind, ArtifactState,
+        BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity,
+        BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState,
+        BountyTarget, BountyTerms, CauseRef, CommodityKind, ComponentDelta, ComponentKind,
+        ComponentValue, Container, ContentionGrant, ContentionQueue, ContentionWaiter,
+        ControlSource, DeadAt, DisturbanceKind, EntityBeliefAspect, EntityKind, EventLog,
+        EventPayload, EventTag, EventView, EvidenceKind, EvidenceRef, InstitutionalBeliefKey,
         InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MismatchKind, NoticeContent,
         NoticeTopic, ObservedEntitySnapshot, OfficeForceState, PendingEvent, PerceptionProfile,
         PerceptionSource, Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
         ProofRequirement, PrototypePlace, Quantity, RelationDelta, RelationKind, RelationValue,
-        ResourceSource, RewardSource, SaleListing, Seed, SocialObservationDetail,
-        SocialObservationKind, StateDelta, StockAssignment, StockAssignmentKind, TheftFacts,
-        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        ResourceSource, RewardSource, SaleListing, SceneEvidence, Seed, SocialObservationDetail,
+        SocialObservationKind, StateDelta, StockAssignment, StockAssignmentKind, TheftFacts, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_observed_entity_snapshot, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -1088,7 +1112,8 @@ mod tests {
 
     fn profile(fidelity: u16) -> PerceptionProfile {
         PerceptionProfile {
-            memory_capacity: 8,
+            entity_memory_capacity: 8,
+            entity_claim_capacity: 8,
             memory_retention_ticks: 32,
             observation_fidelity: Permille::new(fidelity).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1136,6 +1161,7 @@ mod tests {
             courage: None,
             artifact_state: None,
             contention_state: None,
+            evidence_state: None,
         }
     }
 
@@ -1336,6 +1362,153 @@ mod tests {
     }
 
     #[test]
+    fn passive_perception_projects_scene_evidence_for_current_place() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let observer = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            txn.set_component_scene_evidence(
+                place,
+                SceneEvidence {
+                    evidence: vec![worldwake_core::EvidenceEntry {
+                        id: worldwake_core::EvidenceEntryId(0),
+                        kind: EvidenceKind::DisturbanceMarker {
+                            place,
+                            kind: DisturbanceKind::WildernessRelief,
+                            created_at: Tick(2),
+                        },
+                        created_at: Tick(2),
+                        decay_ticks: 50,
+                    }],
+                    next_entry_id: 1,
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            observer
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x21; 32]));
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let belief = world
+            .get_component_agent_belief_store(observer)
+            .unwrap()
+            .get_entity(&place)
+            .expect("observer should believe current place evidence");
+        assert_eq!(
+            belief.believed_evidence,
+            Some(BelievedEvidenceState {
+                entries: vec![BelievedEvidenceEntry {
+                    kind: EvidenceKind::DisturbanceMarker {
+                        place,
+                        kind: DisturbanceKind::WildernessRelief,
+                        created_at: Tick(2),
+                    },
+                    freshness: Tick(2),
+                }],
+                observed_tick: Tick(3),
+            })
+        );
+    }
+
+    #[test]
+    fn passive_perception_clears_stale_place_evidence_after_reobservation() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let observer = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            txn.set_component_scene_evidence(
+                place,
+                SceneEvidence {
+                    evidence: vec![worldwake_core::EvidenceEntry {
+                        id: worldwake_core::EvidenceEntryId(0),
+                        kind: EvidenceKind::DisturbanceMarker {
+                            place,
+                            kind: DisturbanceKind::WildernessRelief,
+                            created_at: Tick(2),
+                        },
+                        created_at: Tick(2),
+                        decay_ticks: 50,
+                    }],
+                    next_entry_id: 1,
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            observer
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x22; 32]));
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.clear_component_scene_evidence(place).unwrap();
+            let _ = txn.commit(&mut event_log);
+        }
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(5),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let belief = world
+            .get_component_agent_belief_store(observer)
+            .unwrap()
+            .get_entity(&place)
+            .expect("observer should still know current place");
+        assert_eq!(belief.observed_tick, Tick(5));
+        assert_eq!(belief.believed_evidence, None);
+    }
+
+    #[test]
     fn idle_colocated_subject_clears_believed_activity() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -1531,7 +1704,8 @@ mod tests {
                 .create_item_lot(CommodityKind::Bread, Quantity(2))
                 .unwrap();
             txn.set_owner(stock_lot, observer).unwrap();
-            txn.put_into_container(stock_lot, display_container).unwrap();
+            txn.put_into_container(stock_lot, display_container)
+                .unwrap();
             txn.set_component_stock_assignment(
                 stock_lot,
                 StockAssignment {
@@ -1549,7 +1723,8 @@ mod tests {
                 observed_snapshot(Some(place), 2)
                     .to_believed_entity_state(Tick(1), PerceptionSource::DirectObservation),
             );
-            txn.set_component_agent_belief_store(observer, store).unwrap();
+            txn.set_component_agent_belief_store(observer, store)
+                .unwrap();
 
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
@@ -1743,7 +1918,10 @@ mod tests {
             txn.set_ground_location(target, place).unwrap();
             txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
                 .unwrap();
-            txn.set_component_perception_profile(observer, profile(1000))
+            let mut observer_profile = profile(1000);
+            observer_profile.entity_memory_capacity = 16;
+            observer_profile.entity_claim_capacity = 16;
+            txn.set_component_perception_profile(observer, observer_profile)
                 .unwrap();
             let bread = txn
                 .create_item_lot(CommodityKind::Bread, Quantity(2))
@@ -1792,7 +1970,6 @@ mod tests {
         let believed = beliefs
             .get_entity(&target)
             .expect("same-place witness should gain a belief snapshot");
-        assert_eq!(believed.last_known_place, Some(place));
         assert_eq!(
             believed.last_known_inventory.get(&CommodityKind::Bread),
             Some(&Quantity(2))
@@ -1800,6 +1977,90 @@ mod tests {
         assert!(believed.alive);
         assert_eq!(believed.observed_tick, Tick(3));
         assert_eq!(believed.source, PerceptionSource::DirectObservation);
+        let claims = beliefs
+            .entity_claims
+            .get(&target)
+            .expect("same-place witness should gain claim-backed entity memory");
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Inventory(CommodityKind::Bread))
+        );
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Alive)
+        );
+    }
+
+    #[test]
+    fn passive_local_observation_emits_claims_and_derives_summary() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.entity_memory_capacity = 16;
+            observer_profile.entity_claim_capacity = 16;
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+            let bread = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(bread, place).unwrap();
+            txn.set_possessor(bread, target).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, target)
+        };
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x44; 32]));
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &active_actions,
+            action_defs: &action_defs,
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(2),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let beliefs = world.get_component_agent_belief_store(observer).unwrap();
+        let believed = beliefs
+            .get_entity(&target)
+            .expect("passive local observation should still project a summary");
+        assert_eq!(
+            believed.last_known_inventory.get(&CommodityKind::Bread),
+            Some(&Quantity(2))
+        );
+        assert!(believed.alive);
+        let claims = beliefs
+            .entity_claims
+            .get(&target)
+            .expect("passive local observation should emit entity claims");
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Inventory(CommodityKind::Bread))
+        );
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Alive)
+        );
     }
 
     #[test]
@@ -2302,16 +2563,20 @@ mod tests {
         })
         .unwrap();
 
-        assert!(world
-            .get_component_agent_belief_store(direct_witness)
-            .unwrap()
-            .get_entity(&target)
-            .is_some());
-        assert!(world
-            .get_component_agent_belief_store(bystander)
-            .unwrap()
-            .get_entity(&target)
-            .is_none());
+        assert!(
+            world
+                .get_component_agent_belief_store(direct_witness)
+                .unwrap()
+                .get_entity(&target)
+                .is_some()
+        );
+        assert!(
+            world
+                .get_component_agent_belief_store(bystander)
+                .unwrap()
+                .get_entity(&target)
+                .is_none()
+        );
     }
 
     #[test]
@@ -2472,16 +2737,20 @@ mod tests {
         })
         .unwrap();
 
-        assert!(world
-            .get_component_agent_belief_store(adjacent_witness)
-            .unwrap()
-            .get_entity(&origin_target)
-            .is_some());
-        assert!(world
-            .get_component_agent_belief_store(remote_witness)
-            .unwrap()
-            .get_entity(&origin_target)
-            .is_none());
+        assert!(
+            world
+                .get_component_agent_belief_store(adjacent_witness)
+                .unwrap()
+                .get_entity(&origin_target)
+                .is_some()
+        );
+        assert!(
+            world
+                .get_component_agent_belief_store(remote_witness)
+                .unwrap()
+                .get_entity(&origin_target)
+                .is_none()
+        );
     }
 
     #[test]
@@ -2510,6 +2779,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(1),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -2519,7 +2789,8 @@ mod tests {
             txn.set_component_perception_profile(
                 observer,
                 PerceptionProfile {
-                    memory_capacity: 1,
+                    entity_memory_capacity: 1,
+                    entity_claim_capacity: 8,
                     memory_retention_ticks: 32,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),
@@ -2771,6 +3042,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -2846,6 +3118,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -2927,6 +3200,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3553,13 +3827,17 @@ mod tests {
         .unwrap();
 
         let local_store = world.get_component_agent_belief_store(observer).unwrap();
-        assert!(local_store
-            .institutional_beliefs
-            .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office }));
+        assert!(
+            local_store
+                .institutional_beliefs
+                .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office })
+        );
         let remote_store = world.get_component_agent_belief_store(remote).unwrap();
-        assert!(!remote_store
-            .institutional_beliefs
-            .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office }));
+        assert!(
+            !remote_store
+                .institutional_beliefs
+                .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office })
+        );
     }
 
     #[test]
@@ -3588,6 +3866,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3655,6 +3934,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3755,6 +4035,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3813,6 +4094,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3899,6 +4181,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -3996,6 +4279,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -4090,6 +4374,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -4219,6 +4504,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },

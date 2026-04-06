@@ -10,24 +10,24 @@ use worldwake_ai::{
     PlannerOpKind, RankedGoalComparisonDimension, SelectedPlanSource,
 };
 use worldwake_core::{
+    AgentData, BlockingFact, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
+    ContentionGrant, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
+    DeprivationExposure, DeprivationKind, EntityId, EventTag, EventView, HomeostaticNeeds,
+    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PerceptionProfile,
+    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
     hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation, AgentData, BlockingFact,
-    BodyPart, CarryCapacity, CombatProfile, CommodityKind, ControlSource, DemandMemory,
-    DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind, EntityId,
-    EventTag, EventView, ContentionGrant, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
-    ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
+    verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::{
-    ActionRequestMode, ActionStartFailureReason, ActionTraceKind, InputKind,
-    RequestAttemptTrace, RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
-    ResolvedRequestTrace,
+    ActionRequestMode, ActionStartFailureReason, ActionTraceKind, InputKind, RequestAttemptTrace,
+    RequestBindingKind, RequestProvenance, RequestResolutionOutcome, ResolvedRequestTrace,
 };
 
 fn production_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 20,
+        entity_memory_capacity: 20,
+        entity_claim_capacity: 20,
         memory_retention_ticks: 100,
         observation_fidelity: pm(1000),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
@@ -55,14 +55,10 @@ fn request_simple_action(
     def_name: &str,
     targets: Vec<EntityId>,
 ) {
-    let def_id = h
-        .defs
-        .iter()
-        .find(|def| def.name == def_name)
-        .map_or_else(
-            || panic!("full registries should include {def_name}"),
-            |def| def.id,
-        );
+    let def_id = h.defs.iter().find(|def| def.name == def_name).map_or_else(
+        || panic!("full registries should include {def_name}"),
+        |def| def.id,
+    );
     let tick = h.scheduler.current_tick();
     let _ = h.scheduler.input_queue_mut().enqueue(
         tick,
@@ -821,7 +817,8 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         txn.set_component_perception_profile(
             crafter,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
@@ -1358,7 +1355,8 @@ fn run_contested_harvest_start_failure_remote_recovery_scenario(
         ActionStartFailureReason::ReservationUnavailable(local_workstation)
     );
     assert!(
-        planning_tick_1.selection.selected_plan_source != Some(SelectedPlanSource::RetainedCurrentPlan),
+        planning_tick_1.selection.selected_plan_source
+            != Some(SelectedPlanSource::RetainedCurrentPlan),
         "start-failure reconciliation should not keep the failed harvest step as a retained current plan"
     );
     assert!(
@@ -2258,7 +2256,8 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
         txn.set_component_perception_profile(
             patient,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
@@ -2406,7 +2405,8 @@ fn run_local_detour_before_intended_action_scenario(
         txn.set_component_perception_profile(
             agent,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
@@ -2825,8 +2825,10 @@ fn run_unique_item_race_rejection_redirect_scenario(seed: Seed) -> UniqueItemRac
             .events_for(loser)
             .iter()
             .any(|event| {
-                matches!(event.kind, ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. })
-                    && matches!(event.action_name.as_str(), "harvest:Harvest Apples" | "eat")
+                matches!(
+                    event.kind,
+                    ActionTraceKind::Started { .. } | ActionTraceKind::Committed { .. }
+                ) && matches!(event.action_name.as_str(), "harvest:Harvest Apples" | "eat")
             });
         loser_hunger_decreased |= h.agent_hunger(loser) < initial_loser_hunger;
         if loser_used_alternative_path && loser_hunger_decreased {
@@ -3813,7 +3815,6 @@ fn record_faction_ownership_milestones(
     if world.effective_place(scenario.outsider) != Some(ORCHARD_FARM) {
         milestones.insert(FactionOwnershipMilestone::OutsiderLeftFactionOrchard);
     }
-
 }
 
 fn assert_faction_ownership_conservation(world: &worldwake_core::World) {

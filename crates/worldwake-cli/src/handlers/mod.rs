@@ -37,12 +37,20 @@ pub fn dispatch_command(
         CliCommand::Inspect { entity } => inspect::handle_inspect(sim, &entity.join(" ")),
         CliCommand::Inventory { entity } => {
             let joined = entity.join(" ");
-            let arg = if joined.is_empty() { None } else { Some(joined.as_str()) };
+            let arg = if joined.is_empty() {
+                None
+            } else {
+                Some(joined.as_str())
+            };
             inspect::handle_inventory(sim, arg)
         }
         CliCommand::Needs { entity } => {
             let joined = entity.join(" ");
-            let arg = if joined.is_empty() { None } else { Some(joined.as_str()) };
+            let arg = if joined.is_empty() {
+                None
+            } else {
+                Some(joined.as_str())
+            };
             inspect::handle_needs(sim, arg)
         }
         CliCommand::Relations { entity } => inspect::handle_relations(sim, &entity.join(" ")),

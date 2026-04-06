@@ -24,7 +24,7 @@ pub struct ActionInstance {
 mod tests {
     use super::ActionInstance;
     use crate::{ActionDuration, ActionInstanceId, ActionPayload, ActionState, ActionStatus};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{ActionDefId, CommodityKind, EntityId, Quantity, ReservationId, Tick};
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

@@ -5,9 +5,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-    IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, ReasoningProfile,
-    Tick,
+    ActionDefId, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
+    HomeostaticNeeds, IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, Tick,
     UniqueItemKind, Wound,
 };
 
@@ -94,7 +93,7 @@ impl ExhaustionEntry {
         invalidation_conditions: Vec<ExhaustionInvalidationCondition>,
         baseline: ExhaustionBaseline,
         current_tick: Tick,
-        reasoning: &ReasoningProfile,
+        cognitive: &CognitiveProfile,
     ) -> Self {
         let mut entry = Self {
             retry_state: ExhaustionRetryState::BudgetRetryPending,
@@ -103,7 +102,7 @@ impl ExhaustionEntry {
             next_retry_tick: None,
             consecutive_failures: 0,
         };
-        entry.record_budget_exhaustion(current_tick, reasoning);
+        entry.record_budget_exhaustion(current_tick, cognitive);
         entry
     }
 
@@ -122,14 +121,14 @@ impl ExhaustionEntry {
         matches!(self.retry_state, ExhaustionRetryState::FrontierExhausted)
     }
 
-    pub fn record_budget_exhaustion(&mut self, current_tick: Tick, reasoning: &ReasoningProfile) {
+    pub fn record_budget_exhaustion(&mut self, current_tick: Tick, cognitive: &CognitiveProfile) {
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
         let shift = u32::from(self.consecutive_failures.saturating_sub(1).min(6));
-        let cooldown = reasoning
+        let cooldown = cognitive
             .initial_cooldown_ticks
             .checked_shl(shift)
             .unwrap_or(u32::MAX)
-            .min(reasoning.max_cooldown_ticks);
+            .min(cognitive.max_cooldown_ticks);
         self.next_retry_tick = Some(Tick(current_tick.0.saturating_add(u64::from(cooldown))));
         self.retry_state = ExhaustionRetryState::BudgetRetryPending;
     }
@@ -270,22 +269,22 @@ pub fn classify_frame_plan_relation(
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
-        has_active_frame_travel, has_frame, AgentDecisionRuntime, ExhaustionEntry,
-        ExhaustionRetryState, FramePlanRelation, MaterializationBindings,
+        AgentDecisionRuntime, ExhaustionEntry, ExhaustionRetryState, FramePlanRelation,
+        MaterializationBindings, classify_frame_plan_relation, frame_runtime_snapshot,
+        frame_travel_destination, has_active_frame_travel, has_frame,
     };
     use crate::{
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
         GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, ReasoningProfile,
-        PlanningEntityRef,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        ProfileFixture,
     };
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        BodyPart, CommodityKind, EntityId, FrameClearReason, FrameState, HomeostaticNeeds,
-        IntentionDomain, IntentionFrame, PatrolRoute, Quantity, Tick, UniqueItemKind, Wound,
-        WoundCause, WoundId,
+        BodyPart, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
+        HomeostaticNeeds, IntentionDomain, IntentionFrame, PatrolRoute, Quantity, Tick,
+        UniqueItemKind, Wound, WoundCause, WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -340,6 +339,21 @@ mod tests {
         }
     }
 
+    fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
+        CognitiveProfile {
+            max_candidates_to_plan: reasoning.max_candidates_to_plan,
+            max_plan_depth: reasoning.max_plan_depth,
+            snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
+            max_node_expansions: reasoning.max_node_expansions,
+            switch_margin: reasoning.switch_margin,
+            transient_block_ticks: reasoning.transient_block_ticks,
+            unknown_block_ticks: reasoning.unknown_block_ticks,
+            structural_block_ticks: reasoning.structural_block_ticks,
+            initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
+            max_cooldown_ticks: reasoning.max_cooldown_ticks,
+        }
+    }
+
     #[test]
     fn agent_decision_runtime_defaults_to_empty_clean_state() {
         let runtime = AgentDecisionRuntime::default();
@@ -356,10 +370,12 @@ mod tests {
         assert!(runtime.last_commodity_signature.is_empty());
         assert!(runtime.last_unique_item_signature.is_empty());
         assert_eq!(runtime.last_patrol_route, None);
-        assert!(runtime
-            .materialization_bindings
-            .hypothetical_to_authoritative
-            .is_empty());
+        assert!(
+            runtime
+                .materialization_bindings
+                .hypothetical_to_authoritative
+                .is_empty()
+        );
     }
 
     #[test]
@@ -520,17 +536,17 @@ mod tests {
 
     #[test]
     fn budget_retry_pending_factory_sets_initial_cooldown_from_budget() {
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             initial_cooldown_ticks: 10,
             max_cooldown_ticks: 100,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
 
         let entry = ExhaustionEntry::budget_retry_pending(
             vec![ExhaustionInvalidationCondition::PositionChanged],
             ExhaustionBaseline::default(),
             Tick(7),
-            &budget,
+            &cognitive(&budget),
         );
 
         assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
@@ -540,27 +556,27 @@ mod tests {
 
     #[test]
     fn record_budget_exhaustion_doubles_cooldown_until_cap() {
-        let budget = ReasoningProfile {
+        let budget = ProfileFixture {
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 16,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         };
         let mut entry =
             ExhaustionEntry::frontier_exhausted(Vec::new(), ExhaustionBaseline::default());
 
-        entry.record_budget_exhaustion(Tick(1), &budget);
+        entry.record_budget_exhaustion(Tick(1), &cognitive(&budget));
         assert_eq!(entry.consecutive_failures, 1);
         assert_eq!(entry.next_retry_tick, Some(Tick(5)));
 
-        entry.record_budget_exhaustion(Tick(5), &budget);
+        entry.record_budget_exhaustion(Tick(5), &cognitive(&budget));
         assert_eq!(entry.consecutive_failures, 2);
         assert_eq!(entry.next_retry_tick, Some(Tick(13)));
 
-        entry.record_budget_exhaustion(Tick(13), &budget);
+        entry.record_budget_exhaustion(Tick(13), &cognitive(&budget));
         assert_eq!(entry.consecutive_failures, 3);
         assert_eq!(entry.next_retry_tick, Some(Tick(29)));
 
-        entry.record_budget_exhaustion(Tick(29), &budget);
+        entry.record_budget_exhaustion(Tick(29), &cognitive(&budget));
         assert_eq!(entry.consecutive_failures, 4);
         assert_eq!(entry.next_retry_tick, Some(Tick(45)));
     }

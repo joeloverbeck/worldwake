@@ -1,25 +1,24 @@
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, FrameState, IntentionFrame, Permille, Tick,
+    ActiveGoal, BlockedIntentMemory, CauseRef, CognitiveProfile, EntityId, FrameState,
+    IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, Interruptibility, PerAgentBeliefView, RuntimeBeliefView,
     SchedulerActionRuntime, TickInputError,
 };
 
-use crate::failure_handling::ExecutionFailure;
-use crate::DirtySet;
-use crate::{
-    classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure, has_frame,
-    AgentDecisionRuntime, DecisionContext, InterruptDecision, PlanFailureContext, PlanTerminalKind,
-    PlannedStep, RankedGoal,
-};
-use worldwake_core::ReasoningProfile;
-
 use super::frame::progress_op_kinds;
-use super::observation::{reconcile_in_flight_state, InFlightReconciliation};
+use super::observation::{InFlightReconciliation, reconcile_in_flight_state};
 use super::{
-    build_candidate_plans, persist_blocked_memory, selection_candidates, AgentTickContext,
-    FrameSwitchMarginSource,
+    AgentTickContext, FrameSwitchMarginSource, build_candidate_plans, persist_blocked_memory,
+    selection_candidates,
+};
+use crate::DirtySet;
+use crate::failure_handling::ExecutionFailure;
+use crate::{
+    AgentDecisionRuntime, DecisionContext, InterruptDecision, PlanFailureContext, PlanTerminalKind,
+    PlannedStep, RankedGoal, classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure,
+    has_frame,
 };
 
 pub(super) fn active_action_for_agent(
@@ -75,7 +74,8 @@ pub(super) fn handle_active_action_phase(
             ranked_candidates,
             blocked_memory,
             tick,
-            ctx.reasoning,
+            ctx.cognitive,
+            ctx.execution_budget,
             ctx.semantics_table,
             action_defs,
             action_handlers,
@@ -143,16 +143,16 @@ pub(super) fn effective_goal_switch_margin(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     jc: Option<&IntentionFrame>,
-    reasoning: &ReasoningProfile,
+    cognitive: &CognitiveProfile,
 ) -> Permille {
-    goal_switch_margin_details(view, agent, jc, reasoning).0
+    goal_switch_margin_details(view, agent, jc, cognitive).0
 }
 
 pub(super) fn goal_switch_margin_details(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     jc: Option<&IntentionFrame>,
-    reasoning: &ReasoningProfile,
+    cognitive: &CognitiveProfile,
 ) -> (Permille, FrameSwitchMarginSource) {
     if has_frame(jc) {
         let profile = view
@@ -165,8 +165,8 @@ pub(super) fn goal_switch_margin_details(
     }
 
     (
-        reasoning.switch_margin,
-        FrameSwitchMarginSource::ReasoningProfile,
+        cognitive.switch_margin,
+        FrameSwitchMarginSource::CognitiveProfile,
     )
 }
 
@@ -186,11 +186,11 @@ pub(super) fn advance_completed_step(
 
     let mut updated_jc = jc.cloned();
 
-    if let Some(ref mut c) = updated_jc {
-        if progress_op_kinds(&c.domain).contains(&completed_op_kind) {
-            c.last_progress_tick = Some(tick);
-            c.stalled_ticks = 0;
-        }
+    if let Some(ref mut c) = updated_jc
+        && progress_op_kinds(&c.domain).contains(&completed_op_kind)
+    {
+        c.last_progress_tick = Some(tick);
+        c.stalled_ticks = 0;
     }
 
     runtime.current_step_index = runtime
@@ -252,7 +252,7 @@ pub(super) fn handle_current_step_failure(
 ) -> Result<(), TickInputError> {
     let world = &mut *ctx.world;
     let event_log = &mut *ctx.event_log;
-    let reasoning = ctx.reasoning;
+    let cognitive = ctx.cognitive;
     let tick = ctx.tick;
     let view = PerAgentBeliefView::from_world(agent, world);
     let goal_key = active_goal.unwrap_or_else(|| {
@@ -274,7 +274,7 @@ pub(super) fn handle_current_step_failure(
         runtime,
         jc,
         blocked_memory,
-        reasoning,
+        cognitive,
     );
     runtime.step_in_flight = false;
     runtime.current_step_index = 0;

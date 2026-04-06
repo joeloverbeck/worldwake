@@ -5,21 +5,21 @@ mod golden_harness;
 use golden_harness::*;
 use std::num::NonZeroU32;
 use worldwake_ai::{
+    DecisionOutcome, GoalKind, PlannerOpKind, PlanningEntityRef, PlanningState,
     apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
-    generate_candidates, search_plan, DecisionOutcome, GoalKind, PlannerOpKind, ReasoningProfile,
-    PlanningEntityRef, PlanningState,
+    generate_candidates, search_plan,
 };
 use worldwake_core::{
-    hash_event_log, hash_world, total_live_lot_quantity, BlockedIntent, BlockedIntentMemory,
-    BlockerKey, BlockingFact, BodyPart, CommodityKind, ContentionPolicy, ContentionQueue,
-    DeprivationKind, EntityId, GoalKey, HomeostaticNeeds, MetabolismProfile, PerceptionSource,
-    Quantity, Seed, StateHash, TellTopic, Tick, UtilityProfile, Wound, WoundCause, WoundId,
-    WoundList,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyPart, CommodityKind,
+    ContentionPolicy, ContentionQueue, DeprivationKind, EntityId, GoalKey, HomeostaticNeeds,
+    MetabolismProfile, PerceptionSource, Quantity, Seed, StateHash, TellTopic, Tick,
+    UtilityProfile, Wound, WoundCause, WoundId, WoundList, hash_event_log, hash_world,
+    total_live_lot_quantity,
 };
 use worldwake_sim::{
-    get_affordances, step_tick, ActionStartFailureReason, ActionTraceKind,
-    AutonomousControllerRuntime, PerAgentBeliefView, TickInputContext, TickInputError,
-    TickInputProducer, TickStepServices,
+    ActionStartFailureReason, ActionTraceKind, AutonomousControllerRuntime, PerAgentBeliefView,
+    TickInputContext, TickInputError, TickInputProducer, TickStepServices, get_affordances,
+    step_tick,
 };
 
 struct ClearPatientWoundsAfterPlanning<'a> {
@@ -635,10 +635,11 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &semantics,
         &h.defs,
         &h.handlers,
-        &ReasoningProfile {
+        &worldwake_core::CognitiveProfile {
             max_plan_depth: 6,
-            ..ReasoningProfile::default()
+            ..worldwake_core::CognitiveProfile::default()
         },
+        &worldwake_core::ExecutionBudget::default(),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),
@@ -651,7 +652,8 @@ fn remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topolog
         &semantics,
         &h.defs,
         &h.handlers,
-        &ReasoningProfile::default(),
+        &worldwake_core::CognitiveProfile::default(),
+        &worldwake_core::ExecutionBudget::default(),
         &h.recipes,
         &BlockedIntentMemory::default(),
         Tick(0),

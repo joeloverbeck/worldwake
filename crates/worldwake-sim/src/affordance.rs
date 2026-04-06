@@ -56,7 +56,7 @@ impl PartialOrd for Affordance {
 mod tests {
     use super::Affordance;
     use crate::{ActionDef, ActionHandlerId, ActionPayload, DurationExpr, Interruptibility};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{

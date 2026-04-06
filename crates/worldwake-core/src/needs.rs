@@ -209,10 +209,10 @@ const fn nz(value: u32) -> NonZeroU32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        nz, pm, BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile,
+        BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile, nz, pm,
     };
-    use crate::{traits::Component, Permille};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{Permille, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 

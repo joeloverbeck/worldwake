@@ -603,7 +603,7 @@ fn validate_office_authority_at_place(
     let office_data = world.get_component_office_data(office).ok_or_else(|| {
         ActionError::PreconditionFailed(format!("office {office} lacks OfficeData"))
     })?;
-    if office_data.jurisdiction != place {
+    if !office_data.jurisdiction.contains(&place) {
         return Err(ActionError::PreconditionFailed(format!(
             "office {office} lacks jurisdiction at place {place}"
         )));
@@ -1132,21 +1132,21 @@ fn abort_punishment(
 #[cfg(test)]
 mod tests {
     use super::{register_accuse_action, register_exile_action, register_fine_action};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        build_prototype_world, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
-        BeliefConfidencePolicy, BelievedEntityState, CauseRef, EligibilityRule, EntityId, EventLog,
-        EventTag, EventView, InstitutionalClaim, JusticeDispositionProfile, OfficeData,
-        PerceptionProfile, PerceptionSource, PrototypePlace, PunishmentKind, Quantity, RecordData,
-        RecordEntryId, RecordKind, Seed, SocialObservation, SocialObservationDetail, SuccessionLaw,
-        TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile, ViolationId, ViolationKind,
-        ViolationMemory, VisibilitySpec, WitnessData, World, WorldTxn,
+        ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, CauseRef,
+        EligibilityRule, EntityId, EventLog, EventTag, EventView, InstitutionalClaim,
+        JusticeDispositionProfile, OfficeData, PerceptionProfile, PerceptionSource, PrototypePlace,
+        PunishmentKind, Quantity, RecordData, RecordEntryId, RecordKind, Seed, SocialObservation,
+        SocialObservationDetail, SuccessionLaw, TheftFacts, Tick, UtilityProfile,
+        ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world, verify_live_lot_conservation,
     };
     use worldwake_sim::{
-        get_affordances, AbortReason, AccuseActionPayload, ActionAbortRequestReason,
-        ActionDefRegistry, ActionError, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionStatus, DeterministicRng, ExternalAbortReason, PerAgentBeliefView,
-        PunishActionPayload,
+        AbortReason, AccuseActionPayload, ActionAbortRequestReason, ActionDefRegistry, ActionError,
+        ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
+        DeterministicRng, ExternalAbortReason, PerAgentBeliefView, PunishActionPayload,
+        get_affordances,
     };
 
     fn pm(value: u16) -> worldwake_core::Permille {
@@ -1217,7 +1217,10 @@ mod tests {
         (handler.on_commit)(
             def,
             instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &EventLog::new(),
             &mut rng,
             &mut txn,
@@ -1278,6 +1281,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(tick),
                 source: PerceptionSource::DirectObservation,
             },
@@ -1346,7 +1350,8 @@ mod tests {
                     office,
                     OfficeData {
                         title: "Magistrate".to_string(),
-                        jurisdiction: place,
+                        seat: place,
+                        jurisdiction: BTreeSet::from([place]),
                         succession_law: SuccessionLaw::Support,
                         eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
                         succession_period_ticks: 12,
@@ -1452,7 +1457,8 @@ mod tests {
                     txn.set_component_perception_profile(
                         agent,
                         PerceptionProfile {
-                            memory_capacity: 16,
+                            entity_memory_capacity: 16,
+                            entity_claim_capacity: 16,
                             memory_retention_ticks: 100,
                             observation_fidelity: pm(1000),
                             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1740,7 +1746,10 @@ mod tests {
         let err = (handler.on_start)(
             def,
             &mut instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &mut rng,
             &mut txn,
         )
@@ -1786,7 +1795,10 @@ mod tests {
         let err = (handler.on_start)(
             def,
             &mut instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &mut rng,
             &mut txn,
         )
@@ -1810,7 +1822,10 @@ mod tests {
         let err = (handler.on_start)(
             def,
             &mut instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &mut rng,
             &mut txn,
         )
@@ -1878,7 +1893,10 @@ mod tests {
         (handler.on_abort)(
             def,
             &instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &AbortReason::external_abort(ExternalAbortReason::Other),
             &EventLog::new(),
             &mut rng,
@@ -1973,7 +1991,10 @@ mod tests {
         let err = (handler.on_start)(
             def,
             &mut instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &mut rng,
             &mut txn,
         )
@@ -2104,7 +2125,10 @@ mod tests {
         let err = (handler.on_start)(
             def,
             &mut instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &mut rng,
             &mut txn,
         )

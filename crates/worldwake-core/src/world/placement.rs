@@ -1,5 +1,5 @@
 use super::World;
-use crate::{load_of_entity, remaining_container_capacity, Container, EntityId, WorldError};
+use crate::{Container, EntityId, WorldError, load_of_entity, remaining_container_capacity};
 use std::collections::BTreeSet;
 
 impl World {
@@ -194,15 +194,14 @@ impl World {
     ) -> Result<(), WorldError> {
         let container_component = self.require_live_container(container)?;
 
-        if let Some(lot) = self.get_component_item_lot(entity) {
-            if let Some(allowed) = &container_component.allowed_commodities {
-                if !allowed.contains(&lot.commodity) {
-                    return Err(WorldError::InvalidOperation(format!(
-                        "container {container} does not allow commodity {:?} for {entity}",
-                        lot.commodity
-                    )));
-                }
-            }
+        if let Some(lot) = self.get_component_item_lot(entity)
+            && let Some(allowed) = &container_component.allowed_commodities
+            && !allowed.contains(&lot.commodity)
+        {
+            return Err(WorldError::InvalidOperation(format!(
+                "container {container} does not allow commodity {:?} for {entity}",
+                lot.commodity
+            )));
         }
 
         if self.get_component_unique_item(entity).is_some()

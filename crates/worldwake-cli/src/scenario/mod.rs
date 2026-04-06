@@ -10,16 +10,16 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    hash_world, CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId,
-    EntityKind, EventLog, LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource,
-    Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-    WorkstationMarker, World, WorldTxn,
+    CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
+    LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource, Seed, Tick, Topology,
+    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn,
+    hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
     Scheduler, SimulationState, SystemDispatchTable, SystemManifest,
 };
-use worldwake_systems::{build_full_action_registries, dispatch_table, ActionRegistries};
+use worldwake_systems::{ActionRegistries, build_full_action_registries, dispatch_table};
 
 /// Bundled result of scenario spawning: persistent simulation state plus
 /// transient runtime artifacts (action registries, dispatch table).
@@ -278,15 +278,19 @@ fn spawn_agent(
     txn.set_component_drive_thresholds(agent_id, thresholds)?;
     let metabolism = agent_def.metabolism_profile.unwrap_or_default();
     txn.set_component_metabolism_profile(agent_id, metabolism)?;
-    let carry = agent_def.carry_capacity.unwrap_or(DEFAULT_AGENT_CARRY_CAPACITY);
+    let carry = agent_def
+        .carry_capacity
+        .unwrap_or(DEFAULT_AGENT_CARRY_CAPACITY);
     txn.set_component_carry_capacity(agent_id, carry)?;
 
     let perception = agent_def.perception_profile.unwrap_or_default();
     txn.set_component_perception_profile(agent_id, perception)?;
     let tell = agent_def.tell_profile.unwrap_or_default();
     txn.set_component_tell_profile(agent_id, tell)?;
-    let reasoning = agent_def.reasoning_profile.clone().unwrap_or_default();
-    txn.set_component_reasoning_profile(agent_id, reasoning)?;
+    let cognitive = agent_def.cognitive_profile.unwrap_or_default();
+    let execution_budget = agent_def.execution_budget.unwrap_or_default();
+    txn.set_component_cognitive_profile(agent_id, cognitive)?;
+    txn.set_component_execution_budget(agent_id, execution_budget)?;
     let epistemic = agent_def.epistemic_disposition.clone().unwrap_or_default();
     txn.set_component_epistemic_disposition_profile(agent_id, epistemic)?;
     let intention = agent_def.intention_disposition.clone().unwrap_or_default();
@@ -473,14 +477,13 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
-        BeliefConfidencePolicy, CarryCapacity, CommodityKind, CommodityValuationProfile,
-        CommunicationProfile, ControlSource, DriveThresholds, EpistemicDispositionProfile,
-        ContentionDispositionProfile, HomeostaticNeeds, IntentionDispositionProfile,
-        JusticeDispositionProfile, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile,
-        Permille, PreferenceProfile, PursuitProfile, Quantity, ReasoningProfile,
-        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
-        TradeCategory, WorkstationTag,
-        ViolationDispositionProfile,
+        BeliefConfidencePolicy, CarryCapacity, CognitiveProfile, CommodityKind,
+        CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
+        ControlSource, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
+        HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
+        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PreferenceProfile, PursuitProfile,
+        Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
+        TradeCategory, ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -495,7 +498,8 @@ mod tests {
             trade_disposition: None,
             perception_profile: None,
             tell_profile: None,
-            reasoning_profile: None,
+            cognitive_profile: None,
+            execution_budget: None,
             epistemic_disposition: None,
             intention_disposition: None,
             communication_profile: None,
@@ -1008,10 +1012,17 @@ mod tests {
             world.get_component_perception_profile(agent),
             Some(&PerceptionProfile::default())
         );
-        assert_eq!(world.get_component_tell_profile(agent), Some(&TellProfile::default()));
         assert_eq!(
-            world.get_component_reasoning_profile(agent),
-            Some(&ReasoningProfile::default())
+            world.get_component_tell_profile(agent),
+            Some(&TellProfile::default())
+        );
+        assert_eq!(
+            world.get_component_cognitive_profile(agent),
+            Some(&CognitiveProfile::default())
+        );
+        assert_eq!(
+            world.get_component_execution_budget(agent),
+            Some(&ExecutionBudget::default())
         );
         assert_eq!(
             world.get_component_epistemic_disposition_profile(agent),
@@ -1034,7 +1045,8 @@ mod tests {
     #[test]
     fn test_spawn_agent_with_profile_overrides() {
         let custom_perception = PerceptionProfile {
-            memory_capacity: 4,
+            entity_memory_capacity: 4,
+            entity_claim_capacity: 6,
             memory_retention_ticks: 16,
             observation_fidelity: Permille::new(900).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1118,8 +1130,14 @@ mod tests {
             .next()
             .expect("spawned scenario should contain one agent");
 
-        assert_eq!(world.get_component_perception_profile(agent), Some(&custom_perception));
-        assert_eq!(world.get_component_drive_thresholds(agent), Some(&custom_thresholds));
+        assert_eq!(
+            world.get_component_perception_profile(agent),
+            Some(&custom_perception)
+        );
+        assert_eq!(
+            world.get_component_drive_thresholds(agent),
+            Some(&custom_thresholds)
+        );
     }
 
     #[test]
@@ -1226,7 +1244,10 @@ mod tests {
             world.get_component_violation_disposition_profile(agent),
             Some(&violation_profile)
         );
-        assert_eq!(world.get_component_patrol_profile(agent), Some(&patrol_profile));
+        assert_eq!(
+            world.get_component_patrol_profile(agent),
+            Some(&patrol_profile)
+        );
         assert_eq!(
             world.get_component_patrol_route(agent),
             Some(&PatrolRoute {
@@ -1234,7 +1255,10 @@ mod tests {
                 current_index: 0,
             })
         );
-        assert_eq!(world.get_component_pursuit_profile(agent), Some(&pursuit_profile));
+        assert_eq!(
+            world.get_component_pursuit_profile(agent),
+            Some(&pursuit_profile)
+        );
         assert_eq!(
             world.get_component_contention_disposition_profile(agent),
             Some(&queue_profile)
@@ -1260,11 +1284,17 @@ mod tests {
 
         assert_eq!(world.get_component_theft_disposition_profile(agent), None);
         assert_eq!(world.get_component_justice_disposition_profile(agent), None);
-        assert_eq!(world.get_component_violation_disposition_profile(agent), None);
+        assert_eq!(
+            world.get_component_violation_disposition_profile(agent),
+            None
+        );
         assert_eq!(world.get_component_patrol_profile(agent), None);
         assert_eq!(world.get_component_patrol_route(agent), None);
         assert_eq!(world.get_component_pursuit_profile(agent), None);
-        assert_eq!(world.get_component_contention_disposition_profile(agent), None);
+        assert_eq!(
+            world.get_component_contention_disposition_profile(agent),
+            None
+        );
         assert_eq!(world.get_component_commodity_valuation_profile(agent), None);
         assert_eq!(world.get_component_substitute_preferences(agent), None);
     }

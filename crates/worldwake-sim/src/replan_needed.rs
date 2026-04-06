@@ -15,7 +15,7 @@ pub struct ReplanNeeded {
 mod tests {
     use super::ReplanNeeded;
     use crate::{AbortReason, ActionInstanceId, InterruptReason};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{ActionDefId, EntityId, Tick};
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

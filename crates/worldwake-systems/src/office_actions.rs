@@ -442,7 +442,7 @@ fn enumerate_press_force_claim_payloads(
         .filter(|entity| view.entity_kind(*entity) == Some(EntityKind::Office))
         .filter_map(|office| {
             let office_data = view.office_data(office)?;
-            if office_data.jurisdiction != actor_place
+            if office_data.seat != actor_place
                 || office_data.succession_law != SuccessionLaw::Force
                 || contested.contains(&office)
                 || !candidate_is_eligible_in_view(view, &office_data, actor)
@@ -476,7 +476,7 @@ fn enumerate_yield_force_claim_payloads(
         .into_iter()
         .filter_map(|office| {
             let office_data = view.office_data(office)?;
-            (office_data.jurisdiction == actor_place).then_some(ActionPayload::YieldForceClaim(
+            (office_data.seat == actor_place).then_some(ActionPayload::YieldForceClaim(
                 YieldForceClaimActionPayload { office },
             ))
         })
@@ -989,10 +989,10 @@ fn validate_declare_support_context_in_world(
             payload.candidate
         )));
     }
-    if world.effective_place(actor) != Some(office_data.jurisdiction) {
+    if world.effective_place(actor) != Some(office_data.seat) {
         return Err(ActionError::PreconditionFailed(format!(
-            "actor {actor} is not at office jurisdiction {}",
-            office_data.jurisdiction
+            "actor {actor} is not at office seat {}",
+            office_data.seat
         )));
     }
     if office_data.vacancy_since.is_none() || world.office_holder(payload.office).is_some() {
@@ -1026,10 +1026,10 @@ fn validate_press_force_claim_context_in_world(
             payload.office
         )));
     }
-    if world.effective_place(actor) != Some(office_data.jurisdiction) {
+    if world.effective_place(actor) != Some(office_data.seat) {
         return Err(ActionError::PreconditionFailed(format!(
-            "actor {actor} is not at office jurisdiction {}",
-            office_data.jurisdiction
+            "actor {actor} is not at office seat {}",
+            office_data.seat
         )));
     }
     if !candidate_is_eligible(world, office_data, actor) {
@@ -1063,10 +1063,10 @@ fn validate_yield_force_claim_context_in_world(
         .ok_or_else(|| {
             ActionError::PreconditionFailed(format!("office {} lacks OfficeData", payload.office))
         })?;
-    if world.effective_place(actor) != Some(office_data.jurisdiction) {
+    if world.effective_place(actor) != Some(office_data.seat) {
         return Err(ActionError::PreconditionFailed(format!(
-            "actor {actor} is not at office jurisdiction {}",
-            office_data.jurisdiction
+            "actor {actor} is not at office seat {}",
+            office_data.seat
         )));
     }
     if !world.offices_contested_by(actor).contains(&payload.office) {
@@ -1234,21 +1234,21 @@ fn transfer_lot(
 mod tests {
     use super::register_office_actions;
     use crate::perception::perception_system;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
-        BelievedEntityState, CauseRef, CombatProfile, CommodityKind, ControlSource,
-        EligibilityRule, EntityId, EventLog, EventTag, EventView, InstitutionalBeliefRead,
-        OfficeData, PerceptionSource, Permille, Quantity, RecordData, RecordKind, Seed,
-        SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, CombatProfile, CommodityKind,
+        ControlSource, EligibilityRule, EntityId, EventLog, EventTag, EventView,
+        InstitutionalBeliefRead, OfficeData, PerceptionSource, Permille, Quantity, RecordData,
+        RecordKind, Seed, SuccessionLaw, Tick, UtilityProfile, VisibilitySpec, WitnessData, World,
+        WorldTxn, build_prototype_world, verify_live_lot_conservation,
     };
     use worldwake_sim::{
-        get_affordances, AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
+        AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
         BribeActionPayload, DeclareSupportActionPayload, DeterministicRng, ExternalAbortReason,
         PerAgentBeliefView, PressForceClaimActionPayload, SystemExecutionContext, SystemId,
-        ThreatenActionPayload, YieldForceClaimActionPayload,
+        ThreatenActionPayload, YieldForceClaimActionPayload, get_affordances,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1364,7 +1364,8 @@ mod tests {
                     office,
                     OfficeData {
                         title: "Chair".to_string(),
-                        jurisdiction: place,
+                        seat: place,
+                        jurisdiction: BTreeSet::from([place]),
                         succession_law: SuccessionLaw::Support,
                         eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
                         succession_period_ticks: 12,
@@ -1511,7 +1512,10 @@ mod tests {
         (handler.on_commit)(
             def,
             instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &EventLog::new(),
             &mut rng,
             &mut txn,
@@ -1568,6 +1572,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(tick),
                 source: PerceptionSource::DirectObservation,
             },
@@ -1701,6 +1706,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(2),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -2014,7 +2020,10 @@ mod tests {
         let err = (handler.on_commit)(
             def,
             &instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &EventLog::new(),
             &mut rng,
             &mut txn,
@@ -2059,7 +2068,10 @@ mod tests {
         (handler.on_abort)(
             def,
             &instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &AbortReason::external_abort(ExternalAbortReason::Other),
             &EventLog::new(),
             &mut rng,
@@ -2290,6 +2302,45 @@ mod tests {
             fx.actor,
             &[],
             &declare_payload,
+            &fx.world,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ActionError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn declare_support_requires_office_seat_even_with_wider_jurisdiction() {
+        let (defs, handlers, ids) = setup_registries();
+        let mut fx = SocialFixture::new();
+        let def = defs.get(ids[2]).unwrap();
+        let handler = handlers.get(def.handler).unwrap();
+        let payload = ActionPayload::DeclareSupport(DeclareSupportActionPayload {
+            office: fx.office,
+            candidate: fx.candidate,
+        });
+        let other_place = fx
+            .world
+            .topology()
+            .place_ids()
+            .find(|place| *place != fx.place)
+            .unwrap();
+
+        {
+            let mut txn = new_txn(&mut fx.world, 2);
+            let mut office = txn.get_component_office_data(fx.office).cloned().unwrap();
+            office.jurisdiction.insert(other_place);
+            txn.set_component_office_data(fx.office, office).unwrap();
+            txn.set_ground_location(fx.actor, other_place).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let err = (handler.authoritative_payload_is_valid)(
+            def,
+            &defs,
+            fx.actor,
+            &[],
+            &payload,
             &fx.world,
         )
         .unwrap_err();
@@ -2558,19 +2609,20 @@ mod tests {
         let mut log = commit_action(&mut fx.world, &defs, &handlers, ids[0], &instance, 8, 3);
         run_perception(&mut fx.world, &mut log, 3);
 
-        assert!(fx
-            .world
-            .get_component_agent_belief_store(fx.observer)
-            .unwrap()
-            .social_observations
-            .iter()
-            .any(|observation| observation.kind()
-                == worldwake_core::SocialObservationKind::WitnessedObligation
-                && observation.detail
-                    == worldwake_core::SocialObservationDetail::WitnessedObligation {
-                        actor: fx.actor,
-                        target: fx.target,
-                    }));
+        assert!(
+            fx.world
+                .get_component_agent_belief_store(fx.observer)
+                .unwrap()
+                .social_observations
+                .iter()
+                .any(|observation| observation.kind()
+                    == worldwake_core::SocialObservationKind::WitnessedObligation
+                    && observation.detail
+                        == worldwake_core::SocialObservationDetail::WitnessedObligation {
+                            actor: fx.actor,
+                            target: fx.target,
+                        })
+        );
     }
 
     #[test]
@@ -2594,19 +2646,20 @@ mod tests {
         let mut log = commit_action(&mut fx.world, &defs, &handlers, ids[1], &instance, 9, 3);
         run_perception(&mut fx.world, &mut log, 3);
 
-        assert!(fx
-            .world
-            .get_component_agent_belief_store(fx.observer)
-            .unwrap()
-            .social_observations
-            .iter()
-            .any(|observation| observation.kind()
-                == worldwake_core::SocialObservationKind::WitnessedConflict
-                && observation.detail
-                    == worldwake_core::SocialObservationDetail::WitnessedConflict {
-                        actor: fx.actor,
-                        target: fx.target,
-                    }));
+        assert!(
+            fx.world
+                .get_component_agent_belief_store(fx.observer)
+                .unwrap()
+                .social_observations
+                .iter()
+                .any(|observation| observation.kind()
+                    == worldwake_core::SocialObservationKind::WitnessedConflict
+                    && observation.detail
+                        == worldwake_core::SocialObservationDetail::WitnessedConflict {
+                            actor: fx.actor,
+                            target: fx.target,
+                        })
+        );
     }
 
     #[test]
@@ -2633,19 +2686,20 @@ mod tests {
         let mut log = commit_action(&mut fx.world, &defs, &handlers, ids[2], &instance, 10, 3);
         run_perception(&mut fx.world, &mut log, 3);
 
-        assert!(fx
-            .world
-            .get_component_agent_belief_store(fx.observer)
-            .unwrap()
-            .social_observations
-            .iter()
-            .any(|observation| observation.kind()
-                == worldwake_core::SocialObservationKind::WitnessedCooperation
-                && observation.detail
-                    == worldwake_core::SocialObservationDetail::WitnessedCooperation {
-                        actor: fx.actor,
-                        counterpart: fx.candidate,
-                    }));
+        assert!(
+            fx.world
+                .get_component_agent_belief_store(fx.observer)
+                .unwrap()
+                .social_observations
+                .iter()
+                .any(|observation| observation.kind()
+                    == worldwake_core::SocialObservationKind::WitnessedCooperation
+                    && observation.detail
+                        == worldwake_core::SocialObservationDetail::WitnessedCooperation {
+                            actor: fx.actor,
+                            counterpart: fx.candidate,
+                        })
+        );
     }
 
     #[test]

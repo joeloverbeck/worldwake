@@ -33,33 +33,31 @@ pub mod pursuit_belief;
 pub mod ranking;
 mod route_threat;
 pub mod search;
-pub mod side_benefit;
 mod shared_collections;
+pub mod side_benefit;
 mod theft;
 
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
-    classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
-    has_active_frame_travel, has_frame, AgentDecisionRuntime, ExhaustionEntry,
-    ExhaustionRetryState, FramePlanRelation, FrameRuntimeSnapshot, MaterializationBindings,
+    AgentDecisionRuntime, ExhaustionEntry, ExhaustionRetryState, FramePlanRelation,
+    FrameRuntimeSnapshot, MaterializationBindings, classify_frame_plan_relation,
+    frame_runtime_snapshot, frame_travel_destination, has_active_frame_travel, has_frame,
 };
 pub use decision_trace::{
     ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,
-    AskWitnessOmissionDetail,
-    BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily, BindingRejection,
-    CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
-    CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, CandidateTrace,
-    CompetitionDiscount, DecisionOutcome, DecisionTraceSink, DesireFullyBlocked,
-    ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry, GoalHistoryEntry,
-    GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PayloadOverrideFailureReason,
-    PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace, PlannedStepSummary,
-    PlanningPipelineTrace, PoliticalCandidateOmission, PoliticalCandidateOmissionReason,
-    PursuitDiagnostic, PursuitInvalidationReason, PursuitOmissionReason,
-    PoliticalGoalFamily, PatrolRouteSnapshotTrace, PrerequisiteExclusionReason,
-    PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, RankedGoalSummary,
-    RootCandidateFilterReason, RootCandidateOutcome, RootCandidatePayloadStatus,
-    RootCandidateSkipReason, RootCandidateTrace,
+    AskWitnessOmissionDetail, BanditCandidateOmission, BanditCandidateOmissionReason,
+    BanditGoalFamily, BindingRejection, CandidateEvidenceContributor, CandidateEvidenceExclusion,
+    CandidateEvidenceExclusionReason, CandidateEvidenceKind, CandidateEvidenceTrace,
+    CandidateLegalityTrace, CandidateTrace, CompetitionDiscount, DecisionOutcome,
+    DecisionTraceSink, DesireFullyBlocked, ExecutionFailureReason, ExecutionTrace,
+    ExhaustionTraceEntry, GoalHistoryEntry, GoalSwitchSummary, GoalTraceStatus, InterruptTrace,
+    PatrolRouteSnapshotTrace, PayloadOverrideFailureReason, PlanAttemptTrace, PlanSearchOutcome,
+    PlanSearchTrace, PlannedStepSummary, PlanningPipelineTrace, PoliticalCandidateOmission,
+    PoliticalCandidateOmissionReason, PoliticalGoalFamily, PrerequisiteExclusionReason,
+    PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, PursuitDiagnostic,
+    PursuitInvalidationReason, PursuitOmissionReason, RankedGoalSummary, RootCandidateFilterReason,
+    RootCandidateOutcome, RootCandidatePayloadStatus, RootCandidateSkipReason, RootCandidateTrace,
     RootOperatorOmissionDetail, RootOperatorOmissionReason, RootOperatorOmissionTrace,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
@@ -68,8 +66,8 @@ pub use decision_trace::{
 };
 pub use dirty_set::DirtySet;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
-pub use failure_handling::{clear_resolved_blockers, handle_plan_failure, PlanFailureContext};
-pub use feasibility::{feasibility_hint, FeasibilityHint};
+pub use failure_handling::{PlanFailureContext, clear_resolved_blockers, handle_plan_failure};
+pub use feasibility::{FeasibilityHint, feasibility_hint};
 pub use goal_dispatch_decl::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
 pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_model::{
@@ -78,39 +76,77 @@ pub use goal_model::{
     RankedGoalProvenanceFamily, RankedPriorityAdjustment,
 };
 pub use goal_policy::{
-    evaluate_suppression, goal_family_policy, DecisionContext, FreeInterruptRole, GoalFamilyPolicy,
-    GoalPolicyOutcome,
+    DecisionContext, FreeInterruptRole, GoalFamilyPolicy, GoalPolicyOutcome, evaluate_suppression,
+    goal_family_policy,
 };
 pub use goal_switching::GoalSwitchKind;
-pub use interrupts::{evaluate_interrupt, InterruptDecision, InterruptTrigger};
+pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
 pub use plan_revalidation::{is_pursuit_plan_invalid, revalidate_next_step};
-pub use plan_selection::{select_best_plan, SelectionPolicy};
+pub use plan_selection::{SelectionPolicy, select_best_plan};
 pub use planner_duration_contract::PlannerDurationDependency;
 pub use planner_ops::{
-    apply_hypothetical_transition, authoritative_target, authoritative_targets,
-    build_semantics_table, resolve_planning_target_with, resolve_planning_targets_with,
     ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-    PlannerOpSemantics, PlannerTransitionKind,
+    PlannerOpSemantics, PlannerTransitionKind, apply_hypothetical_transition, authoritative_target,
+    authoritative_targets, build_semantics_table, resolve_planning_target_with,
+    resolve_planning_targets_with,
 };
 pub use planning_snapshot::{
-    build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses, PlanningSnapshot,
+    PlanningSnapshot, build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,
 };
 pub use planning_state::{
     HypotheticalEntityId, HypotheticalEntityMeta, PlanningEntityRef, PlanningState,
 };
 pub use pressure::{
-    assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure, DangerAssessment,
+    DangerAssessment, assess_danger, classify_band, derive_danger_pressure, derive_pain_pressure,
 };
+pub use pursuit_belief::{PursuitTargetBelief, pursuit_target_belief};
 pub use ranking::{
-    build_decision_context, rank_candidates, RankedGoalComparison, RankedGoalComparisonDimension,
-    RankingOutcome,
+    RankedGoalComparison, RankedGoalComparisonDimension, RankingOutcome, build_decision_context,
+    rank_candidates,
 };
-pub use pursuit_belief::{pursuit_target_belief, PursuitTargetBelief};
-pub use search::{search_plan, PlanSearchResult};
-pub use side_benefit::{build_plan_value, detect_side_benefits, PlanValue, SideBenefit};
+pub use search::{PlanSearchResult, search_plan};
+pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};
 pub use worldwake_core::{
-    CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, ReasoningProfile,
+    CognitiveProfile, CommodityPurpose, ExecutionBudget, GoalKey, GoalKind, OpportunityAnchor,
+    OpportunityKey,
 };
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProfileFixture {
+    pub max_candidates_to_plan: u8,
+    pub max_plan_depth: u8,
+    pub snapshot_travel_horizon: u8,
+    pub max_node_expansions: u16,
+    pub beam_width: u8,
+    pub max_prerequisite_locations: u8,
+    pub switch_margin: worldwake_core::Permille,
+    pub transient_block_ticks: u32,
+    pub unknown_block_ticks: u32,
+    pub structural_block_ticks: u32,
+    pub initial_cooldown_ticks: u32,
+    pub max_cooldown_ticks: u32,
+}
+
+#[cfg(test)]
+impl Default for ProfileFixture {
+    fn default() -> Self {
+        Self {
+            max_candidates_to_plan: 2,
+            max_plan_depth: 8,
+            snapshot_travel_horizon: 6,
+            max_node_expansions: 224,
+            beam_width: 8,
+            max_prerequisite_locations: 3,
+            switch_margin: worldwake_core::Permille::new_unchecked(100),
+            transient_block_ticks: 20,
+            unknown_block_ticks: 5,
+            structural_block_ticks: 200,
+            initial_cooldown_ticks: 4,
+            max_cooldown_ticks: 64,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

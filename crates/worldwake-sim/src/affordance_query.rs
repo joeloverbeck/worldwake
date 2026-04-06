@@ -380,26 +380,24 @@ fn precondition_implied_by_target_spec(spec: &TargetSpec, precondition: Precondi
             Precondition::TargetKind { kind, .. } => kinds.contains(&kind),
             _ => false,
         },
-        (
-            TargetSpec::EntityDirectlyPossessedByActor { kind: target_kind },
-            precondition,
-        ) => match precondition {
-            Precondition::TargetExists(_) | Precondition::TargetDirectlyPossessedByActor(_) => {
-                true
+        (TargetSpec::EntityDirectlyPossessedByActor { kind: target_kind }, precondition) => {
+            match precondition {
+                Precondition::TargetExists(_) | Precondition::TargetDirectlyPossessedByActor(_) => {
+                    true
+                }
+                Precondition::TargetKind { kind, .. } => *target_kind == kind,
+                _ => false,
             }
-            Precondition::TargetKind { kind, .. } => *target_kind == kind,
-            _ => false,
-        },
-        (
-            TargetSpec::EntityDirectlyPossessedByActorAnyOf { kinds },
-            precondition,
-        ) => match precondition {
-            Precondition::TargetExists(_) | Precondition::TargetDirectlyPossessedByActor(_) => {
-                true
+        }
+        (TargetSpec::EntityDirectlyPossessedByActorAnyOf { kinds }, precondition) => {
+            match precondition {
+                Precondition::TargetExists(_) | Precondition::TargetDirectlyPossessedByActor(_) => {
+                    true
+                }
+                Precondition::TargetKind { kind, .. } => kinds.contains(&kind),
+                _ => false,
             }
-            Precondition::TargetKind { kind, .. } => kinds.contains(&kind),
-            _ => false,
-        },
+        }
         _ => false,
     }
 }
@@ -409,13 +407,15 @@ fn preconditions_not_implied_by_target_specs(def: &ActionDef) -> Vec<Preconditio
     def.preconditions
         .iter()
         .copied()
-        .filter(|precondition| match precondition_target_index(*precondition) {
-            Some(index) => def
-                .targets
-                .get(index)
-                .is_none_or(|spec| !precondition_implied_by_target_spec(spec, *precondition)),
-            None => true,
-        })
+        .filter(
+            |precondition| match precondition_target_index(*precondition) {
+                Some(index) => def
+                    .targets
+                    .get(index)
+                    .is_none_or(|spec| !precondition_implied_by_target_spec(spec, *precondition)),
+                None => true,
+            },
+        )
         .collect()
 }
 
@@ -487,12 +487,11 @@ fn enumerate_targets(
                 })
                 .collect::<Vec<_>>()
         }
-        TargetSpec::EntityDirectlyPossessedByActor { kind } => {
-            view.direct_possessions(actor)
-                .into_iter()
-                .filter(|entity| view.entity_kind(*entity) == Some(*kind))
-                .collect::<Vec<_>>()
-        }
+        TargetSpec::EntityDirectlyPossessedByActor { kind } => view
+            .direct_possessions(actor)
+            .into_iter()
+            .filter(|entity| view.entity_kind(*entity) == Some(*kind))
+            .collect::<Vec<_>>(),
         TargetSpec::EntityDirectlyPossessedByActorAnyOf { kinds } => view
             .direct_possessions(actor)
             .into_iter()
@@ -505,8 +504,7 @@ fn enumerate_targets(
             let Some(place) = view.effective_place(actor) else {
                 return Vec::new();
             };
-            view
-                .adjacent_places(place)
+            view.adjacent_places(place)
                 .into_iter()
                 .filter(|entity| {
                     view.entity_kind(*entity) == Some(worldwake_core::EntityKind::Place)
@@ -602,8 +600,7 @@ fn enumerate_affordances_for_def(
 mod tests {
     use super::{
         enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances,
-        get_affordances_for_defs,
-        preconditions_not_implied_by_target_specs,
+        get_affordances_for_defs, preconditions_not_implied_by_target_specs,
     };
     use crate::{
         ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -615,13 +612,13 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BelievedEntityState, BodyCostPerTick,
-        CauseRef, CombatProfile, CombatWeaponRef, CommodityConsumableProfile, CommodityKind,
-        ContentionGrant, ContentionStatus, ControlSource, DemandObservation, DriveThresholds,
-        EntityId, EntityKind, EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, TellProfile,
-        Tick, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationTag, World, WorldTxn, Wound,
+        ActionDefId, ActionDomain, BelievedEntityState, BodyCostPerTick, CauseRef, CombatProfile,
+        CombatWeaponRef, CommodityConsumableProfile, CommodityKind, ContentionGrant,
+        ContentionStatus, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
+        EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn, Wound, build_prototype_world,
     };
 
     #[derive(Default)]
@@ -1194,7 +1191,12 @@ mod tests {
         view.adjacent_places
             .insert(place, vec![dest_b, dest_a, dest_a]);
 
-        let targets = enumerate_targets(&TargetSpec::AdjacentPlace, actor, &view, &mut BTreeMap::new());
+        let targets = enumerate_targets(
+            &TargetSpec::AdjacentPlace,
+            actor,
+            &view,
+            &mut BTreeMap::new(),
+        );
 
         assert_eq!(targets, vec![dest_a, dest_b]);
     }
@@ -1210,7 +1212,8 @@ mod tests {
         view.kinds.insert(place, EntityKind::Place);
         view.places.insert(actor, place);
 
-        let targets = enumerate_targets(&TargetSpec::ActorPlace, actor, &view, &mut BTreeMap::new());
+        let targets =
+            enumerate_targets(&TargetSpec::ActorPlace, actor, &view, &mut BTreeMap::new());
 
         assert_eq!(targets, vec![place]);
     }
@@ -1818,7 +1821,10 @@ mod tests {
                     }
                     vec![ActionPayload::Trade(TradeActionPayload {
                         counterparty,
-                        sale_lot: EntityId { slot: 50, generation: 0 },
+                        sale_lot: EntityId {
+                            slot: 50,
+                            generation: 0,
+                        },
                         offered_commodity: CommodityKind::Coin,
                         offered_quantity: Quantity(1),
                         requested_quantity: Quantity(1),
@@ -1859,7 +1865,10 @@ mod tests {
             affordances[0].payload_override,
             Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: seller,
-                sale_lot: EntityId { slot: 50, generation: 0 },
+                sale_lot: EntityId {
+                    slot: 50,
+                    generation: 0
+                },
                 offered_commodity: CommodityKind::Coin,
                 offered_quantity: Quantity(1),
                 requested_quantity: Quantity(1),

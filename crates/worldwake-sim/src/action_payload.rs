@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
     ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, NoticeTopic,
-    ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource,
-    TellTopic, Tick, UniqueItemKind, ViolationId, WorkstationTag,
+    ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource, TellTopic,
+    Tick, UniqueItemKind, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -366,7 +366,7 @@ mod tests {
         QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload, ThreatenActionPayload,
         TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{
         ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, NoticeTopic,
         ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource,
@@ -998,11 +998,17 @@ mod tests {
         assert_eq!(ask_witness.as_post_bounty(), None);
         assert_eq!(ask_witness.as_post_notice(), None);
 
-        assert_eq!(post_bounty.as_post_bounty(), Some(&sample_post_bounty_payload()));
+        assert_eq!(
+            post_bounty.as_post_bounty(),
+            Some(&sample_post_bounty_payload())
+        );
         assert_eq!(post_bounty.as_post_notice(), None);
         assert_eq!(post_bounty.as_trade(), None);
 
-        assert_eq!(post_notice.as_post_notice(), Some(&sample_post_notice_payload()));
+        assert_eq!(
+            post_notice.as_post_notice(),
+            Some(&sample_post_notice_payload())
+        );
         assert_eq!(post_notice.as_post_bounty(), None);
         assert_eq!(post_notice.as_tell(), None);
     }
@@ -1225,7 +1231,10 @@ mod tests {
     #[test]
     fn staff_market_accessor_returns_inner() {
         let payload = ActionPayload::StaffMarket(sample_staff_market_payload());
-        assert_eq!(payload.as_staff_market(), Some(&sample_staff_market_payload()));
+        assert_eq!(
+            payload.as_staff_market(),
+            Some(&sample_staff_market_payload())
+        );
         assert_eq!(payload.as_trade(), None);
         assert_eq!(payload.as_harvest(), None);
         assert_eq!(payload.as_post_bounty(), None);

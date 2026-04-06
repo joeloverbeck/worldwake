@@ -72,15 +72,15 @@ impl ReplayState {
     }
 
     pub fn record_input(&mut self, input: InputEvent) -> Result<(), ReplayStateError> {
-        if let Some(previous) = self.input_log.last() {
-            if input.sequence_no <= previous.sequence_no {
-                return Err(ReplayStateError::NonMonotonicInputSequence {
-                    previous_tick: previous.scheduled_tick,
-                    previous_sequence_no: previous.sequence_no,
-                    attempted_tick: input.scheduled_tick,
-                    attempted_sequence_no: input.sequence_no,
-                });
-            }
+        if let Some(previous) = self.input_log.last()
+            && input.sequence_no <= previous.sequence_no
+        {
+            return Err(ReplayStateError::NonMonotonicInputSequence {
+                previous_tick: previous.scheduled_tick,
+                previous_sequence_no: previous.sequence_no,
+                attempted_tick: input.scheduled_tick,
+                attempted_sequence_no: input.sequence_no,
+            });
         }
 
         self.input_log.push(input);
@@ -91,13 +91,13 @@ impl ReplayState {
         &mut self,
         checkpoint: ReplayCheckpoint,
     ) -> Result<(), ReplayStateError> {
-        if let Some(previous) = self.checkpoints.last() {
-            if checkpoint.tick <= previous.tick {
-                return Err(ReplayStateError::NonMonotonicCheckpoint {
-                    previous_tick: previous.tick,
-                    attempted_tick: checkpoint.tick,
-                });
-            }
+        if let Some(previous) = self.checkpoints.last()
+            && checkpoint.tick <= previous.tick
+        {
+            return Err(ReplayStateError::NonMonotonicCheckpoint {
+                previous_tick: previous.tick,
+                attempted_tick: checkpoint.tick,
+            });
         }
 
         self.checkpoints.push(checkpoint);
@@ -208,7 +208,7 @@ impl std::error::Error for ReplayStateError {}
 mod tests {
     use super::{ReplayCheckpoint, ReplayRecordingConfig, ReplayState, ReplayStateError};
     use crate::{InputEvent, InputKind};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::num::NonZeroU64;
     use worldwake_core::{ActionDefId, EntityId, Seed, StateHash, Tick};
 

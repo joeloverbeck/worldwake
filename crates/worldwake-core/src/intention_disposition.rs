@@ -51,7 +51,7 @@ impl Component for IntentionDispositionProfile {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::{de::DeserializeOwned, Serialize as SerializeTrait};
+    use serde::{Serialize as SerializeTrait, de::DeserializeOwned};
     use std::fmt::Debug;
 
     fn assert_component_bounds<T: Component>() {}
@@ -110,6 +110,9 @@ mod tests {
 
         assert!(profile.domain_patience.is_empty());
         assert_eq!(profile.default_patience_ticks, NonZeroU32::new(30).unwrap());
-        assert_eq!(profile.commitment_switch_margin, Permille::new(200).unwrap());
+        assert_eq!(
+            profile.commitment_switch_margin,
+            Permille::new(200).unwrap()
+        );
     }
 }

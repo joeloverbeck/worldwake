@@ -160,7 +160,7 @@ fn exact_destination_facility(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     destination: EntityId,
-)-> Option<EntityId> {
+) -> Option<EntityId> {
     if view.stock_storage_policy(destination).is_some() && view.can_control(agent, destination) {
         return Some(destination);
     }
@@ -252,8 +252,8 @@ mod tests {
         WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
-        RuntimeBeliefView,
+        ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
+        estimate_duration_from_beliefs,
     };
 
     #[derive(Default)]

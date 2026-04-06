@@ -495,9 +495,10 @@ mod tests {
         RequestBindingKind, RequestProvenance, ResolvedRequestTrace, TellActionPayload,
     };
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, CauseRef, CommodityKind, ControlSource,
-        EventLog, InstitutionalClaim, InstitutionalRecordEntry, PrototypePlace, PunishmentKind,
-        Quantity, RecordData, RecordEntryId, Tick, VisibilitySpec, WitnessData, WorldTxn,
+        CauseRef, CommodityKind, ControlSource, EventLog, InstitutionalClaim,
+        InstitutionalRecordEntry, PrototypePlace, PunishmentKind, Quantity, RecordData,
+        RecordEntryId, Tick, VisibilitySpec, WitnessData, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
 
     const fn sample_request(input_sequence_no: u64) -> ResolvedRequestTrace {
@@ -955,7 +956,8 @@ mod tests {
                 office,
                 worldwake_core::OfficeData {
                     title: "Magistrate".to_string(),
-                    jurisdiction: place,
+                    seat: place,
+                    jurisdiction: std::collections::BTreeSet::from([place]),
                     succession_law: worldwake_core::SuccessionLaw::Support,
                     eligibility_rules: Vec::new(),
                     succession_period_ticks: 8,

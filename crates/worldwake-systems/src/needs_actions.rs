@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, EventTag, HomeostaticNeeds, ItemLot, MetabolismProfile,
-    Permille, PlaceTag, Quantity, VisibilitySpec, WorldTxn, OUTDOOR_RELIEF_TAGS,
+    OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -11,6 +11,8 @@ use worldwake_sim::{
     CommitOutcome, Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
     MetabolismDurationKind, Precondition, TargetSpec,
 };
+
+use crate::evidence_support::emit_evidence;
 
 pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut ActionHandlerRegistry) {
     let eat_handler = handlers.register(ActionHandler::new(
@@ -113,10 +115,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         interruptibility: Interruptibility::InterruptibleWithPenalty,
         commit_conditions: vec![Precondition::ActorAlive],
         visibility: VisibilitySpec::SamePlace,
-        causal_event_tags: BTreeSet::from([
-            EventTag::WorldMutation,
-            EventTag::WildernessRelief,
-        ]),
+        causal_event_tags: BTreeSet::from([EventTag::WorldMutation, EventTag::WildernessRelief]),
         payload: ActionPayload::None,
         handler: relieve_wilderness_handler,
     });
@@ -421,6 +420,18 @@ fn commit_relieve_wilderness(
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_ground_location(waste, place)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    let current_tick = txn.tick();
+    emit_evidence(
+        txn,
+        place,
+        worldwake_core::EvidenceKind::DisturbanceMarker {
+            place,
+            kind: worldwake_core::DisturbanceKind::WildernessRelief,
+            created_at: current_tick,
+        },
+        50,
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
     set_actor_needs(
         txn,
         instance.actor,
@@ -429,7 +440,8 @@ fn commit_relieve_wilderness(
             needs.thirst,
             needs.fatigue,
             pm(0),
-            needs.dirtiness
+            needs
+                .dirtiness
                 .saturating_add(profile.wilderness_relief_dirtiness_penalty),
         ),
     )?;
@@ -474,16 +486,16 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
-        AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
-        DriveThresholds, EntityId, EventLog, EventTag, HomeostaticNeeds, MetabolismProfile,
-        PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        ActionDefId, AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
+        DisturbanceKind, DriveThresholds, EntityId, EventLog, EventTag, EvidenceKind,
+        HomeostaticNeeds, MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
+        Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionDefRegistry,
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome,
+        ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
+        ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome, abort_action,
+        get_affordances, start_action, tick_action,
     };
 
     fn pm(value: u16) -> Permille {
@@ -629,7 +641,10 @@ mod tests {
                     event_log: log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap()
             {
@@ -649,10 +664,7 @@ mod tests {
         assert_eq!(handlers.len(), 6);
         assert_eq!(defs.get(ActionDefId(0)).unwrap().name, "eat");
         assert_eq!(defs.get(ActionDefId(4)).unwrap().name, "wash");
-        assert_eq!(
-            defs.get(ActionDefId(5)).unwrap().name,
-            "relieve_wilderness"
-        );
+        assert_eq!(defs.get(ActionDefId(5)).unwrap().name, "relieve_wilderness");
     }
 
     #[test]
@@ -957,9 +969,11 @@ mod tests {
         let (defs, handlers) = setup_registries();
 
         let affordances = affordances_for(&world, actor, &defs, &handlers);
-        assert!(affordances
-            .iter()
-            .all(|affordance| affordance.def_id != ActionDefId(0)));
+        assert!(
+            affordances
+                .iter()
+                .all(|affordance| affordance.def_id != ActionDefId(0))
+        );
     }
 
     // --- Possession-requirement tests (S01PROOUTOWNCLA-010) ---
@@ -1104,10 +1118,7 @@ mod tests {
         ActionDefId(5)
     }
 
-    fn setup_actor_at_place(
-        world: &mut World,
-        place: EntityId,
-    ) -> EntityId {
+    fn setup_actor_at_place(world: &mut World, place: EntityId) -> EntityId {
         let mut txn = new_txn(world, 1);
         let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
         txn.set_ground_location(actor, place).unwrap();
@@ -1329,9 +1340,38 @@ mod tests {
         let (defs, _) = setup_registries();
         let def = defs.get(relieve_wilderness_def_id()).unwrap();
         assert!(
-            def.causal_event_tags
-                .contains(&EventTag::WildernessRelief),
+            def.causal_event_tags.contains(&EventTag::WildernessRelief),
             "relieve_wilderness should have WildernessRelief event tag"
         );
+    }
+
+    #[test]
+    fn relieve_wilderness_commit_emits_scene_evidence() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let forest_path = prototype_place_entity(PrototypePlace::ForestPath);
+        let actor = setup_actor_at_place(&mut world, forest_path);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        let rw_index = affordances
+            .iter()
+            .position(|a| a.def_id == relieve_wilderness_def_id())
+            .expect("relieve_wilderness affordance should exist at ForestPath");
+        run_action_to_completion(actor, rw_index, &mut world, &mut log, &defs, &handlers);
+
+        let scene = world
+            .get_component_scene_evidence(forest_path)
+            .expect("wilderness relief should leave scene evidence");
+        assert!(scene.evidence.iter().any(|entry| {
+            matches!(
+                entry.kind,
+                EvidenceKind::DisturbanceMarker {
+                    place,
+                    kind: DisturbanceKind::WildernessRelief,
+                    ..
+                } if place == forest_path
+            )
+        }));
     }
 }

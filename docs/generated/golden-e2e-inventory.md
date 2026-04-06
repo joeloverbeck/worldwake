@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 21
 - Files contributing `golden_*` tests: 21
-- Total `golden_*` tests: 296
+- Total `golden_*` tests: 307
 
 ## Per-File Inventory
 
@@ -18,9 +18,9 @@ Do not hand-edit it.
 | `golden_combat.rs` | 27 |
 | `golden_commodity_opportunity.rs` | 3 |
 | `golden_determinism.rs` | 12 |
-| `golden_emergent.rs` | 47 |
+| `golden_emergent.rs` | 51 |
 | `golden_experience_preferences.rs` | 6 |
-| `golden_integration.rs` | 24 |
+| `golden_integration.rs` | 30 |
 | `golden_merchant_selling.rs` | 20 |
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
@@ -29,7 +29,7 @@ Do not hand-edit it.
 | `golden_reasoning_diversity.rs` | 2 |
 | `golden_resilience.rs` | 2 |
 | `golden_soak.rs` | 1 |
-| `golden_social.rs` | 17 |
+| `golden_social.rs` | 18 |
 | `golden_supply_chain.rs` | 2 |
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 11 |
@@ -175,6 +175,10 @@ Do not hand-edit it.
 - `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically`
 - `golden_exile_punishment_when_fine_is_not_locally_collectible`
 - `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically`
+- `golden_jurisdiction_gated_punishment`
+- `golden_jurisdiction_gated_punishment_replays_deterministically`
+- `golden_secondary_jurisdiction_punishment`
+- `golden_secondary_jurisdiction_punishment_replays_deterministically`
 - `golden_dual_discovery_converges_without_double_accusation`
 - `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
 
@@ -213,6 +217,12 @@ Do not hand-edit it.
 - `golden_s49_delivery_bounty_lifecycle_replays_deterministically`
 - `golden_s45_notice_warning_flips_route_choice`
 - `golden_s45_notice_warning_flips_route_choice_replays_deterministically`
+- `golden_s51_autonomous_bounty_posting`
+- `golden_s51_autonomous_bounty_posting_replays_deterministically`
+- `golden_s58_autonomous_notice_reroutes_later_travel`
+- `golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically`
+- `golden_s52_theft_evidence_discovery`
+- `golden_s52_theft_evidence_discovery_replays_deterministically`
 
 ### `golden_merchant_selling.rs`
 
@@ -348,6 +358,7 @@ Do not hand-edit it.
 - `golden_alarm_survives_stress_suppression`
 - `golden_class_aware_acceptance`
 - `golden_alarm_relay_through_stressed_intermediary`
+- `golden_contradictory_location_claims_coexist_and_direct_observation_wins`
 
 ### `golden_supply_chain.rs`
 

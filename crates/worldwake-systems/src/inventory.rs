@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    load_of_entity, CarryCapacity, CommodityKind, EntityId, LoadUnits, Quantity, WorldTxn,
+    CarryCapacity, CommodityKind, EntityId, LoadUnits, Quantity, WorldTxn, load_of_entity,
 };
 use worldwake_sim::ActionError;
 

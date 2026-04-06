@@ -15,7 +15,7 @@ pub enum VisibilitySpec {
 #[cfg(test)]
 mod tests {
     use super::VisibilitySpec;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     fn assert_traits<
         T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,

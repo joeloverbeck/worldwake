@@ -109,7 +109,7 @@ fn no_box_dyn_any() {
 
 #[test]
 fn canonical_bytes_stability() {
-    use worldwake_core::{canonical_bytes, EntityId, Tick};
+    use worldwake_core::{EntityId, Tick, canonical_bytes};
 
     let id = EntityId {
         slot: 42,

@@ -1,20 +1,20 @@
 use crate::{
-    action_semantics::consultation_duration_ticks, ActionDuration, ActionPayload, DurationExpr,
-    RecipeDefinition,
+    ActionDuration, ActionPayload, DurationExpr, RecipeDefinition,
+    action_semantics::consultation_duration_ticks,
 };
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityTreatmentProfile, CommodityValuationProfile, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, ContentionGrant, HomeostaticNeeds, InTransitOnEdge,
+    CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant, DemandObservation,
+    DriveThresholds, EffectiveRight, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
     PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
     RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
     RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
     TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 /// Narrow AI-facing surface for goal formation, pressure derivation, ranking, and explanation.
@@ -135,6 +135,10 @@ pub trait GoalBeliefView {
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
+    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+        let _ = (actor, entity);
+        Vec::new()
+    }
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
     fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
         let _ = facility;
@@ -249,6 +253,10 @@ pub trait GoalBeliefView {
         None
     }
     fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+        let _ = agent;
+        None
+    }
+    fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
         let _ = agent;
         None
     }
@@ -447,6 +455,10 @@ pub trait RuntimeBeliefView {
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
+    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+        let _ = (actor, entity);
+        Vec::new()
+    }
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
     fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
         let _ = facility;
@@ -523,6 +535,10 @@ pub trait RuntimeBeliefView {
         let _ = agent;
         None
     }
+    fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
+        let _ = agent;
+        None
+    }
     fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
         let _ = agent;
         None
@@ -554,7 +570,7 @@ pub trait RuntimeBeliefView {
         None
     }
     fn intention_disposition_profile(&self, agent: EntityId)
-        -> Option<IntentionDispositionProfile>;
+    -> Option<IntentionDispositionProfile>;
     fn route_exists(&self, from: EntityId, to: EntityId) -> bool;
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
         let _ = agent;
@@ -956,6 +972,14 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::believed_owner_of(self, entity)
             }
 
+            fn believed_rights(
+                &self,
+                actor: worldwake_core::EntityId,
+                entity: worldwake_core::EntityId,
+            ) -> Vec<worldwake_core::EffectiveRight> {
+                $crate::RuntimeBeliefView::believed_rights(self, actor, entity)
+            }
+
             fn workstation_tag(
                 &self,
                 entity: worldwake_core::EntityId,
@@ -1198,6 +1222,13 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::preference_profile(self, agent)
             }
 
+            fn utility_profile(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::UtilityProfile> {
+                $crate::RuntimeBeliefView::utility_profile(self, agent)
+            }
+
             fn wounds(&self, agent: worldwake_core::EntityId) -> Vec<worldwake_core::Wound> {
                 $crate::RuntimeBeliefView::wounds(self, agent)
             }
@@ -1238,10 +1269,7 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::seller_for_sale_lot(self, lot)
             }
 
-            fn has_sale_listing(
-                &self,
-                lot: worldwake_core::EntityId,
-            ) -> bool {
+            fn has_sale_listing(&self, lot: worldwake_core::EntityId) -> bool {
                 $crate::RuntimeBeliefView::has_sale_listing(self, lot)
             }
 
@@ -1454,8 +1482,8 @@ mod tests {
     use super::estimate_duration_from_beliefs;
     use crate::{ActionPayload, DurationExpr, PerAgentBeliefView};
     use worldwake_core::{
-        build_prototype_world, AgentBeliefStore, CauseRef, ControlSource, EventLog, PatrolProfile,
-        Permille, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        AgentBeliefStore, CauseRef, ControlSource, EventLog, PatrolProfile, Permille, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {

@@ -1,9 +1,8 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    load_of_entity, load_per_unit, ActionDefId, BodyCostPerTick, ContentionGrant,
-    ContentionPolicy, ContentionQueue, EntityId, EntityKind, EventTag, Quantity,
-    VisibilitySpec, WorldTxn,
+    ActionDefId, BodyCostPerTick, ContentionGrant, ContentionPolicy, ContentionQueue, EntityId,
+    EntityKind, EventTag, Quantity, VisibilitySpec, WorldTxn, load_of_entity, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
@@ -12,6 +11,7 @@ use worldwake_sim::{
     TransportActionPayload,
 };
 
+use crate::evidence_support::emit_evidence;
 use crate::inventory::{move_entity_to_direct_possession, remaining_capacity};
 
 #[allow(clippy::too_many_lines)]
@@ -273,16 +273,15 @@ fn clear_unique_item_pickup_grant(
     if txn.entity_kind(target) != Some(EntityKind::UniqueItem) {
         return Ok(());
     }
-    if let Some(mut queue) = txn.get_component_contention_queue(target).cloned() {
-        if queue
+    if let Some(mut queue) = txn.get_component_contention_queue(target).cloned()
+        && queue
             .granted
             .as_ref()
             .is_some_and(|granted| granted.actor == actor && granted.intended_action == action_def)
-        {
-            queue.clear_grant();
-            txn.set_component_contention_queue(target, queue)
-                .map_err(|err| ActionError::InternalError(err.to_string()))?;
-        }
+    {
+        queue.clear_grant();
+        txn.set_component_contention_queue(target, queue)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
     if detach_when_ineligible && !unique_item_pickup_contention_eligible(txn, target) {
         if txn.get_component_contention_queue(target).is_some() {
@@ -311,7 +310,9 @@ fn validate_pick_up(
             "target {target} is not at actor {actor} place {actor_place}"
         )));
     }
-    let kind = txn.entity_kind(target).ok_or(ActionError::InvalidTarget(target))?;
+    let kind = txn
+        .entity_kind(target)
+        .ok_or(ActionError::InvalidTarget(target))?;
     if !is_transport_ground_pickup_kind(kind) {
         return Err(ActionError::InvalidTarget(target));
     }
@@ -433,7 +434,9 @@ fn validate_put_down(
             "target {target} is not at actor {actor} place {actor_place}"
         )));
     }
-    let kind = txn.entity_kind(target).ok_or(ActionError::InvalidTarget(target))?;
+    let kind = txn
+        .entity_kind(target)
+        .ok_or(ActionError::InvalidTarget(target))?;
     if !is_transport_direct_possession_kind(kind) {
         return Err(ActionError::InvalidTarget(target));
     }
@@ -509,7 +512,12 @@ fn start_pick_up(
     txn: &mut WorldTxn<'_>,
 ) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
     let target = require_transport_target(instance)?;
-    validate_pick_up(txn, instance.actor, target, requested_pick_up_quantity(&instance.payload)?)?;
+    validate_pick_up(
+        txn,
+        instance.actor,
+        target,
+        requested_pick_up_quantity(&instance.payload)?,
+    )?;
     claim_or_require_unique_item_pickup_grant(txn, instance.actor, target, def.id, true)?;
     Ok(None)
 }
@@ -523,7 +531,12 @@ fn commit_pick_up(
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let target = require_transport_target(instance)?;
-    validate_pick_up(txn, instance.actor, target, requested_pick_up_quantity(&instance.payload)?)?;
+    validate_pick_up(
+        txn,
+        instance.actor,
+        target,
+        requested_pick_up_quantity(&instance.payload)?,
+    )?;
     claim_or_require_unique_item_pickup_grant(txn, instance.actor, target, def.id, false)?;
     let moved_entity = execute_pick_up(
         txn,
@@ -596,6 +609,7 @@ fn commit_steal(
 ) -> Result<CommitOutcome, ActionError> {
     let target = require_transport_target(instance)?;
     validate_steal(txn, instance.actor, target)?;
+    let target_container = txn.direct_container(target);
     let actor_place = txn.effective_place(instance.actor).ok_or_else(|| {
         ActionError::PreconditionFailed(format!("actor {} has no place", instance.actor))
     })?;
@@ -604,6 +618,30 @@ fn commit_steal(
         let _ = txn.clear_component_sale_listing(target);
     }
     move_entity_to_direct_possession(txn, target, instance.actor, actor_place)?;
+    if let Some(container) = target_container {
+        let current_tick = txn.tick();
+        emit_evidence(
+            txn,
+            actor_place,
+            worldwake_core::EvidenceKind::ContainerTampered {
+                container,
+                tampered_at: current_tick,
+            },
+            200,
+        )
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        emit_evidence(
+            txn,
+            actor_place,
+            worldwake_core::EvidenceKind::DisturbanceMarker {
+                place: actor_place,
+                kind: worldwake_core::DisturbanceKind::ForcedEntry,
+                created_at: current_tick,
+            },
+            50,
+        )
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
     Ok(CommitOutcome::empty())
 }
 
@@ -628,10 +666,10 @@ fn abort_transport(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    if def.name == "pick_up" {
-        if let Some(target) = instance.targets.first().copied() {
-            clear_unique_item_pickup_grant(txn, instance.actor, target, def.id, false)?;
-        }
+    if def.name == "pick_up"
+        && let Some(target) = instance.targets.first().copied()
+    {
+        clear_unique_item_pickup_grant(txn, instance.actor, target, def.id, false)?;
     }
     Ok(())
 }
@@ -689,16 +727,17 @@ mod tests {
     use super::register_transport_actions;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
         AgentBeliefStore, CarryCapacity, CauseRef, CommodityKind, Container, ControlSource,
-        EventLog, EventView, LoadUnits, PerceptionSource, Place, Quantity, SaleListing, Seed,
-        StockAssignment, StockAssignmentKind, Tick, Topology, TravelEdge, TravelEdgeId,
-        UniqueItemKind, VisibilitySpec, WitnessData, World, WorldTxn,
+        DisturbanceKind, EventLog, EventView, EvidenceEntry, EvidenceEntryId, EvidenceKind,
+        LoadUnits, PerceptionSource, Place, Quantity, SaleListing, Seed, StockAssignment,
+        StockAssignmentKind, Tick, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world, verify_live_lot_conservation,
     };
     use worldwake_sim::{
-        get_affordances, start_action, tick_action, ActionDefRegistry, ActionExecutionAuthority,
-        ActionHandlerRegistry, ActionInstance, ActionInstanceId,
-        DeterministicRng, PerAgentBeliefView, TickOutcome,
+        ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
+        ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome, get_affordances,
+        start_action, tick_action,
     };
 
     use super::*;
@@ -873,15 +912,21 @@ mod tests {
                 kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
             }]
         );
-        assert!(pick_up
-            .preconditions
-            .contains(&Precondition::TargetNotInContainer(0)));
-        assert!(pick_up
-            .preconditions
-            .contains(&Precondition::TargetUnpossessed(0)));
-        assert!(put_down
-            .preconditions
-            .contains(&Precondition::TargetDirectlyPossessedByActor(0)));
+        assert!(
+            pick_up
+                .preconditions
+                .contains(&Precondition::TargetNotInContainer(0))
+        );
+        assert!(
+            pick_up
+                .preconditions
+                .contains(&Precondition::TargetUnpossessed(0))
+        );
+        assert!(
+            put_down
+                .preconditions
+                .contains(&Precondition::TargetDirectlyPossessedByActor(0))
+        );
         assert!(
             !steal
                 .preconditions
@@ -901,11 +946,7 @@ mod tests {
             let actor_a = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let actor_b = txn.create_agent("Briar", ControlSource::Ai).unwrap();
             let item = txn
-                .create_unique_item(
-                    UniqueItemKind::Artifact,
-                    Some("Seal"),
-                    BTreeMap::new(),
-                )
+                .create_unique_item(UniqueItemKind::Artifact, Some("Seal"), BTreeMap::new())
                 .unwrap();
             for actor in [actor_a, actor_b] {
                 txn.set_ground_location(actor, place).unwrap();
@@ -919,11 +960,15 @@ mod tests {
         let (defs, handlers, pick_up_id, _, _) = setup_registries();
         let affordance_a = affordances_for(&world, actor_a, &defs, &handlers)
             .into_iter()
-            .find(|affordance| affordance.def_id == pick_up_id && affordance.bound_targets == vec![item])
+            .find(|affordance| {
+                affordance.def_id == pick_up_id && affordance.bound_targets == vec![item]
+            })
             .expect("ground unique item should expose pick_up");
         let affordance_b = affordances_for(&world, actor_b, &defs, &handlers)
             .into_iter()
-            .find(|affordance| affordance.def_id == pick_up_id && affordance.bound_targets == vec![item])
+            .find(|affordance| {
+                affordance.def_id == pick_up_id && affordance.bound_targets == vec![item]
+            })
             .expect("ground unique item should expose pick_up for second actor");
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -971,7 +1016,9 @@ mod tests {
             worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
         )
         .unwrap_err();
-        assert!(matches!(err, ActionError::PreconditionFailed(message) if message == "contention_rejected"));
+        assert!(
+            matches!(err, ActionError::PreconditionFailed(message) if message == "contention_rejected")
+        );
 
         let outcome = tick_action(
             instance_id,
@@ -1001,11 +1048,7 @@ mod tests {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let item = txn
-                .create_unique_item(
-                    UniqueItemKind::Misc,
-                    Some("Token"),
-                    BTreeMap::new(),
-                )
+                .create_unique_item(UniqueItemKind::Misc, Some("Token"), BTreeMap::new())
                 .unwrap();
             txn.set_ground_location(actor, place).unwrap();
             txn.set_ground_location(item, place).unwrap();
@@ -1018,7 +1061,9 @@ mod tests {
         let (defs, handlers, _, put_down_id, _) = setup_registries();
         let affordance = affordances_for(&world, actor, &defs, &handlers)
             .into_iter()
-            .find(|affordance| affordance.def_id == put_down_id && affordance.bound_targets == vec![item])
+            .find(|affordance| {
+                affordance.def_id == put_down_id && affordance.bound_targets == vec![item]
+            })
             .expect("possessed unique item should expose put_down");
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -1593,12 +1638,16 @@ mod tests {
             .filter(|affordance| affordance.def_id == pick_up_id)
             .collect::<Vec<_>>();
 
-        assert!(affordances
-            .iter()
-            .any(|affordance| affordance.bound_targets == vec![ground_lot]));
-        assert!(!affordances
-            .iter()
-            .any(|affordance| affordance.bound_targets == vec![contained_lot]));
+        assert!(
+            affordances
+                .iter()
+                .any(|affordance| affordance.bound_targets == vec![ground_lot])
+        );
+        assert!(
+            !affordances
+                .iter()
+                .any(|affordance| affordance.bound_targets == vec![contained_lot])
+        );
     }
 
     #[test]
@@ -1834,7 +1883,9 @@ mod tests {
         let (defs, handlers, _, _, steal_id) = setup_registries();
         let affordance = affordances_for(&world, actor, &defs, &handlers)
             .into_iter()
-            .find(|affordance| affordance.def_id == steal_id && affordance.bound_targets == vec![lot])
+            .find(|affordance| {
+                affordance.def_id == steal_id && affordance.bound_targets == vec![lot]
+            })
             .expect("contained displayed lot should expose a steal affordance");
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -1945,7 +1996,9 @@ mod tests {
         let (defs, handlers, _, _, steal_id) = setup_registries();
         let affordance = affordances_for(&world, actor, &defs, &handlers)
             .into_iter()
-            .find(|affordance| affordance.def_id == steal_id && affordance.bound_targets == vec![lot])
+            .find(|affordance| {
+                affordance.def_id == steal_id && affordance.bound_targets == vec![lot]
+            })
             .expect("contained displayed lot should expose a steal affordance");
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
@@ -2003,6 +2056,131 @@ mod tests {
         assert_eq!(world.direct_container(lot), None);
         assert_eq!(world.get_component_stock_assignment(lot), None);
         assert_eq!(world.get_component_sale_listing(lot), None);
+    }
+
+    #[test]
+    fn contained_steal_emits_container_tamper_and_forced_entry_evidence_without_overwrite() {
+        let (mut world, actor, lot, place, _) = setup_world();
+        let display_container = {
+            let mut txn = new_txn(&mut world, 2);
+            let owner = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            let (_facility, _stock_container, display_container) = txn
+                .create_merchant_facility(place, owner, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display_container = display_container.expect("display container should exist");
+            txn.set_owner(lot, owner).unwrap();
+            txn.put_into_container(lot, display_container).unwrap();
+            txn.set_component_theft_disposition_profile(
+                actor,
+                worldwake_core::TheftDispositionProfile {
+                    steal_duration_ticks: NonZeroU32::new(2).unwrap(),
+                    theft_motive_weight: worldwake_core::Permille::new(500).unwrap(),
+                    witness_risk_penalty: worldwake_core::Permille::new(100).unwrap(),
+                },
+            )
+            .unwrap();
+            txn.set_component_scene_evidence(
+                place,
+                worldwake_core::SceneEvidence {
+                    evidence: vec![EvidenceEntry {
+                        id: EvidenceEntryId(0),
+                        kind: EvidenceKind::MovementTrace {
+                            entity: actor,
+                            departed_from: place,
+                            direction: place,
+                            observed_at: Tick(2),
+                        },
+                        created_at: Tick(2),
+                        decay_ticks: 30,
+                    }],
+                    next_entry_id: 1,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            display_container
+        };
+        let (defs, handlers, _, _, steal_id) = setup_registries();
+        let affordance = affordances_for(&world, actor, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == steal_id && affordance.bound_targets == vec![lot]
+            })
+            .expect("contained displayed lot should expose a steal affordance");
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+
+        let _ = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
+        )
+        .unwrap();
+        let _ = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(7)),
+        )
+        .unwrap();
+
+        let scene = world
+            .get_component_scene_evidence(place)
+            .expect("steal should leave scene evidence");
+        assert_eq!(scene.evidence.len(), 3);
+        assert_eq!(
+            scene
+                .evidence
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            vec![EvidenceEntryId(0), EvidenceEntryId(1), EvidenceEntryId(2)]
+        );
+        assert!(scene.evidence.iter().any(|entry| {
+            entry.kind
+                == EvidenceKind::ContainerTampered {
+                    container: display_container,
+                    tampered_at: Tick(7),
+                }
+        }));
+        assert!(scene.evidence.iter().any(|entry| {
+            entry.kind
+                == EvidenceKind::DisturbanceMarker {
+                    place,
+                    kind: DisturbanceKind::ForcedEntry,
+                    created_at: Tick(7),
+                }
+        }));
     }
 
     #[test]

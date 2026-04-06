@@ -198,7 +198,7 @@ mod tests {
         WitnessData,
     };
     use crate::{EntityId, EventId, Tick};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
 

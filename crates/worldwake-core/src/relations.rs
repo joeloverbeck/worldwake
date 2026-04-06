@@ -379,8 +379,8 @@ impl RelationTables {
 mod tests {
     use super::{RelationTables, ReservationRecord};
     use crate::{EntityId, Permille, RelationRecord, ReservationId, Tick, TickRange};
-    use serde::de::DeserializeOwned;
     use serde::Serialize;
+    use serde::de::DeserializeOwned;
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
 

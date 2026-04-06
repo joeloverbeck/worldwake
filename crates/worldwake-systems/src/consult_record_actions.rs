@@ -286,16 +286,17 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_believed_entity_state, BelievedInstitutionalClaim, CauseRef, ControlSource, EventLog,
-        PerceptionSource, RecordData, RecordEntryId, RecordKind, Seed, Tick, WitnessData,
+        BelievedInstitutionalClaim, CauseRef, ControlSource, EventLog, PerceptionSource,
+        RecordData, RecordEntryId, RecordKind, Seed, Tick, WitnessData,
+        build_believed_entity_state,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, step_tick, tick_action,
-        ActionExecutionAuthority, ActionInstance, ActionInstanceId,
-        ActionPayload, ActionState, ActionTraceSink, ControllerState, ExternalAbortReason,
-        InputKind, InstitutionalBeliefReadSummary, InstitutionalBeliefTransitionTrace,
+        ActionExecutionAuthority, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
+        ActionTraceSink, ControllerState, ExternalAbortReason, InputKind,
+        InstitutionalBeliefReadSummary, InstitutionalBeliefTransitionTrace,
         InstitutionalKnowledgeTraceSink, InstitutionalKnowledgeTraceSource, PerAgentBeliefView,
         Scheduler, SystemDispatchTable, SystemManifest, TickOutcome, TickStepServices,
+        abort_action, get_affordances, start_action, step_tick, tick_action,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -694,9 +695,11 @@ mod tests {
         assert!(matches!(second, TickOutcome::Committed { .. }));
 
         let store = world.get_component_agent_belief_store(actor).unwrap();
-        assert!(!store
-            .institutional_beliefs
-            .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office: entity(80) }));
+        assert!(
+            !store
+                .institutional_beliefs
+                .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office: entity(80) })
+        );
 
         let faction_beliefs = store
             .institutional_beliefs

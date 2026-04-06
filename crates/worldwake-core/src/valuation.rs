@@ -18,7 +18,7 @@ impl Component for CommodityValuationProfile {}
 mod tests {
     use super::CommodityValuationProfile;
     use crate::{test_utils::sample_commodity_valuation_profile, traits::Component};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
     fn assert_component_bounds<T: Component>() {}

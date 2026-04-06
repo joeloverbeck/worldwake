@@ -1,7 +1,7 @@
 use crate::{
-    action_validation::validate_action_def_authoritatively, ActionDefRegistry, ActionDuration,
-    ActionError, ActionExecutionAuthority, ActionExecutionContext, ActionHandlerRegistry,
-    ActionInstance, ActionInstanceId, ActionStatus, Affordance,
+    ActionDefRegistry, ActionDuration, ActionError, ActionExecutionAuthority,
+    ActionExecutionContext, ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionStatus,
+    Affordance, action_validation::validate_action_def_authoritatively,
 };
 use worldwake_core::{EventTag, Tick, TickRange, WitnessData, WorldError, WorldTxn};
 
@@ -316,12 +316,12 @@ mod tests {
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
-    use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CombatProfile,
-        CombatWeaponRef, CommodityKind, ControlSource, EntityId, EventLog, EventTag, EventView,
-        Quantity, Seed, Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn,
-    };
     use std::sync::LazyLock;
+    use worldwake_core::{
+        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CombatProfile, CombatWeaponRef,
+        CommodityKind, ControlSource, EntityId, EventLog, EventTag, EventView, Quantity, Seed,
+        Tick, TickRange, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+    };
 
     static TEST_RECIPES: LazyLock<RecipeRegistry> = LazyLock::new(RecipeRegistry::new);
 

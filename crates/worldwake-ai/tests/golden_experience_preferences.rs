@@ -6,12 +6,11 @@ use golden_harness::*;
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_ai::{CommodityPurpose, DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
-    hash_event_log, hash_world, AgentData, BeliefConfidencePolicy, CauseRef, CommodityKind,
-    ControlSource, EdgeExperience, EntityId, EventLog, EventPayload, EventTag, GoalKey, GoalKind,
-    HomeostaticNeeds, PendingEvent, PerceptionProfile, PerceptionSource, Place, PlaceTag,
-    PreferenceProfile, Quantity, ResourceSource, RouteExperience, Seed, Tick, Topology,
-    TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, World,
-    ProductionOutputOwner, WorkstationTag,
+    AgentData, BeliefConfidencePolicy, CauseRef, CommodityKind, ControlSource, EdgeExperience,
+    EntityId, EventLog, EventPayload, EventTag, GoalKey, GoalKind, HomeostaticNeeds, PendingEvent,
+    PerceptionProfile, PerceptionSource, Place, PlaceTag, PreferenceProfile, ProductionOutputOwner,
+    Quantity, ResourceSource, RouteExperience, Seed, Tick, Topology, TravelEdge, TravelEdgeId,
+    UtilityProfile, VisibilitySpec, WitnessData, WorkstationTag, World, hash_event_log, hash_world,
 };
 use worldwake_sim::{
     ActionExecutionContext, ActionRequestMode, InputKind, InterruptReason, RequestProvenance,
@@ -93,7 +92,8 @@ fn build_harness_with_topology(seed: Seed, topology: Topology) -> GoldenHarness 
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -163,7 +163,8 @@ fn set_preference_profile(
     profile: PreferenceProfile,
 ) {
     let mut txn = new_txn(world, 0);
-    txn.set_component_preference_profile(agent, profile).unwrap();
+    txn.set_component_preference_profile(agent, profile)
+        .unwrap();
     commit_txn(txn, event_log);
 }
 
@@ -229,7 +230,13 @@ fn request_travel(h: &mut GoldenHarness, actor: EntityId, destination: EntityId)
     );
 }
 
-fn emit_combat_event(log: &mut EventLog, tick: Tick, place: EntityId, actor: EntityId, target: EntityId) {
+fn emit_combat_event(
+    log: &mut EventLog,
+    tick: Tick,
+    place: EntityId,
+    actor: EntityId,
+    target: EntityId,
+) {
     let _ = log.emit(PendingEvent::from_payload(EventPayload {
         tick,
         cause: CauseRef::Bootstrap,
@@ -271,7 +278,10 @@ fn interrupt_active_travel(h: &mut GoldenHarness, actor: EntityId) {
         .expect("interrupting a live travel action should succeed");
 }
 
-fn latest_selected_apple_travel_destination(h: &GoldenHarness, agent: EntityId) -> Option<EntityId> {
+fn latest_selected_apple_travel_destination(
+    h: &GoldenHarness,
+    agent: EntityId,
+) -> Option<EntityId> {
     h.driver
         .trace_sink()?
         .traces_for(agent)
@@ -352,7 +362,8 @@ fn run_hostile_route_learning_scenario(
     seed: Seed,
     abort_after_combat: bool,
 ) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
-    let baseline_destination = plan_destination_snapshot(Seed([seed.0[0].wrapping_add(1); 32]), 1000, None);
+    let baseline_destination =
+        plan_destination_snapshot(Seed([seed.0[0].wrapping_add(1); 32]), 1000, None);
     assert_eq!(
         baseline_destination,
         Some(DANGEROUS_ROAD),
@@ -457,7 +468,9 @@ fn run_hostile_route_learning_scenario(
     )
 }
 
-fn run_preference_diversity_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+fn run_preference_diversity_scenario(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = build_harness_with_topology(seed, build_s38_topology());
     let _orchard = place_orchard_source(&mut h);
     let cautious = hungry_agent(&mut h, "Cautious", ControlSource::Ai, 800);

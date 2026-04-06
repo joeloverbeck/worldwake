@@ -124,9 +124,7 @@ fn validate_queue_payload_authoritatively(
     if facility_marker != WorkstationMarker(intended_tag) {
         return Err(ActionError::PreconditionFailed(format!(
             "facility {facility} workstation {:?} does not match intended action {:?} workstation {:?}",
-            facility_marker.0,
-            payload.intended_action,
-            intended_tag
+            facility_marker.0, payload.intended_action, intended_tag
         )));
     }
 
@@ -136,15 +134,19 @@ fn validate_queue_payload_authoritatively(
 pub(crate) fn exclusive_facility_workstation_tag(def: &ActionDef) -> Option<WorkstationTag> {
     match (&def.targets[..], &def.payload) {
         (
-            [TargetSpec::EntityAtActorPlace {
-                kind: EntityKind::Facility,
-            }],
+            [
+                TargetSpec::EntityAtActorPlace {
+                    kind: EntityKind::Facility,
+                },
+            ],
             ActionPayload::Harvest(payload),
         ) => Some(payload.required_workstation_tag),
         (
-            [TargetSpec::EntityAtActorPlace {
-                kind: EntityKind::Facility,
-            }],
+            [
+                TargetSpec::EntityAtActorPlace {
+                    kind: EntityKind::Facility,
+                },
+            ],
             ActionPayload::Craft(payload),
         ) => Some(payload.required_workstation_tag),
         _ => None,
@@ -270,17 +272,17 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BodyCostPerTick, CauseRef, CommodityKind,
-        ControlSource, EntityId, EntityKind, EventLog, EventTag, EventView,
-        ContentionPolicy, ContentionQueue, Permille, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        ActionDefId, BodyCostPerTick, CauseRef, CommodityKind, ContentionPolicy, ContentionQueue,
+        ControlSource, EntityId, EntityKind, EventLog, EventTag, EventView, Permille,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed,
+        Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
     };
     use worldwake_sim::{
-        abort_action, start_action, tick_action, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId,
-        ActionPayload, DeterministicRng, DurationExpr, ExternalAbortReason,
-        QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry, TickOutcome,
+        ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
+        ActionInstanceId, ActionPayload, DeterministicRng, DurationExpr, ExternalAbortReason,
+        QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry, TickOutcome, abort_action,
+        start_action, tick_action,
     };
 
     fn pm(value: u16) -> Permille {
@@ -545,8 +547,7 @@ mod tests {
                 .cloned()
                 .unwrap();
             queue.enqueue(actor, harvest_id, Tick(2), None).unwrap();
-            txn.set_component_contention_queue(facility, queue)
-                .unwrap();
+            txn.set_component_contention_queue(facility, queue).unwrap();
             commit_txn(txn);
         }
         let affordance = queue_affordance(queue_id, actor, facility, harvest_id);
@@ -588,8 +589,7 @@ mod tests {
                 .unwrap();
             queue.enqueue(actor, harvest_id, Tick(2), None).unwrap();
             queue.promote_head(Tick(3), nz(3));
-            txn.set_component_contention_queue(facility, queue)
-                .unwrap();
+            txn.set_component_contention_queue(facility, queue).unwrap();
             commit_txn(txn);
         }
         let affordance = queue_affordance(queue_id, actor, facility, harvest_id);

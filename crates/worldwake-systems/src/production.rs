@@ -106,11 +106,11 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, CauseRef, CommodityKind, ComponentDelta, ComponentKind,
-        ComponentValue, DemandMemory, DemandObservation, DemandObservationReason, EventLog,
-        EventTag, EventView, Permille, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        Quantity, ResourceSource, Seed, StateDelta, Tick, TradeDispositionProfile, VisibilitySpec,
-        WitnessData, World, WorldTxn,
+        CauseRef, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, DemandMemory,
+        DemandObservation, DemandObservationReason, EventLog, EventTag, EventView, Permille,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed,
+        StateDelta, Tick, TradeDispositionProfile, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -410,11 +410,13 @@ mod tests {
         })
         .unwrap();
 
-        assert!(noop_world
-            .get_component_demand_memory(trader)
-            .unwrap()
-            .observations
-            .is_empty());
+        assert!(
+            noop_world
+                .get_component_demand_memory(trader)
+                .unwrap()
+                .observations
+                .is_empty()
+        );
         assert_eq!(noop_log.len(), 1);
     }
 }

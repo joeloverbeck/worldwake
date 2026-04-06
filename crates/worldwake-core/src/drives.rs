@@ -111,9 +111,9 @@ const fn pm(value: u16) -> Permille {
 
 #[cfg(test)]
 mod tests {
-    use super::{pm, DriveThresholds, ThresholdBand};
-    use crate::{traits::Component, Permille};
-    use serde::{de::DeserializeOwned, Serialize};
+    use super::{DriveThresholds, ThresholdBand, pm};
+    use crate::{Permille, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
     fn assert_component_bounds<T: Component>() {}

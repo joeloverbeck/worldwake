@@ -737,11 +737,11 @@ impl Route {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_prototype_world, prototype_place_entity, Place, PlaceTag, PrototypePlace, Route,
-        Topology, TravelEdge, OUTDOOR_RELIEF_TAGS, PROTOTYPE_EDGE_SPECS, PROTOTYPE_PLACE_SPECS,
+        OUTDOOR_RELIEF_TAGS, PROTOTYPE_EDGE_SPECS, PROTOTYPE_PLACE_SPECS, Place, PlaceTag,
+        PrototypePlace, Route, Topology, TravelEdge, build_prototype_world, prototype_place_entity,
     };
     use crate::{
-        canonical_bytes, hash_serializable, traits::Component, EntityId, TravelEdgeId, WorldError,
+        EntityId, TravelEdgeId, WorldError, canonical_bytes, hash_serializable, traits::Component,
     };
     use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};

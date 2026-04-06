@@ -6,36 +6,35 @@
 // Each test binary uses a different subset of harness items.
 #![allow(dead_code)]
 
-mod timeline;
 pub mod soak_world;
+mod timeline;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey};
 use worldwake_core::{
-    build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
-    to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
-    BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
-    CombatStance, CommodityKind, ComponentDelta, ComponentKind, ComponentValue, ControlSource,
-    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId,
-    EventLog, EventRecord, EventTag, EventView, ContentionPolicy,
-    ContentionDispositionProfile, ContentionQueue, FactionData, FactionPurpose,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    KnownRecipes, LoadUnits, MetabolismProfile, OfficeData, OfficeForceProfile,
-    OfficeForceState, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
-    ReasoningProfile, RecipeId, RecordData, RecordKind, RelationDelta, RelationValue,
-    ResourceSource, Seed, SharedTellState, StateDelta, SuccessionLaw, TellMemoryKey, TellProfile,
-    TellTopic, Tick, ToldBeliefMemory, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
-    CommunicationProfile,
+    AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
+    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
+    CommunicationProfile, ComponentDelta, ComponentKind, ComponentValue,
+    ContentionDispositionProfile, ContentionPolicy, ContentionQueue, ControlSource,
+    DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog,
+    EventRecord, EventTag, EventView, FactionData, FactionPurpose, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
+    LoadUnits, MetabolismProfile, OfficeData, OfficeForceProfile, OfficeForceState,
+    PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity, RecipeId, RecordData,
+    RecordKind, RelationDelta, RelationValue, ResourceSource, Seed, SharedTellState, StateDelta,
+    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    WoundList, build_believed_entity_state, build_prototype_world, hash_serializable,
+    prototype_place_entity, to_shared_belief_snapshot,
 };
 use worldwake_sim::{
-    load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
-    ActionTraceSink, AutonomousControllerRuntime, ControllerState, DeterministicRng,
-    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeDefinition,
-    RecipeRegistry, ReplayRecordingConfig, ReplayState, RequestResolutionTraceSink,
-    SaveableRuntime, Scheduler, SimulationState, SystemManifest, TickStepResult, TickStepServices,
+    ActionDefRegistry, ActionHandlerRegistry, ActionTraceSink, AutonomousControllerRuntime,
+    ControllerState, DeterministicRng, InstitutionalKnowledgeTraceSink, PerceptionTraceSink,
+    PoliticalTraceSink, RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState,
+    RequestResolutionTraceSink, SaveableRuntime, Scheduler, SimulationState, SystemManifest,
+    TickStepResult, TickStepServices, load_from_bytes, save_to_bytes, step_tick,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -261,15 +260,27 @@ pub fn set_agent_perception_profile(
     commit_txn(txn, event_log);
 }
 
-pub fn set_agent_reasoning_profile(
+pub fn set_agent_cognitive_profile(
     world: &mut World,
     event_log: &mut EventLog,
     agent: EntityId,
-    reasoning_profile: ReasoningProfile,
+    cognitive_profile: worldwake_core::CognitiveProfile,
 ) {
     let mut txn = new_txn(world, 0);
-    txn.set_component_reasoning_profile(agent, reasoning_profile)
-        .expect("golden harness should keep reasoning profiles writable");
+    txn.set_component_cognitive_profile(agent, cognitive_profile)
+        .expect("golden harness should keep cognitive profiles writable");
+    commit_txn(txn, event_log);
+}
+
+pub fn set_agent_execution_budget(
+    world: &mut World,
+    event_log: &mut EventLog,
+    agent: EntityId,
+    execution_budget: worldwake_core::ExecutionBudget,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_component_execution_budget(agent, execution_budget)
+        .expect("golden harness should keep execution budgets writable");
     commit_txn(txn, event_log);
 }
 
@@ -717,8 +728,15 @@ pub fn place_exclusive_workstation_with_source(
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
-    txn.set_component_contention_policy(ws, ContentionPolicy { grant_hold_ticks, auto_promote: true, max_waiters: None })
-        .unwrap();
+    txn.set_component_contention_policy(
+        ws,
+        ContentionPolicy {
+            grant_hold_ticks,
+            auto_promote: true,
+            max_waiters: None,
+        },
+    )
+    .unwrap();
     txn.set_component_contention_queue(ws, ContentionQueue::default())
         .unwrap();
     txn.set_component_production_output_ownership_policy(
@@ -819,7 +837,8 @@ pub fn seed_office(
         office,
         OfficeData {
             title: title.to_string(),
-            jurisdiction,
+            seat: jurisdiction,
+            jurisdiction: BTreeSet::from([jurisdiction]),
             succession_law: succession_law.clone(),
             eligibility_rules,
             succession_period_ticks,
@@ -921,6 +940,7 @@ pub fn seed_known_office_at_place(
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: tick,
             source: PerceptionSource::DirectObservation,
         },
@@ -1203,10 +1223,7 @@ impl GoldenHarness {
     }
 
     pub fn from_simulation_state(state: &SimulationState) -> Self {
-        Self::from_simulation_state_with_driver(
-            state,
-            AgentTickDriver::new(),
-        )
+        Self::from_simulation_state_with_driver(state, AgentTickDriver::new())
     }
 
     fn from_simulation_state_with_driver(state: &SimulationState, driver: AgentTickDriver) -> Self {
@@ -1583,7 +1600,8 @@ mod tests {
             ..TellProfile::default()
         };
         let perception_profile = PerceptionProfile {
-            memory_capacity: 5,
+            entity_memory_capacity: 5,
+            entity_claim_capacity: 5,
             memory_retention_ticks: 17,
             observation_fidelity: pm(600),
             confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),

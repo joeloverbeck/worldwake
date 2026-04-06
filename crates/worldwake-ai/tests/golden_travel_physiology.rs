@@ -9,9 +9,9 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    prototype_place_entity, CommodityKind, EventTag, EventView, HomeostaticNeeds,
-    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
-    UtilityProfile, WorkstationTag,
+    CommodityKind, EventTag, EventView, HomeostaticNeeds, MetabolismProfile, PerceptionProfile,
+    PrototypePlace, Quantity, ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
+    prototype_place_entity,
 };
 
 // ---------------------------------------------------------------------------
@@ -20,10 +20,8 @@ use worldwake_core::{
 
 const EAST_FIELD_TRAIL: worldwake_core::EntityId =
     prototype_place_entity(PrototypePlace::EastFieldTrail);
-const COMMON_HOUSE: worldwake_core::EntityId =
-    prototype_place_entity(PrototypePlace::CommonHouse);
-const FOREST_PATH: worldwake_core::EntityId =
-    prototype_place_entity(PrototypePlace::ForestPath);
+const COMMON_HOUSE: worldwake_core::EntityId = prototype_place_entity(PrototypePlace::CommonHouse);
+const FOREST_PATH: worldwake_core::EntityId = prototype_place_entity(PrototypePlace::ForestPath);
 
 // ---------------------------------------------------------------------------
 // Shared setup: place an apple-producing workstation at OrchardFarm so
@@ -160,7 +158,10 @@ fn golden_travel_escalation() {
 
     let final_bladder = h.agent_bladder(agent);
 
-    assert!(ticks_traveled >= 1, "agent should have traveled at least 1 tick");
+    assert!(
+        ticks_traveled >= 1,
+        "agent should have traveled at least 1 tick"
+    );
 
     // The bladder should have increased by more than just basal rate.
     // Basal rate alone: bladder_rate (10) per tick.
@@ -278,10 +279,10 @@ fn golden_critical_bladder_local_relief() {
     for _ in 0..80 {
         h.step_once();
 
-        if let Some(action_name) = h.agent_active_action_name(agent) {
-            if action_name == "toilet" || action_name == "relieve_wilderness" {
-                saw_relieve_action = true;
-            }
+        if let Some(action_name) = h.agent_active_action_name(agent)
+            && (action_name == "toilet" || action_name == "relieve_wilderness")
+        {
+            saw_relieve_action = true;
         }
 
         if saw_relieve_action {
@@ -293,12 +294,11 @@ fn golden_critical_bladder_local_relief() {
     if let Some(sink) = h.action_trace_sink() {
         let events = sink.events_for(agent);
         for event in &events {
-            if matches!(event.kind, worldwake_sim::ActionTraceKind::Aborted { .. }) {
-                if let Some(def) = h.defs.get(event.def_id) {
-                    if def.name == "travel" {
-                        travel_was_interrupted = true;
-                    }
-                }
+            if matches!(event.kind, worldwake_sim::ActionTraceKind::Aborted { .. })
+                && let Some(def) = h.defs.get(event.def_id)
+                && def.name == "travel"
+            {
+                travel_was_interrupted = true;
             }
         }
     }
@@ -320,7 +320,10 @@ fn golden_critical_bladder_local_relief() {
         let relieve_appeared = traces.iter().any(|trace| {
             if let worldwake_ai::DecisionOutcome::Planning(ref p) = trace.outcome {
                 p.candidates.ranked.iter().any(|c| {
-                    matches!(c.opportunity.goal_key.kind, worldwake_core::GoalKind::Relieve)
+                    matches!(
+                        c.opportunity.goal_key.kind,
+                        worldwake_core::GoalKind::Relieve
+                    )
                 })
             } else {
                 false
@@ -636,10 +639,7 @@ fn golden_travel_interrupt_from_bladder_escalation() {
         .expect("decision tracing should be enabled");
     let traces = decision_sink.traces_for(agent);
     let critical_survival_interrupt_during_travel = traces.iter().any(|trace| {
-        if let worldwake_ai::DecisionOutcome::ActiveAction {
-            ref interrupt, ..
-        } = trace.outcome
-        {
+        if let worldwake_ai::DecisionOutcome::ActiveAction { ref interrupt, .. } = trace.outcome {
             matches!(
                 interrupt.decision,
                 worldwake_ai::InterruptDecision::InterruptForReplan {
@@ -659,7 +659,10 @@ fn golden_travel_interrupt_from_bladder_escalation() {
     let relieve_appeared = traces.iter().any(|trace| {
         if let worldwake_ai::DecisionOutcome::Planning(ref p) = trace.outcome {
             p.candidates.ranked.iter().any(|c| {
-                matches!(c.opportunity.goal_key.kind, worldwake_core::GoalKind::Relieve)
+                matches!(
+                    c.opportunity.goal_key.kind,
+                    worldwake_core::GoalKind::Relieve
+                )
             })
         } else {
             false
@@ -673,9 +676,9 @@ fn golden_travel_interrupt_from_bladder_escalation() {
     // --- Verification Layer 4: Relief action committed ---
     let relief_committed = agent_events.iter().any(|e| {
         matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
-            && h.defs
-                .get(e.def_id)
-                .is_some_and(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
+            && h.defs.get(e.def_id).is_some_and(|d| {
+                d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness"
+            })
     });
     assert!(
         relief_committed,
@@ -788,10 +791,12 @@ fn golden_latrine_preferred() {
     let traces = decision_sink.traces_for(agent);
     let relieve_appeared = traces.iter().any(|trace| {
         if let worldwake_ai::DecisionOutcome::Planning(ref p) = trace.outcome {
-            p.candidates
-                .ranked
-                .iter()
-                .any(|c| matches!(c.opportunity.goal_key.kind, worldwake_core::GoalKind::Relieve))
+            p.candidates.ranked.iter().any(|c| {
+                matches!(
+                    c.opportunity.goal_key.kind,
+                    worldwake_core::GoalKind::Relieve
+                )
+            })
         } else {
             false
         }
@@ -962,10 +967,12 @@ fn golden_wilderness_fallback() {
     let traces = decision_sink.traces_for(agent);
     let relieve_appeared = traces.iter().any(|trace| {
         if let worldwake_ai::DecisionOutcome::Planning(ref p) = trace.outcome {
-            p.candidates
-                .ranked
-                .iter()
-                .any(|c| matches!(c.opportunity.goal_key.kind, worldwake_core::GoalKind::Relieve))
+            p.candidates.ranked.iter().any(|c| {
+                matches!(
+                    c.opportunity.goal_key.kind,
+                    worldwake_core::GoalKind::Relieve
+                )
+            })
         } else {
             false
         }
@@ -1138,9 +1145,9 @@ fn golden_deprivation_accident() {
 
     let relief_committed = agent_events.iter().any(|e| {
         matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
-            && h.defs
-                .get(e.def_id)
-                .is_some_and(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
+            && h.defs.get(e.def_id).is_some_and(|d| {
+                d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness"
+            })
     });
     assert!(
         !relief_committed,
@@ -1358,7 +1365,10 @@ fn golden_witness_observation() {
         witnessed_wilderness_relief,
         "Agent B (co-located with PerceptionProfile) should have observed a WildernessRelief \
          event via the perception pipeline. Perception trace entries for B: {:?}",
-        b_observations.iter().map(|e| e.summary()).collect::<Vec<_>>(),
+        b_observations
+            .iter()
+            .map(|e| e.summary())
+            .collect::<Vec<_>>(),
     );
 
     // --- Verification Layer 3: The witnessed event's actor is Agent A ---
@@ -1689,7 +1699,10 @@ fn golden_need_continuity_toilet() {
         }
     }
 
-    assert!(toilet_committed, "agent should have committed toilet at PublicLatrine");
+    assert!(
+        toilet_committed,
+        "agent should have committed toilet at PublicLatrine"
+    );
 
     // Bladder should be near pm(0) (basal drift of at most 1 tick since commit).
     assert!(
@@ -1865,9 +1878,9 @@ fn golden_need_continuity_accident() {
         .expect("action tracing should be enabled");
     let relief_committed = action_sink.events_for(agent).iter().any(|e| {
         matches!(e.kind, worldwake_sim::ActionTraceKind::Committed { .. })
-            && h.defs
-                .get(e.def_id)
-                .is_some_and(|d| d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness")
+            && h.defs.get(e.def_id).is_some_and(|d| {
+                d.name.as_str() == "toilet" || d.name.as_str() == "relieve_wilderness"
+            })
     });
     assert!(
         !relief_committed,

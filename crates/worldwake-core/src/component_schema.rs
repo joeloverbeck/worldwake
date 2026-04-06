@@ -730,28 +730,53 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
-                reasoning_profiles,
-                ReasoningProfile,
-                insert_reasoning_profile,
-                get_reasoning_profile,
-                get_reasoning_profile_mut,
-                remove_reasoning_profile,
-                has_reasoning_profile,
-                iter_reasoning_profiles,
-                insert_component_reasoning_profile,
-                get_component_reasoning_profile,
-                get_component_reasoning_profile_mut,
-                remove_component_reasoning_profile,
-                has_component_reasoning_profile,
-                entities_with_reasoning_profile,
-                query_reasoning_profile,
-                count_with_reasoning_profile,
-                "ReasoningProfile",
+                cognitive_profiles,
+                CognitiveProfile,
+                insert_cognitive_profile,
+                get_cognitive_profile,
+                get_cognitive_profile_mut,
+                remove_cognitive_profile,
+                has_cognitive_profile,
+                iter_cognitive_profiles,
+                insert_component_cognitive_profile,
+                get_component_cognitive_profile,
+                get_component_cognitive_profile_mut,
+                remove_component_cognitive_profile,
+                has_component_cognitive_profile,
+                entities_with_cognitive_profile,
+                query_cognitive_profile,
+                count_with_cognitive_profile,
+                "CognitiveProfile",
                 |kind| kind == EntityKind::Agent,
-                ReasoningProfile,
-                crate::ReasoningProfile,
-                set_component_reasoning_profile,
-                clear_component_reasoning_profile,
+                CognitiveProfile,
+                crate::CognitiveProfile,
+                set_component_cognitive_profile,
+                clear_component_cognitive_profile,
+                txn_simple_set
+            }
+            {
+                execution_budgets,
+                ExecutionBudget,
+                insert_execution_budget,
+                get_execution_budget,
+                get_execution_budget_mut,
+                remove_execution_budget,
+                has_execution_budget,
+                iter_execution_budgets,
+                insert_component_execution_budget,
+                get_component_execution_budget,
+                get_component_execution_budget_mut,
+                remove_component_execution_budget,
+                has_component_execution_budget,
+                entities_with_execution_budget,
+                query_execution_budget,
+                count_with_execution_budget,
+                "ExecutionBudget",
+                |kind| kind == EntityKind::Agent,
+                ExecutionBudget,
+                crate::ExecutionBudget,
+                set_component_execution_budget,
+                clear_component_execution_budget,
                 txn_simple_set
             }
             {
@@ -1162,6 +1187,31 @@ macro_rules! with_component_schema_entries {
                 crate::BanditCamp,
                 set_component_bandit_camp,
                 clear_component_bandit_camp,
+                txn_simple_set
+            }
+            {
+                scene_evidences,
+                SceneEvidence,
+                insert_scene_evidence,
+                get_scene_evidence,
+                get_scene_evidence_mut,
+                remove_scene_evidence,
+                has_scene_evidence,
+                iter_scene_evidences,
+                insert_component_scene_evidence,
+                get_component_scene_evidence,
+                get_component_scene_evidence_mut,
+                remove_component_scene_evidence,
+                has_component_scene_evidence,
+                entities_with_scene_evidence,
+                query_scene_evidence,
+                count_with_scene_evidence,
+                "SceneEvidence",
+                |kind| kind == EntityKind::Place,
+                SceneEvidence,
+                crate::SceneEvidence,
+                set_component_scene_evidence,
+                clear_component_scene_evidence,
                 txn_simple_set
             }
             {
@@ -1594,7 +1644,7 @@ macro_rules! with_component_schema_entries {
 }
 
 macro_rules! forward_authoritative_components {
-    ($callback:ident; $({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident, $txn_component_ty:ty, $set_fn:ident, $clear_fn:ident, $txn_marker:ident })*) => {
+    ($callback:ident; $({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident, $txn_component_ty:ty, $set_fn:ident, $clear_fn:ident, $txn_marker:ident })*) => {
         $callback! {
             $(
                 {
@@ -1648,7 +1698,7 @@ macro_rules! select_txn_simple_set_components {
         $query_fn:ident,
         $count_fn:ident,
         $component_name:literal,
-        $kind_check:expr,
+        $kind_check:expr_2021,
         $component_variant:ident,
         $txn_component_ty:ty,
         $set_fn:ident,
@@ -1689,7 +1739,7 @@ macro_rules! select_txn_simple_set_components {
         $query_fn:ident,
         $count_fn:ident,
         $component_name:literal,
-        $kind_check:expr,
+        $kind_check:expr_2021,
         $component_variant:ident,
         $txn_component_ty:ty,
         $set_fn:ident,
@@ -1702,3 +1752,26 @@ macro_rules! select_txn_simple_set_components {
 pub(crate) use forward_authoritative_components;
 pub(crate) use select_txn_simple_set_components;
 pub(crate) use with_component_schema_entries;
+
+#[cfg(test)]
+mod tests {
+    use crate::{EntityKind, SceneEvidence, Tick, Topology, World, WorldError};
+
+    #[test]
+    fn scene_evidence_is_registered_for_places_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let place = world.create_entity(EntityKind::Place, Tick(1));
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+
+        world
+            .insert_component_scene_evidence(place, SceneEvidence::default())
+            .unwrap();
+        assert!(world.has_component_scene_evidence(place));
+        assert_eq!(world.count_with_scene_evidence(), 1);
+
+        let error = world
+            .insert_component_scene_evidence(agent, SceneEvidence::default())
+            .unwrap_err();
+        assert!(matches!(error, WorldError::InvalidOperation(_)));
+    }
+}

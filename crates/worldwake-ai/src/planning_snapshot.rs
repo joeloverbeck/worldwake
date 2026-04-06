@@ -1,18 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
-    BlockedIntentMemory, BlockingFact, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    DemandObservation, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
-    ContentionGrant, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData,
-    ResourceSource, StockStoragePolicy,
-    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    ViolationDispositionProfile, WorkstationTag, Wound,
+    ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+    BelievedInstitutionalClaim, BlockedIntentMemory, BlockingFact, CombatProfile,
+    CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DriveThresholds,
+    EntityId, EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity,
+    RecipeId, RecordData, ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw,
+    TellMemoryKey, TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
-use worldwake_sim::{RuntimeBeliefView};
+use worldwake_sim::RuntimeBeliefView;
 
 use crate::route_threat::perceived_direct_travel_cost_from_memory;
 
@@ -220,11 +219,7 @@ impl DistanceMatrix {
         let i = self.place_ids.binary_search(&from).ok()?;
         let j = self.place_ids.binary_search(&to).ok()?;
         let val = self.data[i * n + j];
-        if val == u32::MAX {
-            None
-        } else {
-            Some(val)
-        }
+        if val == u32::MAX { None } else { Some(val) }
     }
 }
 
@@ -317,7 +312,11 @@ impl PlanningSnapshot {
             .collect();
         let content_edges = entities
             .iter()
-            .filter_map(|(&entity, snapshot)| snapshot.direct_container.map(|container| (entity, container)))
+            .filter_map(|(&entity, snapshot)| {
+                snapshot
+                    .direct_container
+                    .map(|container| (entity, container))
+            })
             .collect::<Vec<_>>();
         for (entity, container) in content_edges {
             if let Some(container_snapshot) = entities.get_mut(&container) {
@@ -412,13 +411,13 @@ impl PlanningSnapshot {
         self.actor
     }
 
-    /// Jurisdiction place for an Office entity, captured from `OfficeData.jurisdiction`.
+    /// Canonical seat place for an Office entity, captured from `OfficeData.seat`.
     #[must_use]
-    pub(crate) fn jurisdiction(&self, office: EntityId) -> Option<EntityId> {
+    pub(crate) fn seat(&self, office: EntityId) -> Option<EntityId> {
         self.entities
             .get(&office)
             .and_then(|snapshot| snapshot.office_data.as_ref())
-            .map(|office_data| office_data.jurisdiction)
+            .map(|office_data| office_data.seat)
     }
 
     /// Base support declarations for an office, captured at snapshot build time.
@@ -576,7 +575,7 @@ fn build_snapshot_places(
     included_places: &BTreeSet<EntityId>,
     included_entities: &BTreeSet<EntityId>,
 ) -> BTreeMap<EntityId, SnapshotPlace> {
-    let places = included_places
+    included_places
         .iter()
         .copied()
         .map(|place| {
@@ -604,8 +603,7 @@ fn build_snapshot_places(
                 },
             )
         })
-        .collect();
-    places
+        .collect()
 }
 
 fn build_snapshot_entity(
@@ -625,13 +623,7 @@ fn build_snapshot_entity(
         .direct_possessions(entity)
         .into_iter()
         .filter(|possessed| {
-            included_entities_contains(
-                view,
-                *possessed,
-                actor,
-                evidence_entities,
-                included_places,
-            )
+            included_entities_contains(view, *possessed, actor, evidence_entities, included_places)
         })
         .collect();
     let known_recipes = view.known_recipes(entity);
@@ -888,15 +880,15 @@ fn collect_entities(
                 frontier.push_back(related);
             }
         }
-        if let Some(container) = view.direct_container(entity) {
-            if included.insert(container) {
-                frontier.push_back(container);
-            }
+        if let Some(container) = view.direct_container(entity)
+            && included.insert(container)
+        {
+            frontier.push_back(container);
         }
-        if let Some(possessor) = view.direct_possessor(entity) {
-            if included.insert(possessor) {
-                frontier.push_back(possessor);
-            }
+        if let Some(possessor) = view.direct_possessor(entity)
+            && included.insert(possessor)
+        {
+            frontier.push_back(possessor);
         }
     }
     included
@@ -920,15 +912,15 @@ fn included_entities_contains(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_planning_snapshot, SnapshotFacilityQueue};
+    use super::{SnapshotFacilityQueue, build_planning_snapshot};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
-        EligibilityRule, EntityId, EntityKind, ContentionGrant, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        OfficeData, PatrolProfile, PatrolRoute, Quantity, RecipeId, ResourceSource, SuccessionLaw,
+        CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
+        DriveThresholds, EligibilityRule, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+        PatrolProfile, PatrolRoute, Quantity, RecipeId, ResourceSource, SuccessionLaw,
         TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
         UniqueItemKind, WorkstationTag, Wound,
     };
@@ -1428,6 +1420,7 @@ mod tests {
                             believed_activity: None,
                             believed_artifact: None,
                             believed_contention: None,
+                            believed_evidence: None,
                             observed_tick: Tick(6),
                             source: worldwake_core::PerceptionSource::DirectObservation,
                         }),
@@ -1553,11 +1546,19 @@ mod tests {
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 0);
 
         assert_eq!(
-            snapshot.entities.get(&lot).and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Bread)).copied(),
+            snapshot
+                .entities
+                .get(&lot)
+                .and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Bread))
+                .copied(),
             Some(Quantity(3))
         );
         assert_eq!(
-            snapshot.entities.get(&lot).and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Water)).copied(),
+            snapshot
+                .entities
+                .get(&lot)
+                .and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Water))
+                .copied(),
             None
         );
     }
@@ -1853,9 +1854,11 @@ mod tests {
         assert!(declarations.contains(&(supporter_b, actor)));
 
         // Non-office returns empty
-        assert!(snapshot
-            .base_support_declarations_for_office(entity(999))
-            .is_empty());
+        assert!(
+            snapshot
+                .base_support_declarations_for_office(entity(999))
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1929,7 +1932,8 @@ mod tests {
             office,
             OfficeData {
                 title: "Marshal".to_string(),
-                jurisdiction: town,
+                seat: town,
+                jurisdiction: BTreeSet::from([town]),
                 succession_law: SuccessionLaw::Force,
                 eligibility_rules: vec![EligibilityRule::FactionMember(faction)],
                 succession_period_ticks: 19,

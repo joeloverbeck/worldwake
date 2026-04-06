@@ -1,9 +1,9 @@
 use crate::{
-    build_observed_entity_snapshot, component_schema::with_component_schema_entries,
     ArchiveMutationSnapshot, BelievedInstitutionalClaim, CommodityKind, Container, ControlSource,
     EntityId, EntityKind, EventId, InstitutionalBeliefKey, InstitutionalClaim, LoadUnits,
     LotOperation, Permille, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
     StockStoragePolicy, Tick, TickRange, UniqueItemKind, World, WorldError,
+    build_observed_entity_snapshot, component_schema::with_component_schema_entries,
 };
 use crate::{
     CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventPayload,
@@ -1753,8 +1753,8 @@ impl<'w> WorldTxn<'w> {
             holder,
             effective_tick: self.tick,
         };
-        let record = self
-            .require_unique_record_at_place(office_data.jurisdiction, RecordKind::OfficeRegister)?;
+        let record =
+            self.require_unique_record_at_place(office_data.seat, RecordKind::OfficeRegister)?;
         let superseded_entry = self.find_unique_active_record_entry(record, |existing| {
             matches!(
                 existing,
@@ -1793,8 +1793,8 @@ impl<'w> WorldTxn<'w> {
             candidate: Some(candidate),
             effective_tick: self.tick,
         };
-        let record = self
-            .require_unique_record_at_place(office_data.jurisdiction, RecordKind::SupportLedger)?;
+        let record =
+            self.require_unique_record_at_place(office_data.seat, RecordKind::SupportLedger)?;
         let superseded_entry = self.find_unique_active_record_entry(record, |existing| {
             matches!(
                 existing,
@@ -1935,20 +1935,20 @@ fn observed_evidence_entities(evidence: &EvidenceRef) -> BTreeSet<EntityId> {
 mod tests {
     use super::WorldTxn;
     use crate::{
+        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
+        CognitiveProfile, CommunicationProfile, DemandMemory, EpistemicDispositionProfile,
+        ExecutionBudget, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
+        InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
+        MerchandiseProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
+        PatrolRoute, PerceptionProfile, PerceptionSource, PreferenceProfile, RecordData,
+        RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
+        TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
-        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
-        CommunicationProfile, DemandMemory, EpistemicDispositionProfile, FactionData,
-        FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-        InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
-        OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-        PerceptionSource, PreferenceProfile, ReasoningProfile, RecordData, RecordEntryId,
-        RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
-        TradeDispositionProfile, UtilityProfile,
     };
     use crate::{
         BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
@@ -2042,7 +2042,8 @@ mod tests {
     fn sample_office_data() -> OfficeData {
         OfficeData {
             title: "Granary Chair".to_string(),
-            jurisdiction: entity(5),
+            seat: entity(5),
+            jurisdiction: BTreeSet::from([entity(5)]),
             succession_law: SuccessionLaw::Support,
             eligibility_rules: Vec::new(),
             succession_period_ticks: 8,
@@ -2190,7 +2191,8 @@ mod tests {
                 office,
                 OfficeData {
                     title: "Chair".to_string(),
-                    jurisdiction: place,
+                    seat: place,
+                    jurisdiction: BTreeSet::from([place]),
                     succession_law: SuccessionLaw::Support,
                     eligibility_rules: Vec::new(),
                     succession_period_ticks: 8,
@@ -2366,15 +2368,19 @@ mod tests {
                     entity: agent,
                     component_kind: ComponentKind::CommunicationProfile,
                     before: None,
-                    after: ComponentValue::CommunicationProfile(
-                        CommunicationProfile::default(),
-                    ),
+                    after: ComponentValue::CommunicationProfile(CommunicationProfile::default(),),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,
-                    component_kind: ComponentKind::ReasoningProfile,
+                    component_kind: ComponentKind::CognitiveProfile,
                     before: None,
-                    after: ComponentValue::ReasoningProfile(ReasoningProfile::default()),
+                    after: ComponentValue::CognitiveProfile(CognitiveProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::ExecutionBudget,
+                    before: None,
+                    after: ComponentValue::ExecutionBudget(ExecutionBudget::default()),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,
@@ -3907,8 +3913,8 @@ mod tests {
     }
 
     #[test]
-    fn set_component_production_output_ownership_policy_records_component_delta_and_updates_world_on_commit(
-    ) {
+    fn set_component_production_output_ownership_policy_records_component_delta_and_updates_world_on_commit()
+     {
         let mut world = World::new(test_topology()).unwrap();
         let facility = world.create_entity(EntityKind::Facility, Tick(1));
         let before = sample_production_output_ownership_policy();
@@ -4507,6 +4513,7 @@ mod tests {
                 believed_activity: None,
                 believed_artifact: None,
                 believed_contention: None,
+                believed_evidence: None,
                 observed_tick: Tick(12),
                 source: PerceptionSource::Inference,
             },
@@ -4545,7 +4552,8 @@ mod tests {
             .copied()
             .unwrap();
         let mut after = before;
-        after.memory_capacity += 3;
+        after.entity_memory_capacity += 3;
+        after.entity_claim_capacity += 5;
         after.observation_fidelity = Permille::new(990).unwrap();
 
         let mut txn = new_txn(&mut world);
@@ -5779,10 +5787,7 @@ mod tests {
 
         assert_eq!(world.effective_place(facility), Some(place));
         assert_eq!(world.effective_place(stock), Some(place));
-        assert_eq!(
-            world.effective_place(display.unwrap()),
-            Some(place)
-        );
+        assert_eq!(world.effective_place(display.unwrap()), Some(place));
     }
 
     #[test]

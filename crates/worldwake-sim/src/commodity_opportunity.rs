@@ -198,9 +198,9 @@ fn best_recipe_opportunity(
         };
 
         if !recipe
-                .inputs
-                .iter()
-                .any(|(input_commodity, _)| *input_commodity == commodity)
+            .inputs
+            .iter()
+            .any(|(input_commodity, _)| *input_commodity == commodity)
             || !workstation_reachable(actor, recipe.required_workstation_tag, belief, profile)
             || !sibling_inputs_satisfiable(
                 actor,
@@ -426,15 +426,15 @@ fn saturating_u64_to_u32(value: u64) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{commodity_opportunity_score, CommodityOpportunityBreakdown};
+    use super::{CommodityOpportunityBreakdown, commodity_opportunity_score};
     use crate::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
     use std::collections::BTreeMap;
-    use std::num::{NonZeroU32, NonZeroU8};
+    use std::num::{NonZeroU8, NonZeroU32};
     use worldwake_core::{
         BeliefConfidencePolicy, BodyCostPerTick, BodyPart, CommodityKind,
         CommodityValuationProfile, DemandObservation, DemandObservationReason, DriveThresholds,
-        EntityId, EntityKind, HomeostaticNeeds, LoadUnits, MerchandiseProfile, Permille,
-        Quantity, RecipeId, ResourceSource, Tick, WorkstationTag, Wound, WoundCause,
+        EntityId, EntityKind, HomeostaticNeeds, LoadUnits, MerchandiseProfile, Permille, Quantity,
+        RecipeId, ResourceSource, Tick, WorkstationTag, Wound, WoundCause,
     };
 
     #[derive(Default)]
@@ -479,7 +479,10 @@ mod tests {
             &self,
             place: EntityId,
         ) -> Vec<(EntityId, NonZeroU32)> {
-            self.adjacent_places.get(&place).cloned().unwrap_or_default()
+            self.adjacent_places
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn knows_recipe(&self, _actor: EntityId, recipe: RecipeId) -> bool {
@@ -633,7 +636,11 @@ mod tests {
             Vec::new()
         }
 
-        fn listed_sale_lots_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+        fn listed_sale_lots_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
 
@@ -863,8 +870,13 @@ mod tests {
         );
         view.adjacent_places
             .insert(origin, vec![(mill, NonZeroU32::new(1).unwrap())]);
-        view.workstations_by_place
-            .insert((mill, WorkstationTag::Mill), vec![EntityId { slot: 12, generation: 0 }]);
+        view.workstations_by_place.insert(
+            (mill, WorkstationTag::Mill),
+            vec![EntityId {
+                slot: 12,
+                generation: 0,
+            }],
+        );
 
         let breakdown = commodity_opportunity_score(
             actor(),
@@ -953,8 +965,13 @@ mod tests {
             },
             origin,
         );
-        view.workstations_by_place
-            .insert((origin, WorkstationTag::Mill), vec![EntityId { slot: 31, generation: 0 }]);
+        view.workstations_by_place.insert(
+            (origin, WorkstationTag::Mill),
+            vec![EntityId {
+                slot: 31,
+                generation: 0,
+            }],
+        );
 
         let breakdown = commodity_opportunity_score(
             actor(),
@@ -999,8 +1016,13 @@ mod tests {
             },
             origin,
         );
-        view.workstations_by_place
-            .insert((origin, WorkstationTag::Mill), vec![EntityId { slot: 41, generation: 0 }]);
+        view.workstations_by_place.insert(
+            (origin, WorkstationTag::Mill),
+            vec![EntityId {
+                slot: 41,
+                generation: 0,
+            }],
+        );
 
         let breakdown = commodity_opportunity_score(
             actor(),
@@ -1053,11 +1075,17 @@ mod tests {
         );
         deep_view.workstations_by_place.insert(
             (origin, WorkstationTag::Mill),
-            vec![EntityId { slot: 51, generation: 0 }],
+            vec![EntityId {
+                slot: 51,
+                generation: 0,
+            }],
         );
         deep_view.workstations_by_place.insert(
             (origin, WorkstationTag::Forge),
-            vec![EntityId { slot: 52, generation: 0 }],
+            vec![EntityId {
+                slot: 52,
+                generation: 0,
+            }],
         );
 
         let waste = commodity_opportunity_score(
@@ -1133,11 +1161,17 @@ mod tests {
         );
         view.workstations_by_place.insert(
             (origin, WorkstationTag::Mill),
-            vec![EntityId { slot: 61, generation: 0 }],
+            vec![EntityId {
+                slot: 61,
+                generation: 0,
+            }],
         );
         view.workstations_by_place.insert(
             (origin, WorkstationTag::Forge),
-            vec![EntityId { slot: 62, generation: 0 }],
+            vec![EntityId {
+                slot: 62,
+                generation: 0,
+            }],
         );
 
         let first = commodity_opportunity_score(
@@ -1175,20 +1209,10 @@ mod tests {
         };
         let held = holdings(&[(CommodityKind::Bread, 1), (CommodityKind::Medicine, 1)]);
         let alternatives = holdings(&[(CommodityKind::Bread, 1)]);
-        let first = commodity_opportunity_score(
-            actor(),
-            CommodityKind::Bread,
-            &view,
-            &held,
-            &alternatives,
-        );
-        let second = commodity_opportunity_score(
-            actor(),
-            CommodityKind::Bread,
-            &view,
-            &held,
-            &alternatives,
-        );
+        let first =
+            commodity_opportunity_score(actor(), CommodityKind::Bread, &view, &held, &alternatives);
+        let second =
+            commodity_opportunity_score(actor(), CommodityKind::Bread, &view, &held, &alternatives);
 
         assert_eq!(first, second);
         assert_eq!(

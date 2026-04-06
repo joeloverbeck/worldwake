@@ -60,7 +60,9 @@ fn format_cause(cause: &CauseRef) -> String {
     }
 }
 
-fn format_action_detail_line(record: &impl worldwake_core::event_record::EventView) -> Option<String> {
+fn format_action_detail_line(
+    record: &impl worldwake_core::event_record::EventView,
+) -> Option<String> {
     record.action_name().map(|name| format!("  action: {name}"))
 }
 
@@ -273,7 +275,8 @@ mod tests {
                 trade_disposition: None,
                 perception_profile: None,
                 tell_profile: None,
-                reasoning_profile: None,
+                cognitive_profile: None,
+                execution_budget: None,
                 epistemic_disposition: None,
                 intention_disposition: None,
                 communication_profile: None,

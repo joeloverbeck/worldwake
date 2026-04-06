@@ -1,5 +1,14 @@
 use super::World;
-use crate::{CommodityKind, EntityId, Quantity, UniqueItemKind, WorldError};
+use crate::{
+    CommodityKind, EffectiveRight, EntityId, Quantity, RightKind, UniqueItemKind, WorldError,
+};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ControlOutcome {
+    Allowed(Vec<EffectiveRight>),
+    BlockedByPossessor(EntityId),
+    NoRights,
+}
 
 impl World {
     fn controlled_item_lots_for(
@@ -161,40 +170,109 @@ impl World {
         self.ensure_alive(actor)?;
         self.ensure_alive(entity)?;
 
-        if let Some(container) = self.direct_container(entity) {
-            return self.can_exercise_control(actor, container);
+        match self.collect_control_rights(actor, entity) {
+            ControlOutcome::Allowed(_) => Ok(()),
+            ControlOutcome::BlockedByPossessor(holder) => {
+                Err(WorldError::PreconditionFailed(format!(
+                    "entity {entity} is possessed by {holder}, so {actor} cannot exercise control"
+                )))
+            }
+            ControlOutcome::NoRights => Err(WorldError::PreconditionFailed(format!(
+                "entity {actor} neither possesses nor owns {entity}"
+            ))),
         }
+    }
+
+    #[must_use]
+    pub fn effective_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+        if self.ensure_alive(actor).is_err() || self.ensure_alive(entity).is_err() {
+            return Vec::new();
+        }
+
+        let mut rights = match self.collect_control_rights(actor, entity) {
+            ControlOutcome::Allowed(rights) => rights,
+            ControlOutcome::BlockedByPossessor(_) | ControlOutcome::NoRights => Vec::new(),
+        };
+        if let Some(jurisdictional_right) = self.jurisdictional_right(actor, entity) {
+            rights.push(jurisdictional_right);
+        }
+        rights
+    }
+
+    #[must_use]
+    pub fn has_right(&self, actor: EntityId, entity: EntityId, kind: RightKind) -> bool {
+        self.effective_rights(actor, entity)
+            .iter()
+            .any(|right| right.kind == kind)
+    }
+
+    fn collect_control_rights(&self, actor: EntityId, entity: EntityId) -> ControlOutcome {
+        if let Some(container) = self.direct_container(entity) {
+            return match self.collect_control_rights(actor, container) {
+                ControlOutcome::Allowed(_) => ControlOutcome::Allowed(vec![EffectiveRight {
+                    kind: RightKind::ContainerAccess,
+                    via: Some(container),
+                }]),
+                blocked => blocked,
+            };
+        }
+
+        let mut rights = Vec::new();
 
         if self.relations.possessed_by.get(&entity) == Some(&actor) {
-            return Ok(());
+            rights.push(EffectiveRight {
+                kind: RightKind::PhysicalPossession,
+                via: None,
+            });
         }
 
-        if self.relations.owned_by.get(&entity) == Some(&actor)
-            && !self.relations.possessed_by.contains_key(&entity)
+        let unpossessed = !self.relations.possessed_by.contains_key(&entity);
+        if self.relations.owned_by.get(&entity) == Some(&actor) && unpossessed {
+            rights.push(EffectiveRight {
+                kind: RightKind::Ownership,
+                via: None,
+            });
+        }
+
+        if let Some(owner) = self.relations.owned_by.get(&entity).copied()
+            && unpossessed
         {
-            return Ok(());
-        }
-
-        // Institutional delegation: faction membership or office holding
-        if let Some(owner) = self.relations.owned_by.get(&entity).copied() {
-            if !self.relations.possessed_by.contains_key(&entity) {
-                if self.factions_of(actor).contains(&owner) {
-                    return Ok(());
-                }
-                if self.offices_held_by(actor).contains(&owner) {
-                    return Ok(());
-                }
+            if self.factions_of(actor).contains(&owner) {
+                rights.push(EffectiveRight {
+                    kind: RightKind::FactionAuthority,
+                    via: Some(owner),
+                });
+            }
+            if self.offices_held_by(actor).contains(&owner) {
+                rights.push(EffectiveRight {
+                    kind: RightKind::OfficeAuthority,
+                    via: Some(owner),
+                });
             }
         }
 
-        if let Some(holder) = self.relations.possessed_by.get(&entity) {
-            return Err(WorldError::PreconditionFailed(format!(
-                "entity {entity} is possessed by {holder}, so {actor} cannot exercise control"
-            )));
+        if !rights.is_empty() {
+            return ControlOutcome::Allowed(rights);
         }
 
-        Err(WorldError::PreconditionFailed(format!(
-            "entity {actor} neither possesses nor owns {entity}"
-        )))
+        if let Some(holder) = self.relations.possessed_by.get(&entity).copied() {
+            return ControlOutcome::BlockedByPossessor(holder);
+        }
+
+        ControlOutcome::NoRights
+    }
+
+    fn jurisdictional_right(&self, actor: EntityId, entity: EntityId) -> Option<EffectiveRight> {
+        let entity_place = self.effective_place(entity)?;
+        self.offices_held_by(actor)
+            .into_iter()
+            .find(|office| {
+                self.get_component_office_data(*office)
+                    .is_some_and(|office_data| office_data.jurisdiction.contains(&entity_place))
+            })
+            .map(|office| EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            })
     }
 }

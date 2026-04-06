@@ -14,9 +14,9 @@ mod golden_harness;
 use golden_harness::soak_world::*;
 use golden_harness::*;
 use worldwake_core::{
-    hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, CauseRef, CommodityKind, DeadAt, EntityId, EntityKind,
-    EventId, EventView, Permille, Seed, StateHash, Tick,
+    CauseRef, CommodityKind, DeadAt, EntityId, EntityKind, EventId, EventView, Permille, Seed,
+    StateHash, Tick, hash_event_log, hash_world, total_authoritative_commodity_quantity,
+    verify_authoritative_conservation,
 };
 
 // ---------------------------------------------------------------------------
@@ -72,8 +72,7 @@ fn run_t31_stress(seed: Seed) {
     // Separate RNG stream for disruptions so they don't perturb the simulation RNG.
     let mut disruption_seed = seed;
     disruption_seed.0[0] = disruption_seed.0[0].wrapping_add(0xDD);
-    let mut disruption_rng =
-        worldwake_sim::DeterministicRng::new(disruption_seed);
+    let mut disruption_rng = worldwake_sim::DeterministicRng::new(disruption_seed);
 
     // Collect all place IDs from the T30 topology for teleportation targets.
     let all_places = [
@@ -104,8 +103,7 @@ fn run_t31_stress(seed: Seed) {
                         .filter(|&a| !h.agent_is_dead(a))
                         .collect();
                     if !living.is_empty() {
-                        let idx =
-                            disruption_rng.next_range(0, living.len() as u32) as usize;
+                        let idx = disruption_rng.next_range(0, living.len() as u32) as usize;
                         let victim = living[idx];
                         let mut txn = new_txn(&mut h.world, current_tick_val);
                         txn.set_component_dead_at(victim, DeadAt(Tick(current_tick_val)))
@@ -115,18 +113,13 @@ fn run_t31_stress(seed: Seed) {
                 }
                 1 => {
                     // Destroy a random ItemLot (archive it and adjust conservation baseline).
-                    let lots: Vec<EntityId> = h
-                        .world
-                        .entities_of_kind(EntityKind::ItemLot)
-                        .collect();
+                    let lots: Vec<EntityId> =
+                        h.world.entities_of_kind(EntityKind::ItemLot).collect();
                     if !lots.is_empty() {
-                        let idx =
-                            disruption_rng.next_range(0, lots.len() as u32) as usize;
+                        let idx = disruption_rng.next_range(0, lots.len() as u32) as usize;
                         let lot = lots[idx];
                         // Read quantity before archiving to adjust conservation baseline.
-                        if let Some(item_lot) =
-                            h.world.get_component_item_lot(lot).cloned()
-                        {
+                        if let Some(item_lot) = h.world.get_component_item_lot(lot).cloned() {
                             let commodity = item_lot.commodity;
                             let qty = item_lot.quantity.0 as u64;
                             let mut txn = new_txn(&mut h.world, current_tick_val);
@@ -147,8 +140,7 @@ fn run_t31_stress(seed: Seed) {
                         .filter(|&e| h.world.get_component_workstation_marker(e).is_some())
                         .collect();
                     if !facilities.is_empty() {
-                        let idx = disruption_rng.next_range(0, facilities.len() as u32)
-                            as usize;
+                        let idx = disruption_rng.next_range(0, facilities.len() as u32) as usize;
                         let facility = facilities[idx];
                         let mut txn = new_txn(&mut h.world, current_tick_val);
                         txn.clear_component_workstation_marker(facility).unwrap();
@@ -163,12 +155,10 @@ fn run_t31_stress(seed: Seed) {
                         .filter(|&a| !h.agent_is_dead(a))
                         .collect();
                     if !living.is_empty() {
-                        let agent_idx =
-                            disruption_rng.next_range(0, living.len() as u32) as usize;
+                        let agent_idx = disruption_rng.next_range(0, living.len() as u32) as usize;
                         let agent = living[agent_idx];
-                        let place_idx = disruption_rng
-                            .next_range(0, all_places.len() as u32)
-                            as usize;
+                        let place_idx =
+                            disruption_rng.next_range(0, all_places.len() as u32) as usize;
                         let target_place = all_places[place_idx];
                         let mut txn = new_txn(&mut h.world, current_tick_val);
                         txn.set_ground_location(agent, target_place).unwrap();
@@ -260,8 +250,7 @@ fn run_t31_stress(seed: Seed) {
                              at tick {current_tick:?}"
                         );
                     }
-                    CauseRef::SystemTick(_) | CauseRef::Bootstrap | CauseRef::ExternalInput(_) => {
-                    }
+                    CauseRef::SystemTick(_) | CauseRef::Bootstrap | CauseRef::ExternalInput(_) => {}
                 }
             }
         }
@@ -334,11 +323,7 @@ fn run_continuous(seed: Seed, total_ticks: u64) -> Vec<(u64, StateHash, StateHas
 /// Run `save_at` ticks, save to bytes, load from bytes, then continue for
 /// `total_ticks - save_at` more ticks. Record checkpoints at every 100-tick
 /// boundary across both halves.
-fn run_split(
-    seed: Seed,
-    save_at: u64,
-    total_ticks: u64,
-) -> Vec<(u64, StateHash, StateHash)> {
+fn run_split(seed: Seed, save_at: u64, total_ticks: u64) -> Vec<(u64, StateHash, StateHash)> {
     let (mut h, _agents, _rf, _bf, _office) = build_t30_world(seed);
     let mut checkpoints = Vec::new();
 

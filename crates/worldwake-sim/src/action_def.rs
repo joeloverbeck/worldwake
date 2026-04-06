@@ -32,7 +32,7 @@ mod tests {
         ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility, Precondition,
         ReservationReq, TargetSpec,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{

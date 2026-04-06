@@ -12,10 +12,10 @@ use worldwake_ai::{
     OpportunityKey, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    prototype_place_entity, total_live_lot_quantity, BeliefConfidencePolicy, CommodityKind,
-    FrameState, HomeostaticNeeds, IntentionDispositionProfile, MetabolismProfile,
-    PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick, UtilityProfile,
-    WorkstationTag,
+    BeliefConfidencePolicy, CommodityKind, FrameState, HomeostaticNeeds,
+    IntentionDispositionProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
+    ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag, prototype_place_entity,
+    total_live_lot_quantity,
 };
 use worldwake_sim::{ActionTraceKind, SaveableRuntime};
 
@@ -184,7 +184,8 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
         &mut h.event_log,
         bob,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -377,7 +378,8 @@ fn run_exhausted_opportunity_switches_to_sibling_source(
         &mut h.event_log,
         agent,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -713,10 +715,10 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
         h.step_once();
 
         // Check for blocked intent memory.
-        if let Some(blocked) = h.world.get_component_blocked_intent_memory(agent) {
-            if !blocked.intents.is_empty() {
-                saw_blocker = true;
-            }
+        if let Some(blocked) = h.world.get_component_blocked_intent_memory(agent)
+            && !blocked.intents.is_empty()
+        {
+            saw_blocker = true;
         }
 
         // Harvest drops apple lots on the ground at the workstation.
@@ -1354,7 +1356,8 @@ fn golden_goal_switching_during_multi_leg_travel() {
         txn.set_component_perception_profile(
             agent,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 64,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -1703,7 +1706,8 @@ fn setup_multi_hop_travel_scenario(
     txn.set_component_perception_profile(
         agent,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 64,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1755,10 +1759,10 @@ fn observe_multi_hop_travel_step(
     }
 
     let current_place = h.world.effective_place(agent);
-    if let Some(place) = current_place {
-        if !observation.visited_places.contains(&place) {
-            observation.visited_places.push(place);
-        }
+    if let Some(place) = current_place
+        && !observation.visited_places.contains(&place)
+    {
+        observation.visited_places.push(place);
     }
     let origin = observation
         .visited_places
@@ -2042,7 +2046,8 @@ fn golden_utility_weight_diversity_in_need_selection() {
         txn.set_component_perception_profile(
             enterprise_driven,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),

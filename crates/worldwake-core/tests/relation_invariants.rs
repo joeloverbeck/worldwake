@@ -1,10 +1,10 @@
-use rand_chacha::rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use rand_chacha::rand_core::{RngCore, SeedableRng};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    test_utils::deterministic_seed, CauseRef, CommodityKind, Container, ControlSource, EntityId,
-    EventLog, EventTag, LoadUnits, Place, PlaceTag, Quantity, Tick, TickRange, Topology,
-    UniqueItemKind, VisibilitySpec, WitnessData, World, WorldError, WorldTxn,
+    CauseRef, CommodityKind, Container, ControlSource, EntityId, EventLog, EventTag, LoadUnits,
+    Place, PlaceTag, Quantity, Tick, TickRange, Topology, UniqueItemKind, VisibilitySpec,
+    WitnessData, World, WorldError, WorldTxn, test_utils::deterministic_seed,
 };
 
 const SEED_COUNT: u8 = 5;

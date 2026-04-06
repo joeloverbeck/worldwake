@@ -1,12 +1,12 @@
 use clap::Parser;
-use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 use std::error::Error;
 use worldwake_ai::AgentTickDriver;
 use worldwake_core::Name;
 use worldwake_sim::{
-    get_affordances, Affordance, PerAgentBeliefRuntime, PerAgentBeliefView, SimulationState,
-    SystemDispatchTable,
+    Affordance, PerAgentBeliefRuntime, PerAgentBeliefView, SimulationState, SystemDispatchTable,
+    get_affordances,
 };
 use worldwake_systems::ActionRegistries;
 
@@ -83,28 +83,22 @@ pub fn run_single_command(
     // in a fresh ReplState). Call get_affordances directly to avoid printing
     // the action list — the user only wants the `do` output.
     // Apply the same filters as handle_actions() to keep indices aligned.
-    if words.first().is_some_and(|w| w.eq_ignore_ascii_case("do")) {
-        if let Some(entity) = sim.controller_state().controlled_entity() {
-            let runtime =
-                PerAgentBeliefRuntime::new(sim.scheduler().active_actions(), &registries.defs);
-            let view =
-                PerAgentBeliefView::with_runtime_from_world(entity, sim.world(), runtime);
-            let mut affordances =
-                get_affordances(&view, entity, &registries.defs, &registries.handlers);
-            affordances.retain(|a| !a.bound_targets.contains(&entity));
-            affordances.retain(|a| {
-                registries
-                    .defs
-                    .get(a.def_id)
-                    .is_none_or(|def| {
-                        !crate::handlers::actions::HIDDEN_ACTIONS
-                            .contains(&def.name.as_str())
-                    })
-            });
-            affordances
-                .dedup_by(|a, b| a.def_id == b.def_id && a.bound_targets == b.bound_targets);
-            repl_state.last_affordances = affordances;
-        }
+    if words.first().is_some_and(|w| w.eq_ignore_ascii_case("do"))
+        && let Some(entity) = sim.controller_state().controlled_entity()
+    {
+        let runtime =
+            PerAgentBeliefRuntime::new(sim.scheduler().active_actions(), &registries.defs);
+        let view = PerAgentBeliefView::with_runtime_from_world(entity, sim.world(), runtime);
+        let mut affordances =
+            get_affordances(&view, entity, &registries.defs, &registries.handlers);
+        affordances.retain(|a| !a.bound_targets.contains(&entity));
+        affordances.retain(|a| {
+            registries.defs.get(a.def_id).is_none_or(|def| {
+                !crate::handlers::actions::HIDDEN_ACTIONS.contains(&def.name.as_str())
+            })
+        });
+        affordances.dedup_by(|a, b| a.def_id == b.def_id && a.bound_targets == b.bound_targets);
+        repl_state.last_affordances = affordances;
     }
 
     let parsed = match CommandParser::try_parse_from(words) {
@@ -198,8 +192,8 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
     use worldwake_core::{
-        hash_world, CauseRef, ControlSource, EntityId, EventLog, Place, Seed, Tick, Topology,
-        VisibilitySpec, WitnessData, WorldTxn,
+        CauseRef, ControlSource, EntityId, EventLog, Place, Seed, Tick, Topology, VisibilitySpec,
+        WitnessData, WorldTxn, hash_world,
     };
     use worldwake_sim::{
         ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,

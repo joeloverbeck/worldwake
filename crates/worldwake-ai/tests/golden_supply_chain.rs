@@ -23,17 +23,16 @@ use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::{
     AgentTickDriver, CandidateEvidenceExclusionReason, CandidateEvidenceKind, DecisionOutcome,
-    PlannerOpKind, ReasoningProfile, SelectedPlanReplacementKind, SelectedPlanSource,
+    PlannerOpKind, SelectedPlanReplacementKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    build_believed_entity_state, hash_event_log, hash_world, prototype_place_entity,
-    total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation, BeliefConfidencePolicy,
-    BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation, DemandObservationReason,
-    EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeeds, KnownRecipes,
-    MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource, PrototypePlace,
-    Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile, UtilityProfile,
-    WorkstationTag,
+    BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
+    DemandObservationReason, EpistemicDispositionProfile, ExecutionBudget, GoalKey, GoalKind,
+    HomeostaticNeeds, KnownRecipes, MerchandiseProfile, MetabolismProfile, PerceptionProfile,
+    PerceptionSource, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
+    TradeDispositionProfile, UtilityProfile, WorkstationTag, build_believed_entity_state,
+    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
+    total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::{ActionTraceDetail, ActionTraceKind, RecipeDefinition, RecipeRegistry};
 
@@ -63,7 +62,12 @@ fn create_home_facility(
 ) -> worldwake_core::EntityId {
     let mut txn = new_txn(&mut h.world, tick);
     let (facility, _stock_container, _display_container) = txn
-        .create_merchant_facility(place, owner, worldwake_core::LoadUnits(500), Some(worldwake_core::LoadUnits(300)))
+        .create_merchant_facility(
+            place,
+            owner,
+            worldwake_core::LoadUnits(500),
+            Some(worldwake_core::LoadUnits(300)),
+        )
         .unwrap();
     commit_txn(txn, &mut h.event_log);
     facility
@@ -128,7 +132,8 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
         &mut h.event_log,
         producer,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -187,7 +192,8 @@ fn run_merchant_restock_with_traces(seed: Seed) -> (StateHash, StateHash) {
         txn.set_component_perception_profile(
             merchant,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -374,13 +380,14 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         },
         KnownRecipes::with([harvest_firewood_recipe, bake_bread_recipe]),
     );
-    set_agent_reasoning_profile(
+    set_agent_cognitive_profile(
         &mut h.world,
         &mut h.event_log,
         merchant,
-        ReasoningProfile {
+        worldwake_core::CognitiveProfile {
             max_plan_depth: 12,
-            ..ReasoningProfile::default()
+            max_node_expansions: 1024,
+            ..worldwake_core::CognitiveProfile::default()
         },
     );
     {
@@ -388,7 +395,8 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         txn.set_component_perception_profile(
             merchant,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -635,7 +643,9 @@ fn run_merchant_restocks_via_prerequisite_aware_craft(seed: Seed) -> (StateHash,
         "merchant should travel before harvesting remote firewood; events={merchant_events:?}"
     );
     assert!(
-        travel_commits.iter().any(|commit| *commit > harvest_commit && *commit < craft_commit),
+        travel_commits
+            .iter()
+            .any(|commit| *commit > harvest_commit && *commit < craft_commit),
         "merchant should return home after harvesting and before crafting; events={merchant_events:?}"
     );
     assert!(
@@ -760,22 +770,28 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         },
         KnownRecipes::with([harvest_firewood_recipe, bake_bread_recipe]),
     );
-    set_agent_reasoning_profile(
+    set_agent_cognitive_profile(
         &mut h.world,
         &mut h.event_log,
         merchant,
-        ReasoningProfile {
+        worldwake_core::CognitiveProfile {
             max_plan_depth: 12,
-            max_node_expansions: 1024,
-            ..ReasoningProfile::default()
+            ..worldwake_core::CognitiveProfile::default()
         },
+    );
+    set_agent_execution_budget(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        ExecutionBudget::default(),
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
         txn.set_component_perception_profile(
             merchant,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -953,9 +969,11 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         Some(SelectedPlanSource::SearchSelection),
         "stale-belief scenario should start from a fresh search result"
     );
-    assert!(tick_zero_planning
-        .selection
-        .selected_goal_is(restock_bread_goal));
+    assert!(
+        tick_zero_planning
+            .selection
+            .selected_goal_is(restock_bread_goal)
+    );
     assert_eq!(
         selected_tick_zero_plan
             .next_step
@@ -986,14 +1004,16 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .candidates
         .evidence_for_opportunity(initial_selected_opportunity)
         .expect("initial stale branch should record typed candidate evidence provenance");
-    assert!(initial_candidate_trace
-        .contributors
-        .iter()
-        .any(|contributor| {
-            contributor.kind == CandidateEvidenceKind::ResourceSource
-                && contributor.entity == orchard_source
-                && contributor.place == ORCHARD_FARM
-        }));
+    assert!(
+        initial_candidate_trace
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == CandidateEvidenceKind::ResourceSource
+                    && contributor.entity == orchard_source
+                    && contributor.place == ORCHARD_FARM
+            })
+    );
 
     let fallback_replan_trace =
         trace_sink
@@ -1030,9 +1050,11 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .selected_plan
         .as_ref()
         .expect("fallback planning should select a bandit-camp plan");
-    assert!(replan_planning
-        .selection
-        .selected_goal_is(restock_bread_goal));
+    assert!(
+        replan_planning
+            .selection
+            .selected_goal_is(restock_bread_goal)
+    );
     let replacement = replan_planning
         .selection
         .plan_replacement
@@ -1069,14 +1091,16 @@ fn run_stale_prerequisite_belief_discovery_replan(seed: Seed) -> (StateHash, Sta
         .candidates
         .evidence_for_opportunity(fallback_selected_opportunity)
         .expect("fallback replan should record typed candidate evidence provenance");
-    assert!(fallback_candidate_trace
-        .contributors
-        .iter()
-        .any(|contributor| {
-            contributor.kind == CandidateEvidenceKind::ResourceSource
-                && contributor.entity == bandit_source
-                && contributor.place == bandit_camp
-        }));
+    assert!(
+        fallback_candidate_trace
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == CandidateEvidenceKind::ResourceSource
+                    && contributor.entity == bandit_source
+                    && contributor.place == bandit_camp
+            })
+    );
     assert!(fallback_candidate_trace.exclusions.iter().any(|exclusion| {
         exclusion.kind == CandidateEvidenceKind::ResourceSource
             && exclusion.entity == orchard_source
@@ -1210,15 +1234,21 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
             ..UtilityProfile::default()
         },
     );
-    set_agent_reasoning_profile(
+    set_agent_cognitive_profile(
         &mut h.world,
         &mut h.event_log,
         merchant,
-        ReasoningProfile {
+        worldwake_core::CognitiveProfile {
             max_plan_depth: 10,
             max_node_expansions: 1024,
-            ..ReasoningProfile::default()
+            ..worldwake_core::CognitiveProfile::default()
         },
+    );
+    set_agent_execution_budget(
+        &mut h.world,
+        &mut h.event_log,
+        merchant,
+        ExecutionBudget::default(),
     );
     let witness = seed_agent(
         &mut h.world,
@@ -1238,7 +1268,8 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         txn.set_component_perception_profile(
             merchant,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(875),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -1277,7 +1308,8 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         txn.set_component_perception_profile(
             witness,
             PerceptionProfile {
-                memory_capacity: 64,
+                entity_memory_capacity: 64,
+                entity_claim_capacity: 64,
                 memory_retention_ticks: 240,
                 observation_fidelity: pm(0),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -1427,9 +1459,11 @@ fn run_stale_prerequisite_ask_witness_chain(seed: Seed) -> (StateHash, StateHash
         Some(SelectedPlanSource::SearchSelection),
         "ask_witness scenario should start from a fresh search result"
     );
-    assert!(tick_zero_planning
-        .selection
-        .selected_goal_is(restock_apple_goal));
+    assert!(
+        tick_zero_planning
+            .selection
+            .selected_goal_is(restock_apple_goal)
+    );
     assert_eq!(
         selected_tick_zero_plan
             .next_step
@@ -1712,7 +1746,8 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
     );
 
     let perception_profile = PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -1821,20 +1856,20 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
             "authoritative apples should never increase during the full supply chain"
         );
 
-        merchant_left_home |=
-            h.world.is_in_transit(merchant) || h.world.effective_place(merchant) != Some(general_store);
+        merchant_left_home |= h.world.is_in_transit(merchant)
+            || h.world.effective_place(merchant) != Some(general_store);
         consumer_hunger_decreased |= h.agent_hunger(consumer) < initial_consumer_hunger;
-        consumer_trade_agreed |= h
-            .world
-            .get_component_demand_memory(consumer)
-            .is_some_and(|memory| {
-                memory.observations.iter().any(|obs| {
-                    obs.reason == DemandObservationReason::TradeAgreed
-                        && obs.commodity == CommodityKind::Apple
-                        && obs.quantity > Quantity(1)
-                        && obs.counterparty == Some(merchant)
-                })
-            });
+        consumer_trade_agreed |=
+            h.world
+                .get_component_demand_memory(consumer)
+                .is_some_and(|memory| {
+                    memory.observations.iter().any(|obs| {
+                        obs.reason == DemandObservationReason::TradeAgreed
+                            && obs.commodity == CommodityKind::Apple
+                            && obs.quantity > Quantity(1)
+                            && obs.counterparty == Some(merchant)
+                    })
+                });
 
         let consumer_events = h
             .action_trace_sink()
@@ -1848,11 +1883,10 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
             event.action_name == "harvest:Harvest Apples"
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
         });
-        merchant_returned_home_after_harvest |= merchant_harvested_apples
-            && h.world.effective_place(merchant) == Some(general_store);
+        merchant_returned_home_after_harvest |=
+            merchant_harvested_apples && h.world.effective_place(merchant) == Some(general_store);
         consumer_started_trade |= consumer_events.iter().any(|event| {
-            event.action_name == "trade"
-                && matches!(event.kind, ActionTraceKind::Started { .. })
+            event.action_name == "trade" && matches!(event.kind, ActionTraceKind::Started { .. })
         });
 
         if merchant_left_home
@@ -1893,7 +1927,10 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
     assert!(!h.agent_is_dead(merchant), "merchant must stay alive");
     assert!(!h.agent_is_dead(consumer), "consumer must stay alive");
 
-    let sink = h.driver.trace_sink().expect("decision tracing should be enabled");
+    let sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
     let consumer_selected_acquire = sink.traces_for(consumer).into_iter().any(|trace| {
         matches!(
             &trace.outcome,

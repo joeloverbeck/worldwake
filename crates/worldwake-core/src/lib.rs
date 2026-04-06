@@ -31,24 +31,28 @@ pub mod belief;
 pub mod blocked_intent;
 pub mod canonical;
 pub mod cause;
+pub mod cognitive_profile;
 pub mod combat;
 pub mod communication;
-pub mod contention;
 pub mod component_schema;
 pub mod component_tables;
 pub mod components;
 pub mod conservation;
+pub mod contention;
 pub mod control;
 pub mod crime;
 pub mod delta;
 pub mod drives;
 pub mod entity;
+pub mod entity_belief_claim;
 pub mod epistemic;
 pub mod error;
-pub mod experience;
 pub mod event_log;
 pub mod event_record;
 pub mod event_tag;
+pub mod evidence;
+pub mod execution_budget;
+pub mod experience;
 pub mod factions;
 pub mod goal;
 pub mod ids;
@@ -64,8 +68,8 @@ pub mod offices;
 pub mod patrol;
 pub mod production;
 pub mod pursuit;
-pub mod reasoning_profile;
 pub mod relations;
+pub mod rights;
 pub mod social_artifact;
 pub mod test_utils;
 pub mod topology;
@@ -85,39 +89,39 @@ pub use action_domain::ActionDomain;
 pub use allocator::EntityAllocator;
 pub use bandit_camp::{BanditCamp, BanditFactionPolicy};
 pub use belief::{
-    belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-    current_institutional_belief_topics, institutional_claim_same_memory_lane,
-    institutional_claim_subject_entity, institutional_knowledge_chain_len,
-    recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
-    social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
-    to_shared_belief_snapshot, AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey,
-    BeliefConfidencePolicy, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
-    BelievedContentionState, BelievedEntityState, HeardBeliefDisposition, HeardBeliefMemory,
-    MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
+    AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
+    BelievedActivity, BelievedArtifactState, BelievedBountyTerms, BelievedContentionState,
+    BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState, HeardBeliefDisposition,
+    HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
     RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
-    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey,
-    TellProfile, TellTopic, ToldBeliefMemory,
+    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile,
+    TellTopic, ToldBeliefMemory, belief_confidence, build_believed_entity_state,
+    build_observed_entity_snapshot, current_institutional_belief_topics,
+    institutional_claim_same_memory_lane, institutional_claim_subject_entity,
+    institutional_knowledge_chain_len, recipient_knowledge_status, share_equivalent,
+    social_observation_is_redundant_for_listener, social_observation_is_relayable,
+    tell_subject_is_directly_observable_by_listener, to_shared_belief_snapshot,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
 };
 pub use canonical::{
-    canonical_bytes, hash_bytes, hash_event_log, hash_serializable, hash_world, CanonicalError,
-    StateHash,
+    CanonicalError, StateHash, canonical_bytes, hash_bytes, hash_event_log, hash_serializable,
+    hash_world,
 };
 pub use cause::CauseRef;
+pub use cognitive_profile::CognitiveProfile;
 pub use combat::{CombatProfile, CombatStance, DeadAt};
-pub use communication::{classify_communication, CommunicationClass, CommunicationProfile};
-pub use contention::{
-    ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
-    ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter,
-    QueuedContentionIntent,
-};
+pub use communication::{CommunicationClass, CommunicationProfile, classify_communication};
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
 pub use conservation::{
     total_authoritative_commodity_quantity, total_live_lot_quantity,
     verify_authoritative_conservation, verify_live_lot_conservation,
+};
+pub use contention::{
+    ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
+    ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter, QueuedContentionIntent,
 };
 pub use control::ControlSource;
 pub use crime::{
@@ -130,15 +134,18 @@ pub use delta::{
 };
 pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
+pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBeliefClaim};
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
 pub use error::WorldError;
+pub use event_log::EventLog;
+pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
+pub use event_tag::EventTag;
+pub use evidence::{DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence};
+pub use execution_budget::ExecutionBudget;
 pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
     SourceReliability, danger_ratio_permille, failure_ratio_permille,
 };
-pub use event_log::EventLog;
-pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
-pub use event_tag::EventTag;
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
@@ -171,42 +178,42 @@ pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
 pub use patrol::{PatrolProfile, PatrolRoute};
-pub use pursuit::PursuitProfile;
-pub use reasoning_profile::ReasoningProfile;
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
 };
+pub use pursuit::PursuitProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
+pub use rights::{EffectiveRight, RightKind};
 pub use social_artifact::{
-    ArtifactHeader, ArtifactKind, ArtifactState, BountyTarget, BountyTerms, NoticeContent,
-    NoticeTopic, ProofRequirement, RewardSource,
+    ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactState, BountyTarget, BountyTerms,
+    NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
 };
 pub use topology::{
-    build_prototype_world, prototype_place_entity, Place, PlaceTag, PlaceTagSet, PrototypePlace,
-    Route, Topology, TravelEdge, OUTDOOR_RELIEF_TAGS,
+    OUTDOOR_RELIEF_TAGS, Place, PlaceTag, PlaceTagSet, PrototypePlace, Route, Topology, TravelEdge,
+    build_prototype_world, prototype_place_entity,
 };
 pub use trade::{
-    DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile,
-    SaleListing, StockAssignment, StockAssignmentKind, StockStoragePolicy,
-    SubstitutePreferences, TradeDispositionProfile, TradeRole,
+    DemandMemory, DemandObservation, DemandObservationReason, MerchandiseProfile, SaleListing,
+    StockAssignment, StockAssignmentKind, StockStoragePolicy, SubstitutePreferences,
+    TradeDispositionProfile, TradeRole,
 };
 pub use traits::{Component, RelationRecord};
 pub use utility_profile::UtilityProfile;
 pub use valuation::CommodityValuationProfile;
-pub use verification::{verify_completeness, VerificationError};
+pub use verification::{VerificationError, verify_completeness};
 pub use violation::{
     RecordedViolation, ViolationDispositionProfile, ViolationId, ViolationKind, ViolationMemory,
 };
 pub use visibility::VisibilitySpec;
 pub use witness::WitnessData;
+pub use world::World;
 pub use world::lifecycle::{
     ArchiveMutationSnapshot, ArchivePreparationAction, ArchivePreparationPlan,
     ArchivePreparationPolicy, ArchivePreparationReport, ArchiveResolution,
 };
-pub use world::World;
 pub use world_txn::WorldTxn;
 pub use wounds::{
-    is_incapacitated, is_wound_load_fatal, BodyPart, CombatWeaponRef, DeprivationKind, Wound,
-    WoundCause, WoundId, WoundList,
+    BodyPart, CombatWeaponRef, DeprivationKind, Wound, WoundCause, WoundId, WoundList,
+    is_incapacitated, is_wound_load_fatal,
 };

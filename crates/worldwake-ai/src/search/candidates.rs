@@ -1,8 +1,8 @@
 use crate::goal_model::{
-    grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
-    RootCandidateSynthesis,
+    RootCandidateSynthesis, grounded_goal_epistemic_subjects,
+    grounded_goal_matches_epistemic_barrier,
 };
-use crate::planner_ops::{planner_only_candidates, PlannerOpKind};
+use crate::planner_ops::{PlannerOpKind, planner_only_candidates};
 use crate::{
     GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
 };
@@ -11,8 +11,8 @@ use worldwake_core::{
     ActionDefId, BlockedIntentMemory, ContentionStatus, EntityId, GoalKind, Tick,
 };
 use worldwake_sim::{
-    get_affordances_for_defs, ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
-    QueueForFacilityUsePayload, RuntimeBeliefView,
+    ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
+    QueueForFacilityUsePayload, RuntimeBeliefView, get_affordances_for_defs,
 };
 
 use super::SearchNode;
@@ -602,11 +602,7 @@ pub(super) fn search_candidates_from_affordance(
         .filter(|action_id| {
             !require_current_affordability
                 || intended_action_is_currently_affordable(
-                    goal,
-                    state,
-                    registry,
-                    handlers,
-                    *action_id,
+                    goal, state, registry, handlers, *action_id,
                 )
         })
         .filter(|action_id| !state.has_actor_facility_grant(facility, *action_id))
@@ -629,9 +625,15 @@ fn intended_action_is_currently_affordable(
     intended_action: ActionDefId,
 ) -> bool {
     let allowed_defs = BTreeSet::from([intended_action]);
-    get_affordances_for_defs(state, state.snapshot().actor(), registry, handlers, &allowed_defs)
-        .into_iter()
-        .any(|affordance| affordance_matches_grounded_opportunity(goal, &affordance))
+    get_affordances_for_defs(
+        state,
+        state.snapshot().actor(),
+        registry,
+        handlers,
+        &allowed_defs,
+    )
+    .into_iter()
+    .any(|affordance| affordance_matches_grounded_opportunity(goal, &affordance))
 }
 
 fn queue_intended_actions_for(
@@ -667,8 +669,7 @@ fn queue_intended_actions_for(
                         def.payload.as_craft().and_then(|payload| {
                             (payload.required_workstation_tag == workstation_tag
                                 && payload.outputs.iter().any(|(output, quantity)| {
-                                    *output == commodity
-                                        && *quantity > worldwake_core::Quantity(0)
+                                    *output == commodity && *quantity > worldwake_core::Quantity(0)
                                 }))
                             .then_some(def.id)
                         })

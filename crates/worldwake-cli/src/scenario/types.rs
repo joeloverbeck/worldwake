@@ -7,14 +7,13 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    CarryCapacity, CombatProfile, CommodityValuationProfile, CommunicationProfile, ControlSource,
-    DriveThresholds, EpistemicDispositionProfile, ContentionDispositionProfile,
-    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-    MetabolismProfile, PatrolProfile, PerceptionProfile, PreferenceProfile,
-    PursuitProfile, Quantity, ReasoningProfile, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag,
-    items::CommodityKind, topology::PlaceTag,
+    CarryCapacity, CognitiveProfile, CombatProfile, CommodityValuationProfile,
+    CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
+    EpistemicDispositionProfile, ExecutionBudget, HomeostaticNeeds, IntentionDispositionProfile,
+    JusticeDispositionProfile, MetabolismProfile, PatrolProfile, PerceptionProfile,
+    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -73,7 +72,9 @@ pub struct AgentDef {
     #[serde(default)]
     pub tell_profile: Option<TellProfile>,
     #[serde(default)]
-    pub reasoning_profile: Option<ReasoningProfile>,
+    pub cognitive_profile: Option<CognitiveProfile>,
+    #[serde(default)]
+    pub execution_budget: Option<ExecutionBudget>,
     #[serde(default)]
     pub epistemic_disposition: Option<EpistemicDispositionProfile>,
     #[serde(default)]
@@ -247,6 +248,8 @@ mod tests {
                         social_weight: 200,
                         activity_awareness_weight: 200,
                         side_benefit_weight: 100,
+                        bounty_posting_weight: 0,
+                        notice_posting_weight: 0,
                         courage: 500,
                         care_weight: 200,
                     ),
@@ -263,7 +266,8 @@ mod tests {
                         market_presence_ticks: 30,
                     ),
                     perception_profile: (
-                        memory_capacity: 6,
+                        entity_memory_capacity: 6,
+                        entity_claim_capacity: 9,
                         memory_retention_ticks: 24,
                         observation_fidelity: 900,
                         confidence_policy: (
@@ -338,6 +342,14 @@ mod tests {
             bob.utility_profile
                 .as_ref()
                 .unwrap()
+                .bounty_posting_weight
+                .value(),
+            0
+        );
+        assert_eq!(
+            bob.utility_profile
+                .as_ref()
+                .unwrap()
                 .side_benefit_weight
                 .value(),
             100
@@ -351,7 +363,9 @@ mod tests {
         assert_eq!(merch.home_facility, Some("Town".to_string()));
         assert!(bob.trade_disposition.is_some());
         assert!(bob.perception_profile.is_some());
-        assert_eq!(bob.perception_profile.unwrap().memory_capacity, 6);
+        let perception = bob.perception_profile.unwrap();
+        assert_eq!(perception.entity_memory_capacity, 6);
+        assert_eq!(perception.entity_claim_capacity, 9);
         assert!(bob.drive_thresholds.is_some());
         assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
         assert!(bob.theft_disposition.is_some());
@@ -399,7 +413,8 @@ mod tests {
         assert!(agent.trade_disposition.is_none());
         assert!(agent.perception_profile.is_none());
         assert!(agent.tell_profile.is_none());
-        assert!(agent.reasoning_profile.is_none());
+        assert!(agent.cognitive_profile.is_none());
+        assert!(agent.execution_budget.is_none());
         assert!(agent.epistemic_disposition.is_none());
         assert!(agent.intention_disposition.is_none());
         assert!(agent.communication_profile.is_none());

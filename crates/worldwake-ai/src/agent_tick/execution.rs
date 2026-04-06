@@ -1,10 +1,10 @@
 use super::active_action::handle_current_step_failure;
 use super::observation::update_runtime_observation_snapshot;
-use super::{handle_recoverable_travel_step_blockage, runtime_belief_view, AgentTickContext};
+use super::{AgentTickContext, handle_recoverable_travel_step_blockage, runtime_belief_view};
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, EntityId, ContentionIntents, Tick,
-    VisibilitySpec, WitnessData, WorldTxn,
+    ActiveGoal, BlockedIntentMemory, CauseRef, ContentionIntents, EntityId, Tick, VisibilitySpec,
+    WitnessData, WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
 
@@ -40,7 +40,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             agent,
             step,
             tick,
-            ctx.reasoning,
+            ctx.cognitive,
         );
         *jc = updated_jc;
         if handled {
@@ -75,7 +75,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             agent,
             step,
             tick,
-            ctx.reasoning,
+            ctx.cognitive,
         );
         *jc = updated_jc;
         if handled {

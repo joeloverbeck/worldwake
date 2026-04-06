@@ -6,14 +6,14 @@
 use crate::{
     ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind,
     CommodityPurpose, CommodityValuationProfile, ContentionDispositionProfile, DemandMemory,
-    DemandObservation, DemandObservationReason, EdgeExperience, EntityId, GoalKey,
-    GoalKind, MerchandiseProfile, PreferenceProfile, Permille, Quantity, ReliabilityRecord,
-    RouteExperience, Seed, SourceKey, SourceReliability, StockAssignment, StockAssignmentKind,
-    StockStoragePolicy, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
-    TravelEdgeId, UtilityProfile,
+    DemandObservation, DemandObservationReason, EdgeExperience, EntityId, GoalKey, GoalKind,
+    MerchandiseProfile, Permille, PreferenceProfile, Quantity, ReliabilityRecord, RouteExperience,
+    Seed, SourceKey, SourceReliability, StockAssignment, StockAssignmentKind, StockStoragePolicy,
+    SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile, TravelEdgeId,
+    UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use std::num::{NonZeroU32, NonZeroU8};
+use std::num::{NonZeroU8, NonZeroU32};
 
 /// Returns a fixed, well-known seed for deterministic test scenarios.
 pub fn deterministic_seed() -> Seed {
@@ -102,6 +102,8 @@ pub fn sample_utility_profile() -> UtilityProfile {
         social_weight: Permille::new(200).unwrap(),
         activity_awareness_weight: Permille::new(250).unwrap(),
         side_benefit_weight: Permille::new(100).unwrap(),
+        bounty_posting_weight: Permille::new(0).unwrap(),
+        notice_posting_weight: Permille::new(0).unwrap(),
         courage: Permille::new(350).unwrap(),
         care_weight: Permille::new(250).unwrap(),
     }

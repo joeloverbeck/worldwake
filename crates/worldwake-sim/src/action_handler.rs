@@ -447,22 +447,21 @@ impl AbortReason {
 mod tests {
     use super::{
         AbortReason, ActionAbortRequestReason, ActionError, ActionHandler, ActionProgress,
-        CommitOutcome, ExternalAbortReason, InterruptReason, Materialization,
-        MaterializationTag, PayloadEntityRole, SelfTargetActionKind,
+        CommitOutcome, ExternalAbortReason, InterruptReason, Materialization, MaterializationTag,
+        PayloadEntityRole, SelfTargetActionKind,
     };
     use crate::{
         ActionDef, ActionDuration, ActionExecutionContext, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint,
-        DeterministicRng, DurationExpr, Interruptibility, Precondition, RecipeRegistry,
-        ReservationReq, TargetSpec,
+        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Constraint, DeterministicRng,
+        DurationExpr, Interruptibility, Precondition, RecipeRegistry, ReservationReq, TargetSpec,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource,
-        EntityId, EventTag, ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, EntityId, EventTag,
+        ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
     };
 
     fn sample_instance() -> ActionInstance {
@@ -742,8 +741,7 @@ mod tests {
         );
 
         let outcome =
-            (handler.on_commit)(&def, &instance, &context, &event_log, &mut rng, &mut txn)
-                .unwrap();
+            (handler.on_commit)(&def, &instance, &context, &event_log, &mut rng, &mut txn).unwrap();
 
         let after = txn.query_agent_data().count();
         assert_eq!(after, before + 1);

@@ -1,7 +1,8 @@
 use crate::{
-    classify_frame_plan_relation, frame_switch_policy::compare_relation_aware_goal_switch,
-    goal_switching::GoalSwitchKind, side_benefit::build_plan_value, AgentDecisionRuntime,
-    FramePlanRelation, GoalKey, GoalPriorityClass, PlanValue, PlannedPlan, RankedGoal,
+    AgentDecisionRuntime, FramePlanRelation, GoalKey, GoalPriorityClass, PlanValue, PlannedPlan,
+    RankedGoal, classify_frame_plan_relation,
+    frame_switch_policy::compare_relation_aware_goal_switch, goal_switching::GoalSwitchKind,
+    side_benefit::build_plan_value,
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -132,7 +133,7 @@ fn compare_ranked_plans(
 
 #[cfg(test)]
 mod tests {
-    use super::{select_best_plan, SelectionCandidatePlan, SelectionPolicy};
+    use super::{SelectionCandidatePlan, SelectionPolicy, select_best_plan};
     use crate::{
         AgentDecisionRuntime, CommodityPurpose, GoalKey, GoalPriorityClass, GroundedGoal,
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
@@ -584,7 +585,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(selected.goal, high_goal);
-        assert_ne!(selected.goal, GoalKey::from(worldwake_core::GoalKind::Patrol { place: orchard }));
+        assert_ne!(
+            selected.goal,
+            GoalKey::from(worldwake_core::GoalKind::Patrol { place: orchard })
+        );
     }
 
     #[test]

@@ -28,7 +28,7 @@ impl ActionDuration {
 #[cfg(test)]
 mod tests {
     use super::ActionDuration;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     fn assert_traits<T: Copy + Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
 

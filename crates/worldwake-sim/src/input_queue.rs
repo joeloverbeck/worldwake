@@ -110,17 +110,17 @@ impl InputQueue {
 
         let mut previous: Option<&InputEvent> = None;
         for input in inputs {
-            if let Some(previous_input) = previous {
-                if input.sequence_no <= previous_input.sequence_no {
-                    self.events_by_tick.clear();
-                    self.next_sequence_no = 0;
-                    return Err(InputQueueError::NonMonotonicSequence {
-                        previous_tick: previous_input.scheduled_tick,
-                        previous_sequence_no: previous_input.sequence_no,
-                        attempted_tick: input.scheduled_tick,
-                        attempted_sequence_no: input.sequence_no,
-                    });
-                }
+            if let Some(previous_input) = previous
+                && input.sequence_no <= previous_input.sequence_no
+            {
+                self.events_by_tick.clear();
+                self.next_sequence_no = 0;
+                return Err(InputQueueError::NonMonotonicSequence {
+                    previous_tick: previous_input.scheduled_tick,
+                    previous_sequence_no: previous_input.sequence_no,
+                    attempted_tick: input.scheduled_tick,
+                    attempted_sequence_no: input.sequence_no,
+                });
             }
 
             self.events_by_tick

@@ -4,9 +4,7 @@ use worldwake_core::{
     SocialObservationDetail, Tick, ViolationKind, ViolationMemory, VisibilitySpec, WitnessData,
     WorldTxn,
 };
-use worldwake_sim::{
-    ActionInstance, ActionInstanceId, SystemError, SystemExecutionContext,
-};
+use worldwake_sim::{ActionInstance, ActionInstanceId, SystemError, SystemExecutionContext};
 
 pub fn patrol_route_adaptation_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
     let SystemExecutionContext {
@@ -70,7 +68,9 @@ fn has_active_action(
     active_actions: &BTreeMap<ActionInstanceId, ActionInstance>,
     agent: EntityId,
 ) -> bool {
-    active_actions.values().any(|instance| instance.actor == agent)
+    active_actions
+        .values()
+        .any(|instance| instance.actor == agent)
 }
 
 fn adapt_patrol_route(
@@ -106,7 +106,11 @@ fn adapt_patrol_route(
         }
     }
 
-    let existing_places = route.assigned_places.iter().copied().collect::<BTreeSet<_>>();
+    let existing_places = route
+        .assigned_places
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
     let mut appended_new = active_places
         .iter()
         .filter_map(|(place, observed_tick)| {
@@ -147,10 +151,7 @@ fn collect_active_patrol_places(
             let ViolationKind::SuspectedTheft { theft, .. } = &record.kind else {
                 continue;
             };
-            let freshness_window = record
-                .expires_tick
-                .0
-                .saturating_sub(record.observed_tick.0);
+            let freshness_window = record.expires_tick.0.saturating_sub(record.observed_tick.0);
             if within_route_reactive_window(
                 current_tick,
                 record.observed_tick,
@@ -224,12 +225,12 @@ mod tests {
     use crate::dispatch_table;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, ActionDefId, AgentBeliefStore,
-        BeliefConfidencePolicy, CauseRef, CommodityKind, ControlSource, EventLog, PatrolProfile,
-        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
-        RecordedViolation, Seed, SocialObservation, SocialObservationDetail, TheftFacts, Tick,
-        ViolationId, ViolationKind, ViolationMemory, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, CauseRef, CommodityKind,
+        ControlSource, EventLog, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
+        Permille, PrototypePlace, Quantity, RecordedViolation, Seed, SocialObservation,
+        SocialObservationDetail, TheftFacts, Tick, ViolationId, ViolationKind, ViolationMemory,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
@@ -280,7 +281,8 @@ mod tests {
 
     fn perception_profile(retention: u64) -> PerceptionProfile {
         PerceptionProfile {
-            memory_capacity: 12,
+            entity_memory_capacity: 12,
+            entity_claim_capacity: 12,
             memory_retention_ticks: retention,
             observation_fidelity: pm(1000),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -316,7 +318,8 @@ mod tests {
         txn.set_component_violation_memory(guard, ViolationMemory::default())
             .unwrap();
         if let Some(perception) = perception {
-            txn.set_component_perception_profile(guard, perception).unwrap();
+            txn.set_component_perception_profile(guard, perception)
+                .unwrap();
         }
         commit_txn(txn);
         guard
@@ -328,7 +331,10 @@ mod tests {
         place: worldwake_core::EntityId,
         observed_tick: u64,
     ) {
-        let mut store = world.get_component_agent_belief_store(guard).unwrap().clone();
+        let mut store = world
+            .get_component_agent_belief_store(guard)
+            .unwrap()
+            .clone();
         store.record_social_observation(SocialObservation {
             detail: SocialObservationDetail::SuspectedTheft {
                 theft: theft(place),
@@ -657,14 +663,13 @@ mod tests {
         let mut log = EventLog::new();
         let mut rng = test_rng();
 
-        systems
-            .get(SystemId::Patrol)(system_context(
-                &mut world,
-                &mut log,
-                &mut rng,
-                &BTreeMap::new(),
-                &defs,
-            ))
-            .unwrap();
+        systems.get(SystemId::Patrol)(system_context(
+            &mut world,
+            &mut log,
+            &mut rng,
+            &BTreeMap::new(),
+            &defs,
+        ))
+        .unwrap();
     }
 }

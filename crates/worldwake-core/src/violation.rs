@@ -6,11 +6,11 @@
 //! same already-noticed mismatch. [`ViolationDispositionProfile`] governs
 //! per-agent investigation behavior (P2, P20).
 
+use crate::TheftFacts;
 use crate::ids::{EntityId, Tick};
 use crate::items::CommodityKind;
 use crate::numerics::Permille;
 use crate::traits::Component;
-use crate::TheftFacts;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 

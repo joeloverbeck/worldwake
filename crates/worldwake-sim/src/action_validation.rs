@@ -1,4 +1,4 @@
-use worldwake_core::{is_incapacitated, ControlSource, EntityId, EntityKind, World, WorldTxn};
+use worldwake_core::{ControlSource, EntityId, EntityKind, World, WorldTxn, is_incapacitated};
 
 use crate::{ActionDef, ActionError, Constraint, ConsumableEffect, Precondition};
 
@@ -186,10 +186,10 @@ mod tests {
     };
     use crate::{Constraint, ConsumableEffect, Precondition};
     use worldwake_core::{
-        build_prototype_world, BodyPart, CauseRef, CommodityKind, ControlSource, EntityKind,
-        EventLog, Permille, Quantity, RecipeId, ResourceSource, Tick, UniqueItemKind,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-        WoundCause, WoundId, WoundList,
+        BodyPart, CauseRef, CommodityKind, ControlSource, EntityKind, EventLog, Permille, Quantity,
+        RecipeId, ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        build_prototype_world,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {

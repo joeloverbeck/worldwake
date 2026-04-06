@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    is_incapacitated, ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BelievedEntityState,
-    BodyCostPerTick, EntityId, EntityKind, EventTag, PerceptionSource, VisibilitySpec, World,
-    WorldTxn,
+    ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BelievedEntityState, BodyCostPerTick,
+    EntityId, EntityKind, EventTag, PerceptionSource, VisibilitySpec, World, WorldTxn,
+    is_incapacitated,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -384,13 +384,13 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, BodyPart, CauseRef, CombatProfile,
-        CombatWeaponRef, ControlSource, DeadAt, EpistemicDispositionProfile, EventLog, Permille,
-        Seed, Tick, WitnessData, Wound, WoundCause, WoundId, WoundList,
+        BodyPart, CauseRef, CombatProfile, CombatWeaponRef, ControlSource, DeadAt,
+        EpistemicDispositionProfile, EventLog, Permille, Seed, Tick, WitnessData, Wound,
+        WoundCause, WoundId, WoundList, build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
-        get_affordances, start_action, tick_action, ActionExecutionAuthority,
-        ActionInstanceId, Affordance, PerAgentBeliefView, TickOutcome,
+        ActionExecutionAuthority, ActionInstanceId, Affordance, PerAgentBeliefView, TickOutcome,
+        get_affordances, start_action, tick_action,
     };
 
     fn nz(value: u32) -> NonZeroU32 {
@@ -536,7 +536,10 @@ mod tests {
                 rng: &mut rng,
             },
             &mut next_instance_id,
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(start_tick)),
+            worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                Tick(start_tick),
+            ),
         )
         .unwrap();
 
@@ -551,7 +554,10 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap();
             if tick == commit_tick {
@@ -862,7 +868,10 @@ mod tests {
                     active_actions: &mut active_actions,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3)
+                ),
             )
             .unwrap(),
             TickOutcome::Continuing

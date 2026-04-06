@@ -1,9 +1,7 @@
-use crate::{
-    authoritative_target, AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind,
-};
+use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact, CommodityKind,
-    EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, ReasoningProfile, Tick,
+    BlockedIntent, BlockedIntentMemory, BlockerDiagnostic, BlockerKey, BlockingFact,
+    CognitiveProfile, CommodityKind, EntityId, GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -31,7 +29,7 @@ pub fn handle_plan_failure(
     runtime: &mut AgentDecisionRuntime,
     jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
-    reasoning: &ReasoningProfile,
+    cognitive: &CognitiveProfile,
 ) {
     runtime.current_plan = None;
     if jc.is_some() {
@@ -48,7 +46,7 @@ pub fn handle_plan_failure(
         context.execution_failure,
     );
     let expires_tick =
-        context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, reasoning));
+        context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, cognitive));
 
     let blocker_key = BlockerKey {
         goal_key: context.goal_key,
@@ -151,7 +149,9 @@ fn derive_blocking_fact(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
-        | PlannerOpKind::ClaimBounty => {}
+        | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => {}
     }
 
     if danger_too_high(view, agent) {
@@ -306,15 +306,13 @@ fn classify_production_failure(
         .payload_override
         .as_ref()
         .and_then(ActionPayload::as_harvest)
-    {
-        if let Some(missing_tool) = payload
+        && let Some(missing_tool) = payload
             .required_tool_kinds
             .iter()
             .copied()
             .find(|tool| view.unique_item_count(agent, *tool) == 0)
-        {
-            return Some(BlockingFact::MissingTool(missing_tool));
-        }
+    {
+        return Some(BlockingFact::MissingTool(missing_tool));
     }
 
     if let Some(payload) = step
@@ -399,7 +397,9 @@ fn classify_input_failure(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
-        | PlannerOpKind::ClaimBounty => None,
+        | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))
@@ -426,7 +426,9 @@ fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep
         | PlannerOpKind::Bury
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
-        | PlannerOpKind::ClaimBounty => view.entity_kind(target).is_none(),
+        | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => view.entity_kind(target).is_none(),
         PlannerOpKind::Attack | PlannerOpKind::Defend => {
             if view.entity_kind(target).is_none() || view.is_dead(target) {
                 return true;
@@ -701,7 +703,9 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Relieve
         | PlannerOpKind::Wash
         | PlannerOpKind::EstablishCamp
-        | PlannerOpKind::Investigate => None,
+        | PlannerOpKind::Investigate
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => None,
         PlannerOpKind::Bury
         | PlannerOpKind::Consume
         | PlannerOpKind::QueueForFacilityUse
@@ -716,7 +720,9 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Accuse
         | PlannerOpKind::Fine
         | PlannerOpKind::Exile
-        | PlannerOpKind::ClaimBounty => step.targets.first().copied().and_then(authoritative_target),
+        | PlannerOpKind::ClaimBounty => {
+            step.targets.first().copied().and_then(authoritative_target)
+        }
         PlannerOpKind::Bribe => step
             .payload_override
             .as_ref()
@@ -791,18 +797,20 @@ fn related_place(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
-        | PlannerOpKind::ClaimBounty => view.effective_place(agent),
+        | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice => view.effective_place(agent),
     }
 }
 
-fn blocking_fact_ttl(fact: BlockingFact, reasoning: &ReasoningProfile) -> u32 {
+fn blocking_fact_ttl(fact: BlockingFact, cognitive: &CognitiveProfile) -> u32 {
     match fact {
         BlockingFact::SellerOutOfStock
         | BlockingFact::WorkstationBusy
         | BlockingFact::ReservationConflict
         | BlockingFact::ExclusiveFacilityUnavailable
-        | BlockingFact::TargetGone => reasoning.transient_block_ticks,
-        BlockingFact::Unknown => reasoning.unknown_block_ticks,
+        | BlockingFact::TargetGone => cognitive.transient_block_ticks,
+        BlockingFact::Unknown => cognitive.unknown_block_ticks,
         BlockingFact::NoKnownPath
         | BlockingFact::NoKnownSeller
         | BlockingFact::TooExpensive
@@ -813,29 +821,29 @@ fn blocking_fact_ttl(fact: BlockingFact, reasoning: &ReasoningProfile) -> u32 {
         | BlockingFact::CombatTooRisky
         | BlockingFact::PatienceExhausted
         | BlockingFact::AssumptionFailed
-        | BlockingFact::NoBuyer => reasoning.structural_block_ticks,
+        | BlockingFact::NoBuyer => cognitive.structural_block_ticks,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        blocking_fact_ttl, clear_resolved_blockers, derive_blocking_fact, handle_plan_failure,
-        ExecutionFailure, PlanFailureContext,
+        ExecutionFailure, PlanFailureContext, blocking_fact_ttl, clear_resolved_blockers,
+        derive_blocking_fact, handle_plan_failure,
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
-        PlannerOpKind, ReasoningProfile, PlanningEntityRef,
+        PlannerOpKind, PlanningEntityRef, ProfileFixture,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
+        CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        CommodityPurpose, DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState,
+        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -1028,11 +1036,7 @@ mod tests {
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
         }
-        fn listed_sale_lots_at(
-            &self,
-            place: EntityId,
-            commodity: CommodityKind,
-        ) -> Vec<EntityId> {
+        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
             self.listed_lots
                 .get(&(place, commodity))
                 .cloned()
@@ -1092,6 +1096,21 @@ mod tests {
             _payload: &ActionPayload,
         ) -> Option<ActionDuration> {
             Some(ActionDuration::new(1))
+        }
+    }
+
+    fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
+        CognitiveProfile {
+            max_candidates_to_plan: reasoning.max_candidates_to_plan,
+            max_plan_depth: reasoning.max_plan_depth,
+            snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
+            max_node_expansions: reasoning.max_node_expansions,
+            switch_margin: reasoning.switch_margin,
+            transient_block_ticks: reasoning.transient_block_ticks,
+            unknown_block_ticks: reasoning.unknown_block_ticks,
+            structural_block_ticks: reasoning.structural_block_ticks,
+            initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
+            max_cooldown_ticks: reasoning.max_cooldown_ticks,
         }
     }
 
@@ -1291,7 +1310,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
-            &ReasoningProfile::default(),
+            &cognitive(&ProfileFixture::default()),
         );
 
         assert_eq!(runtime.current_plan, None);
@@ -1305,7 +1324,7 @@ mod tests {
         assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(1)));
         assert_eq!(
             intent.expires_tick,
-            Tick(20 + u64::from(ReasoningProfile::default().transient_block_ticks))
+            Tick(20 + u64::from(ProfileFixture::default().transient_block_ticks))
         );
     }
 
@@ -1544,7 +1563,7 @@ mod tests {
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
         let mut blocked = BlockedIntentMemory::default();
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
 
         handle_plan_failure(
             &PlanFailureContext {
@@ -1558,7 +1577,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
-            &budget,
+            &cognitive(&budget),
         );
 
         assert_eq!(runtime.current_plan, None);
@@ -1630,33 +1649,33 @@ mod tests {
 
     #[test]
     fn blocking_fact_ttl_uses_budget_classification() {
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
 
         assert_eq!(
-            blocking_fact_ttl(BlockingFact::SellerOutOfStock, &budget),
+            blocking_fact_ttl(BlockingFact::SellerOutOfStock, &cognitive(&budget)),
             budget.transient_block_ticks
         );
         assert_eq!(
-            blocking_fact_ttl(BlockingFact::NoKnownSeller, &budget),
+            blocking_fact_ttl(BlockingFact::NoKnownSeller, &cognitive(&budget)),
             budget.structural_block_ticks
         );
         assert_eq!(
-            blocking_fact_ttl(BlockingFact::Unknown, &budget),
+            blocking_fact_ttl(BlockingFact::Unknown, &cognitive(&budget)),
             budget.unknown_block_ticks
         );
     }
 
     #[test]
     fn unknown_blocker_uses_dedicated_ttl() {
-        let budget = ReasoningProfile::default();
-        let ttl = blocking_fact_ttl(BlockingFact::Unknown, &budget);
+        let budget = ProfileFixture::default();
+        let ttl = blocking_fact_ttl(BlockingFact::Unknown, &cognitive(&budget));
         assert_eq!(ttl, 5);
         assert_ne!(ttl, budget.transient_block_ticks);
     }
 
     #[test]
     fn transient_blockers_unchanged_ttl() {
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
         let transient_facts = [
             BlockingFact::SellerOutOfStock,
             BlockingFact::WorkstationBusy,
@@ -1666,7 +1685,7 @@ mod tests {
         ];
         for fact in transient_facts {
             assert_eq!(
-                blocking_fact_ttl(fact, &budget),
+                blocking_fact_ttl(fact, &cognitive(&budget)),
                 20,
                 "{fact:?} should still use transient_block_ticks (20)"
             );
@@ -1695,7 +1714,7 @@ mod tests {
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
         let mut blocked = BlockedIntentMemory::default();
-        let budget = ReasoningProfile::default();
+        let budget = ProfileFixture::default();
 
         handle_plan_failure(
             &PlanFailureContext {
@@ -1709,7 +1728,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
-            &budget,
+            &cognitive(&budget),
         );
 
         let intent = blocked.intents.values().next().unwrap();
@@ -1841,6 +1860,10 @@ mod tests {
         // The blocker should NOT auto-resolve even though the target entity
         // still exists — pursuit TargetGone relies on TTL expiry.
         clear_resolved_blockers(&view, agent, &mut blocked, Tick(10));
-        assert_eq!(blocked.intents.len(), 1, "pursuit TargetGone blocker should not auto-resolve");
+        assert_eq!(
+            blocked.intents.len(),
+            1,
+            "pursuit TargetGone blocker should not auto-resolve"
+        );
     }
 }

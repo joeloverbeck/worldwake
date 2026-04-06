@@ -1,54 +1,55 @@
 use super::candidates::abandon_expired_facility_queues_with_limit;
 use super::execution::resolve_step_targets;
 use super::observation::{
-    facility_queue_patience_exhausted, refresh_runtime_for_read_phase,
-    update_runtime_observation_snapshot, ReadPhaseContext,
+    ReadPhaseContext, facility_queue_patience_exhausted, refresh_runtime_for_read_phase,
+    update_runtime_observation_snapshot,
 };
 use super::planning::{
     determine_selected_plan_source, plan_and_validate_next_step, summarize_plan_replacement,
 };
 use super::{
-    advance_completed_step, apply_step_materialization_bindings, committed_action_for_step,
-    effective_goal_switch_margin, handle_recoverable_travel_step_blockage, persist_blocked_memory,
-    plan_and_validate_next_step_traced, update_frame_for_adopted_plan, AgentTickDriver,
+    AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
+    committed_action_for_step, effective_goal_switch_margin,
+    handle_recoverable_travel_step_blockage, persist_blocked_memory,
+    plan_and_validate_next_step_traced, update_frame_for_adopted_plan,
 };
+use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
-use crate::ReasoningProfile;
 use crate::{
-    build_semantics_table, AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
+    AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
     ExhaustionInvalidationCondition, ExpectedMaterialization, FrameSwitchMarginSource, GoalKey,
     GoalKind, GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
     PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
-    RankedGoalProvenance, SelectedPlanReplacementKind,
+    RankedGoalProvenance, SelectedPlanReplacementKind, build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
-    build_believed_entity_state, build_prototype_world, ActionDefId, BanditFactionPolicy,
-    BeliefConfidencePolicy, BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory,
-    BlockerKey, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CommodityKind,
-    ControlSource, DeadAt, DemandMemory, DemandObservation, DemandObservationReason,
-    DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog, EventPayload,
-    ContentionPolicy, ContentionIntents, ContentionQueue, FrameState,
-    ContentionGrant, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
-    PatrolRoute,
-    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
-    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
-    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    ActionDefId, BanditFactionPolicy, BeliefConfidencePolicy, BelievedInstitutionalClaim,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart,
+    CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents,
+    ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
+    DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
+    EventPayload, ExecutionBudget, FrameState, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain,
+    IntentionFrame, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
+    PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place,
+    Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed,
+    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
+    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    WoundList, build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
-    step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
+    ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
     AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState, DeterministicRng,
     DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView, RecipeDefinition,
     RecipeRegistry, RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SystemDispatchTable,
     SystemExecutionContext, SystemId, SystemManifest, TickStepServices, TransportActionPayload,
+    step_tick,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -83,6 +84,28 @@ fn patrol_profile(base_dwell_ticks: u32, vigilance: u16, motive: u16) -> PatrolP
         vigilance: Permille::new(vigilance).unwrap(),
         route_adaptation_sensitivity: Permille::new(1000).unwrap(),
         patrol_motive_weight: Permille::new(motive).unwrap(),
+    }
+}
+
+fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
+    CognitiveProfile {
+        max_candidates_to_plan: reasoning.max_candidates_to_plan,
+        max_plan_depth: reasoning.max_plan_depth,
+        snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
+        max_node_expansions: reasoning.max_node_expansions,
+        switch_margin: reasoning.switch_margin,
+        transient_block_ticks: reasoning.transient_block_ticks,
+        unknown_block_ticks: reasoning.unknown_block_ticks,
+        structural_block_ticks: reasoning.structural_block_ticks,
+        initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
+        max_cooldown_ticks: reasoning.max_cooldown_ticks,
+    }
+}
+
+fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
+    ExecutionBudget {
+        beam_width: reasoning.beam_width,
+        max_prerequisite_locations: reasoning.max_prerequisite_locations,
     }
 }
 
@@ -184,10 +207,12 @@ impl Harness {
         self.driver.runtime_by_agent.get(&self.actor)
     }
 
-    fn set_reasoning_profile(&mut self, agent: EntityId, reasoning: ReasoningProfile) {
+    fn set_profile_fixture(&mut self, agent: EntityId, profile: ProfileFixture) {
         let mut txn = new_txn(&mut self.world, 0);
-        txn.set_component_reasoning_profile(agent, reasoning)
-            .expect("test harness should keep reasoning profiles writable");
+        txn.set_component_cognitive_profile(agent, cognitive(&profile))
+            .expect("test harness should keep cognitive profiles writable");
+        txn.set_component_execution_budget(agent, execution_budget(&profile))
+            .expect("test harness should keep execution budgets writable");
         commit_txn(txn);
     }
 }
@@ -792,11 +817,11 @@ fn cargo_harness(possessed: bool) -> (Harness, EntityId, EntityId, EntityId) {
         driver: AgentTickDriver::new(),
         actor: actor.0,
     };
-    harness.set_reasoning_profile(
+    harness.set_profile_fixture(
         actor.0,
-        ReasoningProfile {
+        ProfileFixture {
             max_plan_depth: 3,
-            ..ReasoningProfile::default()
+            ..ProfileFixture::default()
         },
     );
 
@@ -957,7 +982,8 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, Entit
         txn.set_component_perception_profile(
             actor,
             PerceptionProfile {
-                memory_capacity: 12,
+                entity_memory_capacity: 12,
+                entity_claim_capacity: 12,
                 memory_retention_ticks: 64,
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -1063,7 +1089,8 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
         txn.set_component_perception_profile(
             actor,
             PerceptionProfile {
-                memory_capacity: 12,
+                entity_memory_capacity: 12,
+                entity_claim_capacity: 12,
                 memory_retention_ticks: 4,
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -1146,8 +1173,8 @@ fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick,
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     )
@@ -1354,8 +1381,7 @@ fn set_local_queue_state(
             .enqueue(actor, ActionDefId(77), Tick(queued_at), None)
             .unwrap();
     }
-    txn.set_component_contention_queue(facility, queue)
-        .unwrap();
+    txn.set_component_contention_queue(facility, queue).unwrap();
     commit_txn(txn);
     sync_all_beliefs(world, actor, Tick(queued_at.max(1)));
 }
@@ -1368,8 +1394,7 @@ fn clear_local_queue_state(world: &mut World, actor: EntityId, facility: EntityI
         .unwrap_or_default();
     queue.waiting.clear();
     queue.granted = None;
-    txn.set_component_contention_queue(facility, queue)
-        .unwrap();
+    txn.set_component_contention_queue(facility, queue).unwrap();
     commit_txn(txn);
     sync_all_beliefs(world, actor, Tick(tick.max(1)));
 }
@@ -1643,11 +1668,7 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
         Vec::new()
     }
-    fn listed_sale_lots_at(
-        &self,
-        _place: EntityId,
-        _commodity: CommodityKind,
-    ) -> Vec<EntityId> {
+    fn listed_sale_lots_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
         Vec::new()
     }
     fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
@@ -1708,7 +1729,7 @@ fn effective_goal_switch_margin_uses_route_margin_for_any_intention_frame() {
         commit_txn(txn);
         actor
     };
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let view = PerAgentBeliefView::from_world(actor, &world);
     let jc_active = Some(IntentionFrame {
         goal: GoalKey::from(GoalKind::Sleep),
@@ -1722,17 +1743,17 @@ fn effective_goal_switch_margin_uses_route_margin_for_any_intention_frame() {
     });
 
     assert_eq!(
-        effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &budget),
+        effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &cognitive(&budget)),
         Permille::new(300).unwrap()
     );
     // Planless commitment (same jc, no plan on runtime) still has route margin.
     assert_eq!(
-        effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &budget),
+        effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &cognitive(&budget)),
         Permille::new(300).unwrap()
     );
     // No commitment => budget default.
     assert_eq!(
-        effective_goal_switch_margin(&view, actor, None, &budget),
+        effective_goal_switch_margin(&view, actor, None, &cognitive(&budget)),
         budget.switch_margin
     );
 }
@@ -1755,7 +1776,7 @@ fn effective_goal_switch_margin_panics_when_committed_agent_lacks_intention_prof
             .unwrap();
         commit_txn(txn);
     }
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let view = PerAgentBeliefView::from_world(actor, &world);
     let jc_active = Some(IntentionFrame {
         goal: GoalKey::from(GoalKind::Sleep),
@@ -1768,7 +1789,7 @@ fn effective_goal_switch_margin_panics_when_committed_agent_lacks_intention_prof
         patience_limit: 10,
     });
 
-    let _ = effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &budget);
+    let _ = effective_goal_switch_margin(&view, actor, jc_active.as_ref(), &cognitive(&budget));
 }
 
 #[test]
@@ -1804,8 +1825,8 @@ fn grant_arrival_marks_runtime_dirty_from_facility_access_snapshot() {
             recipe_registry: &harness.recipes,
             utility: &UtilityProfile::default(),
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -1834,15 +1855,17 @@ fn abandon_expired_facility_queues_removes_actor_from_authoritative_queue() {
     let mut harness = Harness::new(ControlSource::Ai);
     let facility = add_local_queued_facility(&mut harness.world, harness.actor, 1);
 
-    assert!(abandon_expired_facility_queues_with_limit(
-        &mut harness.world,
-        &mut harness.event_log,
-        harness.actor,
-        Tick(4),
-        NonZeroU32::new(3).unwrap(),
-        ReasoningProfile::default().structural_block_ticks,
-    )
-    .unwrap());
+    assert!(
+        abandon_expired_facility_queues_with_limit(
+            &mut harness.world,
+            &mut harness.event_log,
+            harness.actor,
+            Tick(4),
+            NonZeroU32::new(3).unwrap(),
+            ProfileFixture::default().structural_block_ticks,
+        )
+        .unwrap()
+    );
 
     let queue = harness
         .world
@@ -1886,15 +1909,17 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
     let initial_view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
     update_runtime_observation_snapshot(&initial_view, harness.actor, &mut runtime);
 
-    assert!(abandon_expired_facility_queues_with_limit(
-        &mut harness.world,
-        &mut harness.event_log,
-        harness.actor,
-        Tick(4),
-        NonZeroU32::new(3).unwrap(),
-        ReasoningProfile::default().structural_block_ticks,
-    )
-    .unwrap());
+    assert!(
+        abandon_expired_facility_queues_with_limit(
+            &mut harness.world,
+            &mut harness.event_log,
+            harness.actor,
+            Tick(4),
+            NonZeroU32::new(3).unwrap(),
+            ProfileFixture::default().structural_block_ticks,
+        )
+        .unwrap()
+    );
 
     let blocked = harness
         .world
@@ -1908,10 +1933,12 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
     );
     assert_eq!(intent.blocker_key.target, Some(facility));
     assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(77)));
-    assert!(harness
-        .world
-        .get_component_contention_intents(harness.actor)
-        .is_none_or(|intents| intents.intents.is_empty()));
+    assert!(
+        harness
+            .world
+            .get_component_contention_intents(harness.actor)
+            .is_none_or(|intents| intents.intents.is_empty())
+    );
 }
 
 #[test]
@@ -1980,8 +2007,8 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
             recipe_registry: &harness.recipes,
             utility: &UtilityProfile::default(),
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -2006,11 +2033,12 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         harness.actor,
         std::slice::from_ref(&goal),
         &blocked,
-        ReasoningProfile::default().switch_margin,
-        ReasoningProfile::default().switch_margin,
+        ProfileFixture::default().switch_margin,
+        ProfileFixture::default().switch_margin,
         UtilityProfile::default().side_benefit_weight,
         Tick(2),
-        &ReasoningProfile::default(),
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
         &semantics,
         &harness.defs,
         &harness.handlers,
@@ -2080,8 +2108,8 @@ fn same_place_queue_invalidation_records_exclusive_facility_blocker() {
             recipe_registry: &harness.recipes,
             utility: &UtilityProfile::default(),
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -2158,8 +2186,8 @@ fn grant_loss_does_not_record_hard_blocker() {
             recipe_registry: &harness.recipes,
             utility: &UtilityProfile::default(),
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -2181,10 +2209,12 @@ fn queued_actor_can_eat_without_losing_queue_membership() {
         .world
         .get_component_contention_queue(facility)
         .expect("queued facility should still exist");
-    assert!(queue
-        .waiting
-        .values()
-        .any(|queued| queued.actor == harness.actor));
+    assert!(
+        queue
+            .waiting
+            .values()
+            .any(|queued| queued.actor == harness.actor)
+    );
 }
 
 #[test]
@@ -2265,7 +2295,7 @@ fn frame_snapshot_reports_budget_margin_when_no_profile_override_applies() {
         commit_txn(txn);
         actor
     };
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let mut driver = AgentTickDriver::new();
     driver.runtime_by_agent.insert(
         actor,
@@ -2284,12 +2314,9 @@ fn frame_snapshot_reports_budget_margin_when_no_profile_override_applies() {
 
     assert_eq!(
         snapshot.switch_margin_source,
-        FrameSwitchMarginSource::ReasoningProfile
+        FrameSwitchMarginSource::CognitiveProfile
     );
-    assert_eq!(
-        snapshot.effective_switch_margin,
-        budget.switch_margin
-    );
+    assert_eq!(snapshot.effective_switch_margin, budget.switch_margin);
     assert_eq!(snapshot.runtime.committed_destination, None);
     assert_eq!(snapshot.runtime.active_plan_destination, None);
     assert!(!snapshot.runtime.has_active_frame_travel);
@@ -2571,7 +2598,7 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
         actor,
         &step,
         Tick(9),
-        &ReasoningProfile::default(),
+        &cognitive(&ProfileFixture::default()),
     );
     assert!(handled);
     let updated_jc = updated_jc.expect("commitment should persist with incremented blocked ticks");
@@ -2584,10 +2611,12 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
     assert_eq!(runtime.current_plan, None);
     assert_eq!(runtime.current_step_index, 0);
     assert!(blocked_memory.intents.is_empty());
-    assert!(runtime
-        .materialization_bindings
-        .hypothetical_to_authoritative
-        .is_empty());
+    assert!(
+        runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty()
+    );
 }
 
 #[test]
@@ -2637,7 +2666,7 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
         ..crate::AgentDecisionRuntime::default()
     };
     let mut blocked_memory = BlockedIntentMemory::default();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
 
     let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
         &view,
@@ -2648,7 +2677,7 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
         actor,
         &step,
         Tick(9),
-        &budget,
+        &cognitive(&budget),
     );
     assert!(handled);
     assert_eq!(runtime.current_plan, None);
@@ -2825,10 +2854,12 @@ fn progress_barrier_completion_preserves_goal_and_forces_replan() {
     );
     assert_eq!(updated_jc.last_progress_tick, Some(Tick(4)));
     assert!(!runtime.dirty.is_empty());
-    assert!(runtime
-        .materialization_bindings
-        .hypothetical_to_authoritative
-        .is_empty());
+    assert!(
+        runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty()
+    );
 }
 
 #[test]
@@ -3141,10 +3172,12 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
 
     assert!(runtime.current_plan.is_none());
     assert!(!runtime.step_in_flight);
-    assert!(runtime
-        .materialization_bindings
-        .hypothetical_to_authoritative
-        .is_empty());
+    assert!(
+        runtime
+            .materialization_bindings
+            .hypothetical_to_authoritative
+            .is_empty()
+    );
 }
 
 #[allow(clippy::too_many_lines)]
@@ -3160,9 +3193,9 @@ fn goal_stability_across_cargo_materialization_continuity() {
         commodity: CommodityKind::Bread,
         destination: destination_facility,
     });
-    let budget = ReasoningProfile {
+    let budget = ProfileFixture {
         max_plan_depth: 4,
-        ..ReasoningProfile::default()
+        ..ProfileFixture::default()
     };
     let semantics = crate::build_semantics_table(&harness.defs);
     let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
@@ -3326,7 +3359,8 @@ fn goal_stability_across_cargo_materialization_continuity() {
         budget.switch_margin,
         utility.side_benefit_weight,
         Tick(1),
-        &budget,
+        &cognitive(&budget),
+        &execution_budget(&budget),
         &semantics,
         &harness.defs,
         &harness.handlers,
@@ -3428,7 +3462,8 @@ fn goal_stability_across_cargo_materialization_continuity() {
         budget.switch_margin,
         utility.side_benefit_weight,
         Tick(2),
-        &budget,
+        &cognitive(&budget),
+        &execution_budget(&budget),
         &semantics,
         &harness.defs,
         &harness.handlers,
@@ -3487,8 +3522,8 @@ fn irrelevant_commodity_change_does_not_trigger_replan_for_sleep_goal() {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -3544,8 +3579,8 @@ fn relevant_commodity_change_triggers_replan_for_consume_goal() {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -3582,8 +3617,8 @@ fn no_plan_always_marks_runtime_dirty() {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick: Tick(1),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -3599,8 +3634,10 @@ fn patrol_route_change_marks_runtime_dirty() {
         .get_component_utility_profile(harness.actor)
         .cloned()
         .unwrap_or_default();
-    let place = worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::VillageSquare);
-    let remote = worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::OrchardFarm);
+    let place =
+        worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::VillageSquare);
+    let remote =
+        worldwake_core::prototype_place_entity(worldwake_core::PrototypePlace::OrchardFarm);
     let route = PatrolRoute {
         assigned_places: vec![place, remote],
         current_index: 0,
@@ -3642,8 +3679,8 @@ fn patrol_route_change_marks_runtime_dirty() {
             recipe_registry: &harness.recipes,
             utility: &utility,
             tick: Tick(2),
-            travel_horizon: ReasoningProfile::default().snapshot_travel_horizon,
-            structural_block_ticks: ReasoningProfile::default().structural_block_ticks,
+            travel_horizon: ProfileFixture::default().snapshot_travel_horizon,
+            structural_block_ticks: ProfileFixture::default().structural_block_ticks,
         },
         false,
     );
@@ -3707,9 +3744,9 @@ fn trace_planning_outcome_includes_patrol_route_provenance() {
                 Some(OpportunityAnchor::Place(remote))
             );
             assert!(
-                planning.selection.selected_goal_is(GoalKey::from(GoalKind::Patrol {
-                    place: remote
-                })),
+                planning
+                    .selection
+                    .selected_goal_is(GoalKey::from(GoalKind::Patrol { place: remote })),
                 "selected goal should stay aligned with the patrol provenance surface"
             );
         }
@@ -3729,12 +3766,14 @@ fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
             purpose: CommodityPurpose::SelfConsume,
         }
     ));
-    assert!(harness
-        .world
-        .get_component_agent_belief_store(harness.actor)
-        .unwrap()
-        .get_entity(&seller)
-        .is_none());
+    assert!(
+        harness
+            .world
+            .get_component_agent_belief_store(harness.actor)
+            .unwrap()
+            .get_entity(&seller)
+            .is_none()
+    );
 
     run_same_place_observation(&mut harness, Tick(2), origin, seller);
     run_same_place_observation(&mut harness, Tick(2), origin, bread);
@@ -3894,15 +3933,15 @@ fn perception_refresh_evicts_expired_remote_acquisition_belief_and_removes_goal(
 
     let after = ranked_goals_at(&mut harness, Tick(10));
     assert!(
-            !has_goal(
-                &after,
-                GoalKind::AcquireCommodity {
-                    commodity: CommodityKind::Bread,
-                    purpose: CommodityPurpose::SelfConsume,
-                }
-            ),
-            "once retention enforcement prunes the stale remote seller, the acquire goal must disappear"
-        );
+        !has_goal(
+            &after,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ),
+        "once retention enforcement prunes the stale remote seller, the acquire goal must disappear"
+    );
 }
 
 #[test]
@@ -4653,7 +4692,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         .get_component_utility_profile(harness.actor)
         .cloned()
         .unwrap_or_default();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
     let semantics = build_semantics_table(&harness.defs);
     let runtime = harness
         .driver
@@ -4700,7 +4739,8 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             budget.switch_margin,
             utility.side_benefit_weight,
             Tick(1),
-            &budget,
+            &cognitive(&budget),
+            &execution_budget(&budget),
             &semantics,
             &harness.defs,
             &harness.handlers,
@@ -4787,7 +4827,8 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             budget.switch_margin,
             utility.side_benefit_weight,
             Tick(2),
-            &budget,
+            &cognitive(&budget),
+            &execution_budget(&budget),
             &semantics,
             &harness.defs,
             &harness.handlers,
@@ -4988,7 +5029,8 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
             office,
             OfficeData {
                 title: "War Chief".to_string(),
-                jurisdiction: place,
+                seat: place,
+                jurisdiction: BTreeSet::from([place]),
                 succession_law: SuccessionLaw::Force,
                 succession_period_ticks: 5,
                 eligibility_rules: Vec::new(),
@@ -5042,17 +5084,17 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
                 "Force-law ClaimOffice should enter political plan search in agent_tick"
             );
             assert!(
-                    !planning.planning.attempts.iter().any(|attempt| {
-                        matches!(
-                            attempt.goal.kind,
-                            GoalKind::SupportCandidateForOffice {
-                                office: goal_office,
-                                candidate
-                            } if goal_office == office && candidate == rival
-                        )
-                    }),
-                    "Force-law support-candidate goals must not enter political plan search in agent_tick"
-                );
+                !planning.planning.attempts.iter().any(|attempt| {
+                    matches!(
+                        attempt.goal.kind,
+                        GoalKind::SupportCandidateForOffice {
+                            office: goal_office,
+                            candidate
+                        } if goal_office == office && candidate == rival
+                    )
+                }),
+                "Force-law support-candidate goals must not enter political plan search in agent_tick"
+            );
             let claim_attempt = planning
                 .planning
                 .attempts
@@ -5070,13 +5112,13 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
                 .find(|summary| summary.depth == 0)
                 .expect("root expansion summary should be present for ClaimOffice");
             assert!(
-                    root.root_candidates.iter().any(|candidate| {
-                        candidate.op_kind == Some(PlannerOpKind::PressForceClaim)
-                            && candidate.outcome
-                                == crate::decision_trace::RootCandidateOutcome::Expanded
-                    }),
-                    "force-law ClaimOffice root trace should expose the retained PressForceClaim candidate"
-                );
+                root.root_candidates.iter().any(|candidate| {
+                    candidate.op_kind == Some(PlannerOpKind::PressForceClaim)
+                        && candidate.outcome
+                            == crate::decision_trace::RootCandidateOutcome::Expanded
+                }),
+                "force-law ClaimOffice root trace should expose the retained PressForceClaim candidate"
+            );
             let selected_plan = planning
                 .selection
                 .selected_plan
@@ -5092,16 +5134,19 @@ fn trace_force_law_office_skips_political_candidates_and_planning() {
                 "force-law ClaimOffice should bind directly to PressForceClaim when already local"
             );
             assert!(
-                    planning.candidates.omitted_political.iter().any(|omission| {
-                        omission.family
-                            == crate::PoliticalGoalFamily::SupportCandidateForOffice
+                planning
+                    .candidates
+                    .omitted_political
+                    .iter()
+                    .any(|omission| {
+                        omission.family == crate::PoliticalGoalFamily::SupportCandidateForOffice
                             && omission.office == office
                             && omission.candidate.is_none()
                             && omission.reason
                                 == crate::PoliticalCandidateOmissionReason::ForceSuccessionLaw
                     }),
-                    "Force-law omission should be preserved in the decision trace for SupportCandidateForOffice"
-                );
+                "Force-law omission should be preserved in the decision trace for SupportCandidateForOffice"
+            );
         }
         other => panic!("expected Planning outcome, got {other:?}"),
     }
@@ -5330,7 +5375,8 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
         txn.set_component_perception_profile(
             harness.actor,
             PerceptionProfile {
-                memory_capacity: 32,
+                entity_memory_capacity: 32,
+                entity_claim_capacity: 32,
                 memory_retention_ticks: 240,
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -5360,7 +5406,8 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
             office,
             OfficeData {
                 title: "Speaker".to_string(),
-                jurisdiction: remote_place,
+                seat: remote_place,
+                jurisdiction: BTreeSet::from([remote_place]),
                 succession_law: SuccessionLaw::Support,
                 succession_period_ticks: 5,
                 eligibility_rules: Vec::new(),
@@ -5662,12 +5709,14 @@ fn tracing_disabled_produces_identical_behavior() {
     );
 
     // Traced harness should have trace data.
-    assert!(!harness_traced
-        .driver
-        .trace_sink()
-        .unwrap()
-        .traces()
-        .is_empty());
+    assert!(
+        !harness_traced
+            .driver
+            .trace_sink()
+            .unwrap()
+            .traces()
+            .is_empty()
+    );
 
     // Non-traced harness should have no trace data.
     assert!(harness_no_trace.driver.trace_sink().is_none());
@@ -5694,7 +5743,7 @@ fn check_patience_exhaustion_creates_blocked_intent() {
     };
     let mut blocked_memory = BlockedIntentMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
 
     let exhausted = check_patience_exhaustion(
         &frame,
@@ -5844,7 +5893,7 @@ fn assumption_failure_creates_blocked_intent() {
         patience_limit: 30,
     };
     let mut blocked_memory = BlockedIntentMemory::default();
-    let budget = ReasoningProfile::default();
+    let budget = ProfileFixture::default();
 
     record_assumption_failure_blocked_intent(
         &frame,
@@ -5889,11 +5938,11 @@ fn goal_completion_does_not_create_blocked_intent() {
                 || intent.blocking_fact == BlockingFact::AssumptionFailed
         });
         assert!(
-                !has_patience_or_assumption,
-                "goal completion must NOT create PatienceExhausted or AssumptionFailed blocked intents, \
+            !has_patience_or_assumption,
+            "goal completion must NOT create PatienceExhausted or AssumptionFailed blocked intents, \
                  got: {:?}",
-                memory.intents
-            );
+            memory.intents
+        );
     }
 }
 

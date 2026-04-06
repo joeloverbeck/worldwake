@@ -1,8 +1,9 @@
-use crate::{goal_dispatch_key::GoalDispatchKey, PlannerOpKind, RankedGoalProvenanceFamily};
+use crate::{PlannerOpKind, RankedGoalProvenanceFamily, goal_dispatch_key::GoalDispatchKey};
 use worldwake_core::HomeostaticNeedId;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum InvalidationStrategy {
+    NoOpinion,
     CommodityOnly,
     AcquireCommodity,
     AcquireRestock,
@@ -123,6 +124,8 @@ const FULFILL_BOUNTY_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::StockManagement,
     PlannerOpKind::ClaimBounty,
 ];
+const POST_BOUNTY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::PostBounty];
+const POST_NOTICE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::PostNotice];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
 const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
@@ -283,6 +286,20 @@ static DECL_FULFILL_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     invalidation_strategy: InvalidationStrategy::BountyActive,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
 };
+static DECL_POST_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "PostBounty",
+    provenance_family: None,
+    relevant_ops: POST_BOUNTY_OPS,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+};
+static DECL_POST_NOTICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "PostNotice",
+    provenance_family: None,
+    relevant_ops: POST_NOTICE_OPS,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+};
 static DECL_SHARE_BELIEF: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ShareBelief",
     provenance_family: None,
@@ -371,6 +388,8 @@ impl GoalDispatchKey {
             Self::LootCorpse => &DECL_LOOT_CORPSE,
             Self::BuryCorpse => &DECL_BURY_CORPSE,
             Self::FulfillBounty => &DECL_FULFILL_BOUNTY,
+            Self::PostBounty => &DECL_POST_BOUNTY,
+            Self::PostNotice => &DECL_POST_NOTICE,
             Self::ShareBelief => &DECL_SHARE_BELIEF,
             Self::ClaimOffice => &DECL_CLAIM_OFFICE,
             Self::SupportCandidateForOffice => &DECL_SUPPORT_CANDIDATE_FOR_OFFICE,
@@ -389,8 +408,9 @@ mod tests {
     use super::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
     use worldwake_core::{
-        CommodityKind, CommodityPurpose, EntityId, GoalKind, HomeostaticNeedId, PunishmentKind,
-        Quantity, RecipeId, RecordEntryId, TellTopic, ViolationId,
+        ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommodityPurpose,
+        EntityId, GoalKind, HomeostaticNeedId, ProofRequirement, PunishmentKind, Quantity,
+        RecipeId, RecordEntryId, RewardSource, TellTopic, ViolationId,
     };
 
     const ALL_KEYS: &[GoalDispatchKey] = &[
@@ -414,6 +434,8 @@ mod tests {
         GoalDispatchKey::LootCorpse,
         GoalDispatchKey::BuryCorpse,
         GoalDispatchKey::FulfillBounty,
+        GoalDispatchKey::PostBounty,
+        GoalDispatchKey::PostNotice,
         GoalDispatchKey::ShareBelief,
         GoalDispatchKey::ClaimOffice,
         GoalDispatchKey::SupportCandidateForOffice,
@@ -483,6 +505,31 @@ mod tests {
                 burial_site: destination,
             },
             GoalDispatchKey::FulfillBounty => GoalKind::FulfillBounty { bounty: target },
+            GoalDispatchKey::PostBounty => GoalKind::PostBounty {
+                posting: ArtifactPostingContext {
+                    posting_place: destination,
+                    issuing_authority: None,
+                    expires_at: None,
+                    jurisdiction: None,
+                },
+                terms: BountyTerms {
+                    target: BountyTarget::EliminateEntity { target },
+                    proof_requirement: ProofRequirement::SelfReport,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(5),
+                    reward_source: RewardSource::PersonalFunds { issuer: office },
+                    claim_place: destination,
+                },
+            },
+            GoalDispatchKey::PostNotice => GoalKind::PostNotice {
+                posting: ArtifactPostingContext {
+                    posting_place: destination,
+                    issuing_authority: None,
+                    expires_at: None,
+                    jurisdiction: None,
+                },
+                topic: worldwake_core::NoticeTopic::ThreatWarning { place: destination },
+            },
             GoalDispatchKey::ShareBelief => GoalKind::ShareBelief {
                 listener: target,
                 topic: TellTopic::EntityBelief { subject: office },
@@ -528,7 +575,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 29);
+        assert_eq!(ALL_KEYS.len(), 31);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();
@@ -569,8 +616,14 @@ mod tests {
             declaration.relevant_ops,
             &[PlannerOpKind::Travel, PlannerOpKind::Patrol]
         );
-        assert_eq!(declaration.invalidation_strategy, InvalidationStrategy::Patrol);
-        assert_eq!(declaration.feasibility_strategy, FeasibilityStrategy::PlaceMatch);
+        assert_eq!(
+            declaration.invalidation_strategy,
+            InvalidationStrategy::Patrol
+        );
+        assert_eq!(
+            declaration.feasibility_strategy,
+            FeasibilityStrategy::PlaceMatch
+        );
     }
 
     #[test]
@@ -612,7 +665,8 @@ mod tests {
         for key in ALL_KEYS {
             let declaration = key.declaration();
             match declaration.invalidation_strategy {
-                InvalidationStrategy::CommodityOnly
+                InvalidationStrategy::NoOpinion
+                | InvalidationStrategy::CommodityOnly
                 | InvalidationStrategy::AcquireCommodity
                 | InvalidationStrategy::AcquireRestock
                 | InvalidationStrategy::CombatTarget

@@ -9,14 +9,14 @@ use worldwake_ai::{
     PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    build_believed_entity_state, hash_event_log, hash_world, verify_authoritative_conservation,
     ActionDomain, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
     BelievedActivity, CombatProfile, CommodityKind, Container, ControlSource, DemandMemory,
     DemandObservation, DemandObservationReason, EntityId, EventLog, GoalKey, GoalKind,
     HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalKnowledgeSource, KnownRecipes,
     MerchandiseProfile, MetabolismProfile, PerceptionProfile, PerceptionSource, Place, PlaceTag,
     Quantity, ResourceSource, Seed, TellProfile, Tick, Topology, TradeDispositionProfile,
-    TravelEdge, TravelEdgeId, UtilityProfile, WorkstationTag, World,
+    TravelEdge, TravelEdgeId, UtilityProfile, WorkstationTag, World, build_believed_entity_state,
+    hash_event_log, hash_world, verify_authoritative_conservation,
 };
 use worldwake_sim::{ActionPayload, ActionRequestMode, CombatActionPayload, RequestProvenance};
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
@@ -103,7 +103,8 @@ fn build_t22_topology() -> Topology {
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -1418,10 +1419,11 @@ fn run_t22_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
             .traces_for(ids.outsider)
             .into_iter()
             .any(|trace| {
-                trace.goal_status(&GoalKind::RegroupWithFaction { faction: ids.faction })
-                    == GoalTraceStatus::OmittedBandit(
-                        BanditCandidateOmissionReason::MissingRallyBelief,
-                    )
+                trace.goal_status(&GoalKind::RegroupWithFaction {
+                    faction: ids.faction,
+                }) == GoalTraceStatus::OmittedBandit(
+                    BanditCandidateOmissionReason::MissingRallyBelief,
+                )
             }),
         "a same-faction outsider without rally doctrine should expose the missing-rally omission reason in decision traces"
     );
@@ -1827,18 +1829,17 @@ fn run_s49_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
                 continue;
             }
 
-            if let Some(sink) = h.driver.trace_sink() {
-                if let Some(trace) = sink.traces_for(ids.bandit).into_iter().last() {
-                    if let DecisionOutcome::Planning(planning) = &trace.outcome {
-                        let raid_goal = GoalKey::from(GoalKind::RaidTarget { target: *traveler });
-                        saw_raid_candidate |= planning
-                            .candidates
-                            .generated
-                            .iter()
-                            .any(|goal| goal.goal_key == raid_goal);
-                        saw_raid_selection |= planning.selection.selected_goal() == Some(raid_goal);
-                    }
-                }
+            if let Some(sink) = h.driver.trace_sink()
+                && let Some(trace) = sink.traces_for(ids.bandit).into_iter().last()
+                && let DecisionOutcome::Planning(planning) = &trace.outcome
+            {
+                let raid_goal = GoalKey::from(GoalKind::RaidTarget { target: *traveler });
+                saw_raid_candidate |= planning
+                    .candidates
+                    .generated
+                    .iter()
+                    .any(|goal| goal.goal_key == raid_goal);
+                saw_raid_selection |= planning.selection.selected_goal() == Some(raid_goal);
             }
 
             saw_attack_commit |= h
@@ -1908,22 +1909,21 @@ fn run_s49_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake_core::S
             continue;
         }
 
-        if let Some(sink) = h.driver.trace_sink() {
-            if let Some(trace) = sink.traces_for(ids.bandit).into_iter().last() {
-                if let DecisionOutcome::Planning(planning) = &trace.outcome {
-                    saw_post_threshold_planning = true;
-                    let raid_goal = GoalKey::from(GoalKind::RaidTarget {
-                        target: final_traveler,
-                    });
-                    saw_post_threshold_raid_candidate |= planning
-                        .candidates
-                        .generated
-                        .iter()
-                        .any(|goal| goal.goal_key == raid_goal);
-                    saw_post_threshold_raid_selection |=
-                        planning.selection.selected_goal() == Some(raid_goal);
-                }
-            }
+        if let Some(sink) = h.driver.trace_sink()
+            && let Some(trace) = sink.traces_for(ids.bandit).into_iter().last()
+            && let DecisionOutcome::Planning(planning) = &trace.outcome
+        {
+            saw_post_threshold_planning = true;
+            let raid_goal = GoalKey::from(GoalKind::RaidTarget {
+                target: final_traveler,
+            });
+            saw_post_threshold_raid_candidate |= planning
+                .candidates
+                .generated
+                .iter()
+                .any(|goal| goal.goal_key == raid_goal);
+            saw_post_threshold_raid_selection |=
+                planning.selection.selected_goal() == Some(raid_goal);
         }
 
         saw_post_threshold_attack |= h

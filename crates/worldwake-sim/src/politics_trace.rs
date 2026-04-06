@@ -14,7 +14,7 @@ pub struct PoliticalTraceEvent {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OfficeSuccessionTrace {
-    pub jurisdiction: EntityId,
+    pub seat: EntityId,
     pub succession_law: SuccessionLaw,
     pub holder_before: Option<EntityId>,
     pub vacancy_since_before: Option<Tick>,
@@ -204,13 +204,12 @@ impl PoliticalTraceEvent {
                 "tick {}: office {} remains force-contested by {} claimants [{}]",
                 self.tick.0, self.office, claimant_count, phase
             )),
-            OfficeSuccessionOutcome::ForceInstallationDeferred {
-                controller,
-                reason,
-            } => Some(format!(
-                "tick {}: office {} defers force installation of {} — {reason:?} [{}]",
-                self.tick.0, self.office, controller, phase
-            )),
+            OfficeSuccessionOutcome::ForceInstallationDeferred { controller, reason } => {
+                Some(format!(
+                    "tick {}: office {} defers force installation of {} — {reason:?} [{}]",
+                    self.tick.0, self.office, controller, phase
+                ))
+            }
             OfficeSuccessionOutcome::ForceInstalled { holder } => Some(format!(
                 "tick {}: office {} installs {} by force-law uncontested succession [{}]",
                 self.tick.0, self.office, holder, phase
@@ -426,9 +425,9 @@ mod tests {
         let mut sink = PoliticalTraceSink::new();
         let office_a = office(1);
         let office_b = office(2);
-        let jurisdiction = office(3);
+        let seat = office(3);
         let trace = OfficeSuccessionTrace {
-            jurisdiction,
+            seat,
             succession_law: SuccessionLaw::Force,
             holder_before: None,
             vacancy_since_before: Some(Tick(1)),
@@ -470,23 +469,24 @@ mod tests {
         assert_eq!(sink.events_at(Tick(7)).len(), 1);
         assert!(sink.event_for_office_at(office_a, Tick(7)).is_some());
         assert!(sink.event_for_office_at(office_a, Tick(8)).is_none());
-        assert!(sink
-            .event_for_office_at(office_a, Tick(7))
-            .unwrap()
-            .summary()
-            .contains("phase: vacant pending resolution"));
+        assert!(
+            sink.event_for_office_at(office_a, Tick(7))
+                .unwrap()
+                .summary()
+                .contains("phase: vacant pending resolution")
+        );
     }
 
     #[test]
     fn summary_formats_pending_force_grace_outcomes() {
-        let jurisdiction = office(3);
+        let seat = office(3);
         let office_id = office(1);
 
         let vacancy_pending = PoliticalTraceEvent {
             tick: Tick(4),
             office: office_id,
             trace: OfficeSuccessionTrace {
-                jurisdiction,
+                seat,
                 succession_law: SuccessionLaw::Force,
                 holder_before: None,
                 vacancy_since_before: Some(Tick(3)),
@@ -502,15 +502,17 @@ mod tests {
                 force_candidates: Vec::new(),
             },
         };
-        assert!(vacancy_pending
-            .summary()
-            .contains("vacancy claim grace pending"));
+        assert!(
+            vacancy_pending
+                .summary()
+                .contains("vacancy claim grace pending")
+        );
 
         let challenger_pending = PoliticalTraceEvent {
             tick: Tick(5),
             office: office_id,
             trace: OfficeSuccessionTrace {
-                jurisdiction,
+                seat,
                 succession_law: SuccessionLaw::Force,
                 holder_before: None,
                 vacancy_since_before: Some(Tick(3)),

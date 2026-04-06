@@ -1,4 +1,4 @@
-use crate::{build_decision_context, generate_candidates, rank_candidates, GoalPriorityClass};
+use crate::{GoalPriorityClass, build_decision_context, generate_candidates, rank_candidates};
 use worldwake_core::{BlockedIntentMemory, EntityId, GoalKind, Tick, UtilityProfile};
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
@@ -24,14 +24,7 @@ pub fn explain_goal(
 ) -> Option<GoalExplanation> {
     let candidates = generate_candidates(view, agent, blocked, recipes, current_tick);
     let dc = build_decision_context(view, agent);
-    let outcome = rank_candidates(
-        &candidates,
-        view,
-        agent,
-        current_tick,
-        utility,
-        &dc,
-    );
+    let outcome = rank_candidates(&candidates, view, agent, current_tick, utility, &dc);
     let target = outcome
         .ranked
         .iter()
@@ -60,20 +53,20 @@ pub fn explain_goal(
 
 #[cfg(test)]
 mod tests {
-    use super::{explain_goal, GoalExplanation};
+    use super::{GoalExplanation, explain_goal};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         BlockedIntentMemory, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind, ContentionGrant,
+        ContentionGrant, DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind,
         HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
-        ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        TellProfile, WorkstationTag, Wound,
+        ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
+        UtilityProfile, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDuration, ActionPayload, DurationExpr,
-        RecipeRegistry, RuntimeBeliefView,
+        ActionDuration, ActionPayload, DurationExpr, RecipeRegistry, RuntimeBeliefView,
+        estimate_duration_from_beliefs,
     };
 
     #[derive(Default)]
@@ -408,6 +401,8 @@ mod tests {
             social_weight: pm(150),
             activity_awareness_weight: pm(200),
             side_benefit_weight: pm(100),
+            bounty_posting_weight: pm(0),
+            notice_posting_weight: pm(0),
             courage: pm(500),
             care_weight: pm(200),
         }

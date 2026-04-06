@@ -7,9 +7,8 @@ mod golden_harness;
 
 use golden_harness::soak_world::build_t30_world;
 use worldwake_core::{
-    hash_event_log, hash_world, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, CauseRef, CommodityKind, EventId, EventView, Permille,
-    Seed,
+    CauseRef, CommodityKind, EventId, EventView, Permille, Seed, hash_event_log, hash_world,
+    total_authoritative_commodity_quantity, verify_authoritative_conservation,
 };
 
 struct SoakRunResult {
@@ -24,7 +23,9 @@ const TOTAL_TICKS: u64 = 10080;
 fn parse_seed_arg() -> Result<u8, String> {
     let mut args = std::env::args().skip(1);
     let Some(seed_text) = args.next() else {
-        return Err("usage: cargo run -p worldwake-ai --bin soak_seed_perf -- <seed-id>".to_string());
+        return Err(
+            "usage: cargo run -p worldwake-ai --bin soak_seed_perf -- <seed-id>".to_string(),
+        );
     };
     if args.next().is_some() {
         return Err("expected exactly one positional argument: <seed-id>".to_string());
@@ -53,7 +54,12 @@ fn run_one_seed(seed: Seed) -> SoakRunResult {
 
     let mut commodity_totals: BTreeMap<CommodityKind, u64> = commodities_to_check
         .iter()
-        .map(|&commodity| (commodity, total_authoritative_commodity_quantity(&h.world, commodity)))
+        .map(|&commodity| {
+            (
+                commodity,
+                total_authoritative_commodity_quantity(&h.world, commodity),
+            )
+        })
         .collect();
 
     let initial_world_hash = hash_world(&h.world).expect("T30 soak world should hash");
@@ -142,8 +148,7 @@ fn run_one_seed(seed: Seed) -> SoakRunResult {
         initial_world_hash, final_world_hash,
         "world state did not change after {TOTAL_TICKS} ticks (seed: {seed:?})"
     );
-    let event_log_hash =
-        hash_event_log(&h.event_log).expect("post-soak event log should hash");
+    let event_log_hash = hash_event_log(&h.event_log).expect("post-soak event log should hash");
 
     SoakRunResult {
         duration_ms: start.elapsed().as_millis(),

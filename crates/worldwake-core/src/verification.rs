@@ -355,13 +355,13 @@ impl ActualWorldState {
             });
         }
 
-        if kind == EntityKind::Office {
-            if let Some(holder) = world.office_holder(entity) {
-                relations.insert(RelationValue::OfficeHolder {
-                    office: entity,
-                    holder,
-                });
-            }
+        if kind == EntityKind::Office
+            && let Some(holder) = world.office_holder(entity)
+        {
+            relations.insert(RelationValue::OfficeHolder {
+                office: entity,
+                holder,
+            });
         }
     }
 
@@ -482,7 +482,7 @@ fn diff_btree_set<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::{verify_completeness, verify_event_covers_world_state, VerificationError};
+    use super::{VerificationError, verify_completeness, verify_event_covers_world_state};
     use crate::{
         BodyPart, CauseRef, CommodityKind, Container, ControlSource, DeprivationKind, EntityId,
         EventId, EventLog, EventPayload, EventRecord, EventTag, LoadUnits, Quantity, Tick,

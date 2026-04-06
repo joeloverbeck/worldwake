@@ -27,8 +27,8 @@ impl Component for BanditFactionPolicy {}
 #[cfg(test)]
 mod tests {
     use super::{BanditCamp, BanditFactionPolicy};
-    use crate::{traits::Component, EntityId, Permille, Tick};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{EntityId, Permille, Tick, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 

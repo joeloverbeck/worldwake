@@ -45,7 +45,7 @@ pub struct InputEvent {
 mod tests {
     use super::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
     use crate::{ActionInstanceId, ActionPayload, TradeActionPayload};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{ActionDefId, CommodityKind, EntityId, Quantity, Tick};
 
     fn assert_traits<T: Clone + Eq + Ord + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -110,7 +110,10 @@ mod tests {
             targets: vec![entity(8), entity(9)],
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: entity(8),
-                sale_lot: EntityId { slot: 50, generation: 0 },
+                sale_lot: EntityId {
+                    slot: 50,
+                    generation: 0,
+                },
                 offered_commodity: CommodityKind::Coin,
                 offered_quantity: Quantity(2),
                 requested_quantity: Quantity(1),

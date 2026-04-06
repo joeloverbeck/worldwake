@@ -2,12 +2,12 @@ use crate::facility_queue_actions::exclusive_facility_workstation_tag;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDomain, CauseRef, ContentionPolicy, EntityId, EntityKind, EventLog, EventTag,
-    ContentionQueue, Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+    ActionDomain, CauseRef, ContentionPolicy, ContentionQueue, EntityId, EntityKind, EventLog,
+    EventTag, Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
 };
 use worldwake_sim::{
-    validate_action_def_authoritatively, ActionDefRegistry, ActionInstance, ActionStatus,
-    SystemError, SystemExecutionContext,
+    ActionDefRegistry, ActionInstance, ActionStatus, SystemError, SystemExecutionContext,
+    validate_action_def_authoritatively,
 };
 
 #[derive(Clone, Copy)]
@@ -291,12 +291,7 @@ fn prune_structurally_invalid_heads(
         let queued_actor = queued.actor;
         let intended_action = queued.intended_action;
 
-        if !head_is_structurally_invalid(
-            world,
-            action_defs,
-            facility,
-            intended_action,
-        ) {
+        if !head_is_structurally_invalid(world, action_defs, facility, intended_action) {
             return Ok(());
         }
 
@@ -325,10 +320,7 @@ fn promote_ready_head(
     facility: EntityId,
     tick: Tick,
 ) -> Result<(), SystemError> {
-    let Some(policy) = world
-        .get_component_contention_policy(facility)
-        .cloned()
-    else {
+    let Some(policy) = world.get_component_contention_policy(facility).cloned() else {
         return Ok(());
     };
     let Some(mut queue) = world.get_component_contention_queue(facility).cloned() else {
@@ -337,7 +329,9 @@ fn promote_ready_head(
     if !policy.auto_promote {
         return Ok(());
     }
-    if queue.granted.is_some() || active_exclusive_action_on_entity(active_actions, action_defs, facility) {
+    if queue.granted.is_some()
+        || active_exclusive_action_on_entity(active_actions, action_defs, facility)
+    {
         return Ok(());
     }
     let Some(queued) = queue.waiting.values().next() else {
@@ -537,17 +531,20 @@ fn actor_has_matching_contention_intent(
 #[cfg(test)]
 mod tests {
     use super::contention_system;
-    use crate::{register_craft_actions, register_harvest_actions, register_heal_action, register_loot_action};
+    use crate::{
+        register_craft_actions, register_harvest_actions, register_heal_action,
+        register_loot_action,
+    };
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, BodyPart, CauseRef, CommodityKind, ControlSource,
-        DeprivationKind, EntityId, EntityKind, EventLog, EventTag, EventView,
-        ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
-        DeadAt, GoalKey, GoalKind, KnownRecipes, ProductionJob, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, QueuedContentionIntent, Quantity, ResourceSource, Seed,
-        Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
-        World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        ActionDefId, BodyPart, CauseRef, CommodityKind, ContentionDispositionProfile,
+        ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
+        DeprivationKind, EntityId, EntityKind, EventLog, EventTag, EventView, GoalKey, GoalKind,
+        KnownRecipes, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        Quantity, QueuedContentionIntent, ResourceSource, Seed, Tick, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
@@ -560,7 +557,10 @@ mod tests {
     }
 
     fn entity(slot: u32) -> EntityId {
-        EntityId { slot, generation: 0 }
+        EntityId {
+            slot,
+            generation: 0,
+        }
     }
 
     fn pm(value: u16) -> worldwake_core::Permille {
@@ -707,9 +707,10 @@ mod tests {
             .get_component_contention_queue(facility)
             .cloned()
             .unwrap();
-        queue.enqueue(actor, intended_action, Tick(2), None).unwrap();
-        txn.set_component_contention_queue(facility, queue)
+        queue
+            .enqueue(actor, intended_action, Tick(2), None)
             .unwrap();
+        txn.set_component_contention_queue(facility, queue).unwrap();
         if txn.entity_kind(actor).is_some() {
             txn.set_component_contention_intents(
                 actor,
@@ -811,11 +812,13 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
     }
 
     #[test]
@@ -838,11 +841,13 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
     }
 
     #[test]
@@ -859,11 +864,13 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
     }
 
     #[test]
@@ -880,8 +887,7 @@ mod tests {
                 .cloned()
                 .unwrap();
             queue.promote_head(Tick(3), nz(2));
-            txn.set_component_contention_queue(facility, queue)
-                .unwrap();
+            txn.set_component_contention_queue(facility, queue).unwrap();
             commit_txn(txn);
         }
         let mut log = EventLog::new();
@@ -913,8 +919,7 @@ mod tests {
                 .cloned()
                 .unwrap();
             queue.promote_head(Tick(3), nz(2));
-            txn.set_component_contention_queue(facility, queue)
-                .unwrap();
+            txn.set_component_contention_queue(facility, queue).unwrap();
             commit_txn(txn);
         }
         let mut log = EventLog::new();
@@ -922,7 +927,10 @@ mod tests {
         run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 5);
 
         let queue = world.get_component_contention_queue(facility).unwrap();
-        assert_eq!(queue.granted.as_ref().map(|grant| grant.actor), Some(second));
+        assert_eq!(
+            queue.granted.as_ref().map(|grant| grant.actor),
+            Some(second)
+        );
         assert_eq!(log.events_by_tag(EventTag::QueueGrantExpired).len(), 1);
         assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
     }
@@ -943,11 +951,13 @@ mod tests {
 
         run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
         assert_eq!(log.events_by_tag(EventTag::QueueHeadFailed).len(), 1);
     }
 
@@ -962,11 +972,13 @@ mod tests {
 
         run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .waiting
-            .is_empty());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .waiting
+                .is_empty()
+        );
         assert_eq!(log.events_by_tag(EventTag::QueueHeadFailed).len(), 1);
     }
 
@@ -1212,11 +1224,13 @@ mod tests {
 
         run_system(&mut world, &mut EventLog::new(), &defs, &active, 3);
 
-        assert!(world
-            .get_component_contention_queue(facility)
-            .unwrap()
-            .granted
-            .is_none());
+        assert!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .granted
+                .is_none()
+        );
     }
 
     #[test]
@@ -1253,11 +1267,7 @@ mod tests {
         let item = {
             let mut txn = new_txn(&mut world, 1);
             let item = txn
-                .create_unique_item(
-                    UniqueItemKind::Artifact,
-                    Some("Seal"),
-                    BTreeMap::new(),
-                )
+                .create_unique_item(UniqueItemKind::Artifact, Some("Seal"), BTreeMap::new())
                 .unwrap();
             txn.set_ground_location(item, place).unwrap();
             commit_txn(txn);
@@ -1287,11 +1297,7 @@ mod tests {
             let mut txn = new_txn(&mut world, 1);
             let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let item = txn
-                .create_unique_item(
-                    UniqueItemKind::Misc,
-                    Some("Token"),
-                    BTreeMap::new(),
-                )
+                .create_unique_item(UniqueItemKind::Misc, Some("Token"), BTreeMap::new())
                 .unwrap();
             txn.set_ground_location(actor, place).unwrap();
             txn.set_ground_location(item, place).unwrap();

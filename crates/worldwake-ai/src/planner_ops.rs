@@ -4,10 +4,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{load_per_unit, ActionDefId, ActionDomain, EntityId, EntityKind, Quantity};
+use worldwake_core::{ActionDefId, ActionDomain, EntityId, EntityKind, Quantity, load_per_unit};
 use worldwake_sim::{
-    ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView,
-    MaterializationTag,
+    ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView, MaterializationTag,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -28,6 +27,8 @@ pub enum PlannerOpKind {
     Loot,
     Bury,
     ClaimBounty,
+    PostBounty,
+    PostNotice,
     Tell,
     ConsultRecord,
     Attack,
@@ -92,9 +93,7 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Trade, "staff_market") => Some(PlannerOpKind::StaffMarket),
         (ActionDomain::Production, "queue_for_facility_use")
         | (ActionDomain::Corpse, "queue_for_corpse_use")
-        | (ActionDomain::Care, "queue_for_care_target") => {
-            Some(PlannerOpKind::QueueForFacilityUse)
-        }
+        | (ActionDomain::Care, "queue_for_care_target") => Some(PlannerOpKind::QueueForFacilityUse),
         (ActionDomain::Production, name)
             if name.starts_with("harvest:") && matches!(def.payload, ActionPayload::Harvest(_)) =>
         {
@@ -108,18 +107,16 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Transport, "pick_up" | "put_down" | "steal") => {
             Some(PlannerOpKind::MoveCargo)
         }
-        (
-            ActionDomain::Transport,
-            "store_stock" | "collect_display_stock",
-        )
-        | (
-            ActionDomain::Trade,
-            "stage_stock_for_sale" | "unstage_stock",
-        ) => Some(PlannerOpKind::StockManagement),
+        (ActionDomain::Transport, "store_stock" | "collect_display_stock")
+        | (ActionDomain::Trade, "stage_stock_for_sale" | "unstage_stock") => {
+            Some(PlannerOpKind::StockManagement)
+        }
         (ActionDomain::Care, "heal") => Some(PlannerOpKind::Heal),
         (ActionDomain::Corpse, "loot") => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury") => Some(PlannerOpKind::Bury),
         (ActionDomain::Social, "claim_bounty") => Some(PlannerOpKind::ClaimBounty),
+        (ActionDomain::Social, "post_bounty") => Some(PlannerOpKind::PostBounty),
+        (ActionDomain::Social, "post_notice") => Some(PlannerOpKind::PostNotice),
         (ActionDomain::Social, "tell") => Some(PlannerOpKind::Tell),
         (ActionDomain::Social, "consult_record") => Some(PlannerOpKind::ConsultRecord),
         (ActionDomain::Social, "bribe") => Some(PlannerOpKind::Bribe),
@@ -217,6 +214,8 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             PlannerTransitionKind::GoalModelFallback,
         ),
         PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice
         | PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Attack
@@ -246,6 +245,8 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
         }
         PlannerOpKind::Tell
         | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::PostBounty
+        | PlannerOpKind::PostNotice
         | PlannerOpKind::Attack
         | PlannerOpKind::Defend
         | PlannerOpKind::Accuse
@@ -280,61 +281,50 @@ pub fn apply_hypothetical_transition<'snapshot>(
     payload_override: Option<&ActionPayload>,
 ) -> Option<HypotheticalTransition<'snapshot>> {
     match semantics.transition_kind {
-        PlannerTransitionKind::GoalModelFallback => {
-            let result = Some(apply_goal_model_fallback_transition(
-                goal,
-                semantics,
-                state,
-                targets,
-                payload_override,
-            ));
-            result
-        }
+        PlannerTransitionKind::GoalModelFallback => Some(apply_goal_model_fallback_transition(
+            goal,
+            semantics,
+            state,
+            targets,
+            payload_override,
+        )),
         PlannerTransitionKind::ConsumeMatchingTargetCommodity => {
-            let result = apply_consume_matching_target_transition(goal, semantics, state, targets);
-            result
+            apply_consume_matching_target_transition(goal, semantics, state, targets)
         }
         PlannerTransitionKind::PickUpGroundLot => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            let result = apply_pick_up_transition(state, targets, payload_override);
-            result
+            apply_pick_up_transition(state, targets, payload_override)
         }
         PlannerTransitionKind::StealGroundLot => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            let result = apply_steal_transition(state, targets);
-            result
+            apply_steal_transition(state, targets)
         }
         PlannerTransitionKind::PutDownGroundLot => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            let result = apply_put_down_transition(state, targets);
-            result
+            apply_put_down_transition(state, targets)
         }
         PlannerTransitionKind::StoreStockIntoLocalFacility => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            let result = apply_store_stock_transition(state, targets);
-            result
+            apply_store_stock_transition(state, targets)
         }
         PlannerTransitionKind::StageStoredStockForSale => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            let result = apply_stage_stock_transition(state, targets);
-            result
+            apply_stage_stock_transition(state, targets)
         }
         PlannerTransitionKind::CollectFacilityStockToPossession => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            let result = apply_collect_stock_transition(state, targets);
-            result
+            apply_collect_stock_transition(state, targets)
         }
         PlannerTransitionKind::UnstageDisplayedStock => {
             let state =
                 apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            let result = apply_unstage_stock_transition(state, targets);
-            result
+            apply_unstage_stock_transition(state, targets)
         }
     }
 }
@@ -347,13 +337,12 @@ fn apply_goal_model_fallback_state<'snapshot>(
     payload_override: Option<&ActionPayload>,
 ) -> PlanningState<'snapshot> {
     let authoritative_targets = authoritative_targets(targets).unwrap_or_default();
-    let state = goal.key.kind.apply_planner_step(
+    goal.key.kind.apply_planner_step(
         state,
         semantics.op_kind,
         &authoritative_targets,
         payload_override,
-    );
-    state
+    )
 }
 
 fn apply_goal_model_fallback_transition<'snapshot>(
@@ -630,7 +619,8 @@ fn apply_collect_stock_transition<'snapshot>(
         return None;
     }
     let container = state.direct_container_ref(lot_ref)?;
-    let _ = controlled_facility_for_any_storage_container(&state, actor_ref, actor_place, container)?;
+    let _ =
+        controlled_facility_for_any_storage_container(&state, actor_ref, actor_place, container)?;
 
     Some(HypotheticalTransition {
         targets: vec![lot_ref],
@@ -943,31 +933,30 @@ fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_hypothetical_transition, authoritative_target, authoritative_targets,
-        build_semantics_table, classify_action_def, planner_only_candidates, semantics_for,
-        resolve_planning_targets_with, ExpectedMaterialization, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
+        ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlannerOpSemantics, PlannerTransitionKind, apply_hypothetical_transition,
+        authoritative_target, authoritative_targets, build_semantics_table, classify_action_def,
+        planner_only_candidates, resolve_planning_targets_with, semantics_for,
     };
     use crate::{
-        build_planning_snapshot, CommodityPurpose, GoalKey, GoalKind, GroundedGoal,
-        HypotheticalEntityId, PlanningEntityRef, PlanningState,
+        CommodityPurpose, GoalKey, GoalKind, GroundedGoal, HypotheticalEntityId, PlanningEntityRef,
+        PlanningState, build_planning_snapshot,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        load_per_unit, ActionDefId, ActionDomain, BodyCostPerTick, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DriveThresholds, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Permille, Quantity, RecipeId, ResourceSource, TellTopic, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        ActionDefId, ActionDomain, BodyCostPerTick, CommodityConsumableProfile, CommodityKind,
+        DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
+        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
+        RecipeId, ResourceSource, TellTopic, TickRange, TradeDispositionProfile, UniqueItemKind,
+        WorkstationTag, Wound, load_per_unit,
     };
     use worldwake_sim::{
-        estimate_duration_from_beliefs, ActionDefRegistry, ActionDuration, ActionPayload,
-        BribeActionPayload, ConsultRecordActionPayload, DeclareSupportActionPayload, DurationExpr,
-        MaterializationTag, PressForceClaimActionPayload, QueueForFacilityUsePayload,
-        RecipeDefinition, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
-        YieldForceClaimActionPayload,
+        ActionDefRegistry, ActionDuration, ActionPayload, BribeActionPayload,
+        ConsultRecordActionPayload, DeclareSupportActionPayload, DurationExpr, MaterializationTag,
+        PressForceClaimActionPayload, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
+        RuntimeBeliefView, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+        TransportActionPayload, YieldForceClaimActionPayload, estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -987,7 +976,10 @@ mod tests {
             ],
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: entity(3),
-                sale_lot: EntityId { slot: 50, generation: 0 },
+                sale_lot: EntityId {
+                    slot: 50,
+                    generation: 0,
+                },
                 offered_commodity: CommodityKind::Coin,
                 offered_quantity: Quantity(2),
                 requested_quantity: Quantity(1),
@@ -1588,6 +1580,8 @@ mod tests {
             PlannerOpKind::Loot,
             PlannerOpKind::Bury,
             PlannerOpKind::ClaimBounty,
+            PlannerOpKind::PostBounty,
+            PlannerOpKind::PostNotice,
             PlannerOpKind::Tell,
             PlannerOpKind::ConsultRecord,
             PlannerOpKind::Attack,
@@ -1598,14 +1592,13 @@ mod tests {
             PlannerOpKind::AskWitness,
         ];
 
-        assert_eq!(all.len(), 24);
+        assert_eq!(all.len(), 26);
     }
 
     #[test]
     fn build_semantics_table_classifies_registered_planner_action_defs() {
         let defs = build_phase_two_registry();
         let table = build_semantics_table(&defs);
-        let intentionally_unclassified = ["post_bounty", "post_notice"];
         let semantics_by_name = defs
             .iter()
             .filter_map(|def| {
@@ -1635,6 +1628,8 @@ mod tests {
             ("loot", PlannerOpKind::Loot),
             ("bury", PlannerOpKind::Bury),
             ("claim_bounty", PlannerOpKind::ClaimBounty),
+            ("post_bounty", PlannerOpKind::PostBounty),
+            ("post_notice", PlannerOpKind::PostNotice),
             ("heal", PlannerOpKind::Heal),
             ("bribe", PlannerOpKind::Bribe),
             ("threaten", PlannerOpKind::Threaten),
@@ -1655,13 +1650,12 @@ mod tests {
             ("pick_up", PlannerTransitionKind::PickUpGroundLot),
             ("steal", PlannerTransitionKind::StealGroundLot),
             ("put_down", PlannerTransitionKind::PutDownGroundLot),
+            ("post_bounty", PlannerTransitionKind::GoalModelFallback),
+            ("post_notice", PlannerTransitionKind::GoalModelFallback),
         ];
         let unclassified = defs
             .iter()
-            .filter(|def| {
-                !table.contains_key(&def.id)
-                    && !intentionally_unclassified.contains(&def.name.as_str())
-            })
+            .filter(|def| !table.contains_key(&def.id))
             .map(|def| def.name.as_str())
             .collect::<Vec<_>>();
 
@@ -1669,10 +1663,6 @@ mod tests {
             unclassified.is_empty(),
             "unexpected unclassified actions: {unclassified:?}"
         );
-        for name in intentionally_unclassified {
-            assert!(defs.iter().any(|def| def.name == name));
-            assert!(!semantics_by_name.contains_key(name));
-        }
         assert!(defs.iter().any(|def| def.name == "tell"));
         for (name, op_kind) in expected_ops {
             assert_eq!(semantics_by_name.get(name).unwrap().op_kind, op_kind);
@@ -1800,17 +1790,19 @@ mod tests {
                 def.name
             );
         }
-        assert!(defs
-            .iter()
-            .filter(|def| {
-                table.contains_key(&def.id)
-                    && matches!(def.name.as_str(), "attack" | "defend" | "bury" | "tell")
-            })
-            .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan));
-        assert!(defs
-            .iter()
-            .filter(|def| table.contains_key(&def.id) && def.name == "consult_record")
-            .all(|def| table.get(&def.id).unwrap().may_appear_mid_plan));
+        assert!(
+            defs.iter()
+                .filter(|def| {
+                    table.contains_key(&def.id)
+                        && matches!(def.name.as_str(), "attack" | "defend" | "bury" | "tell")
+                })
+                .all(|def| !table.get(&def.id).unwrap().may_appear_mid_plan)
+        );
+        assert!(
+            defs.iter()
+                .filter(|def| table.contains_key(&def.id) && def.name == "consult_record")
+                .all(|def| table.get(&def.id).unwrap().may_appear_mid_plan)
+        );
     }
 
     #[test]
@@ -1846,15 +1838,15 @@ mod tests {
         def.payload = ActionPayload::None;
         def.targets.clear();
 
-        let semantics = semantics_for(
-            &def,
-            PlannerOpKind::Patrol,
-        );
+        let semantics = semantics_for(&def, PlannerOpKind::Patrol);
 
         assert_eq!(semantics.op_kind, PlannerOpKind::Patrol);
         assert!(!semantics.may_appear_mid_plan);
         assert!(!semantics.is_materialization_barrier);
-        assert_eq!(semantics.transition_kind, PlannerTransitionKind::GoalModelFallback);
+        assert_eq!(
+            semantics.transition_kind,
+            PlannerTransitionKind::GoalModelFallback
+        );
     }
 
     #[test]
@@ -2017,10 +2009,12 @@ mod tests {
             apply_hypothetical_transition(&goal, semantics, state, &[lot], None).unwrap();
         assert_eq!(advanced.targets, vec![lot]);
         let split_off = match advanced.expected_materializations.as_slice() {
-            [ExpectedMaterialization {
-                tag: MaterializationTag::SplitOffLot,
-                hypothetical_id,
-            }] => PlanningEntityRef::Hypothetical(*hypothetical_id),
+            [
+                ExpectedMaterialization {
+                    tag: MaterializationTag::SplitOffLot,
+                    hypothetical_id,
+                },
+            ] => PlanningEntityRef::Hypothetical(*hypothetical_id),
             _ => panic!("partial pickup should expose one split-off materialization"),
         };
 
@@ -2080,10 +2074,12 @@ mod tests {
         .unwrap();
         assert_eq!(advanced.targets, vec![lot]);
         let split_off = match advanced.expected_materializations.as_slice() {
-            [ExpectedMaterialization {
-                tag: MaterializationTag::SplitOffLot,
-                hypothetical_id,
-            }] => PlanningEntityRef::Hypothetical(*hypothetical_id),
+            [
+                ExpectedMaterialization {
+                    tag: MaterializationTag::SplitOffLot,
+                    hypothetical_id,
+                },
+            ] => PlanningEntityRef::Hypothetical(*hypothetical_id),
             _ => panic!("payload split pickup should expose one split-off materialization"),
         };
         assert_eq!(
@@ -2232,6 +2228,9 @@ mod tests {
             !sem.is_materialization_barrier,
             "StaffMarket should NOT be a materialization barrier"
         );
-        assert_eq!(sem.transition_kind, PlannerTransitionKind::GoalModelFallback);
+        assert_eq!(
+            sem.transition_kind,
+            PlannerTransitionKind::GoalModelFallback
+        );
     }
 }

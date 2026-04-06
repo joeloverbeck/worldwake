@@ -1,15 +1,13 @@
-//! Golden tests proving per-agent reasoning diversity via `ReasoningProfile`.
+//! Golden tests proving per-agent reasoning diversity via split execution budgets.
 
 mod golden_harness;
 
 use golden_harness::*;
-use worldwake_ai::{
-    DecisionOutcome, PlannerOpKind, SelectedPlanSource,
-};
+use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
-    hash_event_log, hash_world, BeliefConfidencePolicy, CommodityKind, EntityId,
-    HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity,
-    ReasoningProfile, Seed, StateHash, Tick, UtilityProfile, WorkstationTag,
+    BeliefConfidencePolicy, CognitiveProfile, CommodityKind, EntityId, ExecutionBudget,
+    HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity, Seed,
+    StateHash, Tick, UtilityProfile, WorkstationTag, hash_event_log, hash_world,
 };
 
 fn planning_trace_at(
@@ -35,7 +33,8 @@ fn configure_perception(h: &mut GoldenHarness, agent: EntityId) {
         &mut h.event_log,
         agent,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -48,7 +47,8 @@ fn configure_perception(h: &mut GoldenHarness, agent: EntityId) {
 
 fn setup_search_depth_harness(
     seed: Seed,
-    reasoning_profile: ReasoningProfile,
+    cognitive_profile: CognitiveProfile,
+    execution_budget: ExecutionBudget,
 ) -> (GoldenHarness, EntityId) {
     let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
     let bread_recipe = h
@@ -68,7 +68,8 @@ fn setup_search_depth_harness(
         KnownRecipes::with([bread_recipe]),
     );
     configure_perception(&mut h, baker);
-    set_agent_reasoning_profile(&mut h.world, &mut h.event_log, baker, reasoning_profile);
+    set_agent_cognitive_profile(&mut h.world, &mut h.event_log, baker, cognitive_profile);
+    set_agent_execution_budget(&mut h.world, &mut h.event_log, baker, execution_budget);
 
     place_workstation(
         &mut h.world,
@@ -98,13 +99,17 @@ fn setup_search_depth_harness(
 }
 
 fn run_search_depth_hashes(seed: Seed) -> (StateHash, StateHash, StateHash, StateHash) {
-    let tight_reasoning = ReasoningProfile {
+    let tight_reasoning = CognitiveProfile {
         max_node_expansions: 2,
-        ..ReasoningProfile::default()
+        ..CognitiveProfile::default()
     };
-    let (mut tight, _tight_agent) = setup_search_depth_harness(seed, tight_reasoning);
-    let (mut thorough, _thorough_agent) =
-        setup_search_depth_harness(seed, ReasoningProfile::default());
+    let (mut tight, _tight_agent) =
+        setup_search_depth_harness(seed, tight_reasoning, ExecutionBudget::default());
+    let (mut thorough, _thorough_agent) = setup_search_depth_harness(
+        seed,
+        CognitiveProfile::default(),
+        ExecutionBudget::default(),
+    );
 
     tight.step_once();
     thorough.step_once();
@@ -134,7 +139,7 @@ fn run_search_depth_hashes(seed: Seed) -> (StateHash, StateHash, StateHash, Stat
 //
 // Setup: Two isolated harness runs share the same baker, recipe registry,
 //   remote firewood input, beliefs, and RNG seed. The only difference is
-//   `ReasoningProfile.max_node_expansions`: tight budget `2` vs default.
+//   `CognitiveProfile.max_node_expansions`: tight budget `2` vs default.
 //
 // Proves: Per-agent reasoning style changes which multi-step plan search can
 //   actually select. The default budget finds the remote input -> return ->
@@ -148,13 +153,17 @@ fn run_search_depth_hashes(seed: Seed) -> (StateHash, StateHash, StateHash, Stat
 #[test]
 fn search_depth_divergence() {
     let seed = Seed([32; 32]);
-    let tight_reasoning = ReasoningProfile {
+    let tight_reasoning = CognitiveProfile {
         max_node_expansions: 2,
-        ..ReasoningProfile::default()
+        ..CognitiveProfile::default()
     };
-    let (mut tight_h, tight_agent) = setup_search_depth_harness(seed, tight_reasoning);
-    let (mut thorough_h, thorough_agent) =
-        setup_search_depth_harness(seed, ReasoningProfile::default());
+    let (mut tight_h, tight_agent) =
+        setup_search_depth_harness(seed, tight_reasoning, ExecutionBudget::default());
+    let (mut thorough_h, thorough_agent) = setup_search_depth_harness(
+        seed,
+        CognitiveProfile::default(),
+        ExecutionBudget::default(),
+    );
 
     tight_h.step_once();
     thorough_h.step_once();
@@ -194,10 +203,7 @@ fn search_depth_divergence() {
         "default reasoning plan should include the bake step"
     );
     assert!(
-        thorough_planning
-            .selection
-            .selected_goal()
-            .is_some(),
+        thorough_planning.selection.selected_goal().is_some(),
         "default reasoning should still select a concrete goal; planning={thorough_planning:?}"
     );
 
@@ -206,8 +212,7 @@ fn search_depth_divergence() {
         "tight reasoning should fail to select the remote craft plan under the reduced expansion budget"
     );
     assert_eq!(
-        tight_planning.selection.selected_plan_source,
-        None,
+        tight_planning.selection.selected_plan_source, None,
         "tight reasoning should stop before a plan source is recorded"
     );
 }

@@ -27,8 +27,8 @@ impl Component for PatrolProfile {}
 #[cfg(test)]
 mod tests {
     use super::{PatrolProfile, PatrolRoute};
-    use crate::{traits::Component, EntityId, Permille};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{EntityId, Permille, traits::Component};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
     fn entity(slot: u32) -> EntityId {

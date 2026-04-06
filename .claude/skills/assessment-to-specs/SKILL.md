@@ -44,7 +44,9 @@ Read ALL of these files before any analysis:
 1. **The assessment document** (from the argument) — read the entire file
 2. **`docs/FOUNDATIONS.md`** — architectural commandments. Skip if read earlier in this session and not modified since.
 3. **`docs/spec-drafting-rules.md`** — spec format requirements. Skip if read earlier in this session and not modified since.
-4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is.
+4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. Also determine the highest completed phase number for use in Phase 3.
+
+**Pre-flight check**: If `specs/IMPLEMENTATION-ORDER.md` exists, warn the user that Phase 3 will overwrite it with a fresh file containing only the new phase. Suggest archiving or backing it up before proceeding (see `docs/archival-workflow.md`). If the user has not archived it, ask whether to continue.
 
 #### Step 2: Extract Proposals
 
@@ -66,8 +68,9 @@ For each proposal, validate the assessment's assumptions against the actual code
 2. **Check if already addressed**: Some proposals may describe problems that have already been fixed in recent work. Cross-reference against completed specs in `specs/IMPLEMENTATION-ORDER.md`.
 3. **Verify FOUNDATIONS alignment**: Confirm the proposal's cited FOUNDATIONS principles are correct (right number, right name). Check whether the proposal itself would violate any principles it doesn't cite.
 4. **Assess benefit**: Would this change create meaningful downstream consequences (Principle 5)? Or is it "nice to have" without real emergent payoff?
+5. **Check for overlap with active specs**: Glob `specs/S*.md` and check whether any existing active spec already covers the proposal's scope. If so, classify as Reject with reason "already covered by S{N}."
 
-When the proposal count is large (>5), use up to 3 Explore agents in parallel to validate different proposal groups simultaneously. Provide each agent with the proposals it should validate and the checklist above.
+When the proposal count is large (>5), use up to 3 Explore agents in parallel to validate different proposal groups simultaneously. Provide each agent with the proposals it should validate and the checklist above. Group proposals by codebase area (e.g., AI/planner proposals together, perception proposals together, ECS/core proposals together) so each agent can efficiently share grep context. If proposals span many areas, group by estimated validation complexity instead.
 
 #### Step 4: Classify Each Proposal
 
@@ -85,18 +88,18 @@ Present the triage to the user in a structured format:
 ## Triage Report: <assessment title>
 
 ### Accepted (N proposals)
-1. **P1: <title>** — <1-sentence rationale>. Scope: <Small/Medium/Large>. Spec: S{next}-<name>.
+1. **P1: <title>** — <1-sentence rationale>. FOUNDATIONS: <aligned / P{N} misnumbered / P{N} violated>. Scope: <Small/Medium/Large>. Spec: S{next}-<name>.
 2. ...
 
 ### Scoped Down (N proposals)  
-1. **P3: <title>** — <1-sentence rationale for scope reduction>. 
+1. **P3: <title>** — <1-sentence rationale for scope reduction>. FOUNDATIONS: <aligned / P{N} misnumbered>.
    - **Included**: <what the spec will cover>
    - **Deferred**: <what is left for later>
    - Spec: S{next}-<name>.
 2. ...
 
 ### Rejected (N proposals)
-1. **P5: <title>** — <specific reason for rejection>.
+1. **P5: <title>** — <specific reason for rejection>. FOUNDATIONS: <aligned / P{N} violated / N/A>.
 2. ...
 
 ### Questions
@@ -121,7 +124,7 @@ Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. 
 
 #### Step 7: Write Draft Specs
 
-For each accepted or scoped-down proposal, write a draft spec to `specs/S{next}-{short-name}.md`.
+For each accepted or scoped-down proposal, write a draft spec to `specs/S{next}-{short-name}.md`. Use lowercase-kebab-case for `{short-name}`. Name should describe the deliverable, not the problem. Match existing spec naming patterns (e.g., `S42-per-agent-reasoning-style`, `S44-generalized-contention-substrate`). Avoid abstract names like `belief-improvement` — prefer concrete names like `entity-belief-claims`.
 
 Each spec MUST follow project conventions from `docs/spec-drafting-rules.md`:
 
@@ -143,9 +146,9 @@ These are **draft specs**. They contain the architectural shape and key delivera
 
 When writing multiple specs (>3), use Explore agents in parallel to trace codebase references for different specs simultaneously.
 
-#### Step 8: Present Written Specs
+#### Step 8: Verify and Present Written Specs
 
-After writing all specs, present a brief summary:
+After writing all specs, spot-check that each contains: FOUNDATIONS Alignment table, Section H (where applicable), Deliverables with concrete types, and Component Registration section. Report any missing mandatory sections before presenting the summary.
 
 ```
 ## Specs Written
@@ -168,7 +171,11 @@ For each new spec, determine:
 - Which existing completed specs/epics it builds on
 - Which specs are independent and can run in parallel
 
+A spec depends on another if it: (a) references types or components the other spec introduces, (b) modifies code the other spec also modifies (merge conflict risk), or (c) the other spec's deliverables are preconditions in this spec's Section H. Soft dependencies (benefit but not blocking) should be noted but not treated as hard blockers for wave ordering.
+
 #### Step 10: Write Implementation Order
+
+Determine the next phase number from the completed phases in the old `specs/IMPLEMENTATION-ORDER.md` (read in Step 1). Increment the highest completed phase number by 1.
 
 Write a **fresh** `specs/IMPLEMENTATION-ORDER.md` with the following structure:
 
@@ -210,6 +217,7 @@ S50, S51 (parallel)
 ### Phase Gate
 - [ ] <gate criterion 1>
 - [ ] <gate criterion 2>
+- [ ] Golden E2E coverage for each new spec's core behavior
 - ...
 ```
 

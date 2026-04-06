@@ -1,28 +1,26 @@
 //! Typed event-log deltas over canonical world semantics.
 
 use crate::{
-    component_schema::with_component_schema_entries, ActiveGoal, AgentBeliefStore, AgentData,
-    ArtifactHeader, BountyTerms,
-    BanditCamp, BanditFactionPolicy, BlockedIntentMemory, CarryCapacity, CombatProfile,
-    CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile,
-    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
-    Container, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-    EpistemicDispositionProfile, FactionData,
-    HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
-    JusticeDispositionProfile, KnownRecipes, MerchandiseProfile, MetabolismProfile, Name,
-    OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute,
-    PreferenceProfile, PursuitProfile, PerceptionProfile, Permille, ProductionJob,
-    ProductionOutputOwnershipPolicy, Quantity, ReasoningProfile,
-    RecordData, ReservationRecord, ResourceSource, SaleListing, StockAssignment,
-    RouteExperience, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, BanditCamp, BanditFactionPolicy,
+    BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance,
+    CommodityKind, CommodityValuationProfile, CommunicationProfile, Container,
+    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
+    DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
+    EpistemicDispositionProfile, ExecutionBudget, FactionData, HomeostaticNeeds, InTransitOnEdge,
+    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
+    MerchandiseProfile, MetabolismProfile, Name, NoticeContent, OfficeData, OfficeForceProfile,
+    OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PreferenceProfile,
+    ProductionJob, ProductionOutputOwnershipPolicy, PursuitProfile, Quantity, RecordData,
+    ReservationRecord, ResourceSource, RouteExperience, SaleListing, SceneEvidence,
+    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
     TheftDispositionProfile, TradeDispositionProfile, UniqueItem, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
-    NoticeContent,
+    component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 
 macro_rules! define_component_kind {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
         pub enum ComponentKind {
             $($component_variant,)*
@@ -37,7 +35,7 @@ macro_rules! define_component_kind {
 }
 
 macro_rules! define_component_value {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
         pub enum ComponentValue {
             $($component_variant($component_ty),)*
@@ -55,7 +53,7 @@ macro_rules! define_component_value {
 }
 
 macro_rules! count_authoritative_components {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         <[()]>::len(&[$(count_authoritative_components!(@replace $component_variant)),*])
     };
     (@replace $component_variant:ident) => { () };
@@ -239,36 +237,34 @@ mod tests {
         RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        test_utils::{
-            sample_blocked_intent_memory, sample_demand_memory,
-            sample_commodity_valuation_profile, sample_preference_profile,
-            sample_route_experience, sample_source_reliability,
-            sample_contention_disposition_profile, sample_merchandise_profile,
-            sample_substitute_preferences, sample_trade_disposition_profile,
-            sample_utility_profile,
-        },
         ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, ArtifactKind,
         ArtifactState, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
-        BelievedEntityState, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CombatProfile,
-        CombatStance, CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure,
-        CommunicationProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
-        DeprivationKind, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
-        EventId, FactionData,
-        FrameState, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
-        InstitutionalRecordEntry, IntentionDispositionProfile, IntentionDomain, IntentionDomainTag,
-        IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation,
-        MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, ProductionJob, PursuitProfile,
-        NoticeContent, NoticeTopic, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        ProofRequirement, ProvenanceEntry, Quantity, QueuedContentionIntent, ReasoningProfile,
-        RecordData, RecordEntryId,
-        RecordKind, ReservationId,
-        ReservationRecord, ResourceSource, RewardSource, SaleListing, StockAssignment,
-        StockAssignmentKind, StockStoragePolicy, TellProfile, TheftDispositionProfile, Tick, TickRange,
-        TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile, ViolationMemory,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        BelievedEntityState, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CognitiveProfile,
+        CombatProfile, CombatStance, CommodityKind, CommunicationProfile, Container,
+        ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
+        DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
+        EpistemicDispositionProfile, EventId, ExecutionBudget, FactionData, FrameState, GoalKey,
+        GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry,
+        IntentionDispositionProfile, IntentionDomain, IntentionDomainTag, IntentionFrame, ItemLot,
+        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
+        NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile, OfficeForceState,
+        PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, ProvenanceEntry,
+        PursuitProfile, Quantity, QueuedContentionIntent, RecordData, RecordEntryId, RecordKind,
+        ReservationId, ReservationRecord, ResourceSource, RewardSource, SaleListing, SceneEvidence,
+        StockAssignment, StockAssignmentKind, StockStoragePolicy, TellProfile,
+        TheftDispositionProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
+        ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
+        test_utils::{
+            sample_blocked_intent_memory, sample_commodity_valuation_profile,
+            sample_contention_disposition_profile, sample_demand_memory,
+            sample_merchandise_profile, sample_preference_profile, sample_route_experience,
+            sample_source_reliability, sample_substitute_preferences,
+            sample_trade_disposition_profile, sample_utility_profile,
+        },
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Debug;
 
@@ -320,9 +316,7 @@ mod tests {
             )),
             ComponentValue::DeadAt(DeadAt(Tick(18))),
             ComponentValue::CombatStance(CombatStance::Defending),
-            ComponentValue::ContentionDispositionProfile(
-                sample_contention_disposition_profile(),
-            ),
+            ComponentValue::ContentionDispositionProfile(sample_contention_disposition_profile()),
             ComponentValue::ContentionPolicy(ContentionPolicy {
                 grant_hold_ticks: std::num::NonZeroU32::new(4).unwrap(),
                 auto_promote: true,
@@ -356,7 +350,8 @@ mod tests {
             }),
             ComponentValue::OfficeData(OfficeData {
                 title: "Granary Chair".to_string(),
-                jurisdiction: entity(32),
+                seat: entity(32),
+                jurisdiction: BTreeSet::from([entity(32)]),
                 succession_law: crate::SuccessionLaw::Support,
                 eligibility_rules: Vec::new(),
                 succession_period_ticks: 12,
@@ -417,6 +412,8 @@ mod tests {
             }),
             ComponentValue::BlockedIntentMemory(sample_blocked_intent_memory()),
             ComponentValue::AgentBeliefStore(AgentBeliefStore {
+                entity_claims: BTreeMap::new(),
+                next_claim_id: crate::ClaimId(0),
                 known_entities: BTreeMap::from([(
                     entity(18),
                     BelievedEntityState {
@@ -433,6 +430,7 @@ mod tests {
                         believed_activity: None,
                         believed_artifact: None,
                         believed_contention: None,
+                        believed_evidence: None,
                         observed_tick: Tick(14),
                         source: PerceptionSource::DirectObservation,
                     },
@@ -459,7 +457,8 @@ mod tests {
                 )]),
             }),
             ComponentValue::PerceptionProfile(PerceptionProfile {
-                memory_capacity: 16,
+                entity_memory_capacity: 16,
+                entity_claim_capacity: 16,
                 memory_retention_ticks: 64,
                 observation_fidelity: Permille::new(920).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -478,19 +477,21 @@ mod tests {
                 testimony_acceptance: Permille::new(830).unwrap(),
                 gossip_acceptance: Permille::new(540).unwrap(),
             }),
-            ComponentValue::ReasoningProfile(ReasoningProfile {
+            ComponentValue::CognitiveProfile(CognitiveProfile {
                 max_candidates_to_plan: 3,
                 max_plan_depth: 9,
                 snapshot_travel_horizon: 5,
-                max_prerequisite_locations: 4,
                 max_node_expansions: 320,
-                beam_width: 11,
                 switch_margin: Permille::new(175).unwrap(),
                 transient_block_ticks: 12,
                 unknown_block_ticks: 6,
                 structural_block_ticks: 250,
                 initial_cooldown_ticks: 7,
                 max_cooldown_ticks: 90,
+            }),
+            ComponentValue::ExecutionBudget(ExecutionBudget {
+                beam_width: 11,
+                max_prerequisite_locations: 4,
             }),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
@@ -531,6 +532,19 @@ mod tests {
                 faction: entity(40),
                 supplies: entity(41),
                 empty_since_tick: Some(Tick(9)),
+            }),
+            ComponentValue::SceneEvidence(SceneEvidence {
+                evidence: vec![crate::EvidenceEntry {
+                    id: crate::EvidenceEntryId(1),
+                    kind: crate::EvidenceKind::DisturbanceMarker {
+                        place: entity(42),
+                        kind: crate::DisturbanceKind::ForcedEntry,
+                        created_at: Tick(16),
+                    },
+                    created_at: Tick(16),
+                    decay_ticks: 50,
+                }],
+                next_entry_id: 2,
             }),
             ComponentValue::BanditFactionPolicy(BanditFactionPolicy {
                 min_regroup_count: 3,
@@ -744,7 +758,8 @@ mod tests {
                 ComponentKind::PerceptionProfile,
                 ComponentKind::TellProfile,
                 ComponentKind::CommunicationProfile,
-                ComponentKind::ReasoningProfile,
+                ComponentKind::CognitiveProfile,
+                ComponentKind::ExecutionBudget,
                 ComponentKind::DriveThresholds,
                 ComponentKind::HomeostaticNeeds,
                 ComponentKind::DeprivationExposure,
@@ -761,6 +776,7 @@ mod tests {
                 ComponentKind::ResourceSource,
                 ComponentKind::ProductionOutputOwnershipPolicy,
                 ComponentKind::BanditCamp,
+                ComponentKind::SceneEvidence,
                 ComponentKind::BanditFactionPolicy,
                 ComponentKind::ProductionJob,
                 ComponentKind::InTransitOnEdge,

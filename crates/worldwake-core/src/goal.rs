@@ -1,8 +1,8 @@
 //! Shared goal identity types used across authoritative memory and AI planning.
 
 use crate::{
-    CommodityKind, CommunicationClass, EntityId, PunishmentKind, RecipeId, RecordEntryId,
-    TellTopic, ViolationId,
+    ArtifactPostingContext, BountyTerms, CommodityKind, CommunicationClass, EntityId, NoticeTopic,
+    PunishmentKind, RecipeId, RecordEntryId, TellTopic, ViolationId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -63,6 +63,14 @@ pub enum GoalKind {
     },
     FulfillBounty {
         bounty: EntityId,
+    },
+    PostBounty {
+        posting: ArtifactPostingContext,
+        terms: BountyTerms,
+    },
+    PostNotice {
+        posting: ArtifactPostingContext,
+        topic: NoticeTopic,
     },
     ShareBelief {
         listener: EntityId,
@@ -163,6 +171,9 @@ impl From<GoalKind> for GoalKey {
                 corpse,
                 burial_site,
             } => (None, Some(corpse), Some(burial_site)),
+            GoalKind::PostBounty { posting, .. } | GoalKind::PostNotice { posting, .. } => {
+                (None, None, Some(posting.posting_place))
+            }
             GoalKind::ShareBelief { listener, .. } => (None, Some(listener), None),
             GoalKind::RegroupWithFaction { faction }
             | GoalKind::EstablishBanditCamp { faction } => (None, Some(faction), None),
@@ -201,10 +212,11 @@ mod tests {
         ViolationId,
     };
     use crate::{
-        test_utils::entity_id, CommodityKind, CommunicationClass, PunishmentKind, Quantity,
-        RecipeId,
+        ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
+        NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId, RewardSource,
+        test_utils::entity_id,
     };
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
     use std::fmt::Debug;
 
@@ -266,6 +278,57 @@ mod tests {
         let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn goal_key_extracts_posting_place_for_post_bounty() {
+        let posting_place = entity_id(24, 0);
+        let key = GoalKey::from(GoalKind::PostBounty {
+            posting: ArtifactPostingContext {
+                posting_place,
+                issuing_authority: None,
+                expires_at: None,
+                jurisdiction: None,
+            },
+            terms: BountyTerms {
+                target: BountyTarget::EliminateEntity {
+                    target: entity_id(25, 0),
+                },
+                proof_requirement: ProofRequirement::SelfReport,
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(5),
+                reward_source: RewardSource::PersonalFunds {
+                    issuer: entity_id(26, 0),
+                },
+                claim_place: posting_place,
+            },
+        });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, None);
+        assert_eq!(key.place, Some(posting_place));
+    }
+
+    #[test]
+    fn goal_key_preserves_notice_topic_in_kind_and_extracts_posting_place() {
+        let posting_place = entity_id(26, 0);
+        let goal = GoalKind::PostNotice {
+            posting: ArtifactPostingContext {
+                posting_place,
+                issuing_authority: None,
+                expires_at: None,
+                jurisdiction: None,
+            },
+            topic: NoticeTopic::ThreatWarning {
+                place: entity_id(27, 0),
+            },
+        };
+        let key = GoalKey::from(goal);
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, None);
+        assert_eq!(key.place, Some(posting_place));
+        assert_eq!(key.kind, goal);
     }
 
     #[test]

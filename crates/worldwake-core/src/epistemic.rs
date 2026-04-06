@@ -41,8 +41,8 @@ impl Component for EpistemicDispositionProfile {}
 #[cfg(test)]
 mod tests {
     use super::{EpistemicDispositionProfile, EpistemicSubject};
-    use crate::{test_utils::entity_id, CommodityKind, Component, Permille};
-    use serde::{de::DeserializeOwned, Serialize};
+    use crate::{CommodityKind, Component, Permille, test_utils::entity_id};
+    use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
 
@@ -102,8 +102,14 @@ mod tests {
     fn epistemic_disposition_profile_default_matches_fixture_baseline() {
         let profile = EpistemicDispositionProfile::default();
 
-        assert_eq!(profile.stale_evidence_barrier_threshold, Permille::new(400).unwrap());
-        assert_eq!(profile.witness_query_duration_ticks, NonZeroU32::new(2).unwrap());
+        assert_eq!(
+            profile.stale_evidence_barrier_threshold,
+            Permille::new(400).unwrap()
+        );
+        assert_eq!(
+            profile.witness_query_duration_ticks,
+            NonZeroU32::new(2).unwrap()
+        );
         assert_eq!(profile.ask_memory_retention_ticks, 12);
     }
 }

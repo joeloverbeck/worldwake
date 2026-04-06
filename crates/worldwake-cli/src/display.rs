@@ -3,6 +3,7 @@
 //! All functions are pure read-only — no world mutation.
 
 use worldwake_core::{
+    Tick,
     control::ControlSource,
     delta::{
         ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
@@ -14,7 +15,6 @@ use worldwake_core::{
     items::CommodityKind,
     numerics::{Permille, Quantity},
     world::World,
-    Tick,
 };
 
 /// Errors from [`resolve_entity`].
@@ -150,12 +150,12 @@ pub fn format_location(world: &World, entity_id: EntityId, current_tick: Tick) -
         let place_name = entity_display_name(world, place_id);
         return format!("at {place_name}");
     }
-    if world.is_in_transit(entity_id) {
-        if let Some(transit) = world.get_component_in_transit_on_edge(entity_id) {
-            let dest = entity_display_name(world, transit.destination);
-            let remaining = transit.arrival_tick.0.saturating_sub(current_tick.0);
-            return format!("in transit to {dest} ({remaining} ticks remaining)");
-        }
+    if world.is_in_transit(entity_id)
+        && let Some(transit) = world.get_component_in_transit_on_edge(entity_id)
+    {
+        let dest = entity_display_name(world, transit.destination);
+        let remaining = transit.arrival_tick.0.saturating_sub(current_tick.0);
+        return format!("in transit to {dest} ({remaining} ticks remaining)");
     }
     "(no location)".to_string()
 }
@@ -287,8 +287,12 @@ fn format_active_goal_delta(agent_name: &str, after: &ComponentValue, world: &Wo
 /// Format a `GoalKind` with resolved entity names instead of raw `EntityId` values.
 pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
     match kind {
-        GoalKind::ConsumeOwnedCommodity { commodity } => format!("ConsumeOwnedCommodity({commodity:?})"),
-        GoalKind::AcquireCommodity { commodity, purpose } => format!("AcquireCommodity({commodity:?}, {purpose:?})"),
+        GoalKind::ConsumeOwnedCommodity { commodity } => {
+            format!("ConsumeOwnedCommodity({commodity:?})")
+        }
+        GoalKind::AcquireCommodity { commodity, purpose } => {
+            format!("AcquireCommodity({commodity:?}, {purpose:?})")
+        }
         GoalKind::Sleep => "Sleep".to_string(),
         GoalKind::Relieve => "Relieve".to_string(),
         GoalKind::Wash => "Wash".to_string(),
@@ -303,27 +307,63 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
             format!("TreatWounds({})", entity_display_name(world, *patient))
         }
         GoalKind::RegroupWithFaction { faction } => {
-            format!("RegroupWithFaction({})", entity_display_name(world, *faction))
+            format!(
+                "RegroupWithFaction({})",
+                entity_display_name(world, *faction)
+            )
         }
         GoalKind::EstablishBanditCamp { faction } => {
-            format!("EstablishBanditCamp({})", entity_display_name(world, *faction))
+            format!(
+                "EstablishBanditCamp({})",
+                entity_display_name(world, *faction)
+            )
         }
         GoalKind::ProduceCommodity { recipe_id } => format!("ProduceCommodity({recipe_id:?})"),
         GoalKind::SellCommodity { commodity } => format!("SellCommodity({commodity:?})"),
         GoalKind::RestockCommodity { commodity } => format!("RestockCommodity({commodity:?})"),
-        GoalKind::MoveCargo { commodity, destination } => {
-            format!("MoveCargo({commodity:?} → {})", entity_display_name(world, *destination))
+        GoalKind::MoveCargo {
+            commodity,
+            destination,
+        } => {
+            format!(
+                "MoveCargo({commodity:?} → {})",
+                entity_display_name(world, *destination)
+            )
         }
         GoalKind::LootCorpse { corpse } => {
             format!("LootCorpse({})", entity_display_name(world, *corpse))
         }
-        GoalKind::BuryCorpse { corpse, burial_site } => {
-            format!("BuryCorpse({} at {})", entity_display_name(world, *corpse), entity_display_name(world, *burial_site))
+        GoalKind::BuryCorpse {
+            corpse,
+            burial_site,
+        } => {
+            format!(
+                "BuryCorpse({} at {})",
+                entity_display_name(world, *corpse),
+                entity_display_name(world, *burial_site)
+            )
         }
         GoalKind::FulfillBounty { bounty } => {
             format!("FulfillBounty({})", entity_display_name(world, *bounty))
         }
-        GoalKind::ShareBelief { listener, topic, communication_class } => {
+        GoalKind::PostBounty { posting, terms } => {
+            format!(
+                "PostBounty({:?} at {})",
+                terms.target,
+                entity_display_name(world, posting.posting_place)
+            )
+        }
+        GoalKind::PostNotice { posting, topic } => {
+            format!(
+                "PostNotice({topic:?} at {})",
+                entity_display_name(world, posting.posting_place)
+            )
+        }
+        GoalKind::ShareBelief {
+            listener,
+            topic,
+            communication_class,
+        } => {
             let listener_name = entity_display_name(world, *listener);
             let topic_str = format_tell_topic_brief(world, topic);
             format!("ShareBelief({communication_class:?}, tell {listener_name} about {topic_str})")
@@ -332,10 +372,17 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
             format!("ClaimOffice({})", entity_display_name(world, *office))
         }
         GoalKind::SupportCandidateForOffice { office, candidate } => {
-            format!("SupportCandidate({} for {})", entity_display_name(world, *candidate), entity_display_name(world, *office))
+            format!(
+                "SupportCandidate({} for {})",
+                entity_display_name(world, *candidate),
+                entity_display_name(world, *office)
+            )
         }
         GoalKind::InvestigateViolation { place, .. } => {
-            format!("InvestigateViolation(at {})", entity_display_name(world, *place))
+            format!(
+                "InvestigateViolation(at {})",
+                entity_display_name(world, *place)
+            )
         }
         GoalKind::Patrol { place } => {
             format!("Patrol({})", entity_display_name(world, *place))
@@ -346,8 +393,15 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::Accuse { accused, .. } => {
             format!("Accuse({})", entity_display_name(world, *accused))
         }
-        GoalKind::PunishAccused { accused, punishment, .. } => {
-            format!("PunishAccused({}, {punishment:?})", entity_display_name(world, *accused))
+        GoalKind::PunishAccused {
+            accused,
+            punishment,
+            ..
+        } => {
+            format!(
+                "PunishAccused({}, {punishment:?})",
+                entity_display_name(world, *accused)
+            )
         }
     }
 }
@@ -373,19 +427,39 @@ fn format_needs_delta(
     if let Some(bn) = before_needs {
         let mut changes = Vec::new();
         if bn.hunger != after_needs.hunger {
-            changes.push(format!("hunger {}→{}‰", bn.hunger.value(), after_needs.hunger.value()));
+            changes.push(format!(
+                "hunger {}→{}‰",
+                bn.hunger.value(),
+                after_needs.hunger.value()
+            ));
         }
         if bn.thirst != after_needs.thirst {
-            changes.push(format!("thirst {}→{}‰", bn.thirst.value(), after_needs.thirst.value()));
+            changes.push(format!(
+                "thirst {}→{}‰",
+                bn.thirst.value(),
+                after_needs.thirst.value()
+            ));
         }
         if bn.fatigue != after_needs.fatigue {
-            changes.push(format!("fatigue {}→{}‰", bn.fatigue.value(), after_needs.fatigue.value()));
+            changes.push(format!(
+                "fatigue {}→{}‰",
+                bn.fatigue.value(),
+                after_needs.fatigue.value()
+            ));
         }
         if bn.bladder != after_needs.bladder {
-            changes.push(format!("bladder {}→{}‰", bn.bladder.value(), after_needs.bladder.value()));
+            changes.push(format!(
+                "bladder {}→{}‰",
+                bn.bladder.value(),
+                after_needs.bladder.value()
+            ));
         }
         if bn.dirtiness != after_needs.dirtiness {
-            changes.push(format!("dirtiness {}→{}‰", bn.dirtiness.value(), after_needs.dirtiness.value()));
+            changes.push(format!(
+                "dirtiness {}→{}‰",
+                bn.dirtiness.value(),
+                after_needs.dirtiness.value()
+            ));
         }
         if changes.is_empty() {
             format!("HomeostaticNeeds: unchanged on {agent_name}")
@@ -395,8 +469,11 @@ fn format_needs_delta(
     } else {
         format!(
             "HomeostaticNeeds on {agent_name}: hunger={}‰, thirst={}‰, fatigue={}‰, bladder={}‰, dirtiness={}‰",
-            after_needs.hunger.value(), after_needs.thirst.value(), after_needs.fatigue.value(),
-            after_needs.bladder.value(), after_needs.dirtiness.value()
+            after_needs.hunger.value(),
+            after_needs.thirst.value(),
+            after_needs.fatigue.value(),
+            after_needs.bladder.value(),
+            after_needs.dirtiness.value()
         )
     }
 }
@@ -458,24 +535,21 @@ fn format_belief_store_delta(
                 }
             }
         } else {
-            changes.push(format!(
-                "received {} beliefs",
-                after_heard - before_heard
-            ));
+            changes.push(format!("received {} beliefs", after_heard - before_heard));
         }
     }
 
     // Diff told beliefs (Tell sending)
     let before_told = before_store.map_or(0, |s| s.told_beliefs.len());
     let after_told = after_store.told_beliefs.len();
-    if after_told > before_told {
-        if let Some(bs) = before_store {
-            for key in after_store.told_beliefs.keys() {
-                if !bs.told_beliefs.contains_key(key) {
-                    let listener = entity_display_name(world, key.counterparty);
-                    let topic = format_tell_topic_brief(world, &key.topic);
-                    changes.push(format!("told {listener} about {topic}"));
-                }
+    if after_told > before_told
+        && let Some(bs) = before_store
+    {
+        for key in after_store.told_beliefs.keys() {
+            if !bs.told_beliefs.contains_key(key) {
+                let listener = entity_display_name(world, key.counterparty);
+                let topic = format_tell_topic_brief(world, &key.topic);
+                changes.push(format!("told {listener} about {topic}"));
             }
         }
     }
@@ -505,10 +579,10 @@ fn format_belief_store_delta(
         if let Some(bs) = before_store {
             let mut updated = 0;
             for (entity_id, after_state) in &after_store.known_entities {
-                if let Some(before_state) = bs.known_entities.get(entity_id) {
-                    if before_state != after_state {
-                        updated += 1;
-                    }
+                if let Some(before_state) = bs.known_entities.get(entity_id)
+                    && before_state != after_state
+                {
+                    updated += 1;
                 }
             }
             if updated > 0 {
@@ -543,7 +617,7 @@ fn format_tell_topic_brief(world: &World, topic: &worldwake_core::TellTopic) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scenario::{spawn_scenario, types::*, SpawnedSimulation};
+    use crate::scenario::{SpawnedSimulation, spawn_scenario, types::*};
     use worldwake_core::{
         control::ControlSource,
         drives::ThresholdBand,
@@ -579,7 +653,8 @@ mod tests {
                 trade_disposition: None,
                 perception_profile: None,
                 tell_profile: None,
-                reasoning_profile: None,
+                cognitive_profile: None,
+                execution_budget: None,
                 epistemic_disposition: None,
                 intention_disposition: None,
                 communication_profile: None,
@@ -677,7 +752,8 @@ mod tests {
                     trade_disposition: None,
                     perception_profile: None,
                     tell_profile: None,
-                    reasoning_profile: None,
+                    cognitive_profile: None,
+                    execution_budget: None,
                     epistemic_disposition: None,
                     intention_disposition: None,
                     communication_profile: None,
@@ -706,7 +782,8 @@ mod tests {
                     trade_disposition: None,
                     perception_profile: None,
                     tell_profile: None,
-                    reasoning_profile: None,
+                    cognitive_profile: None,
+                    execution_budget: None,
                     epistemic_disposition: None,
                     intention_disposition: None,
                     communication_profile: None,
@@ -754,6 +831,33 @@ mod tests {
         assert_eq!(
             format_goal_kind(sim.state.world(), &GoalKind::FulfillBounty { bounty: id }),
             "FulfillBounty(Aster)"
+        );
+    }
+
+    #[test]
+    fn test_format_goal_kind_post_bounty() {
+        let (sim, id) = one_agent_scenario("Aster");
+        assert_eq!(
+            format_goal_kind(
+                sim.state.world(),
+                &GoalKind::PostBounty {
+                    posting: worldwake_core::ArtifactPostingContext {
+                        posting_place: id,
+                        issuing_authority: None,
+                        expires_at: None,
+                        jurisdiction: None,
+                    },
+                    terms: worldwake_core::BountyTerms {
+                        target: worldwake_core::BountyTarget::EliminateEntity { target: id },
+                        proof_requirement: worldwake_core::ProofRequirement::SelfReport,
+                        reward_commodity: CommodityKind::Coin,
+                        reward_quantity: Quantity(1),
+                        reward_source: worldwake_core::RewardSource::PersonalFunds { issuer: id },
+                        claim_place: id,
+                    },
+                }
+            ),
+            "PostBounty(EliminateEntity { target: EntityId { slot: 1, generation: 0 } } at Aster)"
         );
     }
 

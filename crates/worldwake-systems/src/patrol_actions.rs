@@ -6,8 +6,8 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, CommitOutcome,
-    Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition,
-    RuntimeBeliefView, TargetSpec,
+    Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition, RuntimeBeliefView,
+    TargetSpec,
 };
 
 pub fn register_patrol_action(
@@ -117,7 +117,8 @@ fn enumerate_patrol_targets(
     let Some(waypoint) = route.assigned_places.get(route.current_index).copied() else {
         return Vec::new();
     };
-    (view.effective_place(actor) == Some(waypoint)).then_some(vec![vec![waypoint]])
+    (view.effective_place(actor) == Some(waypoint))
+        .then_some(vec![vec![waypoint]])
         .unwrap_or_default()
 }
 
@@ -210,14 +211,14 @@ mod tests {
     use super::register_patrol_action;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, CauseRef, ControlSource, EventLog, EventTag,
-        EventView, PatrolProfile, PatrolRoute, Permille, PrototypePlace, Seed, Tick,
-        VisibilitySpec, World, WorldTxn,
+        CauseRef, ControlSource, EventLog, EventTag, EventView, PatrolProfile, PatrolRoute,
+        Permille, PrototypePlace, Seed, Tick, VisibilitySpec, World, WorldTxn,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
-        get_affordances, interrupt_action, start_action, tick_action, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionPayload, DeterministicRng, InterruptReason, TickOutcome,
+        ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
+        ActionInstance, ActionInstanceId, ActionPayload, DeterministicRng, InterruptReason,
+        TickOutcome, get_affordances, interrupt_action, start_action, tick_action,
     };
 
     use super::*;

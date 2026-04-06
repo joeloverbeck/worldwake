@@ -1,12 +1,11 @@
 use crate::{
-    authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
     AgentDecisionRuntime, DirtySet, FrameRuntimeSnapshot, PatrolRouteSnapshotTrace, PlannedStep,
-    PlannerOpKind,
+    PlannerOpKind, authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, EntityId, FrameAssumption,
-    FrameClearReason, FrameState, IntentionDomain, IntentionFrame, Permille, ReasoningProfile,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CognitiveProfile, EntityId,
+    FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame, Permille,
     SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
@@ -62,7 +61,7 @@ pub(super) fn progress_op_kinds(domain: &IntentionDomain) -> &'static [PlannerOp
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FrameSwitchMarginSource {
-    ReasoningProfile,
+    CognitiveProfile,
     FrameProfile,
 }
 
@@ -104,15 +103,13 @@ pub(super) fn update_frame_for_adopted_plan(
 
     let same_frame = relation == crate::FramePlanRelation::RefreshesFrame;
 
-    if same_frame {
-        if let Some(existing) = frame {
-            return Some(IntentionFrame {
-                goal: selected_plan.goal,
-                domain: IntentionDomain::Travel { destination },
-                state: FrameState::Active,
-                ..existing.clone()
-            });
-        }
+    if same_frame && let Some(existing) = frame {
+        return Some(IntentionFrame {
+            goal: selected_plan.goal,
+            domain: IntentionDomain::Travel { destination },
+            state: FrameState::Active,
+            ..existing.clone()
+        });
     }
 
     Some(IntentionFrame {
@@ -143,7 +140,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
     agent: EntityId,
     step: &PlannedStep,
     tick: Tick,
-    reasoning: &ReasoningProfile,
+    cognitive: &CognitiveProfile,
 ) -> (bool, Option<IntentionFrame>) {
     if step.op_kind != crate::PlannerOpKind::Travel
         || !has_active_frame_travel(
@@ -183,7 +180,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
             blocking_fact: worldwake_core::BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: tick,
-            expires_tick: tick + u64::from(reasoning.structural_block_ticks),
+            expires_tick: tick + u64::from(cognitive.structural_block_ticks),
         });
         runtime.last_frame_clear_reason = Some(FrameClearReason::PatienceExhausted);
         None
@@ -238,13 +235,13 @@ pub(super) fn populate_assumptions(
         IntentionDomain::Care { patient } => {
             let mut assumptions = Vec::with_capacity(2);
             assumptions.push(FrameAssumption::TargetAlive(patient));
-            if let Some(from) = current_place {
-                if let Some(patient_place) = view.effective_place(patient) {
-                    assumptions.push(FrameAssumption::RouteExists {
-                        from,
-                        to: patient_place,
-                    });
-                }
+            if let Some(from) = current_place
+                && let Some(patient_place) = view.effective_place(patient)
+            {
+                assumptions.push(FrameAssumption::RouteExists {
+                    from,
+                    to: patient_place,
+                });
             }
             assumptions
         }

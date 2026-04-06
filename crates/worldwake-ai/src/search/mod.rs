@@ -4,16 +4,16 @@ mod heuristic;
 mod transition;
 
 use crate::{
-    shared_collections::SharedVec, GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan,
-    PlannedStep, PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot,
-    PlanningState,
+    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan, PlannedStep,
+    PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot, PlanningState,
+    shared_collections::SharedVec,
 };
 use candidates::{
-    root_candidate_payload_status, search_candidates, unsupported_goal, SearchCandidate,
+    SearchCandidate, root_candidate_payload_status, search_candidates, unsupported_goal,
 };
 #[cfg(test)]
 use candidates::{search_candidate_from_planner, search_candidates_from_affordance};
-use frontier::{compare_search_nodes, FrontierEntry};
+use frontier::{FrontierEntry, compare_search_nodes};
 #[cfg(test)]
 use heuristic::compute_heuristic;
 use heuristic::{
@@ -24,7 +24,9 @@ use std::collections::{BTreeMap, BinaryHeap};
 #[cfg(test)]
 use transition::build_successor;
 use transition::build_successor_detailed;
-use worldwake_core::{ActionDefId, BlockedIntentMemory, OpportunityKey, ReasoningProfile, Tick};
+use worldwake_core::{
+    ActionDefId, BlockedIntentMemory, CognitiveProfile, ExecutionBudget, OpportunityKey, Tick,
+};
 use worldwake_sim::{ActionDefRegistry, ActionHandlerRegistry, RecipeRegistry};
 
 #[derive(Clone)]
@@ -80,7 +82,8 @@ pub fn search_plan(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
-    budget: &ReasoningProfile,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
     recipes: &RecipeRegistry,
     blocked: &BlockedIntentMemory,
     current_tick: Tick,
@@ -100,7 +103,10 @@ pub fn search_plan(
 
     let mut frontier = BinaryHeap::new();
     frontier.push(FrontierEntry::new(root_node(
-        snapshot, goal, recipes, budget,
+        snapshot,
+        goal,
+        recipes,
+        execution_budget,
     )));
     let mut expansions = 0u16;
     let mut best_barrier: Option<PlannedPlan> = None;
@@ -117,10 +123,10 @@ pub fn search_plan(
                 .into(),
             );
         }
-        if node.steps.len() >= usize::from(budget.max_plan_depth) {
+        if node.steps.len() >= usize::from(cognitive.max_plan_depth) {
             continue;
         }
-        if expansions >= budget.max_node_expansions {
+        if expansions >= cognitive.max_node_expansions {
             if let Some(barrier_plan) = best_barrier {
                 return PlanSearchResult::Found(Box::new(barrier_plan));
             }
@@ -148,9 +154,9 @@ pub fn search_plan(
             &relevant_defs,
         );
         let combined_places = if expansion_summaries.is_some() {
-            combined_relevant_places_with_guidance(goal, &node.state, recipes, budget)
+            combined_relevant_places_with_guidance(goal, &node.state, recipes, execution_budget)
         } else {
-            combined_relevant_places(goal, &node.state, recipes, budget)
+            combined_relevant_places(goal, &node.state, recipes, execution_budget)
         };
         let mut travel_pruning = None;
         if let Some(current_place) =
@@ -181,31 +187,31 @@ pub fn search_plan(
                 &node,
                 &candidate,
                 recipes,
-                budget,
+                execution_budget,
             ) {
                 Ok(result) => result,
                 Err(reason) => {
                     candidates_skipped += 1;
-                    if let Some(trace_index) = candidate.trace_index {
-                        if let Some(trace) = root_candidates.get_mut(trace_index) {
-                            trace.outcome =
-                                crate::decision_trace::RootCandidateOutcome::Skipped(reason);
-                        }
+                    if let Some(trace_index) = candidate.trace_index
+                        && let Some(trace) = root_candidates.get_mut(trace_index)
+                    {
+                        trace.outcome =
+                            crate::decision_trace::RootCandidateOutcome::Skipped(reason);
                     }
                     continue;
                 }
             };
-            if let Some(trace_index) = candidate.trace_index {
-                if let Some(trace) = root_candidates.get_mut(trace_index) {
-                    trace.payload_status = root_candidate_payload_status(
-                        candidate.payload_override.as_ref(),
-                        successor
-                            .steps
-                            .as_slice()
-                            .last()
-                            .and_then(|step| step.payload_override.as_ref()),
-                    );
-                }
+            if let Some(trace_index) = candidate.trace_index
+                && let Some(trace) = root_candidates.get_mut(trace_index)
+            {
+                trace.payload_status = root_candidate_payload_status(
+                    candidate.payload_override.as_ref(),
+                    successor
+                        .steps
+                        .as_slice()
+                        .last()
+                        .and_then(|step| step.payload_override.as_ref()),
+                );
             }
             if let Some(terminal_kind) = terminal {
                 terminal_successors.push((terminal_kind, successor));
@@ -273,7 +279,7 @@ pub fn search_plan(
             }
         }
         successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
-        successors.truncate(usize::from(budget.beam_width));
+        successors.truncate(usize::from(execution_budget.beam_width));
 
         let non_terminal_after_beam = successors.len() as u16;
 

@@ -1,19 +1,23 @@
 //! Explicit typed component storage.
 
 use crate::{
+    EntityId,
     bandit_camp::{BanditCamp, BanditFactionPolicy},
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocked_intent::BlockedIntentMemory,
+    cognitive_profile::CognitiveProfile,
     combat::{CombatProfile, CombatStance, DeadAt},
     communication::CommunicationProfile,
+    component_schema::with_component_schema_entries,
+    components::{AgentData, Name},
     contention::{
         ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
     },
-    component_schema::with_component_schema_entries,
-    components::{AgentData, Name},
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
+    evidence::SceneEvidence,
+    execution_budget::ExecutionBudget,
     experience::{PreferenceProfile, RouteExperience, SourceReliability},
     factions::FactionData,
     institutional::RecordData,
@@ -24,19 +28,20 @@ use crate::{
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     patrol::{PatrolProfile, PatrolRoute},
-    pursuit::PursuitProfile,
-    reasoning_profile::ReasoningProfile,
-    social_artifact::{ArtifactHeader, BountyTerms, NoticeContent},
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
     },
-    trade::{DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy, SubstitutePreferences, TradeDispositionProfile},
+    pursuit::PursuitProfile,
+    social_artifact::{ArtifactHeader, BountyTerms, NoticeContent},
+    trade::{
+        DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy,
+        SubstitutePreferences, TradeDispositionProfile,
+    },
     utility_profile::UtilityProfile,
     valuation::CommodityValuationProfile,
     violation::{ViolationDispositionProfile, ViolationMemory},
     wounds::WoundList,
-    EntityId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -85,7 +90,7 @@ macro_rules! component_table_methods {
 }
 
 macro_rules! define_component_tables_struct {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         /// Explicit typed component storage for non-topological authoritative components.
         #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
         pub struct ComponentTables {
@@ -95,7 +100,7 @@ macro_rules! define_component_tables_struct {
 }
 
 macro_rules! define_component_table_impls {
-    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr, $component_variant:ident })*) => {
+    ($({ $field:ident, $component_ty:ty, $table_insert:ident, $table_get:ident, $table_get_mut:ident, $table_remove:ident, $table_has:ident, $table_iter:ident, $insert_fn:ident, $get_fn:ident, $get_mut_fn:ident, $remove_fn:ident, $has_fn:ident, $entities_fn:ident, $query_fn:ident, $count_fn:ident, $component_name:literal, $kind_check:expr_2021, $component_variant:ident })*) => {
         impl ComponentTables {
             $(
                 component_table_methods!(
@@ -130,6 +135,14 @@ with_component_schema_entries!(
 mod tests {
     use super::ComponentTables;
     use crate::{
+        ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
+        CommodityKind, CommunicationProfile, Container, ContentionIntents, ContentionPolicy,
+        ContentionQueue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
+        DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, ItemLot,
+        KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, PatrolProfile, PatrolRoute,
+        Permille, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
+        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
         belief::{
             AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, PerceptionProfile,
             PerceptionSource, TellProfile,
@@ -143,20 +156,10 @@ mod tests {
             EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
         },
         test_utils::{
-            sample_blocked_intent_memory, sample_demand_memory,
-            sample_contention_disposition_profile, sample_merchandise_profile,
-            sample_substitute_preferences, sample_trade_disposition_profile,
-            sample_utility_profile,
+            sample_blocked_intent_memory, sample_contention_disposition_profile,
+            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
+            sample_trade_disposition_profile, sample_utility_profile,
         },
-        ActionDefId, BanditCamp, BanditFactionPolicy, BodyPart, CarryCapacity, CombatProfile,
-        CommodityKind, Container, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
-        ContentionIntents, ContentionPolicy, ContentionQueue, DriveThresholds, EntityId, GoalKey,
-        GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, ItemLot, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile,
-        CommunicationProfile, PatrolProfile, PatrolRoute, Permille, ProductionJob, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource, Tick,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
-        WoundCause, WoundList,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -199,6 +202,8 @@ mod tests {
 
     fn sample_roundtrip_belief_store() -> AgentBeliefStore {
         AgentBeliefStore {
+            entity_claims: BTreeMap::new(),
+            next_claim_id: crate::ClaimId(0),
             known_entities: BTreeMap::from([(
                 entity(23),
                 BelievedEntityState {
@@ -212,6 +217,7 @@ mod tests {
                     believed_activity: None,
                     believed_artifact: None,
                     believed_contention: None,
+                    believed_evidence: None,
                     observed_tick: Tick(7),
                     source: PerceptionSource::DirectObservation,
                 },
@@ -259,7 +265,8 @@ mod tests {
     fn sample_office_data() -> OfficeData {
         OfficeData {
             title: "Granary Chair".to_string(),
-            jurisdiction: entity(30),
+            seat: entity(30),
+            jurisdiction: BTreeSet::from([entity(30)]),
             succession_law: SuccessionLaw::Support,
             eligibility_rules: vec![EligibilityRule::FactionMember(entity(31))],
             succession_period_ticks: 24,
@@ -349,7 +356,8 @@ mod tests {
         tables.insert_perception_profile(
             entity(24),
             PerceptionProfile {
-                memory_capacity: 8,
+                entity_memory_capacity: 8,
+                entity_claim_capacity: 8,
                 memory_retention_ticks: 20,
                 observation_fidelity: Permille::new(900).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
@@ -813,7 +821,10 @@ mod tests {
         let entity = entity(53);
         let profile = sample_roundtrip_communication_profile();
 
-        assert_eq!(tables.insert_communication_profile(entity, profile.clone()), None);
+        assert_eq!(
+            tables.insert_communication_profile(entity, profile.clone()),
+            None
+        );
         assert_eq!(tables.get_communication_profile(entity), Some(&profile));
         assert!(tables.has_communication_profile(entity));
         assert_eq!(
@@ -957,26 +968,21 @@ mod tests {
             max_waiters: None,
         };
         let mut queue = ContentionQueue::default();
-        queue.enqueue(entity(99), ActionDefId(7), Tick(3), None)
+        queue
+            .enqueue(entity(99), ActionDefId(7), Tick(3), None)
             .unwrap();
 
         assert_eq!(
             tables.insert_contention_policy(facility, policy.clone()),
             None
         );
-        assert_eq!(
-            tables.get_contention_policy(facility),
-            Some(&policy)
-        );
+        assert_eq!(tables.get_contention_policy(facility), Some(&policy));
         assert_eq!(
             tables.insert_contention_queue(facility, queue.clone()),
             None
         );
         assert_eq!(tables.get_contention_queue(facility), Some(&queue));
-        assert_eq!(
-            tables.remove_contention_policy(facility),
-            Some(policy)
-        );
+        assert_eq!(tables.remove_contention_policy(facility), Some(policy));
         assert_eq!(tables.remove_contention_queue(facility), Some(queue));
     }
 
@@ -994,9 +1000,15 @@ mod tests {
             .enqueue(entity(99), ActionDefId(7), Tick(3), policy.max_waiters)
             .unwrap();
 
-        assert_eq!(tables.insert_contention_policy(facility, policy.clone()), None);
+        assert_eq!(
+            tables.insert_contention_policy(facility, policy.clone()),
+            None
+        );
         assert_eq!(tables.get_contention_policy(facility), Some(&policy));
-        assert_eq!(tables.insert_contention_queue(facility, queue.clone()), None);
+        assert_eq!(
+            tables.insert_contention_queue(facility, queue.clone()),
+            None
+        );
         assert_eq!(tables.get_contention_queue(facility), Some(&queue));
         assert_eq!(tables.remove_contention_policy(facility), Some(policy));
         assert_eq!(tables.remove_contention_queue(facility), Some(queue));
@@ -1016,7 +1028,10 @@ mod tests {
             )]),
         };
 
-        assert_eq!(tables.insert_contention_intents(agent, intents.clone()), None);
+        assert_eq!(
+            tables.insert_contention_intents(agent, intents.clone()),
+            None
+        );
         assert_eq!(tables.get_contention_intents(agent), Some(&intents));
         assert!(tables.has_contention_intents(agent));
         assert_eq!(tables.remove_contention_intents(agent), Some(intents));

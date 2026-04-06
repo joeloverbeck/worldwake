@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    current_container_load, load_of_entity, ActionDefId, ActionDomain, BanditCamp,
-    BanditFactionPolicy, BodyCostPerTick, Container, EntityId, EntityKind, EventTag, LoadUnits,
-    PlaceTag, VisibilitySpec, World, WorldTxn,
+    ActionDefId, ActionDomain, BanditCamp, BanditFactionPolicy, BodyCostPerTick, Container,
+    EntityId, EntityKind, EventTag, LoadUnits, PlaceTag, VisibilitySpec, World, WorldTxn,
+    current_container_load, load_of_entity,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -160,13 +160,13 @@ fn validate_establish_camp(
     }
 
     let existing_place_camp = txn.get_component_bandit_camp(place).cloned();
-    if let Some(camp) = &existing_place_camp {
-        if camp.faction != faction {
-            return Err(ActionError::PreconditionFailed(format!(
-                "place {place} already hosts bandit camp for faction {}",
-                camp.faction
-            )));
-        }
+    if let Some(camp) = &existing_place_camp
+        && camp.faction != faction
+    {
+        return Err(ActionError::PreconditionFailed(format!(
+            "place {place} already hosts bandit camp for faction {}",
+            camp.faction
+        )));
     }
     let policy = faction_policy(txn, faction)?;
     let member_count = living_faction_members_at_place(txn, faction, place);
@@ -458,15 +458,14 @@ mod tests {
     use super::register_establish_camp_action;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, verify_live_lot_conservation, BanditCamp,
-        BanditFactionPolicy, CauseRef, CommodityKind, Container, ControlSource, EntityId, EventLog,
-        LoadUnits, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, World, WorldTxn,
+        BanditCamp, BanditFactionPolicy, CauseRef, CommodityKind, Container, ControlSource,
+        EntityId, EventLog, LoadUnits, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, World,
+        WorldTxn, build_prototype_world, prototype_place_entity, verify_live_lot_conservation,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionDefRegistry, ActionError,
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId,
-        ActionPayload, DeterministicRng, EstablishCampActionPayload, PerAgentBeliefView,
-        TickOutcome,
+        ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
+        ActionInstanceId, ActionPayload, DeterministicRng, EstablishCampActionPayload,
+        PerAgentBeliefView, TickOutcome, abort_action, get_affordances, start_action, tick_action,
     };
 
     struct Harness {
@@ -570,7 +569,10 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_id,
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(10),
+                ),
             )
         }
 
@@ -585,7 +587,10 @@ mod tests {
                     event_log: &mut self.log,
                     rng: &mut self.rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(11),
+                ),
             )
             .unwrap()
         }

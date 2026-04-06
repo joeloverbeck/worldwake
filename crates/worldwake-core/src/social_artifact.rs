@@ -1,6 +1,4 @@
-use crate::{
-    CommodityKind, Component, EntityId, InstitutionalClaim, Quantity, Tick,
-};
+use crate::{CommodityKind, Component, EntityId, InstitutionalClaim, Quantity, Tick};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -15,6 +13,14 @@ pub struct ArtifactHeader {
 }
 
 impl Component for ArtifactHeader {}
+
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct ArtifactPostingContext {
+    pub posting_place: EntityId,
+    pub issuing_authority: Option<EntityId>,
+    pub expires_at: Option<Tick>,
+    pub jurisdiction: Option<EntityId>,
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum ArtifactKind {
@@ -45,7 +51,9 @@ impl Component for BountyTerms {}
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum BountyTarget {
-    EliminateEntity { target: EntityId },
+    EliminateEntity {
+        target: EntityId,
+    },
     DeliverCommodity {
         commodity: CommodityKind,
         quantity: Quantity,
@@ -76,23 +84,29 @@ impl Component for NoticeContent {}
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum NoticeTopic {
-    ThreatWarning { place: EntityId },
-    OfficeVacancy { office: EntityId },
+    ThreatWarning {
+        place: EntityId,
+    },
+    OfficeVacancy {
+        office: EntityId,
+    },
     CommodityShortage {
         commodity: CommodityKind,
         place: EntityId,
     },
-    Institutional { claim: InstitutionalClaim },
+    Institutional {
+        claim: InstitutionalClaim,
+    },
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ArtifactHeader, ArtifactKind, ArtifactState, BountyTarget, BountyTerms, NoticeContent,
-        NoticeTopic, ProofRequirement, RewardSource,
+        ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactState, BountyTarget,
+        BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
     };
     use crate::{CommodityKind, EntityId, InstitutionalClaim, Quantity, Tick};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -106,6 +120,7 @@ mod tests {
     #[test]
     fn social_artifact_types_satisfy_required_traits() {
         assert_traits::<ArtifactHeader>();
+        assert_traits::<ArtifactPostingContext>();
         assert_traits::<ArtifactKind>();
         assert_traits::<ArtifactState>();
         assert_traits::<BountyTerms>();
@@ -135,6 +150,12 @@ mod tests {
 
     #[test]
     fn bounty_and_notice_types_roundtrip_through_bincode() {
+        let posting = ArtifactPostingContext {
+            posting_place: entity(4),
+            issuing_authority: Some(entity(8)),
+            expires_at: Some(Tick(20)),
+            jurisdiction: Some(entity(9)),
+        };
         let bounty = BountyTerms {
             target: BountyTarget::DeliverCommodity {
                 commodity: CommodityKind::Bread,
@@ -162,6 +183,11 @@ mod tests {
         let bounty_bytes = bincode::serialize(&bounty).unwrap();
         let bounty_roundtrip: BountyTerms = bincode::deserialize(&bounty_bytes).unwrap();
         assert_eq!(bounty_roundtrip, bounty);
+
+        let posting_bytes = bincode::serialize(&posting).unwrap();
+        let posting_roundtrip: ArtifactPostingContext =
+            bincode::deserialize(&posting_bytes).unwrap();
+        assert_eq!(posting_roundtrip, posting);
 
         let notice_bytes = bincode::serialize(&notice).unwrap();
         let notice_roundtrip: NoticeContent = bincode::deserialize(&notice_bytes).unwrap();

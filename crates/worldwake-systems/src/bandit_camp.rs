@@ -128,10 +128,9 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, prototype_place_entity, BanditCamp, BanditFactionPolicy,
-        ComponentDelta, ComponentKind, Container, ControlSource, EventLog, EventTag, EventView,
-        InTransitOnEdge, Permille, PrototypePlace, Seed, StateDelta, Tick, VisibilitySpec, World,
-        WorldTxn,
+        BanditCamp, BanditFactionPolicy, ComponentDelta, ComponentKind, Container, ControlSource,
+        EventLog, EventTag, EventView, InTransitOnEdge, Permille, PrototypePlace, Seed, StateDelta,
+        Tick, VisibilitySpec, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -383,18 +382,22 @@ mod tests {
         harness.run(2);
         harness.run(3);
 
-        assert!(harness
-            .world
-            .get_component_bandit_camp(harness.camp_place)
-            .is_none());
+        assert!(
+            harness
+                .world
+                .get_component_bandit_camp(harness.camp_place)
+                .is_none()
+        );
         assert_eq!(
             harness.world.effective_place(harness.supplies),
             Some(harness.camp_place)
         );
-        assert!(harness
-            .world
-            .get_component_container(harness.supplies)
-            .is_some());
+        assert!(
+            harness
+                .world
+                .get_component_container(harness.supplies)
+                .is_some()
+        );
         assert!(harness.world.is_alive(harness.faction));
     }
 

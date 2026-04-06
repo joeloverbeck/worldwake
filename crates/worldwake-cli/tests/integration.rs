@@ -224,7 +224,7 @@ fn test_controlled_agent_death() {
 
 #[test]
 fn test_no_player_branching() {
-    use worldwake_sim::{get_affordances, PerAgentBeliefRuntime, PerAgentBeliefView};
+    use worldwake_sim::{PerAgentBeliefRuntime, PerAgentBeliefView, get_affordances};
 
     let mut ctx = TestContext::load_default();
 
@@ -322,26 +322,26 @@ fn test_event_trace_backward() {
     let mut found_caused = false;
     for i in (0..log_len).rev() {
         let eid = worldwake_core::ids::EventId(u64::try_from(i).unwrap());
-        if let Some(record) = ctx.sim.event_log().get(eid) {
-            if matches!(record.cause(), worldwake_core::cause::CauseRef::Event(_)) {
-                // Trace backward — verify chain terminates at a root event.
-                let chain = ctx.sim.event_log().trace_event_cause(eid);
+        if let Some(record) = ctx.sim.event_log().get(eid)
+            && matches!(record.cause(), worldwake_core::cause::CauseRef::Event(_))
+        {
+            // Trace backward — verify chain terminates at a root event.
+            let chain = ctx.sim.event_log().trace_event_cause(eid);
 
-                // First ancestor in the chain should be a root (non-Event cause).
-                let root_id = *chain.first().unwrap();
-                let root = ctx.sim.event_log().get(root_id).unwrap();
-                assert!(
-                    !matches!(root.cause(), worldwake_core::cause::CauseRef::Event(_)),
-                    "trace should terminate at a root event (Bootstrap, SystemTick, or ExternalInput)"
-                );
+            // First ancestor in the chain should be a root (non-Event cause).
+            let root_id = *chain.first().unwrap();
+            let root = ctx.sim.event_log().get(root_id).unwrap();
+            assert!(
+                !matches!(root.cause(), worldwake_core::cause::CauseRef::Event(_)),
+                "trace should terminate at a root event (Bootstrap, SystemTick, or ExternalInput)"
+            );
 
-                // Trace command should succeed too.
-                let result = ctx.dispatch(CliCommand::Trace { id: eid.0 });
-                assert!(result.is_ok());
+            // Trace command should succeed too.
+            let result = ctx.dispatch(CliCommand::Trace { id: eid.0 });
+            assert!(result.is_ok());
 
-                found_caused = true;
-                break;
-            }
+            found_caused = true;
+            break;
         }
     }
 

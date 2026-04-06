@@ -1,14 +1,15 @@
 use std::num::NonZeroU32;
 
 use worldwake_core::{
-    build_believed_entity_state, build_prototype_world, prototype_place_entity, ActionDefId,
-    CauseRef, CommodityKind, ComponentKind, ControlSource, DeprivationExposure, DeprivationKind,
-    DriveThresholds, EventLog, HomeostaticNeeds, MetabolismProfile, PerceptionSource, Permille,
-    PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, WoundCause,
+    ActionDefId, CauseRef, CommodityKind, ComponentKind, ControlSource, DeprivationExposure,
+    DeprivationKind, DriveThresholds, EventLog, HomeostaticNeeds, MetabolismProfile,
+    PerceptionSource, Permille, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec, WitnessData,
+    World, WorldTxn, WoundCause, build_believed_entity_state, build_prototype_world,
+    prototype_place_entity,
 };
 use worldwake_sim::{
-    step_tick, ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng,
-    InputKind, RecipeRegistry, Scheduler, SystemManifest, TickStepError, TickStepServices,
+    ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng, InputKind,
+    RecipeRegistry, Scheduler, SystemManifest, TickStepError, TickStepServices, step_tick,
 };
 use worldwake_systems::{dispatch_table, register_needs_actions};
 

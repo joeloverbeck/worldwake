@@ -6,19 +6,20 @@ use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::{DecisionOutcome, SelectedPlanSource};
 use worldwake_core::{
+    AgentData, BeliefConfidencePolicy, BodyPart, CommodityKind, ControlSource, DemandMemory,
+    DemandObservation, DemandObservationReason, DeprivationKind, EventTag, FactionPurpose, GoalKey,
+    GoalKind, HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    OpportunityAnchor, OpportunityKey, PerceptionProfile, PreferenceProfile, PrototypePlace,
+    Quantity, ResourceSource, SaleListing, Seed, SourceKey, StockAssignmentKind, Tick,
+    TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
     hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    total_live_lot_quantity, AgentData, BeliefConfidencePolicy, BodyPart, CommodityKind,
-    ControlSource, DemandMemory, DemandObservation, DemandObservationReason, DeprivationKind,
-    EventTag, GoalKey, GoalKind, FactionPurpose, HomeostaticNeeds, KnownRecipes, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OpportunityAnchor, OpportunityKey, PerceptionProfile,
-    PreferenceProfile, PrototypePlace, Quantity, ResourceSource, SaleListing, Seed, SourceKey,
-    StockAssignmentKind, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag, Wound,
-    WoundCause, WoundId, WoundList,
+    total_live_lot_quantity,
 };
 use worldwake_sim::{
     ActionAbortRequestReason, ActionPayload, ActionRequestMode, ActionStartFailureReason,
-    ActionTraceEvent, ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry, RequestBindingKind,
-    RequestProvenance, RequestResolutionOutcome, RuntimeBeliefView, TradeActionPayload,
+    ActionTraceEvent, ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry,
+    RequestBindingKind, RequestProvenance, RequestResolutionOutcome, RuntimeBeliefView,
+    TradeActionPayload,
 };
 
 fn default_trade_disposition_profile() -> TradeDispositionProfile {
@@ -96,11 +97,13 @@ fn discover_trade_payload(
     worldwake_sim::get_affordances(&view, buyer, &h.defs, &h.handlers)
         .into_iter()
         .find_map(|affordance| {
-            (h.defs.get(affordance.def_id).is_some_and(|def| def.name == "trade")
+            (h.defs
+                .get(affordance.def_id)
+                .is_some_and(|def| def.name == "trade")
                 && affordance.bound_targets == vec![seller])
-                .then(|| affordance.payload_override)
-                .flatten()
-                .and_then(|payload| payload.as_trade().cloned())
+            .then(|| affordance.payload_override)
+            .flatten()
+            .and_then(|payload| payload.as_trade().cloned())
         })
         .expect("trade affordance should expose an accepted payload")
 }
@@ -129,14 +132,10 @@ fn request_simple_action(
     def_name: &str,
     targets: Vec<worldwake_core::EntityId>,
 ) {
-    let def_id = h
-        .defs
-        .iter()
-        .find(|def| def.name == def_name)
-        .map_or_else(
-            || panic!("full registries should include {def_name}"),
-            |def| def.id,
-        );
+    let def_id = h.defs.iter().find(|def| def.name == def_name).map_or_else(
+        || panic!("full registries should include {def_name}"),
+        |def| def.id,
+    );
     let tick = h.scheduler.current_tick();
     let _ = h.scheduler.input_queue_mut().enqueue(
         tick,
@@ -151,7 +150,11 @@ fn request_simple_action(
     );
 }
 
-fn request_travel(h: &mut GoldenHarness, traveler: worldwake_core::EntityId, destination: worldwake_core::EntityId) {
+fn request_travel(
+    h: &mut GoldenHarness,
+    traveler: worldwake_core::EntityId,
+    destination: worldwake_core::EntityId,
+) {
     request_simple_action(h, traveler, "travel", vec![destination]);
 }
 
@@ -172,7 +175,8 @@ fn set_preference_profile(
     tick: u64,
 ) {
     let mut txn = new_txn(&mut h.world, tick);
-    txn.set_component_preference_profile(agent, profile).unwrap();
+    txn.set_component_preference_profile(agent, profile)
+        .unwrap();
     commit_txn(txn, &mut h.event_log);
 }
 
@@ -193,9 +197,7 @@ struct SourceReliabilityTradeOutcome {
 }
 
 #[allow(clippy::too_many_lines)]
-fn run_trade_rejection_source_reroute_scenario(
-    seed: Seed,
-) -> SourceReliabilityTradeOutcome {
+fn run_trade_rejection_source_reroute_scenario(seed: Seed) -> SourceReliabilityTradeOutcome {
     let mut h = GoldenHarness::with_recipes(seed, RecipeRegistry::new());
     h.driver.enable_tracing();
     h.enable_action_tracing();
@@ -269,15 +271,15 @@ fn run_trade_rejection_source_reroute_scenario(
     let mut txn = new_txn(&mut h.world, 0);
     for (seller, lot, facility, display) in [
         (local_seller, local_bread_lot, local_facility, local_display),
-        (remote_seller, remote_bread_lot, remote_facility, remote_display),
+        (
+            remote_seller,
+            remote_bread_lot,
+            remote_facility,
+            remote_display,
+        ),
     ] {
-        txn.set_component_sale_listing(
-            lot,
-            SaleListing {
-                listed_at: Tick(0),
-            },
-        )
-        .unwrap();
+        txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(0) })
+            .unwrap();
         txn.set_component_merchandise_profile(
             seller,
             MerchandiseProfile {
@@ -352,7 +354,9 @@ fn run_trade_rejection_source_reroute_scenario(
         "initial planning should target self-consume bread acquisition",
     );
     assert!(
-        initial_planning.selection.selected_opportunity_is(local_opportunity),
+        initial_planning
+            .selection
+            .selected_opportunity_is(local_opportunity),
         "without learned seller unreliability, the local seller should be selected first; traces={:?}",
         trade_trace_summaries(&h, buyer)
     );
@@ -360,11 +364,16 @@ fn run_trade_rejection_source_reroute_scenario(
         .candidates
         .evidence_for_opportunity(local_opportunity)
         .expect("local seller opportunity should expose evidence");
-    assert!(initial_local_evidence.contributors.iter().any(|contributor| {
-        contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
-            && contributor.place == VILLAGE_SQUARE
-            && contributor.entity == local_seller
-    }));
+    assert!(
+        initial_local_evidence
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
+                    && contributor.place == VILLAGE_SQUARE
+                    && contributor.entity == local_seller
+            })
+    );
 
     let initial_buyer_hunger = h.agent_hunger(buyer);
     let initial_remote_seller_bread = h.agent_commodity_qty(remote_seller, CommodityKind::Bread);
@@ -391,15 +400,20 @@ fn run_trade_rejection_source_reroute_scenario(
         }
         let tick_before = h.scheduler.current_tick();
         h.step_once();
-        if h.action_trace_sink().expect("action tracing should remain enabled").events_for_at(buyer, tick_before).iter().any(|event| {
-            event.action_name == "trade"
-                && matches!(
+        if h.action_trace_sink()
+            .expect("action tracing should remain enabled")
+            .events_for_at(buyer, tick_before)
+            .iter()
+            .any(|event| {
+                event.action_name == "trade"
+                    && matches!(
                     event.kind,
                     ActionTraceKind::Aborted { ref reason, .. }
                         if reason.contains("TradeBundleRejected")
                             && reason.contains("InsufficientPayment")
-	                )
-        }) {
+                    )
+            })
+        {
             saw_rejection = true;
             break;
         }
@@ -423,7 +437,9 @@ fn run_trade_rejection_source_reroute_scenario(
         "the rejected local seller should accumulate at least one failed source attempt",
     );
     assert!(
-        h.world.get_component_sale_listing(local_bread_lot).is_some(),
+        h.world
+            .get_component_sale_listing(local_bread_lot)
+            .is_some(),
         "the rejected local lot must remain listed so the reroute is not caused by seller removal",
     );
     assert_eq!(
@@ -451,7 +467,9 @@ fn run_trade_rejection_source_reroute_scenario(
             continue;
         }
         if planning.selection.selected_goal_is(bread_goal)
-            && planning.selection.selected_opportunity_is(remote_opportunity)
+            && planning
+                .selection
+                .selected_opportunity_is(remote_opportunity)
         {
             reroute_tick = Some(tick_before);
             break;
@@ -470,7 +488,9 @@ fn run_trade_rejection_source_reroute_scenario(
         DecisionOutcome::Planning(planning) => planning,
         other => panic!("expected reroute planning trace, got {other:?}"),
     };
-    let ranked_summaries = reroute_planning.candidates.ranked_summaries_for_goal(bread_goal);
+    let ranked_summaries = reroute_planning
+        .candidates
+        .ranked_summaries_for_goal(bread_goal);
     let local_summary = ranked_summaries
         .iter()
         .find(|summary| summary.opportunity == local_opportunity)
@@ -498,20 +518,30 @@ fn run_trade_rejection_source_reroute_scenario(
         .candidates
         .evidence_for_opportunity(local_opportunity)
         .expect("local opportunity should keep evidence after rejection");
-    assert!(reroute_local_evidence.contributors.iter().any(|contributor| {
-        contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
-            && contributor.place == VILLAGE_SQUARE
-            && contributor.entity == local_seller
-    }));
+    assert!(
+        reroute_local_evidence
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
+                    && contributor.place == VILLAGE_SQUARE
+                    && contributor.entity == local_seller
+            })
+    );
     let reroute_remote_evidence = reroute_planning
         .candidates
         .evidence_for_opportunity(remote_opportunity)
         .expect("remote opportunity should expose seller evidence");
-    assert!(reroute_remote_evidence.contributors.iter().any(|contributor| {
-        contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
-            && contributor.place == general_store
-            && contributor.entity == remote_seller
-    }));
+    assert!(
+        reroute_remote_evidence
+            .contributors
+            .iter()
+            .any(|contributor| {
+                contributor.kind == worldwake_ai::CandidateEvidenceKind::Seller
+                    && contributor.place == general_store
+                    && contributor.entity == remote_seller
+            })
+    );
 
     let mut remote_trade_committed = false;
     let mut buyer_hunger_decreased = false;
@@ -534,8 +564,8 @@ fn run_trade_rejection_source_reroute_scenario(
         buyer_spent_coin |= h.agent_commodity_qty(buyer, CommodityKind::Coin) < initial_buyer_coins;
         remote_seller_received_coin |=
             h.agent_commodity_qty(remote_seller, CommodityKind::Coin) > initial_remote_seller_coins;
-        remote_seller_lost_bread |=
-            h.agent_commodity_qty(remote_seller, CommodityKind::Bread) < initial_remote_seller_bread;
+        remote_seller_lost_bread |= h.agent_commodity_qty(remote_seller, CommodityKind::Bread)
+            < initial_remote_seller_bread;
         if remote_trade_committed
             && buyer_hunger_decreased
             && buyer_spent_coin
@@ -627,13 +657,8 @@ fn run_buyer_driven_trade_scenario(
         create_home_facility_with_display(&mut h, seller, VILLAGE_SQUARE, 0);
 
     let mut txn = new_txn(&mut h.world, 0);
-    txn.set_component_sale_listing(
-        seller_bread_lot,
-        SaleListing {
-            listed_at: Tick(0),
-        },
-    )
-    .unwrap();
+    txn.set_component_sale_listing(seller_bread_lot, SaleListing { listed_at: Tick(0) })
+        .unwrap();
     txn.set_component_merchandise_profile(
         seller,
         MerchandiseProfile {
@@ -679,8 +704,8 @@ fn run_buyer_driven_trade_scenario(
         .find(|def| def.name == "trade")
         .map(|def| def.id)
         .expect("full registries should include the trade action");
-    let trade_affordance_resolved =
-        buyer_trade_payload.counterparty == seller && buyer_trade_payload.sale_lot == seller_bread_lot;
+    let trade_affordance_resolved = buyer_trade_payload.counterparty == seller
+        && buyer_trade_payload.sale_lot == seller_bread_lot;
     let _ = h.scheduler.input_queue_mut().enqueue(
         Tick(0),
         InputKind::RequestAction {
@@ -838,7 +863,12 @@ fn run_carrier_delivery_to_facility_preserves_seller_identity(
 
     let mut txn = new_txn(&mut h.world, 0);
     let (facility, stock_container, _display_container) = txn
-        .create_merchant_facility(general_store, merchant, LoadUnits(500), Some(LoadUnits(300)))
+        .create_merchant_facility(
+            general_store,
+            merchant,
+            LoadUnits(500),
+            Some(LoadUnits(300)),
+        )
         .unwrap();
     txn.set_owner(facility, faction).unwrap();
     txn.set_component_merchandise_profile(
@@ -864,7 +894,9 @@ fn run_carrier_delivery_to_facility_preserves_seller_identity(
 
     request_travel(&mut h, carrier, general_store);
     for _ in 0..40 {
-        if h.world.effective_place(carrier) == Some(general_store) && !h.agent_has_active_action(carrier) {
+        if h.world.effective_place(carrier) == Some(general_store)
+            && !h.agent_has_active_action(carrier)
+        {
             break;
         }
         h.step_once();
@@ -893,7 +925,10 @@ fn run_carrier_delivery_to_facility_preserves_seller_identity(
             break;
         }
     }
-    assert!(store_committed, "carrier should commit store_stock at the destination facility");
+    assert!(
+        store_committed,
+        "carrier should commit store_stock at the destination facility"
+    );
     assert_eq!(
         h.world.direct_container(cargo_lot),
         Some(stock_container),
@@ -911,7 +946,9 @@ fn run_carrier_delivery_to_facility_preserves_seller_identity(
 
     request_travel(&mut h, carrier, VILLAGE_SQUARE);
     for _ in 0..40 {
-        if h.world.effective_place(carrier) == Some(VILLAGE_SQUARE) && !h.agent_has_active_action(carrier) {
+        if h.world.effective_place(carrier) == Some(VILLAGE_SQUARE)
+            && !h.agent_has_active_action(carrier)
+        {
             break;
         }
         h.step_once();
@@ -940,7 +977,10 @@ fn run_carrier_delivery_to_facility_preserves_seller_identity(
             break;
         }
     }
-    assert!(stage_committed, "merchant should be able to stage the delivered stock for sale");
+    assert!(
+        stage_committed,
+        "merchant should be able to stage the delivered stock for sale"
+    );
 
     seed_actor_local_beliefs(
         &mut h.world,
@@ -1004,7 +1044,8 @@ fn run_merchant_restock_return_stock_scenario(
     txn.set_component_perception_profile(
         merchant,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
@@ -1251,13 +1292,8 @@ fn run_local_trade_start_failure_production_fallback_scenario(
         },
     )
     .unwrap();
-    txn.set_component_sale_listing(
-        seller_bread_lot,
-        SaleListing {
-            listed_at: Tick(1),
-        },
-    )
-    .unwrap();
+    txn.set_component_sale_listing(seller_bread_lot, SaleListing { listed_at: Tick(1) })
+        .unwrap();
     txn.set_component_trade_disposition_profile(seller, default_trade_disposition_profile())
         .unwrap();
     txn.set_component_trade_disposition_profile(winner, instant_trade_disposition_profile())
@@ -1454,8 +1490,8 @@ fn run_local_trade_start_failure_production_fallback_scenario(
             loser_planning_after_failure.action_start_failures[0].reason,
             ActionStartFailureReason::AbortRequested(
                 ActionAbortRequestReason::SaleLotNotListed { .. }
-                | ActionAbortRequestReason::SaleLotNotPossessedBySeller { .. }
-                | ActionAbortRequestReason::PayloadEntityMismatch { .. }
+                    | ActionAbortRequestReason::SaleLotNotPossessedBySeller { .. }
+                    | ActionAbortRequestReason::PayloadEntityMismatch { .. }
             )
         )
     );
@@ -1583,7 +1619,8 @@ fn merchant_route_knowledge_alone_does_not_unlock_remote_restock() {
     txn.set_component_perception_profile(
         merchant,
         PerceptionProfile {
-            memory_capacity: 64,
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
             memory_retention_ticks: 240,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),

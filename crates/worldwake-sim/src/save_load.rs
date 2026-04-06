@@ -3,8 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 19;
-const LEGACY_SAVE_FORMAT_VERSION: u32 = 5;
+pub const SAVE_FORMAT_VERSION: u32 = 27;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -127,19 +126,12 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>
     );
 
     match found {
-        LEGACY_SAVE_FORMAT_VERSION => load_legacy_v5(payload),
         SAVE_FORMAT_VERSION => load_current_format(payload),
         _ => Err(SaveError::UnsupportedVersion {
             found,
             expected: SAVE_FORMAT_VERSION,
         }),
     }
-}
-
-fn load_legacy_v5(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
-    let state = bincode::deserialize(bytes)
-        .map_err(|error| SaveError::Deserialization(error.to_string()))?;
-    Ok((state, None))
 }
 
 fn load_current_format(bytes: &[u8]) -> Result<(SimulationState, Option<Vec<u8>>), SaveError> {
@@ -190,26 +182,25 @@ fn split_length_prefixed_payload<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        load, load_from_bytes, save, save_to_bytes, SaveError, LEGACY_SAVE_FORMAT_VERSION,
-        SAVE_FORMAT_VERSION, SAVE_MAGIC,
+        SAVE_FORMAT_VERSION, SAVE_MAGIC, SaveError, load, load_from_bytes, save, save_to_bytes,
     };
     use crate::{
-        step_tick, ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionState, ActionStatus, ControllerState,
-        DeterministicRng, InputKind, RecipeDefinition, RecipeRegistry, ReplayCheckpoint,
-        ReplayRecordingConfig, ReplayState, SaveableRuntime, Scheduler, SimulationState,
-        SystemDispatchTable, SystemError, SystemExecutionContext, SystemId, SystemManifest,
-        TickStepServices,
+        ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionState, ActionStatus, ControllerState, DeterministicRng, InputKind,
+        RecipeDefinition, RecipeRegistry, ReplayCheckpoint, ReplayRecordingConfig, ReplayState,
+        SaveableRuntime, Scheduler, SimulationState, SystemDispatchTable, SystemError,
+        SystemExecutionContext, SystemId, SystemManifest, TickStepServices, step_tick,
     };
     use std::num::NonZeroU64;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, AgentBeliefStore, BelievedActivity,
-        BelievedEntityState, BodyCostPerTick, CauseRef, CommodityKind, ControlSource, EntityId,
-        EventLog, EventPayload, PendingEvent, PerceptionSource, Quantity, ReservationId, Seed,
-        StateHash, Tick, TickRange, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn,
+        ActionDefId, ActionDomain, AgentBeliefStore, BelievedActivity, BelievedEntityState,
+        BodyCostPerTick, CauseRef, ClaimId, ClaimValue, CommodityKind, ControlSource,
+        EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload, PendingEvent,
+        PerceptionSource, Quantity, ReservationId, Seed, StateHash, Tick, TickRange,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -298,6 +289,7 @@ mod tests {
             }),
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick,
             source: PerceptionSource::DirectObservation,
         }
@@ -316,6 +308,26 @@ mod tests {
             target,
             believed_entity_state_with_activity(belief_place, Tick(3)),
         );
+        beliefs.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(1),
+            subject: target,
+            aspect: EntityBeliefAspect::Location,
+            value: ClaimValue::Place(Some(belief_place)),
+            source: PerceptionSource::DirectObservation,
+            acquired_tick: Tick(3),
+            claimed_event_tick: Some(Tick(3)),
+            confidence: worldwake_core::Permille::new(1000).unwrap(),
+        });
+        beliefs.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(2),
+            subject: target,
+            aspect: EntityBeliefAspect::Alive,
+            value: ClaimValue::Bool(true),
+            source: PerceptionSource::DirectObservation,
+            acquired_tick: Tick(3),
+            claimed_event_tick: None,
+            confidence: worldwake_core::Permille::new(1000).unwrap(),
+        });
         let mut belief_txn = new_txn(&mut world, Tick(3), CauseRef::Bootstrap);
         belief_txn
             .set_component_agent_belief_store(actor, beliefs)
@@ -571,16 +583,6 @@ mod tests {
         ))
     }
 
-    fn legacy_v5_bytes(state: &SimulationState) -> Vec<u8> {
-        let payload = bincode::serialize(state).unwrap();
-        let mut bytes =
-            Vec::with_capacity(SAVE_MAGIC.len() + std::mem::size_of::<u32>() + payload.len());
-        bytes.extend_from_slice(&SAVE_MAGIC);
-        bytes.extend_from_slice(&LEGACY_SAVE_FORMAT_VERSION.to_le_bytes());
-        bytes.extend_from_slice(&payload);
-        bytes
-    }
-
     struct MockRuntime {
         bytes: Vec<u8>,
     }
@@ -618,16 +620,21 @@ mod tests {
         let restored_belief = restored
             .world()
             .get_component_agent_belief_store(actor)
-            .and_then(|store| store.get_entity(&target))
             .unwrap();
+        let restored_summary = restored_belief.get_entity(&target).unwrap();
         assert_eq!(
-            restored_belief.believed_activity,
+            restored_summary.believed_activity,
             Some(BelievedActivity {
                 action_domain: ActionDomain::Production,
-                target: restored_belief.last_known_place,
+                target: restored_summary.last_known_place,
                 observed_tick: Tick(3),
             })
         );
+        let restored_claims = restored_belief.entity_claims.get(&target).unwrap();
+        assert_eq!(restored_claims.len(), 2);
+        assert_eq!(restored_claims[0].claim_id, ClaimId(1));
+        assert_eq!(restored_claims[1].claim_id, ClaimId(2));
+        assert_eq!(restored_belief.next_claim_id, ClaimId(3));
     }
 
     #[test]
@@ -677,16 +684,6 @@ mod tests {
     }
 
     #[test]
-    fn load_accepts_legacy_v5_format_and_returns_no_runtime_payload() {
-        let (state, _, _, _) = populated_state();
-
-        let (restored, runtime_payload) = load_from_bytes(&legacy_v5_bytes(&state)).unwrap();
-
-        assert_eq!(restored, state);
-        assert_eq!(runtime_payload, None);
-    }
-
-    #[test]
     fn load_rejects_wrong_magic() {
         let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
@@ -712,24 +709,6 @@ mod tests {
                 found,
                 expected: SAVE_FORMAT_VERSION
             } if found == SAVE_FORMAT_VERSION + 1
-        ));
-    }
-
-    #[test]
-    fn load_rejects_previous_current_version_after_schema_bump() {
-        let (state, _, _, _) = populated_state();
-        let mut bytes = save_to_bytes(&state, None).unwrap();
-        bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
-            .copy_from_slice(&(SAVE_FORMAT_VERSION - 1).to_le_bytes());
-
-        let error = load_from_bytes(&bytes).unwrap_err();
-
-        assert!(matches!(
-            error,
-            SaveError::UnsupportedVersion {
-                found,
-                expected: SAVE_FORMAT_VERSION
-            } if found == SAVE_FORMAT_VERSION - 1
         ));
     }
 

@@ -9,7 +9,7 @@ worldwake_core::worldwake_prefixed_id_type!(
 #[cfg(test)]
 mod tests {
     use super::{ActionHandlerId, ActionInstanceId};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     fn assert_traits<
         T: Copy

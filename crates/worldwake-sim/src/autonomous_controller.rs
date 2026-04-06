@@ -119,8 +119,8 @@ mod tests {
         SystemManifest, TickInputContext, TickInputProducer,
     };
     use worldwake_core::{
-        build_prototype_world, ActionDefId, CauseRef, ControlSource, EntityId, EventLog, Seed,
-        Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        ActionDefId, CauseRef, ControlSource, EntityId, EventLog, Seed, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world,
     };
 
     struct RecordingController {

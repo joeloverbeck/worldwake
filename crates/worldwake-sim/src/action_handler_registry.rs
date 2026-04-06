@@ -56,20 +56,20 @@ pub fn verify_completeness(
 
 #[cfg(test)]
 mod tests {
-    use super::{verify_completeness, ActionHandlerRegistry};
+    use super::{ActionHandlerRegistry, verify_completeness};
     use crate::{
         AbortReason, ActionDef, ActionDefRegistry, ActionDuration, ActionError,
-        ActionExecutionContext, ActionHandler, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionProgress, ActionState, ActionStatus,
-        CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility,
-        Precondition, RecipeRegistry, ReservationReq, TargetSpec,
+        ActionExecutionContext, ActionHandler, ActionHandlerId, ActionInstance, ActionInstanceId,
+        ActionPayload, ActionProgress, ActionState, ActionStatus, CommitOutcome, Constraint,
+        DeterministicRng, DurationExpr, Interruptibility, Precondition, RecipeRegistry,
+        ReservationReq, TargetSpec,
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_prototype_world, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource,
-        EntityId, EventTag, ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn,
+        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, ControlSource, EntityId, EventTag,
+        ReservationId, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
     };
 
     fn sample_instance() -> ActionInstance {
@@ -233,13 +233,11 @@ mod tests {
         );
 
         assert_eq!(
-            (retrieved_first.on_start)(&def, &mut instance, &context, &mut rng, &mut txn)
-                .unwrap(),
+            (retrieved_first.on_start)(&def, &mut instance, &context, &mut rng, &mut txn).unwrap(),
             None
         );
         assert_eq!(
-            (retrieved_second.on_start)(&def, &mut instance, &context, &mut rng, &mut txn)
-                .unwrap(),
+            (retrieved_second.on_start)(&def, &mut instance, &context, &mut rng, &mut txn).unwrap(),
             Some(ActionState::Empty)
         );
     }
@@ -298,12 +296,7 @@ mod tests {
         );
 
         (registry.get(handler_id).unwrap().on_commit)(
-            &def,
-            &instance,
-            &context,
-            &event_log,
-            &mut rng,
-            &mut txn,
+            &def, &instance, &context, &event_log, &mut rng, &mut txn,
         )
         .unwrap();
 

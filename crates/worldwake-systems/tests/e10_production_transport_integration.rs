@@ -2,17 +2,18 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use worldwake_core::{
-    build_believed_entity_state, hash_serializable, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation, ActionDefId, AgentBeliefStore,
-    BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind, ControlSource, EventLog, LoadUnits,
-    PerceptionSource, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
-    ResourceSource, Seed, StateHash, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+    ActionDefId, AgentBeliefStore, BodyCostPerTick, CarryCapacity, CauseRef, CommodityKind,
+    ControlSource, EventLog, LoadUnits, PerceptionSource, Place, ProductionOutputOwner,
+    ProductionOutputOwnershipPolicy, Quantity, ResourceSource, Seed, StateHash, Tick, Topology,
+    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+    World, WorldTxn, build_believed_entity_state, hash_serializable,
+    total_authoritative_commodity_quantity, verify_authoritative_conservation,
+    verify_live_lot_conservation,
 };
 use worldwake_sim::{
-    get_affordances, step_tick, ActionDefRegistry, ActionHandlerRegistry, ControllerState,
-    DeterministicRng, InputKind, PerAgentBeliefView, RecipeDefinition, RecipeRegistry, Scheduler,
-    SystemDispatchTable, SystemManifest, TickStepError, TickStepResult, TickStepServices,
+    ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng, InputKind,
+    PerAgentBeliefView, RecipeDefinition, RecipeRegistry, Scheduler, SystemDispatchTable,
+    SystemManifest, TickStepError, TickStepResult, TickStepServices, get_affordances, step_tick,
 };
 use worldwake_systems::{
     dispatch_table, register_craft_actions, register_harvest_actions, register_transport_actions,
@@ -577,18 +578,22 @@ fn scheduler_craft_preserves_staged_inputs_and_applies_exact_recipe_deltas() {
     assert_eq!(job.worker, harness.actor);
     verify_live_lot_conservation(&harness.world, CommodityKind::Grain, 2).unwrap();
     verify_live_lot_conservation(&harness.world, CommodityKind::Bread, 0).unwrap();
-    assert!(harness
-        .world
-        .recursive_contents_of(job.staged_inputs_container)
-        .into_iter()
-        .any(|entity| entity == grain));
+    assert!(
+        harness
+            .world
+            .recursive_contents_of(job.staged_inputs_container)
+            .into_iter()
+            .any(|entity| entity == grain)
+    );
 
     harness.run_queued_action_to_completion(3);
 
-    assert!(harness
-        .world
-        .get_component_production_job(harness.mill_workstation)
-        .is_none());
+    assert!(
+        harness
+            .world
+            .get_component_production_job(harness.mill_workstation)
+            .is_none()
+    );
     verify_live_lot_conservation(&harness.world, CommodityKind::Grain, 0).unwrap();
     verify_live_lot_conservation(&harness.world, CommodityKind::Bread, 1).unwrap();
 }

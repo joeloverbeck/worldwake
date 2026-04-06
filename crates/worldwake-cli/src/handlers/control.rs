@@ -1,13 +1,13 @@
 //! Handlers for agent control commands: `switch` and `observe`.
 
 use worldwake_core::{
-    components::AgentData, control::ControlSource, ids::EntityId, CauseRef, VisibilitySpec,
-    WitnessData, WorldTxn,
+    CauseRef, VisibilitySpec, WitnessData, WorldTxn, components::AgentData, control::ControlSource,
+    ids::EntityId,
 };
 use worldwake_sim::SimulationState;
 
 use crate::commands::{CommandError, CommandOutcome, CommandResult};
-use crate::display::{entity_display_name, format_location, resolve_entity, ResolveError};
+use crate::display::{ResolveError, entity_display_name, format_location, resolve_entity};
 
 /// Set an agent's `ControlSource` via a `WorldTxn`, recording the change in the event log.
 ///
@@ -54,11 +54,7 @@ pub fn handle_switch(sim: &mut SimulationState, name: &str) -> CommandResult {
     let target_id = match resolve_entity(sim.world(), name) {
         Ok(id) => id,
         Err(ResolveError::NotFound(input)) => {
-            let names: Vec<String> = sim
-                .world()
-                .query_name()
-                .map(|(_, n)| n.0.clone())
-                .collect();
+            let names: Vec<String> = sim.world().query_name().map(|(_, n)| n.0.clone()).collect();
             if names.is_empty() {
                 println!("No entity found matching \"{input}\"");
             } else {
@@ -175,7 +171,8 @@ mod tests {
                     trade_disposition: None,
                     perception_profile: None,
                     tell_profile: None,
-                    reasoning_profile: None,
+                    cognitive_profile: None,
+                    execution_budget: None,
                     epistemic_disposition: None,
                     intention_disposition: None,
                     communication_profile: None,
@@ -204,7 +201,8 @@ mod tests {
                     trade_disposition: None,
                     perception_profile: None,
                     tell_profile: None,
-                    reasoning_profile: None,
+                    cognitive_profile: None,
+                    execution_budget: None,
                     epistemic_disposition: None,
                     intention_disposition: None,
                     communication_profile: None,
@@ -422,7 +420,8 @@ mod tests {
                     trade_disposition: None,
                     perception_profile: None,
                     tell_profile: None,
-                    reasoning_profile: None,
+                    cognitive_profile: None,
+                    execution_budget: None,
                     epistemic_disposition: None,
                     intention_disposition: None,
                     communication_profile: None,
@@ -454,7 +453,8 @@ mod tests {
                     trade_disposition: None,
                     perception_profile: None,
                     tell_profile: None,
-                    reasoning_profile: None,
+                    cognitive_profile: None,
+                    execution_budget: None,
                     epistemic_disposition: None,
                     intention_disposition: None,
                     communication_profile: None,

@@ -64,7 +64,7 @@ impl Default for ControllerState {
 #[cfg(test)]
 mod tests {
     use super::{ControlError, ControllerState};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::EntityId;
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}

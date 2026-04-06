@@ -76,7 +76,7 @@ mod tests {
     use crate::{ActionDefRegistry, DeterministicRng, SystemId};
     use std::collections::BTreeMap;
     use std::sync::{Mutex, OnceLock};
-    use worldwake_core::{build_prototype_world, EventLog, Seed, Tick, World};
+    use worldwake_core::{EventLog, Seed, Tick, World, build_prototype_world};
 
     fn calls() -> &'static Mutex<Vec<SystemId>> {
         static CALLS: OnceLock<Mutex<Vec<SystemId>>> = OnceLock::new();

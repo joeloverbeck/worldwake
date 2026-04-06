@@ -1,18 +1,19 @@
+use crate::evidence_support::emit_evidence;
+use crate::facility_queue_actions::{enqueue_for_contention, validate_contention_queue_admission};
 use crate::inventory::{
     consume_one_unit_of_commodity, controlled_entity_load, move_entity_to_direct_possession,
     remaining_capacity,
 };
-use crate::facility_queue_actions::{enqueue_for_contention, validate_contention_queue_admission};
 use crate::production_actions::ensure_matching_contention_grant;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    is_wound_load_fatal, load_per_unit, ActionDefId, ActionDomain, BodyCostPerTick, BodyPart,
-    CauseRef, CombatStance, CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind,
-    Container, ContentionPolicy, ContentionQueue, DeadAt, DriveThresholds, EntityId, EntityKind,
-    EventLog, EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity,
-    StateDelta, VisibilitySpec, WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause,
-    WoundList,
+    ActionDefId, ActionDomain, BodyCostPerTick, BodyPart, CauseRef, CombatStance,
+    CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, Container,
+    ContentionPolicy, ContentionQueue, DeadAt, DriveThresholds, EntityId, EntityKind, EventLog,
+    EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta,
+    VisibilitySpec, WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause, WoundList,
+    is_wound_load_fatal, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -224,9 +225,12 @@ fn apply_wound_progression(
     for update in updates {
         txn.set_component_wound_list(update.entity, update.wounds)
             .map_err(|error| SystemError::new(error.to_string()))?;
-        let current_wounds = txn
-            .get_component_wound_list(update.entity)
-            .ok_or_else(|| SystemError::new(format!("entity {} missing wound list after update", update.entity)))?;
+        let current_wounds = txn.get_component_wound_list(update.entity).ok_or_else(|| {
+            SystemError::new(format!(
+                "entity {} missing wound list after update",
+                update.entity
+            ))
+        })?;
         if current_wounds.wounds.is_empty() {
             clear_entity_contention_state(&mut txn, update.entity)
                 .map_err(|error| SystemError::new(format!("{error:?}")))?;
@@ -775,12 +779,12 @@ fn clear_contention_membership(
         (Some(_), None) => {
             return Err(ActionError::PreconditionFailed(format!(
                 "entity {entity} is contention-managed but lacks ContentionQueue grant state"
-            )))
+            )));
         }
         (None, Some(_)) => {
             return Err(ActionError::PreconditionFailed(format!(
                 "entity {entity} has ContentionQueue grant state without ContentionPolicy"
-            )))
+            )));
         }
     }
 
@@ -1033,16 +1037,16 @@ fn validate_loot_context(
         .targets
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    if let Some(payload) = loot_payload(instance) {
-        if payload.target != target {
-            return Err(ActionError::AbortRequested(
-                ActionAbortRequestReason::PayloadEntityMismatch {
-                    role: PayloadEntityRole::Target,
-                    expected: target,
-                    actual: payload.target,
-                },
-            ));
-        }
+    if let Some(payload) = loot_payload(instance)
+        && payload.target != target
+    {
+        return Err(ActionError::AbortRequested(
+            ActionAbortRequestReason::PayloadEntityMismatch {
+                role: PayloadEntityRole::Target,
+                expected: target,
+                actual: payload.target,
+            },
+        ));
     }
     let place = txn.effective_place(instance.actor).ok_or({
         ActionError::AbortRequested(ActionAbortRequestReason::ActorNotPlaced {
@@ -1747,6 +1751,9 @@ fn commit_attack(
     let payload = combat_payload(def, instance)?;
     let target = validate_attack_context(txn, instance, payload)?;
     validate_selected_weapon(txn, instance.actor, payload.weapon)?;
+    let place = txn.effective_place(instance.actor).ok_or_else(|| {
+        ActionError::PreconditionFailed(format!("actor {} has no place", instance.actor))
+    })?;
 
     let attacker_profile = txn
         .get_component_combat_profile(instance.actor)
@@ -1795,10 +1802,36 @@ fn commit_attack(
     };
 
     let mut next_wounds = target_wounds;
+    let wound_severity = wound.severity;
     next_wounds.wounds.push(wound);
+    let fatal_after_wound = is_wound_load_fatal(&next_wounds, &target_profile);
     txn.set_component_wound_list(target, next_wounds)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
     ensure_care_contention_state(txn, target)?;
+    emit_evidence(
+        txn,
+        place,
+        worldwake_core::EvidenceKind::BloodTrail {
+            from_place: place,
+            severity: wound_severity,
+            caused_by: Some(instance.actor),
+        },
+        100,
+    )
+    .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    if fatal_after_wound {
+        emit_evidence(
+            txn,
+            place,
+            worldwake_core::EvidenceKind::DisturbanceMarker {
+                place,
+                kind: worldwake_core::DisturbanceKind::CombatAftermath,
+                created_at: txn.tick(),
+            },
+            50,
+        )
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
     Ok(CommitOutcome::empty())
 }
 
@@ -1887,32 +1920,32 @@ fn abort_heal(
 #[cfg(test)]
 mod tests {
     use super::{
-        combat_system, effective_guard_skill, register_attack_action, register_bury_action,
+        AttackResolutionActor, AttackResolutionContext, AttackResolutionTarget, combat_system,
+        effective_guard_skill, register_attack_action, register_bury_action,
         register_defend_action, register_heal_action, register_loot_action,
         register_queue_for_care_target_action, register_queue_for_corpse_use_action,
-        resolve_attack_wound, AttackResolutionActor, AttackResolutionContext,
-        AttackResolutionTarget,
+        resolve_attack_wound,
     };
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, ActionDefId, AgentBeliefStore,
-        BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CombatWeaponRef,
-        CommodityKind, Container, ControlSource, ContentionGrant, ContentionIntents,
-        ContentionPolicy, ContentionQueue, ContentionWaiter, DeadAt, DeprivationKind,
-        DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView, EvidenceRef,
-        GoalKey, GoalKind, HomeostaticNeeds, LoadUnits, PerceptionSource, Permille,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
-        QueuedContentionIntent, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        ActionDefId, AgentBeliefStore, BodyPart, CarryCapacity, CauseRef, CombatProfile,
+        CombatStance, CombatWeaponRef, CommodityKind, Container, ContentionGrant,
+        ContentionIntents, ContentionPolicy, ContentionQueue, ContentionWaiter, ControlSource,
+        DeadAt, DeprivationKind, DisturbanceKind, DriveThresholds, EntityId, EntityKind, EventLog,
+        EventTag, EventView, EvidenceKind, EvidenceRef, GoalKey, GoalKind, HomeostaticNeeds,
+        LoadUnits, PerceptionSource, Permille, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, Quantity, QueuedContentionIntent, Seed, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+        WoundCause, WoundId, WoundList, build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
-        get_affordances, start_action, tick_action, ActionDuration, ActionError,
-        ActionExecutionAuthority, ActionHandlerRegistry, ActionInstanceId,
-        ActionPayload, ActionStatus, Affordance, CombatActionPayload, DeterministicRng,
-        DurationExpr, Interruptibility, PerAgentBeliefView, QueueForFacilityUsePayload,
-        SystemExecutionContext, SystemId, TickOutcome,
+        ActionDuration, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
+        ActionInstanceId, ActionPayload, ActionStatus, Affordance, CombatActionPayload,
+        DeterministicRng, DurationExpr, Interruptibility, PerAgentBeliefView,
+        QueueForFacilityUsePayload, SystemExecutionContext, SystemId, TickOutcome, get_affordances,
+        start_action, tick_action,
     };
 
     fn pm(value: u16) -> Permille {
@@ -2043,7 +2076,7 @@ mod tests {
         control: ControlSource,
     ) -> worldwake_core::EntityId {
         let place = world.topology().place_ids().next().unwrap();
-        let actor = {
+        {
             let mut txn = new_txn(world, tick);
             let actor = txn.create_agent("Guard", control).unwrap();
             txn.set_ground_location(actor, place).unwrap();
@@ -2053,8 +2086,7 @@ mod tests {
                 .unwrap();
             commit_txn(txn);
             actor
-        };
-        actor
+        }
     }
 
     fn spawn_guard_with_profile(
@@ -2064,7 +2096,7 @@ mod tests {
         profile: CombatProfile,
     ) -> worldwake_core::EntityId {
         let place = world.topology().place_ids().next().unwrap();
-        let actor = {
+        {
             let mut txn = new_txn(world, tick);
             let actor = txn.create_agent("Guard", control).unwrap();
             txn.set_ground_location(actor, place).unwrap();
@@ -2073,8 +2105,7 @@ mod tests {
                 .unwrap();
             commit_txn(txn);
             actor
-        };
-        actor
+        }
     }
 
     fn arm_actor(
@@ -2227,12 +2258,16 @@ mod tests {
         assert_eq!(attack.visibility, VisibilitySpec::SamePlace);
         assert_eq!(attack.payload, ActionPayload::None);
         assert_eq!(attack.targets.len(), 1);
-        assert!(attack
-            .preconditions
-            .contains(&worldwake_sim::Precondition::TargetAlive(0)));
-        assert!(attack
-            .actor_constraints
-            .contains(&worldwake_sim::Constraint::ActorNotIncapacitated));
+        assert!(
+            attack
+                .preconditions
+                .contains(&worldwake_sim::Precondition::TargetAlive(0))
+        );
+        assert!(
+            attack
+                .actor_constraints
+                .contains(&worldwake_sim::Constraint::ActorNotIncapacitated)
+        );
     }
 
     #[test]
@@ -2248,18 +2283,22 @@ mod tests {
         assert_eq!(loot.interruptibility, Interruptibility::FreelyInterruptible);
         assert_eq!(loot.visibility, VisibilitySpec::SamePlace);
         assert_eq!(loot.payload, ActionPayload::None);
-        assert!(loot
-            .actor_constraints
-            .contains(&worldwake_sim::Constraint::ActorNotIncapacitated));
-        assert!(loot
-            .preconditions
-            .contains(&worldwake_sim::Precondition::TargetDead(0)));
-        assert!(loot
-            .preconditions
-            .contains(&worldwake_sim::Precondition::TargetIsAgent(0)));
-        assert!(loot
-            .preconditions
-            .contains(&worldwake_sim::Precondition::TargetNotInContainer(0)));
+        assert!(
+            loot.actor_constraints
+                .contains(&worldwake_sim::Constraint::ActorNotIncapacitated)
+        );
+        assert!(
+            loot.preconditions
+                .contains(&worldwake_sim::Precondition::TargetDead(0))
+        );
+        assert!(
+            loot.preconditions
+                .contains(&worldwake_sim::Precondition::TargetIsAgent(0))
+        );
+        assert!(
+            loot.preconditions
+                .contains(&worldwake_sim::Precondition::TargetNotInContainer(0))
+        );
         assert!(loot.causal_event_tags.contains(&EventTag::Inventory));
         assert!(loot.causal_event_tags.contains(&EventTag::Transfer));
     }
@@ -2278,9 +2317,10 @@ mod tests {
         assert_eq!(bury.visibility, VisibilitySpec::SamePlace);
         assert_eq!(bury.payload, ActionPayload::None);
         assert_eq!(bury.targets.len(), 2);
-        assert!(bury
-            .preconditions
-            .contains(&worldwake_sim::Precondition::TargetNotInContainer(0)));
+        assert!(
+            bury.preconditions
+                .contains(&worldwake_sim::Precondition::TargetNotInContainer(0))
+        );
         assert!(bury.preconditions.contains(
             &worldwake_sim::Precondition::TargetHasWorkstationTag {
                 target_index: 1,
@@ -2315,15 +2355,17 @@ mod tests {
         );
         assert_eq!(heal.visibility, VisibilitySpec::SamePlace);
         assert_eq!(heal.payload, ActionPayload::None);
-        assert!(heal
-            .actor_constraints
-            .contains(&worldwake_sim::Constraint::ActorHasCommodity {
-                kind: CommodityKind::Medicine,
-                min_qty: Quantity(1),
-            }));
-        assert!(heal
-            .preconditions
-            .contains(&worldwake_sim::Precondition::TargetHasWounds(0)));
+        assert!(
+            heal.actor_constraints
+                .contains(&worldwake_sim::Constraint::ActorHasCommodity {
+                    kind: CommodityKind::Medicine,
+                    min_qty: Quantity(1),
+                })
+        );
+        assert!(
+            heal.preconditions
+                .contains(&worldwake_sim::Precondition::TargetHasWounds(0))
+        );
     }
 
     #[test]
@@ -2481,7 +2523,9 @@ mod tests {
         let place = world.effective_place(looter).unwrap();
         {
             let mut txn = new_txn(&mut world, 3);
-            let coins = txn.create_item_lot(CommodityKind::Coin, Quantity(3)).unwrap();
+            let coins = txn
+                .create_item_lot(CommodityKind::Coin, Quantity(3))
+                .unwrap();
             txn.set_component_dead_at(corpse, DeadAt(Tick(3))).unwrap();
             txn.set_ground_location(coins, place).unwrap();
             txn.set_possessor(coins, corpse).unwrap();
@@ -2495,7 +2539,9 @@ mod tests {
         let loot_id = register_loot_action(&mut defs, &mut handlers);
         let affordance = affordances_for(&world, looter, &defs, &handlers)
             .into_iter()
-            .find(|affordance| affordance.def_id == loot_id && affordance.bound_targets == vec![corpse])
+            .find(|affordance| {
+                affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
+            })
             .expect("loot affordance should still be visible for the corpse");
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2532,7 +2578,9 @@ mod tests {
         let place = world.effective_place(looter).unwrap();
         {
             let mut txn = new_txn(&mut world, 3);
-            let coins = txn.create_item_lot(CommodityKind::Coin, Quantity(3)).unwrap();
+            let coins = txn
+                .create_item_lot(CommodityKind::Coin, Quantity(3))
+                .unwrap();
             txn.set_component_dead_at(corpse, DeadAt(Tick(3))).unwrap();
             txn.set_ground_location(coins, place).unwrap();
             txn.set_possessor(coins, corpse).unwrap();
@@ -2565,7 +2613,9 @@ mod tests {
 
         let affordance = affordances_for(&world, looter, &defs, &handlers)
             .into_iter()
-            .find(|affordance| affordance.def_id == loot_id && affordance.bound_targets == vec![corpse])
+            .find(|affordance| {
+                affordance.def_id == loot_id && affordance.bound_targets == vec![corpse]
+            })
             .expect("loot affordance should remain available with a grant");
         let mut active = BTreeMap::new();
         let mut log = EventLog::new();
@@ -2733,7 +2783,10 @@ mod tests {
                     event_log: &mut log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap();
             if matches!(final_outcome, TickOutcome::Committed { .. }) {
@@ -2742,10 +2795,11 @@ mod tests {
         }
 
         assert!(matches!(final_outcome, TickOutcome::Committed { .. }));
-        assert!(log
-            .events_by_tag(EventTag::Inventory)
-            .iter()
-            .any(|event_id| log.get(*event_id).is_some()));
+        assert!(
+            log.events_by_tag(EventTag::Inventory)
+                .iter()
+                .any(|event_id| log.get(*event_id).is_some())
+        );
     }
 
     #[test]
@@ -2838,9 +2892,11 @@ mod tests {
         let heal_id = register_heal_action(&mut defs, &mut handlers);
 
         let affordances = affordances_for(&world, healer, &defs, &handlers);
-        assert!(!affordances
-            .iter()
-            .any(|affordance| affordance.def_id == heal_id));
+        assert!(
+            !affordances
+                .iter()
+                .any(|affordance| affordance.def_id == heal_id)
+        );
 
         arm_actor(&mut world, healer, 4, CommodityKind::Medicine, 1);
         {
@@ -2849,9 +2905,11 @@ mod tests {
             commit_txn(txn);
         }
         let affordances = affordances_for(&world, healer, &defs, &handlers);
-        assert!(!affordances
-            .iter()
-            .any(|affordance| affordance.def_id == heal_id));
+        assert!(
+            !affordances
+                .iter()
+                .any(|affordance| affordance.def_id == heal_id)
+        );
     }
 
     #[test]
@@ -2940,7 +2998,10 @@ mod tests {
                     event_log: &mut log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap();
             if matches!(outcome, TickOutcome::Committed { .. }) {
@@ -3364,10 +3425,12 @@ mod tests {
         assert_eq!(world.effective_place(corpse), Some(place));
         assert_eq!(world.possessor_of(bread), Some(corpse));
         assert_eq!(world.direct_container(corpse), Some(grave));
-        assert!(world
-            .direct_contents_of(grave)
-            .into_iter()
-            .any(|entity| entity == corpse));
+        assert!(
+            world
+                .direct_contents_of(grave)
+                .into_iter()
+                .any(|entity| entity == corpse)
+        );
 
         let buried_loot_err = start_action(
             &Affordance {
@@ -3622,7 +3685,10 @@ mod tests {
                     event_log: &mut log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap();
             if outcome != TickOutcome::Continuing {
@@ -3657,6 +3723,254 @@ mod tests {
         assert!(record.tags().contains(&EventTag::Combat));
         assert!(record.tags().contains(&EventTag::WorldMutation));
         assert!(record.target_ids().contains(&target));
+    }
+
+    #[test]
+    fn attack_commit_emits_blood_trail_evidence() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let attacker = spawn_guard_with_profile(
+            &mut world,
+            1,
+            ControlSource::Ai,
+            CombatProfile::new(
+                pm(1000),
+                pm(700),
+                pm(1000),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(120),
+                pm(30),
+                nz(6),
+                nz(10),
+            ),
+        );
+        let target = spawn_guard_with_profile(
+            &mut world,
+            2,
+            ControlSource::Ai,
+            CombatProfile::new(
+                pm(1000),
+                pm(700),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(80),
+                pm(10),
+                nz(6),
+                nz(10),
+            ),
+        );
+        arm_actor(&mut world, attacker, 3, CommodityKind::Sword, 1);
+        let place = world.effective_place(attacker).unwrap();
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let attack_id = register_attack_action(&mut defs, &mut handlers);
+        let affordance = affordances_for(&world, attacker, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == attack_id && affordance.bound_targets == vec![target]
+            })
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0);
+
+        let action_id = start_action(
+            &Affordance {
+                payload_override: Some(ActionPayload::Combat(CombatActionPayload {
+                    target,
+                    weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+                })),
+                ..affordance
+            },
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+
+        let mut outcome = TickOutcome::Continuing;
+        for tick in 6..=10 {
+            outcome = tick_action(
+                action_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
+            )
+            .unwrap();
+            if outcome != TickOutcome::Continuing {
+                break;
+            }
+        }
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        let wounds = world.get_component_wound_list(target).unwrap();
+        let inflicted = &wounds.wounds[0];
+        let scene = world
+            .get_component_scene_evidence(place)
+            .expect("attack should leave scene evidence");
+        assert!(scene.evidence.iter().any(|entry| {
+            entry.kind
+                == EvidenceKind::BloodTrail {
+                    from_place: place,
+                    severity: inflicted.severity,
+                    caused_by: Some(attacker),
+                }
+        }));
+    }
+
+    #[test]
+    fn newly_fatal_attack_commit_emits_combat_aftermath_evidence() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let attacker = spawn_guard_with_profile(
+            &mut world,
+            1,
+            ControlSource::Ai,
+            CombatProfile::new(
+                pm(1000),
+                pm(700),
+                pm(1000),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(120),
+                pm(30),
+                nz(6),
+                nz(10),
+            ),
+        );
+        let target = spawn_guard_with_profile(
+            &mut world,
+            2,
+            ControlSource::Ai,
+            CombatProfile::new(
+                pm(1000),
+                pm(700),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(0),
+                pm(80),
+                pm(10),
+                nz(6),
+                nz(10),
+            ),
+        );
+        arm_actor(&mut world, attacker, 3, CommodityKind::Sword, 1);
+        let place = world.effective_place(attacker).unwrap();
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_wound_list(
+                target,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(99),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+                        severity: pm(950),
+                        inflicted_at: Tick(4),
+                        bleed_rate_per_tick: pm(0),
+                    }],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let attack_id = register_attack_action(&mut defs, &mut handlers);
+        let affordance = affordances_for(&world, attacker, &defs, &handlers)
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == attack_id && affordance.bound_targets == vec![target]
+            })
+            .unwrap();
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng(0);
+
+        let action_id = start_action(
+            &Affordance {
+                payload_override: Some(ActionPayload::Combat(CombatActionPayload {
+                    target,
+                    weapon: CombatWeaponRef::Commodity(CommodityKind::Sword),
+                })),
+                ..affordance
+            },
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+
+        let mut outcome = TickOutcome::Continuing;
+        for tick in 6..=10 {
+            outcome = tick_action(
+                action_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
+            )
+            .unwrap();
+            if outcome != TickOutcome::Continuing {
+                break;
+            }
+        }
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        let scene = world
+            .get_component_scene_evidence(place)
+            .expect("fatal attack should leave scene evidence");
+        assert!(scene.evidence.iter().any(|entry| {
+            entry.kind
+                == EvidenceKind::DisturbanceMarker {
+                    place,
+                    kind: DisturbanceKind::CombatAftermath,
+                    created_at: Tick(9),
+                }
+        }));
     }
 
     #[test]
@@ -3732,7 +4046,10 @@ mod tests {
                     event_log: &mut log,
                     rng: &mut rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap();
 
@@ -4051,12 +4368,16 @@ mod tests {
         let dead_affordances = affordances_for(&world, dead, &defs, &handlers);
         let incapacitated_affordances = affordances_for(&world, incapacitated, &defs, &handlers);
 
-        assert!(!dead_affordances
-            .iter()
-            .any(|affordance| affordance.def_id == defend_id));
-        assert!(!incapacitated_affordances
-            .iter()
-            .any(|affordance| affordance.def_id == defend_id));
+        assert!(
+            !dead_affordances
+                .iter()
+                .any(|affordance| affordance.def_id == defend_id)
+        );
+        assert!(
+            !incapacitated_affordances
+                .iter()
+                .any(|affordance| affordance.def_id == defend_id)
+        );
     }
 
     #[test]
@@ -4875,11 +5196,18 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(world.get_component_wound_list(patient), Some(&WoundList::default()));
+        assert_eq!(
+            world.get_component_wound_list(patient),
+            Some(&WoundList::default())
+        );
         assert!(world.get_component_contention_queue(patient).is_none());
         assert!(world.get_component_contention_policy(patient).is_none());
         assert!(world.get_component_contention_intents(healer).is_none());
-        assert!(world.get_component_contention_intents(waiting_healer).is_none());
+        assert!(
+            world
+                .get_component_contention_intents(waiting_healer)
+                .is_none()
+        );
     }
 
     #[test]
@@ -4976,7 +5304,11 @@ mod tests {
         assert!(queue.waiting.is_empty());
         assert!(queue.granted.is_none());
         assert!(world.get_component_contention_intents(healer).is_none());
-        assert!(world.get_component_contention_intents(waiting_healer).is_none());
+        assert!(
+            world
+                .get_component_contention_intents(waiting_healer)
+                .is_none()
+        );
     }
 
     #[test]

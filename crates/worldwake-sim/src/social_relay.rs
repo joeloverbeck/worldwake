@@ -1,7 +1,7 @@
 use worldwake_core::{
-    institutional_knowledge_chain_len, social_observation_is_relayable, BelievedEntityState,
-    BelievedInstitutionalClaim, EntityId, PerceptionSource, RecipientKnowledgeStatus,
-    SocialObservation, TellTopic, Tick,
+    BelievedEntityState, BelievedInstitutionalClaim, EntityId, PerceptionSource,
+    RecipientKnowledgeStatus, SocialObservation, TellTopic, Tick,
+    institutional_knowledge_chain_len, social_observation_is_relayable,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -265,9 +265,9 @@ pub fn listener_aware_tell_topic_selection(
 #[cfg(test)]
 mod tests {
     use super::{
-        belief_chain_len, listener_aware_relayable_subjects, listener_aware_relayable_tell_topics,
-        listener_aware_tell_topic_selection, relayable_social_subjects, TellTopicOmission,
-        TellTopicOmissionReason,
+        TellTopicOmission, TellTopicOmissionReason, belief_chain_len,
+        listener_aware_relayable_subjects, listener_aware_relayable_tell_topics,
+        listener_aware_tell_topic_selection, relayable_social_subjects,
     };
     use std::collections::BTreeMap;
     use worldwake_core::{
@@ -295,6 +295,7 @@ mod tests {
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(observed_tick),
             source,
         }

@@ -6,10 +6,10 @@ use golden_harness::*;
 use std::num::NonZeroU8;
 use worldwake_ai::{CommodityPurpose, DecisionOutcome, GoalKind};
 use worldwake_core::{
-    hash_event_log, hash_world, CommodityKind, CommodityValuationProfile, HomeostaticNeeds,
-    KnownRecipes, MetabolismProfile, Quantity, Seed, Tick, UtilityProfile, WorkstationTag,
+    CommodityKind, CommodityValuationProfile, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
+    Quantity, Seed, Tick, UtilityProfile, WorkstationTag, hash_event_log, hash_world,
 };
-use worldwake_sim::{evaluate_trade_bundle, GoalBeliefView, PerAgentBeliefView, TradeAcceptance};
+use worldwake_sim::{GoalBeliefView, PerAgentBeliefView, TradeAcceptance, evaluate_trade_bundle};
 
 fn valuation_profile() -> CommodityValuationProfile {
     CommodityValuationProfile {
@@ -30,15 +30,17 @@ fn trace_has_recipe_input_candidate(
         .expect("decision tracing should be enabled")
         .trace_at(actor, Tick(0))
         .is_some_and(|trace| match &trace.outcome {
-            DecisionOutcome::Planning(planning) => planning.candidates.generated.iter().any(|goal| {
-                matches!(
-                    goal.goal_key.kind,
-                    GoalKind::AcquireCommodity {
-                        commodity: c,
-                        purpose: CommodityPurpose::RecipeInput(r),
-                    } if c == commodity && r == recipe_id
-                )
-            }),
+            DecisionOutcome::Planning(planning) => {
+                planning.candidates.generated.iter().any(|goal| {
+                    matches!(
+                        goal.goal_key.kind,
+                        GoalKind::AcquireCommodity {
+                            commodity: c,
+                            purpose: CommodityPurpose::RecipeInput(r),
+                        } if c == commodity && r == recipe_id
+                    )
+                })
+            }
             _ => false,
         })
 }
@@ -48,10 +50,7 @@ fn run_recipe_input_snapshot_scenario(
     seed: Seed,
     mill_reachable: bool,
     knows_recipe: bool,
-) -> (
-    worldwake_core::StateHash,
-    worldwake_core::StateHash,
-) {
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
     let bread_recipe = h
         .recipes
@@ -113,7 +112,8 @@ fn run_recipe_input_snapshot_scenario(
 
     h.driver.enable_tracing();
     h.step_once();
-    let ai_has_candidate = trace_has_recipe_input_candidate(&h, baker, CommodityKind::Firewood, bread_recipe);
+    let ai_has_candidate =
+        trace_has_recipe_input_candidate(&h, baker, CommodityKind::Firewood, bread_recipe);
     let belief_store = h
         .world
         .get_component_agent_belief_store(baker)
@@ -141,11 +141,15 @@ fn run_recipe_input_snapshot_scenario(
         "local same-place setup should not over-claim a positive trade-side recipe-input contract"
     );
     assert_eq!(
-        ai_has_candidate, mill_reachable && knows_recipe,
+        ai_has_candidate,
+        mill_reachable && knows_recipe,
         "negative S06 scenarios should only emit a recipe-input candidate when both recipe knowledge and workstation reachability hold"
     );
 
-    (hash_world(&h.world).unwrap(), hash_event_log(&h.event_log).unwrap())
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
 }
 
 // Scenario 89: Unreachable Workstation Suppresses Indirect Firewood Value

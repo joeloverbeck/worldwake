@@ -1,20 +1,23 @@
-use std::{collections::{BTreeMap, BTreeSet}, num::NonZeroU32};
-use worldwake_core::{
-    ActionDefId, BlockedIntent, BlockerKey, BlockingFact, BodyCostPerTick,
-    CommodityKind, DemandMemory, DemandObservation, DemandObservationReason, EntityId, EntityKind,
-    EventTag, GoalKey, GoalKind, MerchandiseProfile, Quantity, SourceKey, Tick,
-    VisibilitySpec, WorldTxn, WoundList,
-};
-use worldwake_sim::{
-    commodity_opportunity_score, evaluate_trade_bundle, AbortReason, ActionAbortRequestReason,
-    ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
-    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    CommitOutcome, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility,
-    PayloadEntityRole, PerAgentBeliefView, Precondition, RecipeRegistry, RuntimeBeliefView,
-    StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload, TradeRejectionReason,
-};
 use crate::experience_recording::{
     record_failed_source_attempt, record_successful_source_acquisition,
+};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    num::NonZeroU32,
+};
+use worldwake_core::{
+    ActionDefId, BlockedIntent, BlockerKey, BlockingFact, BodyCostPerTick, CommodityKind,
+    DemandMemory, DemandObservation, DemandObservationReason, EntityId, EntityKind, EventTag,
+    GoalKey, GoalKind, MerchandiseProfile, Quantity, SourceKey, Tick, VisibilitySpec, WorldTxn,
+    WoundList,
+};
+use worldwake_sim::{
+    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
+    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
+    ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr, GoalBeliefView,
+    Interruptibility, PayloadEntityRole, PerAgentBeliefView, Precondition, RecipeRegistry,
+    RuntimeBeliefView, StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload,
+    TradeRejectionReason, commodity_opportunity_score, evaluate_trade_bundle,
 };
 
 pub fn register_trade_action(
@@ -150,7 +153,10 @@ fn enumerate_trade_payloads(
 /// Derives the requested commodity from the sale lot's item lot component.
 /// The sale lot is the authoritative source; `requested_commodity` is never
 /// stored in the payload.
-fn sale_lot_commodity(txn: &WorldTxn<'_>, sale_lot: EntityId) -> Result<CommodityKind, ActionError> {
+fn sale_lot_commodity(
+    txn: &WorldTxn<'_>,
+    sale_lot: EntityId,
+) -> Result<CommodityKind, ActionError> {
     txn.get_component_item_lot(sale_lot)
         .map(|lot| lot.commodity)
         .ok_or_else(|| {
@@ -215,7 +221,7 @@ fn tick_trade(
         _ => {
             return Err(ActionError::InternalError(
                 "trade action missing negotiation state".to_string(),
-            ))
+            ));
         }
     };
     let (round, initiator_role, initiator_last_offer, responder_last_offer, agreed_price) = state;
@@ -315,12 +321,12 @@ fn tick_trade(
         profile.concession_rate,
     );
     let next_offer = match current_role {
-        worldwake_core::TradeRole::Buyer => initiator_last_offer.map_or(generated, |prev| {
-            Quantity(generated.0.max(prev.0))
-        }),
-        worldwake_core::TradeRole::Seller => responder_last_offer.map_or(generated, |prev| {
-            Quantity(generated.0.min(prev.0))
-        }),
+        worldwake_core::TradeRole::Buyer => {
+            initiator_last_offer.map_or(generated, |prev| Quantity(generated.0.max(prev.0)))
+        }
+        worldwake_core::TradeRole::Seller => {
+            responder_last_offer.map_or(generated, |prev| Quantity(generated.0.min(prev.0)))
+        }
     };
 
     instance.local_state = Some(ActionState::Trade {
@@ -515,7 +521,10 @@ fn validate_trade_context_for_negotiation(
             },
         ));
     }
-    if txn.can_exercise_control(counterparty, payload.sale_lot).is_err() {
+    if txn
+        .can_exercise_control(counterparty, payload.sale_lot)
+        .is_err()
+    {
         return Err(ActionError::AbortRequested(
             ActionAbortRequestReason::SaleLotNotPossessedBySeller {
                 sale_lot: payload.sale_lot,
@@ -672,13 +681,21 @@ pub(crate) fn generate_offer(
             let ceiling = reservation.0.max(floor);
             let start = opening.0.clamp(floor, ceiling);
             let span = ceiling.saturating_sub(start);
-            Quantity(start.saturating_add(scale_by_permille(span, progress)).min(ceiling))
+            Quantity(
+                start
+                    .saturating_add(scale_by_permille(span, progress))
+                    .min(ceiling),
+            )
         }
         worldwake_core::TradeRole::Seller => {
             let floor = reservation.0.max(1);
             let start = opening.0.max(floor);
             let span = start.saturating_sub(floor);
-            Quantity(start.saturating_sub(scale_by_permille(span, progress)).max(floor))
+            Quantity(
+                start
+                    .saturating_sub(scale_by_permille(span, progress))
+                    .max(floor),
+            )
         }
     }
 }
@@ -693,17 +710,24 @@ pub(crate) fn derive_opening_offer(
 ) -> Quantity {
     let bias = u32::from(initial_offer_bias.value());
     let capped_rejections = prior_rejections.min(4);
-    let shift_per_rejection =
-        scale_by_permille(reservation.0.max(1), u32::from(rejection_escalation_rate.value()));
+    let shift_per_rejection = scale_by_permille(
+        reservation.0.max(1),
+        u32::from(rejection_escalation_rate.value()),
+    );
     let total_shift = shift_per_rejection.saturating_mul(capped_rejections);
 
     match role {
         worldwake_core::TradeRole::Buyer => {
             let generous_floor = 1;
             let span = reservation.0.saturating_sub(generous_floor);
-            let base =
-                reservation.0.saturating_sub(scale_by_permille(span, bias)).max(generous_floor);
-            Quantity(base.saturating_add(total_shift).min(reservation.0.max(generous_floor)))
+            let base = reservation
+                .0
+                .saturating_sub(scale_by_permille(span, bias))
+                .max(generous_floor);
+            Quantity(
+                base.saturating_add(total_shift)
+                    .min(reservation.0.max(generous_floor)),
+            )
         }
         worldwake_core::TradeRole::Seller => {
             let floor = 1;
@@ -736,20 +760,17 @@ fn commodity_need_pressure(
         return treatment_pressure(wounds, commodity);
     };
 
-    let consumable_pressure = commodity
-        .spec()
-        .consumable_profile
-        .map_or(0, |profile| {
-            let hunger_units = units_to_cover_pressure(
-                u32::from(needs.hunger.value()),
-                u32::from(profile.hunger_relief_per_unit.value()),
-            );
-            let thirst_units = units_to_cover_pressure(
-                u32::from(needs.thirst.value()),
-                u32::from(profile.thirst_relief_per_unit.value()),
-            );
-            hunger_units.max(thirst_units)
-        });
+    let consumable_pressure = commodity.spec().consumable_profile.map_or(0, |profile| {
+        let hunger_units = units_to_cover_pressure(
+            u32::from(needs.hunger.value()),
+            u32::from(profile.hunger_relief_per_unit.value()),
+        );
+        let thirst_units = units_to_cover_pressure(
+            u32::from(needs.thirst.value()),
+            u32::from(profile.thirst_relief_per_unit.value()),
+        );
+        hunger_units.max(thirst_units)
+    });
 
     consumable_pressure.max(treatment_pressure(wounds, commodity))
 }
@@ -773,16 +794,18 @@ fn treatment_pressure(wounds: Option<&WoundList>, commodity: CommodityKind) -> u
 }
 
 #[allow(dead_code)]
-fn remembered_demand_pressure(demand_memory: Option<&DemandMemory>, commodity: CommodityKind) -> u32 {
-    demand_memory
-        .map_or(0, |memory| {
-            memory
-                .observations
-                .iter()
-                .filter(|obs| obs.commodity == commodity)
-                .map(|obs| obs.quantity.0)
-                .sum()
-        })
+fn remembered_demand_pressure(
+    demand_memory: Option<&DemandMemory>,
+    commodity: CommodityKind,
+) -> u32 {
+    demand_memory.map_or(0, |memory| {
+        memory
+            .observations
+            .iter()
+            .filter(|obs| obs.commodity == commodity)
+            .map(|obs| obs.quantity.0)
+            .sum()
+    })
 }
 
 #[allow(dead_code)]
@@ -794,7 +817,11 @@ fn units_to_cover_pressure(pressure: u32, relief_per_unit: u32) -> u32 {
 }
 
 #[allow(dead_code)]
-fn concession_progress(round: u32, deadline: u32, concession_rate: worldwake_core::Permille) -> u32 {
+fn concession_progress(
+    round: u32,
+    deadline: u32,
+    concession_rate: worldwake_core::Permille,
+) -> u32 {
     let capped_deadline = deadline.max(1);
     let normalized_round = round.min(capped_deadline);
     let linear = ((u64::from(normalized_round) * 1000) / u64::from(capped_deadline)) as u32;
@@ -886,9 +913,13 @@ fn reservation_price_for_actor(
 ) -> Quantity {
     let belief = PerAgentBeliefView::from_world_with_recipes(actor, txn, recipe_registry);
     match role {
-        worldwake_core::TradeRole::Buyer => {
-            buyer_reservation_price_for_view(&belief, actor, counterparty, place, requested_commodity)
-        }
+        worldwake_core::TradeRole::Buyer => buyer_reservation_price_for_view(
+            &belief,
+            actor,
+            counterparty,
+            place,
+            requested_commodity,
+        ),
         worldwake_core::TradeRole::Seller => seller_reservation_price_for_view(
             &belief,
             actor,
@@ -1003,10 +1034,7 @@ pub fn select_substitute_trade_candidate(
     None
 }
 
-fn holdings_from_view(
-    view: &dyn GoalBeliefView,
-    actor: EntityId,
-) -> BTreeMap<CommodityKind, u32> {
+fn holdings_from_view(view: &dyn GoalBeliefView, actor: EntityId) -> BTreeMap<CommodityKind, u32> {
     CommodityKind::ALL
         .into_iter()
         .map(|kind| (kind, view.commodity_quantity(actor, kind).0))
@@ -1020,7 +1048,9 @@ fn alternative_supply_map(
     place: EntityId,
 ) -> BTreeMap<CommodityKind, u32> {
     let mut by_kind = BTreeMap::new();
-    for (_, commodity, quantity) in local_trade_alternatives(view, actor, excluded_counterparty, place) {
+    for (_, commodity, quantity) in
+        local_trade_alternatives(view, actor, excluded_counterparty, place)
+    {
         *by_kind.entry(commodity).or_insert(0) += quantity.0;
     }
     by_kind
@@ -1137,13 +1167,7 @@ fn execute_trade_transfers(
         place,
         payload.offered_commodity,
     )?;
-    transfer_selected_lots(
-        txn,
-        &requested_lots,
-        actor,
-        place,
-        requested_commodity,
-    )
+    transfer_selected_lots(txn, &requested_lots, actor, place, requested_commodity)
 }
 
 fn transfer_selected_lots(
@@ -1372,9 +1396,11 @@ fn validate_staff_market_preconditions(
     actor: EntityId,
     commodity: CommodityKind,
 ) -> Result<(EntityId, MerchandiseProfile), ActionError> {
-    let place = txn.effective_place(actor).ok_or(ActionError::AbortRequested(
-        ActionAbortRequestReason::ActorNotPlaced { actor },
-    ))?;
+    let place = txn
+        .effective_place(actor)
+        .ok_or(ActionError::AbortRequested(
+            ActionAbortRequestReason::ActorNotPlaced { actor },
+        ))?;
     let profile = txn
         .get_component_merchandise_profile(actor)
         .cloned()
@@ -1435,17 +1461,17 @@ fn displayed_sale_lots_at_facility(
     let Some(place) = txn.effective_place(facility) else {
         return false;
     };
-    txn.entities_effectively_at(place).into_iter().any(|entity| {
-        txn.get_component_item_lot(entity)
-            .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
-            && txn.has_component_sale_listing(entity)
-            && txn
-                .get_component_stock_assignment(entity)
-                .is_some_and(|a| {
+    txn.entities_effectively_at(place)
+        .into_iter()
+        .any(|entity| {
+            txn.get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == commodity && lot.quantity > Quantity(0))
+                && txn.has_component_sale_listing(entity)
+                && txn.get_component_stock_assignment(entity).is_some_and(|a| {
                     a.kind == worldwake_core::StockAssignmentKind::Displayed
                         && a.facility == facility
                 })
-    })
+        })
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1487,15 +1513,13 @@ fn commit_staff_market(
     let commodity = payload.commodity;
     // Presence-only: SaleListing is managed by stage/unstage, not staff_market.
     // Record unproductive demand if displayed stock remains unsold.
-    if let Some(profile) = txn.get_component_merchandise_profile(instance.actor) {
-        if let Some(home_facility) = profile.home_facility {
-            if let Some(place) = txn.effective_place(home_facility) {
-                if staff_market_has_sellable_stock(txn, instance.actor, home_facility, commodity) {
-                    record_unproductive_demand(txn, instance.actor, commodity, place);
-                    record_sell_blocked_intent(txn, instance.actor, commodity, place);
-                }
-            }
-        }
+    if let Some(profile) = txn.get_component_merchandise_profile(instance.actor)
+        && let Some(home_facility) = profile.home_facility
+        && let Some(place) = txn.effective_place(home_facility)
+        && staff_market_has_sellable_stock(txn, instance.actor, home_facility, commodity)
+    {
+        record_unproductive_demand(txn, instance.actor, commodity, place);
+        record_sell_blocked_intent(txn, instance.actor, commodity, place);
     }
     Ok(CommitOutcome::empty())
 }
@@ -1574,30 +1598,29 @@ fn record_sell_blocked_intent(
 #[cfg(test)]
 mod tests {
     use super::{
-        buyer_reservation_price, count_local_alternatives, derive_opening_offer, generate_offer,
-        register_trade_action, rejection_count_for, select_substitute_trade_candidate,
-        seller_reservation_price, urgency_modulated_deadline, validate_trade_payload_override,
-        SubstituteTradeCandidate,
+        SubstituteTradeCandidate, buyer_reservation_price, count_local_alternatives,
+        derive_opening_offer, generate_offer, register_trade_action, rejection_count_for,
+        select_substitute_trade_candidate, seller_reservation_price, urgency_modulated_deadline,
+        validate_trade_payload_override,
     };
     use crate::trade_actions::local_alternatives;
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        build_believed_entity_state, build_prototype_world, verify_live_lot_conservation,
         AgentBeliefStore, BlockingFact, CauseRef, CommodityKind, ControlSource, DemandMemory,
         DemandObservation, DemandObservationReason, EntityId, EventLog, EventTag, EventView,
         GoalKind, HomeostaticNeeds, LotOperation, MerchandiseProfile, PerceptionSource, Permille,
         PreferenceProfile, Quantity, ReliabilityRecord, SaleListing, Seed, SourceKey,
         SourceReliability, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
-        VisibilitySpec, WitnessData, World, WorldTxn,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world, verify_live_lot_conservation,
     };
     use worldwake_sim::{
-        abort_action, get_affordances, start_action, tick_action, ActionAbortRequestReason,
-        ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, ActionState, ActionStatus, Affordance, DeterministicRng,
-        ExternalAbortReason, PayloadEntityRole, PerAgentBeliefView, TickOutcome,
-        TradeActionPayload,
+        ActionAbortRequestReason, ActionDefRegistry, ActionError, ActionExecutionAuthority,
+        ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
+        Affordance, DeterministicRng, ExternalAbortReason, PayloadEntityRole, PerAgentBeliefView,
+        TickOutcome, TradeActionPayload, abort_action, get_affordances, start_action, tick_action,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -1808,12 +1831,7 @@ mod tests {
 
     #[test]
     fn seller_reservation_price_returns_higher_value_with_more_demand_observations() {
-        let none = seller_reservation_price(
-            None,
-            CommodityKind::Apple,
-            Quantity(2),
-            None,
-        );
+        let none = seller_reservation_price(None, CommodityKind::Apple, Quantity(2), None);
         let remembered = seller_reservation_price(
             None,
             CommodityKind::Apple,
@@ -1860,11 +1878,21 @@ mod tests {
             let excluded = txn.create_agent("Excluded", ControlSource::Ai).unwrap();
             let seller_a = txn.create_agent("Seller A", ControlSource::Ai).unwrap();
             let seller_b = txn.create_agent("Seller B", ControlSource::Ai).unwrap();
-            let actor_apple = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
-            let excluded_apple = txn.create_item_lot(CommodityKind::Apple, Quantity(1)).unwrap();
-            let orchard_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(2)).unwrap();
-            let grocer_stock = txn.create_item_lot(CommodityKind::Apple, Quantity(3)).unwrap();
-            let baker_stock = txn.create_item_lot(CommodityKind::Bread, Quantity(2)).unwrap();
+            let actor_apple = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(1))
+                .unwrap();
+            let excluded_apple = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(1))
+                .unwrap();
+            let orchard_stock = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(2))
+                .unwrap();
+            let grocer_stock = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(3))
+                .unwrap();
+            let baker_stock = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(2))
+                .unwrap();
 
             for entity in [
                 actor,
@@ -2180,30 +2208,33 @@ mod tests {
                 txn.set_owner(actor_offer, actor).unwrap();
                 // Create facility for counterparty and stage the sale lot.
                 let facility = {
-                {
-                    use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
-                    let (facility, _stock, display) = txn
-                        .create_merchant_facility(place, counterparty, LoadUnits(200), Some(LoadUnits(100)))
+                    {
+                        use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+                        let (facility, _stock, display) = txn
+                            .create_merchant_facility(
+                                place,
+                                counterparty,
+                                LoadUnits(200),
+                                Some(LoadUnits(100)),
+                            )
+                            .unwrap();
+                        let display = display.unwrap();
+                        txn.put_into_container(counterparty_offer, display).unwrap();
+                        txn.set_component_stock_assignment(
+                            counterparty_offer,
+                            StockAssignment {
+                                facility,
+                                kind: StockAssignmentKind::Displayed,
+                            },
+                        )
                         .unwrap();
-                    let display = display.unwrap();
-                    txn.put_into_container(counterparty_offer, display).unwrap();
-                    txn.set_component_stock_assignment(
-                        counterparty_offer,
-                        StockAssignment {
-                            facility,
-                            kind: StockAssignmentKind::Displayed,
-                        },
-                    )
-                    .unwrap();
-                    txn.set_component_sale_listing(
-                        counterparty_offer,
-                        SaleListing {
-                            listed_at: Tick(2),
-                        },
-                    )
-                    .unwrap();
-                    facility
-                }
+                        txn.set_component_sale_listing(
+                            counterparty_offer,
+                            SaleListing { listed_at: Tick(2) },
+                        )
+                        .unwrap();
+                        facility
+                    }
                 };
                 txn.set_component_trade_disposition_profile(
                     actor,
@@ -2298,7 +2329,10 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_instance_id,
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3),
+                ),
             )
             .unwrap();
             (instance_id, active)
@@ -2325,7 +2359,10 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_instance_id,
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3),
+                ),
             )
         }
 
@@ -2397,7 +2434,10 @@ mod tests {
                     event_log: &mut self.log,
                     rng: &mut self.rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
         }
     }
@@ -2443,15 +2483,17 @@ mod tests {
         assert!(affordances.iter().any(|affordance| {
             affordance.def_id == harness.def_id
                 && affordance.bound_targets == vec![harness.counterparty]
-                && affordance.payload_override.as_ref().and_then(ActionPayload::as_trade).is_some_and(
-                    |payload| {
+                && affordance
+                    .payload_override
+                    .as_ref()
+                    .and_then(ActionPayload::as_trade)
+                    .is_some_and(|payload| {
                         payload.counterparty == harness.counterparty
                             && payload.sale_lot == harness.counterparty_offer
                             && payload.offered_commodity == CommodityKind::Coin
                             && payload.offered_quantity > Quantity(1)
                             && payload.requested_quantity == Quantity(1)
-                    },
-                )
+                    })
         }));
     }
 
@@ -2483,7 +2525,8 @@ mod tests {
         assert!(
             !affordances
                 .iter()
-                .any(|affordance| affordance.def_id == harness.def_id && affordance.bound_targets == vec![harness.counterparty])
+                .any(|affordance| affordance.def_id == harness.def_id
+                    && affordance.bound_targets == vec![harness.counterparty])
         );
     }
 
@@ -2522,7 +2565,11 @@ mod tests {
         assert!(affordances.iter().any(|affordance| {
             affordance.def_id == harness.def_id
                 && affordance.bound_targets == vec![harness.counterparty]
-                && affordance.payload_override.as_ref().and_then(ActionPayload::as_trade).is_some()
+                && affordance
+                    .payload_override
+                    .as_ref()
+                    .and_then(ActionPayload::as_trade)
+                    .is_some()
         }));
     }
 
@@ -2776,26 +2823,39 @@ mod tests {
 
         assert!(matches!(second, TickOutcome::Committed { .. }));
         assert_eq!(
-            harness.world.controlled_commodity_quantity(harness.counterparty, CommodityKind::Coin),
+            harness
+                .world
+                .controlled_commodity_quantity(harness.counterparty, CommodityKind::Coin),
             Quantity(4)
         );
         assert_eq!(
-            harness.world.controlled_commodity_quantity(harness.actor, CommodityKind::Coin),
+            harness
+                .world
+                .controlled_commodity_quantity(harness.actor, CommodityKind::Coin),
             Quantity(1)
         );
-        let buyer_memory = harness.world.get_component_demand_memory(harness.actor).unwrap();
+        let buyer_memory = harness
+            .world
+            .get_component_demand_memory(harness.actor)
+            .unwrap();
         let seller_memory = harness
             .world
             .get_component_demand_memory(harness.counterparty)
             .unwrap();
-        assert!(buyer_memory
-            .observations
-            .iter()
-            .any(|obs| obs.reason == DemandObservationReason::TradeAgreed && obs.quantity == Quantity(4)));
-        assert!(seller_memory
-            .observations
-            .iter()
-            .any(|obs| obs.reason == DemandObservationReason::TradeAgreed && obs.quantity == Quantity(4)));
+        assert!(
+            buyer_memory
+                .observations
+                .iter()
+                .any(|obs| obs.reason == DemandObservationReason::TradeAgreed
+                    && obs.quantity == Quantity(4))
+        );
+        assert!(
+            seller_memory
+                .observations
+                .iter()
+                .any(|obs| obs.reason == DemandObservationReason::TradeAgreed
+                    && obs.quantity == Quantity(4))
+        );
     }
 
     #[test]
@@ -2830,7 +2890,10 @@ mod tests {
 
         assert!(matches!(second, TickOutcome::Continuing));
         assert!(matches!(third, TickOutcome::Aborted { .. }));
-        let buyer_memory = harness.world.get_component_demand_memory(harness.actor).unwrap();
+        let buyer_memory = harness
+            .world
+            .get_component_demand_memory(harness.actor)
+            .unwrap();
         let seller_memory = harness
             .world
             .get_component_demand_memory(harness.counterparty)
@@ -2983,13 +3046,8 @@ mod tests {
             txn.set_possessor(replacement, harness.counterparty)
                 .unwrap();
             txn.set_owner(replacement, harness.counterparty).unwrap();
-            txn.set_component_sale_listing(
-                replacement,
-                SaleListing {
-                    listed_at: Tick(3),
-                },
-            )
-            .unwrap();
+            txn.set_component_sale_listing(replacement, SaleListing { listed_at: Tick(3) })
+                .unwrap();
             commit_txn(txn);
             harness.counterparty_offer = replacement;
             harness.payload.sale_lot = replacement;
@@ -3557,10 +3615,12 @@ mod tests {
             HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         );
         // Confirm listing exists before trade.
-        assert!(harness
-            .world
-            .get_component_sale_listing(harness.counterparty_offer)
-            .is_some());
+        assert!(
+            harness
+                .world
+                .get_component_sale_listing(harness.counterparty_offer)
+                .is_some()
+        );
 
         let (instance_id, mut active) = harness.start_with_active();
         let _outcome = tick_action(
@@ -3578,10 +3638,12 @@ mod tests {
         .unwrap();
 
         // After trade, the transferred lot should not have SaleListing.
-        assert!(harness
-            .world
-            .get_component_sale_listing(harness.counterparty_offer)
-            .is_none());
+        assert!(
+            harness
+                .world
+                .get_component_sale_listing(harness.counterparty_offer)
+                .is_none()
+        );
     }
 
     #[test]
@@ -3616,10 +3678,12 @@ mod tests {
         .unwrap();
 
         // Seller's original lot should retain SaleListing (it still has Quantity(2)).
-        assert!(harness
-            .world
-            .get_component_sale_listing(harness.counterparty_offer)
-            .is_some());
+        assert!(
+            harness
+                .world
+                .get_component_sale_listing(harness.counterparty_offer)
+                .is_some()
+        );
         // Seller's remainder should still have quantity.
         let remainder = harness
             .world
@@ -3761,7 +3825,10 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_instance_id,
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3),
+                ),
             )
             .unwrap();
             (instance_id, active)
@@ -3797,7 +3864,10 @@ mod tests {
                     rng: &mut self.rng,
                 },
                 &mut self.next_instance_id,
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3),
+                ),
             )
         }
     }
@@ -3858,7 +3928,10 @@ mod tests {
                     event_log: &mut h.log,
                     rng: &mut h.rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap();
             if matches!(outcome, TickOutcome::Committed { .. }) {
@@ -3890,7 +3963,10 @@ mod tests {
                     event_log: &mut h.log,
                     rng: &mut h.rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap();
             if matches!(outcome, TickOutcome::Committed { .. }) {
@@ -3923,7 +3999,10 @@ mod tests {
                     event_log: &mut h.log,
                     rng: &mut h.rng,
                 },
-                worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(tick)),
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
             )
             .unwrap();
             if matches!(outcome, TickOutcome::Committed { .. }) {
@@ -3990,7 +4069,10 @@ mod tests {
         (handler_entry.on_abort)(
             def,
             instance,
-            &worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, txn.tick()),
+            &worldwake_sim::ActionExecutionContext::without_recipes(
+                CauseRef::Bootstrap,
+                txn.tick(),
+            ),
             &worldwake_sim::AbortReason::Interrupted {
                 kind: worldwake_sim::InterruptReason::Other,
                 detail: None,

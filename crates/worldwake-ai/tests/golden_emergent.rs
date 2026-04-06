@@ -10,26 +10,23 @@ mod golden_harness;
 use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PoliticalCandidateOmissionReason, SelectedPlanSource};
 use worldwake_core::{
-    hash_event_log, hash_world, prototype_place_entity, total_live_lot_quantity,
-    verify_live_lot_conservation, AgentBeliefStore, AgentData, BeliefConfidencePolicy,
-    BelievedEntityState, BelievedInstitutionalClaim, CombatProfile, CommodityKind,
-    CommunicationProfile, ComponentKind, ComponentValue, ControlSource, DeadAt,
-    DeprivationExposure, DeprivationKind, DriveThresholds, EventTag, EventView, GoalKey,
-    GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes,
-    IntentionDispositionProfile, MetabolismProfile, PerceptionProfile, PerceptionSource,
-    PrototypePlace, Quantity,
-    RecordData, RecordKind, RelationValue, ResourceSource, Seed, StateHash, SuccessionLaw,
-    TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand, Tick,
-    UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag,
+    AgentBeliefStore, AgentData, BeliefConfidencePolicy, BelievedEntityState,
+    BelievedInstitutionalClaim, CombatProfile, CommodityKind, CommunicationProfile, ComponentKind,
+    ComponentValue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DriveThresholds,
+    EventTag, EventView, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+    IntentionDispositionProfile, JusticeDispositionProfile, KnownRecipes, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, RecordData, RecordKind,
+    RelationValue, ResourceSource, RightKind, Seed, StateHash, SuccessionLaw, TellProfile,
+    TellTopic, TheftDispositionProfile, TheftFacts, ThresholdBand, Tick, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag, hash_event_log, hash_world,
+    prototype_place_entity, total_live_lot_quantity, verify_live_lot_conservation,
 };
 use worldwake_sim::{
-    step_tick, ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail,
-    ActionTraceKind, AutonomousController, AutonomousControllerContext,
-    DeclareSupportActionPayload, InputKind, OfficeAvailabilityPhase, OfficeSuccessionOutcome,
-    PressForceClaimActionPayload, RequestProvenance, RequestResolutionOutcome,
-    ResolvedRequestTrace, TickStepServices,
+    ActionPayload, ActionRequestMode, ActionStartFailureReason, ActionTraceDetail, ActionTraceKind,
+    AutonomousController, AutonomousControllerContext, DeclareSupportActionPayload, InputKind,
+    OfficeAvailabilityPhase, OfficeSuccessionOutcome, PressForceClaimActionPayload,
+    RequestProvenance, RequestResolutionOutcome, ResolvedRequestTrace, TickStepServices, step_tick,
 };
 
 // ---------------------------------------------------------------------------
@@ -38,7 +35,8 @@ use worldwake_sim::{
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 64,
+        entity_memory_capacity: 64,
+        entity_claim_capacity: 64,
         memory_retention_ticks: 240,
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -50,7 +48,8 @@ fn default_perception_profile() -> PerceptionProfile {
 
 fn blind_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        memory_capacity: 16,
+        entity_memory_capacity: 16,
+        entity_claim_capacity: 16,
         memory_retention_ticks: 240,
         observation_fidelity: pm(0),
         confidence_policy: BeliefConfidencePolicy::default(),
@@ -2892,10 +2891,11 @@ fn run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(
         })
         .expect("listener should commit declare_support after learning the office fact");
     assert!(
-        office_tell_commit_order < (
-            declare_support_commit.tick,
-            declare_support_commit.sequence_in_tick,
-        ),
+        office_tell_commit_order
+            < (
+                declare_support_commit.tick,
+                declare_support_commit.sequence_in_tick,
+            ),
         "the tell that unlocks the office fact must appear before declare_support in the action trace"
     );
     assert_eq!(
@@ -2921,8 +2921,8 @@ fn golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact() {
 }
 
 #[test]
-fn golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact_replays_deterministically(
-) {
+fn golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact_replays_deterministically()
+ {
     let first =
         run_already_told_recent_subject_does_not_crowd_out_untold_office_fact(Seed([46; 32]));
     let second =
@@ -3579,14 +3579,14 @@ fn run_force_claim_creates_hostility_witnessed_and_propagated(
     let mut d_learned = false;
     for _ in 0..80 {
         h.step_once();
-        if let Some(store) = h.world.get_component_agent_belief_store(remote_listener) {
-            if matches!(
+        if let Some(store) = h.world.get_component_agent_belief_store(remote_listener)
+            && matches!(
                 store.believed_force_controller(office),
                 InstitutionalBeliefRead::Certain((Some(controller), _)) if controller == challenger
-            ) {
-                d_learned = true;
-                break;
-            }
+            )
+        {
+            d_learned = true;
+            break;
         }
     }
     assert!(
@@ -4115,14 +4115,14 @@ fn run_contested_force_state_propagates_through_belief_system(
     let mut d_learned = false;
     for _ in 0..80 {
         h.step_once();
-        if let Some(store) = h.world.get_component_agent_belief_store(remote_listener) {
-            if !matches!(
+        if let Some(store) = h.world.get_component_agent_belief_store(remote_listener)
+            && !matches!(
                 store.believed_force_controller(office),
                 InstitutionalBeliefRead::Unknown
-            ) {
-                d_learned = true;
-                break;
-            }
+            )
+        {
+            d_learned = true;
+            break;
         }
     }
     assert!(
@@ -4515,16 +4515,16 @@ fn run_same_place_concurrent_violation_lifecycle(
             .expect("decision tracing should be enabled")
             .trace_at(investigator, just_ran_tick)
             .expect("decision trace should exist for each stepped tick");
-        if let DecisionOutcome::Planning(planning) = &trace.outcome {
-            if planning.selection.selected_goal_is(
+        if let DecisionOutcome::Planning(planning) = &trace.outcome
+            && planning.selection.selected_goal_is(
                 GoalKind::InvestigateViolation {
                     violation_id: sibling_violation_id,
                     place: VILLAGE_SQUARE,
                 }
                 .into(),
-            ) {
-                sibling_selected = true;
-            }
+            )
+        {
+            sibling_selected = true;
         }
 
         let committed_ids = h
@@ -4974,6 +4974,7 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(seed: Seed) -> (Stat
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(0),
             source: PerceptionSource::DirectObservation,
         },
@@ -7074,6 +7075,404 @@ fn golden_exile_punishment_when_fine_is_not_locally_collectible_replays_determin
     );
 }
 
+fn run_jurisdiction_gated_punishment_branch(
+    seed: Seed,
+    office_seat: worldwake_core::EntityId,
+    authority_place: worldwake_core::EntityId,
+    extra_jurisdiction_places: &[worldwake_core::EntityId],
+    expect_punish: bool,
+    expect_seat_distinct: bool,
+) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let authority = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Magistrate",
+        authority_place,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            social_weight: pm(0),
+            enterprise_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    let accused = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Accused",
+        authority_place,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, accused, ControlSource::Human, 0);
+    set_justice_profile(
+        &mut h,
+        authority,
+        JusticeDispositionProfile {
+            accusation_motive_weight: pm(900),
+            fine_severity: pm(500),
+        },
+        0,
+    );
+
+    let faction = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let faction = txn.create_faction("Town Ward").unwrap();
+        commit_txn(txn, &mut h.event_log);
+        faction
+    };
+    let office = seed_office(
+        &mut h.world,
+        &mut h.event_log,
+        "Magistrate",
+        office_seat,
+        SuccessionLaw::Support,
+        8,
+        vec![worldwake_core::EligibilityRule::FactionMember(faction)],
+    );
+    let accusation_entry = worldwake_core::RecordEntryId(0);
+    let violation_id = worldwake_core::ViolationId(1);
+    let theft = TheftFacts {
+        missing_entity: office,
+        expected_place: office_seat,
+        commodity: CommodityKind::Bread,
+        quantity: Quantity(2),
+    };
+    let claim = InstitutionalClaim::Accusation {
+        accuser: authority,
+        accused,
+        violation_id,
+        theft,
+        effective_tick: Tick(0),
+    };
+    let crime_register = {
+        let mut txn = new_txn(&mut h.world, 0);
+        let mut office_data = txn.get_component_office_data(office).cloned().unwrap();
+        for place in extra_jurisdiction_places {
+            office_data.jurisdiction.insert(*place);
+        }
+        txn.set_component_office_data(office, office_data).unwrap();
+        txn.assign_office(office, authority).unwrap();
+        txn.add_member(accused, faction).unwrap();
+        let crime_register = txn
+            .create_record(RecordData {
+                record_kind: RecordKind::CrimeRegister,
+                home_place: authority_place,
+                issuer: office,
+                consultation_ticks: 1,
+                max_entries_per_consult: 8,
+                entries: vec![worldwake_core::InstitutionalRecordEntry {
+                    entry_id: accusation_entry,
+                    claim,
+                    recorded_tick: Tick(0),
+                    supersedes: None,
+                }],
+                next_entry_id: 1,
+            })
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+        crime_register
+    };
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        accused,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        crime_register,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_office_holder_belief(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        office,
+        Some(authority),
+        Tick(0),
+        InstitutionalKnowledgeSource::SelfDeclaration,
+        Some(office_seat),
+    );
+    seed_faction_membership_belief(
+        &mut h.world,
+        &mut h.event_log,
+        authority,
+        faction,
+        accused,
+        true,
+        Tick(0),
+        InstitutionalKnowledgeSource::SelfDeclaration,
+        Some(authority_place),
+    );
+    {
+        let mut store = h
+            .world
+            .get_component_agent_belief_store(authority)
+            .cloned()
+            .unwrap_or_else(AgentBeliefStore::new);
+        let profile = h
+            .world
+            .get_component_perception_profile(authority)
+            .copied()
+            .unwrap_or_default();
+        store.record_institutional_belief(
+            InstitutionalBeliefKey::CrimeCase {
+                accused,
+                violation_id,
+            },
+            BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record: crime_register,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(0),
+                learned_at: Some(authority_place),
+            },
+            &profile,
+        );
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_agent_belief_store(authority, store)
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    let punish_goal = GoalKind::PunishAccused {
+        office,
+        accused,
+        accusation_entry,
+        punishment: worldwake_core::PunishmentKind::Exile {
+            from_faction: faction,
+        },
+    };
+
+    let mut exile_committed = false;
+    for _ in 0..20 {
+        h.step_once();
+        exile_committed = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(authority)
+            .iter()
+            .any(|event| {
+                event.action_name == "exile"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        if exile_committed {
+            break;
+        }
+    }
+
+    let goal_generated = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .goal_history_for(authority, &punish_goal)
+        .iter()
+        .any(|entry| entry.status.is_generated());
+
+    let office_data = h
+        .world
+        .get_component_office_data(office)
+        .expect("office should retain office data");
+    let jurisdiction_right = h
+        .world
+        .effective_rights(authority, accused)
+        .into_iter()
+        .any(|right| right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office));
+
+    if expect_punish {
+        assert_eq!(
+            office_data.seat, office_seat,
+            "office seat should remain the configured canonical seat"
+        );
+        assert!(
+            office_data.jurisdiction.contains(&authority_place),
+            "authority place should be inside the issuing office jurisdiction"
+        );
+        assert!(
+            jurisdiction_right,
+            "authority should hold jurisdictional authority via the issuing office"
+        );
+        assert!(
+            goal_generated,
+            "authority should generate PunishAccused when inside office jurisdiction"
+        );
+        assert!(
+            exile_committed,
+            "authority should commit exile when the issuing office has jurisdiction"
+        );
+        assert!(
+            !h.world.factions_of(accused).contains(&faction),
+            "jurisdiction-backed exile should remove the accused from the governed faction"
+        );
+        assert_eq!(
+            h.world.effective_place(authority),
+            Some(authority_place),
+            "authority should remain at the punishment place through local punishment"
+        );
+        if expect_seat_distinct {
+            assert_ne!(
+                office_data.seat, authority_place,
+                "secondary-jurisdiction branch should punish away from the office seat"
+            );
+            assert!(
+                h.action_trace_sink()
+                    .expect("action tracing should be enabled")
+                    .events_for(authority)
+                    .iter()
+                    .all(|event| {
+                        !(event.action_name == "travel"
+                            && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                    }),
+                "authority should not travel back to the office seat before punishing"
+            );
+        }
+    } else {
+        assert!(
+            !jurisdiction_right,
+            "out-of-jurisdiction branch should not derive jurisdictional authority via the office"
+        );
+        assert!(
+            !goal_generated,
+            "authority should not generate PunishAccused outside the issuing office jurisdiction"
+        );
+        assert!(
+            !exile_committed,
+            "authority should not commit exile outside the issuing office jurisdiction"
+        );
+        assert!(
+            h.world.factions_of(accused).contains(&faction),
+            "without jurisdiction-gated punishment, the accused should remain in the faction"
+        );
+        assert!(
+            h.action_trace_sink()
+                .expect("action tracing should be enabled")
+                .events_for(authority)
+                .iter()
+                .all(|event| {
+                    !(matches!(event.action_name.as_str(), "fine" | "exile")
+                        && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                }),
+            "out-of-jurisdiction branch should commit no punishment action"
+        );
+    }
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+// Scenario 110: Jurisdiction-Gated Punishment
+// GoalKinds: PunishAccused
+// ActionDomains: Social
+// Places: RulersHall, GeneralStore
+// Principles: 7, 12, 14, 24
+//
+// Proves that punishment generation is gated by believed jurisdiction via the
+// issuing office. The same punishment-ready accusation setup produces exile
+// when the authority and accused stand inside that office's jurisdiction, and
+// produces no punishment goal or committed punishment when both stand outside
+// it.
+
+fn run_jurisdiction_gated_punishment(
+    seed_base: u8,
+) -> ((StateHash, StateHash), (StateHash, StateHash)) {
+    let rulers_hall = prototype_place_entity(PrototypePlace::RulersHall);
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    let inside = run_jurisdiction_gated_punishment_branch(
+        Seed([seed_base; 32]),
+        rulers_hall,
+        rulers_hall,
+        &[],
+        true,
+        false,
+    );
+    let outside = run_jurisdiction_gated_punishment_branch(
+        Seed([seed_base.wrapping_add(1); 32]),
+        rulers_hall,
+        general_store,
+        &[],
+        false,
+        false,
+    );
+    (inside, outside)
+}
+
+#[test]
+fn golden_jurisdiction_gated_punishment() {
+    let _ = run_jurisdiction_gated_punishment(69);
+}
+
+#[test]
+fn golden_jurisdiction_gated_punishment_replays_deterministically() {
+    let first = run_jurisdiction_gated_punishment(70);
+    let second = run_jurisdiction_gated_punishment(70);
+    assert_eq!(
+        first, second,
+        "jurisdiction-gated punishment scenario should replay deterministically"
+    );
+}
+
+// Scenario 111: Secondary-Jurisdiction Punishment Away From Office Seat
+// GoalKinds: PunishAccused
+// ActionDomains: Social
+// Places: RulersHall, GeneralStore
+// Principles: 7, 23, 24, 26
+//
+// Proves that the S50 seat/jurisdiction split is load-bearing for justice:
+// the issuing office keeps its canonical seat at RulersHall while still
+// lawfully authorizing punishment at GeneralStore through the same office's
+// wider jurisdiction, without requiring a return to the seat.
+
+fn run_secondary_jurisdiction_punishment(seed: Seed) -> (StateHash, StateHash) {
+    let rulers_hall = prototype_place_entity(PrototypePlace::RulersHall);
+    let general_store = prototype_place_entity(PrototypePlace::GeneralStore);
+    run_jurisdiction_gated_punishment_branch(
+        seed,
+        rulers_hall,
+        general_store,
+        &[general_store],
+        true,
+        true,
+    )
+}
+
+#[test]
+fn golden_secondary_jurisdiction_punishment() {
+    let _ = run_secondary_jurisdiction_punishment(Seed([71; 32]));
+}
+
+#[test]
+fn golden_secondary_jurisdiction_punishment_replays_deterministically() {
+    let first = run_secondary_jurisdiction_punishment(Seed([72; 32]));
+    let second = run_secondary_jurisdiction_punishment(Seed([72; 32]));
+    assert_eq!(
+        first, second,
+        "secondary-jurisdiction punishment scenario should replay deterministically"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 43: Dual Discovery Converges Without Double Accusation
 // ---------------------------------------------------------------------------
@@ -7277,6 +7676,7 @@ fn run_dual_discovery_converges_without_double_accusation(seed: Seed) -> (StateH
             believed_activity: None,
             believed_artifact: None,
             believed_contention: None,
+            believed_evidence: None,
             observed_tick: Tick(0),
             source: PerceptionSource::DirectObservation,
         },
