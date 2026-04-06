@@ -152,6 +152,11 @@ fn derive_blocking_fact(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
+        | PlannerOpKind::SearchPlace
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => {}
@@ -400,6 +405,11 @@ fn classify_input_failure(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
+        | PlannerOpKind::SearchPlace
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => None,
@@ -459,7 +469,12 @@ fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
-        | PlannerOpKind::AskWitness => view.entity_kind(target).is_none() || view.is_dead(target),
+        | PlannerOpKind::AskWitness
+        | PlannerOpKind::SearchPlace
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound => view.entity_kind(target).is_none() || view.is_dead(target),
         PlannerOpKind::Travel | PlannerOpKind::Patrol => false,
     }
 }
@@ -837,6 +852,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Wash
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::Investigate
+        | PlannerOpKind::SearchPlace
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => None,
         PlannerOpKind::Bury
@@ -850,6 +866,10 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Defend
         | PlannerOpKind::AskWitness
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound
         | PlannerOpKind::Accuse
         | PlannerOpKind::Fine
         | PlannerOpKind::Exile
@@ -930,9 +950,15 @@ fn related_place(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => view.effective_place(agent),
+        PlannerOpKind::SearchPlace | PlannerOpKind::EscortToSafety => {
+            goal_key.place.or_else(|| view.effective_place(agent))
+        }
     }
 }
 

@@ -306,6 +306,30 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::TreatWounds { patient } => {
             format!("TreatWounds({})", entity_display_name(world, *patient))
         }
+        GoalKind::SearchForMissing { subject, last_seen } => match last_seen {
+            Some(last_seen) => format!(
+                "SearchForMissing({} last seen at {})",
+                entity_display_name(world, *subject),
+                entity_display_name(world, *last_seen)
+            ),
+            None => format!("SearchForMissing({})", entity_display_name(world, *subject)),
+        },
+        GoalKind::ReportMissing { subject, to_office } => match to_office {
+            Some(to_office) => format!(
+                "ReportMissing({} to {})",
+                entity_display_name(world, *subject),
+                entity_display_name(world, *to_office)
+            ),
+            None => format!("ReportMissing({})", entity_display_name(world, *subject)),
+        },
+        GoalKind::EscortToSafety {
+            subject,
+            destination,
+        } => format!(
+            "EscortToSafety({} → {})",
+            entity_display_name(world, *subject),
+            entity_display_name(world, *destination)
+        ),
         GoalKind::RegroupWithFaction { faction } => {
             format!(
                 "RegroupWithFaction({})",

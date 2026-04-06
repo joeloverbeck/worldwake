@@ -43,6 +43,11 @@ pub enum PlannerOpKind {
     YieldForceClaim,
     Investigate,
     AskWitness,
+    SearchPlace,
+    AskAboutPerson,
+    ReportMissing,
+    EscortToSafety,
+    ReportFound,
     StaffMarket,
     StockManagement,
 }
@@ -131,6 +136,11 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Combat, "defend") => Some(PlannerOpKind::Defend),
         (ActionDomain::Generic, "investigate") => Some(PlannerOpKind::Investigate),
         (ActionDomain::Epistemic, "ask_witness") => Some(PlannerOpKind::AskWitness),
+        (ActionDomain::Epistemic, "search_place") => Some(PlannerOpKind::SearchPlace),
+        (ActionDomain::Epistemic, "ask_about_person") => Some(PlannerOpKind::AskAboutPerson),
+        (ActionDomain::Social, "report_missing") => Some(PlannerOpKind::ReportMissing),
+        (ActionDomain::Care, "escort_to_safety") => Some(PlannerOpKind::EscortToSafety),
+        (ActionDomain::Social, "report_found") => Some(PlannerOpKind::ReportFound),
         _ => None,
     }
 }
@@ -229,7 +239,12 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
-        | PlannerOpKind::AskWitness => unreachable!("handled by social_or_combat_semantics"),
+        | PlannerOpKind::AskWitness
+        | PlannerOpKind::SearchPlace
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound => unreachable!("handled by social_or_combat_semantics"),
     }
 }
 
@@ -256,7 +271,12 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::AskWitness
-        | PlannerOpKind::Investigate => base_semantics(
+        | PlannerOpKind::Investigate
+        | PlannerOpKind::SearchPlace
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound => base_semantics(
             op_kind,
             false,
             false,
@@ -1590,9 +1610,14 @@ mod tests {
             PlannerOpKind::Threaten,
             PlannerOpKind::DeclareSupport,
             PlannerOpKind::AskWitness,
+            PlannerOpKind::SearchPlace,
+            PlannerOpKind::AskAboutPerson,
+            PlannerOpKind::ReportMissing,
+            PlannerOpKind::EscortToSafety,
+            PlannerOpKind::ReportFound,
         ];
 
-        assert_eq!(all.len(), 26);
+        assert_eq!(all.len(), 31);
     }
 
     #[test]
@@ -1863,6 +1888,106 @@ mod tests {
         def.targets.clear();
 
         assert_eq!(classify_action_def(&def), Some(PlannerOpKind::Patrol));
+    }
+
+    #[test]
+    fn classify_action_def_maps_expectation_action_names() {
+        let template = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "establish_camp")
+            .cloned()
+            .expect("establish_camp should exist in test registry");
+        let variants = [
+            (
+                ActionDomain::Epistemic,
+                "search_place",
+                PlannerOpKind::SearchPlace,
+            ),
+            (
+                ActionDomain::Epistemic,
+                "ask_about_person",
+                PlannerOpKind::AskAboutPerson,
+            ),
+            (
+                ActionDomain::Social,
+                "report_missing",
+                PlannerOpKind::ReportMissing,
+            ),
+            (
+                ActionDomain::Care,
+                "escort_to_safety",
+                PlannerOpKind::EscortToSafety,
+            ),
+            (
+                ActionDomain::Social,
+                "report_found",
+                PlannerOpKind::ReportFound,
+            ),
+        ];
+
+        for (domain, name, expected) in variants {
+            let mut def = template.clone();
+            def.domain = domain;
+            def.name = name.to_string();
+            def.payload = ActionPayload::None;
+            def.targets.clear();
+
+            assert_eq!(classify_action_def(&def), Some(expected), "{name}");
+        }
+    }
+
+    #[test]
+    fn expectation_semantics_remain_leaf_non_barrier_fallback_ops() {
+        let template = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "establish_camp")
+            .cloned()
+            .expect("establish_camp should exist in test registry");
+        let variants = [
+            (
+                ActionDomain::Epistemic,
+                "search_place",
+                PlannerOpKind::SearchPlace,
+            ),
+            (
+                ActionDomain::Epistemic,
+                "ask_about_person",
+                PlannerOpKind::AskAboutPerson,
+            ),
+            (
+                ActionDomain::Social,
+                "report_missing",
+                PlannerOpKind::ReportMissing,
+            ),
+            (
+                ActionDomain::Care,
+                "escort_to_safety",
+                PlannerOpKind::EscortToSafety,
+            ),
+            (
+                ActionDomain::Social,
+                "report_found",
+                PlannerOpKind::ReportFound,
+            ),
+        ];
+
+        for (domain, name, op_kind) in variants {
+            let mut def = template.clone();
+            def.domain = domain;
+            def.name = name.to_string();
+            def.payload = ActionPayload::None;
+            def.targets.clear();
+
+            let semantics = semantics_for(&def, op_kind);
+            assert_eq!(semantics.op_kind, op_kind, "{name}");
+            assert!(!semantics.may_appear_mid_plan, "{name}");
+            assert!(!semantics.is_materialization_barrier, "{name}");
+            assert_eq!(
+                semantics.transition_kind,
+                PlannerTransitionKind::GoalModelFallback,
+                "{name}"
+            );
+        }
     }
 
     #[test]

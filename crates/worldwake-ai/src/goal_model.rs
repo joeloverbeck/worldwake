@@ -463,6 +463,9 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }
             | GoalKind::TreatWounds { .. }
+            | GoalKind::SearchForMissing { .. }
+            | GoalKind::ReportMissing { .. }
+            | GoalKind::EscortToSafety { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. }
             | GoalKind::FulfillBounty { .. }
@@ -612,7 +615,12 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::AskWitness => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            PlannerOpKind::AskWitness
+            | PlannerOpKind::SearchPlace
+            | PlannerOpKind::AskAboutPerson
+            | PlannerOpKind::ReportMissing
+            | PlannerOpKind::EscortToSafety
+            | PlannerOpKind::ReportFound => Err(GoalPayloadOverrideError::UnsupportedGoal),
             PlannerOpKind::Accuse => build_accuse_payload_override(self),
             PlannerOpKind::Fine | PlannerOpKind::Exile => build_punish_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
@@ -963,6 +971,11 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::YieldForceClaim
             | PlannerOpKind::Investigate
             | PlannerOpKind::AskWitness
+            | PlannerOpKind::SearchPlace
+            | PlannerOpKind::AskAboutPerson
+            | PlannerOpKind::ReportMissing
+            | PlannerOpKind::EscortToSafety
+            | PlannerOpKind::ReportFound
             | PlannerOpKind::Accuse
             | PlannerOpKind::Fine
             | PlannerOpKind::Exile => state,
@@ -1166,6 +1179,9 @@ impl GoalKindPlannerExt for GoalKind {
                         .is_empty()
             }
             GoalKind::ProduceCommodity { .. }
+            | GoalKind::SearchForMissing { .. }
+            | GoalKind::ReportMissing { .. }
+            | GoalKind::EscortToSafety { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::PostBounty { .. }
@@ -1213,6 +1229,9 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::TreatWounds { patient: target } => {
                 state.effective_place(*target).into_iter().collect()
             }
+            GoalKind::SearchForMissing { last_seen, .. } => last_seen.iter().copied().collect(),
+            GoalKind::ReportMissing { to_office, .. } => to_office.iter().copied().collect(),
+            GoalKind::EscortToSafety { destination, .. } => vec![*destination],
             GoalKind::Sleep
             | GoalKind::Wash
             | GoalKind::ReduceDanger
@@ -1428,7 +1447,12 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::ClaimBounty
             | PlannerOpKind::PostBounty
             | PlannerOpKind::PostNotice
-            | PlannerOpKind::Bury => {}
+            | PlannerOpKind::Bury
+            | PlannerOpKind::SearchPlace
+            | PlannerOpKind::AskAboutPerson
+            | PlannerOpKind::ReportMissing
+            | PlannerOpKind::EscortToSafety
+            | PlannerOpKind::ReportFound => {}
         }
 
         // Terminal ops on flexible goals — always pass.
@@ -1446,6 +1470,8 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ReduceDanger
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }
+            | GoalKind::SearchForMissing { .. }
+            | GoalKind::ReportMissing { .. }
             | GoalKind::ProduceCommodity { .. }
             | GoalKind::SellCommodity { .. }
             | GoalKind::RestockCommodity { .. }
@@ -1482,6 +1508,13 @@ impl GoalKindPlannerExt for GoalKind {
             }
             GoalKind::ShareBelief { listener, .. } => authoritative_targets.contains(listener),
             GoalKind::MoveCargo { destination, .. } => authoritative_targets.contains(destination),
+            GoalKind::EscortToSafety {
+                subject,
+                destination,
+            } => {
+                authoritative_targets.contains(subject)
+                    || authoritative_targets.contains(destination)
+            }
             GoalKind::PostBounty { posting, .. } | GoalKind::PostNotice { posting, .. } => {
                 authoritative_targets.contains(&posting.posting_place)
             }
@@ -2459,6 +2492,53 @@ mod tests {
         assert_eq!(
             goal.relevant_op_kinds(),
             &[PlannerOpKind::Travel, PlannerOpKind::Attack]
+        );
+    }
+
+    #[test]
+    fn search_for_missing_goal_relevant_ops_stay_reserved_to_search_surface() {
+        let goal = GoalKind::SearchForMissing {
+            subject: entity_id(4, 2),
+            last_seen: Some(entity_id(7, 0)),
+        };
+
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[
+                PlannerOpKind::Travel,
+                PlannerOpKind::AskAboutPerson,
+                PlannerOpKind::SearchPlace,
+            ]
+        );
+    }
+
+    #[test]
+    fn report_missing_goal_relevant_ops_stay_reserved_to_report_surface() {
+        let goal = GoalKind::ReportMissing {
+            subject: entity_id(4, 3),
+            to_office: Some(entity_id(8, 0)),
+        };
+        let (view, actor, ..) = spatial_view();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[PlannerOpKind::Travel, PlannerOpKind::ReportMissing]
+        );
+        assert!(!goal.is_satisfied(&state));
+    }
+
+    #[test]
+    fn escort_to_safety_goal_relevant_ops_stay_reserved_to_escort_surface() {
+        let goal = GoalKind::EscortToSafety {
+            subject: entity_id(4, 4),
+            destination: entity_id(9, 0),
+        };
+
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[PlannerOpKind::Travel, PlannerOpKind::EscortToSafety]
         );
     }
 
@@ -6337,6 +6417,18 @@ mod tests {
             GoalKind::TreatWounds {
                 patient: entity(99),
             },
+            GoalKind::SearchForMissing {
+                subject: entity(95),
+                last_seen: Some(place_b),
+            },
+            GoalKind::ReportMissing {
+                subject: entity(95),
+                to_office: Some(entity(94)),
+            },
+            GoalKind::EscortToSafety {
+                subject: entity(99),
+                destination: place_b,
+            },
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(0),
             },
@@ -6386,7 +6478,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 23);
+        assert_eq!(goals.len(), 26);
         for goal in &goals {
             let _ = goal.goal_relevant_places(&state, &recipes);
         }
@@ -6416,6 +6508,18 @@ mod tests {
             GoalKind::ReduceDanger,
             GoalKind::RegroupWithFaction { faction: actor },
             GoalKind::TreatWounds { patient: place_b },
+            GoalKind::SearchForMissing {
+                subject: actor,
+                last_seen: Some(place_b),
+            },
+            GoalKind::ReportMissing {
+                subject: place_b,
+                to_office: Some(actor),
+            },
+            GoalKind::EscortToSafety {
+                subject: actor,
+                destination: place_b,
+            },
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(0),
             },

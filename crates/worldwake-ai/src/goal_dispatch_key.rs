@@ -17,6 +17,9 @@ pub enum GoalDispatchKey {
     RegroupWithFaction,
     EstablishBanditCamp,
     TreatWounds,
+    SearchForMissing,
+    ReportMissing,
+    EscortToSafety,
     ProduceCommodity,
     SellCommodity,
     RestockCommodity,
@@ -38,7 +41,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 31] = [
+    pub const ALL: [Self; 34] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -52,6 +55,9 @@ impl GoalDispatchKey {
         Self::RegroupWithFaction,
         Self::EstablishBanditCamp,
         Self::TreatWounds,
+        Self::SearchForMissing,
+        Self::ReportMissing,
+        Self::EscortToSafety,
         Self::ProduceCommodity,
         Self::SellCommodity,
         Self::RestockCommodity,
@@ -95,6 +101,9 @@ impl GoalDispatchKey {
             GoalKind::RegroupWithFaction { .. } => Self::RegroupWithFaction,
             GoalKind::EstablishBanditCamp { .. } => Self::EstablishBanditCamp,
             GoalKind::TreatWounds { .. } => Self::TreatWounds,
+            GoalKind::SearchForMissing { .. } => Self::SearchForMissing,
+            GoalKind::ReportMissing { .. } => Self::ReportMissing,
+            GoalKind::EscortToSafety { .. } => Self::EscortToSafety,
             GoalKind::ProduceCommodity { .. } => Self::ProduceCommodity,
             GoalKind::SellCommodity { .. } => Self::SellCommodity,
             GoalKind::RestockCommodity { .. } => Self::RestockCommodity,
@@ -221,6 +230,34 @@ mod tests {
     }
 
     #[test]
+    fn test_goal_dispatch_key_maps_expectation_goal_variants() {
+        let subject = entity(11);
+        let destination = entity(12);
+
+        assert_eq!(
+            GoalDispatchKey::from(GoalKind::SearchForMissing {
+                subject,
+                last_seen: Some(destination),
+            }),
+            GoalDispatchKey::SearchForMissing
+        );
+        assert_eq!(
+            GoalDispatchKey::from(GoalKind::ReportMissing {
+                subject,
+                to_office: Some(destination),
+            }),
+            GoalDispatchKey::ReportMissing
+        );
+        assert_eq!(
+            GoalDispatchKey::from(GoalKind::EscortToSafety {
+                subject,
+                destination,
+            }),
+            GoalDispatchKey::EscortToSafety
+        );
+    }
+
+    #[test]
     fn test_goal_dispatch_key_exhaustive_coverage() {
         let target = entity(2);
         let office = entity(3);
@@ -242,6 +279,18 @@ mod tests {
             GoalKind::ReduceDanger,
             GoalKind::RegroupWithFaction { faction: office },
             GoalKind::TreatWounds { patient: target },
+            GoalKind::SearchForMissing {
+                subject: target,
+                last_seen: Some(destination),
+            },
+            GoalKind::ReportMissing {
+                subject: target,
+                to_office: Some(office),
+            },
+            GoalKind::EscortToSafety {
+                subject: target,
+                destination,
+            },
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(7),
             },
@@ -295,7 +344,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 25);
+        assert_eq!(goals.len(), 28);
         for goal in goals {
             let _ = GoalDispatchKey::from(goal);
         }
@@ -311,7 +360,7 @@ mod tests {
     #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 31);
+        assert_eq!(GoalDispatchKey::all().len(), 34);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),

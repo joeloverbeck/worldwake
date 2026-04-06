@@ -441,6 +441,11 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::YieldForceClaim
         | crate::PlannerOpKind::Investigate
         | crate::PlannerOpKind::AskWitness
+        | crate::PlannerOpKind::SearchPlace
+        | crate::PlannerOpKind::AskAboutPerson
+        | crate::PlannerOpKind::ReportMissing
+        | crate::PlannerOpKind::EscortToSafety
+        | crate::PlannerOpKind::ReportFound
         | crate::PlannerOpKind::ClaimBounty
         | crate::PlannerOpKind::PostBounty
         | crate::PlannerOpKind::PostNotice

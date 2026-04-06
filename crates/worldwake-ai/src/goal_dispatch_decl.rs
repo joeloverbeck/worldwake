@@ -86,6 +86,14 @@ const TREAT_WOUNDS_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::MoveCargo,
     PlannerOpKind::Harvest,
 ];
+const SEARCH_FOR_MISSING_OPS: &[PlannerOpKind] = &[
+    PlannerOpKind::Travel,
+    PlannerOpKind::AskAboutPerson,
+    PlannerOpKind::SearchPlace,
+];
+const REPORT_MISSING_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::ReportMissing];
+const ESCORT_TO_SAFETY_OPS: &[PlannerOpKind] =
+    &[PlannerOpKind::Travel, PlannerOpKind::EscortToSafety];
 const PRODUCE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::QueueForFacilityUse,
@@ -237,6 +245,27 @@ static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     invalidation_strategy: InvalidationStrategy::TreatWounds,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
 };
+static DECL_SEARCH_FOR_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "SearchForMissing",
+    provenance_family: None,
+    relevant_ops: SEARCH_FOR_MISSING_OPS,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+};
+static DECL_REPORT_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "ReportMissing",
+    provenance_family: None,
+    relevant_ops: REPORT_MISSING_OPS,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+};
+static DECL_ESCORT_TO_SAFETY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "EscortToSafety",
+    provenance_family: None,
+    relevant_ops: ESCORT_TO_SAFETY_OPS,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+};
 static DECL_PRODUCE_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ProduceCommodity",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
@@ -381,6 +410,9 @@ impl GoalDispatchKey {
             Self::RegroupWithFaction => &DECL_REGROUP_WITH_FACTION,
             Self::EstablishBanditCamp => &DECL_ESTABLISH_BANDIT_CAMP,
             Self::TreatWounds => &DECL_TREAT_WOUNDS,
+            Self::SearchForMissing => &DECL_SEARCH_FOR_MISSING,
+            Self::ReportMissing => &DECL_REPORT_MISSING,
+            Self::EscortToSafety => &DECL_ESCORT_TO_SAFETY,
             Self::ProduceCommodity => &DECL_PRODUCE_COMMODITY,
             Self::SellCommodity => &DECL_SELL_COMMODITY,
             Self::RestockCommodity => &DECL_RESTOCK_COMMODITY,
@@ -427,6 +459,9 @@ mod tests {
         GoalDispatchKey::RegroupWithFaction,
         GoalDispatchKey::EstablishBanditCamp,
         GoalDispatchKey::TreatWounds,
+        GoalDispatchKey::SearchForMissing,
+        GoalDispatchKey::ReportMissing,
+        GoalDispatchKey::EscortToSafety,
         GoalDispatchKey::ProduceCommodity,
         GoalDispatchKey::SellCommodity,
         GoalDispatchKey::RestockCommodity,
@@ -486,6 +521,18 @@ mod tests {
                 GoalKind::EstablishBanditCamp { faction: office }
             }
             GoalDispatchKey::TreatWounds => GoalKind::TreatWounds { patient: target },
+            GoalDispatchKey::SearchForMissing => GoalKind::SearchForMissing {
+                subject: target,
+                last_seen: Some(destination),
+            },
+            GoalDispatchKey::ReportMissing => GoalKind::ReportMissing {
+                subject: target,
+                to_office: Some(office),
+            },
+            GoalDispatchKey::EscortToSafety => GoalKind::EscortToSafety {
+                subject: target,
+                destination,
+            },
             GoalDispatchKey::ProduceCommodity => GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(11),
             },
@@ -575,7 +622,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 31);
+        assert_eq!(ALL_KEYS.len(), 34);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();

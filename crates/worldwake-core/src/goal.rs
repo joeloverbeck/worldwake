@@ -41,6 +41,18 @@ pub enum GoalKind {
     TreatWounds {
         patient: EntityId,
     },
+    SearchForMissing {
+        subject: EntityId,
+        last_seen: Option<EntityId>,
+    },
+    ReportMissing {
+        subject: EntityId,
+        to_office: Option<EntityId>,
+    },
+    EscortToSafety {
+        subject: EntityId,
+        destination: EntityId,
+    },
     ProduceCommodity {
         recipe_id: RecipeId,
     },
@@ -149,6 +161,12 @@ impl From<GoalKind> for GoalKey {
             GoalKind::EngageHostile { target }
             | GoalKind::RaidTarget { target }
             | GoalKind::TreatWounds { patient: target }
+            | GoalKind::SearchForMissing {
+                subject: target, ..
+            }
+            | GoalKind::ReportMissing {
+                subject: target, ..
+            }
             | GoalKind::LootCorpse { corpse: target }
             | GoalKind::FulfillBounty { bounty: target }
             | GoalKind::ClaimOffice { office: target }
@@ -167,6 +185,10 @@ impl From<GoalKind> for GoalKey {
                 commodity,
                 destination,
             } => (Some(commodity), None, Some(destination)),
+            GoalKind::EscortToSafety {
+                subject,
+                destination,
+            } => (None, Some(subject), Some(destination)),
             GoalKind::BuryCorpse {
                 corpse,
                 burial_site,
@@ -273,6 +295,59 @@ mod tests {
     fn treat_wounds_goal_roundtrips_through_bincode() {
         let patient = entity_id(21, 0);
         let goal = GoalKind::TreatWounds { patient };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn goal_key_search_for_missing_keys_on_subject_only() {
+        let subject = entity_id(22, 0);
+        let key = GoalKey::from(GoalKind::SearchForMissing {
+            subject,
+            last_seen: Some(entity_id(23, 0)),
+        });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(subject));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn goal_key_report_missing_keys_on_subject_only() {
+        let subject = entity_id(24, 0);
+        let key = GoalKey::from(GoalKind::ReportMissing {
+            subject,
+            to_office: Some(entity_id(25, 0)),
+        });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(subject));
+        assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn goal_key_escort_to_safety_extracts_subject_and_destination() {
+        let subject = entity_id(26, 0);
+        let destination = entity_id(27, 0);
+        let key = GoalKey::from(GoalKind::EscortToSafety {
+            subject,
+            destination,
+        });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, Some(subject));
+        assert_eq!(key.place, Some(destination));
+    }
+
+    #[test]
+    fn escort_to_safety_goal_roundtrips_through_bincode() {
+        let goal = GoalKind::EscortToSafety {
+            subject: entity_id(28, 0),
+            destination: entity_id(29, 0),
+        };
 
         let bytes = bincode::serialize(&goal).unwrap();
         let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();

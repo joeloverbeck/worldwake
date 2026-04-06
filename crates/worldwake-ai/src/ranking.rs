@@ -450,6 +450,9 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
         }
         GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
+        | GoalKind::SearchForMissing { .. }
+        | GoalKind::ReportMissing { .. }
+        | GoalKind::EscortToSafety { .. }
         | GoalKind::ShareBelief { .. }
         | GoalKind::InvestigateViolation { .. }
         | GoalKind::Patrol { .. }
@@ -641,6 +644,9 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             score_product(context.utility.social_weight, boosted_pressure)
         }
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::SearchForMissing { .. }
+        | GoalKind::ReportMissing { .. }
+        | GoalKind::EscortToSafety { .. } => 0,
         GoalKind::Patrol { .. } => patrol_motive(context),
         GoalKind::StealItem { .. } => theft_motive(context),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
@@ -1446,6 +1452,9 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::PunishAccused { .. } => 25,
         GoalKind::PostBounty { .. } => 26,
         GoalKind::PostNotice { .. } => 27,
+        GoalKind::SearchForMissing { .. } => 28,
+        GoalKind::ReportMissing { .. } => 29,
+        GoalKind::EscortToSafety { .. } => 30,
     }
 }
 

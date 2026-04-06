@@ -191,6 +191,9 @@ pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
         GoalKind::BuryCorpse { .. }
         | GoalKind::RegroupWithFaction { .. }
         | GoalKind::EstablishBanditCamp { .. }
+        | GoalKind::SearchForMissing { .. }
+        | GoalKind::ReportMissing { .. }
+        | GoalKind::EscortToSafety { .. }
         | GoalKind::FulfillBounty { .. }
         | GoalKind::PostBounty { .. }
         | GoalKind::PostNotice { .. }
