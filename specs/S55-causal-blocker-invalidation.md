@@ -124,7 +124,8 @@ Both `BlockerClearingCondition` and `ClearingBaseline` must derive `Copy, Clone,
 | `MissingTool(kind)` | `UniqueItemAcquired { kind }` | Agent's unique item count |
 | `NoKnownSeller` | `EntityReappeared` or `CommodityAvailabilityChanged` | None |
 | `NoKnownPath` | `PathDiscovered` | false |
-| `TargetGone` | `EntityReappeared` | false |
+| `TargetGone` (non-pursuit meanings such as care / danger reduction) | `EntityReappeared` | false |
+| `TargetGone` (pursuit-shaped `RaidTarget` / `EngageHostile`) | `TtlOnly` | N/A |
 | `DangerTooHigh` / `CombatTooRisky` | `DangerReduced` | Perceived danger level |
 | `WorkstationBusy` / `ExclusiveFacilityUnavailable` / `ReservationConflict` | `ContentionChanged` | Queue position |
 | `SourceDepleted` | `CommodityAvailabilityChanged` | Resource quantity |

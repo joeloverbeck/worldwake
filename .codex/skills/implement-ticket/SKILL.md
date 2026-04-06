@@ -306,11 +306,29 @@ If the user asked for full ticket completion, archive per [docs/archival-workflo
 - Note approved partial completion; create follow-up tickets when required
 
 If the user asked only for implementation or analysis, do not archive. Keep factual completion details current for a later archival pass.
+- For implementation-only completion, set `Status: COMPLETED` on the active ticket once the required verification surface has passed.
+- Append factual close-out notes to the active ticket using the same minimal structure expected later at archival: `## Outcome`, verification results, and any explicit deviations from the original ticket wording or scope that were accepted during reassessment.
 
 Before finishing:
 - Re-check `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff. Remove reassessment-only fallout that did not become real edits.
 - Re-check inline code snippets, example signatures, or API sketches against the final landed shape.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
+
+Minimal active-ticket close-out shape:
+
+```markdown
+## Outcome
+
+Completed on YYYY-MM-DD.
+
+- What changed
+- Any bounded deviation from the original ticket wording
+
+## Verification Result
+
+- Passed `<command 1>`
+- Passed `<command 2>`
+```
 
 ## Guardrails
 

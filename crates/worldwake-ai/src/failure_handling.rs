@@ -1,8 +1,8 @@
 use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
-    BlockingFact, CognitiveProfile, CommodityKind, EntityId, GoalKey, GoalKind, IntentionFrame,
-    Quantity, Tick,
+    BlockingFact, ClearingBaseline, CognitiveProfile, CommodityKind, EntityId, GoalKey, GoalKind,
+    IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -68,6 +68,12 @@ pub fn handle_plan_failure(
     } else {
         None
     };
+    let (clearing_condition, baseline_snapshot) = derive_clearing_condition(
+        context.view,
+        context.agent,
+        blocking_fact,
+        &blocker_key,
+    );
 
     blocked_memory.record(BlockedIntent {
         blocker_key,
@@ -75,8 +81,8 @@ pub fn handle_plan_failure(
         diagnostic_context,
         observed_tick: context.current_tick,
         expires_tick,
-        clearing_condition: BlockerClearingCondition::TtlOnly,
-        baseline_snapshot: None,
+        clearing_condition,
+        baseline_snapshot,
     });
     runtime.dirty.insert(DirtySet::REPLAN_SIGNAL);
 }
@@ -593,6 +599,124 @@ fn parse_abort_detail(detail: &str) -> Option<BlockingFact> {
     }
 }
 
+fn derive_clearing_condition(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    blocking_fact: BlockingFact,
+    blocker_key: &BlockerKey,
+) -> (BlockerClearingCondition, Option<ClearingBaseline>) {
+    match blocking_fact {
+        BlockingFact::SellerOutOfStock => {
+            let (Some(place), Some(seller)) = (blocker_key.place, blocker_key.target) else {
+                return (BlockerClearingCondition::TtlOnly, None);
+            };
+            let Some(commodity) = blocker_key.goal_key.commodity else {
+                return (BlockerClearingCondition::TtlOnly, None);
+            };
+            (
+                BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place },
+                Some(ClearingBaseline::CommodityQuantity {
+                    quantity: view.commodity_quantity(seller, commodity),
+                }),
+            )
+        }
+        BlockingFact::TooExpensive => (
+            BlockerClearingCondition::InventoryChanged {
+                commodity: CommodityKind::Coin,
+            },
+            Some(ClearingBaseline::InventoryQuantity {
+                quantity: view.commodity_quantity(agent, CommodityKind::Coin),
+            }),
+        ),
+        BlockingFact::MissingInput(commodity) => (
+            BlockerClearingCondition::InventoryChanged {
+                commodity,
+            },
+            Some(ClearingBaseline::InventoryQuantity {
+                quantity: view.commodity_quantity(agent, commodity),
+            }),
+        ),
+        BlockingFact::MissingTool(kind) => (
+            BlockerClearingCondition::UniqueItemAcquired { kind },
+            Some(ClearingBaseline::UniqueItemCount(
+                view.unique_item_count(agent, kind),
+            )),
+        ),
+        BlockingFact::NoKnownSeller => {
+            let Some(commodity) = blocker_key.goal_key.commodity else {
+                return (BlockerClearingCondition::TtlOnly, None);
+            };
+            let Some(place) = blocker_key.place else {
+                return (BlockerClearingCondition::TtlOnly, None);
+            };
+            (
+                BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place },
+                None,
+            )
+        }
+        BlockingFact::NoKnownPath => {
+            let Some(destination) = blocker_key.place else {
+                return (BlockerClearingCondition::TtlOnly, None);
+            };
+            (
+                BlockerClearingCondition::PathDiscovered { destination },
+                Some(ClearingBaseline::PathKnown(false)),
+            )
+        }
+        BlockingFact::TargetGone => match blocker_key.goal_key.kind {
+            GoalKind::RaidTarget { .. } | GoalKind::EngageHostile { .. } => {
+                (BlockerClearingCondition::TtlOnly, None)
+            }
+            _ => {
+                let Some(entity) = blocker_key.target else {
+                    return (BlockerClearingCondition::TtlOnly, None);
+                };
+                (
+                    BlockerClearingCondition::EntityReappeared { entity },
+                    Some(ClearingBaseline::EntityBelieved(false)),
+                )
+            }
+        },
+        BlockingFact::DangerTooHigh | BlockingFact::CombatTooRisky => {
+            let Some(place) = blocker_key.place.or_else(|| view.effective_place(agent)) else {
+                return (BlockerClearingCondition::TtlOnly, None);
+            };
+            (BlockerClearingCondition::DangerReduced { place }, None)
+        }
+        BlockingFact::WorkstationBusy
+        | BlockingFact::ExclusiveFacilityUnavailable
+        | BlockingFact::ReservationConflict => {
+            let Some(facility) = blocker_key.target else {
+                return (BlockerClearingCondition::TtlOnly, None);
+            };
+            (
+                BlockerClearingCondition::ContentionChanged { facility },
+                Some(ClearingBaseline::ContentionPosition(
+                    view.facility_queue_position(facility, agent),
+                )),
+            )
+        }
+        BlockingFact::SourceDepleted => {
+            let (Some(commodity), Some(place)) = (blocker_key.goal_key.commodity, blocker_key.place)
+            else {
+                return (BlockerClearingCondition::TtlOnly, None);
+            };
+            let quantity = blocker_key
+                .target
+                .and_then(|source| view.resource_source(source))
+                .map_or(Quantity(0), |resource| resource.available_quantity);
+            (
+                BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place },
+                Some(ClearingBaseline::CommodityQuantity { quantity }),
+            )
+        }
+        BlockingFact::Unknown
+        | BlockingFact::PatienceExhausted
+        | BlockingFact::AssumptionFailed
+        | BlockingFact::NoBuyer => (BlockerClearingCondition::TtlOnly, None),
+    }
+}
+
 fn blocker_resolved(view: &dyn RuntimeBeliefView, agent: EntityId, intent: &BlockedIntent) -> bool {
     match intent.blocking_fact {
         BlockingFact::NoKnownPath => {
@@ -830,7 +954,7 @@ fn blocking_fact_ttl(fact: BlockingFact, cognitive: &CognitiveProfile) -> u32 {
 mod tests {
     use super::{
         ExecutionFailure, PlanFailureContext, blocking_fact_ttl, clear_resolved_blockers,
-        derive_blocking_fact, handle_plan_failure,
+        derive_blocking_fact, derive_clearing_condition, handle_plan_failure,
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
@@ -839,12 +963,13 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
-        CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        CommodityPurpose, DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState,
-        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerKey,
+        BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
+        DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds,
+        InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -868,6 +993,7 @@ mod tests {
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         production_jobs: BTreeSet<EntityId>,
         reservation_ranges: BTreeMap<EntityId, Vec<TickRange>>,
+        facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
@@ -986,6 +1112,11 @@ mod tests {
                 .get(&entity)
                 .cloned()
                 .unwrap_or_default()
+        }
+        fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+            self.facility_queue_positions
+                .get(&(facility, actor))
+                .copied()
         }
         fn is_dead(&self, entity: EntityId) -> bool {
             self.dead.contains(&entity)
@@ -1324,9 +1455,262 @@ mod tests {
         assert_eq!(intent.blocker_key.place, Some(place));
         assert_eq!(intent.blocker_key.action_def, Some(ActionDefId(1)));
         assert_eq!(
+            intent.clearing_condition,
+            BlockerClearingCondition::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Bread,
+                place,
+            }
+        );
+        assert_eq!(
+            intent.baseline_snapshot,
+            Some(ClearingBaseline::CommodityQuantity {
+                quantity: Quantity(0),
+            })
+        );
+        assert_eq!(
             intent.expires_tick,
             Tick(20 + u64::from(ProfileFixture::default().transient_block_ticks))
         );
+    }
+
+    #[test]
+    fn derive_clearing_condition_seller_out_of_stock() {
+        let agent = entity(1);
+        let place = entity(10);
+        let seller = entity(2);
+        let mut view = TestBeliefView::default();
+        view.commodity_quantities
+            .insert((seller, CommodityKind::Bread), Quantity(4));
+        let blocker_key = BlockerKey {
+            goal_key: trade_goal(),
+            place: Some(place),
+            target: Some(seller),
+            action_def: Some(ActionDefId(1)),
+        };
+
+        let (condition, baseline) = derive_clearing_condition(
+            &view,
+            agent,
+            BlockingFact::SellerOutOfStock,
+            &blocker_key,
+        );
+
+        assert_eq!(
+            condition,
+            BlockerClearingCondition::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Bread,
+                place,
+            }
+        );
+        assert_eq!(
+            baseline,
+            Some(ClearingBaseline::CommodityQuantity {
+                quantity: Quantity(4),
+            })
+        );
+    }
+
+    #[test]
+    fn derive_clearing_condition_too_expensive() {
+        let agent = entity(1);
+        let mut view = TestBeliefView::default();
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Coin), Quantity(7));
+
+        let (condition, baseline) = derive_clearing_condition(
+            &view,
+            agent,
+            BlockingFact::TooExpensive,
+            &sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+        );
+
+        assert_eq!(
+            condition,
+            BlockerClearingCondition::InventoryChanged {
+                commodity: CommodityKind::Coin,
+            }
+        );
+        assert_eq!(
+            baseline,
+            Some(ClearingBaseline::InventoryQuantity {
+                quantity: Quantity(7),
+            })
+        );
+    }
+
+    #[test]
+    fn derive_clearing_condition_missing_input() {
+        let agent = entity(1);
+        let mut view = TestBeliefView::default();
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Grain), Quantity(2));
+
+        let (condition, baseline) = derive_clearing_condition(
+            &view,
+            agent,
+            BlockingFact::MissingInput(CommodityKind::Grain),
+            &sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+        );
+
+        assert_eq!(
+            condition,
+            BlockerClearingCondition::InventoryChanged {
+                commodity: CommodityKind::Grain,
+            }
+        );
+        assert_eq!(
+            baseline,
+            Some(ClearingBaseline::InventoryQuantity {
+                quantity: Quantity(2),
+            })
+        );
+    }
+
+    #[test]
+    fn derive_clearing_condition_missing_tool() {
+        let agent = entity(1);
+        let mut view = TestBeliefView::default();
+        view.unique_items
+            .insert((agent, UniqueItemKind::SimpleTool), 1);
+
+        let (condition, baseline) = derive_clearing_condition(
+            &view,
+            agent,
+            BlockingFact::MissingTool(UniqueItemKind::SimpleTool),
+            &sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+        );
+
+        assert_eq!(
+            condition,
+            BlockerClearingCondition::UniqueItemAcquired {
+                kind: UniqueItemKind::SimpleTool,
+            }
+        );
+        assert_eq!(baseline, Some(ClearingBaseline::UniqueItemCount(1)));
+    }
+
+    #[test]
+    fn derive_clearing_condition_ttl_only_fallback() {
+        let agent = entity(1);
+        let target = entity(2);
+        let pursuit_key = BlockerKey {
+            goal_key: GoalKey::from(GoalKind::RaidTarget { target }),
+            place: Some(entity(10)),
+            target: Some(target),
+            action_def: Some(ActionDefId(4)),
+        };
+
+        for (fact, key) in [
+            (BlockingFact::Unknown, sample_blocker_key_for(GoalKey::from(GoalKind::Sleep))),
+            (
+                BlockingFact::PatienceExhausted,
+                sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+            ),
+            (
+                BlockingFact::AssumptionFailed,
+                sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+            ),
+            (
+                BlockingFact::NoBuyer,
+                sample_blocker_key_for(GoalKey::from(GoalKind::SellCommodity {
+                    commodity: CommodityKind::Bread,
+                })),
+            ),
+            (BlockingFact::TargetGone, pursuit_key),
+        ] {
+            let (condition, baseline) =
+                derive_clearing_condition(&TestBeliefView::default(), agent, fact, &key);
+            assert_eq!(condition, BlockerClearingCondition::TtlOnly, "{fact:?}");
+            assert_eq!(baseline, None, "{fact:?}");
+        }
+    }
+
+    #[test]
+    fn derive_clearing_condition_no_known_path() {
+        let agent = entity(1);
+        let destination = entity(11);
+        let blocker_key = BlockerKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            place: Some(destination),
+            target: None,
+            action_def: Some(ActionDefId(2)),
+        };
+
+        let (condition, baseline) = derive_clearing_condition(
+            &TestBeliefView::default(),
+            agent,
+            BlockingFact::NoKnownPath,
+            &blocker_key,
+        );
+
+        assert_eq!(
+            condition,
+            BlockerClearingCondition::PathDiscovered { destination }
+        );
+        assert_eq!(baseline, Some(ClearingBaseline::PathKnown(false)));
+    }
+
+    #[test]
+    fn derive_clearing_condition_target_gone_non_pursuit() {
+        let agent = entity(1);
+        let target = entity(2);
+        let blocker_key = BlockerKey {
+            goal_key: GoalKey::from(GoalKind::ReduceDanger),
+            place: Some(entity(10)),
+            target: Some(target),
+            action_def: Some(ActionDefId(4)),
+        };
+
+        let (condition, baseline) = derive_clearing_condition(
+            &TestBeliefView::default(),
+            agent,
+            BlockingFact::TargetGone,
+            &blocker_key,
+        );
+
+        assert_eq!(
+            condition,
+            BlockerClearingCondition::EntityReappeared { entity: target }
+        );
+        assert_eq!(baseline, Some(ClearingBaseline::EntityBelieved(false)));
+    }
+
+    #[test]
+    fn derive_clearing_condition_contention_blockers_capture_queue_baseline_when_available() {
+        let agent = entity(1);
+        let facility = entity(3);
+        let mut view = TestBeliefView::default();
+        view.facility_queue_positions.insert((facility, agent), 2);
+        let blocker_key = BlockerKey {
+            goal_key: GoalKey::from(GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(4),
+            }),
+            place: Some(entity(10)),
+            target: Some(facility),
+            action_def: Some(ActionDefId(3)),
+        };
+
+        let (condition, baseline) = derive_clearing_condition(
+            &view,
+            agent,
+            BlockingFact::ReservationConflict,
+            &blocker_key,
+        );
+
+        assert_eq!(
+            condition,
+            BlockerClearingCondition::ContentionChanged { facility }
+        );
+        assert_eq!(baseline, Some(ClearingBaseline::ContentionPosition(Some(2))));
+    }
+
+    fn sample_blocker_key_for(goal_key: GoalKey) -> BlockerKey {
+        BlockerKey {
+            goal_key,
+            place: None,
+            target: None,
+            action_def: None,
+        }
     }
 
     #[test]

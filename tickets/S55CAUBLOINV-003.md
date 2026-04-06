@@ -17,7 +17,7 @@ After ticket 002, blockers carry explicit clearing conditions and baselines, but
 3. `RuntimeBeliefView` at `crates/worldwake-sim/src/belief_view.rs:353` — provides `commodity_quantity`, `locally_observed_commodity_quantity`, `unique_item_count`, `effective_place`, `adjacent_places_with_travel_ticks`, `entity_kind`, `is_alive`, `current_attackers_of`, `visible_hostiles_for`, `reservation_ranges`, `resource_source`, `has_production_job`.
 4. After ticket 002, production blockers constructed through `handle_plan_failure` should carry real `clearing_condition` and `baseline_snapshot` values for the mapped `BlockingFact` variants it owns. Other production constructors from ticket 001 may still lawfully remain `TtlOnly`/`None` when their blocker families are defined as TTL-only or remain out of this ticket's scope. Test-constructed blockers from ticket 001 still use `TtlOnly`/`None` defaults unless updated by the specific tests this ticket owns.
 5. The `clear_resolved_blockers` test at `failure_handling.rs:1743` tests the existing behavior — it must be updated to use the new evaluation.
-6. The existing `blocker_resolved` has nuanced per-variant logic (e.g., `TargetGone` for `RaidTarget`/`EngageHostile` returns `false` to suppress repeated pursuit). The new `is_blocker_cleared` must preserve these semantics through the stored conditions (ticket 002 maps these to `TtlOnly` baselines where appropriate).
+6. The existing `blocker_resolved` has nuanced per-variant logic (e.g., `TargetGone` for `RaidTarget`/`EngageHostile` returns `false` to suppress repeated pursuit). The new `is_blocker_cleared` must preserve these semantics through the stored conditions; ticket 002 already maps pursuit-shaped `TargetGone` blockers to `TtlOnly`/`None`, so ticket 003 must preserve that TTL-only behavior rather than clear them through `EntityReappeared`.
 7. Cross-system boundary: the evaluation reads `RuntimeBeliefView` (beliefs, not authoritative state) — consistent with P14.
 8. `sweep_cleared` (added in ticket 001) can replace the direct `.intents.retain()` call in `clear_resolved_blockers`.
 
@@ -114,7 +114,7 @@ Delete the entire `blocker_resolved` function (currently ~83 lines at line 595).
 
 - Update `clear_resolved_blockers_removes_restored_and_expired_entries` test to construct blockers with appropriate clearing conditions and baselines (not TtlOnly defaults).
 - Add new focused tests for `is_blocker_cleared` covering each `BlockerClearingCondition` variant.
-- Verify that the `TargetGone` for pursuit goals (previously special-cased in `blocker_resolved` to return `false`) is handled correctly — ticket 002 maps these to `EntityReappeared` with baseline, so the standard evaluation applies. If the pursuit-specific suppression was intentional beyond what TtlOnly provides, add a note.
+- Verify that pursuit-shaped `TargetGone` blockers (previously special-cased in `blocker_resolved` to return `false`) remain TTL-only under the new evaluator, while non-pursuit `TargetGone` blockers clear through `EntityReappeared` as stored by ticket 002.
 
 ## Files to Touch
 
@@ -141,6 +141,7 @@ Delete the entire `blocker_resolved` function (currently ~83 lines at line 595).
 8. New: `is_blocker_cleared_ttl_only_never_clears` — TtlOnly always returns false
 9. New: `is_blocker_cleared_missing_baseline_falls_back` — None baseline always returns false
 10. Updated: `clear_resolved_blockers_removes_restored_and_expired_entries` — uses real clearing conditions
+11. New: `is_blocker_cleared_pursuit_target_gone_ttl_only` — pursuit-shaped `TargetGone` remains uncleared until TTL expiry
 11. Existing golden suite: `cargo test -p worldwake-ai`
 
 ### Invariants
@@ -149,13 +150,13 @@ Delete the entire `blocker_resolved` function (currently ~83 lines at line 595).
 2. `clear_resolved_blockers` uses `sweep_cleared` — no direct `.intents` access from AI code
 3. Clearing is belief-mediated — `is_blocker_cleared` reads `RuntimeBeliefView`, never authoritative world state (P14)
 4. Missing baseline defaults to TTL-only — no panic, no false clearing
-5. All existing golden tests pass — behavioral equivalence for already-tested scenarios
+5. All existing golden tests pass — behavioral equivalence for already-tested scenarios, including TTL-only pursuit suppression
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/failure_handling.rs` (tests module) — 9 new `is_blocker_cleared_*` tests, 1 updated `clear_resolved_blockers_*` test
+1. `crates/worldwake-ai/src/failure_handling.rs` (tests module) — 10 new `is_blocker_cleared_*` tests, 1 updated `clear_resolved_blockers_*` test
 2. No new test files — all tests in existing module
 
 ### Commands
