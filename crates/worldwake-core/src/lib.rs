@@ -46,6 +46,7 @@ pub mod drives;
 pub mod entity;
 pub mod entity_belief_claim;
 pub mod epistemic;
+pub mod expectation;
 pub mod error;
 pub mod event_log;
 pub mod event_record;
@@ -138,6 +139,10 @@ pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBeliefClaim};
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
+pub use expectation::{
+    ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord, ExpectationState,
+    LastSeenProvenance, LastSeenRecord, SearchCondition, SearchResult, SearchTarget,
+};
 pub use error::WorldError;
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};

@@ -15,8 +15,9 @@ Draft
 ## Crates
 
 - `worldwake-core` (expectation types, components)
+- `worldwake-sim` (system registration, GoalBeliefView extension)
 - `worldwake-systems` (search/report actions, overdue detection system)
-- `worldwake-ai` (search goal generation, candidate generation for search actions)
+- `worldwake-ai` (search goal generation, candidate generation for search actions, PlannerOpKind integration)
 
 ## Dependencies
 
@@ -54,6 +55,8 @@ Draft
 | P15 (Knowledge Travels) | Last-seen records have provenance and travel through tell/observation, not telepathy |
 | P17 (Violated Expectation) | Directly satisfies — expectation records are the substrate for detecting violated expectations |
 | P18 (Records Are World State) | Expectation and last-seen records are inspectable, transmittable world state |
+| P22 (Agent Diversity) | Grace periods, memory capacity, and search urgency vary per agent through profile parameters |
+| P26 (Systems Interact Through State) | All cross-system interactions are state-mediated (see Cross-System Interactions table) |
 
 ## Deliverables
 
@@ -61,7 +64,7 @@ Draft
 
 ```rust
 /// Unique identifier for an expectation record.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct ExpectationId(pub u64);
 
 /// Why an expectation exists.
@@ -70,7 +73,7 @@ pub enum ExpectationBasis {
     /// Agent was assigned a duty (patrol, delivery, escort).
     DutyAssignment { office: EntityId },
     /// Agent promised to deliver goods or arrive.
-    DeliveryCommitment { commodity: CommodityKind, quantity: u32 },
+    DeliveryCommitment { commodity: CommodityKind, quantity: Quantity },
     /// Household member expected home by routine.
     RoutineReturn,
     /// Escort obligation — subject is expected to accompany a charge.
@@ -112,7 +115,7 @@ pub struct ExpectationRecord {
     pub expected_place: EntityId,
     pub deadline_tick: Tick,
     /// How many ticks past the deadline before the owner considers it overdue.
-    pub grace_ticks: u32,
+    pub grace_ticks: u64,
     pub basis: ExpectationBasis,
     pub state: ExpectationState,
     pub created_tick: Tick,
@@ -147,10 +150,10 @@ pub enum LastSeenProvenance {
 
 ```rust
 /// Per-agent store of active expectations about other entities.
-/// Registered on EntityKind::Agent.
+/// Registered on EntityKind::Agent. Universal profile.
 pub struct ExpectationStore {
     pub records: BTreeMap<ExpectationId, ExpectationRecord>,
-    next_id: u64,
+    next_expectation_id: ExpectationId,
 }
 
 /// Per-agent store of last-seen records for known entities.
@@ -198,7 +201,7 @@ pub enum SearchCondition {
 
 ### 5. New Actions
 
-All actions registered through the standard `ActionDef` + `ActionHandler` pattern in `worldwake-systems`.
+All actions registered through the standard `ActionDef` + `ActionHandler` pattern in `worldwake-systems`, following the existing registration pattern in `action_registry.rs:register_all_actions()`.
 
 #### `report_missing`
 - **Preconditions**: Actor has an overdue `ExpectationRecord`. Actor is at a place with an office that has jurisdiction (or any co-located agent for informal reports).
@@ -220,14 +223,14 @@ All actions registered through the standard `ActionDef` + `ActionHandler` patter
 
 #### `escort_to_safety`
 - **Preconditions**: Actor is co-located with a wounded or incapacitated entity. A safe destination exists in actor's beliefs.
-- **Duration**: Travel action (uses existing travel infrastructure with escortee).
-- **Effect**: Moves both actor and escortee to destination. On arrival, hands off to care system.
+- **Duration**: Travel action. The escortee is treated as a co-located dependent: both actor and escortee travel the same edge simultaneously, with the escortee's movement governed by the actor's travel action (similar to how carried items move with their holder). The escortee does not independently occupy a travel slot — they are bound to the escort action for its duration.
+- **Effect**: Moves both actor and escortee to destination. On arrival, hands off to care system via the existing `queue_for_care_target` action pattern.
 - **Domain**: `ActionDomain::Care`
 
 #### `report_found`
 - **Preconditions**: Actor has resolved a search (found alive, found dead). Actor is at a place with interested parties (expectation owner, office).
 - **Duration**: Short (communication action).
-- **Effect**: Updates institutional records. Notifies expectation owner through existing channels. If found dead, triggers corpse handling cascade.
+- **Effect**: Updates institutional records. Notifies expectation owner through existing Tell channels. If found dead, triggers corpse handling cascade.
 - **Domain**: `ActionDomain::Social`
 
 ### 6. Goal Kinds and Candidate Generation
@@ -249,16 +252,59 @@ GoalKind::EscortToSafety {
 }
 ```
 
-**Candidate generation**: When an agent's `ExpectationStore` contains an overdue record, `generate_candidates` emits `SearchForMissing` and `ReportMissing` goals. Priority scales with the overdue duration and the relationship to the subject (duty-based expectations rank higher than social promises).
+Each new variant requires a corresponding `GoalKey` entry in `GoalKey::from()` (`goal.rs`).
+
+**Candidate generation**: When an agent's `ExpectationStore` contains an overdue record, `generate_candidates` emits `SearchForMissing` and `ReportMissing` goals via a new `emit_search_candidates()` function called from `generate_candidates_with_travel_horizon()`. Priority scales with the overdue duration and the relationship to the subject (duty-based expectations rank higher than social promises).
 
 ### 7. Overdue Detection SystemFn
 
-A system function `check_overdue_expectations` runs during the agent belief-update phase:
+A system function `check_overdue_expectations` registered as `SystemId::ExpectationCheck`:
 
 - For each agent with an `ExpectationStore`, scan active records.
 - If `current_tick > deadline_tick + grace_ticks` and state is `Active`, transition to `Overdue`.
 - This is a local operation — it does not check whether the subject is actually at the expected place. It only marks the expectation as past due based on the owner's clock.
 - The owner still needs to observe (or fail to observe) the subject to generate a violation.
+
+### 8. PlannerOpKind Integration
+
+New `PlannerOpKind` variants in `crates/worldwake-ai/src/planner_ops.rs`:
+
+```rust
+PlannerOpKind::SearchPlace,
+PlannerOpKind::AskAboutPerson,
+PlannerOpKind::ReportMissing,
+PlannerOpKind::EscortToSafety,
+PlannerOpKind::ReportFound,
+```
+
+Classification in `classify_action_def()`:
+
+| Domain | Action name | PlannerOpKind |
+|--------|-------------|---------------|
+| `ActionDomain::Epistemic` | `"search_place"` | `PlannerOpKind::SearchPlace` |
+| `ActionDomain::Epistemic` | `"ask_about_person"` | `PlannerOpKind::AskAboutPerson` |
+| `ActionDomain::Social` | `"report_missing"` | `PlannerOpKind::ReportMissing` |
+| `ActionDomain::Care` | `"escort_to_safety"` | `PlannerOpKind::EscortToSafety` |
+| `ActionDomain::Social` | `"report_found"` | `PlannerOpKind::ReportFound` |
+
+Each variant needs planner semantics entries in `build_semantics_table()` defining precondition/effect modeling for the GOAP search.
+
+### 9. GoalBeliefView Extension
+
+New methods on `GoalBeliefView` trait (`crates/worldwake-sim/src/belief_view.rs`):
+
+```rust
+fn expectation_store(&self, agent: EntityId) -> Option<&ExpectationStore> {
+    let _ = agent;
+    None
+}
+fn last_seen_memory(&self, agent: EntityId) -> Option<&LastSeenMemory> {
+    let _ = agent;
+    None
+}
+```
+
+These methods are required for `emit_search_candidates()` in candidate generation to read the agent's expectation and last-seen state.
 
 ## FND-01 Section H — Causal Hooks Declaration
 
@@ -286,7 +332,7 @@ A system function `check_overdue_expectations` runs during the agent belief-upda
 
 12. **Lifecycle states**: ExpectationRecord: Active → Overdue → Resolved/Expired. LastSeenRecord: created, updated (newer sighting replaces older), evicted (capacity limit).
 
-13. **Temporal resolution**: Overdue detection runs once per agent-tick during belief-update phase. Search actions have explicit tick durations. Grace period is tick-denominated.
+13. **Temporal resolution**: Overdue detection runs once per tick as `SystemId::ExpectationCheck` after Perception in the canonical system order. Search actions have explicit tick durations. Grace period is tick-denominated (`u64`).
 
 14. **Boundary conditions**: Expectations about entities that left the simulation boundary are resolved as `NotFound` after extended search. No special boundary logic needed — the entity is simply absent from all searched places.
 
@@ -300,19 +346,20 @@ A system function `check_overdue_expectations` runs during the agent belief-upda
 
 ## SystemFn Integration
 
-`check_overdue_expectations` runs during Phase 2 (belief/perception update), after perception but before goal generation. It reads the world clock and each agent's `ExpectationStore`, transitioning Active→Overdue where applicable.
+`check_overdue_expectations` is registered as `SystemId::ExpectationCheck` and runs in the canonical system order after `Perception` and before `EvidenceDecay`.
 
-No new system tick phase needed — integrates into the existing perception-to-planning pipeline.
+**Ordering rationale**: The system must run after Perception so that same-tick observations (e.g., the subject arriving just before the deadline) are reflected in belief state before overdue checks. It runs before EvidenceDecay so that overdue state is visible to same-tick downstream systems. It runs before goal generation (which occurs in the AI tick after all systems) so that newly-overdue expectations can immediately produce search/report goals.
+
+A new `SystemId::ExpectationCheck` variant is added to the `define_system_ids!` macro in `system_manifest.rs`, and inserted into `SystemManifest::canonical()` between `Perception` and `EvidenceDecay`.
 
 ## Component Registration
 
 | Component | EntityKind | Classification | Default |
 |-----------|-----------|----------------|---------|
-| `ExpectationStore` | Agent | Role-specific | `None` — only agents with duties, obligations, or relationships that create expectations |
+| `ExpectationStore` | Agent | Universal | `Default` — empty records map, `next_expectation_id: ExpectationId(0)` |
 | `LastSeenMemory` | Agent | Universal | `Default` — all agents can remember where they last saw others; `capacity: 20` |
 
-`LastSeenMemory` added to `AgentDef` with `unwrap_or_default()` in `spawn_agent()`.
-`ExpectationStore` added to `AgentDef` as `Option<ExpectationStore>` with conditional `if let Some(...)` application.
+Both components added to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs` as `Option<T>` fields with `unwrap_or_default()` in `spawn_agent()` — always applied with defaults, scenario-overridable.
 
 ## Cross-System Interactions
 
@@ -321,7 +368,7 @@ No new system tick phase needed — integrates into the existing perception-to-p
 | Perception (E14) | Observation updates `LastSeenMemory`; overdue detection reads perception results | State-mediated |
 | Violation goals (S27) | `report_missing` creates `ViolationKind::EntityMissing` through existing violation framework | State-mediated |
 | Evidence (S52) | `search_place` reads `SceneEvidence` at the searched location for relevant traces | State-mediated |
-| Care (E12) | `escort_to_safety` hands off wounded entity to existing care queue | State-mediated |
+| Care (E12) | `escort_to_safety` hands off wounded entity to existing care queue via `queue_for_care_target` | State-mediated |
 | Justice (E17) | `report_missing` to an office creates institutional record through existing crime register | State-mediated |
 | Social (Tell) | `ask_about_person` and `report_found` use existing Tell mechanism for information propagation | State-mediated |
 | Corpse handling | Finding a dead body during search triggers existing corpse observation and handling cascade | State-mediated |

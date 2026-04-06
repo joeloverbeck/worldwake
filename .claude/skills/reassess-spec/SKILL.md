@@ -37,6 +37,8 @@ The plan file should use this structure:
 - **Critical Files**: Paths of files to be modified by the updated spec
 - **Verification**: How to confirm the updated spec is correct after writing
 
+The conversational report (Step 6) is the decision artifact — the user approves or rejects based on it. The plan file is a condensed reference for the implementation phase (Steps 7-8).
+
 If question resolution produces new findings or modifies existing ones (e.g., a crate boundary constraint discovered during resolution changes the recommended integration strategy), the plan file should reflect the final resolved state, not the initial Step 6 report.
 
 ## Process
@@ -82,13 +84,13 @@ For every reference extracted in Step 2, validate against the actual codebase:
    - **5c. Default and constructors**: For field additions to existing structs, focus on the `Default` impl and any builder/constructor functions.
    - **5d. Downstream consumers**: For field type changes or removals, perform full downstream consumer analysis (Step 3.6).
    - **5e. Scalar-to-collection migrations**: For scalar-to-collection field migrations (e.g., `EntityId` → `BTreeSet<EntityId>`), additionally grep for equality comparisons (`== field_value`, `!= field_value`) that would need to become containment checks (`.contains()`).
-   - **5f. Semantic overlap**: For each field the spec proposes to add to a new or existing component, grep for semantically similar field names across all existing components (e.g., if the spec adds `switch_margin`, search for `margin`, `switch`, `commitment` across other profile types). Record any semantic overlaps and trace the runtime interaction between the overlapping fields. Also check for functional overlap — fields on a new component that serve the same purpose as fields on existing components, even if the names differ. Flag these as potential P28 migration candidates. For new components introducing a novel domain concept (e.g., a new contention substrate), semantic overlap checks focus on functional overlap with existing components rather than field name similarity. For components extending an existing domain, field name similarity checks remain important.
+   - **5f. Semantic overlap**: For each field the spec proposes to add to a new or existing component, grep for semantically similar field names across all existing components (e.g., if the spec adds `switch_margin`, search for `margin`, `switch`, `commitment` across other profile types). Record any semantic overlaps and trace the runtime interaction between the overlapping fields. Also check for functional overlap — fields on a new component that serve the same purpose as fields on existing components, even if the names differ. Flag these as potential P28 migration candidates. For new components introducing a novel domain concept (e.g., a new contention substrate), semantic overlap checks focus on functional overlap with existing components rather than field name similarity. For components extending an existing domain, field name similarity checks remain important. **Novel-domain test**: A component introduces a novel domain if no existing component serves the same downstream consequence (P5). If the new component's primary effect could be achieved by extending an existing component, it is extending an existing domain, and field name similarity checks apply.
    - **5g. EntityKind variant overlap**: For new enum variants on discriminator enums like `EntityKind`, check whether existing variants overlap semantically with the proposed addition. Empty or unused variants that would fragment the same domain (e.g., separate entity kinds for things that should share a common substrate) should be flagged as P28 migration candidates.
 6. **Downstream consumers**: For types or interfaces the spec proposes to modify, grep for all import sites and usage points. Record the blast radius — files that would need updating.
 7. **Crate boundary validation**: For new functions or methods the spec proposes, verify that the parameter types and return types are accessible from the crate where the function would live. Check `Cargo.toml` dependencies. If a proposed function in crate A takes a type from crate B, and A does not depend on B, flag this as an Issue and note which crate the function must actually live in. This is especially important for the workspace layering (`core → sim → systems → ai → cli`) — a function in `worldwake-core` cannot take parameters typed in `worldwake-sim`.
 8. **Impact scan — upstream spec references**: Grep active specs in `specs/` for references to the target spec's deliverables (type names, component names, interfaces it introduces). Note any active specs that would be affected by proposed changes. This step can be delegated to an Explore agent alongside Steps 3.1-3.6 validation — include "grep active specs in specs/ for references to [list proposed type/component names]" in the agent prompt.
 
-For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation. After agent results arrive, cross-reference their findings against the spec's type assumptions and formulas. Agents validate existence; you must validate semantic compatibility (e.g., the spec says Permille but the codebase uses u32). Spot-check agent claims about existence/registration with direct Grep or Read before including them in findings. Agent results are approximate — treat them as leads, not facts. In plan mode, Explore agents are inherently compatible (read-only exploration) — no special handling needed.
+For specs with many references (>10), consider launching parallel Explore agents organized by theme (e.g., one for action/type references, one for AI/test references, one for dependencies and infrastructure). This is more efficient than sequential validation. Choose themes based on the spec's scope — the split should minimize cross-agent dependencies. Examples: one for action/type references, one for AI/test references, one for dependencies and infrastructure. After agent results arrive, cross-reference their findings against the spec's type assumptions and formulas. Agents validate existence; you must validate semantic compatibility (e.g., the spec says Permille but the codebase uses u32). Spot-check agent claims about existence/registration with direct Grep or Read before including them in findings. Agent results are approximate — treat them as leads, not facts. In plan mode, Explore agents are inherently compatible (read-only exploration) — no special handling needed.
 
 Do not present findings yet. Collect everything for Step 4.
 
@@ -165,7 +167,11 @@ If the user's answers raise new questions or invalidate previous findings, prese
 
 After all findings are resolved and the user has approved the changes:
 
+If the user's plan approval (in plan mode) or question responses include corrections or additional feedback, incorporate them before writing. The ExitPlanMode result may contain user comments — treat these as binding modifications to the approved changes.
+
 **Write the updated spec** incorporating all approved changes. Preserve the spec's existing structure and voice. Do not rewrite sections that have no findings — change only what was agreed upon. When changes are numerous and spread throughout the spec, a full Write is acceptable. The intent is to avoid gratuitous rewrites of prose that has no findings — not to mandate Edit over Write as the tool choice.
+
+If the reassessment adds new deliverable sections that introduce actions, components, or system functions, verify that the FND-01 Section H is updated to cover them (P30 compliance extends to additions, not just the original spec content).
 
 If the user requests corrections after reviewing, apply them and re-present the affected sections.
 
@@ -174,7 +180,7 @@ If the user requests corrections after reviewing, apply them and re-present the 
 After writing the updated spec, present:
 
 - Number of issues fixed, improvements applied, and additions incorporated
-- Change inventory: enumerate all changes applied, either grouped by spec section or by finding type
+- Change inventory: enumerate all changes applied, grouped by finding type (issues fixed, improvements applied, additions incorporated) to mirror the Step 6 report structure
 - Any deferred items the user chose not to address now
 - 1-3 sections that changed most substantially, with a note to review them before proceeding
 - Suggested next step: `/spec-to-tickets <spec-path> <NAMESPACE>` to decompose into tickets

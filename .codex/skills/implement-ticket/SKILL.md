@@ -14,7 +14,8 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 1. Read the target ticket file.
 2. Read every directly relevant reference (specs, docs, code symbols, test files).
 3. When the user supplies a glob or shorthand, confirm the exact live file path before reading or relying on it.
-4. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
+4. Check whether the active ticket file is tracked or untracked in the current worktree before planning reassessment notes or close-out edits. Untracked ticket drafts are valid active state, but remember they will not appear in ordinary `git diff` output.
+5. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
 
 ### 2. Reassess assumptions before coding
 
@@ -26,7 +27,7 @@ For trivial single-file additive tickets, scale the reassessment down deliberate
 
 - Referenced files, types, functions, modules, commands, and tests exist.
 - When the ticket's owned surface is partially landed in the worktree, treat the live state as baseline; limit edits to the missing slice.
-- Check whether the active ticket file is tracked or untracked in the current worktree before recording reassessment notes or close-out edits. Untracked ticket drafts are valid active state, but treat diff/readback expectations accordingly.
+- Keep tracked-vs-untracked state in mind when reading diffs and close-out evidence: untracked ticket drafts and newly created files will not appear in ordinary `git diff` output.
 - Cross-check `Deps` against `What to Change` for additive tickets that assume earlier slices landed.
 - When roadmap summary, active spec, and live ticket disagree, compare all three and record which is authoritative.
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
