@@ -130,6 +130,8 @@ enum AnomalyKind {
     ActionLoop,
     StuckAgent,
     FailedActionSpiral,
+    SustainedCriticalNeed,
+    UnaddressedNeed,
 }
 
 impl AnomalyKind {
@@ -139,6 +141,8 @@ impl AnomalyKind {
             Self::ActionLoop => "ACTION_LOOP",
             Self::StuckAgent => "STUCK_AGENT",
             Self::FailedActionSpiral => "FAILED_ACTION_SPIRAL",
+            Self::SustainedCriticalNeed => "SUSTAINED_CRITICAL_NEED",
+            Self::UnaddressedNeed => "UNADDRESSED_NEED",
         }
     }
 }
@@ -216,12 +220,110 @@ fn detect_anomalies(
                 });
             }
         }
+
+        // 5. Sustained critical needs: a need stays above 750 for 100+ consecutive ticks
+        detect_sustained_critical_needs(stats, &mut anomalies);
+
+        // 6. Unaddressed needs: need avg > 750 but no corresponding relief action attempted
+        detect_unaddressed_needs(stats, &mut anomalies);
     }
 
     // Cross-reference redundant perception more precisely using event log
     refine_redundant_perception(&mut anomalies, agent_stats, perception_trace, event_log);
 
     anomalies
+}
+
+type NeedExtractor = (&'static str, fn(&NeedsSample) -> u16);
+type NeedActionPair = (&'static str, fn(&NeedsSample) -> u16, &'static [&'static str]);
+
+/// Detect needs that stay above 750 permille for 100+ consecutive ticks.
+fn detect_sustained_critical_needs(stats: &AgentStats, anomalies: &mut Vec<Anomaly>) {
+    const THRESHOLD: u16 = 750;
+    const MIN_CONSECUTIVE: u32 = 100;
+
+    let need_extractors: &[NeedExtractor] = &[
+        ("hunger", |s| s.hunger),
+        ("thirst", |s| s.thirst),
+        ("fatigue", |s| s.fatigue),
+        ("bladder", |s| s.bladder),
+        ("dirtiness", |s| s.dirtiness),
+    ];
+
+    for &(need_name, extractor) in need_extractors {
+        let mut consecutive: u32 = 0;
+        let mut max_consecutive: u32 = 0;
+        let mut max_end_tick: u32 = 0;
+        for (i, sample) in stats.needs_samples.iter().enumerate() {
+            if extractor(sample) > THRESHOLD {
+                consecutive += 1;
+                if consecutive > max_consecutive {
+                    max_consecutive = consecutive;
+                    max_end_tick = i as u32;
+                }
+            } else {
+                consecutive = 0;
+            }
+        }
+        if max_consecutive >= MIN_CONSECUTIVE {
+            let start_tick = max_end_tick.saturating_sub(max_consecutive) + 1;
+            anomalies.push(Anomaly {
+                kind: AnomalyKind::SustainedCriticalNeed,
+                agent_name: stats.name.clone(),
+                description: format!(
+                    "{need_name} above {THRESHOLD}‰ for {max_consecutive} consecutive ticks (ticks {start_tick}–{max_end_tick})"
+                ),
+                tick_range: Some((u64::from(start_tick), u64::from(max_end_tick))),
+            });
+        }
+    }
+}
+
+/// Detect needs with avg > 750 but no corresponding relief action attempted.
+fn detect_unaddressed_needs(stats: &AgentStats, anomalies: &mut Vec<Anomaly>) {
+    if stats.needs_samples.is_empty() {
+        return;
+    }
+    let len = stats.needs_samples.len() as u32;
+
+    let need_action_pairs: &[NeedActionPair] = &[
+        ("hunger", |s| s.hunger, &["eat"]),
+        ("thirst", |s| s.thirst, &["drink"]),
+        (
+            "fatigue",
+            |s| s.fatigue,
+            &["sleep"],
+        ),
+        (
+            "bladder",
+            |s| s.bladder,
+            &["toilet", "relieve_wilderness"],
+        ),
+        ("dirtiness", |s| s.dirtiness, &["wash"]),
+    ];
+
+    for &(need_name, extractor, relief_actions) in need_action_pairs {
+        let avg: u32 =
+            stats.needs_samples.iter().map(|s| u32::from(extractor(s))).sum::<u32>() / len;
+        if avg > 750 {
+            let any_attempted = relief_actions.iter().any(|action| {
+                let started = stats.actions_started.get(*action).copied().unwrap_or(0);
+                let failed = stats.actions_start_failed.get(*action).copied().unwrap_or(0);
+                started + failed > 0
+            });
+            if !any_attempted {
+                anomalies.push(Anomaly {
+                    kind: AnomalyKind::UnaddressedNeed,
+                    agent_name: stats.name.clone(),
+                    description: format!(
+                        "{need_name} avg {avg}‰ but no relief action ({}) was ever attempted",
+                        relief_actions.join("/")
+                    ),
+                    tick_range: None,
+                });
+            }
+        }
+    }
 }
 
 /// Look for repeating subsequences in the action history.
@@ -426,6 +528,21 @@ fn format_report(
             )
             .unwrap();
             writeln!(out).unwrap();
+
+            // Ticks above 750 threshold for each need
+            let count_above = |samples: &[NeedsSample], f: fn(&NeedsSample) -> u16| -> u32 {
+                samples.iter().filter(|s| f(s) > 750).count() as u32
+            };
+            let h_above = count_above(&stats.needs_samples, |s| s.hunger);
+            let t_above = count_above(&stats.needs_samples, |s| s.thirst);
+            let f_above = count_above(&stats.needs_samples, |s| s.fatigue);
+            let b_above = count_above(&stats.needs_samples, |s| s.bladder);
+            let d_above = count_above(&stats.needs_samples, |s| s.dirtiness);
+            writeln!(
+                out,
+                "**Ticks above 750‰**: hunger={h_above}, thirst={t_above}, fatigue={f_above}, bladder={b_above}, dirtiness={d_above}\n"
+            )
+            .unwrap();
         }
 
         // Location time

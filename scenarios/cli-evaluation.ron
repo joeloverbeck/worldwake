@@ -4,6 +4,11 @@
 // 4 agents (1 human, 3 AI) with diverse profiles, items, facilities,
 // and resource sources.  Designed to exercise all CLI commands.
 //
+// Updated 2026-04-06: TK-1 — Added Water resource source at Thornwall Village and
+//   Water items at Eldergrove Forest to fix universal dehydration (simulation-remediation).
+// Updated 2026-04-06: S54 schema drift — renamed memory_capacity to entity_memory_capacity
+//   + entity_claim_capacity in perception profiles. Added PlaceTag coverage (Hall, Road,
+//   Latrine) and WorkstationTag coverage (ChoppingBlock, FieldPlot, OrchardRow).
 // Updated 2026-04-05: Added bounty_posting_weight and notice_posting_weight to all UtilityProfiles (S51ARTISS-001).
 //   Tuned Guard Theron as an explicit posting-capable showcase agent (S51ARTISS-004).
 //   Added Forge at Hearthstone Inn and Medicine/Bow items for commodity variety.
@@ -17,10 +22,10 @@
 (
     seed: 7777,
     places: [
-        (name: "Thornwall Village", tags: [Village, Store]),
+        (name: "Thornwall Village", tags: [Village, Store, Hall]),
         (name: "Eldergrove Forest", tags: [Forest]),
-        (name: "Dusty Trail", tags: [Trail]),
-        (name: "Hearthstone Inn", tags: [Inn]),
+        (name: "Dusty Trail", tags: [Trail, Road]),
+        (name: "Hearthstone Inn", tags: [Inn, Latrine]),
         (name: "Golden Fields", tags: [Field, Farm]),
     ],
     edges: [
@@ -65,7 +70,8 @@
                 care_weight: 500,
             ),
             perception_profile: (
-                memory_capacity: 16,
+                entity_memory_capacity: 16,
+                entity_claim_capacity: 16,
                 memory_retention_ticks: 64,
                 observation_fidelity: 950,
                 confidence_policy: (
@@ -285,7 +291,8 @@
                 care_weight: 400,
             ),
             perception_profile: (
-                memory_capacity: 16,
+                entity_memory_capacity: 16,
+                entity_claim_capacity: 16,
                 memory_retention_ticks: 64,
                 observation_fidelity: 950,
                 confidence_policy: (
@@ -347,6 +354,8 @@
         (commodity: Coin, quantity: 20, location: "Kael"),
         // Water on Kael for immediate needs
         (commodity: Water, quantity: 5, location: "Kael"),
+        // Water at Eldergrove Forest for Forager Lina
+        (commodity: Water, quantity: 5, location: "Eldergrove Forest"),
         // Grain and bread at village store
         (commodity: Grain, quantity: 10, location: "Thornwall Village"),
         (commodity: Bread, quantity: 5, location: "Thornwall Village"),
@@ -364,8 +373,12 @@
     facilities: [
         (workstation: Mill, location: "Thornwall Village"),
         (workstation: Forge, location: "Hearthstone Inn"),
+        (workstation: ChoppingBlock, location: "Eldergrove Forest"),
+        (workstation: FieldPlot, location: "Golden Fields"),
+        (workstation: OrchardRow, location: "Eldergrove Forest"),
     ],
     resource_sources: [
         (commodity: Apple, location: "Eldergrove Forest", regeneration_ticks_per_unit: 2, capacity: 20),
+        (commodity: Water, location: "Thornwall Village", regeneration_ticks_per_unit: 3, capacity: 15),
     ],
 )

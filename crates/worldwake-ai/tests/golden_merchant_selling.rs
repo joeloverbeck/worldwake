@@ -1315,10 +1315,17 @@ fn move_cargo_then_sell_commodity_plan_shape() {
             break;
         }
     }
-    // The merchant should at least travel (restock-driven movement toward home market).
+    // TK-3 fix: prerequisite_places for SellCommodity now guides travel to home_facility.
+    // The merchant should travel and arrive at home. staff_market dispatch is blocked by
+    // TK-2 (ConsumeOwnedCommodity terminal treats possession as goal-satisfied).
+    // Once TK-2 is fixed, tighten this to require saw_staff_market.
     assert!(
-        saw_travel || arrived_at_home || saw_staff_market,
-        "merchant at remote place with stock and demand memory should eventually move toward home_facility or start selling"
+        saw_travel,
+        "merchant at remote place should travel toward home_facility"
+    );
+    assert!(
+        arrived_at_home,
+        "merchant should arrive at home_facility place (travel={saw_travel})"
     );
 }
 

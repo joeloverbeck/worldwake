@@ -2232,3 +2232,106 @@ fn golden_trace_enabled_scenario() {
     // dump_agent must not panic (output goes to stderr, not asserted).
     sink.dump_agent(agent, &h.defs);
 }
+
+// ---------------------------------------------------------------------------
+// GT-1: Planner Falls Back to Addressable Needs When Top Need Unsatisfiable
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI
+// GoalKinds: ConsumeOwnedCommodity
+// ActionDomains: Needs
+// Principles: P20 (resource-bounded practical reasoning)
+//
+// Setup: Single AI agent with high thirst (700) and moderate hunger (400).
+//   No Water items anywhere (thirst unsatisfiable). Apple available at location.
+//
+// Proves: when top-priority need (thirst) has no viable plan, agent falls back
+//   to next-best addressable need (hunger) instead of going idle indefinitely.
+//
+// Chain: unsatisfiable top need -> planner exhausts thirst-relief candidates ->
+//   falls back to hunger-relief -> agent eats or sleeps.
+
+#[test]
+#[ignore = "TK-2: ConsumeOwnedCommodity terminal considers possession as goal-satisfied \
+    (0 steps), so agent never dispatches eat. Root cause: planner terminal condition \
+    for ConsumeOwnedCommodity checks commodity ownership, not consumption. \
+    See tickets/TK-2-consume-owned-terminal.md"]
+fn golden_fallback_to_addressable_need_when_top_need_unsatisfiable() {
+    let mut h = GoldenHarness::new(Seed([100; 32]));
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Parched",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(400), pm(700), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    // Give food but NO water — thirst is unsatisfiable
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        VILLAGE_SQUARE,
+        CommodityKind::Apple,
+        Quantity(5),
+    );
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    h.driver.enable_tracing();
+
+    let mut ate = false;
+    let mut slept = false;
+    let mut max_idle = 0u32;
+    let mut consecutive_idle = 0u32;
+
+    for _tick in 0..200 {
+        h.step_once();
+
+        let had_action = if let Some(sink) = h.action_trace_sink() {
+            sink.events_for(agent).iter().any(|e| {
+                if matches!(e.kind, ActionTraceKind::Committed { .. }) {
+                    match e.action_name.as_str() {
+                        "eat" => ate = true,
+                        "sleep" => slept = true,
+                        _ => {}
+                    }
+                    true
+                } else {
+                    false
+                }
+            })
+        } else {
+            false
+        };
+
+        if had_action {
+            consecutive_idle = 0;
+        } else {
+            consecutive_idle += 1;
+            max_idle = max_idle.max(consecutive_idle);
+        }
+
+        if ate || slept {
+            break;
+        }
+    }
+
+    assert!(
+        ate || slept,
+        "Agent with unsatisfiable thirst should still eat or sleep — got neither in 200 ticks (max idle streak: {max_idle})"
+    );
+    assert!(
+        max_idle < 100,
+        "Agent should not be idle for 100+ consecutive ticks, was idle for {max_idle}"
+    );
+}
