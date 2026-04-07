@@ -1,6 +1,6 @@
 ---
 name: post-ticket-review
-description: "Review a just-implemented Worldwake ticket after coding is finished. Use when a ticket is complete and you want Codex to archive it if appropriate, assess the implemented work against `docs/FOUNDATIONS.md`, review nearby architecture/test/traceability quality, and create or update follow-up tickets in `tickets/` when warranted."
+description: "Review a just-implemented Worldwake ticket after coding is finished. Use when a ticket is complete and you want to archive it if appropriate, assess the implemented work against `docs/FOUNDATIONS.md`, review nearby architecture/test/traceability quality, and create or update follow-up tickets in `tickets/` when warranted."
 ---
 
 # Post-Ticket Review
