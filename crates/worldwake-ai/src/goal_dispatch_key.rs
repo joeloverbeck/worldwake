@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use worldwake_core::{GoalKind, PunishmentKind};
+use worldwake_core::{GoalKind, NoticeTopic, PunishmentKind};
 
 /// Payload-aware AI-internal dispatch identity derived from authoritative goal identity.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -28,8 +28,11 @@ pub enum GoalDispatchKey {
     BuryCorpse,
     FulfillBounty,
     PostBounty,
-    PostNotice,
-    ShareBelief,
+    PostNoticeWarning,
+    PostNoticeOther,
+    ShareBeliefAlarm,
+    ShareBeliefTestimony,
+    ShareBeliefGossip,
     ClaimOffice,
     SupportCandidateForOffice,
     InvestigateViolation,
@@ -41,7 +44,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 37] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -66,8 +69,11 @@ impl GoalDispatchKey {
         Self::BuryCorpse,
         Self::FulfillBounty,
         Self::PostBounty,
-        Self::PostNotice,
-        Self::ShareBelief,
+        Self::PostNoticeWarning,
+        Self::PostNoticeOther,
+        Self::ShareBeliefAlarm,
+        Self::ShareBeliefTestimony,
+        Self::ShareBeliefGossip,
         Self::ClaimOffice,
         Self::SupportCandidateForOffice,
         Self::InvestigateViolation,
@@ -112,8 +118,18 @@ impl GoalDispatchKey {
             GoalKind::BuryCorpse { .. } => Self::BuryCorpse,
             GoalKind::FulfillBounty { .. } => Self::FulfillBounty,
             GoalKind::PostBounty { .. } => Self::PostBounty,
-            GoalKind::PostNotice { .. } => Self::PostNotice,
-            GoalKind::ShareBelief { .. } => Self::ShareBelief,
+            GoalKind::PostNotice { topic, .. } => match topic {
+                NoticeTopic::ThreatWarning { .. } => Self::PostNoticeWarning,
+                _ => Self::PostNoticeOther,
+            },
+            GoalKind::ShareBelief {
+                communication_class,
+                ..
+            } => match communication_class {
+                worldwake_core::CommunicationClass::Alarm => Self::ShareBeliefAlarm,
+                worldwake_core::CommunicationClass::Testimony => Self::ShareBeliefTestimony,
+                worldwake_core::CommunicationClass::Gossip => Self::ShareBeliefGossip,
+            },
             GoalKind::ClaimOffice { .. } => Self::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => Self::SupportCandidateForOffice,
             GoalKind::InvestigateViolation { .. } => Self::InvestigateViolation,
@@ -144,7 +160,8 @@ impl From<GoalKind> for GoalDispatchKey {
 mod tests {
     use super::GoalDispatchKey;
     use worldwake_core::{
-        CommodityKind, CommodityPurpose, EntityId, GoalKind, PunishmentKind, Quantity, RecipeId,
+        ArtifactPostingContext, CommodityKind, CommodityPurpose, CommunicationClass, EntityId,
+        GoalKind, InstitutionalClaim, NoticeTopic, PunishmentKind, Quantity, RecipeId,
         RecordEntryId, TellTopic, ViolationId,
     };
 
@@ -206,6 +223,100 @@ mod tests {
 
         assert_eq!(GoalDispatchKey::from(fine), GoalDispatchKey::PunishFine);
         assert_eq!(GoalDispatchKey::from(exile), GoalDispatchKey::PunishExile);
+    }
+
+    #[test]
+    fn test_goal_dispatch_key_payload_sensitive_share_belief_splits() {
+        let alarm = GoalKind::ShareBelief {
+            listener: entity(1),
+            topic: TellTopic::EntityBelief {
+                subject: entity(2),
+            },
+            communication_class: CommunicationClass::Alarm,
+        };
+        let testimony = GoalKind::ShareBelief {
+            listener: entity(1),
+            topic: TellTopic::EntityBelief {
+                subject: entity(2),
+            },
+            communication_class: CommunicationClass::Testimony,
+        };
+        let gossip = GoalKind::ShareBelief {
+            listener: entity(1),
+            topic: TellTopic::EntityBelief {
+                subject: entity(2),
+            },
+            communication_class: CommunicationClass::Gossip,
+        };
+
+        assert_eq!(
+            GoalDispatchKey::from(alarm),
+            GoalDispatchKey::ShareBeliefAlarm
+        );
+        assert_eq!(
+            GoalDispatchKey::from(testimony),
+            GoalDispatchKey::ShareBeliefTestimony
+        );
+        assert_eq!(
+            GoalDispatchKey::from(gossip),
+            GoalDispatchKey::ShareBeliefGossip
+        );
+    }
+
+    #[test]
+    fn test_goal_dispatch_key_payload_sensitive_post_notice_splits() {
+        let posting = ArtifactPostingContext {
+            posting_place: entity(10),
+            issuing_authority: None,
+            expires_at: None,
+            jurisdiction: None,
+        };
+        let warning = GoalKind::PostNotice {
+            posting,
+            topic: NoticeTopic::ThreatWarning {
+                place: entity(11),
+            },
+        };
+        let vacancy = GoalKind::PostNotice {
+            posting,
+            topic: NoticeTopic::OfficeVacancy {
+                office: entity(12),
+            },
+        };
+        let shortage = GoalKind::PostNotice {
+            posting,
+            topic: NoticeTopic::CommodityShortage {
+                commodity: CommodityKind::Bread,
+                place: entity(13),
+            },
+        };
+        let institutional = GoalKind::PostNotice {
+            posting,
+            topic: NoticeTopic::Institutional {
+                claim: InstitutionalClaim::OfficeHolder {
+                    office: entity(14),
+                    holder: Some(entity(15)),
+                    effective_tick: worldwake_core::Tick(0),
+                },
+            },
+        };
+
+        assert_eq!(
+            GoalDispatchKey::from(warning),
+            GoalDispatchKey::PostNoticeWarning
+        );
+        assert_eq!(
+            GoalDispatchKey::from(vacancy),
+            GoalDispatchKey::PostNoticeOther
+        );
+        assert_eq!(
+            GoalDispatchKey::from(shortage),
+            GoalDispatchKey::PostNoticeOther
+        );
+        assert_eq!(
+            GoalDispatchKey::from(institutional),
+            GoalDispatchKey::PostNoticeOther
+        );
     }
 
     #[test]
@@ -362,7 +473,7 @@ mod tests {
     #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 34);
+        assert_eq!(GoalDispatchKey::all().len(), 37);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),

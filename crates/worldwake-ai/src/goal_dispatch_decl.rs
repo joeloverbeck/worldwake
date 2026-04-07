@@ -421,8 +421,10 @@ impl GoalDispatchKey {
             Self::BuryCorpse => &DECL_BURY_CORPSE,
             Self::FulfillBounty => &DECL_FULFILL_BOUNTY,
             Self::PostBounty => &DECL_POST_BOUNTY,
-            Self::PostNotice => &DECL_POST_NOTICE,
-            Self::ShareBelief => &DECL_SHARE_BELIEF,
+            Self::PostNoticeWarning | Self::PostNoticeOther => &DECL_POST_NOTICE,
+            Self::ShareBeliefAlarm | Self::ShareBeliefTestimony | Self::ShareBeliefGossip => {
+                &DECL_SHARE_BELIEF
+            }
             Self::ClaimOffice => &DECL_CLAIM_OFFICE,
             Self::SupportCandidateForOffice => &DECL_SUPPORT_CANDIDATE_FOR_OFFICE,
             Self::InvestigateViolation => &DECL_INVESTIGATE_VIOLATION,
@@ -470,8 +472,11 @@ mod tests {
         GoalDispatchKey::BuryCorpse,
         GoalDispatchKey::FulfillBounty,
         GoalDispatchKey::PostBounty,
-        GoalDispatchKey::PostNotice,
-        GoalDispatchKey::ShareBelief,
+        GoalDispatchKey::PostNoticeWarning,
+        GoalDispatchKey::PostNoticeOther,
+        GoalDispatchKey::ShareBeliefAlarm,
+        GoalDispatchKey::ShareBeliefTestimony,
+        GoalDispatchKey::ShareBeliefGossip,
         GoalDispatchKey::ClaimOffice,
         GoalDispatchKey::SupportCandidateForOffice,
         GoalDispatchKey::InvestigateViolation,
@@ -569,7 +574,7 @@ mod tests {
                     claim_place: destination,
                 },
             },
-            GoalDispatchKey::PostNotice => GoalKind::PostNotice {
+            GoalDispatchKey::PostNoticeWarning => GoalKind::PostNotice {
                 posting: ArtifactPostingContext {
                     posting_place: destination,
                     issuing_authority: None,
@@ -578,7 +583,26 @@ mod tests {
                 },
                 topic: worldwake_core::NoticeTopic::ThreatWarning { place: destination },
             },
-            GoalDispatchKey::ShareBelief => GoalKind::ShareBelief {
+            GoalDispatchKey::PostNoticeOther => GoalKind::PostNotice {
+                posting: ArtifactPostingContext {
+                    posting_place: destination,
+                    issuing_authority: None,
+                    expires_at: None,
+                    jurisdiction: None,
+                },
+                topic: worldwake_core::NoticeTopic::OfficeVacancy { office },
+            },
+            GoalDispatchKey::ShareBeliefAlarm => GoalKind::ShareBelief {
+                listener: target,
+                topic: TellTopic::EntityBelief { subject: office },
+                communication_class: worldwake_core::CommunicationClass::Alarm,
+            },
+            GoalDispatchKey::ShareBeliefTestimony => GoalKind::ShareBelief {
+                listener: target,
+                topic: TellTopic::EntityBelief { subject: office },
+                communication_class: worldwake_core::CommunicationClass::Testimony,
+            },
+            GoalDispatchKey::ShareBeliefGossip => GoalKind::ShareBelief {
                 listener: target,
                 topic: TellTopic::EntityBelief { subject: office },
                 communication_class: worldwake_core::CommunicationClass::Gossip,
@@ -623,7 +647,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 34);
+        assert_eq!(ALL_KEYS.len(), 37);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();

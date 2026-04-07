@@ -28,6 +28,8 @@ Verify the ticket against the current codebase, not stale architectural memory. 
 
 For trivial single-file additive tickets, scale the reassessment down deliberately: read the ticket, cited references, and owned symbol/file; confirm the dependency path is present; and run a narrow existence/fallout sweep for prior implementation or obvious constructor/usage fallout. Do not skip reassessment, but do not force the full matrix when the owned surface is genuinely small and local.
 
+When the ticket was authored by `/spec-to-tickets` in the current session from a freshly reassessed spec, scale reassessment to a targeted sweep: confirm the ticket's owned types still exist at stated paths, check for exhaustive matchers on modified enums, and verify trait bounds on any types used in new test code. Do not repeat the full reference validation already performed during spec reassessment.
+
 When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), treat the audit as reassessment. Record findings in the reassessment section. If a gap is confirmed, auto-correct `Engine Changes`, `What to Change`, and `Files to Touch` before coding. If no gap exists, close with a reassessment-only Outcome documenting the audit trail.
 
 #### Reference and baseline validation
@@ -241,7 +243,7 @@ Do not assume every schema macro reference needs a new import — verify actual 
 6. Preserve critical invariants from [CLAUDE.md](../../../CLAUDE.md): belief-only planning, information locality, append-only event log, determinism, conservation, unique location.
 7. When authoritative validation or affordance-surface behavior changes, verify the full AI pipeline per `Authoritative-To-AI Impact Rule` in [CLAUDE.md](../../../CLAUDE.md). If the change removes candidates earlier, update stale downstream expectations.
 8. When widening an action into a new custody or state regime, audit related stored state carriers for stale markers.
-9. When adding a new enum variant, search for exhaustive matches and state validators in dependent crates before broad verification.
+9. When adding a new enum variant, search for exhaustive matches and state validators in dependent crates before broad verification. Also search for hardcoded array/vec inventories (`const ALL`, test-only `ALL_KEYS` arrays) and count assertions (`assert_eq!(keys.len(), N)`) that mirror the enum's variant set. These are not pattern matches and won't produce compiler errors — they silently become incomplete or fail at runtime.
 10. When a new variant is not supposed to be live yet, land explicit inert dispatch/policy/ranking branches. Do not prematurely wire real runtime behavior.
 11. When adding, removing, or replacing an `EntityKind`, include kind-classification and lifecycle-routing helpers in the sweep.
 12. When adding a field to a shared model, search for hand-written constructors and test literals across sibling modules, including same-crate test modules.

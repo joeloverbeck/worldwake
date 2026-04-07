@@ -1,6 +1,6 @@
 # S69GOADISCON-001: Expand GoalDispatchKey with payload-aware ShareBelief and PostNotice variants
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — enum variant expansion, no runtime behavior change
@@ -124,3 +124,26 @@ Replace `Self::PostNotice => &DECL_POST_NOTICE` with two arms pointing to the ex
 1. `cargo test -p worldwake-ai -- goal_dispatch_key`
 2. `cargo test -p worldwake-ai -- test_declaration`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Assumption Reassessment (2026-04-07)
+
+1. Auto-correction: `ALL_KEYS.len()` assertion in `test_declaration_completeness` (goal_dispatch_decl.rs:650) hardcoded 34 — updated to 37.
+2. Auto-correction: `representative_goal_for()` in goal_dispatch_decl.rs tests had single `PostNotice` and `ShareBelief` arms — expanded to 5 arms with representative GoalKind values for each new variant.
+3. Confirmed `ArtifactPostingContext` is `Copy` — no `.clone()` needed in tests.
+4. Confirmed `InstitutionalClaim` uses `OfficeHolder` (not `OfficeClaim`).
+
+## Outcome
+
+Completed on 2026-04-07.
+
+- Replaced `ShareBelief` and `PostNotice` GoalDispatchKey variants with 5 payload-aware variants (ShareBeliefAlarm, ShareBeliefTestimony, ShareBeliefGossip, PostNoticeWarning, PostNoticeOther)
+- Updated `from_goal_kind()` to discriminate by `CommunicationClass` and `NoticeTopic`
+- Updated ALL constant (34 → 37), declaration() match, ALL_KEYS test constant, representative_goal_for() test helper
+- Added 2 new payload-sensitive split tests
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai -- goal_dispatch_key` (10 tests, 0 failures)
+- Passed `cargo test -p worldwake-ai -- test_declaration` (3 tests, 0 failures)
+- Passed `cargo clippy --workspace --all-targets -- -D warnings` (clean)
+- Passed `cargo test -p worldwake-ai` (full suite, 0 failures)
