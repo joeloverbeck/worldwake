@@ -1,6 +1,6 @@
 # S68GOASWICON-004: Clear ContentionIntents on remaining plan-clear paths
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — AI agent tick frame, observation, and active_action function signatures
@@ -90,3 +90,22 @@ Add `facility_intents: &mut ContentionIntents` to `advance_completed_step` (acti
 1. `cargo test -p worldwake-ai --lib`
 2. `cargo test -p worldwake-ai --test golden_production`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+**Completion date**: 2026-04-07
+
+**What changed**:
+- `mod.rs:514`: Added `current_facility_intents.intents.clear()` at assumption-failure plan-clear path (no signature threading needed).
+- `observation.rs:135`: Added `facility_intents.intents.clear()` at pursuit-invalidation plan-clear path (parameter already in scope).
+- `frame.rs`: Added `facility_intents: &mut ContentionIntents` parameter to `handle_recoverable_travel_step_blockage` and `check_patience_exhaustion`. Added `.intents.clear()` at frame-blockage (line 200) and patience-exhaustion (line 414) plan-clear paths.
+- `active_action.rs`: Added `facility_intents: &mut ContentionIntents` parameter to `advance_completed_step`. Added `.intents.clear()` at ProgressBarrier (line 220) and GoalSatisfied/CombatCommitment (line 239) plan-terminal paths.
+- `execution.rs`: Threaded `facility_intents` parameter through `enqueue_valid_step_or_handle_failure` to both `handle_recoverable_travel_step_blockage` call sites.
+- Updated all call sites in `mod.rs`, `observation.rs`, and `tests.rs` (~15 test call sites).
+
+**Deviations**: None. All 5 plan-clear paths matched the ticket's assumption reassessment exactly.
+
+**Verification**:
+- `cargo test -p worldwake-ai --lib`: 1065 passed, 0 failed
+- `cargo test -p worldwake-ai --test golden_production`: 43 passed, 0 failed
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean

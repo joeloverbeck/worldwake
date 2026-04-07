@@ -2531,6 +2531,7 @@ fn travel_leg_completion_updates_progress_tick_and_resets_blocked_counter() {
     let updated_jc = advance_completed_step(
         &mut runtime,
         &mut None,
+        &mut ContentionIntents::default(),
         jc.as_ref(),
         PlannerOpKind::Travel,
         Tick(9),
@@ -2597,6 +2598,7 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
         &mut runtime,
         Some(goal),
         &mut blocked_memory,
+        &mut ContentionIntents::default(),
         actor,
         &step,
         Tick(9),
@@ -2676,6 +2678,7 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
         &mut runtime,
         Some(goal),
         &mut blocked_memory,
+        &mut ContentionIntents::default(),
         actor,
         &step,
         Tick(9),
@@ -2841,6 +2844,7 @@ fn progress_barrier_completion_preserves_goal_and_forces_replan() {
     let updated_jc = advance_completed_step(
         &mut runtime,
         &mut active_goal,
+        &mut ContentionIntents::default(),
         jc.as_ref(),
         PlannerOpKind::Travel,
         Tick(4),
@@ -2915,6 +2919,7 @@ fn suspended_detour_completion_preserves_commitment_and_reactivates_it() {
     let updated_jc = advance_completed_step(
         &mut runtime,
         &mut active_goal,
+        &mut ContentionIntents::default(),
         jc.as_ref(),
         PlannerOpKind::Consume,
         Tick(4),
@@ -2967,6 +2972,7 @@ fn goal_completion_records_goal_satisfied_clear_reason() {
     let updated_jc = advance_completed_step(
         &mut runtime,
         &mut active_goal,
+        &mut ContentionIntents::default(),
         jc.as_ref(),
         PlannerOpKind::Travel,
         Tick(4),
@@ -3131,6 +3137,7 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
     advance_completed_step(
         &mut runtime,
         &mut active_goal,
+        &mut ContentionIntents::default(),
         None,
         PlannerOpKind::MoveCargo,
         Tick(3),
@@ -3149,6 +3156,7 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
     advance_completed_step(
         &mut runtime,
         &mut active_goal,
+        &mut ContentionIntents::default(),
         None,
         PlannerOpKind::Travel,
         Tick(4),
@@ -3167,6 +3175,7 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
     advance_completed_step(
         &mut runtime,
         &mut active_goal,
+        &mut ContentionIntents::default(),
         None,
         PlannerOpKind::MoveCargo,
         Tick(5),
@@ -3425,6 +3434,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     advance_completed_step(
         &mut runtime,
         &mut active_goal_state,
+        &mut ContentionIntents::default(),
         None,
         PlannerOpKind::MoveCargo,
         Tick(2),
@@ -5759,6 +5769,7 @@ fn check_patience_exhaustion_creates_blocked_intent() {
         &frame,
         Some(place),
         &mut blocked_memory,
+        &mut ContentionIntents::default(),
         &mut runtime,
         Tick(10),
         budget.structural_block_ticks,
@@ -5806,6 +5817,7 @@ fn check_patience_exhaustion_below_limit_returns_false() {
         &frame,
         None,
         &mut blocked_memory,
+        &mut ContentionIntents::default(),
         &mut runtime,
         Tick(10),
         200,
@@ -5839,6 +5851,7 @@ fn patience_exhaustion_care_domain_uses_patient_as_target() {
         &frame,
         Some(entity(99)),
         &mut blocked_memory,
+        &mut ContentionIntents::default(),
         &mut runtime,
         Tick(20),
         100,
@@ -5873,6 +5886,7 @@ fn patience_exhaustion_generic_domain_uses_none_target() {
         &frame,
         Some(entity(99)),
         &mut blocked_memory,
+        &mut ContentionIntents::default(),
         &mut runtime,
         Tick(5),
         100,

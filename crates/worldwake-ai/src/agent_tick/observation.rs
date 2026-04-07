@@ -132,6 +132,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         runtime.current_plan = None;
         runtime.current_step_index = 0;
         runtime.materialization_bindings.clear();
+        facility_intents.intents.clear();
         runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
     }
 
@@ -367,7 +368,7 @@ pub(super) fn reconcile_in_flight_state(
     }
 
     runtime.step_in_flight = false;
-    *jc = advance_completed_step(runtime, active_goal, jc.as_ref(), step.op_kind, ctx.tick);
+    *jc = advance_completed_step(runtime, active_goal, facility_intents, jc.as_ref(), step.op_kind, ctx.tick);
     Ok(())
 }
 

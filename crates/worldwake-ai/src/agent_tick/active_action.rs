@@ -1,6 +1,6 @@
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, CognitiveProfile, EntityId, FrameState,
-    IntentionFrame, Permille, Tick,
+    ActiveGoal, BlockedIntentMemory, CauseRef, CognitiveProfile, ContentionIntents, EntityId,
+    FrameState, IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, Interruptibility, PerAgentBeliefView, RuntimeBeliefView,
@@ -176,6 +176,7 @@ pub(super) fn goal_switch_margin_details(
 pub(super) fn advance_completed_step(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
+    facility_intents: &mut ContentionIntents,
     jc: Option<&IntentionFrame>,
     completed_op_kind: crate::PlannerOpKind,
     tick: Tick,
@@ -216,6 +217,7 @@ pub(super) fn advance_completed_step(
             runtime.current_step_index = 0;
             runtime.dirty.insert(DirtySet::PLAN_FINISHED);
             runtime.materialization_bindings.clear();
+            facility_intents.intents.clear();
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
             if completed_plan_relation == Some(crate::FramePlanRelation::SuspendsFrame) {
@@ -234,6 +236,7 @@ pub(super) fn advance_completed_step(
             runtime.current_step_index = 0;
             runtime.dirty.insert(DirtySet::PLAN_FINISHED);
             runtime.materialization_bindings.clear();
+            facility_intents.intents.clear();
         }
     }
 

@@ -511,6 +511,7 @@ fn process_agent(
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
                     runtime.materialization_bindings.clear();
+                    current_facility_intents.intents.clear();
                     runtime.dirty.insert(crate::DirtySet::ASSUMPTION_FAILED);
                 }
             }
@@ -732,6 +733,7 @@ fn process_agent(
                 active_goal_key,
                 &mut current_frame,
                 &mut blocked_memory,
+                &mut current_facility_intents,
                 agent,
                 tick,
                 &original_blocked,
@@ -900,6 +902,7 @@ fn process_agent(
             current_frame.as_ref().unwrap(),
             view.effective_place(agent),
             &mut blocked_memory,
+            &mut current_facility_intents,
             runtime,
             tick,
             cognitive.structural_block_ticks,
