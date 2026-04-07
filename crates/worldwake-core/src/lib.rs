@@ -132,7 +132,8 @@ pub use crime::{
     PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
 };
 pub use delta::{
-    ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
+    ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
+    RelationDelta,
     RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
 pub use drives::{DriveThresholds, ThresholdBand};

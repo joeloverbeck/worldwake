@@ -18,6 +18,7 @@ use crate::{
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
     component_schema::with_component_schema_entries,
 };
+use crate::BeliefStoreDiff;
 use serde::{Deserialize, Serialize};
 
 macro_rules! define_component_kind {
@@ -175,6 +176,32 @@ pub enum EntityDelta {
     Archived { entity: EntityId, kind: EntityKind },
 }
 
+/// Compact structural diff for a specific component type.
+///
+/// Each variant wraps the diff type for one component kind. New component
+/// diff types are added as new variants here.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ComponentDiff {
+    BeliefStore(BeliefStoreDiff),
+}
+
+impl ComponentDiff {
+    /// Apply this diff to a `ComponentValue`, producing the updated value.
+    ///
+    /// Panics if the diff variant does not match the component value variant.
+    #[must_use]
+    pub fn apply_to_component_value(&self, base: &ComponentValue) -> ComponentValue {
+        match self {
+            ComponentDiff::BeliefStore(diff) => {
+                let ComponentValue::AgentBeliefStore(store) = base else {
+                    panic!("BeliefStore diff applied to non-AgentBeliefStore ComponentValue");
+                };
+                ComponentValue::AgentBeliefStore(diff.clone().apply(store))
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ComponentDelta {
@@ -183,6 +210,11 @@ pub enum ComponentDelta {
         component_kind: ComponentKind,
         before: Option<ComponentValue>,
         after: ComponentValue,
+    },
+    CompactSet {
+        entity: EntityId,
+        component_kind: ComponentKind,
+        diff: ComponentDiff,
     },
     Removed {
         entity: EntityId,
@@ -234,8 +266,8 @@ pub enum StateDelta {
 #[cfg(test)]
 mod tests {
     use super::{
-        ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
-        RelationKind, RelationValue, ReservationDelta, StateDelta,
+        ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
+        RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
         ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, ArtifactKind,
@@ -1161,5 +1193,49 @@ mod tests {
             let roundtrip: StateDelta = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, delta);
         }
+    }
+
+    #[test]
+    fn compact_set_serialization_roundtrip() {
+        let diff = ComponentDiff::BeliefStore(crate::BeliefStoreDiff::default());
+        let delta = ComponentDelta::CompactSet {
+            entity: entity(1),
+            component_kind: ComponentKind::AgentBeliefStore,
+            diff: diff.clone(),
+        };
+
+        let bytes = bincode::serialize(&delta).unwrap();
+        let roundtrip: ComponentDelta = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, delta);
+    }
+
+    #[test]
+    fn compact_set_in_state_delta_serialization_roundtrip() {
+        let diff = ComponentDiff::BeliefStore(crate::BeliefStoreDiff::default());
+        let delta = StateDelta::Component(ComponentDelta::CompactSet {
+            entity: entity(1),
+            component_kind: ComponentKind::AgentBeliefStore,
+            diff,
+        });
+
+        let bytes = bincode::serialize(&delta).unwrap();
+        let roundtrip: StateDelta = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, delta);
+    }
+
+    #[test]
+    fn existing_set_serialization_unchanged_after_compact_set_addition() {
+        let set_delta = ComponentDelta::Set {
+            entity: entity(3),
+            component_kind: ComponentKind::Name,
+            before: Some(ComponentValue::Name(Name("Old".to_string()))),
+            after: ComponentValue::Name(Name("New".to_string())),
+        };
+
+        // Serialize, deserialize, verify equality — confirms the Set variant's
+        // bincode index is unchanged by the CompactSet addition.
+        let bytes = bincode::serialize(&set_delta).unwrap();
+        let roundtrip: ComponentDelta = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, set_delta);
     }
 }

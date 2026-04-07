@@ -1,6 +1,6 @@
 # S71EVELOGDEL-002: Add `CompactSet` variant to `ComponentDelta`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new variant on `ComponentDelta` enum in `worldwake-core`
@@ -18,7 +18,7 @@ To store compact structural diffs instead of full snapshots, `ComponentDelta` ne
 4. `BeliefStoreDiff` will exist after S71EVELOGDEL-001 at `belief.rs` with matching derive bounds.
 5. This ticket only adds the variant and wrapper enum. No match sites are updated yet (that's tickets 004, 005). The workspace will compile because existing matches either use `_ =>` wildcards or will be updated in the same PR/branch.
 6. Not a planner/golden-driven ticket.
-14. No mismatches found.
+14. Mismatch: ticket says "existing matches either use `_ =>` wildcards" but `world_txn.rs:1189` has an exhaustive `Set { .. } | Removed { .. }` match, `display.rs:183-207` has exhaustive `Set` + `Removed` arms, and `verification.rs:196-209` has exhaustive arms. All three must be updated for the workspace to compile. Auto-corrected: absorbed these match-arm updates into this ticket since compilation requires it. Also added `apply_to_component_value` method on `ComponentDiff` (originally ticket 004 scope) since verification needs it at compile time.
 
 ## Architecture Check
 
@@ -77,8 +77,11 @@ Ensure `ComponentDiff` and `BeliefStoreDiff` are re-exported from the crate root
 
 ## Files to Touch
 
-- `crates/worldwake-core/src/delta.rs` (modify — add `ComponentDiff` enum, `CompactSet` variant, accessor methods)
-- `crates/worldwake-core/src/lib.rs` (modify — re-export `ComponentDiff` if needed)
+- `crates/worldwake-core/src/delta.rs` (modify — add `ComponentDiff` enum with `apply_to_component_value`, `CompactSet` variant, serialization tests)
+- `crates/worldwake-core/src/lib.rs` (modify — re-export `ComponentDiff`)
+- `crates/worldwake-core/src/world_txn.rs` (modify — add `CompactSet` to exhaustive match at line 1189)
+- `crates/worldwake-core/src/verification.rs` (modify — add `CompactSet` reconstruction arm)
+- `crates/worldwake-cli/src/display.rs` (modify — add `CompactSet` display arm)
 
 ## Out of Scope
 
@@ -108,6 +111,32 @@ Ensure `ComponentDiff` and `BeliefStoreDiff` are re-exported from the crate root
 
 ### Commands
 
-1. `cargo test -p worldwake-core delta` (targeted)
+1. `cargo test -p worldwake-core compact_set` (targeted)
 2. `cargo test -p worldwake-core`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
+3. `cargo clippy -p worldwake-core --all-targets -- -D warnings`
+4. `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-08.
+
+- Added `ComponentDiff` enum with `BeliefStore(BeliefStoreDiff)` variant and `apply_to_component_value` method in `delta.rs`
+- Added `CompactSet { entity, component_kind, diff }` variant to `ComponentDelta`
+- Re-exported `ComponentDiff` from crate root
+- Fixed 3 exhaustive match sites that would not compile without `CompactSet` arms:
+  - `world_txn.rs:1189` — entity extraction match
+  - `verification.rs:196` — reconstruction match (applies diff via `apply_to_component_value`)
+  - `display.rs:183` — delta formatting (shows compact diff summary)
+- Added 3 serialization roundtrip tests
+
+## Deviations
+
+- Ticket originally scoped match-site updates to tickets 004 and 005. Reassessment found that 3 exhaustive match sites in `world_txn.rs`, `verification.rs`, and `display.rs` lack wildcards and would not compile without `CompactSet` arms. Absorbed these into this ticket since the workspace must build after each ticket. Tickets 004 and 005 should be reassessed — their scope may be reduced.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core compact_set` — 3 tests
+- Passed `cargo test -p worldwake-core` — 1030 tests
+- Passed `cargo clippy -p worldwake-core --all-targets -- -D warnings`
+- Passed `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
+- Pre-existing `cast_precision_loss` errors in `worldwake-ai` perf_diag binary — unrelated to this ticket

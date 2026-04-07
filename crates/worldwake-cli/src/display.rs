@@ -198,6 +198,14 @@ pub fn format_state_delta(world: &World, delta: &StateDelta) -> String {
                 _ => format!("{component_kind:?}: set on {name}"),
             }
         }
+        StateDelta::Component(ComponentDelta::CompactSet {
+            entity,
+            component_kind,
+            diff,
+        }) => {
+            let name = entity_display_name(world, *entity);
+            format!("{component_kind:?}: compact diff on {name} ({diff:?})")
+        }
         StateDelta::Component(ComponentDelta::Removed {
             entity,
             component_kind,

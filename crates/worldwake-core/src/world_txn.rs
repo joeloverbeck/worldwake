@@ -1186,7 +1186,9 @@ impl<'w> WorldTxn<'w> {
                     }
                 },
                 StateDelta::Component(component_delta) => match component_delta {
-                    ComponentDelta::Set { entity, .. } | ComponentDelta::Removed { entity, .. } => {
+                    ComponentDelta::Set { entity, .. }
+                    | ComponentDelta::CompactSet { entity, .. }
+                    | ComponentDelta::Removed { entity, .. } => {
                         entities.insert(*entity);
                     }
                 },

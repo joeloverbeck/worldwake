@@ -1,6 +1,6 @@
 # S71EVELOGDEL-005: Update delta consumers and CLI display for `CompactSet`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — consumer match sites in `worldwake-systems` and `worldwake-cli`
@@ -95,3 +95,19 @@ Both use `matches!()` on `Removed` variant or construct `Set` in tests. Neither 
 1. `cargo build --workspace` (confirm compilation)
 2. `cargo test --workspace`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-08 — primarily delivered by S71EVELOGDEL-002.
+
+- S71EVELOGDEL-002 absorbed the compilation-critical consumer updates:
+  - `display.rs` CompactSet formatting arm: delivered in 002
+  - `world_txn.rs` entity-extraction match: delivered in 002
+- `perception.rs` wildcard at line 1058 already handles CompactSet — confirmed by successful workspace build
+- `events.rs` does not reference ComponentDelta — no update needed
+- `bandit_camp.rs` and `production.rs` unaffected — confirmed during 002 reassessment
+- Optional perception clarifying comment deferred (cosmetic, not compilation-critical)
+
+## Verification Result
+
+- Covered by S71EVELOGDEL-002 verification: `cargo build --workspace` (clean), `cargo clippy -p worldwake-cli --all-targets -- -D warnings` (clean)

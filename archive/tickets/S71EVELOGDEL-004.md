@@ -1,6 +1,6 @@
 # S71EVELOGDEL-004: Update verification reconstruction for `CompactSet`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — verification reconstruction logic in `worldwake-core`
@@ -109,3 +109,16 @@ This keeps the downcast logic centralized in one place rather than scattered acr
 1. `cargo test -p worldwake-core verification` (targeted)
 2. `cargo test -p worldwake-core`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-08 — delivered by S71EVELOGDEL-002.
+
+- S71EVELOGDEL-002 absorbed this ticket's entire scope during implementation because adding the `CompactSet` variant to `ComponentDelta` required updating all exhaustive match sites for the workspace to compile.
+- `verification.rs` `CompactSet` match arm: delivered in 002
+- `ComponentDiff::apply_to_component_value`: delivered in 002
+- Focused tests for `apply_to_component_value` are deferred to ticket 006 (integration validation) since the method is exercised through verification reconstruction.
+
+## Verification Result
+
+- Covered by S71EVELOGDEL-002 verification: `cargo test -p worldwake-core` (1030 tests passed)

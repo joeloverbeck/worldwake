@@ -94,7 +94,7 @@ Prefer small, distinct tickets split by architectural concern. Use the 1-3-1 rul
 
 Run these checks before archival to keep the active roadmap accurate:
 
-- **Delivered work overlap**: When the completed ticket materially resolves assumptions owned by nearby active tickets, update those tickets to remove already-delivered work, stale failure claims, or obsolete roadmap ownership.
+- **Delivered work overlap**: When the completed ticket materially resolves assumptions owned by nearby active tickets, update those tickets to remove already-delivered work, stale failure claims, or obsolete roadmap ownership. When the completed ticket delivers the *entire* scope of a downstream ticket, mark that downstream ticket COMPLETED with an Outcome noting delivery by the parent ticket, and archive it in the same pass.
 - **Substrate-only slices**: When the completed ticket landed only a shared type surface, reserved enum variant, or other non-live substrate, check nearby active tickets for confusion between "the symbol now exists" and "the behavior is now live." Cite if accurate; update if not.
 - **Scope narrowing**: When the completed ticket was corrected or narrowed during implementation, check whether nearby active tickets still assume the older broader boundary. If the remaining slice is real and no active ticket owns it, create a follow-up and update adjacent `Deps`.
 - **Active spec drift**: When the completed ticket falsifies or narrows a claim in an active spec under `specs/`, classify that as active spec drift. Update the spec factually if in scope for this handoff; otherwise create/update a follow-up ticket that owns bringing the spec into alignment.
