@@ -1,3 +1,8 @@
+use crate::goal_model::GoalPriorityClass;
+use crate::goal_policy::{
+    FreeInterruptRole, GoalFamilyPolicy, PenaltyInterruptEligibility, SuppressionRule,
+};
+use crate::interrupts::InterruptTrigger;
 use crate::{PlannerOpKind, RankedGoalProvenanceFamily, goal_dispatch_key::GoalDispatchKey};
 use worldwake_core::HomeostaticNeedId;
 
@@ -46,6 +51,12 @@ pub struct GoalDispatchDeclaration {
     pub relevant_ops: &'static [PlannerOpKind],
     pub invalidation_strategy: InvalidationStrategy,
     pub feasibility_strategy: FeasibilityStrategy,
+    pub family_policy: GoalFamilyPolicy,
+    /// `PlannerOpKind` values that constitute a direct progress barrier for this goal.
+    /// Does not include `QueueForFacilityUse` (goal-family membership check),
+    /// `ConsumeOwnedCommodity`/`MoveCargo` (special case), or `is_materialization_barrier`
+    /// (step-property check) — those remain in `is_progress_barrier()`.
+    pub progress_barrier_ops: &'static [PlannerOpKind],
 }
 
 const CONSUME_OPS: &[PlannerOpKind] = &[
@@ -154,12 +165,94 @@ const ACCUSE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Acc
 const FINE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Fine];
 const EXILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Exile];
 
+// ---------------------------------------------------------------------------
+// Family policy constants
+// ---------------------------------------------------------------------------
+
+const SELF_CARE_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::Never,
+    penalty_interrupt: PenaltyInterruptEligibility::WhenCritical {
+        trigger: InterruptTrigger::CriticalSurvival,
+    },
+    free_interrupt: FreeInterruptRole::Reactive,
+};
+
+const DANGER_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::Never,
+    penalty_interrupt: PenaltyInterruptEligibility::WhenCritical {
+        trigger: InterruptTrigger::CriticalDanger,
+    },
+    free_interrupt: FreeInterruptRole::Reactive,
+};
+
+const CARE_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::Never,
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Reactive,
+};
+
+const ENTERPRISE_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::Never,
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Normal,
+};
+
+const OPPORTUNISTIC_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Opportunistic,
+};
+
+const SOCIAL_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Normal,
+};
+
+// ShareBelief sub-variant policies
+const SHARE_BELIEF_ALARM_POLICY: GoalFamilyPolicy = ENTERPRISE_POLICY;
+
+const SHARE_BELIEF_TESTIMONY_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical),
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Normal,
+};
+
+const SHARE_BELIEF_GOSSIP_POLICY: GoalFamilyPolicy = SOCIAL_POLICY;
+
+// ---------------------------------------------------------------------------
+// Progress barrier op constants (direct per-goal-kind barriers only)
+// ---------------------------------------------------------------------------
+
+const TELL_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Tell];
+const INVESTIGATE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Investigate];
+const SEARCH_PLACE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::SearchPlace];
+const REPORT_MISSING_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::ReportMissing];
+const PATROL_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Patrol];
+const ESCORT_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::EscortToSafety];
+const CLAIM_BOUNTY_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::ClaimBounty];
+const ACCUSE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Accuse];
+const STAFF_MARKET_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::StaffMarket];
+const FINE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Fine];
+const EXILE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Exile];
+const POST_BOUNTY_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::PostBounty];
+const POST_NOTICE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::PostNotice];
+const OFFICE_CLAIM_BARRIER: &[PlannerOpKind] =
+    &[PlannerOpKind::DeclareSupport, PlannerOpKind::PressForceClaim];
+const NO_BARRIER: &[PlannerOpKind] = &[];
+
+// ---------------------------------------------------------------------------
+// Declaration constants
+// ---------------------------------------------------------------------------
+
 static DECL_CONSUME_OWNED_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ConsumeOwnedCommodity",
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: CONSUME_OPS,
     invalidation_strategy: InvalidationStrategy::CommodityOnly,
     feasibility_strategy: FeasibilityStrategy::OwnedCommodityCheck,
+    family_policy: SELF_CARE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_ACQUIRE_SELF_CONSUME: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "AcquireCommodity(SelfConsume)",
@@ -167,6 +260,8 @@ static DECL_ACQUIRE_SELF_CONSUME: GoalDispatchDeclaration = GoalDispatchDeclarat
     relevant_ops: ACQUIRE_OPS,
     invalidation_strategy: InvalidationStrategy::AcquireCommodity,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    family_policy: SELF_CARE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_ACQUIRE_RECIPE_INPUT: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "AcquireCommodity(RecipeInput)",
@@ -174,6 +269,8 @@ static DECL_ACQUIRE_RECIPE_INPUT: GoalDispatchDeclaration = GoalDispatchDeclarat
     relevant_ops: ACQUIRE_OPS,
     invalidation_strategy: InvalidationStrategy::AcquireCommodity,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    family_policy: ENTERPRISE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_ACQUIRE_RESTOCK: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "AcquireCommodity(Restock)",
@@ -181,6 +278,8 @@ static DECL_ACQUIRE_RESTOCK: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: ACQUIRE_OPS,
     invalidation_strategy: InvalidationStrategy::AcquireRestock,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    family_policy: ENTERPRISE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_SLEEP: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Sleep",
@@ -188,6 +287,8 @@ static DECL_SLEEP: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: SLEEP_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Fatigue),
     feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
+    family_policy: SELF_CARE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_RELIEVE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Relieve",
@@ -195,6 +296,8 @@ static DECL_RELIEVE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: RELIEVE_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithPosition(HomeostaticNeedId::Bladder),
     feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
+    family_policy: SELF_CARE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Wash",
@@ -202,6 +305,8 @@ static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: WASH_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Dirtiness),
     feasibility_strategy: FeasibilityStrategy::CommodityPresenceCheck,
+    family_policy: SELF_CARE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "EngageHostile",
@@ -209,6 +314,8 @@ static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: ENGAGE_HOSTILE_OPS,
     invalidation_strategy: InvalidationStrategy::CombatTarget,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: ENTERPRISE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_RAID_TARGET: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "RaidTarget",
@@ -216,6 +323,8 @@ static DECL_RAID_TARGET: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: RAID_TARGET_OPS,
     invalidation_strategy: InvalidationStrategy::CombatTarget,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: ENTERPRISE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_REDUCE_DANGER: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ReduceDanger",
@@ -223,6 +332,8 @@ static DECL_REDUCE_DANGER: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: REDUCE_DANGER_OPS,
     invalidation_strategy: InvalidationStrategy::DangerReduction,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: DANGER_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_REGROUP_WITH_FACTION: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "RegroupWithFaction",
@@ -230,6 +341,8 @@ static DECL_REGROUP_WITH_FACTION: GoalDispatchDeclaration = GoalDispatchDeclarat
     relevant_ops: REGROUP_WITH_FACTION_OPS,
     invalidation_strategy: InvalidationStrategy::FactionRegroup,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_ESTABLISH_BANDIT_CAMP: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "EstablishBanditCamp",
@@ -237,6 +350,8 @@ static DECL_ESTABLISH_BANDIT_CAMP: GoalDispatchDeclaration = GoalDispatchDeclara
     relevant_ops: ESTABLISH_BANDIT_CAMP_OPS,
     invalidation_strategy: InvalidationStrategy::FactionRegroup,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "TreatWounds",
@@ -244,6 +359,8 @@ static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: TREAT_WOUNDS_OPS,
     invalidation_strategy: InvalidationStrategy::TreatWounds,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: CARE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_SEARCH_FOR_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "SearchForMissing",
@@ -251,6 +368,8 @@ static DECL_SEARCH_FOR_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaratio
     relevant_ops: SEARCH_FOR_MISSING_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: SEARCH_PLACE_BARRIER,
 };
 static DECL_REPORT_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ReportMissing",
@@ -258,6 +377,8 @@ static DECL_REPORT_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: REPORT_MISSING_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: REPORT_MISSING_BARRIER,
 };
 static DECL_ESCORT_TO_SAFETY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "EscortToSafety",
@@ -265,6 +386,8 @@ static DECL_ESCORT_TO_SAFETY: GoalDispatchDeclaration = GoalDispatchDeclaration 
     relevant_ops: ESCORT_TO_SAFETY_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: ESCORT_BARRIER,
 };
 static DECL_PRODUCE_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ProduceCommodity",
@@ -272,6 +395,8 @@ static DECL_PRODUCE_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration
     relevant_ops: PRODUCE_OPS,
     invalidation_strategy: InvalidationStrategy::ProduceCommodity,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    family_policy: ENTERPRISE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_SELL_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "SellCommodity",
@@ -279,6 +404,8 @@ static DECL_SELL_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: SELL_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndCommodity,
     feasibility_strategy: FeasibilityStrategy::SellCheck,
+    family_policy: ENTERPRISE_POLICY,
+    progress_barrier_ops: STAFF_MARKET_BARRIER,
 };
 static DECL_RESTOCK_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "RestockCommodity",
@@ -286,6 +413,8 @@ static DECL_RESTOCK_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration
     relevant_ops: RESTOCK_OPS,
     invalidation_strategy: InvalidationStrategy::PositionCommodityAndCoin,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    family_policy: ENTERPRISE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_MOVE_CARGO: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "MoveCargo",
@@ -293,6 +422,8 @@ static DECL_MOVE_CARGO: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: MOVE_CARGO_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndCommodity,
     feasibility_strategy: FeasibilityStrategy::CargoDestinationCheck,
+    family_policy: ENTERPRISE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_LOOT_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "LootCorpse",
@@ -300,6 +431,8 @@ static DECL_LOOT_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: LOOT_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    family_policy: OPPORTUNISTIC_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_BURY_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "BuryCorpse",
@@ -307,6 +440,8 @@ static DECL_BURY_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: BURY_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::CorpseBurialCheck,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_FULFILL_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "FulfillBounty",
@@ -314,6 +449,8 @@ static DECL_FULFILL_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: FULFILL_BOUNTY_OPS,
     invalidation_strategy: InvalidationStrategy::BountyActive,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: CLAIM_BOUNTY_BARRIER,
 };
 static DECL_POST_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "PostBounty",
@@ -321,20 +458,53 @@ static DECL_POST_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: POST_BOUNTY_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: POST_BOUNTY_BARRIER,
 };
-static DECL_POST_NOTICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
-    trace_label: "PostNotice",
+static DECL_POST_NOTICE_WARNING: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "PostNotice(Warning)",
     provenance_family: None,
     relevant_ops: POST_NOTICE_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: ENTERPRISE_POLICY,
+    progress_barrier_ops: POST_NOTICE_BARRIER,
 };
-static DECL_SHARE_BELIEF: GoalDispatchDeclaration = GoalDispatchDeclaration {
-    trace_label: "ShareBelief",
+static DECL_POST_NOTICE_OTHER: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "PostNotice(Other)",
+    provenance_family: None,
+    relevant_ops: POST_NOTICE_OPS,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: POST_NOTICE_BARRIER,
+};
+static DECL_SHARE_BELIEF_ALARM: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "ShareBelief(Alarm)",
     provenance_family: None,
     relevant_ops: SHARE_BELIEF_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: SHARE_BELIEF_ALARM_POLICY,
+    progress_barrier_ops: TELL_BARRIER,
+};
+static DECL_SHARE_BELIEF_TESTIMONY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "ShareBelief(Testimony)",
+    provenance_family: None,
+    relevant_ops: SHARE_BELIEF_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: SHARE_BELIEF_TESTIMONY_POLICY,
+    progress_barrier_ops: TELL_BARRIER,
+};
+static DECL_SHARE_BELIEF_GOSSIP: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "ShareBelief(Gossip)",
+    provenance_family: None,
+    relevant_ops: SHARE_BELIEF_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: SHARE_BELIEF_GOSSIP_POLICY,
+    progress_barrier_ops: TELL_BARRIER,
 };
 static DECL_CLAIM_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ClaimOffice",
@@ -342,6 +512,8 @@ static DECL_CLAIM_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: CLAIM_OFFICE_OPS,
     invalidation_strategy: InvalidationStrategy::ClaimOffice,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: OFFICE_CLAIM_BARRIER,
 };
 static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "SupportCandidateForOffice",
@@ -349,6 +521,8 @@ static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalDispatchDeclaration = GoalDispatch
     relevant_ops: SUPPORT_OFFICE_OPS,
     invalidation_strategy: InvalidationStrategy::SupportCandidateForOffice,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: OFFICE_CLAIM_BARRIER,
 };
 static DECL_INVESTIGATE_VIOLATION: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "InvestigateViolation",
@@ -356,6 +530,8 @@ static DECL_INVESTIGATE_VIOLATION: GoalDispatchDeclaration = GoalDispatchDeclara
     relevant_ops: INVESTIGATE_OPS,
     invalidation_strategy: InvalidationStrategy::InvestigateViolation,
     feasibility_strategy: FeasibilityStrategy::PlaceMatch,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: INVESTIGATE_BARRIER,
 };
 static DECL_PATROL: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Patrol",
@@ -363,6 +539,8 @@ static DECL_PATROL: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: PATROL_OPS,
     invalidation_strategy: InvalidationStrategy::Patrol,
     feasibility_strategy: FeasibilityStrategy::PlaceMatch,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: PATROL_BARRIER,
 };
 static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "StealItem",
@@ -370,6 +548,8 @@ static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: MOVE_CARGO_OPS,
     invalidation_strategy: InvalidationStrategy::StealTargetState,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: NO_BARRIER,
 };
 static DECL_ACCUSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Accuse",
@@ -377,6 +557,8 @@ static DECL_ACCUSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: ACCUSE_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: ACCUSE_BARRIER,
 };
 static DECL_PUNISH_FINE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "PunishAccused(Fine)",
@@ -384,6 +566,8 @@ static DECL_PUNISH_FINE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: FINE_OPS,
     invalidation_strategy: InvalidationStrategy::PunishAccused,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: FINE_BARRIER,
 };
 static DECL_PUNISH_EXILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "PunishAccused(Exile)",
@@ -391,6 +575,8 @@ static DECL_PUNISH_EXILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: EXILE_OPS,
     invalidation_strategy: InvalidationStrategy::PunishAccused,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: EXILE_BARRIER,
 };
 
 impl GoalDispatchKey {
@@ -421,10 +607,11 @@ impl GoalDispatchKey {
             Self::BuryCorpse => &DECL_BURY_CORPSE,
             Self::FulfillBounty => &DECL_FULFILL_BOUNTY,
             Self::PostBounty => &DECL_POST_BOUNTY,
-            Self::PostNoticeWarning | Self::PostNoticeOther => &DECL_POST_NOTICE,
-            Self::ShareBeliefAlarm | Self::ShareBeliefTestimony | Self::ShareBeliefGossip => {
-                &DECL_SHARE_BELIEF
-            }
+            Self::PostNoticeWarning => &DECL_POST_NOTICE_WARNING,
+            Self::PostNoticeOther => &DECL_POST_NOTICE_OTHER,
+            Self::ShareBeliefAlarm => &DECL_SHARE_BELIEF_ALARM,
+            Self::ShareBeliefTestimony => &DECL_SHARE_BELIEF_TESTIMONY,
+            Self::ShareBeliefGossip => &DECL_SHARE_BELIEF_GOSSIP,
             Self::ClaimOffice => &DECL_CLAIM_OFFICE,
             Self::SupportCandidateForOffice => &DECL_SUPPORT_CANDIDATE_FOR_OFFICE,
             Self::InvestigateViolation => &DECL_INVESTIGATE_VIOLATION,
@@ -939,5 +1126,48 @@ mod tests {
             decl.relevant_ops.contains(&PlannerOpKind::StockManagement),
             "SELL_OPS must contain StockManagement"
         );
+    }
+
+    #[test]
+    fn test_family_policy_matches_standalone_function() {
+        use crate::goal_policy::goal_family_policy;
+
+        for key in ALL_KEYS {
+            let goal = representative_goal_for(*key);
+            let decl_policy = key.declaration().family_policy;
+            let standalone_policy = goal_family_policy(&goal);
+            assert_eq!(
+                decl_policy, standalone_policy,
+                "family_policy mismatch for {key:?}: declaration={decl_policy:?}, standalone={standalone_policy:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_progress_barrier_ops_match_goal_model() {
+        use crate::GoalKindPlannerExt;
+        use crate::planner_ops::PlannedStep;
+        use worldwake_core::ActionDefId;
+
+        for key in ALL_KEYS {
+            let goal = representative_goal_for(*key);
+            let decl = key.declaration();
+
+            for &op in decl.progress_barrier_ops {
+                let step = PlannedStep {
+                    def_id: ActionDefId(0),
+                    targets: vec![],
+                    payload_override: None,
+                    op_kind: op,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: vec![],
+                };
+                assert!(
+                    goal.is_progress_barrier(&step),
+                    "progress_barrier_ops contains {op:?} for {key:?}, but is_progress_barrier() returns false"
+                );
+            }
+        }
     }
 }

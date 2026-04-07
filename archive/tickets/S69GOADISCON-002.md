@@ -1,6 +1,6 @@
 # S69GOADISCON-002: Add family_policy and progress_barrier_ops fields to GoalDispatchDeclaration
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — struct field additions, no runtime behavior change
@@ -114,3 +114,29 @@ Add tests that iterate over all `GoalKind` variants and verify:
 2. `cargo test -p worldwake-ai -- test_family_policy`
 3. `cargo test -p worldwake-ai -- test_progress_barrier_ops`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Assumption Reassessment (2026-04-07)
+
+1. Auto-correction: `DECL_POST_NOTICE` and `DECL_SHARE_BELIEF` split into per-variant constants (`DECL_POST_NOTICE_WARNING`, `DECL_POST_NOTICE_OTHER`, `DECL_SHARE_BELIEF_ALARM`, `DECL_SHARE_BELIEF_TESTIMONY`, `DECL_SHARE_BELIEF_GOSSIP`) because each needs a different `family_policy`. The ticket's What to Change section didn't explicitly mention this split since ticket 001 had or-patterned them temporarily.
+2. Auto-correction: trace_labels differentiated for split constants (e.g., `"PostNotice(Warning)"`, `"ShareBelief(Alarm)"`), following the existing AcquireCommodity/PunishAccused pattern.
+3. Defined DRY policy constants (`SELF_CARE_POLICY`, `ENTERPRISE_POLICY`, `DANGER_POLICY`, `CARE_POLICY`, `OPPORTUNISTIC_POLICY`, `SOCIAL_POLICY`) and barrier-ops constants to reduce repetition across 28 declaration entries.
+4. Clippy flagged doc comment backtick omissions on the `progress_barrier_ops` field doc — fixed.
+
+## Outcome
+
+Completed on 2026-04-07.
+
+- Added `family_policy: GoalFamilyPolicy` and `progress_barrier_ops: &'static [PlannerOpKind]` to `GoalDispatchDeclaration`
+- Populated all 28 declaration constants (25 original + 3 new from the PostNotice/ShareBelief split)
+- Split `DECL_POST_NOTICE` → `DECL_POST_NOTICE_WARNING` + `DECL_POST_NOTICE_OTHER` (different suppression rules)
+- Split `DECL_SHARE_BELIEF` → `DECL_SHARE_BELIEF_ALARM` + `DECL_SHARE_BELIEF_TESTIMONY` + `DECL_SHARE_BELIEF_GOSSIP` (different suppression rules)
+- Defined 6 DRY policy constants and 15 barrier-ops constants
+- Added 2 cross-validation tests proving declaration values match standalone functions
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai -- test_family_policy_matches` (1 test, 0 failures)
+- Passed `cargo test -p worldwake-ai -- test_progress_barrier_ops` (1 test, 0 failures)
+- Passed `cargo test -p worldwake-ai -- test_declaration` (3 tests, 0 failures)
+- Passed `cargo clippy --workspace --all-targets -- -D warnings` (clean)
+- Passed `cargo test -p worldwake-ai` (1069 lib tests + all golden suites, 0 failures)
