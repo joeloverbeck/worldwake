@@ -2003,6 +2003,15 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             "Verdict(accused={accused:?}, violation_id={violation_id:?}, punishment={punishment:?}, tick={})",
             effective_tick.0
         ),
+        InstitutionalClaim::MissingPersonStatus {
+            subject,
+            reporter,
+            status,
+            effective_tick,
+        } => format!(
+            "MissingPersonStatus(subject={subject:?}, reporter={reporter:?}, status={status:?}, tick={})",
+            effective_tick.0
+        ),
     }
 }
 

@@ -490,17 +490,17 @@ fn validate_report_found_payload_authoritatively(
             payload.expectation_id
         )));
     };
-    if let ReportFoundTarget::Agent(target_agent) = report_target {
-        if !target_has_overdue_expectation_for_subject(
+    if let ReportFoundTarget::Agent(target_agent) = report_target
+        && !target_has_overdue_expectation_for_subject(
             world.get_component_expectation_store(target_agent),
             target_agent,
             report.subject,
-        ) {
-            return Err(ActionError::PreconditionFailed(format!(
-                "target {target_agent} lacks overdue expectation for subject {}",
-                report.subject
-            )));
-        }
+        )
+    {
+        return Err(ActionError::PreconditionFailed(format!(
+            "target {target_agent} lacks overdue expectation for subject {}",
+            report.subject
+        )));
     }
     Ok(())
 }
