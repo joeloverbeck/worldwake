@@ -674,6 +674,63 @@ impl AgentBeliefStore {
             .min()
             .map(|(_, key, index)| (key, index))
     }
+
+    /// Iterate over all known entity beliefs.
+    pub fn iter_known_entities(&self) -> impl Iterator<Item = (&EntityId, &BelievedEntityState)> {
+        self.known_entities.iter()
+    }
+
+    /// Get the raw entity claims for a subject.
+    #[must_use]
+    pub fn get_entity_claims(&self, id: &EntityId) -> Option<&[EntityBeliefClaim]> {
+        self.entity_claims.get(id).map(Vec::as_slice)
+    }
+
+    /// Iterate over all social observations.
+    pub fn iter_social_observations(&self) -> impl Iterator<Item = &SocialObservation> {
+        self.social_observations.iter()
+    }
+
+    /// Get raw institutional beliefs for a key.
+    #[must_use]
+    pub fn get_institutional_beliefs(
+        &self,
+        key: &InstitutionalBeliefKey,
+    ) -> Option<&[BelievedInstitutionalClaim]> {
+        self.institutional_beliefs.get(key).map(Vec::as_slice)
+    }
+
+    /// Check whether any institutional belief exists for a key.
+    #[must_use]
+    pub fn has_institutional_belief(&self, key: &InstitutionalBeliefKey) -> bool {
+        self.institutional_beliefs.contains_key(key)
+    }
+
+    /// Update the believed activity for a known entity.
+    /// Returns `true` if the belief was actually changed.
+    /// Returns `false` if the entity is not known or the activity was already equal.
+    pub fn update_believed_activity(
+        &mut self,
+        id: &EntityId,
+        activity: Option<BelievedActivity>,
+    ) -> bool {
+        if let Some(belief) = self.known_entities.get_mut(id)
+            && belief.believed_activity != activity
+        {
+            belief.believed_activity = activity;
+            return true;
+        }
+        false
+    }
+
+    /// Clear the believed activity for a known entity (set to None).
+    /// Returns `true` if it was previously Some.
+    pub fn clear_believed_activity(&mut self, id: &EntityId) -> bool {
+        if let Some(belief) = self.known_entities.get_mut(id) {
+            return belief.believed_activity.take().is_some();
+        }
+        false
+    }
 }
 
 fn entity_claims_for_snapshot(
@@ -4811,5 +4868,77 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn update_believed_activity_changes_known_entity() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(1);
+        store.known_entities.insert(id, sample_state(5, 3));
+
+        let activity = BelievedActivity {
+            action_domain: ActionDomain::Production,
+            target: Some(entity(10)),
+            observed_tick: Tick(6),
+        };
+
+        assert!(store.update_believed_activity(&id, Some(activity.clone())));
+        assert_eq!(
+            store.get_entity(&id).unwrap().believed_activity,
+            Some(activity.clone())
+        );
+    }
+
+    #[test]
+    fn update_believed_activity_noop_when_same() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(1);
+        let mut state = sample_state(5, 3);
+        let activity = BelievedActivity {
+            action_domain: ActionDomain::Trade,
+            target: None,
+            observed_tick: Tick(5),
+        };
+        state.believed_activity = Some(activity.clone());
+        store.known_entities.insert(id, state);
+
+        assert!(!store.update_believed_activity(&id, Some(activity)));
+    }
+
+    #[test]
+    fn update_believed_activity_unknown_entity() {
+        let mut store = AgentBeliefStore::new();
+        assert!(!store.update_believed_activity(&entity(99), None));
+    }
+
+    #[test]
+    fn clear_believed_activity_returns_true_when_some() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(2);
+        let mut state = sample_state(5, 1);
+        state.believed_activity = Some(BelievedActivity {
+            action_domain: ActionDomain::Production,
+            target: None,
+            observed_tick: Tick(5),
+        });
+        store.known_entities.insert(id, state);
+
+        assert!(store.clear_believed_activity(&id));
+        assert_eq!(store.get_entity(&id).unwrap().believed_activity, None);
+    }
+
+    #[test]
+    fn clear_believed_activity_returns_false_when_none() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(3);
+        store.known_entities.insert(id, sample_state(5, 1));
+
+        assert!(!store.clear_believed_activity(&id));
+    }
+
+    #[test]
+    fn clear_believed_activity_unknown_entity() {
+        let mut store = AgentBeliefStore::new();
+        assert!(!store.clear_believed_activity(&entity(99)));
     }
 }

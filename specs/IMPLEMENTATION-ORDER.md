@@ -22,7 +22,7 @@ Derived from external gameplay assessment (`brainstorming/prioritary-gameplay-sy
 ### Dependency Graph
 
 ```text
-S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅
+S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 (independent)
      │                     │
      │                     ├── S61 (needs S60 for dens)
      ├── S63 (needs S59 ✅)│
@@ -44,6 +44,7 @@ S65 ─┘
 - **S60**: Persistent Site Occupancy — site profiles with sublocations, occupancy claims, site traces, BanditCamp migration
 - **S62**: Boundary Processes and Remote Shocks — source regions, boundary channels, scheduled inflows, disruption mechanics
 - **S69**: ✅ COMPLETED — Goal Dispatch Consolidation — consolidated GoalFamilyPolicy and progress barrier ops into GoalDispatchDeclaration; expanded GoalDispatchKey with payload-aware ShareBelief/PostNotice variants
+- **S70**: Belief Store Query Encapsulation — add missing accessor/mutation methods to `AgentBeliefStore`, replace ~29 direct field accesses in `perception.rs` with API calls
 
 **Wave 2** (after Wave 1):
 - **S61**: Predator Ecology and Dens — predator agents with territory, hunger-driven roaming, den habitation, carcass/track evidence
@@ -63,12 +64,12 @@ S65 ─┘
 
 ### Phase 7 Gate
 
-- [ ] All 8 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
 - [ ] Wave 1 specs implemented and passing golden E2E tests
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [ ] Wave 4 specs implemented and passing golden E2E tests
-- Note: S59 and S69 from Wave 1 are complete. Wave 1 gate requires S60 and S62 to also be implemented.
+- Note: S59 and S69 from Wave 1 are complete. Wave 1 gate requires S60, S62, and S70 to also be implemented.
 - [ ] Canonical regression A (beast starvation → bounty → hunt) fully producible
 - [ ] Canonical regression G (false rumor → wrongful accusation → correction) fully producible
 - [ ] Canonical regression H (remote shock → local shortage → adaptation) fully producible
