@@ -19,7 +19,8 @@ use worldwake_core::{
     belief_confidence,
 };
 use worldwake_sim::{
-    AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
+    AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload,
+    AskWitnessPayload, CombatActionPayload,
     ConsultRecordActionPayload, DeclareSupportActionPayload, EscortToSafetyActionPayload,
     InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
     PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
@@ -639,9 +640,23 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::AskWitness
-            | PlannerOpKind::AskAboutPerson
-            | PlannerOpKind::ReportFound => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            PlannerOpKind::AskWitness | PlannerOpKind::ReportFound => {
+                Err(GoalPayloadOverrideError::UnsupportedGoal)
+            }
+            PlannerOpKind::AskAboutPerson => match self {
+                GoalKind::SearchForMissing { subject, .. } => {
+                    let Some(&target) = targets.first() else {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    };
+                    Ok(Some(ActionPayload::AskAboutPerson(
+                        AskAboutPersonActionPayload {
+                            target,
+                            subject: *subject,
+                        },
+                    )))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
             PlannerOpKind::EscortToSafety => match self {
                 GoalKind::EscortToSafety {
                     subject,
@@ -1063,7 +1078,10 @@ impl GoalKindPlannerExt for GoalKind {
         }
 
         if matches!(self, GoalKind::SearchForMissing { .. })
-            && step.op_kind == PlannerOpKind::SearchPlace
+            && matches!(
+                step.op_kind,
+                PlannerOpKind::SearchPlace | PlannerOpKind::AskAboutPerson
+            )
         {
             return true;
         }

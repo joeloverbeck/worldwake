@@ -51,6 +51,7 @@ When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), tre
 - When a ticket proposes extending an existing trace/debug carrier, verify the exact live coverage of that carrier before coding. If the current trace only covers one subpath, correct the ticket to either stay within that subpath or explicitly widen the trace surface as owned scope.
 - When the ticket adds candidate generation or goal model integration for a domain that already has golden coverage (e.g., Care, Combat, Expectation), run the existing golden suites for that domain as part of reassessment, before implementation begins. This catches cross-goal interference early — a new candidate emitter can cause goal-switching collisions with existing goal families for the same target entity.
 - When a golden ticket proposes specific GoalKind pairs to exercise a contention, planning, or action-lifecycle invariant, verify that each goal's declared ops (in `goal_dispatch_decl.rs`) include the required PlannerOpKind. If the goal family lacks the required op, correct the ticket's domain before coding.
+- When the ticket claims a specific scenario ID is free, verify by scanning all `golden_*.rs` files for that ID before accepting it. Update the ticket if the ID is already taken.
 
 #### Shared type, serialization, and persisted-shape sweep
 
@@ -107,6 +108,7 @@ Specific persisted-shape checks:
 - When a new world artifact becomes perceivable and the spec says discovery affects behavior, verify at least one lawful downstream consumer exists. Do not land decorative but causally inert snapshot fields.
 - When the ticket says information should be "internalized," search for an existing belief lane or consumer before inventing a new belief substrate.
 - When the ticket changes historical event content or view semantics, inspect renderers and detail views for reconstruction from live runtime state instead of stored event records.
+- When making a new action handler's affordance enumeration live through the planner's search pipeline, verify that every `RuntimeBeliefView` method the handler calls is implemented on `PlanningState` (via `PlanningSnapshot`), not just on `PerAgentBeliefView`. The planning state's view defaults most trait methods to `None`; affordance enumeration that depends on actor-local carriers (`expectation_store`, `ask_witness_memory`, `last_seen_memory`) silently produces zero payloads if the snapshot doesn't include the carrier.
 
 #### Registry and schema checks
 
@@ -169,6 +171,8 @@ Treat a stale acceptance criterion, scenario assertion surface, or proof target 
 | Adjacent blocker exposed by verification — small, local, needed for verification | Absorb; note why in ticket |
 | Adjacent blocker — broad or would expand ticket materially | Stop; use 1-3-1 |
 | Deeper shared-layer contradiction outside ticket scope | Do not pull into ticket; use 1-3-1 |
+
+When using 1-3-1, evaluate each option against the relevant FOUNDATIONS principles. Name the principle numbers and state whether each option aligns or violates. A FOUNDATIONS violation disqualifies an option regardless of implementation simplicity.
 
 Do not silently skip deliverables. Do not weaken the ticket without user confirmation.
 
@@ -244,7 +248,7 @@ Do not assume every schema macro reference needs a new import — verify actual 
 13. When turning a single-shot action into a staged lifecycle, prove each phase separately: start admission, intermediate evolution, commit conditions, abort aftermath.
 14. When an action uses a profile-driven or expression-driven duration, make test helpers derive or tolerate the real completion window. Do not copy a nearby fixed-duration helper and assume the same tick cadence.
 15. When splitting uniform behavior into variant-specific rules, rewrite existing compressed tests into per-case proofs.
-16. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, heuristic/guidance surfaces (`goal_relevant_places`, evidence-place fallback, travel-pruning inputs when relevant), search tests.
+16. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, heuristic/guidance surfaces (`goal_relevant_places`, evidence-place fallback, travel-pruning inputs when relevant), search tests. Verify the `may_appear_mid_plan` / `is_progress_barrier` combination: with `may_appear_mid_plan=false`, the operator can ONLY appear as a terminal step (requires `terminal_kind` to return `Some` — typically via `is_progress_barrier` or goal satisfaction). With `may_appear_mid_plan=true`, it can appear anywhere in the plan. If a ticket says "mid-plan step" but the operator has `may_appear_mid_plan=false`, the ticket needs architectural correction.
 17. When a planner goal must synthesize a runtime payload, verify the activation chain end to end: the goal carries enough identity to build the payload, root/current-place guidance makes the operator reachable, and terminal-step semantics treat the action as goal-satisfying rather than leaf-only.
 18. When the first planner fix only makes an operator partially live, immediately re-check the rest of the same operator chain before declaring success: candidate shape, root synthesis, payload construction, terminal semantics, and the focused planner proof.
 19. When one goal family spans multiple target subtypes, verify operator availability per subtype. Check for stale operators leaking across subtypes.

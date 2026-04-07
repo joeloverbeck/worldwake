@@ -1542,6 +1542,15 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.patrol_route.clone())
     }
 
+    fn expectation_store(
+        &self,
+        agent: EntityId,
+    ) -> Option<worldwake_core::ExpectationStore> {
+        (agent == self.snapshot.actor())
+            .then_some(self.snapshot.actor_expectation_store.clone())
+            .flatten()
+    }
+
     fn epistemic_disposition_profile(
         &self,
         agent: EntityId,

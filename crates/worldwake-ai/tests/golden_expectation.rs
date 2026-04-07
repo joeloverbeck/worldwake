@@ -902,3 +902,217 @@ fn golden_escort_to_safety_after_finding_wounded_replays_deterministically() {
     assert_eq!(first.world_hash, second.world_hash);
     assert_eq!(first.log_hash, second.log_hash);
 }
+
+// ---------------------------------------------------------------------------
+// Helper: AskAboutPerson utility profile — care-weight only, no social
+// ---------------------------------------------------------------------------
+
+fn ask_search_utility_profile() -> UtilityProfile {
+    UtilityProfile {
+        care_weight: pm(200),
+        social_weight: pm(0),
+        ..UtilityProfile::default()
+    }
+}
+
+struct AskAboutPersonScenarioOutcome {
+    world_hash: worldwake_core::StateHash,
+    log_hash: worldwake_core::StateHash,
+}
+
+fn run_ask_about_person_during_search(seed: Seed) -> AskAboutPersonScenarioOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    // Searcher at VillageSquare — has overdue expectation, no initial last-seen.
+    let searcher = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Searcher",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        ask_search_utility_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        searcher,
+        default_perception_profile(),
+    );
+    set_violation_profile(&mut h, searcher, violation_profile(), 0);
+
+    // Witness at VillageSquare — has LastSeenMemory for subject at OrchardFarm.
+    // ControlSource::None so it doesn't act autonomously.
+    let witness = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Witness",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, witness, ControlSource::None, 0);
+
+    // Subject at OrchardFarm — passive, doesn't move.
+    let subject = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Subject",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, subject, ControlSource::None, 0);
+
+    // Seed the witness's LastSeenMemory: subject was at OrchardFarm.
+    seed_last_seen(&mut h, witness, subject, ORCHARD_FARM, 0, 0);
+
+    // Seed overdue expectation on the searcher: subject expected at OrchardFarm.
+    // Using OrchardFarm (not VillageSquare) ensures SearchPlace is only valid
+    // at OrchardFarm — the searcher cannot search locally first. This isolates
+    // the AskAboutPerson progress-barrier path.
+    let expectation_id = seed_expectation(&mut h, searcher, subject, ORCHARD_FARM, 0);
+
+    let mut ask_commit = None;
+    let mut search_commit = None;
+
+    for _tick in 0..120_u64 {
+        h.step_once();
+
+        let action_sink = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for ask-about-person scenario");
+        let searcher_events = action_sink.events_for(searcher);
+
+        // Detect ask_about_person commit.
+        if ask_commit.is_none() {
+            ask_commit = searcher_events.iter().find_map(|event| {
+                (event.action_name == "ask_about_person"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some((event.tick, event.sequence_in_tick))
+            });
+
+            if ask_commit.is_some() {
+                // Immediately after ask commit, verify last-seen transfer.
+                let last_seen = last_seen_record(&h, searcher, subject);
+                assert!(
+                    last_seen.is_some(),
+                    "ask_about_person commit should transfer LastSeenRecord to the searcher"
+                );
+                let record = last_seen.unwrap();
+                assert_eq!(
+                    record.place, ORCHARD_FARM,
+                    "transferred last-seen should point to OrchardFarm"
+                );
+                assert_eq!(
+                    record.provenance,
+                    worldwake_core::LastSeenProvenance::Hearsay {
+                        original_observer: witness,
+                        chain_depth: 1,
+                    },
+                    "transferred last-seen should have hearsay provenance from the witness"
+                );
+            }
+        }
+
+        // Detect search_place commit for the subject.
+        if search_commit.is_none() {
+            search_commit = searcher_events.iter().find_map(|event| {
+                (event.action_name == "search_place"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+                    && matches!(
+                        event.detail.as_ref(),
+                        Some(ActionTraceDetail::SearchPlace { subject: traced_subject })
+                            if *traced_subject == subject
+                    ))
+                .then_some((event.tick, event.sequence_in_tick))
+            });
+        }
+
+        // Break once both the ask and the final search have committed and
+        // the expectation is resolved.
+        if ask_commit.is_some()
+            && search_commit.is_some()
+            && matches!(
+                expectation_state(&h, searcher, expectation_id),
+                ExpectationState::Resolved { .. }
+            )
+        {
+            break;
+        }
+    }
+
+    let ask_commit =
+        ask_commit.expect("searcher should commit ask_about_person for the missing subject");
+    let search_commit = search_commit
+        .expect("searcher should commit search_place for the missing subject after asking");
+    assert!(
+        ask_commit < search_commit,
+        "ask_about_person should commit before the successful search_place: ask={ask_commit:?} search={search_commit:?}"
+    );
+
+    assert_eq!(
+        expectation_state(&h, searcher, expectation_id),
+        ExpectationState::Resolved {
+            outcome: ExpectationOutcome::FoundSafe {
+                at_place: ORCHARD_FARM,
+            },
+        },
+        "search at the witness-revealed location should resolve the overdue expectation as FoundSafe"
+    );
+
+    AskAboutPersonScenarioOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 124: AskAboutPerson as Progress Barrier Within SearchForMissing
+// ---------------------------------------------------------------------------
+//
+// Systems: ExpectationCheck, AI, AskAboutPerson, Travel, SearchPlace
+// GoalKinds: SearchForMissing
+// ActionDomains: Epistemic, Travel
+// Places: VillageSquare, OrchardFarm
+// Principles: 1, 7, 14, 15, 17, 20
+//
+// Setup: A searcher at VillageSquare holds one active RoutineReturn expectation
+//   for a passive subject expected at OrchardFarm, with deadline_tick=0 and
+//   grace_ticks=0 so ExpectationCheck makes it overdue quickly. The searcher has
+//   no initial LastSeenMemory for the subject, so SearchPlace at OrchardFarm is
+//   unreachable without learning the location first. A witness at VillageSquare
+//   (ControlSource::None) has LastSeenMemory recording the subject at OrchardFarm.
+//   The subject is at OrchardFarm with ControlSource::None.
+//
+// Proves: AskAboutPerson functions as a progress barrier for SearchForMissing.
+//   The planner selects AskAboutPerson as a terminal step when the searcher is
+//   co-located with a witness who has relevant last-seen info. After the ask
+//   commits, the searcher's LastSeenMemory is updated with hearsay provenance
+//   (P15: knowledge travels physically through testimony). Replanning with
+//   updated beliefs directs search to OrchardFarm (P14: planner uses accessible
+//   belief state, not witness knowledge). The full chain demonstrates emergent
+//   multi-cycle information gathering (P1) driven by violated expectation (P17).
+//
+// Chain: ExpectationStore Active -> ExpectationCheck Overdue transition ->
+//   SearchForMissing candidate -> AskAboutPerson progress barrier terminal ->
+//   ask_about_person commit -> LastSeenMemory hearsay transfer ->
+//   SearchForMissing replan with updated last_seen -> travel to OrchardFarm ->
+//   search_place commit -> ExpectationStore resolution FoundSafe.
+#[test]
+fn golden_ask_about_person_during_search() {
+    let _ = run_ask_about_person_during_search(Seed([0x6A; 32]));
+}
+
+#[test]
+fn golden_ask_about_person_during_search_replays_deterministically() {
+    let first = run_ask_about_person_during_search(Seed([0x6A; 32]));
+    let second = run_ask_about_person_during_search(Seed([0x6A; 32]));
+
+    assert_eq!(first.world_hash, second.world_hash);
+    assert_eq!(first.log_hash, second.log_hash);
+}

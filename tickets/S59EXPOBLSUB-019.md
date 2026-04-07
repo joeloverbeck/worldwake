@@ -22,13 +22,13 @@ Per FOUNDATIONS P10 (aftermath — actions create partial outcomes and future ho
 6. **Live GoalKind under test**: `GoalKind::SearchForMissing { subject, last_seen }`. Current operator surface: `[Travel, AskAboutPerson, SearchPlace]`. ReportFound is absent from this list and must be added.
 7. **commit_report_found world mutations** — Two target types: (a) Agent target: relays last-seen memory with hearsay provenance, resolves target's overdue expectations, resolves target's missing-person violations (`report_actions.rs:892-920`). (b) OfficeRegister target: writes missing-person status claim with found status (`report_actions.rs:921-929`).
 8. **Planner semantics** — `PlannerOpKind::ReportFound` has `may_appear_mid_plan=false`, `is_materialization_barrier=false`, `transition_kind=GoalModelFallback` (planner_ops.rs:279).
-9. **Golden scenario numbering** — Scenario 124 is free.
+9. **Golden scenario numbering** — Scenario 124 is now taken by S59EXPOBLSUB-018. Scenario 125 is free.
 10. **Scenario isolation consideration** — The golden test must chain search -> find -> report. The scenario must include an office or interested agent to report to. The existing scenario 120 (overdue drives search) establishes the search-then-find pattern; this ticket extends it with a reporting step.
 11. **Design choice: which goal's relevant_ops?** — ReportFound logically follows SearchForMissing (you report what you found during a search). Adding it to SEARCH_FOR_MISSING_OPS makes the planner able to chain search -> report in a single plan. This keeps the behavior emergent per P1 — the planner decides whether to report based on co-located targets, not a scripted sequence.
 
 ## Architecture Check
 
-1. Adding ReportFound to SEARCH_FOR_MISSING_OPS follows the established pattern where SearchForMissing already includes AskAboutPerson as a mid-plan epistemic step. ReportFound extends this with a post-resolution social step. The planner decides when reporting is possible (co-located office/agent) and worth doing.
+1. Adding ReportFound to SEARCH_FOR_MISSING_OPS follows the established pattern where SearchForMissing already includes AskAboutPerson as a progress-barrier terminal (implemented in S59EXPOBLSUB-018). ReportFound extends this with a post-resolution social step. The planner decides when reporting is possible (co-located office/agent) and worth doing. Note: ReportFound has `may_appear_mid_plan=false`, so it must be wired as a progress barrier (same as AskAboutPerson) to be reachable. Additionally, `enumerate_report_found_payloads` depends on `expectation_store()` which is now available on PlanningState thanks to S59EXPOBLSUB-018's PlanningSnapshot widening.
 2. No backwards-compatibility shims — the UnsupportedGoal stub and no-op will be replaced with real logic.
 3. No new GoalKind needed — ReportFound remains a PlannerOpKind used as a step within SearchForMissing goals, consistent with P20.
 
