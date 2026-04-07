@@ -3321,9 +3321,15 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
     let mut combat_at_gate_without_guard = false;
     let mut merchant_injured_or_lost_cargo = false;
 
-    for _ in 0..7200 {
+    // Incremental tracking for post-loop trace assertions (Verifications 3, 8).
+    // Accumulated here to allow periodic trace clearing without losing data.
+    let mut guard_generated_political_goal = false;
+    let mut domains_seen = BTreeSet::new();
+
+    for tick_num in 0u32..7200 {
         h.step_once();
         let tick = h.scheduler.current_tick();
+        let processed_tick = Tick(tick.0.saturating_sub(1));
 
         // Check office vacancy.
         if let Some(od) = h.world.get_component_office_data(office) {
@@ -3352,13 +3358,42 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
         // Check combat at GateRoad without guard: any combat actor at GateRoad
         // during a tick when no guard is at GateRoad.
         if !guard_at_gate && let Some(sink) = h.action_trace_sink() {
-            let tick_events = sink.events_at(Tick(tick.0.saturating_sub(1)));
+            let tick_events = sink.events_at(processed_tick);
             for event in &tick_events {
                 if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name)
                     && def.domain == worldwake_core::ActionDomain::Combat
                     && h.world.effective_place(event.actor) == Some(PLACE_T21_GATE_ROAD)
                 {
                     combat_at_gate_without_guard = true;
+                }
+            }
+        }
+
+        // Incremental: track guard political goal generation (Verification 3).
+        if !guard_generated_political_goal
+            && let Some(sink) = h.driver.trace_sink()
+        {
+            for &guard in &guards {
+                if let Some(trace) = sink.trace_at(guard, processed_tick)
+                    && let DecisionOutcome::Planning(ref planning) = trace.outcome
+                    && planning.candidates.generated.iter().any(|g| {
+                        matches!(
+                            g.goal_key.kind,
+                            GoalKind::ClaimOffice { .. }
+                                | GoalKind::SupportCandidateForOffice { .. }
+                        )
+                    })
+                {
+                    guard_generated_political_goal = true;
+                }
+            }
+        }
+
+        // Incremental: accumulate action domains (Verification 8).
+        if let Some(sink) = h.action_trace_sink() {
+            for event in sink.events_at(processed_tick) {
+                if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
+                    domains_seen.insert(def.domain);
                 }
             }
         }
@@ -3371,6 +3406,11 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
         // indicates consumption (Needs) or cargo loss (predation).
         if h.agent_commodity_qty(merchant, CommodityKind::Apple) < Quantity(3) {
             merchant_injured_or_lost_cargo = true;
+        }
+
+        // Periodic trace clearing to prevent OOM in long-running tests.
+        if tick_num % 500 == 499 {
+            h.clear_traces();
         }
 
         // Early exit if all verifiable conditions met and succession complete.
@@ -3395,25 +3435,7 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
         "Office vacancy_since must transition from None to Some after ruler death",
     );
 
-    // --- Verification 3: Guard political goals (decision trace) ---
-    let trace_sink = h.driver.trace_sink().expect("tracing enabled");
-    let guard_generated_political_goal = guards.iter().any(|&guard| {
-        trace_sink
-            .traces_for(guard)
-            .into_iter()
-            .any(|trace| match &trace.outcome {
-                DecisionOutcome::Planning(planning) => {
-                    planning.candidates.generated.iter().any(|g| {
-                        matches!(
-                            g.goal_key.kind,
-                            GoalKind::ClaimOffice { .. }
-                                | GoalKind::SupportCandidateForOffice { .. }
-                        )
-                    })
-                }
-                _ => false,
-            })
-    });
+    // --- Verification 3: Guard political goals (tracked incrementally in loop) ---
     assert!(
         guard_generated_political_goal,
         "At least 1 guard must generate ClaimOffice or SupportCandidateForOffice \
@@ -3464,14 +3486,7 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
         // (patrol gap → predation) was observed.
     }
 
-    // --- Verification 8: Cross-domain ≥ 4 ---
-    let action_sink = h.action_trace_sink().expect("action tracing enabled");
-    let mut domains_seen = BTreeSet::new();
-    for event in action_sink.events() {
-        if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
-            domains_seen.insert(def.domain);
-        }
-    }
+    // --- Verification 8: Cross-domain ≥ 4 (tracked incrementally in loop) ---
     assert!(
         domains_seen.len() >= 4,
         "Event trace should cover ≥ 4 ActionDomain values from \
@@ -4096,9 +4111,15 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
     // Track whether any theft event occurs before ruler death — should never happen.
     let mut pre_vacancy_theft = false;
 
-    for _ in 0..7200 {
+    // Incremental tracking for post-loop trace assertions (Verifications 3, 9).
+    // Accumulated here to allow periodic trace clearing without losing data.
+    let mut guard_generated_political_goal = false;
+    let mut domains_seen = BTreeSet::new();
+
+    for tick_num in 0u32..7200 {
         h.step_once();
-        let _tick = h.scheduler.current_tick();
+        let tick = h.scheduler.current_tick();
+        let processed_tick = Tick(tick.0.saturating_sub(1));
 
         // Check office vacancy.
         if let Some(od) = h.world.get_component_office_data(office) {
@@ -4110,7 +4131,7 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
             }
         }
 
-        // Check theft via action trace.
+        // Check theft via action trace (current batch only; flag guards re-scan).
         if !theft_committed && let Some(sink) = h.action_trace_sink() {
             for event in sink.events_for(thief) {
                 if event.action_name == "steal"
@@ -4125,6 +4146,49 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
             }
         }
 
+        // Incremental: track guard political goal generation (Verification 3).
+        if !guard_generated_political_goal
+            && let Some(sink) = h.driver.trace_sink()
+        {
+            for &guard in &guards {
+                if let Some(trace) = sink.trace_at(guard, processed_tick) {
+                    let found = match &trace.outcome {
+                        DecisionOutcome::Planning(planning) => {
+                            planning.candidates.generated.iter().any(|g| {
+                                matches!(
+                                    g.goal_key.kind,
+                                    GoalKind::ClaimOffice { .. }
+                                        | GoalKind::SupportCandidateForOffice { .. }
+                                )
+                            })
+                        }
+                        DecisionOutcome::ActiveAction { interrupt, .. } => {
+                            interrupt.top_challenger.as_ref().is_some_and(|challenger| {
+                                matches!(
+                                    challenger.opportunity.goal_key.kind,
+                                    GoalKind::ClaimOffice { .. }
+                                        | GoalKind::SupportCandidateForOffice { .. }
+                                )
+                            })
+                        }
+                        DecisionOutcome::Dead => false,
+                    };
+                    if found {
+                        guard_generated_political_goal = true;
+                    }
+                }
+            }
+        }
+
+        // Incremental: accumulate action domains (Verification 9).
+        if let Some(sink) = h.action_trace_sink() {
+            for event in sink.events_at(processed_tick) {
+                if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
+                    domains_seen.insert(def.domain);
+                }
+            }
+        }
+
         // After succession, check if a guard has returned to a patrol point.
         if succession_completed && !guard_returned_to_market_after_succession {
             guard_returned_to_market_after_succession = guards.iter().any(|&g| {
@@ -4134,6 +4198,11 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
                 let place = h.world.effective_place(g);
                 place == Some(PLACE_T33_MARKET) || place == Some(PLACE_T33_ROAD)
             });
+        }
+
+        // Periodic trace clearing to prevent OOM in long-running tests.
+        if tick_num % 500 == 499 {
+            h.clear_traces();
         }
 
         // Early exit if all conditions met: theft during vacancy, succession
@@ -4161,36 +4230,7 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
         "Office vacancy_since must transition from None to Some after ruler death",
     );
 
-    // --- Verification 3: Guard political distraction (decision trace) ---
-    let trace_sink = h.driver.trace_sink().expect("tracing enabled");
-    let guard_generated_political_goal = guards.iter().any(|&guard| {
-        trace_sink
-            .traces_for(guard)
-            .into_iter()
-            .any(|trace| match &trace.outcome {
-                DecisionOutcome::Planning(planning) => {
-                    planning.candidates.generated.iter().any(|g| {
-                        matches!(
-                            g.goal_key.kind,
-                            GoalKind::ClaimOffice { .. }
-                                | GoalKind::SupportCandidateForOffice { .. }
-                        )
-                    })
-                }
-                DecisionOutcome::ActiveAction { interrupt, .. } => {
-                    // ClaimOffice may appear as the top interrupt challenger
-                    // while the guard has an active patrol action.
-                    interrupt.top_challenger.as_ref().is_some_and(|challenger| {
-                        matches!(
-                            challenger.opportunity.goal_key.kind,
-                            GoalKind::ClaimOffice { .. }
-                                | GoalKind::SupportCandidateForOffice { .. }
-                        )
-                    })
-                }
-                DecisionOutcome::Dead => false,
-            })
-    });
+    // --- Verification 3: Guard political distraction (tracked incrementally in loop) ---
     assert!(
         guard_generated_political_goal,
         "At least 1 guard must generate ClaimOffice or SupportCandidateForOffice \
@@ -4226,7 +4266,9 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
     // After the guard returns, the thief's witness_risk_penalty should suppress
     // StealItem candidate generation. The main loop ran 30 extra ticks after
     // the guard returned — check thief decision traces in that window.
+    // (These 30 ticks ran after the last periodic clear, so trace data is available.)
     let final_tick = h.scheduler.current_tick();
+    let trace_sink = h.driver.trace_sink().expect("tracing enabled");
     let thief_traces_after_guard_return = trace_sink.traces_for(thief);
     let thief_generated_steal_after_recovery = thief_traces_after_guard_return
         .iter()
@@ -4255,14 +4297,7 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
         );
     }
 
-    // --- Verification 9: Cross-domain ≥ 5 ---
-    let action_sink = h.action_trace_sink().expect("action tracing enabled");
-    let mut domains_seen = BTreeSet::new();
-    for event in action_sink.events() {
-        if let Some(def) = h.defs.iter().find(|d| d.name == event.action_name) {
-            domains_seen.insert(def.domain);
-        }
-    }
+    // --- Verification 9: Cross-domain ≥ 5 (tracked incrementally in loop) ---
     assert!(
         domains_seen.len() >= 5,
         "Event trace should cover ≥ 5 ActionDomain values from \

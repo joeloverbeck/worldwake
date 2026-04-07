@@ -2024,12 +2024,14 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
     let semantics = build_semantics_table(&harness.defs);
     let mut jc = None;
     let mut active_goal = None;
+    let mut facility_intents = worldwake_core::ContentionIntents::default();
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &harness.world,
         &harness.scheduler,
         &mut runtime,
         &mut active_goal,
         &mut jc,
+        &mut facility_intents,
         harness.actor,
         std::slice::from_ref(&goal),
         &blocked,
@@ -3346,12 +3348,14 @@ fn goal_stability_across_cargo_materialization_continuity() {
     )
     .ranked;
     let mut jc = None;
+    let mut facility_intents = worldwake_core::ContentionIntents::default();
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &harness.world,
         &harness.scheduler,
         &mut runtime,
         &mut active_goal_state,
         &mut jc,
+        &mut facility_intents,
         harness.actor,
         &ranked,
         &blocked,
@@ -3455,6 +3459,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
         &mut runtime,
         &mut active_goal_state,
         &mut jc2,
+        &mut facility_intents,
         harness.actor,
         &ranked_after_pickup,
         &blocked,
@@ -4727,6 +4732,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let mut active_goal_state: Option<worldwake_core::ActiveGoal> = None;
     let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
     let mut jc = None;
+    let mut facility_intents = worldwake_core::ContentionIntents::default();
     let (_, initial_valid, initial_continued, _, initial_selection) =
         plan_and_validate_next_step_traced(
             &harness.world,
@@ -4734,6 +4740,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             runtime,
             &mut active_goal_state,
             &mut jc,
+            &mut facility_intents,
             harness.actor,
             &initial_read.ranked,
             &blocked,
@@ -4822,6 +4829,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             runtime,
             &mut active_goal_state,
             &mut jc2,
+            &mut facility_intents,
             harness.actor,
             &continuation_read.ranked,
             &blocked,

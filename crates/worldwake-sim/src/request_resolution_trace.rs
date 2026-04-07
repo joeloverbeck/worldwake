@@ -138,6 +138,11 @@ impl RequestResolutionTraceSink {
             .filter(|e| e.actor == actor && e.tick == tick)
             .collect()
     }
+
+    pub fn clear(&mut self) {
+        self.events.clear();
+        self.next_sequence_in_tick.clear();
+    }
 }
 
 impl Default for RequestResolutionTraceSink {

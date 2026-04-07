@@ -687,6 +687,7 @@ fn process_agent(
                 runtime,
                 &mut current_active_goal,
                 &mut current_frame,
+                &mut current_facility_intents,
                 agent,
                 &ranked_candidates,
                 &blocked_memory,

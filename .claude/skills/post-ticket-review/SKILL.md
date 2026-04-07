@@ -7,7 +7,7 @@ description: "Review a just-implemented Worldwake ticket after coding is finishe
 
 Post-implementation review and follow-up planning. Archives the completed ticket, inspects the work for architectural follow-up, and creates tickets when warranted.
 
-Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), [tickets/README.md](../../../tickets/README.md), and [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) before making changes.
+Read [CLAUDE.md](../../../CLAUDE.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), [tickets/README.md](../../../tickets/README.md), and [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) before making changes.
 
 **Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), archive it, create new tickets in `tickets/`, update existing active tickets, fix stale golden scenario metadata headers (Setup/Proves/Chain comments that no longer match the implemented contract), and regenerate golden inventory docs (`python3 scripts/golden_inventory.py --write --check-docs`).
 
@@ -49,6 +49,7 @@ Review the actual local implementation state, not an idealized committed state.
 - Information-path contracts
 - Traceability surfaces
 - Test harness or golden proof surfaces
+- Same-pattern sites: when the ticket fixes a bug pattern at specific call sites, grep for the same pattern across the touched module/crate to check if other sites have the same gap
 
 **Review dimensions**:
 - Production architecture
@@ -61,7 +62,7 @@ Review the actual local implementation state, not an idealized committed state.
 
 Assess whether the completed work:
 - Aligns with [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
-- Preserves repo invariants from [AGENTS.md](../../../AGENTS.md)
+- Preserves repo invariants from [CLAUDE.md](../../../CLAUDE.md)
 - Leaves the touched subsystem clean, robust, and extensible
 
 Look for:
