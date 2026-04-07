@@ -1,6 +1,6 @@
 # PERF-005: Remove debug `eprintln!` in `emit_report_found_candidates`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` candidate generation
@@ -64,3 +64,15 @@ The line `eprintln!("[ReportFound] record {:?} state={:?} — not Found*", recor
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-07.
+
+- The `eprintln!` at `candidate_generation.rs:3355` was already removed prior to this session's PERF ticket series. Reassessment confirms no `eprintln!` calls remain in `candidate_generation.rs`.
+- Remaining `eprintln!` calls in `worldwake-ai` are in diagnostic/binary paths only (`decision_trace.rs`, `soak_seed_perf.rs`, `perf_diag.rs`) — not in hot simulation loops.
+
+## Verification Result
+
+- Confirmed via `grep`: no `eprintln!` in `candidate_generation.rs`
+- All prior PERF ticket verifications (`cargo test -p worldwake-ai`, `cargo test --workspace`) passed with this line already absent

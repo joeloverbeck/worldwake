@@ -41,9 +41,9 @@ Starting from the test file(s), build a dependency graph of source modules:
 3. For each exercised source module, read its internal `use` and `mod` statements to add 1-2 levels of internal dependencies to the exercised set.
 4. Produce a deduplicated list of all source files exercised by the test suite. Exclude `lib.rs` barrel files and `mod.rs` files that only contain `mod` declarations.
 5. Read `docs/FOUNDATIONS.md` — hold it for Phase 6 validation. Do NOT apply it yet.
-6. Read any `prior_reports` if provided — note already-identified issues to avoid rediscovery.
+6. Read any `prior_reports` if provided via `--prior-reports`. Also scan the `reports/` directory for existing `missing-abstractions-*` and `architectural-abstractions-*` reports matching the same test context. Treat discovered reports the same as explicitly provided ones — note already-identified issues to avoid rediscovery.
 7. Check for existing coverage/trace artifacts in the repo. Use them if present.
-8. Run bounded git history: `git log --since="6 months ago" --name-only` on exercised files to identify temporal coupling (files that frequently change together across commits).
+8. Run bounded git history: `git log --since="6 months ago" --name-only` on exercised files to identify temporal coupling. From the output, group files by commit. For each commit, enumerate all cross-crate file pairs that changed together. Count how many commits each pair co-appears in. Report the top 20 cross-crate pairs with 3+ co-changes, ordered by frequency. Also report the crate-to-crate coupling matrix (total co-changing commits per crate pair).
 
 **Short-circuit for golden/integration tests**: If the test calls a top-level simulation step function (e.g., `step_once()`, `tick()`, or equivalent) in a loop, all source modules in the referenced crates are exercised. Skip per-symbol tracing (steps 2-3) and enumerate all `.rs` files in those crates' `src/` directories directly, excluding `lib.rs` barrel files and `mod.rs` files that only contain `mod` declarations.
 
@@ -77,6 +77,8 @@ Then cluster tests into **scenario families** — named behavioral groups. Examp
 
 Every later architectural inference must be tied back to scenario families. A finding not grounded in test behavior is speculation.
 
+**Soak/endurance tests**: When the test is a single function that runs the simulation for many ticks and checks invariants, derive scenario families from the invariant categories and emergence assertions rather than from test function boundaries. Each per-tick invariant check (e.g., conservation, needs bounds, unique placement) and each emergence threshold check (e.g., death, trade, political events) becomes a scenario family.
+
 **Sub-agent delegation**: For large test directories (>30 test files), delegate scenario extraction to 2-3 parallel Explore sub-agents, each handling a subset. Merge and deduplicate scenario families.
 
 ### Phase 3: TRACE
@@ -93,6 +95,8 @@ Build test-to-code traceability using multiple strategies — no single trick ca
 Each traceability link gets a confidence tag (high/medium/low) and a brief reason code.
 
 The purpose of multi-strategy tracing is to catch hidden dependencies that `use` statements alone miss — trait dispatch, `SystemFn` registration, `register_action_handler` indirection, and temporal coupling are the most common sources of invisible links in this codebase.
+
+**After short-circuit**: When Phase 1's short-circuit determined all modules are exercised, skip the `use` statement and call graph strategies — they add no value when the answer is "everything is exercised." Focus Phase 3 on temporal coupling analysis (files that co-change across commits) and the confidence/reason-code tagging of module-to-scenario links. The traceability table still provides value by mapping modules to scenario families with confidence levels.
 
 ### Phase 4: DETECT FRACTURES
 
@@ -141,7 +145,7 @@ Apply two validation filters, in this order:
 4. It can name the rightful owner boundary
 5. It does not merely wrap existing code with a facade
 
-**Filter 2 — FOUNDATIONS alignment.** For surviving candidates only, check against `docs/FOUNDATIONS.md`. The document defines 28 principles in 5 categories (Causal Standard, World Dynamics, Knowledge/Belief/Evidence, Agents/Institutions/Social Order, System Architecture). For each relevant principle, note whether the candidate aligns, strains, or conflicts. Flag conflicts prominently — a candidate that violates FOUNDATIONS needs redesign before it becomes a spec.
+**Filter 2 — FOUNDATIONS alignment.** For surviving candidates only, check against `docs/FOUNDATIONS.md`. The document defines principles in 5 categories (Causal Standard, World Dynamics, Knowledge/Belief/Evidence, Agents/Institutions/Social Order, System Architecture). For each relevant principle, note whether the candidate aligns, strains, or conflicts. Flag conflicts prominently — a candidate that violates FOUNDATIONS needs redesign before it becomes a spec.
 
 This ordering matters. Recovery first, judgement second. Do not let FOUNDATIONS bias the fracture detection — detect what IS, then evaluate what SHOULD BE.
 
