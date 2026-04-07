@@ -50,6 +50,7 @@ When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), tre
 - For golden communication or information-path tickets, verify separately what actually degrades: provenance, confidence, communication class, eligibility, ranking, or another distinct mechanism.
 - When a ticket proposes extending an existing trace/debug carrier, verify the exact live coverage of that carrier before coding. If the current trace only covers one subpath, correct the ticket to either stay within that subpath or explicitly widen the trace surface as owned scope.
 - When the ticket adds candidate generation or goal model integration for a domain that already has golden coverage (e.g., Care, Combat, Expectation), run the existing golden suites for that domain as part of reassessment, before implementation begins. This catches cross-goal interference early — a new candidate emitter can cause goal-switching collisions with existing goal families for the same target entity.
+- When a golden ticket proposes specific GoalKind pairs to exercise a contention, planning, or action-lifecycle invariant, verify that each goal's declared ops (in `goal_dispatch_decl.rs`) include the required PlannerOpKind. If the goal family lacks the required op, correct the ticket's domain before coding.
 
 #### Shared type, serialization, and persisted-shape sweep
 
@@ -305,6 +306,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - When adding or renumbering `// Scenario N:` blocks, treat identifiers as repo-global. Pre-scan nearby or highest live IDs and resolve collisions.
 - After scenario metadata changes, refresh the generated golden inventory/docs as part of the verification surface.
 - When a golden test must isolate one goal from a competing goal family that shares the same observable input (e.g., EscortToSafety vs TreatWounds for wounded entities), use belief-source manipulation: seed beliefs via `PerceptionSource::Report` instead of `DirectObservation` to prevent candidate emission paths that gate on direct observation. This is a scenario isolation technique, not a production constraint.
+- When a golden scenario depends on motive arithmetic driven by metabolism rates or profile values, estimate the crossover tick (when the competing need overtakes the initial driver) from the rate differential. Start with conservative values that produce the crossover well within the tick budget. If the first run misses the milestone, adjust rates rather than expanding the tick budget.
 
 #### Migration verification checklist
 

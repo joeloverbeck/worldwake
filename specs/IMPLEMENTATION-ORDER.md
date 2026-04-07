@@ -5,9 +5,11 @@
 Phases 1–6 (E01–E22, FND-01, FND-02, S01–S58) completed.
 See `archive/` for detailed completion records.
 
-Completed adjunct coverage specs:
+Completed adjunct specs:
 - `S67: Golden E2E Gaps — S59 Expectation and Obligation Substrate` archived at [archive/specs/S67-golden-gaps-S59.md](/home/joeloverbeck/projects/worldwake/archive/specs/S67-golden-gaps-S59.md).
 - `S67` adds golden coverage for the currently implemented `S59` overdue-search and report-missing chains, but it does not imply that parent spec `S59` is complete. `S59` remains active until its remaining proposed behavior is fully implemented.
+- `S68: Goal-Switch Contention Cleanup` archived at [archive/specs/S68-goal-switch-contention-cleanup.md](/home/joeloverbeck/projects/worldwake/archive/specs/S68-goal-switch-contention-cleanup.md).
+- `S68` fixes stale `ContentionIntents` on all plan-abandonment paths (goal switch, lost plan, assumption failure, patience exhaustion, plan terminals, failure handling). Golden E2E proof: Scenario 123 in `golden_production.rs`.
 
 ---
 
@@ -18,7 +20,7 @@ Derived from external gameplay assessment (`brainstorming/prioritary-gameplay-sy
 ### Dependency Graph
 
 ```text
-S59 (independent)     S60 (independent)     S62 (independent)
+S59 (independent)     S60 (independent)     S62 (independent)     S69 (independent)
      │                     │
      │                     ├── S61 (needs S60 for dens)
      ├── S63 (needs S59)   │
@@ -40,6 +42,7 @@ S65 ─┘
   - current status note: the `S67` follow-on golden-gap spec is complete for the implemented overdue-search and report-missing slices, but `S59` itself still remains active because at least one proposed goal/action path is not fully live yet
 - **S60**: Persistent Site Occupancy — site profiles with sublocations, occupancy claims, site traces, BanditCamp migration
 - **S62**: Boundary Processes and Remote Shocks — source regions, boundary channels, scheduled inflows, disruption mechanics
+- **S69**: Goal Dispatch Consolidation — consolidate GoalFamilyPolicy, base GoalPriorityClass, and progress barrier ops into GoalDispatchDeclaration
 
 **Wave 2** (after Wave 1):
 - **S61**: Predator Ecology and Dens — predator agents with territory, hunger-driven roaming, den habitation, carcass/track evidence

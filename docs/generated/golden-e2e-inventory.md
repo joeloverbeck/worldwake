@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 23
-- Files contributing `golden_*` tests: 23
-- Total `golden_*` tests: 318
+- Golden test files: 24
+- Files contributing `golden_*` tests: 24
+- Total `golden_*` tests: 320
 
 ## Per-File Inventory
 
@@ -21,12 +21,13 @@ Do not hand-edit it.
 | `golden_emergent.rs` | 51 |
 | `golden_expectation.rs` | 6 |
 | `golden_experience_preferences.rs` | 6 |
-| `golden_integration.rs` | 30 |
+| `golden_integration.rs` | 26 |
+| `golden_long_scenarios.rs` | 4 |
 | `golden_merchant_selling.rs` | 20 |
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
 | `golden_perception_exposure.rs` | 4 |
-| `golden_production.rs` | 28 |
+| `golden_production.rs` | 30 |
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 2 |
 | `golden_resilience.rs` | 2 |
@@ -215,10 +216,6 @@ Do not hand-edit it.
 - `t28_pursuit_information_boundary_seed_2`
 - `t29_wrongful_accusation_seed_1`
 - `t29_wrongful_accusation_seed_2`
-- `t21_ruler_death_patrol_gap_seed_1`
-- `t21_ruler_death_patrol_gap_seed_2`
-- `t33_vacancy_crime_recovery_seed_1`
-- `t33_vacancy_crime_recovery_seed_2`
 - `t22_camp_reconstitution_seed_1`
 - `t22_camp_reconstitution_seed_2`
 - `golden_s45_bounty_lifecycle`
@@ -235,6 +232,13 @@ Do not hand-edit it.
 - `golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically`
 - `golden_s52_theft_evidence_discovery`
 - `golden_s52_theft_evidence_discovery_replays_deterministically`
+
+### `golden_long_scenarios.rs`
+
+- `t21_ruler_death_patrol_gap_seed_1`
+- `t21_ruler_death_patrol_gap_seed_2`
+- `t33_vacancy_crime_recovery_seed_1`
+- `t33_vacancy_crime_recovery_seed_2`
 
 ### `golden_merchant_selling.rs`
 
@@ -334,6 +338,8 @@ Do not hand-edit it.
 - `golden_unique_item_race_rejection_redirects_to_local_alternative_replays_deterministically`
 - `golden_faction_ownership_producer_owner_delegation`
 - `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
+- `golden_goal_switch_clears_contention_queue_entry`
+- `golden_goal_switch_clears_contention_queue_entry_replays_deterministically`
 
 ### `golden_pursuit.rs`
 

@@ -3889,3 +3889,233 @@ fn golden_faction_ownership_producer_owner_delegation_replays_deterministically(
         "Faction ownership scenario must replay to the same event log hash"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 123: Goal Switch Clears Contention Queue Entry
+// ---------------------------------------------------------------------------
+//
+// Systems: Contention, Production, Needs, AI, Travel
+// GoalKinds: AcquireCommodity(SelfConsume), Sleep
+// ActionDomains: Production, Needs, Travel
+// Places: OrchardFarm
+// Principles: 8, 21, 26
+//
+// Setup: Grant holder blocks exclusive orchard workstation. Hungry agent
+//   queues behind the holder. Fatigue metabolism outpaces hunger, eventually
+//   driving a competing need above the production motive.
+//
+// Proves: When an agent revises its commitment from a contention-queued goal
+//   to a competing need (P21), the stale queue entry is pruned via
+//   state-mediated intent cleanup (P26), preserving P8 contention correctness.
+//   Simulation completes without DuplicateActor panic.
+//
+// Chain: hunger -> acquire apple -> queue for facility -> fatigue rises ->
+//   competing goal wins -> goal switch -> intent clear -> prune waiter.
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug)]
+struct GoalSwitchContentionCleanupOutcome {
+    world_hash: StateHash,
+    log_hash: StateHash,
+    joined_queue: bool,
+    had_acquire_goal_while_queued: bool,
+    goal_changed_after_joining: bool,
+    pruned_from_queue: bool,
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_goal_switch_contention_cleanup_scenario(
+    seed: Seed,
+) -> GoalSwitchContentionCleanupOutcome {
+    let mut h = GoldenHarness::new(seed);
+
+    // Grant holder — sated, blocks the exclusive workstation indefinitely.
+    let grant_holder = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Aster",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+
+    // Test agent — hungry (will seek harvest) with rising fatigue.
+    let test_agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Bram",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(500), pm(0)),
+        MetabolismProfile {
+            hunger_rate: pm(2),
+            thirst_rate: pm(0),
+            bladder_rate: pm(0),
+            fatigue_rate: pm(25),
+            dirtiness_rate: pm(0),
+            ..MetabolismProfile::default()
+        },
+        UtilityProfile::default(),
+    );
+
+    let workstation = place_exclusive_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        nz(30),
+        ProductionOutputOwner::Actor,
+    );
+
+    let harvest_action = h
+        .defs
+        .iter()
+        .find(|def| def.name == "harvest:Harvest Apples")
+        .map(|def| def.id)
+        .expect("harvest action should be registered");
+
+    // Block the workstation with a long grant.
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        let mut queue = txn
+            .get_component_contention_queue(workstation)
+            .cloned()
+            .expect("exclusive workstation should have queue state");
+        queue.granted = Some(ContentionGrant {
+            actor: grant_holder,
+            intended_action: harvest_action,
+            granted_at: Tick(0),
+            expires_at: Tick(100),
+        });
+        txn.set_component_contention_queue(workstation, queue)
+            .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    // Give the test agent perception so they can observe the workstation.
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        test_agent,
+        production_perception_profile(),
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        test_agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    let acquire_apple_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+
+    let mut joined_queue = false;
+    let mut had_acquire_goal_while_queued = false;
+    let mut goal_changed_after_joining = false;
+    let mut pruned_from_queue = false;
+    let mut was_in_queue = false;
+
+    for _ in 0..120 {
+        h.step_once();
+
+        let queue = h
+            .world
+            .get_component_contention_queue(workstation)
+            .cloned()
+            .expect("exclusive workstation should retain queue state");
+        let test_agent_in_queue = queue.position_of(test_agent).is_some();
+
+        if test_agent_in_queue && !was_in_queue {
+            joined_queue = true;
+        }
+
+        if test_agent_in_queue {
+            was_in_queue = true;
+            let active_goal = h.world.get_component_active_goal(test_agent).cloned();
+            if active_goal
+                .as_ref()
+                .is_some_and(|ag| ag.goal_key == acquire_apple_goal)
+            {
+                had_acquire_goal_while_queued = true;
+            }
+        }
+
+        // Detect goal change after having been in queue.
+        if was_in_queue {
+            let active_goal = h.world.get_component_active_goal(test_agent).cloned();
+            let current_goal_is_acquire = active_goal
+                .as_ref()
+                .is_some_and(|ag| ag.goal_key == acquire_apple_goal);
+            if !current_goal_is_acquire && had_acquire_goal_while_queued {
+                goal_changed_after_joining = true;
+            }
+        }
+
+        // Detect prune: agent was in queue but is no longer.
+        if was_in_queue && !test_agent_in_queue {
+            pruned_from_queue = true;
+        }
+
+        if joined_queue && goal_changed_after_joining && pruned_from_queue {
+            break;
+        }
+    }
+
+    GoalSwitchContentionCleanupOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+        joined_queue,
+        had_acquire_goal_while_queued,
+        goal_changed_after_joining,
+        pruned_from_queue,
+    }
+}
+
+#[test]
+fn golden_goal_switch_clears_contention_queue_entry() {
+    let outcome = run_goal_switch_contention_cleanup_scenario(Seed([26; 32]));
+
+    assert!(
+        outcome.joined_queue,
+        "Test agent should enter the exclusive-facility queue while pursuing harvest"
+    );
+    assert!(
+        outcome.had_acquire_goal_while_queued,
+        "Test agent's active goal should be AcquireCommodity while in the contention queue"
+    );
+    assert!(
+        outcome.goal_changed_after_joining,
+        "A competing need should eventually cause the test agent to switch away from the production goal"
+    );
+    assert!(
+        outcome.pruned_from_queue,
+        "After goal switch, the stale contention queue entry should be pruned via state-mediated intent cleanup"
+    );
+}
+
+#[test]
+fn golden_goal_switch_clears_contention_queue_entry_replays_deterministically() {
+    let seed = Seed([26; 32]);
+
+    let outcome_1 = run_goal_switch_contention_cleanup_scenario(seed);
+    let outcome_2 = run_goal_switch_contention_cleanup_scenario(seed);
+
+    assert_eq!(
+        outcome_1.world_hash, outcome_2.world_hash,
+        "Goal-switch contention cleanup should replay to the same world hash"
+    );
+    assert_eq!(
+        outcome_1.log_hash, outcome_2.log_hash,
+        "Goal-switch contention cleanup should replay to the same event log hash"
+    );
+}

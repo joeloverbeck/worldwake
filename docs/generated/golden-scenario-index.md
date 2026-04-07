@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 141
-- Contributing golden test files: 22
-- Associated tests: 303
+- Scenario blocks: 142
+- Contributing golden test files: 23
+- Associated tests: 305
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -654,7 +654,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 20: Apple Stockout → Carrier Reroute → Supply Chain Disruption
 
-- Source: `golden_integration.rs:91`
+- Source: `golden_integration.rs:83`
 - Systems: Needs, Trade, Travel, Combat, Production
 - GoalKinds: ConsumeOwnedCommodity, RestockCommodity, AcquireCommodity
 - ActionDomains: Needs, Trade, Travel, Combat (≥ 4 required)
@@ -669,7 +669,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 27: Controlled Agent Death
 
-- Source: `golden_integration.rs:1050`
+- Source: `golden_integration.rs:1042`
 - Systems: Combat, AI, Needs
 - GoalKinds: EngageHostile
 - ActionDomains: Combat
@@ -684,7 +684,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 28: Pursuit Across Information Boundary
 
-- Source: `golden_integration.rs:1310`
+- Source: `golden_integration.rs:1302`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social (≥ 2 required)
@@ -697,39 +697,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: thief steals apples at Storehouse → witness may observe → witness tells authority at GuardPost → authority accuses → authority punishes (fine or exile).
 
-### Scenario 21: Ruler Death → Office Vacancy → Patrol Gap → Route Predation
-
-- Source: `golden_integration.rs:2550`
-- Systems: Succession, Combat, AI, Needs, Patrol, Trade, Travel
-- GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, EngageHostile
-- ActionDomains: Combat, Social, Travel, Needs (≥ 4 required)
-- Places: RulersHall, Market, GateRoad, BanditForest, GuardPost, Farm
-- Principles: 4, 7, 10, 12, 14
-
-**Setup**: 6-place topology. Ruler holds office at RulersHall, killed at tick 0. 2 claimants with faction membership and enterprise_weight compete for the vacant office. 3 guards with PatrolRoute covering GateRoad abandon patrol when political goals outrank patrol_motive_weight during vacancy. 2 bandits at BanditForest with BanditCamp. Merchant at Market with goods.
-
-**Proves**: Office vacancy caused by ruler death → guard political distraction → patrol gap at GateRoad → bandit predation on merchant → supply disruption. All consequences emerge from general rules, not scenario- specific triggers. Cross-domain coverage ≥ 4.
-
-**Cross-system chain**: ruler death -> vacancy_since set -> guards generate ClaimOffice/ SupportCandidate competing with Patrol -> guards leave GateRoad -> patrol gap ≥ 100 ticks -> bandit encounters merchant -> combat at GateRoad -> cargo loss or merchant injury -> succession completes within 2880 ticks.
-
-### Scenario 33: Office Vacancy → Patrol Gap → Crime Opportunity → Recovery
-
-- Source: `golden_integration.rs:3522`
-- Systems: Succession, Combat, AI, Patrol, Transport, Perception, Travel
-- GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, StealItem
-- ActionDomains: Combat, Social, Travel, Transport, Epistemic (≥ 5 required)
-- Places: RulersHall, Market, Road, Farm, GuardPost
-- Principles: 4, 7, 8, 10, 11, 12, 14
-
-**Setup**: 5-place topology. Ruler holds office at RulersHall, killed at tick 0. 2 guards with PatrolRoute covering Market and Road abandon patrol when political goals outrank patrol_motive_weight during vacancy. 1 thief at Road with high witness_risk_penalty (pm(900)) is fully deterred by any guard presence. Merchant at Market with owned goods on the ground.
-
-**Proves**: Full vacancy→crime→recovery feedback loop with physical dampener: ruler death → vacancy → guard political distraction → patrol gap → theft during vacancy → succession completes → guard patrol resumes → theft suppressed post-recovery. The dampener (succession → patrol return → crime suppression) is physical, not a numeric clamp (Principle 11).
-
-**Cross-system chain**: ruler death -> vacancy_since set -> guards generate ClaimOffice/ SupportCandidate competing with Patrol -> guards leave Market -> thief StealItem during vacancy (effective_motive=800 with 0 witnesses) -> succession completes -> guard returns to Market -> thief effective_motive drops to 0 (800-900=0) -> StealItem suppressed post-recovery.
-
 ### Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
 
-- Source: `golden_integration.rs:4638`
+- Source: `golden_integration.rs:2871`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
 - GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Generic, Travel, Social, Production
@@ -744,7 +714,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 105: Social artifact bounty lifecycle closes canonically
 
-- Source: `golden_integration.rs:6913`
+- Source: `golden_integration.rs:5146`
 - Systems: Social artifact actions, Perception, AI, Travel, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel, Combat
@@ -759,7 +729,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 106: Expired bounty stays visible but no longer generates pursuit
 
-- Source: `golden_integration.rs:6951`
+- Source: `golden_integration.rs:5184`
 - Systems: Social artifact actions, pre-action artifact lifecycle, Perception, AI
 - GoalKinds: FulfillBounty
 - ActionDomains: Social
@@ -774,7 +744,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 108: Delivery bounty closes through cargo movement and later claim
 
-- Source: `golden_integration.rs:6988`
+- Source: `golden_integration.rs:5221`
 - Systems: Social artifact actions, Perception, AI, Travel, Transport
 - GoalKinds: FulfillBounty, MoveCargo
 - ActionDomains: Social, Travel, Transport
@@ -789,7 +759,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 107: Threat-warning notice flips the next route choice
 
-- Source: `golden_integration.rs:7028`
+- Source: `golden_integration.rs:5261`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production
@@ -804,7 +774,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 112: Autonomous institutional bounty posts from consulted accusation
 
-- Source: `golden_integration.rs:7066`
+- Source: `golden_integration.rs:5299`
 - Systems: Social artifact actions, Beliefs, AI, Offices
 - GoalKinds: PostBounty
 - ActionDomains: Social
@@ -819,7 +789,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 113: Autonomous threat-warning notice reroutes later travel
 
-- Source: `golden_integration.rs:7105`
+- Source: `golden_integration.rs:5338`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production
@@ -834,7 +804,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 114: Theft evidence persists, is perceived locally, and decays
 
-- Source: `golden_integration.rs:7146`
+- Source: `golden_integration.rs:5379`
 - Systems: Transport, Perception, Evidence decay, AI
 - GoalKinds: InvestigateViolation
 - ActionDomains: Transport, Travel, Generic
@@ -844,6 +814,36 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: an AI thief at VillageSquare steals owned bread from a real container,
 
 **Proves**: S52's evidence substrate is live end to end without over-claiming
+
+### Scenario 21: Ruler Death → Office Vacancy → Patrol Gap → Route Predation
+
+- Source: `golden_long_scenarios.rs:68`
+- Systems: Succession, Combat, AI, Needs, Patrol, Trade, Travel
+- GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, EngageHostile
+- ActionDomains: Combat, Social, Travel, Needs (≥ 4 required)
+- Places: RulersHall, Market, GateRoad, BanditForest, GuardPost, Farm
+- Principles: 4, 7, 10, 12, 14
+
+**Setup**: 6-place topology. Ruler holds office at RulersHall, killed at tick 0. 2 claimants with faction membership and enterprise_weight compete for the vacant office. 3 guards with PatrolRoute covering GateRoad abandon patrol when political goals outrank patrol_motive_weight during vacancy. 2 bandits at BanditForest with BanditCamp. Merchant at Market with goods.
+
+**Proves**: Office vacancy caused by ruler death → guard political distraction → patrol gap at GateRoad → bandit predation on merchant → supply disruption. All consequences emerge from general rules, not scenario- specific triggers. Cross-domain coverage ≥ 4.
+
+**Cross-system chain**: ruler death -> vacancy_since set -> guards generate ClaimOffice/ SupportCandidate competing with Patrol -> guards leave GateRoad -> patrol gap ≥ 100 ticks -> bandit encounters merchant -> combat at GateRoad -> cargo loss or merchant injury -> succession completes within 2880 ticks.
+
+### Scenario 33: Office Vacancy → Patrol Gap → Crime Opportunity → Recovery
+
+- Source: `golden_long_scenarios.rs:1055`
+- Systems: Succession, Combat, AI, Patrol, Transport, Perception, Travel
+- GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, StealItem
+- ActionDomains: Combat, Social, Travel, Transport, Epistemic (≥ 5 required)
+- Places: RulersHall, Market, Road, Farm, GuardPost
+- Principles: 4, 7, 8, 10, 11, 12, 14
+
+**Setup**: 5-place topology. Ruler holds office at RulersHall, killed at tick 0. 2 guards with PatrolRoute covering Market and Road abandon patrol when political goals outrank patrol_motive_weight during vacancy. 1 thief at Road with high witness_risk_penalty (pm(900)) is fully deterred by any guard presence. Merchant at Market with owned goods on the ground.
+
+**Proves**: Full vacancy→crime→recovery feedback loop with physical dampener: ruler death → vacancy → guard political distraction → patrol gap → theft during vacancy → succession completes → guard patrol resumes → theft suppressed post-recovery. The dampener (succession → patrol return → crime suppression) is physical, not a numeric clamp (Principle 11).
+
+**Cross-system chain**: ruler death -> vacancy_since set -> guards generate ClaimOffice/ SupportCandidate competing with Patrol -> guards leave Market -> thief StealItem during vacancy (effective_motive=800 with 0 witnesses) -> succession completes -> guard returns to Market -> thief effective_motive drops to 0 (800-900=0) -> StealItem suppressed post-recovery.
 
 ### Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 
@@ -1447,6 +1447,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: Harvest output owned by faction. Member picks up via institutional delegation. Outsider is blocked strongly enough to abandon the orchard. Conservation holds.
 
 **Cross-system chain**: ProducerOwner policy -> faction-owned output -> member pickup / outsider blocked -> outsider departure from the faction orchard.
+
+### Scenario 123: Goal Switch Clears Contention Queue Entry
+
+- Source: `golden_production.rs:3894`
+- Systems: Contention, Production, Needs, AI, Travel
+- GoalKinds: AcquireCommodity(SelfConsume), Sleep
+- ActionDomains: Production, Needs, Travel
+- Places: OrchardFarm
+- Principles: 8, 21, 26
+
+**Setup**: Grant holder blocks exclusive orchard workstation. Hungry agent queues behind the holder. Fatigue metabolism outpaces hunger, eventually driving a competing need above the production motive.
+
+**Proves**: When an agent revises its commitment from a contention-queued goal to a competing need (P21), the stale queue entry is pruned via state-mediated intent cleanup (P26), preserving P8 contention correctness. Simulation completes without DuplicateActor panic.
+
+**Cross-system chain**: hunger -> acquire apple -> queue for facility -> fatigue rises -> competing goal wins -> goal switch -> intent clear -> prune waiter.
 
 ### Scenario 68: Bandit witnesses traveler leave, pursues, attacks
 

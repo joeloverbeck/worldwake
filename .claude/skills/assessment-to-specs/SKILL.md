@@ -46,7 +46,7 @@ Read ALL of these files before any analysis:
 3. **`docs/spec-drafting-rules.md`** — spec format requirements. Skip if read earlier in this session and not modified since.
 4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. Also determine the highest completed phase number for use in Phase 3. If the file does not exist in `specs/`, check `archive/specs/IMPLEMENTATION-ORDER*.md` for the most recently archived version and read that instead.
 
-**Pre-flight check**: If `specs/IMPLEMENTATION-ORDER.md` exists in `specs/`, warn the user that Phase 3 will overwrite it with a fresh file containing only the new phase. Suggest archiving or backing it up before proceeding (see `docs/archival-workflow.md`). If the user has not archived it, ask whether to continue. If the file was already archived (read from `archive/`), skip this warning.
+**Pre-flight check**: If `specs/IMPLEMENTATION-ORDER.md` exists in `specs/`, note its presence for Step 10. Do not warn about overwriting yet — the write strategy (append vs. fresh) depends on the number and nature of accepted proposals, which is not known until after triage. If the file was already archived (read from `archive/`), note that no active file exists.
 
 #### Step 2: Extract Proposals
 
@@ -110,7 +110,7 @@ Present the triage to the user in a structured format:
 [If any proposals are ambiguous, ask here. Max 3 questions.]
 ```
 
-When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options. When open-ended, present in the report.
+Omit classification sections that have 0 entries (e.g., skip the "Rejected" header entirely if nothing was rejected). When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options. When open-ended, present in the report.
 
 **Wait for user response.** Do not proceed to Phase 2 until the user has approved or adjusted the triage. Treat classifications as approved unless the user explicitly changes them.
 
@@ -177,7 +177,9 @@ A spec depends on another if it: (a) references types or components the other sp
 
 Determine the next phase number from the completed phases in the old `specs/IMPLEMENTATION-ORDER.md` (read in Step 1). Increment the highest completed phase number by 1.
 
-Write a **fresh** `specs/IMPLEMENTATION-ORDER.md` with the following structure:
+**Append vs. fresh**: If only 1-2 independent specs were accepted and they have no dependencies on unreleased specs in the current active phase, offer the user a choice: (a) append to the existing phase as parallel Wave 1 items (recommended for small additions), or (b) create a new phase. For single-spec results, appending is the default recommendation. If appending, edit the existing `specs/IMPLEMENTATION-ORDER.md` to add the new spec(s) to the dependency graph and Wave 1 list — do not overwrite. If creating a new phase or if no active IMPLEMENTATION-ORDER.md exists, warn the user that a fresh file will be written and suggest archiving the old one (see `docs/archival-workflow.md`).
+
+**When writing a fresh file**, use the following structure:
 
 ```markdown
 # Implementation Order & Dependency Graph

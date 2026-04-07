@@ -1,6 +1,6 @@
 # S68: Goal-Switch Contention Cleanup
 
-**Status**: DRAFT
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Category**: Architecture fix — AI agent lifecycle
 
@@ -102,6 +102,7 @@ Check `agent_tick/active_action.rs` interrupt path (lines 102-122) — when an a
 
 ## Verification
 
-- **Unit test**: Verify that after a goal switch in the planning function, `facility_intents.intents` is empty.
-- **Golden test**: Add a golden E2E test exercising the exact failure path: agent queued for `TreatWounds` on entity W, switches to `EscortToSafety` for same entity W, new `enqueue_for_contention` succeeds without `DuplicateActor`. Follow the pattern of `golden_dead_agent_pruned_from_facility_queue` (golden_production.rs:3118).
-- **Regression**: All existing golden tests pass (`cargo test -p worldwake-ai`).
+- **Unit test**: Verify that after a goal switch in the planning function, `facility_intents.intents` is empty. ✅ Delivered by S68GOASWICON-001.
+- **Golden test**: `golden_goal_switch_clears_contention_queue_entry` (Scenario 123) proves the full path: agent queued at exclusive workstation via AcquireCommodity, fatigue metabolism drives goal switch, stale queue entry pruned, simulation completes without DuplicateActor. ✅ Delivered by S68GOASWICON-003. (Original narrative used TreatWounds → EscortToSafety, but EscortToSafety ops lack QueueForFacilityUse; production domain was used instead per P1.)
+- **Regression**: All existing golden tests pass (`cargo test -p worldwake-ai`). ✅ 1065 unit + 45 golden.
+- **Invariant sweep**: Every `materialization_bindings.clear()` in the codebase now has a matching `facility_intents.intents.clear()`. ✅ Delivered by S68GOASWICON-001 + S68GOASWICON-002 + S68GOASWICON-004.

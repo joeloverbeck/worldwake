@@ -22,11 +22,13 @@ Analyze engine code exercised by a test suite to find implicit state machines, s
 
 **Output**: Structured report at `reports/missing-abstractions-<date>-<context>.md`, formatted for consumption by `/assessment-to-specs`.
 
+**Incremental mode** (optional): If a previous report exists for the same test path (check `reports/missing-abstractions-*-<context>.md`), read it at the start of Phase 2. Focus Phase 3 measurement only on clusters whose file counts changed by >20% or that include newly added modules since the previous report. Carry forward unchanged "Acceptable" verdicts without re-measuring. Note "incremental — carried forward from <previous date>" for reused verdicts.
+
 ## Background
 
 Missing or incomplete abstractions manifest as: a single semantic concept (e.g., "patrol lifecycle", "trade readiness") whose state transitions or readiness checks are scattered across many files with no unifying type, or with a type that lacks sufficient derived state — forcing callers to re-compute readiness/applicability from scratch. In a Rust/ECS codebase, symptoms include:
 
-- The same enum is matched in 5+ files with similar-but-not-identical match logic
+- The same enum is matched in 3+ files with similar-but-not-identical match logic
 - The same combination of component checks (`has::<T>()`, `get::<T>()`) appears in multiple locations
 - A single concept requires touching 3+ crates to implement correctly
 - Functions in different modules compute the same derived value from the same inputs
@@ -35,9 +37,15 @@ Missing or incomplete abstractions manifest as: a single semantic concept (e.g.,
 
 ## Methodology
 
+**Execution Strategy**: Phases 1-3 are parallelizable. For large analyses (>30 modules), launch up to 3 Explore agents in parallel — e.g., one for Phase 1 tracing, one for Phase 3 scattered-match detection, one for Phase 3 repeated-predicate detection. Phase 4 requires FOUNDATIONS context and should run sequentially after Phases 1-3 complete.
+
 ### Phase 1: TRACE — Build the Exercised Module Set
 
-Starting from the test file(s), build a list of source modules that the tests exercise:
+Starting from the test file(s), build a list of source modules that the tests exercise.
+
+**Short-circuit for integration/soak tests**: If the test calls a top-level simulation step function (e.g., `step_once()`, `tick()`, or equivalent) in a loop, all source modules in the referenced crates are exercised. Skip per-symbol tracing (steps 3-5) and enumerate all `.rs` files in those crates' `src/` directories directly, excluding `lib.rs` barrel files and `mod.rs` files that only contain `mod` declarations.
+
+**Otherwise, trace per-symbol**:
 
 1. If the input is a directory, collect all `.rs` files in it (excluding `mod.rs` files that only contain `mod` declarations). If a single file, use that file.
 2. Read the test file(s) and extract all `use` statements to identify which crates are referenced (e.g., `worldwake_core`, `worldwake_sim`, `worldwake_systems`, `worldwake_ai`).
@@ -54,18 +62,21 @@ Starting from the test file(s), build a list of source modules that the tests ex
 
 Within the exercised modules, find cross-cutting concept clusters:
 
-1. Extract all `pub fn`, `pub struct`, `pub enum`, `pub type`, `pub const`, and `pub trait` names from each exercised module.
-2. Tokenize each symbol name by splitting on `_` (snake_case) and CamelCase boundaries.
-3. Identify recurring name-fragment tokens that appear in exported symbols across 3+ files (e.g., `patrol`, `trade`, `belief`, `combat`, `need`, `affordance`, `goal`, `plan`).
-4. Group symbols by shared concept fragments.
-5. Name each cluster by its dominant fragment (e.g., "patrol" cluster, "trade" cluster).
-6. Filter to clusters exceeding the file-count threshold: >10% of analyzed files, or 5+ files, whichever is larger. For small analyses (<30 modules), use 5+ files as the floor.
+1. **Filename clustering** (primary method): Group exercised modules by dominant concept in their filename (e.g., `patrol.rs`, `patrol_actions.rs` → "patrol" cluster; `goal_policy.rs`, `goal_model.rs`, `goal_dispatch_key.rs` → "goal" cluster). Module filenames in this codebase reliably reflect concept boundaries.
+2. **Import clustering** (supplement): For modules with generic names, scan their `use` statements and key `pub` exports to assign them to a concept cluster.
+3. **Enum-centered clustering**: Grep for key enums (`pub enum`) in the exercised modules. Any enum whose variants are referenced in 3+ files is a cluster seed — name the cluster after the enum (e.g., "GoalKind" cluster).
+4. Name each cluster by its dominant concept fragment (e.g., "patrol" cluster, "trade" cluster, "goal" cluster).
+5. Filter to clusters exceeding the file-count threshold: >10% of analyzed files, or 5+ files, whichever is larger. For small analyses (<30 modules), use 5+ files as the floor.
 
-**Tool usage**: Grep for `pub (fn|struct|enum|type|const|trait)` across exercised files.
+**Tool usage**: Glob for filenames, Grep for `pub enum` definitions and variant references across exercised files.
 
 ### Phase 3: MEASURE — Quantify Structural Signals
 
-For each concept cluster meeting the file-count threshold, compute the following metrics. These are the primary detection signals — not comment scanning.
+For each concept cluster meeting the file-count threshold, first apply the early-exit check, then compute structural metrics for remaining clusters.
+
+**Early-exit for fundamental accessors**: If a cluster's symbols are predominantly single-component accessors (`get_component_*`, `effective_place`, `possessor`, `ground_location`, `commodity_quantity`, or similar read-only queries) and no enum in the cluster is being matched in multiple files, mark the cluster as "Acceptable — fundamental accessor" and skip to the next cluster. Fundamental accessors appear in many files by design because they are the building blocks of all system logic. Reserve full measurement for clusters centered on enums, lifecycle types, or multi-component derived predicates.
+
+**Full measurement** (for clusters that did not early-exit): Compute the following metrics. These are the primary detection signals — not comment scanning.
 
 | Metric | How to measure | Signal strength |
 |--------|---------------|-----------------|
@@ -201,6 +212,12 @@ For each cluster that met the file-count threshold but showed no structural debt
 ### <Cluster Name>
 
 <1-2 sentences explaining why the spread is architecturally correct — e.g., "Trade touches 4 crates because trade is inherently cross-cutting: core defines the types, systems handles execution, ai generates trade goals. Each crate owns its own concern cleanly.">
+
+---
+
+## Codebase Health Observations (optional)
+
+<Notable architectural strengths discovered during analysis — e.g., effective centralization patterns, clean crate boundaries, low workaround density. This section highlights what is working well, not just what needs fixing.>
 ```
 
 ## Important Rules
@@ -214,3 +231,9 @@ For each cluster that met the file-count threshold but showed no structural debt
 7. **Proposals section must be `/assessment-to-specs`-compatible** — each proposal has: ID, claim, evidence with file:line references, FOUNDATIONS references, proposed change, and priority.
 8. **Do not invent problems** — if no missing abstractions are found, say so. A clean result is a valid and valuable finding. Report it with the same rigor as a problematic result.
 9. **Workaround density matters more than file count** — a cluster with repeated predicates in 3 files is a stronger signal than a concept that simply appears in 15 files with clean boundaries.
+
+## Workflow Context
+
+Typically invoked after implementing a spec or after `/golden-gap-analysis` identifies coverage gaps. Output feeds into `/assessment-to-specs` for spec generation from proposals. The workflow is:
+
+1. Implement spec → 2. `/golden-gap-analysis` (coverage) → 3. `/detect-missing-abstractions` (structural debt) → 4. `/assessment-to-specs` (spec drafting from proposals)
