@@ -638,6 +638,9 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
             accused,
             violation_id,
         },
+        InstitutionalClaim::MissingPersonStatus { subject, .. } => {
+            InstitutionalBeliefKey::MissingPersonStatus { subject }
+        }
     }
 }
 

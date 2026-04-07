@@ -52,6 +52,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - Error, trace, request, and report carriers that store embedded enums by value
 - Save/load version boundaries and `SAVE_FORMAT_VERSION` gates
 - Crate-root re-exports and downstream imports for new shared types
+- When a new shared type is defined under a submodule, verify the actual public import path before patching downstream crates. Do not assume a crate-root re-export exists or will be added unless the live code already provides it.
 
 Specific persisted-shape checks:
 - Worldwake does not support legacy saves by default. When persisted shape changes, update the current save format and keep older versions rejected unless the user explicitly asks for compatibility work.
@@ -91,7 +92,7 @@ Specific persisted-shape checks:
 - When the ticket gates behavior on a typed right from a specific provenance source, verify whether right existence alone is lawful or the producing carrier is part of the contract.
 - When a staged ticket introduces a shared enum before all variants are producible, distinguish "type surface lands now" from "variant becomes live now." Test reserved variants as absent.
 - When adding a new shared enum variant ahead of integration tickets, sweep dependent exhaustive tables. Prefer bounded compile-safe inert branches over reusing older variant behavior.
-- When adding a new shared enum variant, also check bounded non-owner exhaustive consumers such as ranking/policy code, failure handling, observation/runtime helpers, renderers, and detail-formatting surfaces. If those consumers only need compile-safe inert handling and do not widen behavioral scope, absorb them into the ticket rather than treating them as a separate architecture change.
+- When adding a new shared enum variant, also check bounded non-owner exhaustive consumers such as ranking/policy code, failure handling, observation/runtime helpers, relay-selection or ordering helpers, renderers, and detail-formatting surfaces. If those consumers only need compile-safe inert handling and do not widen behavioral scope, absorb them into the ticket rather than treating them as a separate architecture change.
 - When the ticket keeps an action family unified while widening to new entity kinds, inspect `TargetSpec`, affordance enumeration, authoritative validation, planner semantics, and payload validators.
 - When extending a projected belief or derived state, check for parallel snapshot builders, event carriers, or projection helpers that also reconstruct that model.
 - When a new world artifact becomes perceivable and the spec says discovery affects behavior, verify at least one lawful downstream consumer exists. Do not land decorative but causally inert snapshot fields.

@@ -15,6 +15,14 @@ pub enum RecordKind {
 pub struct RecordEntryId(pub u64);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum MissingPersonReportStatus {
+    Missing { expected_place: EntityId },
+    FoundSafe { at_place: EntityId },
+    FoundWounded { at_place: EntityId },
+    FoundDead { at_place: EntityId },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum InstitutionalClaim {
     OfficeHolder {
         office: EntityId,
@@ -55,6 +63,12 @@ pub enum InstitutionalClaim {
         accused: EntityId,
         violation_id: ViolationId,
         punishment: PunishmentKind,
+        effective_tick: Tick,
+    },
+    MissingPersonStatus {
+        subject: EntityId,
+        reporter: EntityId,
+        status: MissingPersonReportStatus,
         effective_tick: Tick,
     },
 }
@@ -198,6 +212,9 @@ pub enum InstitutionalBeliefKey {
         accused: EntityId,
         violation_id: ViolationId,
     },
+    MissingPersonStatus {
+        subject: EntityId,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -235,7 +252,7 @@ mod tests {
     use super::{
         BelievedInstitutionalClaim, InstitutionalBeliefKey, InstitutionalBeliefRead,
         InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
-        InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
+        InstitutionalRecordError, MissingPersonReportStatus, RecordData, RecordEntryId, RecordKind,
     };
     use crate::{
         CommodityKind, EntityId, PunishmentKind, Quantity, TheftFacts, Tick, ViolationId,
@@ -303,6 +320,18 @@ mod tests {
                 commodity: CommodityKind::Coin,
                 amount: Quantity(9),
             },
+            effective_tick: Tick(effective_tick),
+        }
+    }
+
+    fn missing_person_claim(
+        status: MissingPersonReportStatus,
+        effective_tick: u64,
+    ) -> InstitutionalClaim {
+        InstitutionalClaim::MissingPersonStatus {
+            subject: entity(44),
+            reporter: entity(45),
+            status,
             effective_tick: Tick(effective_tick),
         }
     }
@@ -443,6 +472,7 @@ mod tests {
                 accused: entity(5),
                 violation_id: ViolationId(9),
             },
+            InstitutionalBeliefKey::MissingPersonStatus { subject: entity(8) },
         ];
 
         keys.sort();
@@ -461,6 +491,7 @@ mod tests {
                     accused: entity(5),
                     violation_id: ViolationId(9),
                 },
+                InstitutionalBeliefKey::MissingPersonStatus { subject: entity(8) },
             ]
         );
     }
@@ -482,6 +513,12 @@ mod tests {
         let read = InstitutionalBeliefRead::Conflicted(vec![
             support_claim(Some(entity(41)), 13),
             force_control_claim(None, true, 14),
+            missing_person_claim(
+                MissingPersonReportStatus::FoundSafe {
+                    at_place: entity(46),
+                },
+                15,
+            ),
         ]);
 
         let record_bytes = bincode::serialize(&record).unwrap();
@@ -534,16 +571,25 @@ mod tests {
     fn accusation_and_verdict_roundtrip_through_bincode() {
         let accusation = accusation_claim(13);
         let verdict = verdict_claim(21);
+        let missing = missing_person_claim(
+            MissingPersonReportStatus::FoundWounded {
+                at_place: entity(46),
+            },
+            22,
+        );
 
         let accusation_bytes = bincode::serialize(&accusation).unwrap();
         let verdict_bytes = bincode::serialize(&verdict).unwrap();
+        let missing_bytes = bincode::serialize(&missing).unwrap();
 
         let accusation_roundtrip: InstitutionalClaim =
             bincode::deserialize(&accusation_bytes).unwrap();
         let verdict_roundtrip: InstitutionalClaim = bincode::deserialize(&verdict_bytes).unwrap();
+        let missing_roundtrip: InstitutionalClaim = bincode::deserialize(&missing_bytes).unwrap();
 
         assert_eq!(accusation_roundtrip, accusation);
         assert_eq!(verdict_roundtrip, verdict);
+        assert_eq!(missing_roundtrip, missing);
     }
 
     #[test]

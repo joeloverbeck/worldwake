@@ -3,8 +3,9 @@ use std::num::NonZeroU32;
 
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventLog, EventTag, ExpectationId,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, LastSeenMemory,
-    LastSeenProvenance, LastSeenRecord, ViolationKind, VisibilitySpec, World, WorldTxn,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, InstitutionalClaim,
+    LastSeenMemory, LastSeenProvenance, LastSeenRecord, RecordData, RecordEntryId, RecordKind,
+    ViolationKind, VisibilitySpec, World, WorldTxn, institutional::MissingPersonReportStatus,
     is_incapacitated,
 };
 use worldwake_sim::{
@@ -97,11 +98,6 @@ fn report_found_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         Precondition::ActorAlive,
         Precondition::TargetExists(0),
         Precondition::TargetAtActorPlace(0),
-        Precondition::TargetKind {
-            target_index: 0,
-            kind: EntityKind::Agent,
-        },
-        Precondition::TargetAlive(0),
     ];
 
     ActionDef {
@@ -109,8 +105,8 @@ fn report_found_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         name: "report_found".to_string(),
         domain: worldwake_core::ActionDomain::Social,
         actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorNotIncapacitated],
-        targets: vec![TargetSpec::EntityAtActorPlace {
-            kind: EntityKind::Agent,
+        targets: vec![TargetSpec::EntityAtActorPlaceAnyOf {
+            kinds: [EntityKind::Agent, EntityKind::Record],
         }],
         preconditions: preconditions.clone(),
         reservation_requirements: Vec::new(),
@@ -178,6 +174,12 @@ struct ReportableFoundExpectation {
     last_seen: LastSeenRecord,
 }
 
+#[derive(Clone, Copy)]
+enum ReportFoundTarget {
+    Agent(EntityId),
+    OfficeRegister(EntityId),
+}
+
 fn target_has_overdue_expectation_for_subject(
     store: Option<&ExpectationStore>,
     target: EntityId,
@@ -235,6 +237,114 @@ fn reportable_found_expectation(
         outcome,
         last_seen,
     })
+}
+
+fn office_register_at_place(
+    txn: &WorldTxn<'_>,
+    place: EntityId,
+) -> Result<Option<EntityId>, ActionError> {
+    let matches = txn
+        .query_record_data()
+        .filter_map(|(entity, record)| {
+            (record.home_place == place && record.record_kind == RecordKind::OfficeRegister)
+                .then_some(entity)
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [record] => Ok(Some(*record)),
+        _ => Err(ActionError::InternalError(format!(
+            "multiple OfficeRegister records at place {place}"
+        ))),
+    }
+}
+
+fn active_missing_person_entry(
+    record_data: &RecordData,
+    subject: EntityId,
+) -> Option<RecordEntryId> {
+    record_data
+        .active_entries()
+        .into_iter()
+        .find_map(|entry| match entry.claim {
+            InstitutionalClaim::MissingPersonStatus {
+                subject: claim_subject,
+                ..
+            } if claim_subject == subject => Some(entry.entry_id),
+            _ => None,
+        })
+}
+
+fn missing_person_status_for_missing(record: &ExpectationRecord) -> MissingPersonReportStatus {
+    MissingPersonReportStatus::Missing {
+        expected_place: record.expected_place,
+    }
+}
+
+fn missing_person_status_for_found(outcome: ExpectationOutcome) -> MissingPersonReportStatus {
+    match outcome {
+        ExpectationOutcome::FoundSafe { at_place } => {
+            MissingPersonReportStatus::FoundSafe { at_place }
+        }
+        ExpectationOutcome::FoundWounded { at_place } => {
+            MissingPersonReportStatus::FoundWounded { at_place }
+        }
+        ExpectationOutcome::FoundDead { at_place } => {
+            MissingPersonReportStatus::FoundDead { at_place }
+        }
+        ExpectationOutcome::Fulfilled
+        | ExpectationOutcome::NotFound
+        | ExpectationOutcome::ReturnedLate => unreachable!("report_found only uses found outcomes"),
+    }
+}
+
+fn write_missing_person_status_claim(
+    txn: &mut WorldTxn<'_>,
+    office_register: EntityId,
+    reporter: EntityId,
+    subject: EntityId,
+    status: MissingPersonReportStatus,
+) -> Result<(), ActionError> {
+    let record_data = txn
+        .get_component_record_data(office_register)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::InternalError(format!("record {office_register} lacks RecordData"))
+        })?;
+    if record_data.record_kind != RecordKind::OfficeRegister {
+        return Err(ActionError::PreconditionFailed(format!(
+            "record {office_register} is not an OfficeRegister"
+        )));
+    }
+
+    let claim = InstitutionalClaim::MissingPersonStatus {
+        subject,
+        reporter,
+        status,
+        effective_tick: txn.tick(),
+    };
+    if active_missing_person_entry(&record_data, subject)
+        .and_then(|entry_id| {
+            record_data
+                .entries
+                .iter()
+                .find(|entry| entry.entry_id == entry_id)
+                .map(|entry| entry.claim)
+        })
+        .is_some_and(|existing| existing == claim)
+    {
+        return Ok(());
+    }
+
+    match active_missing_person_entry(&record_data, subject) {
+        Some(entry_id) => txn
+            .supersede_record_entry(office_register, entry_id, claim)
+            .map_err(|error| ActionError::InternalError(error.to_string()))?,
+        None => txn
+            .append_record_entry(office_register, claim)
+            .map_err(|error| ActionError::InternalError(error.to_string()))?,
+    };
+    Ok(())
 }
 
 fn enumerate_report_missing_payloads(
@@ -372,7 +482,7 @@ fn validate_report_found_payload_authoritatively(
             payload.target, target
         )));
     }
-    validate_report_found_authoritative_context(world, actor, target)?;
+    let report_target = validate_report_found_authoritative_context(world, actor, target)?;
     let view = PerAgentBeliefView::from_world(actor, world);
     let Some(report) = reportable_found_expectation(&view, actor, payload.expectation_id) else {
         return Err(ActionError::PreconditionFailed(format!(
@@ -380,15 +490,17 @@ fn validate_report_found_payload_authoritatively(
             payload.expectation_id
         )));
     };
-    if !target_has_overdue_expectation_for_subject(
-        world.get_component_expectation_store(target),
-        target,
-        report.subject,
-    ) {
-        return Err(ActionError::PreconditionFailed(format!(
-            "target {target} lacks overdue expectation for subject {}",
-            report.subject
-        )));
+    if let ReportFoundTarget::Agent(target_agent) = report_target {
+        if !target_has_overdue_expectation_for_subject(
+            world.get_component_expectation_store(target_agent),
+            target_agent,
+            report.subject,
+        ) {
+            return Err(ActionError::PreconditionFailed(format!(
+                "target {target_agent} lacks overdue expectation for subject {}",
+                report.subject
+            )));
+        }
     }
     Ok(())
 }
@@ -404,40 +516,56 @@ fn validate_report_found_authoritative_context(
     world: &World,
     actor: EntityId,
     target: EntityId,
-) -> Result<(), ActionError> {
-    if target == actor {
-        return Err(ActionError::PreconditionFailed(format!(
-            "actor {actor} cannot report_found to self"
-        )));
-    }
-    if world.get_component_dead_at(target).is_some() {
-        return Err(ActionError::PreconditionFailed(format!(
-            "target {target} is not alive"
-        )));
-    }
-    if world.entity_kind(target) != Some(EntityKind::Agent) {
-        return Err(ActionError::PreconditionFailed(format!(
-            "target {target} is not an agent"
-        )));
-    }
+) -> Result<ReportFoundTarget, ActionError> {
     if world.effective_place(actor) != world.effective_place(target) {
         return Err(ActionError::PreconditionFailed(format!(
             "target {target} is not colocated with actor {actor}"
         )));
     }
-    if is_authoritatively_incapacitated(world, target) {
-        return Err(ActionError::PreconditionFailed(format!(
-            "target {target} is incapacitated"
-        )));
+    match world.entity_kind(target) {
+        Some(EntityKind::Agent) => {
+            if target == actor {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "actor {actor} cannot report_found to self"
+                )));
+            }
+            if world.get_component_dead_at(target).is_some() {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "target {target} is not alive"
+                )));
+            }
+            if is_authoritatively_incapacitated(world, target) {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "target {target} is incapacitated"
+                )));
+            }
+            Ok(ReportFoundTarget::Agent(target))
+        }
+        Some(EntityKind::Record) => {
+            let Some(record_data) = world.get_component_record_data(target) else {
+                return Err(ActionError::InternalError(format!(
+                    "record {target} lacks RecordData"
+                )));
+            };
+            if record_data.record_kind != RecordKind::OfficeRegister {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "record {target} is not an OfficeRegister"
+                )));
+            }
+            Ok(ReportFoundTarget::OfficeRegister(target))
+        }
+        Some(kind) => Err(ActionError::PreconditionFailed(format!(
+            "target {target} has unsupported kind {kind:?}"
+        ))),
+        None => Err(ActionError::InvalidTarget(target)),
     }
-    Ok(())
 }
 
 fn validate_report_found_context(
     txn: &WorldTxn<'_>,
     instance: &ActionInstance,
     payload: &ReportFoundActionPayload,
-) -> Result<EntityId, ActionError> {
+) -> Result<ReportFoundTarget, ActionError> {
     let target = *instance
         .targets
         .first()
@@ -450,12 +578,6 @@ fn validate_report_found_context(
                 actual: payload.target,
             },
         ));
-    }
-    if target == instance.actor {
-        return Err(ActionError::PreconditionFailed(format!(
-            "actor {} cannot report_found to self",
-            instance.actor
-        )));
     }
     let actor_place = txn.effective_place(instance.actor).ok_or_else(|| {
         ActionError::AbortRequested(ActionAbortRequestReason::ActorNotPlaced {
@@ -470,22 +592,64 @@ fn validate_report_found_context(
             },
         ));
     }
-    if txn.get_component_dead_at(target).is_some() {
-        return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::TargetNotAlive { target },
-        ));
+    match txn.entity_kind(target) {
+        Some(EntityKind::Agent) => {
+            if target == instance.actor {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "actor {} cannot report_found to self",
+                    instance.actor
+                )));
+            }
+            if txn.get_component_dead_at(target).is_some() {
+                return Err(ActionError::AbortRequested(
+                    ActionAbortRequestReason::TargetNotAlive { target },
+                ));
+            }
+            if is_authoritatively_incapacitated(txn, target) {
+                return Err(ActionError::AbortRequested(
+                    ActionAbortRequestReason::TargetIncapacitated { target },
+                ));
+            }
+            Ok(ReportFoundTarget::Agent(target))
+        }
+        Some(EntityKind::Record) => {
+            let Some(record_data) = txn.get_component_record_data(target) else {
+                return Err(ActionError::InternalError(format!(
+                    "record {target} lacks RecordData"
+                )));
+            };
+            if record_data.record_kind != RecordKind::OfficeRegister {
+                return Err(ActionError::PreconditionFailed(format!(
+                    "record {target} is not an OfficeRegister"
+                )));
+            }
+            Ok(ReportFoundTarget::OfficeRegister(target))
+        }
+        Some(kind) => Err(ActionError::PreconditionFailed(format!(
+            "target {target} has unsupported kind {kind:?}"
+        ))),
+        None => Err(ActionError::InvalidTarget(target)),
     }
-    if txn.entity_kind(target) != Some(EntityKind::Agent) {
-        return Err(ActionError::PreconditionFailed(format!(
-            "target {target} is not an agent"
-        )));
+}
+
+fn ensure_agent_target_has_overdue_expectation(
+    txn: &WorldTxn<'_>,
+    target: EntityId,
+    subject: EntityId,
+    at_commit: bool,
+) -> Result<(), ActionError> {
+    if target_has_overdue_expectation_for_subject(
+        txn.get_component_expectation_store(target),
+        target,
+        subject,
+    ) {
+        return Ok(());
     }
-    if is_authoritatively_incapacitated(txn, target) {
-        return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::TargetIncapacitated { target },
-        ));
-    }
-    Ok(target)
+
+    let suffix = if at_commit { " at commit" } else { "" };
+    Err(ActionError::PreconditionFailed(format!(
+        "target {target} lacks overdue expectation for subject {subject}{suffix}"
+    )))
 }
 
 fn start_report_missing(
@@ -521,19 +685,12 @@ fn start_report_found(
     let Some(report) = reportable_found_expectation(&view, instance.actor, payload.expectation_id)
     else {
         return Err(ActionError::PreconditionFailed(format!(
-            "actor {} cannot report found expectation {} to target {target}",
-            instance.actor, payload.expectation_id
+            "actor {} cannot report found expectation {} to target {}",
+            instance.actor, payload.expectation_id, payload.target
         )));
     };
-    if !target_has_overdue_expectation_for_subject(
-        txn.get_component_expectation_store(target),
-        target,
-        report.subject,
-    ) {
-        return Err(ActionError::PreconditionFailed(format!(
-            "target {target} lacks overdue expectation for subject {}",
-            report.subject
-        )));
+    if let ReportFoundTarget::Agent(target_agent) = target {
+        ensure_agent_target_has_overdue_expectation(txn, target_agent, report.subject, false)?;
     }
     Ok(Some(ActionState::Empty))
 }
@@ -699,6 +856,15 @@ fn commit_report_missing(
     );
     txn.set_component_violation_memory(actor, memory)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    if let Some(office_register) = office_register_at_place(txn, record.expected_place)? {
+        write_missing_person_status_claim(
+            txn,
+            office_register,
+            actor,
+            record.subject,
+            missing_person_status_for_missing(&record),
+        )?;
+    }
 
     Ok(CommitOutcome::empty())
 }
@@ -718,46 +884,50 @@ fn commit_report_found(
     let report = reportable_found_expectation(&view, instance.actor, payload.expectation_id)
         .ok_or_else(|| {
             ActionError::PreconditionFailed(format!(
-                "actor {} cannot report found expectation {} to target {target} at commit",
-                instance.actor, payload.expectation_id
+                "actor {} cannot report found expectation {} to target {} at commit",
+                instance.actor, payload.expectation_id, payload.target
             ))
         })?;
-    if !target_has_overdue_expectation_for_subject(
-        txn.get_component_expectation_store(target),
-        target,
-        report.subject,
-    ) {
-        return Err(ActionError::PreconditionFailed(format!(
-            "target {target} lacks overdue expectation for subject {} at commit",
-            report.subject
-        )));
+    match target {
+        ReportFoundTarget::Agent(target_agent) => {
+            ensure_agent_target_has_overdue_expectation(txn, target_agent, report.subject, true)?;
+
+            let mut target_memory = txn
+                .get_component_last_seen_memory(target_agent)
+                .cloned()
+                .unwrap_or_default();
+            remember_last_seen(
+                &mut target_memory,
+                relay_last_seen_record(report.last_seen, instance.actor),
+            );
+            txn.set_component_last_seen_memory(target_agent, target_memory)
+                .map_err(|error| ActionError::InternalError(error.to_string()))?;
+
+            let mut target_store = txn
+                .get_component_expectation_store(target_agent)
+                .cloned()
+                .unwrap_or_default();
+            resolve_overdue_expectations_for_subject(
+                &mut target_store,
+                target_agent,
+                report.subject,
+                report.outcome,
+            );
+            txn.set_component_expectation_store(target_agent, target_store)
+                .map_err(|error| ActionError::InternalError(error.to_string()))?;
+
+            resolve_missing_violations_for_subject(txn, target_agent, report.subject)?;
+        }
+        ReportFoundTarget::OfficeRegister(office_register) => {
+            write_missing_person_status_claim(
+                txn,
+                office_register,
+                instance.actor,
+                report.subject,
+                missing_person_status_for_found(report.outcome),
+            )?;
+        }
     }
-
-    let mut target_memory = txn
-        .get_component_last_seen_memory(target)
-        .cloned()
-        .unwrap_or_default();
-    remember_last_seen(
-        &mut target_memory,
-        relay_last_seen_record(report.last_seen, instance.actor),
-    );
-    txn.set_component_last_seen_memory(target, target_memory)
-        .map_err(|error| ActionError::InternalError(error.to_string()))?;
-
-    let mut target_store = txn
-        .get_component_expectation_store(target)
-        .cloned()
-        .unwrap_or_default();
-    resolve_overdue_expectations_for_subject(
-        &mut target_store,
-        target,
-        report.subject,
-        report.outcome,
-    );
-    txn.set_component_expectation_store(target, target_store)
-        .map_err(|error| ActionError::InternalError(error.to_string()))?;
-
-    resolve_missing_violations_for_subject(txn, target, report.subject)?;
 
     Ok(CommitOutcome::empty())
 }
@@ -909,6 +1079,29 @@ mod tests {
         commit_txn(txn);
     }
 
+    fn create_record(
+        world: &mut World,
+        place: EntityId,
+        issuer: EntityId,
+        kind: RecordKind,
+        tick: u64,
+    ) -> EntityId {
+        let mut txn = new_txn(world, tick);
+        let record = txn
+            .create_record(RecordData {
+                record_kind: kind,
+                home_place: place,
+                issuer,
+                consultation_ticks: 4,
+                max_entries_per_consult: 6,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })
+            .unwrap();
+        commit_txn(txn);
+        record
+    }
+
     fn setup_fixture() -> (World, EntityId, EntityId, EntityId, EntityId, EntityId) {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place =
@@ -1057,6 +1250,118 @@ mod tests {
                     expected_place: place,
                 }
         }));
+    }
+
+    #[test]
+    fn report_missing_commit_writes_missing_person_claim_to_local_office_register() {
+        let (mut world, actor, _listener, subject, place, _other_place) = setup_fixture();
+        let office_register =
+            create_record(&mut world, place, actor, RecordKind::OfficeRegister, 2);
+        let expectation_id =
+            seed_expectation(&mut world, actor, subject, place, ExpectationState::Overdue);
+        let (defs, handlers, report_missing_id, _report_found_id) = setup_registries();
+        let affordance = Affordance {
+            def_id: report_missing_id,
+            actor,
+            bound_targets: vec![place],
+            payload_override: Some(ActionPayload::ReportMissing(ReportMissingActionPayload {
+                expectation_id,
+            })),
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+
+        let outcome = run_action_to_completion(&mut world, &defs, &handlers, &affordance);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+
+        let record_data = world.get_component_record_data(office_register).unwrap();
+        let entry = record_data
+            .active_entries()
+            .into_iter()
+            .find(|entry| {
+                matches!(
+                    entry.claim,
+                    InstitutionalClaim::MissingPersonStatus { subject: claim_subject, .. }
+                        if claim_subject == subject
+                )
+            })
+            .expect("office register should hold missing-person claim");
+        assert_eq!(
+            entry.claim,
+            InstitutionalClaim::MissingPersonStatus {
+                subject,
+                reporter: actor,
+                status: MissingPersonReportStatus::Missing {
+                    expected_place: place,
+                },
+                effective_tick: Tick(3),
+            }
+        );
+    }
+
+    #[test]
+    fn report_missing_commit_supersedes_existing_missing_person_claim_for_same_subject() {
+        let (mut world, actor, _listener, subject, place, other_place) = setup_fixture();
+        let office_register =
+            create_record(&mut world, place, actor, RecordKind::OfficeRegister, 2);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let _ = txn
+                .append_record_entry(
+                    office_register,
+                    InstitutionalClaim::MissingPersonStatus {
+                        subject,
+                        reporter: actor,
+                        status: MissingPersonReportStatus::FoundSafe {
+                            at_place: other_place,
+                        },
+                        effective_tick: Tick(2),
+                    },
+                )
+                .unwrap();
+            commit_txn(txn);
+        }
+        let expectation_id =
+            seed_expectation(&mut world, actor, subject, place, ExpectationState::Overdue);
+        let (defs, handlers, report_missing_id, _report_found_id) = setup_registries();
+        let affordance = Affordance {
+            def_id: report_missing_id,
+            actor,
+            bound_targets: vec![place],
+            payload_override: Some(ActionPayload::ReportMissing(ReportMissingActionPayload {
+                expectation_id,
+            })),
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+
+        let outcome = run_action_to_completion(&mut world, &defs, &handlers, &affordance);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+
+        let record_data = world.get_component_record_data(office_register).unwrap();
+        let active_claims = record_data
+            .active_entries()
+            .into_iter()
+            .filter(|entry| {
+                matches!(
+                    entry.claim,
+                    InstitutionalClaim::MissingPersonStatus { subject: claim_subject, .. }
+                        if claim_subject == subject
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(active_claims.len(), 1);
+        assert_eq!(
+            active_claims[0].claim,
+            InstitutionalClaim::MissingPersonStatus {
+                subject,
+                reporter: actor,
+                status: MissingPersonReportStatus::Missing {
+                    expected_place: place,
+                },
+                effective_tick: Tick(3),
+            }
+        );
     }
 
     #[test]
@@ -1272,6 +1577,75 @@ mod tests {
                 .unresolved_by_id(missing_violation_id, Tick(3))
                 .is_none(),
             "listener missing violation should be resolved after report_found"
+        );
+    }
+
+    #[test]
+    fn report_found_commit_writes_found_status_to_office_register() {
+        let (mut world, actor, _listener, subject, place, other_place) = setup_fixture();
+        let office_register =
+            create_record(&mut world, place, actor, RecordKind::OfficeRegister, 2);
+        let expectation_id = seed_expectation(
+            &mut world,
+            actor,
+            subject,
+            place,
+            ExpectationState::Resolved {
+                outcome: ExpectationOutcome::FoundDead {
+                    at_place: other_place,
+                },
+            },
+        );
+        seed_last_seen_record(
+            &mut world,
+            actor,
+            LastSeenRecord {
+                subject,
+                place: other_place,
+                observed_tick: Tick(7),
+                source: actor,
+                provenance: LastSeenProvenance::DirectObservation,
+            },
+            5,
+        );
+        let (defs, handlers, _report_missing_id, report_found_id) = setup_registries();
+        let affordance = Affordance {
+            def_id: report_found_id,
+            actor,
+            bound_targets: vec![office_register],
+            payload_override: Some(ActionPayload::ReportFound(ReportFoundActionPayload {
+                target: office_register,
+                expectation_id,
+            })),
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+
+        let outcome = run_action_to_completion(&mut world, &defs, &handlers, &affordance);
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+
+        let record_data = world.get_component_record_data(office_register).unwrap();
+        let entry = record_data
+            .active_entries()
+            .into_iter()
+            .find(|entry| {
+                matches!(
+                    entry.claim,
+                    InstitutionalClaim::MissingPersonStatus { subject: claim_subject, .. }
+                        if claim_subject == subject
+                )
+            })
+            .expect("office register should hold found-person claim");
+        assert_eq!(
+            entry.claim,
+            InstitutionalClaim::MissingPersonStatus {
+                subject,
+                reporter: actor,
+                status: MissingPersonReportStatus::FoundDead {
+                    at_place: other_place,
+                },
+                effective_tick: Tick(3),
+            }
         );
     }
 

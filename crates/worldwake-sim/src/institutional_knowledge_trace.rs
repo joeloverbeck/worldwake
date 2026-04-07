@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use worldwake_core::{
     AgentBeliefStore, EntityId, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, RecordData, RecordEntryId, Tick,
+    InstitutionalClaim, RecordData, RecordEntryId, Tick, institutional::MissingPersonReportStatus,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -67,6 +67,12 @@ pub enum InstitutionalBeliefReadSummary {
     },
     CrimeCaseClaims {
         claims: Vec<InstitutionalClaim>,
+    },
+    MissingPersonStatusCertain {
+        status: MissingPersonReportStatus,
+    },
+    MissingPersonStatusConflicted {
+        statuses: Vec<MissingPersonReportStatus>,
     },
 }
 
@@ -312,6 +318,17 @@ pub fn summarize_institutional_read(
                 InstitutionalBeliefReadSummary::CrimeCaseClaims { claims }
             }
         }
+        InstitutionalBeliefKey::MissingPersonStatus { subject } => {
+            match store.believed_missing_person_status(subject) {
+                InstitutionalBeliefRead::Unknown => InstitutionalBeliefReadSummary::Unknown,
+                InstitutionalBeliefRead::Certain(status) => {
+                    InstitutionalBeliefReadSummary::MissingPersonStatusCertain { status }
+                }
+                InstitutionalBeliefRead::Conflicted(statuses) => {
+                    InstitutionalBeliefReadSummary::MissingPersonStatusConflicted { statuses }
+                }
+            }
+        }
     }
 }
 
@@ -345,6 +362,9 @@ fn institutional_belief_key(claim: worldwake_core::InstitutionalClaim) -> Instit
             accused,
             violation_id,
         },
+        worldwake_core::InstitutionalClaim::MissingPersonStatus { subject, .. } => {
+            InstitutionalBeliefKey::MissingPersonStatus { subject }
+        }
     }
 }
 

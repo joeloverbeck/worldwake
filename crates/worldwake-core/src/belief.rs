@@ -5,6 +5,7 @@ use crate::{
     EntityBeliefAspect, EntityBeliefClaim, EntityId, EvidenceKind, InstitutionalBeliefKey,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity,
     ResourceSource, TheftFacts, Tick, WorkstationTag, World, Wound,
+    institutional::MissingPersonReportStatus,
     social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,9 @@ enum InstitutionalTellTopicKey {
     CrimeCase {
         accused: EntityId,
         violation_id: crate::ViolationId,
+    },
+    MissingPersonStatus {
+        subject: EntityId,
     },
 }
 
@@ -582,6 +586,27 @@ impl AgentBeliefStore {
     }
 
     #[must_use]
+    pub fn believed_missing_person_status(
+        &self,
+        subject: EntityId,
+    ) -> InstitutionalBeliefRead<MissingPersonReportStatus> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::MissingPersonStatus { subject })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::MissingPersonStatus {
+                    subject: claim_subject,
+                    status,
+                    ..
+                } if *claim_subject == subject => Some(*status),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
     pub fn believed_support_declarations_for_office(
         &self,
         office: EntityId,
@@ -847,6 +872,9 @@ fn institutional_tell_topic_key(claim: InstitutionalClaim) -> InstitutionalTellT
             accused,
             violation_id,
         },
+        InstitutionalClaim::MissingPersonStatus { subject, .. } => {
+            InstitutionalTellTopicKey::MissingPersonStatus { subject }
+        }
     }
 }
 
@@ -876,7 +904,8 @@ fn institutional_claim_effective_tick(claim: InstitutionalClaim) -> Tick {
         | InstitutionalClaim::FactionRallyPoint { effective_tick, .. }
         | InstitutionalClaim::SupportDeclaration { effective_tick, .. }
         | InstitutionalClaim::Accusation { effective_tick, .. }
-        | InstitutionalClaim::Verdict { effective_tick, .. } => effective_tick,
+        | InstitutionalClaim::Verdict { effective_tick, .. }
+        | InstitutionalClaim::MissingPersonStatus { effective_tick, .. } => effective_tick,
     }
 }
 
@@ -1101,7 +1130,10 @@ pub fn institutional_claim_subject_entity(claim: InstitutionalClaim) -> EntityId
         InstitutionalClaim::FactionMembership { faction, .. }
         | InstitutionalClaim::FactionRallyPoint { faction, .. } => faction,
         InstitutionalClaim::Accusation { accused, .. }
-        | InstitutionalClaim::Verdict { accused, .. } => accused,
+        | InstitutionalClaim::Verdict { accused, .. }
+        | InstitutionalClaim::MissingPersonStatus {
+            subject: accused, ..
+        } => accused,
     }
 }
 
@@ -1341,6 +1373,18 @@ fn institutional_claim_same_content(left: InstitutionalClaim, right: Institution
                 && left_violation_id == right_violation_id
                 && left_punishment == right_punishment
         }
+        (
+            InstitutionalClaim::MissingPersonStatus {
+                subject: left_subject,
+                status: left_status,
+                ..
+            },
+            InstitutionalClaim::MissingPersonStatus {
+                subject: right_subject,
+                status: right_status,
+                ..
+            },
+        ) => left_subject == right_subject && left_status == right_status,
         _ => false,
     }
 }
