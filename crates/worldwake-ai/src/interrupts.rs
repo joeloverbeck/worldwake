@@ -2,7 +2,8 @@ use crate::{
     AgentDecisionRuntime, DecisionContext, FramePlanRelation, GoalKey, GoalPriorityClass,
     RankedGoal, classify_frame_plan_relation,
     frame_switch_policy::compare_relation_aware_goal_switch,
-    goal_policy::{FreeInterruptRole, PenaltyInterruptEligibility, goal_family_policy},
+    GoalDispatchKey,
+    goal_policy::{FreeInterruptRole, PenaltyInterruptEligibility},
     goal_switching::{GoalSwitchKind, compare_goal_switch},
     plan_selection::SelectionCandidatePlan,
 };
@@ -74,7 +75,9 @@ fn interrupt_with_penalty(challenger: &RankedGoal) -> InterruptDecision {
     if challenger.priority_class != GoalPriorityClass::Critical {
         return InterruptDecision::NoInterrupt;
     }
-    let policy = goal_family_policy(&challenger.grounded.key.kind);
+    let policy = GoalDispatchKey::from_goal_kind(&challenger.grounded.key.kind)
+        .declaration()
+        .family_policy;
     match policy.penalty_interrupt {
         PenaltyInterruptEligibility::WhenCritical { trigger } => {
             InterruptDecision::InterruptForReplan { trigger }
@@ -95,7 +98,9 @@ fn interrupt_freely(
     frame_switch_margin: Permille,
     decision_context: DecisionContext,
 ) -> InterruptDecision {
-    let policy = goal_family_policy(&challenger.grounded.key.kind);
+    let policy = GoalDispatchKey::from_goal_kind(&challenger.grounded.key.kind)
+        .declaration()
+        .family_policy;
     if policy.free_interrupt == FreeInterruptRole::Opportunistic {
         return if decision_context.is_stressed_at_or_above(GoalPriorityClass::Medium) {
             InterruptDecision::NoInterrupt
@@ -124,7 +129,10 @@ fn interrupt_freely(
     ) {
         return match switch_kind {
             GoalSwitchKind::HigherPriorityGoal
-                if goal_family_policy(&challenger.grounded.key.kind).free_interrupt
+                if GoalDispatchKey::from_goal_kind(&challenger.grounded.key.kind)
+                    .declaration()
+                    .family_policy
+                    .free_interrupt
                     == FreeInterruptRole::Reactive =>
             {
                 InterruptDecision::InterruptForReplan {

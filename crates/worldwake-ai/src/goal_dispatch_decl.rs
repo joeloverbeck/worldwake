@@ -226,7 +226,8 @@ const SHARE_BELIEF_GOSSIP_POLICY: GoalFamilyPolicy = SOCIAL_POLICY;
 
 const TELL_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Tell];
 const INVESTIGATE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Investigate];
-const SEARCH_PLACE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::SearchPlace];
+const SEARCH_PLACE_BARRIER: &[PlannerOpKind] =
+    &[PlannerOpKind::SearchPlace, PlannerOpKind::AskAboutPerson];
 const REPORT_MISSING_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::ReportMissing];
 const PATROL_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Patrol];
 const ESCORT_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::EscortToSafety];
@@ -1129,18 +1130,32 @@ mod tests {
     }
 
     #[test]
-    fn test_family_policy_matches_standalone_function() {
-        use crate::goal_policy::goal_family_policy;
+    fn test_family_policy_declarations_cover_all_policy_variants() {
+        use std::collections::HashSet;
+
+        let mut suppression_variants = HashSet::new();
+        let mut free_interrupt_variants = HashSet::new();
 
         for key in ALL_KEYS {
-            let goal = representative_goal_for(*key);
-            let decl_policy = key.declaration().family_policy;
-            let standalone_policy = goal_family_policy(&goal);
-            assert_eq!(
-                decl_policy, standalone_policy,
-                "family_policy mismatch for {key:?}: declaration={decl_policy:?}, standalone={standalone_policy:?}"
-            );
+            let policy = key.declaration().family_policy;
+            suppression_variants
+                .insert(std::mem::discriminant(&policy.suppression));
+            free_interrupt_variants
+                .insert(std::mem::discriminant(&policy.free_interrupt));
         }
+
+        // SuppressionRule has 2 variants: Never, WhenStressedAtOrAbove
+        assert_eq!(
+            suppression_variants.len(),
+            2,
+            "expected both SuppressionRule variants represented"
+        );
+        // FreeInterruptRole has 3 variants: Reactive, Opportunistic, Normal
+        assert_eq!(
+            free_interrupt_variants.len(),
+            3,
+            "expected all FreeInterruptRole variants represented"
+        );
     }
 
     #[test]

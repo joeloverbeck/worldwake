@@ -42,7 +42,7 @@ S65 ─┘
   - current status note: the `S67` follow-on golden-gap spec is complete for the implemented overdue-search and report-missing slices, but `S59` itself still remains active because at least one proposed goal/action path is not fully live yet
 - **S60**: Persistent Site Occupancy — site profiles with sublocations, occupancy claims, site traces, BanditCamp migration
 - **S62**: Boundary Processes and Remote Shocks — source regions, boundary channels, scheduled inflows, disruption mechanics
-- **S69**: Goal Dispatch Consolidation — consolidate GoalFamilyPolicy, base GoalPriorityClass, and progress barrier ops into GoalDispatchDeclaration
+- **S69**: Goal Dispatch Consolidation — ✅ COMPLETED — consolidated GoalFamilyPolicy and progress barrier ops into GoalDispatchDeclaration; expanded GoalDispatchKey with payload-aware ShareBelief/PostNotice variants (base GoalPriorityClass excluded — runtime-dependent)
 
 **Wave 2** (after Wave 1):
 - **S61**: Predator Ecology and Dens — predator agents with territory, hunger-driven roaming, den habitation, carcass/track evidence

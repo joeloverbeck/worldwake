@@ -77,7 +77,6 @@ pub use goal_model::{
 };
 pub use goal_policy::{
     DecisionContext, FreeInterruptRole, GoalFamilyPolicy, GoalPolicyOutcome, evaluate_suppression,
-    goal_family_policy,
 };
 pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};

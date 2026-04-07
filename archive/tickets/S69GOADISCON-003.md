@@ -1,6 +1,6 @@
 # S69GOADISCON-003: Migrate consumers and remove standalone functions
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — consumer migration and dead code removal, no runtime behavior change
@@ -129,3 +129,30 @@ Remove `test_family_policy_matches_standalone_function` from `goal_dispatch_decl
 2. `cargo test -p worldwake-ai --features soak --test golden_soak`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
 4. `grep -r "goal_family_policy" crates/worldwake-ai/src/` — must return zero results (excluding comments/docs)
+
+## Assumption Reassessment (2026-04-07)
+
+1. Auto-correction: `SEARCH_PLACE_BARRIER` in `goal_dispatch_decl.rs` was missing `AskAboutPerson` — the live `is_progress_barrier()` treats both `SearchPlace` and `AskAboutPerson` as barriers for `SearchForMissing`. Fixed to `&[SearchPlace, AskAboutPerson]` for behavioral equivalence before replacing the inline checks.
+2. Auto-correction: `lib.rs:80` re-exports `goal_family_policy` — removed.
+3. Tests in `goal_policy.rs` that tested `goal_family_policy()` directly (12 pure-policy tests) had their `goal_family_policy(kind)` calls replaced with `GoalDispatchKey::from_goal_kind(kind).declaration().family_policy` rather than being deleted. These tests still verify the declaration table values against expected policies — useful as regression coverage.
+4. Cross-validation test `test_family_policy_matches_standalone_function` replaced with `test_family_policy_declarations_cover_all_policy_variants` — verifies all `SuppressionRule` and `FreeInterruptRole` variants appear across declarations.
+
+## Outcome
+
+Completed on 2026-04-07.
+
+- Migrated 3 production call sites in `interrupts.rs` to read `family_policy` from declaration
+- Migrated `evaluate_suppression()` in `goal_policy.rs` to read from declaration
+- Deleted `goal_family_policy()` (120 lines) and its doc comment from `goal_policy.rs`
+- Removed `goal_family_policy` from `lib.rs` re-exports
+- Replaced 13 inline per-goal op_kind barrier checks in `is_progress_barrier()` with a single `progress_barrier_ops.contains()` delegation (75 lines → 5 lines)
+- Fixed `SEARCH_PLACE_BARRIER` to include `AskAboutPerson` (ticket 002 omission)
+- Migrated 15 test calls from `goal_family_policy(...)` to declaration lookups
+- Replaced cross-validation test with policy variant coverage check
+- Cleaned up unused imports (`CommodityPurpose`, `CommunicationClass`, `NoticeTopic` from outer scope; `goal_family_policy` from all imports)
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai` (1069 lib tests + all golden suites, 0 failures)
+- Passed `cargo clippy --workspace --all-targets -- -D warnings` (clean)
+- `grep -r "goal_family_policy" crates/worldwake-ai/src/` returns 0 results — fully removed

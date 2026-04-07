@@ -42,6 +42,7 @@ When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), tre
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
 - Described architecture still matches live code.
 - Stated coverage gaps are real and correctly classified.
+- When replacing inline code with a delegation to data populated by a prior ticket, verify line-by-line that the prior ticket's data captures every branch of the original code. Staged migrations risk silent behavior loss if the data ticket was incomplete.
 
 #### Golden-specific reassessment
 

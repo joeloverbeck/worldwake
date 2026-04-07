@@ -1067,80 +1067,11 @@ impl GoalKindPlannerExt for GoalKind {
             );
         }
 
-        if matches!(self, GoalKind::ShareBelief { .. }) && step.op_kind == PlannerOpKind::Tell {
-            return true;
-        }
-
-        if matches!(self, GoalKind::InvestigateViolation { .. })
-            && step.op_kind == PlannerOpKind::Investigate
+        // Direct per-goal op_kind barriers — delegated to the declaration table.
+        let decl = crate::GoalDispatchKey::from_goal_kind(self).declaration();
+        if !decl.progress_barrier_ops.is_empty()
+            && decl.progress_barrier_ops.contains(&step.op_kind)
         {
-            return true;
-        }
-
-        if matches!(self, GoalKind::SearchForMissing { .. })
-            && matches!(
-                step.op_kind,
-                PlannerOpKind::SearchPlace | PlannerOpKind::AskAboutPerson
-            )
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::ReportMissing { .. })
-            && step.op_kind == PlannerOpKind::ReportMissing
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::Patrol { .. }) && step.op_kind == PlannerOpKind::Patrol {
-            return true;
-        }
-
-        if matches!(self, GoalKind::EscortToSafety { .. })
-            && step.op_kind == PlannerOpKind::EscortToSafety
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::FulfillBounty { .. })
-            && step.op_kind == PlannerOpKind::ClaimBounty
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::Accuse { .. }) && step.op_kind == PlannerOpKind::Accuse {
-            return true;
-        }
-
-        if matches!(self, GoalKind::SellCommodity { .. })
-            && step.op_kind == PlannerOpKind::StaffMarket
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::PunishAccused { .. })
-            && matches!(step.op_kind, PlannerOpKind::Fine | PlannerOpKind::Exile)
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::PostBounty { .. }) && step.op_kind == PlannerOpKind::PostBounty
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::PostNotice { .. }) && step.op_kind == PlannerOpKind::PostNotice
-        {
-            return true;
-        }
-
-        if matches!(
-            self,
-            GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. }
-        ) && matches!(
-            step.op_kind,
-            PlannerOpKind::DeclareSupport | PlannerOpKind::PressForceClaim
-        ) {
             return true;
         }
 
