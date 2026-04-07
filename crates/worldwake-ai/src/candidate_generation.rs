@@ -3405,6 +3405,22 @@ fn emit_escort_candidates(
         evidence.places.insert(actor_place);
         evidence.places.insert(destination);
 
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled
+            && let Some((_, belief)) = ctx
+                .view
+                .known_entity_beliefs(ctx.agent)
+                .into_iter()
+                .find(|(e, _)| *e == subject)
+        {
+            trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                subject,
+                aspect: BeliefAspect::Wounded,
+                source: belief.source,
+                observed_tick: belief.observed_tick,
+            });
+        }
+
         emit_candidate_with_trace(
             candidates,
             diagnostics,
@@ -3414,7 +3430,7 @@ fn emit_escort_candidates(
             },
             OpportunityAnchor::Place(destination),
             evidence,
-            EvidenceTrace::default(),
+            trace,
         );
     }
 }

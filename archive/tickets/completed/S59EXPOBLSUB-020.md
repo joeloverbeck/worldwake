@@ -1,6 +1,6 @@
 # S59EXPOBLSUB-020: Add EvidenceTrace knowledge path entries to emit_escort_candidates
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: Yes — candidate generation traceability
@@ -68,3 +68,16 @@ In `crates/worldwake-ai/src/candidate_generation.rs`, within the `emit_escort_ca
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-07.
+
+- Populated `EvidenceTrace.knowledge_path` in `emit_escort_candidates` (`candidate_generation.rs:3408-3420`) with a `BeliefProvenance` entry carrying `BeliefAspect::Wounded`, the belief's `source`, and `observed_tick` — matching the pattern from `emit_care_goals`.
+- Gated on `ctx.tracing_enabled` to avoid allocation when tracing is off.
+- No behavioral change; diagnostic-only enrichment.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai` (36 tests)
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
