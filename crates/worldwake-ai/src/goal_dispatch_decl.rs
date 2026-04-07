@@ -103,6 +103,7 @@ const SEARCH_FOR_MISSING_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::SearchPlace,
 ];
 const REPORT_MISSING_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::ReportMissing];
+const REPORT_FOUND_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::ReportFound];
 const ESCORT_TO_SAFETY_OPS: &[PlannerOpKind] =
     &[PlannerOpKind::Travel, PlannerOpKind::EscortToSafety];
 const PRODUCE_OPS: &[PlannerOpKind] = &[
@@ -229,6 +230,7 @@ const INVESTIGATE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Investigate];
 const SEARCH_PLACE_BARRIER: &[PlannerOpKind] =
     &[PlannerOpKind::SearchPlace, PlannerOpKind::AskAboutPerson];
 const REPORT_MISSING_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::ReportMissing];
+const REPORT_FOUND_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::ReportFound];
 const PATROL_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Patrol];
 const ESCORT_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::EscortToSafety];
 const CLAIM_BOUNTY_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::ClaimBounty];
@@ -380,6 +382,15 @@ static DECL_REPORT_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: REPORT_MISSING_BARRIER,
+};
+static DECL_REPORT_FOUND: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "ReportFound",
+    provenance_family: None,
+    relevant_ops: REPORT_FOUND_OPS,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    family_policy: SOCIAL_POLICY,
+    progress_barrier_ops: REPORT_FOUND_BARRIER,
 };
 static DECL_ESCORT_TO_SAFETY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "EscortToSafety",
@@ -599,6 +610,7 @@ impl GoalDispatchKey {
             Self::TreatWounds => &DECL_TREAT_WOUNDS,
             Self::SearchForMissing => &DECL_SEARCH_FOR_MISSING,
             Self::ReportMissing => &DECL_REPORT_MISSING,
+            Self::ReportFound => &DECL_REPORT_FOUND,
             Self::EscortToSafety => &DECL_ESCORT_TO_SAFETY,
             Self::ProduceCommodity => &DECL_PRODUCE_COMMODITY,
             Self::SellCommodity => &DECL_SELL_COMMODITY,
@@ -631,8 +643,8 @@ mod tests {
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
     use worldwake_core::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommodityPurpose,
-        EntityId, GoalKind, HomeostaticNeedId, ProofRequirement, PunishmentKind, Quantity,
-        RecipeId, RecordEntryId, RewardSource, TellTopic, ViolationId,
+        EntityId, ExpectationId, GoalKind, HomeostaticNeedId, ProofRequirement, PunishmentKind,
+        Quantity, RecipeId, RecordEntryId, RewardSource, TellTopic, ViolationId,
     };
 
     const ALL_KEYS: &[GoalDispatchKey] = &[
@@ -651,6 +663,7 @@ mod tests {
         GoalDispatchKey::TreatWounds,
         GoalDispatchKey::SearchForMissing,
         GoalDispatchKey::ReportMissing,
+        GoalDispatchKey::ReportFound,
         GoalDispatchKey::EscortToSafety,
         GoalDispatchKey::ProduceCommodity,
         GoalDispatchKey::SellCommodity,
@@ -722,6 +735,13 @@ mod tests {
                 subject: target,
                 to_office: Some(office),
                 expectation_id: None,
+            },
+            GoalDispatchKey::ReportFound => GoalKind::ReportFound {
+                subject: EntityId {
+                    slot: 0,
+                    generation: 0,
+                },
+                expectation_id: ExpectationId(0),
             },
             GoalDispatchKey::EscortToSafety => GoalKind::EscortToSafety {
                 subject: target,
@@ -835,7 +855,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 37);
+        assert_eq!(ALL_KEYS.len(), 38);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();

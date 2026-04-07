@@ -20,11 +20,7 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 ## Pending Backlog Summary
 
-1. **S67 Expectation/search/report E2E gaps** — [specs/S67-golden-gaps-S59.md](../specs/S67-golden-gaps-S59.md). The entire S59 expectation-obligation behavioral domain (SearchForMissing, ReportMissing, search_place, ask_about_person, report_missing, ExpectationCheck, MissingPersonStatus) has zero golden coverage. Two scenarios proposed: S67-A (overdue expectation -> search -> found) and S67-B (report missing creates violation + institutional record, then suppression shifts agent to search).
-
-### Recommended Implementation Order
-
-- `S67` — closes the S59 expectation-obligation golden gap.
+(No pending gaps.)
 
 ---
 
@@ -47,6 +43,8 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 ## Removed Backlog Items
 
 Items removed from the golden backlog with rationale (prevents duplicate coverage proposals):
+
+- **S67 Expectation/search/report E2E gaps** (removed 2026-04-07) — Implemented as Scenarios 120-125 in `golden_expectation.rs` (5 scenarios with deterministic replay companions). Spec archived at [archive/specs/S67-golden-gaps-S59.md](../archive/specs/S67-golden-gaps-S59.md). The suite covers all S59 GoalKinds (SearchForMissing, ReportMissing, EscortToSafety, ReportFound), all actions (search_place, ask_about_person, report_missing, escort_to_safety, report_found), the ExpectationCheck system, hearsay transfer through AskAboutPerson, institutional record creation, and multi-goal sequencing through expectation state transitions.
 
 - **S58 Artifact-issuance remaining E2E gap** (removed 2026-04-07) — Implemented as Scenario 113 in `golden_integration.rs` (`golden_s58_autonomous_notice_reroutes_later_travel` plus deterministic replay). Spec archived at [archive/specs/S58-golden-gaps-S51.md](../archive/specs/S58-golden-gaps-S51.md).
 

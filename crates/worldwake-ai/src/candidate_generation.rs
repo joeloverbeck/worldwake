@@ -27,7 +27,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     ArtifactPostingContext, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
     BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule,
-    EntityId, EntityKind, ExpectationRecord, ExpectationState, GoalKey, GoalKind,
+    EntityId, EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState, GoalKey,
+    GoalKind,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
     OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
@@ -255,6 +256,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_recorded_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_search_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_report_found_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_escort_candidates(&mut candidates, &mut diagnostics, &ctx);
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
@@ -3314,6 +3316,69 @@ fn emit_search_candidates(
                 subject: record.subject,
                 to_office: None,
                 expectation_id: Some(record.id),
+            },
+            OpportunityAnchor::Entity(record.subject),
+            evidence,
+            EvidenceTrace::default(),
+        );
+    }
+}
+
+/// Emit [`GoalKind::ReportFound`] candidates when the agent has a resolved
+/// Found* expectation and the last-seen record matches the found place.
+fn emit_report_found_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    // Guard: social weight must be nonzero (reporting is a social action).
+    if ctx.view.utility_profile(ctx.agent).is_none_or(|u| u.social_weight.value() == 0) {
+        return;
+    }
+
+    let Some(store) = ctx.view.expectation_store(ctx.agent) else {
+        return;
+    };
+    let last_seen_memory = ctx.view.last_seen_memory(ctx.agent);
+
+    for record in store.records.values().copied() {
+        if record.owner != ctx.agent {
+            continue;
+        }
+        let ExpectationState::Resolved {
+            outcome:
+                ExpectationOutcome::FoundSafe { at_place: found_place }
+                | ExpectationOutcome::FoundWounded { at_place: found_place }
+                | ExpectationOutcome::FoundDead { at_place: found_place },
+        } = record.state
+        else {
+            eprintln!("[ReportFound] record {:?} state={:?} — not Found*", record.id, record.state);
+            continue;
+        };
+
+        // The last-seen record must confirm the found place (matches
+        // reportable_found_expectation in report_actions.rs).
+        let last_seen_matches = last_seen_memory
+            .as_ref()
+            .and_then(|memory| memory.records.get(&record.subject))
+            .is_some_and(|ls| ls.place == found_place);
+        if !last_seen_matches {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_entity(record.subject);
+        evidence.places.insert(found_place);
+        evidence.places.insert(record.expected_place);
+        if let Some(place) = ctx.place {
+            evidence.places.insert(place);
+        }
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::ReportFound {
+                subject: record.subject,
+                expectation_id: record.id,
             },
             OpportunityAnchor::Entity(record.subject),
             evidence,

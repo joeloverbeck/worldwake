@@ -1551,6 +1551,15 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .flatten()
     }
 
+    fn last_seen_memory(
+        &self,
+        agent: EntityId,
+    ) -> Option<worldwake_core::LastSeenMemory> {
+        (agent == self.snapshot.actor())
+            .then_some(self.snapshot.actor_last_seen_memory.clone())
+            .flatten()
+    }
+
     fn epistemic_disposition_profile(
         &self,
         agent: EntityId,

@@ -324,6 +324,14 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
             ),
             None => format!("ReportMissing({})", entity_display_name(world, *subject)),
         },
+        GoalKind::ReportFound {
+            subject,
+            expectation_id,
+        } => format!(
+            "ReportFound({} exp:{})",
+            entity_display_name(world, *subject),
+            expectation_id
+        ),
         GoalKind::EscortToSafety {
             subject,
             destination,

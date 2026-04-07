@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 143
+- Scenario blocks: 144
 - Contributing golden test files: 23
-- Associated tests: 307
+- Associated tests: 309
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -630,6 +630,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: AskAboutPerson functions as a progress barrier for SearchForMissing. The planner selects AskAboutPerson as a terminal step when the searcher is co-located with a witness who has relevant last-seen info. After the ask commits, the searcher's LastSeenMemory is updated with hearsay provenance (P15: knowledge travels physically through testimony). Replanning with updated beliefs directs search to OrchardFarm (P14: planner uses accessible belief state, not witness knowledge). The full chain demonstrates emergent multi-cycle information gathering (P1) driven by violated expectation (P17).
 
 **Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue transition -> SearchForMissing candidate -> AskAboutPerson progress barrier terminal -> ask_about_person commit -> LastSeenMemory hearsay transfer -> SearchForMissing replan with updated last_seen -> travel to OrchardFarm -> search_place commit -> ExpectationStore resolution FoundSafe.
+
+### Scenario 125: ReportFound After Search Resolution
+
+- Source: `golden_expectation.rs:1300`
+- Systems: ExpectationCheck, AI, Travel, SearchPlace, ReportFound, OfficeRegister
+- GoalKinds: SearchForMissing, ReportFound
+- ActionDomains: Travel, Epistemic, Social
+- Places: VillageSquare, OrchardFarm
+- Principles: 1, 3, 7, 10, 17, 20
+
+**Setup**: A searcher at VillageSquare holds one active RoutineReturn expectation for a passive subject expected at OrchardFarm, with deadline_tick=0 and grace_ticks=0. The searcher has LastSeenMemory pointing to OrchardFarm. An OfficeRegister exists at VillageSquare. The subject is at OrchardFarm with ControlSource::None.
+
+**Proves**: After SearchForMissing resolves the expectation via search_place at OrchardFarm (FoundSafe), the resolved state drives a new GoalKind::ReportFound candidate (P10: aftermath creates future hooks). The planner selects ReportFound as a progress-barrier terminal, travels back to VillageSquare, and commits report_found, writing MissingPersonStatus::FoundSafe to the OfficeRegister (P17: violated expectation drives institutional response). The full chain demonstrates emergent multi-goal sequencing through state transitions (P1), not scripted chains.
+
+**Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue -> SearchForMissing candidate -> travel to OrchardFarm -> search_place commit -> ExpectationStore Resolved(FoundSafe) -> ReportFound candidate -> travel to VillageSquare -> report_found commit -> OfficeRegister MissingPersonStatus::FoundSafe.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 

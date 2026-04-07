@@ -18,7 +18,8 @@ use std::{
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
     CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationRecord,
-    ExpectationState, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead,
+    ExpectationOutcome, ExpectationState, GoalKey, GoalKind, HomeostaticNeeds,
+    InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OpportunityAnchor,
     OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey, TellTopic,
     ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, failure_ratio_permille,
@@ -452,6 +453,7 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
         | GoalKind::BuryCorpse { .. }
         | GoalKind::SearchForMissing { .. }
         | GoalKind::ReportMissing { .. }
+        | GoalKind::ReportFound { .. }
         | GoalKind::EscortToSafety { .. }
         | GoalKind::ShareBelief { .. }
         | GoalKind::InvestigateViolation { .. }
@@ -644,7 +646,9 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             score_product(context.utility.social_weight, boosted_pressure)
         }
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
-        GoalKind::SearchForMissing { .. } | GoalKind::ReportMissing { .. } => {
+        GoalKind::SearchForMissing { .. }
+        | GoalKind::ReportMissing { .. }
+        | GoalKind::ReportFound { .. } => {
             expectation_response_motive(&candidate.key.kind, context)
         }
         GoalKind::EscortToSafety { subject, .. } => {
@@ -676,7 +680,9 @@ fn expectation_response_motive(goal_kind: &GoalKind, context: &RankingContext<'_
 
     let weight = match goal_kind {
         GoalKind::SearchForMissing { .. } => context.utility.care_weight,
-        GoalKind::ReportMissing { .. } => context.utility.social_weight,
+        GoalKind::ReportMissing { .. } | GoalKind::ReportFound { .. } => {
+            context.utility.social_weight
+        }
         _ => return 0,
     };
 
@@ -685,9 +691,9 @@ fn expectation_response_motive(goal_kind: &GoalKind, context: &RankingContext<'_
 
 fn expectation_response_signal(goal_kind: &GoalKind, context: &RankingContext<'_>) -> u32 {
     let subject = match goal_kind {
-        GoalKind::SearchForMissing { subject, .. } | GoalKind::ReportMissing { subject, .. } => {
-            *subject
-        }
+        GoalKind::SearchForMissing { subject, .. }
+        | GoalKind::ReportMissing { subject, .. }
+        | GoalKind::ReportFound { subject, .. } => *subject,
         _ => return 0,
     };
 
@@ -695,13 +701,25 @@ fn expectation_response_signal(goal_kind: &GoalKind, context: &RankingContext<'_
         return 0;
     };
 
+    let is_report_found = matches!(goal_kind, GoalKind::ReportFound { .. });
     store
         .records
         .values()
         .filter(|record| {
             record.owner == context.agent
                 && record.subject == subject
-                && record.state == ExpectationState::Overdue
+                && if is_report_found {
+                    matches!(
+                        record.state,
+                        ExpectationState::Resolved {
+                            outcome: ExpectationOutcome::FoundSafe { .. }
+                                | ExpectationOutcome::FoundWounded { .. }
+                                | ExpectationOutcome::FoundDead { .. }
+                        }
+                    )
+                } else {
+                    record.state == ExpectationState::Overdue
+                }
         })
         .map(|record| expectation_signal_from_record(*record, context.current_tick))
         .max()
@@ -1524,6 +1542,7 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::SearchForMissing { .. } => 28,
         GoalKind::ReportMissing { .. } => 29,
         GoalKind::EscortToSafety { .. } => 30,
+        GoalKind::ReportFound { .. } => 31,
     }
 }
 

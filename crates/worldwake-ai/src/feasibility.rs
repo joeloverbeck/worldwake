@@ -146,6 +146,7 @@ fn goal_specific_feasibility(
             | GoalKind::SearchForMissing { .. }
             | GoalKind::ReportMissing { .. }
             | GoalKind::EscortToSafety { .. }
+            | GoalKind::ReportFound { .. }
             | GoalKind::FulfillBounty { .. }
             | GoalKind::PostBounty { .. }
             | GoalKind::PostNotice { .. }

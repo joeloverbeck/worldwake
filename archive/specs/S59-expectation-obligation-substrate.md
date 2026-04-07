@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-Draft
+**Status**: COMPLETED
 
 ## Crates
 
@@ -369,3 +369,10 @@ Both components added to `AgentDef` in `crates/worldwake-cli/src/scenario/types.
 `LastSeenMemory.capacity` is per-agent (scenario-configurable). Higher capacity for institutional agents (guards, magistrates) who need to track more people.
 
 `ExpectationRecord.grace_ticks` is per-expectation, set at creation time based on the basis (patrol check-ins have shorter grace than social promises).
+
+## Outcome
+
+- **Completion date**: 2026-04-07
+- **What changed**: All 9 deliverables implemented across 17 tickets (S59EXPOBLSUB-001 through S59EXPOBLSUB-017). Types (`ExpectationRecord`, `LastSeenRecord`, `SearchResult`, etc.) in `worldwake-core`. Components (`ExpectationStore`, `LastSeenMemory`) registered as universal on Agent. `ExpectationCheck` system registered as `SystemId::ExpectationCheck` after Perception. Five new actions (`search_place`, `ask_about_person`, `report_missing`, `escort_to_safety`, `report_found`) with handlers in `worldwake-systems`. Three new `GoalKind` variants (`SearchForMissing`, `ReportMissing`, `EscortToSafety`, `ReportFound`) with candidate generation (`emit_search_candidates`, `emit_escort_candidates`, `emit_report_found_candidates`). Five `PlannerOpKind` variants with planner semantics. `GoalBeliefView` extended with `expectation_store()` and `last_seen_memory()`.
+- **Deviations**: None significant. All deliverables landed as specified.
+- **Verification**: 5 golden E2E scenarios (Scenarios 120–125) in `golden_expectation.rs` with deterministic replay companions. Golden gap analysis (S67, archived) confirmed comprehensive coverage. All `cargo test --workspace` and `cargo clippy` passing.

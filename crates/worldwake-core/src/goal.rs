@@ -50,6 +50,10 @@ pub enum GoalKind {
         to_office: Option<EntityId>,
         expectation_id: Option<ExpectationId>,
     },
+    ReportFound {
+        subject: EntityId,
+        expectation_id: ExpectationId,
+    },
     EscortToSafety {
         subject: EntityId,
         destination: EntityId,
@@ -166,6 +170,9 @@ impl From<GoalKind> for GoalKey {
                 subject: target, ..
             }
             | GoalKind::ReportMissing {
+                subject: target, ..
+            }
+            | GoalKind::ReportFound {
                 subject: target, ..
             }
             | GoalKind::LootCorpse { corpse: target }

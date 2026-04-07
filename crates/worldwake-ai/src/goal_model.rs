@@ -24,7 +24,8 @@ use worldwake_sim::{
     ConsultRecordActionPayload, DeclareSupportActionPayload, EscortToSafetyActionPayload,
     InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
     PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
-    RecipeDefinition, RecipeRegistry, ReportMissingActionPayload, RuntimeBeliefView,
+    RecipeDefinition, RecipeRegistry, ReportFoundActionPayload, ReportMissingActionPayload,
+    RuntimeBeliefView,
     SearchPlaceActionPayload, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
@@ -503,7 +504,8 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Patrol { .. }
             | GoalKind::StealItem { .. }
             | GoalKind::Accuse { .. }
-            | GoalKind::PunishAccused { .. } => Some(BTreeSet::new()),
+            | GoalKind::PunishAccused { .. }
+            | GoalKind::ReportFound { .. } => Some(BTreeSet::new()),
         }
     }
 
@@ -640,9 +642,23 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::AskWitness | PlannerOpKind::ReportFound => {
+            PlannerOpKind::AskWitness => {
                 Err(GoalPayloadOverrideError::UnsupportedGoal)
             }
+            PlannerOpKind::ReportFound => match self {
+                GoalKind::ReportFound { expectation_id, .. } => {
+                    let Some(&target) = targets.first() else {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    };
+                    Ok(Some(ActionPayload::ReportFound(
+                        ReportFoundActionPayload {
+                            target,
+                            expectation_id: *expectation_id,
+                        },
+                    )))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
             PlannerOpKind::AskAboutPerson => match self {
                 GoalKind::SearchForMissing { subject, .. } => {
                     let Some(&target) = targets.first() else {
@@ -1067,6 +1083,12 @@ impl GoalKindPlannerExt for GoalKind {
             );
         }
 
+        if matches!(self, GoalKind::ReportFound { .. })
+            && step.op_kind == PlannerOpKind::ReportFound
+        {
+            return true;
+        }
+
         // Direct per-goal op_kind barriers — delegated to the declaration table.
         let decl = crate::GoalDispatchKey::from_goal_kind(self).declaration();
         if !decl.progress_barrier_ops.is_empty()
@@ -1208,6 +1230,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ProduceCommodity { .. }
             | GoalKind::SearchForMissing { .. }
             | GoalKind::ReportMissing { .. }
+            | GoalKind::ReportFound { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::PostBounty { .. }
@@ -1261,7 +1284,8 @@ impl GoalKindPlannerExt for GoalKind {
                 None => state.effective_place(actor).into_iter().collect(),
             },
             GoalKind::EscortToSafety { destination, .. } => vec![*destination],
-            GoalKind::Sleep
+            GoalKind::ReportFound { .. }
+            | GoalKind::Sleep
             | GoalKind::Wash
             | GoalKind::ReduceDanger
             | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
@@ -1501,6 +1525,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::EstablishBanditCamp { .. }
             | GoalKind::SearchForMissing { .. }
             | GoalKind::ReportMissing { .. }
+            | GoalKind::ReportFound { .. }
             | GoalKind::ProduceCommodity { .. }
             | GoalKind::SellCommodity { .. }
             | GoalKind::RestockCommodity { .. }

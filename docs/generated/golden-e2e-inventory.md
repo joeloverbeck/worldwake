@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 24
 - Files contributing `golden_*` tests: 24
-- Total `golden_*` tests: 322
+- Total `golden_*` tests: 324
 
 ## Per-File Inventory
 
@@ -19,7 +19,7 @@ Do not hand-edit it.
 | `golden_commodity_opportunity.rs` | 3 |
 | `golden_determinism.rs` | 12 |
 | `golden_emergent.rs` | 51 |
-| `golden_expectation.rs` | 8 |
+| `golden_expectation.rs` | 10 |
 | `golden_experience_preferences.rs` | 6 |
 | `golden_integration.rs` | 26 |
 | `golden_long_scenarios.rs` | 4 |
@@ -196,6 +196,8 @@ Do not hand-edit it.
 - `golden_escort_to_safety_after_finding_wounded_replays_deterministically`
 - `golden_ask_about_person_during_search`
 - `golden_ask_about_person_during_search_replays_deterministically`
+- `golden_report_found_after_search`
+- `golden_report_found_after_search_replays_deterministically`
 
 ### `golden_experience_preferences.rs`
 

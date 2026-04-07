@@ -1116,3 +1116,225 @@ fn golden_ask_about_person_during_search_replays_deterministically() {
     assert_eq!(first.world_hash, second.world_hash);
     assert_eq!(first.log_hash, second.log_hash);
 }
+
+// ---------------------------------------------------------------------------
+// Helper: ReportFound utility profile — social weight for reporting
+// ---------------------------------------------------------------------------
+
+struct ReportFoundScenarioOutcome {
+    world_hash: worldwake_core::StateHash,
+    log_hash: worldwake_core::StateHash,
+}
+
+fn run_report_found_after_search(seed: Seed) -> ReportFoundScenarioOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    // Searcher at VillageSquare — has overdue expectation for subject at
+    // OrchardFarm. Social weight enables ReportFound candidacy.
+    let searcher = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Searcher",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        search_only_utility_profile(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        searcher,
+        default_perception_profile(),
+    );
+    set_violation_profile(&mut h, searcher, violation_profile(), 0);
+
+    // OfficeRegister at OrchardFarm — created BEFORE the Subject so that its
+    // EntityId sorts lower, making the planner's affordance enumeration prefer
+    // the Record target over the co-located Agent target for report_found.
+    let office_register = seed_office_register(&mut h.world, &mut h.event_log, ORCHARD_FARM);
+
+    // Subject at OrchardFarm — passive, doesn't move.
+    let subject = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Subject",
+        ORCHARD_FARM,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, subject, ControlSource::None, 0);
+
+    // Seed the searcher's belief about the OfficeRegister at OrchardFarm.
+    // Record entities are not projected through standard perception, so the
+    // planner needs an explicit belief to discover the report target.
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        searcher,
+        office_register,
+        BelievedEntityState {
+            last_known_place: Some(ORCHARD_FARM),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(0),
+            source: PerceptionSource::DirectObservation,
+        },
+    );
+
+    // Seed overdue expectation: subject expected at OrchardFarm.
+    let expectation_id = seed_expectation(&mut h, searcher, subject, ORCHARD_FARM, 0);
+
+    let mut search_commit = None;
+    let mut report_commit = None;
+    let mut social_enabled = false;
+
+    for _tick in 0..120_u64 {
+        h.step_once();
+
+        // Scope the immutable borrow on h so we can mutate h.world afterward.
+        let found_search = {
+            let action_sink = h
+                .action_trace_sink()
+                .expect("action tracing should be enabled for report-found scenario");
+            let searcher_events = action_sink.events_for(searcher);
+
+            if search_commit.is_none() {
+                search_commit = searcher_events.iter().find_map(|event| {
+                    (event.action_name == "search_place"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. })
+                        && matches!(
+                            event.detail.as_ref(),
+                            Some(ActionTraceDetail::SearchPlace { subject: traced_subject })
+                                if *traced_subject == subject
+                        ))
+                    .then_some((event.tick, event.sequence_in_tick))
+                });
+            }
+
+            if report_commit.is_none() {
+                report_commit = searcher_events.iter().find_map(|event| {
+                    (event.action_name == "report_found"
+                        && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                    .then_some((event.tick, event.sequence_in_tick))
+                });
+            }
+
+            search_commit.is_some() && !social_enabled
+        };
+
+        // After search commits, enable social_weight so ReportFound
+        // candidates can be generated.
+        if found_search {
+            social_enabled = true;
+            let tick_val = search_commit.unwrap().0 .0;
+            let mut txn = new_txn(&mut h.world, tick_val);
+            txn.set_component_utility_profile(
+                searcher,
+                UtilityProfile {
+                    care_weight: pm(200),
+                    social_weight: pm(900),
+                    ..UtilityProfile::default()
+                },
+            )
+            .expect("golden report-found scenario should keep utility profiles writable");
+            commit_txn(txn, &mut h.event_log);
+        }
+
+        if report_commit.is_some() {
+            let status = missing_person_status_claim(&h, office_register, subject);
+            assert!(
+                matches!(
+                    status,
+                    Some(InstitutionalClaim::MissingPersonStatus {
+                        subject: claim_subject,
+                        reporter: claim_reporter,
+                        status: MissingPersonReportStatus::FoundSafe {
+                            at_place: ORCHARD_FARM,
+                        },
+                        ..
+                    }) if claim_subject == subject && claim_reporter == searcher
+                ),
+                "report_found should write FoundSafe status to the OfficeRegister; got {status:?}"
+            );
+            break;
+        }
+    }
+
+    let search_commit = search_commit
+        .expect("searcher should commit search_place for the missing subject");
+    let report_commit = report_commit
+        .expect("searcher should commit report_found after finding the subject");
+    assert!(
+        search_commit < report_commit,
+        "search_place should commit before report_found: search={search_commit:?} report={report_commit:?}"
+    );
+
+    assert_eq!(
+        expectation_state(&h, searcher, expectation_id),
+        ExpectationState::Resolved {
+            outcome: ExpectationOutcome::FoundSafe {
+                at_place: ORCHARD_FARM,
+            },
+        },
+        "expectation should be resolved as FoundSafe at OrchardFarm"
+    );
+
+    ReportFoundScenarioOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 125: ReportFound After Search Resolution
+// ---------------------------------------------------------------------------
+//
+// Systems: ExpectationCheck, AI, Travel, SearchPlace, ReportFound, OfficeRegister
+// GoalKinds: SearchForMissing, ReportFound
+// ActionDomains: Travel, Epistemic, Social
+// Places: VillageSquare, OrchardFarm
+// Principles: 1, 3, 7, 10, 17, 20
+//
+// Setup: A searcher at VillageSquare holds one active RoutineReturn expectation
+//   for a passive subject expected at OrchardFarm, with deadline_tick=0 and
+//   grace_ticks=0. The searcher has LastSeenMemory pointing to OrchardFarm.
+//   An OfficeRegister exists at VillageSquare. The subject is at OrchardFarm
+//   with ControlSource::None.
+//
+// Proves: After SearchForMissing resolves the expectation via search_place at
+//   OrchardFarm (FoundSafe), the resolved state drives a new GoalKind::ReportFound
+//   candidate (P10: aftermath creates future hooks). The planner selects
+//   ReportFound as a progress-barrier terminal, travels back to VillageSquare,
+//   and commits report_found, writing MissingPersonStatus::FoundSafe to the
+//   OfficeRegister (P17: violated expectation drives institutional response).
+//   The full chain demonstrates emergent multi-goal sequencing through state
+//   transitions (P1), not scripted chains.
+//
+// Chain: ExpectationStore Active -> ExpectationCheck Overdue -> SearchForMissing
+//   candidate -> travel to OrchardFarm -> search_place commit -> ExpectationStore
+//   Resolved(FoundSafe) -> ReportFound candidate -> travel to VillageSquare ->
+//   report_found commit -> OfficeRegister MissingPersonStatus::FoundSafe.
+#[test]
+fn golden_report_found_after_search() {
+    let _ = run_report_found_after_search(Seed([0x6B; 32]));
+}
+
+#[test]
+fn golden_report_found_after_search_replays_deterministically() {
+    let first = run_report_found_after_search(Seed([0x6B; 32]));
+    let second = run_report_found_after_search(Seed([0x6B; 32]));
+
+    assert_eq!(first.world_hash, second.world_hash);
+    assert_eq!(first.log_hash, second.log_hash);
+}

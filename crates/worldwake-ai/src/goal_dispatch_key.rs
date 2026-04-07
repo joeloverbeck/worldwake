@@ -19,6 +19,7 @@ pub enum GoalDispatchKey {
     TreatWounds,
     SearchForMissing,
     ReportMissing,
+    ReportFound,
     EscortToSafety,
     ProduceCommodity,
     SellCommodity,
@@ -44,7 +45,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 37] = [
+    pub const ALL: [Self; 38] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -60,6 +61,7 @@ impl GoalDispatchKey {
         Self::TreatWounds,
         Self::SearchForMissing,
         Self::ReportMissing,
+        Self::ReportFound,
         Self::EscortToSafety,
         Self::ProduceCommodity,
         Self::SellCommodity,
@@ -109,6 +111,7 @@ impl GoalDispatchKey {
             GoalKind::TreatWounds { .. } => Self::TreatWounds,
             GoalKind::SearchForMissing { .. } => Self::SearchForMissing,
             GoalKind::ReportMissing { .. } => Self::ReportMissing,
+            GoalKind::ReportFound { .. } => Self::ReportFound,
             GoalKind::EscortToSafety { .. } => Self::EscortToSafety,
             GoalKind::ProduceCommodity { .. } => Self::ProduceCommodity,
             GoalKind::SellCommodity { .. } => Self::SellCommodity,
@@ -161,8 +164,8 @@ mod tests {
     use super::GoalDispatchKey;
     use worldwake_core::{
         ArtifactPostingContext, CommodityKind, CommodityPurpose, CommunicationClass, EntityId,
-        GoalKind, InstitutionalClaim, NoticeTopic, PunishmentKind, Quantity, RecipeId,
-        RecordEntryId, TellTopic, ViolationId,
+        ExpectationId, GoalKind, InstitutionalClaim, NoticeTopic, PunishmentKind, Quantity,
+        RecipeId, RecordEntryId, TellTopic, ViolationId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -400,6 +403,10 @@ mod tests {
                 to_office: Some(office),
                 expectation_id: None,
             },
+            GoalKind::ReportFound {
+                subject: target,
+                expectation_id: ExpectationId(0),
+            },
             GoalKind::EscortToSafety {
                 subject: target,
                 destination,
@@ -457,7 +464,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 28);
+        assert_eq!(goals.len(), 29);
         for goal in goals {
             let _ = GoalDispatchKey::from(goal);
         }
@@ -473,7 +480,7 @@ mod tests {
     #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 37);
+        assert_eq!(GoalDispatchKey::all().len(), 38);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),

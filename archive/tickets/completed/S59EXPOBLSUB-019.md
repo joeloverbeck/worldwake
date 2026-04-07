@@ -1,6 +1,6 @@
 # S59EXPOBLSUB-019: ReportFound as SearchForMissing post-resolution step and golden E2E
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — goal dispatch declaration, goal model, golden E2E test
@@ -110,6 +110,63 @@ Add `golden_report_found_after_search` (+ deterministic replay variant) to `crat
 
 ### Commands
 
-1. `cargo test -p worldwake-ai golden_report_found`
+1. `cargo test -p worldwake-ai --test golden_expectation golden_report_found`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+4. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-07.
+
+### Architectural Correction
+
+The ticket originally framed ReportFound as a "post-resolution step within SearchForMissing." Reassessment proved this is architecturally impossible: ReportFound requires `Resolved/Found*` expectation state that only exists AFTER `search_place` commits, but both operators have `may_appear_mid_plan=false` (terminal-only). The planner cannot chain them in one plan.
+
+The correct design: **`GoalKind::ReportFound` as a standalone goal**, symmetric with `GoalKind::ReportMissing`. After SearchForMissing resolves an expectation, the Resolved/Found* state drives a new ReportFound candidate. This aligns with P10 (aftermath creates future hooks), P17 (violated expectation drives institutional response), and P20 (ReportFound names a world condition — "institution knows entity was found").
+
+### What Changed
+
+**New GoalKind variant** (`worldwake-core`):
+- `GoalKind::ReportFound { subject: EntityId, expectation_id: ExpectationId }`
+
+**Exhaustive match updates** (across `goal.rs`, `goal_dispatch_key.rs`, `goal_dispatch_decl.rs`, `goal_model.rs`, `ranking.rs`, `feasibility.rs`, `display.rs`):
+- `GoalDispatchKey::ReportFound` with `ALL` array count 37→38
+- `REPORT_FOUND_OPS = [Travel, ReportFound]` with `REPORT_FOUND_BARRIER`
+- `DECL_REPORT_FOUND` static dispatch declaration
+- `goal_kind_discriminant` → 31
+- `priority_class` → Low (same as ReportMissing)
+- `feasibility_strategy` → NoOpinion
+- `is_progress_barrier` for ReportFound + PlannerOpKind::ReportFound
+- `build_payload_override` synthesizes `ReportFoundActionPayload`
+- `goal_relevant_places` → empty (evidence places guide travel)
+- `is_satisfied` → false (terminal-only)
+- `requested_affordance_matches` → flexible goal (true)
+
+**Candidate emitter** (`candidate_generation.rs`):
+- `emit_report_found_candidates` — fires when actor has Resolved/Found* expectation + matching last_seen + social_weight > 0
+
+**Ranking fix** (`ranking.rs`):
+- `expectation_response_signal` now checks `Resolved/Found*` state for ReportFound (was only checking Overdue, which is correct for SearchForMissing/ReportMissing but gives zero motive for ReportFound)
+
+**PlanningSnapshot widening** (`planning_snapshot.rs`, `planning_state.rs`):
+- Added `actor_last_seen_memory: Option<LastSeenMemory>` to PlanningSnapshot
+- Implemented `last_seen_memory()` on PlanningState's RuntimeBeliefView
+
+**Golden E2E test** (Scenario 125):
+- `golden_report_found_after_search` + deterministic replay. Proves: search resolves expectation → ReportFound candidate emitted → planner selects ReportFound → report_found commits → OfficeRegister receives MissingPersonStatus::FoundSafe.
+
+### Deviations
+
+1. **Standalone GoalKind instead of SearchForMissing step** — Original ticket placed ReportFound inside SEARCH_FOR_MISSING_OPS. Corrected to standalone `GoalKind::ReportFound` because the planner architecture can't chain terminal-only operators. FOUNDATIONS P14/P10/P20 all support this correction.
+2. **Scenario 125** (was 124) — 124 taken by S59EXPOBLSUB-018.
+3. **OfficeRegister at OrchardFarm** — Co-located with found subject to avoid requiring travel back. OfficeRegister entity created before Subject to ensure entity ID ordering places the Record target before the Agent target in affordance enumeration (avoids spurious StartFailed from targeting the Subject).
+4. **Belief seeding for OfficeRegister** — Record entities are not projected through standard perception; explicit belief seeded so the PlanningSnapshot includes the report target.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_expectation golden_report_found` (2 tests)
+- Passed `cargo test --test golden_expectation -p worldwake-ai` (25 tests)
+- Passed `cargo test --workspace` (0 failures)
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs` (144 scenario blocks)
