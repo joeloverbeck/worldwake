@@ -148,8 +148,7 @@ pub(super) fn search_candidates(
                     }
                     semantics.op_kind == PlannerOpKind::Travel
                         || grounded_goal_matches_epistemic_barrier(
-                            goal,
-                            &node.state,
+                            &epistemic_subjects,
                             semantics.op_kind,
                             &candidate.authoritative_targets,
                             candidate.payload_override.as_ref(),

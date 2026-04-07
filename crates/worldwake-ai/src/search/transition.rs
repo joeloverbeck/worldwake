@@ -1,5 +1,8 @@
 use super::{SearchCandidate, SearchNode};
-use crate::goal_model::{GoalPayloadOverrideError, grounded_goal_matches_epistemic_barrier};
+use crate::goal_model::{
+    GoalPayloadOverrideError, grounded_goal_epistemic_subjects,
+    grounded_goal_matches_epistemic_barrier,
+};
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
     GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind,
@@ -54,13 +57,12 @@ pub(super) fn build_successor_detailed<'snapshot>(
     let semantics = semantics_table
         .get(&candidate.def_id)
         .ok_or(crate::decision_trace::RootCandidateSkipReason::MissingSemantics)?;
-    let epistemic_barrier_active =
-        !crate::goal_model::grounded_goal_epistemic_subjects(goal, &node.state).is_empty();
+    let epistemic_subjects = grounded_goal_epistemic_subjects(goal, &node.state);
+    let epistemic_barrier_active = !epistemic_subjects.is_empty();
     let is_goal_relevant = if epistemic_barrier_active {
         semantics.op_kind == PlannerOpKind::Travel
             || grounded_goal_matches_epistemic_barrier(
-                goal,
-                &node.state,
+                &epistemic_subjects,
                 semantics.op_kind,
                 &candidate.authoritative_targets,
                 candidate.payload_override.as_ref(),
@@ -198,9 +200,9 @@ pub(super) fn terminal_kind(
     if goal.key.kind.is_satisfied(state) {
         return Some(PlanTerminalKind::GoalSatisfied);
     }
+    let epistemic_subjects = grounded_goal_epistemic_subjects(goal, state);
     if grounded_goal_matches_epistemic_barrier(
-        goal,
-        state,
+        &epistemic_subjects,
         step.op_kind,
         &step
             .targets

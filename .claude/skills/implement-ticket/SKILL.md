@@ -133,6 +133,7 @@ Specific persisted-shape checks:
 - When a ticket eliminates allocation on a hot path (e.g., replacing `format!` with a structured enum variant), verify all consumers of the changed return type: `.is_ok()`, `.unwrap_err()`, `.map_err()`, pattern matches, `Display`/`to_string()` formatting. Confirm no caller depends on the old allocation shape (e.g., string content matching).
 - When adding a new enum variant to replace an allocating variant, include the exhaustive-match and downstream-mapping sweep from the "new enum variant" guidance in Section 5.9.
 - When a performance ticket adds a boolean fast-path alongside an existing `Result`-returning function, verify both paths agree on the same inputs.
+- When refactoring a function to accept pre-computed results by reference instead of re-computing internally, enumerate all call sites and verify each passes the correct pre-computed data. Confirm no call site depended on the function internally re-computing fresh state mid-sequence.
 
 #### Repo rules
 

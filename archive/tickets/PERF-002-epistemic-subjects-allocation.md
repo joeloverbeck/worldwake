@@ -1,6 +1,6 @@
 # PERF-002: Reduce allocation in `grounded_goal_epistemic_subjects`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` goal model and search
@@ -48,7 +48,8 @@ In `search_plan`, compute `grounded_goal_epistemic_subjects` once before the sea
 ## Files to Touch
 
 - `crates/worldwake-ai/src/goal_model.rs` (modify — `grounded_goal_epistemic_subjects`, `grounded_goal_matches_epistemic_barrier`)
-- `crates/worldwake-ai/src/search/mod.rs` (modify — cache result at search entry, pass to barrier check)
+- `crates/worldwake-ai/src/search/candidates.rs` (modify — pass pre-computed subjects to barrier check)
+- `crates/worldwake-ai/src/search/transition.rs` (modify — pre-compute subjects, pass to barrier check)
 
 ## Out of Scope
 
@@ -79,3 +80,23 @@ In `search_plan`, compute `grounded_goal_epistemic_subjects` once before the sea
 1. `cargo test -p worldwake-ai -- grounded_goal_epistemic_subjects`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-07.
+
+- Removed `BTreeSet` intermediate in `grounded_goal_epistemic_subjects` (`goal_model.rs:163-165`). Since `evidence_entities` is already a `BTreeSet<EntityId>` and `filter_map` produces at most one `EpistemicSubject` per entity, the dedup step was unnecessary. Now collects directly to `Vec`.
+- Changed `grounded_goal_matches_epistemic_barrier` signature to accept `&[EpistemicSubject]` instead of `(&GroundedGoal, &PlanningState)` — eliminates redundant re-computation of subjects at every barrier check.
+- Updated all 3 call-site files: `candidates.rs` (1 site), `transition.rs` (2 sites, each pre-computing subjects once), `goal_model.rs` tests (1 test with 4 assertions).
+- Item 3 from "What to Change" (avoid re-allocating `known_entity_beliefs` per call) is structurally already addressed by the lazy `find_map` pattern in the function body. Changing the trait return type to avoid the `Vec` allocation is explicitly out of scope.
+
+## Deviations
+
+- Ticket proposed caching at search entry. Implemented a simpler approach: changed `grounded_goal_matches_epistemic_barrier` to take pre-computed subjects by reference, so each call site computes once and reuses. This achieves the same zero-recomputation goal without a separate cache struct.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai` (all 27 lib tests + 36 planner conformance tests)
+- Passed `cargo clippy -p worldwake-ai --lib -- -D warnings`
+- Passed `cargo test --workspace`
+- Note: `cargo clippy -p worldwake-ai --all-targets` has pre-existing failures in untracked `perf_diag.rs` binary, unrelated to this ticket.

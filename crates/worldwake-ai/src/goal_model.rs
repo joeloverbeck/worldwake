@@ -160,33 +160,29 @@ pub(crate) fn grounded_goal_epistemic_subjects(
             );
             (anchored_here || goal.evidence_places.contains(&place)).then_some(subject)
         })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
         .collect()
 }
 
 pub(crate) fn grounded_goal_matches_epistemic_barrier(
-    goal: &GroundedGoal,
-    state: &PlanningState<'_>,
+    subjects: &[EpistemicSubject],
     op_kind: PlannerOpKind,
     authoritative_targets: &[EntityId],
     payload: Option<&ActionPayload>,
 ) -> bool {
-    let subjects = grounded_goal_epistemic_subjects(goal, state);
     if subjects.is_empty() {
         return false;
     }
 
     match (op_kind, payload) {
-        (PlannerOpKind::Travel, _) => subjects.into_iter().any(|subject| match subject {
+        (PlannerOpKind::Travel, _) => subjects.iter().any(|subject| match subject {
             EpistemicSubject::EntityLocation { place, .. }
             | EpistemicSubject::SupplyAvailability { place, .. } => {
-                authoritative_targets.contains(&place)
+                authoritative_targets.contains(place)
             }
         }),
         (PlannerOpKind::AskWitness, Some(ActionPayload::AskWitness(ask))) => subjects
-            .into_iter()
-            .any(|subject| ask_witness_payload_matches_subject(ask, subject)),
+            .iter()
+            .any(|subject| ask_witness_payload_matches_subject(ask, *subject)),
         _ => false,
     }
 }
@@ -5288,16 +5284,15 @@ mod tests {
             evidence_places: BTreeSet::from([remote]),
         };
 
+        let subjects = grounded_goal_epistemic_subjects(&goal, &state);
         assert!(grounded_goal_matches_epistemic_barrier(
-            &goal,
-            &state,
+            &subjects,
             PlannerOpKind::Travel,
             &[remote],
             None,
         ));
         assert!(grounded_goal_matches_epistemic_barrier(
-            &goal,
-            &state,
+            &subjects,
             PlannerOpKind::AskWitness,
             &[witness],
             Some(&ActionPayload::AskWitness(AskWitnessPayload {
@@ -5307,8 +5302,7 @@ mod tests {
             })),
         ));
         assert!(!grounded_goal_matches_epistemic_barrier(
-            &goal,
-            &state,
+            &subjects,
             PlannerOpKind::AskWitness,
             &[witness],
             Some(&ActionPayload::AskWitness(AskWitnessPayload {
@@ -5318,8 +5312,7 @@ mod tests {
             })),
         ));
         assert!(!grounded_goal_matches_epistemic_barrier(
-            &goal,
-            &state,
+            &subjects,
             PlannerOpKind::Travel,
             &[town],
             None,
