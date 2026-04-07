@@ -336,7 +336,9 @@ fn project_local_bandit_rally_doctrine(
         learned_tick: tick,
         learned_at: Some(place),
     };
-    let before = store.institutional_beliefs.get(&key).cloned();
+    let before = store
+        .get_institutional_beliefs(&key)
+        .map(<[BelievedInstitutionalClaim]>::to_vec);
     store.replace_institutional_belief(key, belief.clone(), profile);
     before.as_deref() != Some(std::slice::from_ref(&belief))
 }
@@ -381,39 +383,33 @@ fn observe_active_actions(
                 None => None,
             };
 
-            let current_activity = store
-                .get_entity(subject)
-                .and_then(|belief| belief.believed_activity.clone());
-            if current_activity != next_activity
-                && let Some(belief) = store.known_entities.get_mut(subject)
-            {
-                belief.believed_activity = next_activity;
+            if store.update_believed_activity(subject, next_activity) {
                 changed = true;
             }
         }
 
         for subject in &batch.noticed_missing_subjects {
-            if let Some(belief) = store.known_entities.get_mut(subject) {
-                if belief.believed_activity.take().is_some() {
-                    changed = true;
-                }
+            if store.clear_believed_activity(subject) {
+                changed = true;
+            }
 
-                // Departure-direction projection: when a known entity
-                // departs and has an active travel action, project the
-                // travel destination as their believed place.  This is
-                // lawful co-location observation (Principles 7, 15) —
-                // the observer was at the same place when the departure
-                // happened and can see which direction the subject went.
-                if let Some(instance) = active_by_actor.get(subject) {
-                    let is_travel = action_defs
-                        .get(instance.def_id)
-                        .is_some_and(|def| def.domain == worldwake_core::ActionDomain::Travel);
-                    if is_travel && let Some(destination) = instance.targets.first().copied() {
-                        belief.last_known_place = Some(destination);
-                        belief.observed_tick = tick;
-                        belief.source = PerceptionSource::DirectObservation;
-                        changed = true;
-                    }
+            // Departure-direction projection: when a known entity
+            // departs and has an active travel action, project the
+            // travel destination as their believed place.  This is
+            // lawful co-location observation (Principles 7, 15) —
+            // the observer was at the same place when the departure
+            // happened and can see which direction the subject went.
+            if let Some(belief) = store.known_entities.get_mut(subject)
+                && let Some(instance) = active_by_actor.get(subject)
+            {
+                let is_travel = action_defs
+                    .get(instance.def_id)
+                    .is_some_and(|def| def.domain == worldwake_core::ActionDomain::Travel);
+                if is_travel && let Some(destination) = instance.targets.first().copied() {
+                    belief.last_known_place = Some(destination);
+                    belief.observed_tick = tick;
+                    belief.source = PerceptionSource::DirectObservation;
+                    changed = true;
                 }
             }
         }
@@ -460,7 +456,7 @@ fn collect_direct_local_observation_batch(
 
     let observed_entities = observed_snapshots.keys().copied().collect::<BTreeSet<_>>();
     let mut noticed_missing_subjects = BTreeSet::new();
-    for (subject, belief) in &store.known_entities {
+    for (subject, belief) in store.iter_known_entities() {
         if belief.last_known_place != Some(place) {
             continue;
         }
@@ -600,8 +596,7 @@ fn internalize_notice_beliefs(
     };
 
     let already_known = store
-        .institutional_beliefs
-        .get(&key)
+        .get_institutional_beliefs(&key)
         .is_some_and(|beliefs| beliefs.iter().any(|existing| existing == &belief));
     if !already_known {
         store.record_institutional_belief(key, belief, profile);
@@ -2185,8 +2180,7 @@ mod tests {
         assert_eq!(believed.observed_tick, Tick(3));
         assert_eq!(believed.source, PerceptionSource::DirectObservation);
         let claims = beliefs
-            .entity_claims
-            .get(&target)
+            .get_entity_claims(&target)
             .expect("same-place witness should gain claim-backed entity memory");
         assert!(
             claims
@@ -2255,8 +2249,7 @@ mod tests {
         );
         assert!(believed.alive);
         let claims = beliefs
-            .entity_claims
-            .get(&target)
+            .get_entity_claims(&target)
             .expect("passive local observation should emit entity claims");
         assert!(
             claims
@@ -2326,7 +2319,7 @@ mod tests {
             .get_component_agent_belief_store(observer)
             .expect("observer should have a belief store");
         assert!(
-            beliefs.social_observations.iter().any(|observation| {
+            beliefs.iter_social_observations().any(|observation| {
                 observation.kind() == SocialObservationKind::WitnessedCooperation
                     && observation.place == place
                     && observation.detail
@@ -2397,7 +2390,7 @@ mod tests {
             .get_component_agent_belief_store(observer)
             .expect("observer should have a belief store");
         assert!(
-            beliefs.social_observations.iter().any(|observation| {
+            beliefs.iter_social_observations().any(|observation| {
                 observation.kind() == SocialObservationKind::WitnessedTelling
                     && observation.place == place
                     && observation.detail
@@ -2465,7 +2458,7 @@ mod tests {
             .get_component_agent_belief_store(observer)
             .expect("observer should have a belief store");
         assert!(
-            beliefs.social_observations.iter().any(|observation| {
+            beliefs.iter_social_observations().any(|observation| {
                 observation.kind() == SocialObservationKind::WitnessedObligation
                     && observation.place == place
                     && observation.detail
@@ -2539,7 +2532,7 @@ mod tests {
             .get_component_agent_belief_store(observer)
             .expect("observer should have a belief store");
         assert!(
-            beliefs.social_observations.iter().any(|observation| {
+            beliefs.iter_social_observations().any(|observation| {
                 observation.kind() == SocialObservationKind::SuspectedTheft
                     && observation.place == place
                     && observation.detail
@@ -2616,7 +2609,7 @@ mod tests {
             .get_component_agent_belief_store(observer)
             .expect("observer should have a belief store");
         assert!(
-            beliefs.social_observations.iter().any(|observation| {
+            beliefs.iter_social_observations().any(|observation| {
                 observation.kind() == SocialObservationKind::WitnessedCooperation
                     && observation.place == place
                     && observation.detail
@@ -2630,7 +2623,7 @@ mod tests {
             "political witness should record cooperation evidence for agent targets only"
         );
         assert!(
-            beliefs.social_observations.iter().all(|observation| {
+            beliefs.iter_social_observations().all(|observation| {
                 observation.detail
                     != SocialObservationDetail::WitnessedCooperation {
                         actor,
@@ -2697,7 +2690,7 @@ mod tests {
             .get_component_agent_belief_store(observer)
             .expect("observer should have a belief store");
         assert!(
-            beliefs.social_observations.iter().any(|observation| {
+            beliefs.iter_social_observations().any(|observation| {
                 observation.kind() == SocialObservationKind::WitnessedConflict
                     && observation.place == place
                     && observation.detail
@@ -3093,10 +3086,10 @@ mod tests {
             .get_component_agent_belief_store(observer)
             .expect("observer should have a belief store");
         let target_belief = beliefs
-            .known_entities
-            .values()
-            .find(|belief| {
-                belief.last_known_inventory.get(&CommodityKind::Bread) == Some(&Quantity(2))
+            .iter_known_entities()
+            .find_map(|(_, belief)| {
+                (belief.last_known_inventory.get(&CommodityKind::Bread) == Some(&Quantity(2)))
+                    .then_some(belief)
             })
             .expect("passive same-place observation should capture already-present local entities");
         assert_eq!(target_belief.last_known_place, Some(place));
@@ -3220,7 +3213,7 @@ mod tests {
             .get_component_agent_belief_store(observer)
             .expect("observer should have a belief store");
         assert!(
-            beliefs.known_entities.is_empty(),
+            beliefs.iter_known_entities().next().is_none(),
             "zero observation fidelity should block passive same-place observation"
         );
     }
@@ -3720,8 +3713,7 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(observer).unwrap();
         let beliefs = store
-            .institutional_beliefs
-            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .get_institutional_beliefs(&InstitutionalBeliefKey::OfficeHolderOf { office })
             .expect("office-holder belief should be projected for the witness");
         assert_eq!(beliefs.len(), 1);
         assert_eq!(
@@ -3790,8 +3782,7 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(observer).unwrap();
         let beliefs = store
-            .institutional_beliefs
-            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .get_institutional_beliefs(&InstitutionalBeliefKey::OfficeHolderOf { office })
             .expect("vacancy belief should be projected for the witness");
         assert_eq!(beliefs.len(), 1);
         assert_eq!(
@@ -3878,8 +3869,7 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(observer).unwrap();
         let beliefs = store
-            .institutional_beliefs
-            .get(&InstitutionalBeliefKey::ForceControllerOf { office })
+            .get_institutional_beliefs(&InstitutionalBeliefKey::ForceControllerOf { office })
             .unwrap();
         assert_eq!(beliefs.len(), 1);
         assert_eq!(
@@ -3964,8 +3954,7 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(observer).unwrap();
         let beliefs = store
-            .institutional_beliefs
-            .get(&InstitutionalBeliefKey::SupportFor { supporter, office })
+            .get_institutional_beliefs(&InstitutionalBeliefKey::SupportFor { supporter, office })
             .expect("support belief should be projected for the witness");
         assert_eq!(beliefs.len(), 1);
         assert_eq!(
@@ -4036,14 +4025,12 @@ mod tests {
         let local_store = world.get_component_agent_belief_store(observer).unwrap();
         assert!(
             local_store
-                .institutional_beliefs
-                .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office })
+                .has_institutional_belief(&InstitutionalBeliefKey::OfficeHolderOf { office })
         );
         let remote_store = world.get_component_agent_belief_store(remote).unwrap();
         assert!(
             !remote_store
-                .institutional_beliefs
-                .contains_key(&InstitutionalBeliefKey::OfficeHolderOf { office })
+                .has_institutional_belief(&InstitutionalBeliefKey::OfficeHolderOf { office })
         );
     }
 
@@ -4990,8 +4977,7 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(observer).unwrap();
         let beliefs = store
-            .institutional_beliefs
-            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .get_institutional_beliefs(&InstitutionalBeliefKey::OfficeHolderOf { office })
             .unwrap();
         assert!(beliefs.iter().any(|belief| {
             belief.claim
@@ -5088,8 +5074,7 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(observer).unwrap();
         let beliefs = store
-            .institutional_beliefs
-            .get(&InstitutionalBeliefKey::OfficeHolderOf { office })
+            .get_institutional_beliefs(&InstitutionalBeliefKey::OfficeHolderOf { office })
             .unwrap();
         assert!(beliefs.iter().any(|belief| {
             belief.claim

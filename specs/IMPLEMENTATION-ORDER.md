@@ -8,6 +8,7 @@ See `archive/` for detailed completion records.
 Completed Phase 7 specs:
 - `S59: Expectation and Obligation Substrate` — archived at [archive/specs/S59-expectation-obligation-substrate.md](/home/joeloverbeck/projects/worldwake/archive/specs/S59-expectation-obligation-substrate.md). Time-bounded expectations, overdue detection, search/rescue actions, last-seen propagation. Golden coverage: Scenarios 120–125 in `golden_expectation.rs`.
 - `S69: Goal Dispatch Consolidation` — completed in-place (adjunct infrastructure spec).
+- `S70: Belief Store Query Encapsulation` — added 7 accessor/mutation methods to `AgentBeliefStore`, migrated ~24 direct field accesses in `perception.rs` to use the new API.
 
 Completed adjunct specs:
 - `S67: Golden E2E Gaps — S59` archived at [archive/specs/S67-golden-gaps-S59.md](/home/joeloverbeck/projects/worldwake/archive/specs/S67-golden-gaps-S59.md).
@@ -22,7 +23,7 @@ Derived from external gameplay assessment (`brainstorming/prioritary-gameplay-sy
 ### Dependency Graph
 
 ```text
-S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 (independent)
+S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 ✅
      │                     │
      │                     ├── S61 (needs S60 for dens)
      ├── S63 (needs S59 ✅)│
