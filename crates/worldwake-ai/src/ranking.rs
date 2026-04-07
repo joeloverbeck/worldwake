@@ -647,7 +647,14 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
         GoalKind::SearchForMissing { .. } | GoalKind::ReportMissing { .. } => {
             expectation_response_motive(&candidate.key.kind, context)
         }
-        GoalKind::EscortToSafety { .. } => 0,
+        GoalKind::EscortToSafety { subject, .. } => {
+            // Escort motive is lower than TreatWounds so that agents prefer
+            // healing a co-located wounded entity over escorting them away.
+            // Quarter the score to ensure TreatWounds always outranks escort
+            // when both compete for the same patient.
+            let subject_pain = derive_pain_pressure(context.view, subject);
+            score_product(context.utility.care_weight, subject_pain) / 4
+        }
         GoalKind::Patrol { .. } => patrol_motive(context),
         GoalKind::StealItem { .. } => theft_motive(context),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),

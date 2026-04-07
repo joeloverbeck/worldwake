@@ -47,6 +47,7 @@ For trivial single-file additive tickets, scale the reassessment down deliberate
 - If a claimed divergence is proved at lower layers but not stably isolatable as a golden without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative.
 - For golden communication or information-path tickets, verify separately what actually degrades: provenance, confidence, communication class, eligibility, ranking, or another distinct mechanism.
 - When a ticket proposes extending an existing trace/debug carrier, verify the exact live coverage of that carrier before coding. If the current trace only covers one subpath, correct the ticket to either stay within that subpath or explicitly widen the trace surface as owned scope.
+- When the ticket adds candidate generation or goal model integration for a domain that already has golden coverage (e.g., Care, Combat, Expectation), run the existing golden suites for that domain as part of reassessment, before implementation begins. This catches cross-goal interference early — a new candidate emitter can cause goal-switching collisions with existing goal families for the same target entity.
 
 #### Shared type, serialization, and persisted-shape sweep
 
@@ -246,6 +247,8 @@ Do not assume every schema macro reference needs a new import — verify actual 
 19. When one goal family spans multiple target subtypes, verify operator availability per subtype. Check for stale operators leaking across subtypes.
 20. When a goal family ends in a place-sensitive terminal action, add focused coverage for both target satisfaction and return-to-terminal-place legality.
 21. When a colocated leaf action becomes live, verify the colocated terminal case separately from travel-plus-leaf planning.
+22. When adding a new candidate emitter for a domain that already has active goal families (e.g., Care domain has both TreatWounds and EscortToSafety), verify that the new goal does not cause goal-switching collisions with existing goals for the same target entity. Run the existing golden suites for that domain before writing the new golden test. A new candidate can silently win ranking and trigger a goal switch that starts a second action while the first is still running, producing `DuplicateActor` or similar runtime errors.
+23. When a goal generates as a candidate with nonzero motive but is never selected, diagnose in this order: (a) verify `compute_motive` returns > 0, (b) verify `synthesized_root_candidate_targets` provides a root candidate for the terminal op, (c) verify `is_progress_barrier` identifies the terminal op, (d) verify `build_payload_override` succeeds for the goal's ops, (e) verify `estimate_duration` returns `Some` for the action's `DurationExpr`. Each of these is a silent skip in the search pipeline.
 
 ### 6. Verify at the right boundary
 
@@ -298,6 +301,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - When adding `// Scenario ...` metadata, keep `Setup`, `Proves`, and `Cross-system chain` entries in the generator-friendly live format used by current golden files. After regenerating docs, inspect the generated scenario-map prose for truncation or malformed wrapped fields before closing the ticket.
 - When adding or renumbering `// Scenario N:` blocks, treat identifiers as repo-global. Pre-scan nearby or highest live IDs and resolve collisions.
 - After scenario metadata changes, refresh the generated golden inventory/docs as part of the verification surface.
+- When a golden test must isolate one goal from a competing goal family that shares the same observable input (e.g., EscortToSafety vs TreatWounds for wounded entities), use belief-source manipulation: seed beliefs via `PerceptionSource::Report` instead of `DirectObservation` to prevent candidate emission paths that gate on direct observation. This is a scenario isolation technique, not a production constraint.
 
 #### Migration verification checklist
 
@@ -330,6 +334,7 @@ After the owned implementation is fully verified:
 - When a ticket claims cross-layer valuation agreement, check whether the shared scorer computes marginal value over the actor's current accessible stock.
 - When a ticket changes action availability, include at least one proof through real affordance enumeration, not just direct action construction.
 - For exact-bound planner-root candidates, do not treat target binding as the whole contract when operator legality depends on intermediate goal state.
+- When making a goal family live, verify its ranking entry in `compute_motive` returns a nonzero motive for the expected scenario inputs. A stub `=> 0` ranking silently prevents goal selection even when candidate generation and planner search are fully wired.
 
 #### Staged scaffolding
 

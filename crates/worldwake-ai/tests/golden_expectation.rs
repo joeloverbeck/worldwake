@@ -3,13 +3,15 @@
 mod golden_harness;
 
 use golden_harness::*;
+use std::collections::BTreeMap;
 use worldwake_ai::{DecisionOutcome, GoalKind, GoalKey, SelectedPlanSource};
 use worldwake_core::{
-    AgentData, BeliefConfidencePolicy, ControlSource, ExpectationBasis, ExpectationId,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, HomeostaticNeeds,
-    InstitutionalClaim, LastSeenProvenance, LastSeenRecord, MetabolismProfile,
-    PerceptionProfile, Seed, Tick, UtilityProfile, ViolationDispositionProfile,
-    ViolationKind, hash_event_log, hash_world, institutional::MissingPersonReportStatus,
+    AgentData, BeliefConfidencePolicy, BelievedEntityState, BodyPart, ControlSource,
+    DeprivationKind, ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord,
+    ExpectationState, HomeostaticNeeds, InstitutionalClaim, LastSeenProvenance, LastSeenRecord,
+    MetabolismProfile, PerceptionProfile, PerceptionSource, Seed, Tick, UtilityProfile,
+    ViolationDispositionProfile, ViolationKind, Wound, WoundCause, WoundId, WoundList,
+    hash_event_log, hash_world, institutional::MissingPersonReportStatus,
 };
 use worldwake_sim::{ActionTraceDetail, ActionTraceKind};
 
@@ -664,6 +666,238 @@ fn golden_report_missing_creates_violation_and_institutional_record() {
 fn golden_report_missing_creates_violation_and_institutional_record_replays_deterministically() {
     let first = run_report_missing_chain(Seed([0x68; 32]));
     let second = run_report_missing_chain(Seed([0x68; 32]));
+
+    assert_eq!(first.world_hash, second.world_hash);
+    assert_eq!(first.log_hash, second.log_hash);
+}
+
+fn escort_utility_profile() -> UtilityProfile {
+    UtilityProfile {
+        care_weight: pm(900),
+        social_weight: pm(0),
+        ..UtilityProfile::default()
+    }
+}
+
+struct EscortScenarioOutcome {
+    world_hash: worldwake_core::StateHash,
+    log_hash: worldwake_core::StateHash,
+}
+
+fn run_escort_to_safety(seed: Seed) -> EscortScenarioOutcome {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    // Escorter at Village Square with high care weight but NO PerceptionProfile.
+    // Instead, wound knowledge is seeded via Report source so that TreatWounds
+    // (which requires DirectObservation) is not emitted while EscortToSafety
+    // (which only needs has_wounds from beliefs) fires.
+    let escorter = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Escorter",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        escort_utility_profile(),
+    );
+
+    // Wounded entity at Village Square (co-located with escorter).
+    let wounded = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Wounded",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, wounded, ControlSource::None, 0);
+
+    // Give the wounded entity a stable wound (authoritative state).
+    let wound = Wound {
+        id: WoundId(1),
+        body_part: BodyPart::Torso,
+        cause: WoundCause::Deprivation(DeprivationKind::Starvation),
+        severity: pm(400),
+        inflicted_at: Tick(0),
+        bleed_rate_per_tick: pm(0),
+    };
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_wound_list(
+            wounded,
+            WoundList {
+                wounds: vec![wound.clone()],
+            },
+        )
+        .expect("golden escort scenario should keep wound list writable");
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    // Seed the escorter's belief about the wounded entity via Report source.
+    // Report-based beliefs carry wound data but are NOT DirectObservation,
+    // so TreatWounds candidate generation skips this entity while
+    // EscortToSafety candidate generation (which checks has_wounds) succeeds.
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        escorter,
+        wounded,
+        BelievedEntityState {
+            last_known_place: Some(VILLAGE_SQUARE),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: vec![wound],
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(0),
+            source: PerceptionSource::Report {
+                from: wounded,
+                chain_len: 1,
+            },
+        },
+    );
+
+    let mut escort_generated_tick = None;
+    let mut escort_selected_tick = None;
+
+    for tick in 0..80_u64 {
+        h.step_once();
+
+        if let Some(planning) = planning_trace_at(&h, escorter, Tick(tick)) {
+            let generated_escort = planning.candidates.generated.iter().any(|goal| {
+                matches!(
+                    goal.goal_key.kind,
+                    GoalKind::EscortToSafety {
+                        subject: candidate_subject,
+                        ..
+                    } if candidate_subject == wounded
+                )
+            });
+            if generated_escort && escort_generated_tick.is_none() {
+                escort_generated_tick = Some(Tick(tick));
+            }
+
+            let selected_escort = planning.selection.selected_goal().is_some_and(|goal| {
+                matches!(
+                    goal.kind,
+                    GoalKind::EscortToSafety {
+                        subject: candidate_subject,
+                        ..
+                    } if candidate_subject == wounded
+                )
+            });
+            if selected_escort && escort_selected_tick.is_none() {
+                escort_selected_tick = Some(Tick(tick));
+            }
+        }
+
+        // Break once the escort action commits (wounded entity moved).
+        let action_sink = h.action_trace_sink();
+        if let Some(sink) = &action_sink {
+            let has_escort_commit = sink.events_for(escorter).iter().any(|event| {
+                event.action_name == "escort_to_safety"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+            if has_escort_commit {
+                break;
+            }
+        }
+    }
+
+    let escort_generated_tick = escort_generated_tick
+        .expect("decision trace should generate EscortToSafety for wounded co-located entity");
+    let escort_selected_tick = escort_selected_tick
+        .expect("decision trace should select EscortToSafety in this scenario");
+    assert!(
+        escort_generated_tick <= escort_selected_tick,
+        "EscortToSafety should be selected no earlier than generated: generated={escort_generated_tick:?} selected={escort_selected_tick:?}"
+    );
+
+    // Verify action traces: escort_to_safety should commit.
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled for escort scenario");
+    let escorter_events = action_sink.events_for(escorter);
+    let escort_commit = escorter_events
+        .iter()
+        .find(|event| {
+            event.action_name == "escort_to_safety"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && matches!(
+                    event.detail.as_ref(),
+                    Some(ActionTraceDetail::EscortToSafety {
+                        subject: traced_subject,
+                        ..
+                    }) if *traced_subject == wounded
+                )
+        })
+        .expect("escort_to_safety should commit with the wounded entity as subject");
+
+    // Verify the wounded entity has moved to the destination.
+    let escort_destination = match escort_commit.detail.as_ref().unwrap() {
+        ActionTraceDetail::EscortToSafety { destination, .. } => *destination,
+        _ => panic!("expected EscortToSafety detail"),
+    };
+    let wounded_place = h
+        .world
+        .effective_place(wounded)
+        .expect("wounded entity should have a location after escort");
+    assert_eq!(
+        wounded_place, escort_destination,
+        "wounded entity should be at the escort destination after commit"
+    );
+
+    // Verify escorter is also at the destination (co-location binding).
+    let escorter_place = h
+        .world
+        .effective_place(escorter)
+        .expect("escorter should have a location after escort");
+    assert_eq!(
+        escorter_place, escort_destination,
+        "escorter should also be at the destination after commit (co-location binding)"
+    );
+
+    EscortScenarioOutcome {
+        world_hash: hash_world(&h.world).unwrap(),
+        log_hash: hash_event_log(&h.event_log).unwrap(),
+    }
+}
+
+// Scenario 122: Escort Wounded Entity to Safety
+// Systems: AI, Travel, EscortToSafety
+// GoalKinds: EscortToSafety
+// ActionDomains: Care, Travel
+// Places: VillageSquare + adjacent destination
+// Principles: 1, 3, 8, 10, 20
+// Setup: An escorter at VillageSquare with high care_weight knows about a
+//   wounded co-located entity via Report-sourced beliefs (not DirectObservation,
+//   so TreatWounds candidate is suppressed and EscortToSafety is isolated).
+//   The topology provides at least one adjacent reachable destination. The
+//   wounded entity has ControlSource::None to isolate escort behavior.
+// Proves: AI candidate generation emits EscortToSafety when the agent believes
+//   a co-located entity is wounded, the planner selects it and produces a valid
+//   plan, the escort_to_safety action commits, and both actor and charge arrive
+//   at the destination (co-location binding).
+// Chain: Wounded entity observation -> EscortToSafety candidate generation ->
+//   plan selection -> escort_to_safety action -> co-located travel -> commit ->
+//   both entities at destination.
+#[test]
+fn golden_escort_to_safety_after_finding_wounded() {
+    let _ = run_escort_to_safety(Seed([0x69; 32]));
+}
+
+#[test]
+fn golden_escort_to_safety_after_finding_wounded_replays_deterministically() {
+    let first = run_escort_to_safety(Seed([0x69; 32]));
+    let second = run_escort_to_safety(Seed([0x69; 32]));
 
     assert_eq!(first.world_hash, second.world_hash);
     assert_eq!(first.log_hash, second.log_hash);

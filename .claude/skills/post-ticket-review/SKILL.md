@@ -9,9 +9,9 @@ Post-implementation review and follow-up planning. Archives the completed ticket
 
 Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), [tickets/README.md](../../../tickets/README.md), and [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) before making changes.
 
-**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), archive it, create new tickets in `tickets/`, update existing active tickets.
+**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), archive it, create new tickets in `tickets/`, update existing active tickets, fix stale golden scenario metadata headers (Setup/Proves/Chain comments that no longer match the implemented contract), and regenerate golden inventory docs (`python3 scripts/golden_inventory.py --write --check-docs`).
 
-**Forbidden**: modifying production code or tests.
+**Forbidden**: modifying production code or test logic (assertions, setup functions, scenario bodies).
 
 ## Workflow
 
@@ -183,7 +183,8 @@ If no follow-up tickets are warranted, still report reviewed areas and state tha
 
 ## Guardrails
 
-- Do not modify production code or tests.
+- Do not modify production code or test logic (assertions, setup functions, scenario bodies).
+- Golden scenario metadata headers and generated golden inventory docs may be corrected as part of handoff quality.
 - Review local implementation state as it exists now, committed or not.
 - Only change the completed ticket's `Outcome`, verification notes, and archival mechanics.
 - Every finding must be backed by concrete code, test, trace, ticket, or documentation evidence.

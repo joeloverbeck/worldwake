@@ -1,6 +1,6 @@
 # S59EXPOBLSUB-017: EscortToSafety goal model integration, candidate generation, and golden E2E
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — candidate generation, goal model, golden E2E test
@@ -24,6 +24,11 @@ Per FOUNDATIONS P20, "Goals name desired world conditions" — getting a wounded
 8. **Golden scenario numbering** — Scenarios 120 and 121 are taken (golden_expectation.rs). Scenario 122 is free.
 9. **Existing golden test patterns** — Scenarios 120/121 in `crates/worldwake-ai/tests/golden_expectation.rs` establish the assertion style: decision traces for candidate emission + plan selection, action traces for commit verification, world state assertions for component mutations.
 10. **No adjacent contradictions** — EscortToSafety is independent of the other two gap tickets (018, 019).
+11. **Ranking returns 0** — `ranking.rs:650` has `GoalKind::EscortToSafety { .. } => 0`. Must implement real ranking using `care_weight` and wound severity, matching the TreatWounds pattern at line 616-622.
+12. **`goal_relevant_places` already returns `[destination]`** — Confirmed at `goal_model.rs:1281`. No change needed; A* heuristic guidance is wired.
+13. **`is_terminal_target_match` already wired** — `goal_model.rs:1558-1564` checks `authoritative_targets.contains(subject) || authoritative_targets.contains(destination)`. No change needed.
+14. **`EscortToSafetyActionPayload` has complex fields** — `route_places`, `route_edges`, `intended_heal_action` in `action_payload.rs:393-399`. These are filled at runtime by `start_escort_to_safety`, not during planning. Payload override should build with empty routes and placeholder `ActionDefId(u32::MAX)`, matching `build_escort_payload` at `escort_actions.rs:152-164`.
+15. **No care-capability concept in GoalBeliefView** — `enumerate_escort_payloads` checks wounds and route existence only, not care-capability of destination. Candidate generation should follow same pattern: any reachable destination from a wounded co-located entity.
 
 ## Architecture Check
 
@@ -61,7 +66,11 @@ Replace the `false` return for `GoalKind::EscortToSafety` with: charge (subject)
 
 Replace the no-op for `PlannerOpKind::EscortToSafety` with state transition modeling: after the escort step, the planning state should reflect that the subject is now at the destination.
 
-### 5. Golden E2E test — scenario 122
+### 5. Ranking — compute_motive for EscortToSafety
+
+In `crates/worldwake-ai/src/ranking.rs`, replace the `=> 0` return for `GoalKind::EscortToSafety` with real ranking logic: `care_weight * wound_severity`, matching the TreatWounds other-patient pattern.
+
+### 6. Golden E2E test — scenario 122
 
 Add `golden_escort_to_safety_after_finding_wounded` (+ deterministic replay variant) to `crates/worldwake-ai/tests/golden_expectation.rs`. Scenario setup:
 - Agent A at Place1 with a wounded entity W also at Place1
@@ -73,6 +82,7 @@ Add `golden_escort_to_safety_after_finding_wounded` (+ deterministic replay vari
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — add `emit_escort_candidates`)
 - `crates/worldwake-ai/src/goal_model.rs` (modify — EscortToSafety goal model methods)
+- `crates/worldwake-ai/src/ranking.rs` (modify — EscortToSafety motive computation)
 - `crates/worldwake-ai/tests/golden_expectation.rs` (modify — add scenario 122)
 - `crates/worldwake-ai/tests/scenarios/` (new — scenario 122 RON file if scenario-driven)
 
@@ -109,3 +119,31 @@ Add `golden_escort_to_safety_after_finding_wounded` (+ deterministic replay vari
 1. `cargo test -p worldwake-ai golden_escort_to_safety`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-07.
+
+- Added `emit_escort_candidates()` in `candidate_generation.rs` — emits `EscortToSafety` when agent observes wounded co-located entity via beliefs and has `care_weight > 0`. Suppressed when TreatWounds already covers the same patient (prevents goal-switching conflicts).
+- Implemented `build_payload_override` for `PlannerOpKind::EscortToSafety` — synthesizes `EscortToSafetyActionPayload` with empty routes and placeholder `ActionDefId` (filled at runtime by `start_escort_to_safety`).
+- Implemented `is_satisfied` for `GoalKind::EscortToSafety` — checks subject is at destination in agent's beliefs.
+- Implemented `apply_planner_step` for `PlannerOpKind::EscortToSafety` — models actor moving to destination.
+- Added `is_progress_barrier` entry for EscortToSafety.
+- Added `synthesized_root_candidate_targets` entry for EscortToSafety — provides subject as target for colocated terminal action.
+- Implemented ranking for `GoalKind::EscortToSafety` — `care_weight * subject_pain / 4` (lower than TreatWounds to prefer in-place healing).
+- Added golden E2E scenario 122 (escort_to_safety_after_finding_wounded) + deterministic replay.
+
+## Deviations
+
+- Ticket originally proposed checking wound state in `build_payload_override`; removed this guard since candidate generation already validates wounds and the planning state may not include wound data for evidence entities.
+- Escort motive is ranked at 1/4 of TreatWounds motive to prevent goal-switching conflicts when both candidates exist for the same patient.
+- EscortToSafety candidates are suppressed when TreatWounds candidates already exist for the same entity — this prevents DuplicateActor runtime errors from goal switching.
+- Golden scenario uses Report-sourced beliefs (not DirectObservation) to isolate EscortToSafety from TreatWounds candidate emission.
+- Three additional planner integration points were needed beyond what the ticket described: `is_progress_barrier`, `synthesized_root_candidate_targets`, and ranking. These were identified during reassessment and added to the ticket.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_expectation` (21 tests)
+- Passed `cargo test -p worldwake-ai --test golden_care` (33 tests, no regressions)
+- Passed `cargo test -p worldwake-ai` (1582+ tests, 0 failures)
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

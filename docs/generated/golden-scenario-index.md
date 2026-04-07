@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 140
+- Scenario blocks: 141
 - Contributing golden test files: 22
-- Associated tests: 301
+- Associated tests: 303
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -573,7 +573,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 120: Overdue Expectation Drives Search
 
-- Source: `golden_expectation.rs:603`
+- Source: `golden_expectation.rs:605`
 - Systems: ExpectationCheck, AI, Travel, SearchPlace
 - GoalKinds: SearchForMissing
 - ActionDomains: Travel, Epistemic
@@ -588,7 +588,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 121: Report Missing Creates Institutional Record Then Searches
 
-- Source: `golden_expectation.rs:637`
+- Source: `golden_expectation.rs:639`
 - Systems: ExpectationCheck, AI, ReportMissing, ViolationMemory, OfficeRegister, Travel, SearchPlace
 - GoalKinds: ReportMissing, SearchForMissing
 - ActionDomains: Social, Travel, Epistemic
@@ -600,6 +600,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: Once ExpectationCheck makes the record overdue, AI generates both ReportMissing and SearchForMissing, selects report_missing first, records EntityMissing plus MissingPersonStatus at the expected-place OfficeRegister, then suppresses duplicate ReportMissing while continuing into the search path and eventually finding the subject at OrchardFarm.
 
 **Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue transition -> dual ReportMissing/SearchForMissing generation -> report_missing commit -> ViolationMemory + OfficeRegister MissingPersonStatus update -> ReportMissing suppression with SearchForMissing retained -> travel/search_place -> ExpectationStore resolution and LastSeenMemory update.
+
+### Scenario 122: Escort Wounded Entity to Safety
+
+- Source: `golden_expectation.rs:874`
+- Systems: AI, Travel, EscortToSafety
+- GoalKinds: EscortToSafety
+- ActionDomains: Care, Travel
+- Places: VillageSquare + adjacent destination
+- Principles: 1, 3, 8, 10, 20
+
+**Setup**: An escorter at VillageSquare with high care_weight knows about a wounded co-located entity via Report-sourced beliefs (not DirectObservation, so TreatWounds candidate is suppressed and EscortToSafety is isolated). The topology provides at least one adjacent reachable destination. The wounded entity has ControlSource::None to isolate escort behavior.
+
+**Proves**: AI candidate generation emits EscortToSafety when the agent believes a co-located entity is wounded, the planner selects it and produces a valid plan, the escort_to_safety action commits, and both actor and charge arrive at the destination (co-location binding).
+
+**Cross-system chain**: Wounded entity observation -> EscortToSafety candidate generation -> plan selection -> escort_to_safety action -> co-located travel -> commit -> both entities at destination.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 

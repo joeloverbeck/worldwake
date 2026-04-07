@@ -13,18 +13,18 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose, EntityId,
-    EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
+    ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
+    EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
     OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
     belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
-    ConsultRecordActionPayload, DeclareSupportActionPayload, InvestigateActionPayload,
-    LootActionPayload, PostBountyActionPayload, PostNoticeActionPayload,
-    PressForceClaimActionPayload, PunishActionPayload, RecipeDefinition, RecipeRegistry,
-    ReportMissingActionPayload, RuntimeBeliefView, SearchPlaceActionPayload, TellActionPayload,
-    TradeActionPayload, TransportActionPayload,
+    ConsultRecordActionPayload, DeclareSupportActionPayload, EscortToSafetyActionPayload,
+    InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
+    PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
+    RecipeDefinition, RecipeRegistry, ReportMissingActionPayload, RuntimeBeliefView,
+    SearchPlaceActionPayload, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -641,8 +641,27 @@ impl GoalKindPlannerExt for GoalKind {
             },
             PlannerOpKind::AskWitness
             | PlannerOpKind::AskAboutPerson
-            | PlannerOpKind::EscortToSafety
             | PlannerOpKind::ReportFound => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            PlannerOpKind::EscortToSafety => match self {
+                GoalKind::EscortToSafety {
+                    subject,
+                    destination,
+                } => {
+                    // Candidate generation already verified wound state; the
+                    // planner only needs a plausible payload.  Route fields are
+                    // filled at action start, not during planning.
+                    Ok(Some(ActionPayload::EscortToSafety(
+                        EscortToSafetyActionPayload {
+                            subject: *subject,
+                            destination: *destination,
+                            intended_heal_action: ActionDefId(u32::MAX),
+                            route_places: Vec::new(),
+                            route_edges: Vec::new(),
+                        },
+                    )))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
             PlannerOpKind::ReportMissing => match self {
                 GoalKind::ReportMissing {
                     expectation_id: Some(expectation_id),
@@ -1006,11 +1025,16 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::SearchPlace
             | PlannerOpKind::AskAboutPerson
             | PlannerOpKind::ReportMissing
-            | PlannerOpKind::EscortToSafety
             | PlannerOpKind::ReportFound
             | PlannerOpKind::Accuse
             | PlannerOpKind::Fine
             | PlannerOpKind::Exile => state,
+            PlannerOpKind::EscortToSafety => match self {
+                GoalKind::EscortToSafety { destination, .. } => {
+                    state.move_actor_to(*destination)
+                }
+                _ => state,
+            },
         }
     }
 
@@ -1051,6 +1075,12 @@ impl GoalKindPlannerExt for GoalKind {
         }
 
         if matches!(self, GoalKind::Patrol { .. }) && step.op_kind == PlannerOpKind::Patrol {
+            return true;
+        }
+
+        if matches!(self, GoalKind::EscortToSafety { .. })
+            && step.op_kind == PlannerOpKind::EscortToSafety
+        {
             return true;
         }
 
@@ -1222,10 +1252,13 @@ impl GoalKindPlannerExt for GoalKind {
                         .listed_sale_lots_at(home_place.unwrap(), *commodity)
                         .is_empty()
             }
+            GoalKind::EscortToSafety {
+                subject,
+                destination,
+            } => state.effective_place(*subject) == Some(*destination),
             GoalKind::ProduceCommodity { .. }
             | GoalKind::SearchForMissing { .. }
             | GoalKind::ReportMissing { .. }
-            | GoalKind::EscortToSafety { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::PostBounty { .. }
@@ -2207,6 +2240,18 @@ impl GroundedGoal {
                     RootCandidateSynthesis::Targets(vec![posting.posting_place])
                 }
                 GoalKind::PostNotice { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::EscortToSafety => match &self.key.kind {
+                GoalKind::EscortToSafety { subject, .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![*subject])
+                }
+                GoalKind::EscortToSafety { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
             _ => RootCandidateSynthesis::UnsupportedGoalOp,

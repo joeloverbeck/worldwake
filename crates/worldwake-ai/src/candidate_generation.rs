@@ -255,6 +255,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_recorded_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_search_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_escort_candidates(&mut candidates, &mut diagnostics, &ctx);
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
@@ -3346,6 +3347,76 @@ fn overdue_ticks(record: ExpectationRecord, current_tick: Tick) -> u64 {
     current_tick
         .0
         .saturating_sub(record.deadline_tick.0.saturating_add(record.grace_ticks))
+}
+
+/// Emit [`GoalKind::EscortToSafety`] candidates when the agent observes a
+/// wounded co-located entity and knows at least one reachable destination.
+fn emit_escort_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let Some(actor_place) = ctx.place else {
+        return;
+    };
+
+    // Guard: agent must value care actions.
+    if ctx.view.utility_profile(ctx.agent).is_none_or(|u| u.care_weight.value() == 0) {
+        return;
+    }
+
+    let colocated = ctx.view.entities_at(actor_place);
+    for entity in &colocated {
+        let subject = *entity;
+        if subject == ctx.agent || !ctx.view.has_wounds(subject) || ctx.view.is_dead(subject) {
+            continue;
+        }
+
+        // Suppress when a TreatWounds candidate already covers this patient.
+        // TreatWounds provides in-place care; escorting is only valuable when
+        // no direct-observation TreatWounds path exists for this entity.
+        let already_covered_by_care = candidates.iter().any(|c| {
+            matches!(
+                c.key.kind,
+                GoalKind::TreatWounds { patient } if patient == subject
+            )
+        });
+        if already_covered_by_care {
+            continue;
+        }
+
+        // Find at least one reachable destination that is not the current place.
+        let adjacent: Vec<EntityId> = ctx
+            .view
+            .adjacent_places_with_travel_ticks(actor_place)
+            .into_iter()
+            .map(|(place, _)| place)
+            .collect();
+        if adjacent.is_empty() {
+            continue;
+        }
+        // Pick the first adjacent place as the destination for the candidate.
+        // The affordance enumeration at runtime will expand all reachable
+        // destinations; the candidate only needs *a* plausible target for the
+        // planner's A* heuristic to guide the agent.
+        let destination = adjacent[0];
+
+        let mut evidence = Evidence::with_entity(subject);
+        evidence.places.insert(actor_place);
+        evidence.places.insert(destination);
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::EscortToSafety {
+                subject,
+                destination,
+            },
+            OpportunityAnchor::Place(destination),
+            evidence,
+            EvidenceTrace::default(),
+        );
+    }
 }
 
 /// Detect expectation violations by comparing stale beliefs against current
