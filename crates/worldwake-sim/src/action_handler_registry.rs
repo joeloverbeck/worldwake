@@ -188,10 +188,12 @@ mod tests {
     }
 
     fn execution_context(recipes: &RecipeRegistry) -> ActionExecutionContext<'_> {
+        let base = ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(1));
         ActionExecutionContext {
-            cause: CauseRef::Bootstrap,
-            tick: Tick(1),
+            cause: base.cause,
+            tick: base.tick,
             recipe_registry: recipes,
+            action_defs: base.action_defs,
         }
     }
 

@@ -79,7 +79,9 @@ impl PlannerDurationDependency {
             DurationExpr::CombatWeapon => Some(Self::CombatWeapon),
             DurationExpr::TargetTreatment { .. } => Some(Self::TargetTreatment),
             DurationExpr::ConsultRecord { .. } => Some(Self::ConsultRecord),
-            DurationExpr::TravelToTarget { .. } => Some(Self::TravelToTarget),
+            DurationExpr::TravelToTarget { .. } | DurationExpr::EscortRouteTravel => {
+                Some(Self::TravelToTarget)
+            }
         }
     }
 }

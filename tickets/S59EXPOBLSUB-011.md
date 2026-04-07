@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — candidate generation in worldwake-ai
-**Deps**: S59EXPOBLSUB-004, S59EXPOBLSUB-005, S59EXPOBLSUB-006
+**Deps**: S59EXPOBLSUB-004, S59EXPOBLSUB-005, S59EXPOBLSUB-006, S59EXPOBLSUB-010
 
 ## Problem
 
@@ -19,6 +19,7 @@ Overdue expectations should drive agents to search for missing persons and repor
 5. Priority scaling uses overdue duration (current_tick - deadline_tick) and basis type (DutyAssignment > RoutineReturn > SocialPromise).
 6. `GroundedGoal` is the return type with priority weight — pattern from existing `emit_*_candidates()` functions.
 7. `BlockedIntentMemory` parameter filters recently-failed goals to prevent thrashing.
+8. `S59EXPOBLSUB-010` now lands the real route-aware `escort_to_safety` action, so later contextual `EscortToSafety` goal emission can rely on a live authoritative action boundary instead of a reserved planner-only symbol.
 
 ## Architecture Check
 

@@ -52,6 +52,10 @@ pub enum ActionTraceDetail {
     ReportMissing {
         expectation_id: ExpectationId,
     },
+    EscortToSafety {
+        subject: EntityId,
+        destination: EntityId,
+    },
 }
 
 /// The lifecycle transition that this trace event represents.
@@ -378,6 +382,10 @@ impl ActionTraceDetail {
             ActionPayload::ReportMissing(payload) => Some(Self::ReportMissing {
                 expectation_id: payload.expectation_id,
             }),
+            ActionPayload::EscortToSafety(payload) => Some(Self::EscortToSafety {
+                subject: payload.subject,
+                destination: payload.destination,
+            }),
             ActionPayload::None
             | ActionPayload::ConsultRecord(_)
             | ActionPayload::Bribe(_)
@@ -427,6 +435,12 @@ impl ActionTraceDetail {
             }
             Self::ReportMissing { expectation_id } => {
                 format!("report_missing expectation {expectation_id}")
+            }
+            Self::EscortToSafety {
+                subject,
+                destination,
+            } => {
+                format!("escort_to_safety subject {subject} destination {destination}")
             }
         }
     }

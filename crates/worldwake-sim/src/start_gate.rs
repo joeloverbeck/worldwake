@@ -510,6 +510,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -626,6 +627,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -727,6 +729,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -789,6 +792,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -851,6 +855,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(3),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -918,6 +923,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -1018,6 +1024,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -1083,6 +1090,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -1101,6 +1109,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(3),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -1153,6 +1162,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(1),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -1192,6 +1202,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(1),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -1272,6 +1283,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();

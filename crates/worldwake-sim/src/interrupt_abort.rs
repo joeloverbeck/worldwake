@@ -421,6 +421,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(10),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -459,6 +460,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             InterruptReason::DangerNearby,
         )
@@ -502,6 +504,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             InterruptReason::DangerNearby,
         )
@@ -552,6 +555,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             InterruptReason::Reprioritized,
         )
@@ -591,6 +595,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             ExternalAbortReason::TargetDestroyed,
         )
@@ -639,6 +644,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             ExternalAbortReason::TargetDestroyed,
         )

@@ -12,6 +12,7 @@ pub mod bandit_camp_actions;
 pub mod combat;
 pub mod consult_record_actions;
 pub mod epistemic_actions;
+pub mod escort_actions;
 pub mod evidence_decay;
 mod evidence_support;
 pub mod expectation_check;
@@ -52,6 +53,7 @@ pub use combat::{
 };
 pub use consult_record_actions::register_consult_record_action;
 pub use epistemic_actions::register_ask_witness_action;
+pub use escort_actions::register_escort_to_safety_action;
 pub use evidence_decay::evidence_decay_system;
 pub use expectation_check::check_overdue_expectations;
 pub use facility_queue::contention_system;

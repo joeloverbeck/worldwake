@@ -857,7 +857,7 @@ fn clear_entity_contention_state(
     Ok(())
 }
 
-fn ensure_care_contention_state(
+pub(crate) fn ensure_care_contention_state(
     txn: &mut WorldTxn<'_>,
     entity: EntityId,
 ) -> Result<(), ActionError> {

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use worldwake_core::{
     ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, ExpectationId,
     NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource,
-    TellTopic, Tick, UniqueItemKind, ViolationId, WorkstationTag,
+    TellTopic, Tick, TravelEdgeId, UniqueItemKind, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -30,6 +30,7 @@ pub enum ActionPayload {
     AskAboutPerson(AskAboutPersonActionPayload),
     SearchPlace(SearchPlaceActionPayload),
     ReportMissing(ReportMissingActionPayload),
+    EscortToSafety(EscortToSafetyActionPayload),
     QueueForFacilityUse(QueueForFacilityUsePayload),
     StaffMarket(StaffMarketPayload),
     PostBounty(PostBountyActionPayload),
@@ -214,6 +215,14 @@ impl ActionPayload {
     }
 
     #[must_use]
+    pub const fn as_escort_to_safety(&self) -> Option<&EscortToSafetyActionPayload> {
+        match self {
+            Self::EscortToSafety(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub const fn as_staff_market(&self) -> Option<&StaffMarketPayload> {
         match self {
             Self::StaffMarket(payload) => Some(payload),
@@ -366,6 +375,15 @@ pub struct ReportMissingActionPayload {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct EscortToSafetyActionPayload {
+    pub subject: EntityId,
+    pub destination: EntityId,
+    pub intended_heal_action: ActionDefId,
+    pub route_places: Vec<EntityId>,
+    pub route_edges: Vec<TravelEdgeId>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct QueueForFacilityUsePayload {
     pub intended_action: ActionDefId,
 }
@@ -403,8 +421,8 @@ mod tests {
     use super::{
         AccuseActionPayload, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
         BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
-        DeclareSupportActionPayload, EstablishCampActionPayload, HarvestActionPayload,
-        InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
+        DeclareSupportActionPayload, EscortToSafetyActionPayload, EstablishCampActionPayload,
+        HarvestActionPayload, InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
         PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
         QueueForFacilityUsePayload, ReportMissingActionPayload, SearchPlaceActionPayload,
         StaffMarketPayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
@@ -414,7 +432,7 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, ExpectationId,
         NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId,
-        RewardSource, TellTopic, Tick, UniqueItemKind, ViolationId, WorkstationTag,
+        RewardSource, TellTopic, Tick, TravelEdgeId, UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -640,6 +658,35 @@ mod tests {
         }
     }
 
+    fn sample_escort_to_safety_payload() -> EscortToSafetyActionPayload {
+        EscortToSafetyActionPayload {
+            subject: EntityId {
+                slot: 48,
+                generation: 0,
+            },
+            destination: EntityId {
+                slot: 49,
+                generation: 0,
+            },
+            intended_heal_action: ActionDefId(27),
+            route_places: vec![
+                EntityId {
+                    slot: 47,
+                    generation: 0,
+                },
+                EntityId {
+                    slot: 48,
+                    generation: 0,
+                },
+                EntityId {
+                    slot: 49,
+                    generation: 0,
+                },
+            ],
+            route_edges: vec![TravelEdgeId(5), TravelEdgeId(7)],
+        }
+    }
+
     fn sample_post_bounty_payload() -> PostBountyActionPayload {
         PostBountyActionPayload {
             posting_place: EntityId {
@@ -735,6 +782,7 @@ mod tests {
         assert_traits::<AskAboutPersonActionPayload>();
         assert_traits::<SearchPlaceActionPayload>();
         assert_traits::<ReportMissingActionPayload>();
+        assert_traits::<EscortToSafetyActionPayload>();
         assert_traits::<QueueForFacilityUsePayload>();
         assert_traits::<AskWitnessPayload>();
         assert_traits::<StaffMarketPayload>();
@@ -1024,6 +1072,7 @@ mod tests {
         let ask_about_person = ActionPayload::AskAboutPerson(sample_ask_about_person_payload());
         let search_place = ActionPayload::SearchPlace(sample_search_place_payload());
         let report_missing = ActionPayload::ReportMissing(sample_report_missing_payload());
+        let escort = ActionPayload::EscortToSafety(sample_escort_to_safety_payload());
         let post_bounty = ActionPayload::PostBounty(sample_post_bounty_payload());
         let post_notice = ActionPayload::PostNotice(sample_post_notice_payload());
 
@@ -1141,12 +1190,22 @@ mod tests {
         assert_eq!(report_missing.as_ask_witness(), None);
         assert_eq!(report_missing.as_ask_about_person(), None);
         assert_eq!(report_missing.as_search_place(), None);
+        assert_eq!(report_missing.as_escort_to_safety(), None);
+
+        assert_eq!(
+            escort.as_escort_to_safety(),
+            Some(&sample_escort_to_safety_payload())
+        );
+        assert_eq!(escort.as_ask_about_person(), None);
+        assert_eq!(escort.as_search_place(), None);
+        assert_eq!(escort.as_report_missing(), None);
 
         assert_eq!(
             post_bounty.as_post_bounty(),
             Some(&sample_post_bounty_payload())
         );
         assert_eq!(post_bounty.as_report_missing(), None);
+        assert_eq!(post_bounty.as_escort_to_safety(), None);
         assert_eq!(post_bounty.as_post_notice(), None);
         assert_eq!(post_bounty.as_trade(), None);
 
@@ -1155,6 +1214,7 @@ mod tests {
             Some(&sample_post_notice_payload())
         );
         assert_eq!(post_notice.as_report_missing(), None);
+        assert_eq!(post_notice.as_escort_to_safety(), None);
         assert_eq!(post_notice.as_post_bounty(), None);
         assert_eq!(post_notice.as_tell(), None);
     }
@@ -1183,6 +1243,7 @@ mod tests {
         assert_eq!(none.as_ask_about_person(), None);
         assert_eq!(none.as_search_place(), None);
         assert_eq!(none.as_report_missing(), None);
+        assert_eq!(none.as_escort_to_safety(), None);
         assert_eq!(none.as_post_bounty(), None);
         assert_eq!(none.as_post_notice(), None);
     }

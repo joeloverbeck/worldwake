@@ -2,6 +2,8 @@ use crate::{
     ActionDuration, ActionPayload, DurationExpr, RecipeDefinition,
     action_semantics::consultation_duration_ticks,
 };
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
@@ -1433,6 +1435,11 @@ pub fn estimate_duration_from_beliefs(
                     (adjacent == target).then_some(ActionDuration::new(ticks.get()))
                 })
         }
+        DurationExpr::EscortRouteTravel => {
+            let target = payload.as_escort_to_safety()?.destination;
+            let origin = view.effective_place(actor)?;
+            estimate_route_duration_from_beliefs(view, origin, target).map(ActionDuration::new)
+        }
         DurationExpr::ActorMetabolism { kind } => {
             let profile = view.metabolism_profile(actor)?;
             let ticks = match kind {
@@ -1505,6 +1512,71 @@ pub fn estimate_duration_from_beliefs(
             ))
         }
     }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+struct BeliefRouteQueueEntry {
+    total_ticks: u32,
+    place: EntityId,
+}
+
+impl Ord for BeliefRouteQueueEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other
+            .total_ticks
+            .cmp(&self.total_ticks)
+            .then_with(|| self.place.cmp(&other.place))
+    }
+}
+
+impl PartialOrd for BeliefRouteQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn estimate_route_duration_from_beliefs(
+    view: &dyn RuntimeBeliefView,
+    from: EntityId,
+    to: EntityId,
+) -> Option<u32> {
+    if from == to {
+        return Some(0);
+    }
+
+    let mut best = BTreeMap::new();
+    best.insert(from, 0_u32);
+    let mut frontier = BinaryHeap::new();
+    frontier.push(BeliefRouteQueueEntry {
+        total_ticks: 0,
+        place: from,
+    });
+
+    while let Some(entry) = frontier.pop() {
+        let known = *best.get(&entry.place)?;
+        if entry.total_ticks != known {
+            continue;
+        }
+        if entry.place == to {
+            return Some(entry.total_ticks);
+        }
+
+        for (adjacent, ticks) in view.adjacent_places_with_travel_ticks(entry.place) {
+            let candidate = entry.total_ticks.saturating_add(ticks.get());
+            let should_replace = best
+                .get(&adjacent)
+                .is_none_or(|existing| candidate < *existing);
+            if should_replace {
+                best.insert(adjacent, candidate);
+                frontier.push(BeliefRouteQueueEntry {
+                    total_ticks: candidate,
+                    place: adjacent,
+                });
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

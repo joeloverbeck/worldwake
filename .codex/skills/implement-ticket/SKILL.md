@@ -75,6 +75,7 @@ Specific persisted-shape checks:
 - When the ticket changes contested access to a scarce affordance, decide explicitly whether the domain uses pure race resolution or lawful waiting via queue/grant/reservation. Surface contradictions with 1-3-1.
 - When the ticket names S44 contention helpers, verify helper semantics match the live `ContentionPolicy` shape for that domain.
 - When widening a shared callback or execution signature, search dependent crates for both production call paths and test-only handler registrations.
+- When a shared execution or runtime context struct gains a field, search for manual struct literals across both production and test code, not only typed function signatures or handler registrations.
 
 #### AI pipeline and affordance checks
 
@@ -255,6 +256,7 @@ Typical order:
 - Run multiple `cargo test` or `cargo clippy` commands sequentially, not in parallel — lock contention makes parallel runs unreliable.
 - After changing code post-verification, rerun narrowest affected tests and any stale broader commands.
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
+- When CI/compile fallout follows a shared context-field change, sweep manual struct literals as well as direct function call sites before the next verification pass.
 - When a migration reshapes a common API surface, expect lint fallout as well as compile fallout. Satisfy trait expectations like `Default` instead of suppressing lints.
 - When long-running verification commands are in flight, reuse those sessions rather than spawning duplicates.
 - When new registered actions or systems cause broad failures, triage for catalog-order drift, completeness assertions, and registry-expansion fallout before assuming the feature's runtime logic is broken.

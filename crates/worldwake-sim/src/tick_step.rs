@@ -320,6 +320,7 @@ fn apply_input(
                     cause: CauseRef::ExternalInput(sequence_no),
                     tick,
                     recipe_registry: services.recipe_registry,
+                    action_defs: services.action_defs,
                 },
             ) {
                 if mode == crate::ActionRequestMode::BestEffort
@@ -421,6 +422,7 @@ fn apply_input(
                         cause: CauseRef::ExternalInput(sequence_no),
                         tick,
                         recipe_registry: services.recipe_registry,
+                        action_defs: services.action_defs,
                     },
                     ExternalAbortReason::CancelledByInput { sequence_no },
                 )
@@ -593,6 +595,7 @@ fn progress_active_actions(
                     cause: CauseRef::SystemTick(tick),
                     tick,
                     recipe_registry: services.recipe_registry,
+                    action_defs: services.action_defs,
                 },
             )
             .map_err(TickStepError::Action)?
@@ -746,6 +749,7 @@ fn abort_actions_for_dead_actors(
                     cause: CauseRef::SystemTick(tick),
                     tick,
                     recipe_registry: services.recipe_registry,
+                    action_defs: services.action_defs,
                 },
                 ExternalAbortReason::ActorMarkedDead,
             )

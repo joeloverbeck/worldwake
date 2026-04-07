@@ -115,6 +115,7 @@ pub(super) fn handle_active_action_phase(
                     cause: CauseRef::SystemTick(tick),
                     tick,
                     recipe_registry: ctx.recipe_registry,
+                    action_defs,
                 },
                 worldwake_sim::InterruptReason::Reprioritized,
             )
