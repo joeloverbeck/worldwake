@@ -9,7 +9,7 @@ mod golden_harness;
 use golden_harness::soak_world::build_t30_world;
 use worldwake_core::Seed;
 
-const DIAG_TICKS: u64 = 2880;
+const DIAG_TICKS: u64 = 500;
 
 fn seed_from_id(seed_id: u8) -> Seed {
     let mut bytes = [0u8; 32];
