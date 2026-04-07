@@ -30,3 +30,4 @@ campaigns/*/results.tsv
 campaigns/*/program.md.backup
 campaigns/*/run.log
 # NOTE: campaigns/lessons-global.jsonl is NOT gitignored — it must be committed
+perf.data
