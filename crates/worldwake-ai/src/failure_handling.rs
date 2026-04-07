@@ -1,8 +1,8 @@
 use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
-    BlockingFact, ClearingBaseline, CognitiveProfile, CommodityKind, EntityId, GoalKey, GoalKind,
-    IntentionFrame, Quantity, Tick,
+    BlockingFact, ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, EntityId,
+    GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -30,6 +30,7 @@ pub fn handle_plan_failure(
     runtime: &mut AgentDecisionRuntime,
     jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
+    facility_intents: &mut ContentionIntents,
     cognitive: &CognitiveProfile,
 ) {
     runtime.current_plan = None;
@@ -38,6 +39,7 @@ pub fn handle_plan_failure(
     }
     *jc = None;
     runtime.materialization_bindings.clear();
+    facility_intents.intents.clear();
 
     let blocking_fact = derive_blocking_fact(
         context.view,
@@ -999,7 +1001,7 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerKey,
         BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant, ContentionIntents,
         DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
         HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
@@ -1480,6 +1482,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
+            &mut ContentionIntents::default(),
             &cognitive(&ProfileFixture::default()),
         );
 
@@ -2279,6 +2282,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
+            &mut ContentionIntents::default(),
             &cognitive(&budget),
         );
 
@@ -2430,6 +2434,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
+            &mut ContentionIntents::default(),
             &cognitive(&budget),
         );
 

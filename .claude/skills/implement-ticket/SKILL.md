@@ -28,6 +28,8 @@ Verify the ticket against the current codebase, not stale architectural memory. 
 
 For trivial single-file additive tickets, scale the reassessment down deliberately: read the ticket, cited references, and owned symbol/file; confirm the dependency path is present; and run a narrow existence/fallout sweep for prior implementation or obvious constructor/usage fallout. Do not skip reassessment, but do not force the full matrix when the owned surface is genuinely small and local.
 
+When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), treat the audit as reassessment. Record findings in the reassessment section. If a gap is confirmed, auto-correct `Engine Changes`, `What to Change`, and `Files to Touch` before coding. If no gap exists, close with a reassessment-only Outcome documenting the audit trail.
+
 #### Reference and baseline validation
 
 - Referenced files, types, functions, modules, commands, and tests exist.
@@ -265,8 +267,8 @@ Typical order:
 - If a canonical interface is realized through a forwarding layer, prove both the consumer-facing call and the forwarding path.
 - Check that focused selectors actually match new/changed test names — thematic filters can miss sibling tests with different prefixes.
 - Prefer separate `cargo test` invocations per selector over combining exact test names in one command.
-- Run multiple `cargo test` or `cargo clippy` commands sequentially, not in parallel — lock contention makes parallel runs unreliable.
-- Treat focused selectors the same way: even narrow `cargo test` invocations should run one at a time, never through parallel tool wrappers.
+- Run multiple `cargo test` or `cargo clippy` commands sequentially when they share the same build profile — lock contention makes parallel same-profile runs unreliable. Commands with different profiles (e.g., `cargo test` vs `cargo clippy`) can safely run in parallel.
+- Treat focused selectors the same way: even narrow same-profile `cargo test` invocations should run one at a time, never through parallel tool wrappers.
 - When a broad verification run dies by `SIGKILL` or another likely environment/resource kill after focused suites are already green, rerun the named interrupted/failing suite in isolation before deciding whether to repeat the full broad run. Record that distinction in the ticket outcome instead of treating the killed broad run as a semantic failure by default.
 - After changing code post-verification, rerun narrowest affected tests and any stale broader commands.
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
@@ -275,6 +277,7 @@ Typical order:
 - When long-running verification commands are in flight, reuse those sessions rather than spawning duplicates.
 - When new registered actions or systems cause broad failures, triage for catalog-order drift, completeness assertions, and registry-expansion fallout before assuming the feature's runtime logic is broken.
 - If a focused failing proof exposes a real production contradiction in a ticket currently marked test-only or `Engine Changes: None`, update the ticket sections that define scope (`Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Out of Scope`) before continuing. Do not leave the ticket describing "tests only" work once live code changes are required.
+- When a ticket fixes a repeated pattern across multiple call sites, run a post-implementation pattern sweep (e.g., grep for the unfixed pattern) to confirm no sites were missed. Record the sweep result in the ticket Outcome.
 
 Use the repo-approved commands from [CLAUDE.md](../../../CLAUDE.md):
 

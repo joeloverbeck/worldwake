@@ -250,6 +250,7 @@ pub(super) fn handle_current_step_failure(
     active_goal: Option<worldwake_core::GoalKey>,
     jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
+    facility_intents: &mut ContentionIntents,
     agent: EntityId,
     step: &PlannedStep,
     execution_failure: Option<ExecutionFailure<'_>>,
@@ -278,6 +279,7 @@ pub(super) fn handle_current_step_failure(
         runtime,
         jc,
         blocked_memory,
+        facility_intents,
         cognitive,
     );
     runtime.step_in_flight = false;
