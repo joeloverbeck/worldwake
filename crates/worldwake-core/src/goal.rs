@@ -1,8 +1,8 @@
 //! Shared goal identity types used across authoritative memory and AI planning.
 
 use crate::{
-    ArtifactPostingContext, BountyTerms, CommodityKind, CommunicationClass, EntityId, NoticeTopic,
-    PunishmentKind, RecipeId, RecordEntryId, TellTopic, ViolationId,
+    ArtifactPostingContext, BountyTerms, CommodityKind, CommunicationClass, EntityId,
+    ExpectationId, NoticeTopic, PunishmentKind, RecipeId, RecordEntryId, TellTopic, ViolationId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +48,7 @@ pub enum GoalKind {
     ReportMissing {
         subject: EntityId,
         to_office: Option<EntityId>,
+        expectation_id: Option<ExpectationId>,
     },
     EscortToSafety {
         subject: EntityId,
@@ -235,7 +236,8 @@ mod tests {
     };
     use crate::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
-        NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId, RewardSource,
+        ExpectationId, NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId,
+        RewardSource,
         test_utils::entity_id,
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -321,6 +323,7 @@ mod tests {
         let key = GoalKey::from(GoalKind::ReportMissing {
             subject,
             to_office: Some(entity_id(25, 0)),
+            expectation_id: Some(ExpectationId(7)),
         });
 
         assert_eq!(key.commodity, None);

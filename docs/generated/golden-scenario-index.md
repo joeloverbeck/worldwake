@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 139
+- Scenario blocks: 140
 - Contributing golden test files: 22
-- Associated tests: 299
+- Associated tests: 301
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -573,7 +573,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 120: Overdue Expectation Drives Search
 
-- Source: `golden_expectation.rs:311`
+- Source: `golden_expectation.rs:603`
 - Systems: ExpectationCheck, AI, Travel, SearchPlace
 - GoalKinds: SearchForMissing
 - ActionDomains: Travel, Epistemic
@@ -585,6 +585,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: ExpectationCheck transitions the record to Overdue, AI generates and selects SearchForMissing, the selected plan includes remote travel and search_place at OrchardFarm, and the final search resolves the expectation to FoundSafe while updating LastSeenMemory locally.
 
 **Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue transition -> SearchForMissing candidate and plan selection -> travel commit -> search_place commit -> ExpectationStore resolution and LastSeenMemory update.
+
+### Scenario 121: Report Missing Creates Institutional Record Then Searches
+
+- Source: `golden_expectation.rs:637`
+- Systems: ExpectationCheck, AI, ReportMissing, ViolationMemory, OfficeRegister, Travel, SearchPlace
+- GoalKinds: ReportMissing, SearchForMissing
+- ActionDomains: Social, Travel, Epistemic
+- Places: VillageSquare, OrchardFarm
+- Principles: 1, 3, 7, 8, 12, 17
+
+**Setup**: A reporter at VillageSquare holds one active RoutineReturn expectation for a passive subject expected back at VillageSquare, while the reporter's LastSeenMemory still points to OrchardFarm. A unique OfficeRegister exists at VillageSquare, and the reporter uses a utility profile that makes the opening overdue response prefer reporting over immediate searching.
+
+**Proves**: Once ExpectationCheck makes the record overdue, AI generates both ReportMissing and SearchForMissing, selects report_missing first, records EntityMissing plus MissingPersonStatus at the expected-place OfficeRegister, then suppresses duplicate ReportMissing while continuing into the search path and eventually finding the subject at OrchardFarm.
+
+**Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue transition -> dual ReportMissing/SearchForMissing generation -> report_missing commit -> ViolationMemory + OfficeRegister MissingPersonStatus update -> ReportMissing suppression with SearchForMissing retained -> travel/search_place -> ExpectationStore resolution and LastSeenMemory update.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 

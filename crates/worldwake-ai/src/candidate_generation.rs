@@ -3312,6 +3312,7 @@ fn emit_search_candidates(
             GoalKind::ReportMissing {
                 subject: record.subject,
                 to_office: None,
+                expectation_id: Some(record.id),
             },
             OpportunityAnchor::Entity(record.subject),
             evidence,
@@ -12861,6 +12862,7 @@ mod tests {
             GoalKind::ReportMissing {
                 subject,
                 to_office: None,
+                expectation_id: Some(ExpectationId(1)),
             }
         ));
     }
@@ -12981,6 +12983,7 @@ mod tests {
             GoalKind::ReportMissing {
                 subject,
                 to_office: None,
+                expectation_id: Some(ExpectationId(1)),
             }
         ));
     }
@@ -13043,6 +13046,7 @@ mod tests {
             GoalKind::ReportMissing {
                 subject,
                 to_office: None,
+                expectation_id: Some(ExpectationId(1)),
             }
         ));
     }

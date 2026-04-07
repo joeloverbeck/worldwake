@@ -1,5 +1,7 @@
 # S67: Golden E2E Gaps — S59 Expectation and Obligation Substrate
 
+**Status**: COMPLETED
+
 ## Summary
 
 S59 introduced a complete expectation/search/report behavioral domain (3 GoalKind variants, 5 actions, 1 system function, candidate generation, institutional missing-person records) with zero golden E2E coverage. This spec proposes scenarios that demonstrate the core emergent chains.
@@ -135,3 +137,14 @@ The entire S59 behavioral domain has zero golden scenarios. No GoalKind, ActionD
 - Each primary golden scenario MUST have a `*_replays_deterministically` companion
 - Conservation verification: S59 introduces no physical goods, so `verify_conservation` should pass unchanged. ExpectationRecords and LastSeenRecords are informational, not conserved quantities.
 - All scenarios must use `ChaCha8Rng` seeded determinism
+
+## Outcome
+
+- Completion date: 2026-04-07
+- What changed: The spec was implemented through [archive/tickets/S67GOLGAP-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S67GOLGAP-001.md) and [archive/tickets/S67GOLGAP-002.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S67GOLGAP-002.md). `worldwake-ai` now has golden expectation coverage for both the overdue-search chain and the report-missing institutional-record chain, with generated golden inventory/docs refreshed accordingly.
+- Deviations from original plan: Scenario S67-B exposed a live planner contradiction, so implementation widened beyond "golden only" to add the bounded `ReportMissing` planner fix: `GoalKind::ReportMissing` now carries planner-visible `ExpectationId` identity and the goal model treats `report_missing` as goal-satisfying. Scenario S67-A was also re-isolated with a search-favoring utility profile so the new report path did not change its contract.
+- Verification results:
+  - `cargo test -p worldwake-ai --test golden_expectation`
+  - `cargo test -p worldwake-ai report_missing_builds_payload_override_from_expectation_id`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

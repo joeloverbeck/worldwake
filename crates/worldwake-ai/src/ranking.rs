@@ -2941,6 +2941,7 @@ mod tests {
             &[goal(GoalKind::ReportMissing {
                 subject,
                 to_office: None,
+                expectation_id: None,
             })],
             &view,
             agent,
@@ -3005,6 +3006,7 @@ mod tests {
                 goal(GoalKind::ReportMissing {
                     subject,
                     to_office: None,
+                    expectation_id: None,
                 }),
             ],
             &view,
@@ -3023,6 +3025,7 @@ mod tests {
                 GoalKey::from(GoalKind::ReportMissing {
                     subject,
                     to_office: None,
+                    expectation_id: None,
                 }),
             ]
         );

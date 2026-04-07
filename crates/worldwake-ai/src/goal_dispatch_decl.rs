@@ -528,6 +528,7 @@ mod tests {
             GoalDispatchKey::ReportMissing => GoalKind::ReportMissing {
                 subject: target,
                 to_office: Some(office),
+                expectation_id: None,
             },
             GoalDispatchKey::EscortToSafety => GoalKind::EscortToSafety {
                 subject: target,

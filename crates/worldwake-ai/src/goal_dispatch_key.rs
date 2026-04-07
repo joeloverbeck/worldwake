@@ -245,6 +245,7 @@ mod tests {
             GoalDispatchKey::from(GoalKind::ReportMissing {
                 subject,
                 to_office: Some(destination),
+                expectation_id: None,
             }),
             GoalDispatchKey::ReportMissing
         );
@@ -286,6 +287,7 @@ mod tests {
             GoalKind::ReportMissing {
                 subject: target,
                 to_office: Some(office),
+                expectation_id: None,
             },
             GoalKind::EscortToSafety {
                 subject: target,

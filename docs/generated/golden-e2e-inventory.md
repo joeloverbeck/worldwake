@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 23
 - Files contributing `golden_*` tests: 23
-- Total `golden_*` tests: 314
+- Total `golden_*` tests: 316
 
 ## Per-File Inventory
 
@@ -19,7 +19,7 @@ Do not hand-edit it.
 | `golden_commodity_opportunity.rs` | 3 |
 | `golden_determinism.rs` | 12 |
 | `golden_emergent.rs` | 51 |
-| `golden_expectation.rs` | 2 |
+| `golden_expectation.rs` | 4 |
 | `golden_experience_preferences.rs` | 6 |
 | `golden_integration.rs` | 30 |
 | `golden_merchant_selling.rs` | 20 |
@@ -189,6 +189,8 @@ Do not hand-edit it.
 
 - `golden_overdue_expectation_drives_search`
 - `golden_overdue_expectation_drives_search_replays_deterministically`
+- `golden_report_missing_creates_violation_and_institutional_record`
+- `golden_report_missing_creates_violation_and_institutional_record_replays_deterministically`
 
 ### `golden_experience_preferences.rs`
 

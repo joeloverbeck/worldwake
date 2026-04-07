@@ -314,7 +314,9 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
             ),
             None => format!("SearchForMissing({})", entity_display_name(world, *subject)),
         },
-        GoalKind::ReportMissing { subject, to_office } => match to_office {
+        GoalKind::ReportMissing {
+            subject, to_office, ..
+        } => match to_office {
             Some(to_office) => format!(
                 "ReportMissing({} to {})",
                 entity_display_name(world, *subject),

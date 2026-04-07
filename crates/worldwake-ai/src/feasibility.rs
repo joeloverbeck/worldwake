@@ -724,6 +724,7 @@ mod tests {
             ranked_goal(GoalKind::ReportMissing {
                 subject: entity(6),
                 to_office: None,
+                expectation_id: None,
             }),
             ranked_goal(GoalKind::EscortToSafety {
                 subject: entity(7),

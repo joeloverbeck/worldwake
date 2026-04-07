@@ -5,6 +5,10 @@
 Phases 1–6 (E01–E22, FND-01, FND-02, S01–S58) completed.
 See `archive/` for detailed completion records.
 
+Completed adjunct coverage specs:
+- `S67: Golden E2E Gaps — S59 Expectation and Obligation Substrate` archived at [archive/specs/S67-golden-gaps-S59.md](/home/joeloverbeck/projects/worldwake/archive/specs/S67-golden-gaps-S59.md).
+- `S67` adds golden coverage for the currently implemented `S59` overdue-search and report-missing chains, but it does not imply that parent spec `S59` is complete. `S59` remains active until its remaining proposed behavior is fully implemented.
+
 ---
 
 ## Phase 7: Consequence Carriers
@@ -33,6 +37,7 @@ S65 ─┘
 
 **Wave 1** (parallel, no deps):
 - **S59**: Expectation and Obligation Substrate — time-bounded expectations, overdue detection, search/rescue actions, last-seen propagation
+  - current status note: the `S67` follow-on golden-gap spec is complete for the implemented overdue-search and report-missing slices, but `S59` itself still remains active because at least one proposed goal/action path is not fully live yet
 - **S60**: Persistent Site Occupancy — site profiles with sublocations, occupancy claims, site traces, BanditCamp migration
 - **S62**: Boundary Processes and Remote Shocks — source regions, boundary channels, scheduled inflows, disruption mechanics
 
@@ -59,6 +64,7 @@ S65 ─┘
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [ ] Wave 4 specs implemented and passing golden E2E tests
+- Note: completed golden-gap follow-on specs such as `S67` count as coverage progress for implemented slices, but they do not satisfy a parent wave gate while the parent feature spec itself is still active.
 - [ ] Canonical regression A (beast starvation → bounty → hunt) fully producible
 - [ ] Canonical regression G (false rumor → wrongful accusation → correction) fully producible
 - [ ] Canonical regression H (remote shock → local shortage → adaptation) fully producible
