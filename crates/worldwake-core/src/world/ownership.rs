@@ -17,7 +17,7 @@ impl World {
         holder: EntityId,
     ) -> impl Iterator<Item = (EntityId, &crate::ItemLot)> + '_ {
         self.query_item_lot()
-            .filter(move |(entity, _)| self.can_exercise_control(holder, *entity).is_ok())
+            .filter(move |(entity, _)| self.has_control(holder, *entity))
     }
 
     fn controlled_unique_items_for(
@@ -25,7 +25,7 @@ impl World {
         holder: EntityId,
     ) -> impl Iterator<Item = (EntityId, &crate::UniqueItem)> + '_ {
         self.query_unique_item()
-            .filter(move |(entity, _)| self.can_exercise_control(holder, *entity).is_ok())
+            .filter(move |(entity, _)| self.has_control(holder, *entity))
     }
 
     #[must_use]
@@ -209,6 +209,46 @@ impl World {
         self.effective_rights(actor, entity)
             .iter()
             .any(|right| right.kind == kind)
+    }
+
+    /// Boolean-only control check. Returns `true` if `actor` has any control
+    /// right over `entity`, without allocating a `Vec<EffectiveRight>`.
+    /// Mirrors the logic of [`collect_control_rights`] but short-circuits on
+    /// the first found right.
+    #[must_use]
+    pub fn has_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        if self.ensure_alive(actor).is_err() || self.ensure_alive(entity).is_err() {
+            return false;
+        }
+        self.has_control_inner(actor, entity)
+    }
+
+    fn has_control_inner(&self, actor: EntityId, entity: EntityId) -> bool {
+        if let Some(container) = self.direct_container(entity) {
+            return self.has_control_inner(actor, container);
+        }
+
+        if self.relations.possessed_by.get(&entity) == Some(&actor) {
+            return true;
+        }
+
+        let unpossessed = !self.relations.possessed_by.contains_key(&entity);
+        if self.relations.owned_by.get(&entity) == Some(&actor) && unpossessed {
+            return true;
+        }
+
+        if let Some(owner) = self.relations.owned_by.get(&entity).copied()
+            && unpossessed
+        {
+            if self.factions_of(actor).contains(&owner) {
+                return true;
+            }
+            if self.offices_held_by(actor).contains(&owner) {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn collect_control_rights(&self, actor: EntityId, entity: EntityId) -> ControlOutcome {

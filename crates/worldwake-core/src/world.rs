@@ -3710,6 +3710,64 @@ mod tests {
     }
 
     #[test]
+    fn has_control_agrees_with_can_exercise_control() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let office = world.create_office("Mayor", Tick(1)).unwrap();
+        let owner = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let holder = world
+            .create_agent("Bram", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let member = world
+            .create_agent("Cora", ControlSource::Ai, Tick(4))
+            .unwrap();
+        let stranger = world
+            .create_agent("Dara", ControlSource::Ai, Tick(5))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(6))
+            .unwrap();
+
+        // Unowned, unpossessed — no one has control
+        assert_eq!(
+            world.has_control(owner, item),
+            world.can_exercise_control(owner, item).is_ok()
+        );
+
+        // Direct ownership
+        world.set_owner(item, owner).unwrap();
+        assert!(world.has_control(owner, item));
+        assert_eq!(
+            world.has_control(stranger, item),
+            world.can_exercise_control(stranger, item).is_ok()
+        );
+
+        // Possession overrides ownership
+        world.set_possessor(item, holder).unwrap();
+        assert!(world.has_control(holder, item));
+        assert!(!world.has_control(owner, item));
+        assert_eq!(
+            world.has_control(owner, item),
+            world.can_exercise_control(owner, item).is_ok()
+        );
+
+        // Faction authority
+        world.clear_possessor(item).unwrap();
+        world.set_owner(item, faction).unwrap();
+        world.add_member(member, faction).unwrap();
+        assert!(world.has_control(member, item));
+        assert!(!world.has_control(stranger, item));
+
+        // Office authority
+        world.set_owner(item, office).unwrap();
+        world.assign_office(office, owner).unwrap();
+        assert!(world.has_control(owner, item));
+        assert!(!world.has_control(stranger, item));
+    }
+
+    #[test]
     fn effective_rights_possession() {
         let mut world = World::new(Topology::new()).unwrap();
         let possessor = world

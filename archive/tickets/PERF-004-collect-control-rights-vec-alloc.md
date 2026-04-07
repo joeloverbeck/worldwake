@@ -1,6 +1,6 @@
 # PERF-004: Eliminate per-call `Vec` allocation in `collect_control_rights`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-core` ownership module
@@ -80,3 +80,18 @@ If `effective_rights` callers remain performance-relevant, switch `Vec<Effective
 2. `cargo test -p worldwake-core`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
 4. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-07.
+
+- Added `pub fn has_control(&self, actor, entity) -> bool` and private `fn has_control_inner` to `ownership.rs`. Mirrors the logic of `collect_control_rights` but returns `true` at first found right without allocating `Vec<EffectiveRight>`.
+- Updated `controlled_item_lots_for` and `controlled_unique_items_for` to use `has_control` instead of `can_exercise_control(..).is_ok()`.
+- Added `has_control_agrees_with_can_exercise_control` equivalence test covering: unowned, direct ownership, possession override, faction authority, and office authority.
+- Item 3 (SmallVec in `collect_control_rights`) deferred — the remaining callers (`effective_rights`, `can_exercise_control`) are not on the hot filter path.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core` (full crate suite including new equivalence test)
+- Passed `cargo clippy -p worldwake-core --all-targets -- -D warnings`
+- Passed `cargo test --workspace`
