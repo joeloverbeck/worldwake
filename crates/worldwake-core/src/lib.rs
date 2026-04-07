@@ -91,7 +91,7 @@ pub use action_domain::ActionDomain;
 pub use allocator::EntityAllocator;
 pub use bandit_camp::{BanditCamp, BanditFactionPolicy};
 pub use belief::{
-    AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
+    AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy, BeliefStoreDiff,
     BelievedActivity, BelievedArtifactState, BelievedBountyTerms, BelievedContentionState,
     BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState, HeardBeliefDisposition,
     HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,

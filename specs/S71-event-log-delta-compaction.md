@@ -53,7 +53,7 @@ None. Spec S70 (belief store query encapsulation) is independent and complementa
 - **Preserve causal history** — every component change is still recorded and queryable (FND-29A)
 - **Preserve debuggability** — the "what changed and why" question remains answerable (FND-29)
 - **Preserve replay fidelity** — save/load roundtrip and replay determinism are unchanged (FND-12)
-- **Preserve verification** — `verify_causal_link_integrity` and event-log-based assertions continue to work
+- **Preserve verification** — event-log-based reconstruction and assertions continue to work
 
 ## Non-Goals
 
@@ -77,14 +77,14 @@ None. Spec S70 (belief store query encapsulation) is independent and complementa
 Component deltas flow through one path: `WorldTxn::commit` → `EventLog::emit` → stored in `events: Vec<EventRecord>`. Consumers read them via `record.state_deltas()`. The change is to the representation stored in that path, not to the path itself.
 
 Consumers of `state_deltas()`:
-1. **Perception** (`perception.rs:1004, 1039`) — reads `RelationDelta` and `ComponentDelta` to extract institutional claims. Does NOT read `ComponentValue` payloads.
-2. **Verification** (`verification.rs:187`) — reconstructs world state from deltas. Reads `ComponentDelta::Set { after }` to build the final component state. This is the primary consumer of full snapshots.
-3. **Production** (`production.rs:278`) — checks for specific component kinds in deltas.
+1. **Perception** (`perception.rs:1034-1060`) — reads `RelationDelta` and `ComponentDelta` to extract institutional claims. Reads `ComponentValue` payloads for specific component kinds (e.g., `OfficeForceState` at line 1052) but does NOT read belief store payloads.
+2. **Verification** (`verification.rs:196`) — reconstructs world state from deltas. Reads `ComponentDelta::Set { after }` to build the final component state. This is the primary consumer of full snapshots. Note: no consumer currently reads the `before` field at runtime.
+3. **Production** (`production.rs:278`) — test assertions check for specific component kinds in deltas (not runtime delta inspection).
 4. **Combat/BanditCamp** — check for specific delta patterns (death, wounds).
 5. **Observer CLI** — prints delta counts and details.
 6. **Save/Load** — hashes the event log for determinism checks.
 
-Of these, only **verification** and **observer CLI** actually inspect `ComponentValue` payloads. All others match on delta structure (entity, component_kind) without examining the full before/after values.
+Of these, **verification**, **perception** (for non-belief-store components like `OfficeForceState`), and **observer CLI** inspect `ComponentValue` payloads. All others match on delta structure (entity, component_kind) without examining the full before/after values.
 
 ## Positive-Feedback Analysis
 
@@ -154,6 +154,8 @@ Rationale:
 - It aligns with FND-12: same causal information, less memory
 - The diff/apply logic can be implemented incrementally: start with `AgentBeliefStore` (the worst offender), measure, then decide if other components need it
 
+Note: No runtime consumer currently reads the `before` field from `ComponentDelta::Set` — verification.rs uses only `after` (via `..` wildcard). This means Option B (drop `before`) could be applied as a complementary zero-impact step for non-belief-store components, further reducing memory without requiring per-component diff logic.
+
 Option C loses information that verification currently uses. Option D adds maintenance burden. Option B is a partial fix that may need to be revisited.
 
 ## Deliverables
@@ -163,6 +165,7 @@ Option C loses information that verification currently uses. Option D adds maint
 Define a `BeliefStoreDiff` struct that captures only the mutations:
 ```
 struct BeliefStoreDiff {
+    next_claim_id: Option<ClaimId>,
     known_entities_set: Vec<(EntityId, BelievedEntityState)>,
     known_entities_removed: Vec<EntityId>,
     social_observations_added: Vec<SocialObservation>,
@@ -171,6 +174,8 @@ struct BeliefStoreDiff {
     told_beliefs_removed: Vec<TellMemoryKey>,
     heard_beliefs_set: Vec<(TellMemoryKey, HeardBeliefMemory)>,
     heard_beliefs_removed: Vec<TellMemoryKey>,
+    asked_witnesses_set: Vec<(AskWitnessMemoryKey, AskWitnessMemory)>,
+    asked_witnesses_removed: Vec<AskWitnessMemoryKey>,
     entity_claims_set: Vec<(EntityId, Vec<EntityBeliefClaim>)>,
     entity_claims_removed: Vec<EntityId>,
     institutional_beliefs_set: Vec<(InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>)>,
@@ -204,6 +209,7 @@ enum ComponentDelta {
 - `crates/worldwake-core/src/world_txn.rs` (modify — use compact diff for belief store sets)
 - `crates/worldwake-core/src/verification.rs` (modify — apply compact diffs)
 - `crates/worldwake-core/src/event_record.rs` (modify if delta representation changes EventView)
+- `crates/worldwake-systems/src/perception.rs` (review — pattern-matches on `ComponentDelta::Set` at line 1049; confirm wildcard arm handles `CompactSet` correctly)
 - `crates/worldwake-cli/src/handlers/events.rs` (modify — display compact diffs)
 
 ## Out of Scope
@@ -223,7 +229,6 @@ enum ComponentDelta {
 
 ### Correctness
 
-- `verify_causal_link_integrity` passes on soak runs
 - Save/load roundtrip produces identical world hash
 - All golden tests pass with identical hashes (deterministic replay preserved)
 - `cargo test --workspace` passes
