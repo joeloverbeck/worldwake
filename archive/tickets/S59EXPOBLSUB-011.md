@@ -1,14 +1,14 @@
 # S59EXPOBLSUB-011: Search candidate generation
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
-**Engine Changes**: Yes — candidate generation in worldwake-ai
+**Engine Changes**: Yes — candidate generation and ranking in worldwake-ai
 **Deps**: S59EXPOBLSUB-004, S59EXPOBLSUB-005, S59EXPOBLSUB-006, S59EXPOBLSUB-010
 
 ## Problem
 
-Overdue expectations should drive agents to search for missing persons and report their absence. The AI needs a candidate generation function that reads `ExpectationStore` for overdue records and emits `SearchForMissing` and `ReportMissing` goals with appropriate priority scaling.
+Overdue expectations should drive agents to search for missing persons and report their absence. On this branch, that requires both candidate generation and minimal ranking support: emitted `SearchForMissing` / `ReportMissing` goals must survive the existing zero-motive filter in `rank_candidates()` before the behavior is live.
 
 ## Assumption Reassessment (2026-04-06)
 
@@ -20,10 +20,12 @@ Overdue expectations should drive agents to search for missing persons and repor
 6. `GroundedGoal` is the return type with priority weight — pattern from existing `emit_*_candidates()` functions.
 7. `BlockedIntentMemory` parameter filters recently-failed goals to prevent thrashing.
 8. `S59EXPOBLSUB-010` now lands the real route-aware `escort_to_safety` action, so later contextual `EscortToSafety` goal emission can rely on a live authoritative action boundary instead of a reserved planner-only symbol.
+9. Live mismatch: `crates/worldwake-ai/src/ranking.rs:647-649` still assigns `SearchForMissing`, `ReportMissing`, and `EscortToSafety` zero motive. Candidate generation alone would emit these goals and then immediately drop them during ranking.
+10. Honest scope correction: this ticket must own the minimal ranking support needed for overdue search/report goals to become behaviorally selectable. Contextual `EscortToSafety` emission remains separate until the candidate layer proves it is part of the same live slice.
 
 ## Architecture Check
 
-1. Follows the exact `emit_*_candidates()` pattern used by all other candidate generators. No new infrastructure.
+1. Follows the existing `emit_*_candidates()` pattern for generation, plus the existing `goal_motive_score()` / priority-class path for ranking. No new infrastructure.
 2. Reads only from GoalBeliefView (belief state, not world state) — satisfies P14.
 3. No backward compatibility shims.
 
@@ -34,7 +36,8 @@ Overdue expectations should drive agents to search for missing persons and repor
 3. Active (non-overdue) expectations do NOT emit goals → decision trace (absence check)
 4. Priority scales with overdue duration → focused unit test on priority computation
 5. Blocked intent memory suppresses recently-failed search goals → focused unit test
-6. Single-layer ticket (candidate generation only) — verification via decision trace is sufficient.
+6. Emitted search/report goals survive ranking with non-zero motive and appear in the ranked candidate set.
+7. Minimal mixed-layer AI ticket: prove both generation and ranking, not just raw emission.
 
 ## What to Change
 
@@ -99,15 +102,26 @@ fn emit_search_candidates(
 
 Add `emit_search_candidates(view, agent, current_tick, blocked, &mut candidates)` call in `generate_candidates_with_travel_horizon()` alongside existing emit functions.
 
+### 3. Add minimal motive support in ranking
+
+In `crates/worldwake-ai/src/ranking.rs`, replace the current zero-motive fallback for:
+
+- `GoalKind::SearchForMissing { .. }`
+- `GoalKind::ReportMissing { .. }`
+
+with a minimal non-zero motive path derived from the same overdue expectation / last-seen basis the candidate layer exposes. The goal of this ticket is not deep policy tuning; it is making overdue missing-person response behaviorally live on the existing ranking pipeline. `EscortToSafety` remains out of scope unless reassessment during implementation proves it is required for the same live slice.
+
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — add function + call site)
+- `crates/worldwake-ai/src/ranking.rs` (modify — minimal motive support for search/report goals)
 
 ## Out of Scope
 
 - EscortToSafety goal emission — this is triggered by search_place finding a wounded person, not by overdue expectations directly. The escort goal is generated contextually after search, not in candidate generation.
 - Priority tuning — initial weights are starting points, tunable later
 - Integration with UtilityProfile or pressure system — uses direct priority scoring
+- Broad ranking-policy redesign — this ticket only adds the minimum motive support needed so newly emitted overdue search/report goals are not discarded as zero-motive.
 
 ## Acceptance Criteria
 
@@ -120,7 +134,8 @@ Add `emit_search_candidates(view, agent, current_tick, blocked, &mut candidates)
 5. ReportMissing goal emitted alongside SearchForMissing for overdue records
 6. Blocked intent memory suppresses recently-failed search goals
 7. LastSeenMemory provides last_seen_place hint to SearchForMissing goal
-8. Existing suite: `cargo test -p worldwake-ai`
+8. Ranked candidates retain non-zero-motive SearchForMissing and ReportMissing goals when their overdue expectations are present
+9. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
 
@@ -128,14 +143,33 @@ Add `emit_search_candidates(view, agent, current_tick, blocked, &mut candidates)
 2. Priority scales monotonically with overdue duration
 3. Duty-based expectations outrank social expectations
 4. Reads only from GoalBeliefView (P14 — belief state, not world state)
+5. Newly emitted overdue search/report goals are not filtered out by the ranking zero-motive path
 
 ## Test Plan
 
 ### New/Modified Tests
 
 1. `crates/worldwake-ai/src/candidate_generation.rs` — focused tests for `emit_search_candidates` with mock GoalBeliefView
+2. `crates/worldwake-ai/src/ranking.rs` or existing ranked-candidate tests — focused proof that overdue search/report goals survive ranking with non-zero motive
 
 ### Commands
 
 1. `cargo test -p worldwake-ai candidate_generation`
-2. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+2. `cargo test -p worldwake-ai ranking`
+3. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+- Completed: 2026-04-07
+- What changed:
+  - Added overdue-expectation-driven `SearchForMissing` / `ReportMissing` candidate emission in `crates/worldwake-ai/src/candidate_generation.rs`.
+  - Added focused candidate-generation coverage for overdue, active, blocked, and duplicate-report-suppressed missing-response cases.
+  - Replaced the zero-motive ranking fallback for `SearchForMissing` / `ReportMissing` with expectation-backed motive scoring in `crates/worldwake-ai/src/ranking.rs`.
+  - Added focused ranking coverage proving overdue missing-response goals survive zero-motive filtering and preserve basis/overdue ordering.
+- Deviations from original plan:
+  - Scope was corrected during reassessment to include minimal ranking support, because candidate generation alone would have emitted goals that `rank_candidates()` immediately dropped as zero motive.
+  - The implemented candidate layer deduplicates overdue records by subject and selects the strongest overdue expectation for emission instead of emitting one goal per raw record.
+- Verification results:
+  - Passed `cargo test -p worldwake-ai candidate_generation`
+  - Passed `cargo test -p worldwake-ai ranking`
+  - Passed `cargo test -p worldwake-ai`
