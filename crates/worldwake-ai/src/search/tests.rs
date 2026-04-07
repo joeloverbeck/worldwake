@@ -5839,6 +5839,51 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
 }
 
 #[test]
+fn combined_places_include_grounded_evidence_place_when_goal_has_no_intrinsic_place() {
+    let actor = entity(1);
+    let subject = entity(2);
+    let village_square = entity(10);
+    let orchard_farm = entity(11);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, subject, village_square, orchard_farm]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(subject, EntityKind::Agent);
+    view.kinds.insert(village_square, EntityKind::Place);
+    view.kinds.insert(orchard_farm, EntityKind::Place);
+    view.effective_places.insert(actor, village_square);
+    view.entities_at.insert(village_square, vec![actor]);
+    view.entities_at.insert(orchard_farm, vec![subject]);
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::SearchForMissing {
+            subject,
+            last_seen: None,
+        }),
+        evidence_entities: BTreeSet::from([subject]),
+        evidence_places: BTreeSet::from([orchard_farm]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+    let state = PlanningState::new(&snapshot);
+
+    let places = combined_relevant_places(
+        &goal,
+        &state,
+        &RecipeRegistry::new(),
+        &ProfileFixture::default(),
+    );
+
+    assert_eq!(places.places, vec![orchard_farm]);
+    assert_eq!(places.prerequisite_places_count, 0);
+}
+
+#[test]
 fn prune_travel_retains_remote_medicine_branch_for_treat_wounds() {
     let (view, actor, patient, current_place, patient_place, medicine_place) =
         build_branching_care_view();

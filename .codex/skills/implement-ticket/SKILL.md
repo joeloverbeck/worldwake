@@ -235,7 +235,7 @@ Do not assume every schema macro reference needs a new import — verify actual 
 13. When turning a single-shot action into a staged lifecycle, prove each phase separately: start admission, intermediate evolution, commit conditions, abort aftermath.
 14. When an action uses a profile-driven or expression-driven duration, make test helpers derive or tolerate the real completion window. Do not copy a nearby fixed-duration helper and assume the same tick cadence.
 15. When splitting uniform behavior into variant-specific rules, rewrite existing compressed tests into per-case proofs.
-16. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, search tests.
+16. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, heuristic/guidance surfaces (`goal_relevant_places`, evidence-place fallback, travel-pruning inputs when relevant), search tests.
 17. When one goal family spans multiple target subtypes, verify operator availability per subtype. Check for stale operators leaking across subtypes.
 18. When a goal family ends in a place-sensitive terminal action, add focused coverage for both target satisfaction and return-to-terminal-place legality.
 19. When a colocated leaf action becomes live, verify the colocated terminal case separately from travel-plus-leaf planning.
@@ -256,6 +256,7 @@ Typical order:
 - Check that focused selectors actually match new/changed test names — thematic filters can miss sibling tests with different prefixes.
 - Prefer separate `cargo test` invocations per selector over combining exact test names in one command.
 - Run multiple `cargo test` or `cargo clippy` commands sequentially, not in parallel — lock contention makes parallel runs unreliable.
+- When a broad verification run dies by `SIGKILL` or another likely environment/resource kill after focused suites are already green, rerun the named interrupted/failing suite in isolation before deciding whether to repeat the full broad run. Record that distinction in the ticket outcome instead of treating the killed broad run as a semantic failure by default.
 - After changing code post-verification, rerun narrowest affected tests and any stale broader commands.
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
 - When CI/compile fallout follows a shared context-field change, sweep manual struct literals as well as direct function call sites before the next verification pass.

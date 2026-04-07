@@ -20,11 +20,11 @@ Regenerate/validate all with `python3 scripts/golden_inventory.py --write --chec
 
 ## Pending Backlog Summary
 
-1. **S58 Artifact-issuance remaining E2E gap** — [specs/S58-golden-gaps-S51.md](../specs/S58-golden-gaps-S51.md). The suite now proves manual notice downstream effects through Scenario 107 and autonomous institutional bounty issuance through Scenario 112, but it still lacks an end-to-end golden showing that an AI agent autonomously posts a high-danger `ThreatWarning` notice and that the posted artifact later reroutes another agent's travel choice.
+1. **S67 Expectation/search/report E2E gaps** — [specs/S67-golden-gaps-S59.md](../specs/S67-golden-gaps-S59.md). The entire S59 expectation-obligation behavioral domain (SearchForMissing, ReportMissing, search_place, ask_about_person, report_missing, ExpectationCheck, MissingPersonStatus) has zero golden coverage. Two scenarios proposed: S67-A (overdue expectation -> search -> found) and S67-B (report missing creates violation + institutional record, then suppression shifts agent to search).
 
 ### Recommended Implementation Order
 
-- `S58` — closes the remaining S51 autonomous-notice golden gap.
+- `S67` — closes the S59 expectation-obligation golden gap.
 
 ---
 
@@ -47,6 +47,8 @@ The following scenarios were considered during the 2026-03-14 coverage review an
 ## Removed Backlog Items
 
 Items removed from the golden backlog with rationale (prevents duplicate coverage proposals):
+
+- **S58 Artifact-issuance remaining E2E gap** (removed 2026-04-07) — Implemented as Scenario 113 in `golden_integration.rs` (`golden_s58_autonomous_notice_reroutes_later_travel` plus deterministic replay). Spec archived at [archive/specs/S58-golden-gaps-S51.md](../archive/specs/S58-golden-gaps-S51.md).
 
 - **S49 Unified social artifact remaining E2E gaps** (removed 2026-04-05) — Implemented and archived as [archive/specs/S49-golden-gaps-S45.md](../archive/specs/S49-golden-gaps-S45.md). Scenario 108 in `golden_integration.rs` now proves delivery-bounty fulfillment and later claim with deterministic replay, and Scenario 109 in `golden_offices.rs` now proves office-vacancy notice uptake into political action without `consult_record`.
 

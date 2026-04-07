@@ -143,6 +143,9 @@ fn goal_specific_feasibility(
             GoalKind::ReduceDanger
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }
+            | GoalKind::SearchForMissing { .. }
+            | GoalKind::ReportMissing { .. }
+            | GoalKind::EscortToSafety { .. }
             | GoalKind::FulfillBounty { .. }
             | GoalKind::PostBounty { .. }
             | GoalKind::PostNotice { .. }
@@ -707,6 +710,39 @@ mod tests {
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
         assert_eq!(hint, FeasibilityHint::Uncertain);
+    }
+
+    #[test]
+    fn test_s59_no_opinion_goals_fall_through_to_uncertain() {
+        let view = MockView::default();
+        let blocked = empty_blocked_memory();
+        let goals = [
+            ranked_goal(GoalKind::SearchForMissing {
+                subject: entity(5),
+                last_seen: None,
+            }),
+            ranked_goal(GoalKind::ReportMissing {
+                subject: entity(6),
+                to_office: None,
+            }),
+            ranked_goal(GoalKind::EscortToSafety {
+                subject: entity(7),
+                destination: entity(8),
+            }),
+        ];
+
+        for goal in goals {
+            assert_eq!(
+                feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1)),
+                FeasibilityHint::Uncertain,
+                "{:?} should fall through to NoOpinion/Uncertain",
+                goal.grounded.key.kind
+            );
+            assert_eq!(
+                goal_specific_feasibility_strategy(&goal),
+                crate::FeasibilityStrategy::NoOpinion
+            );
+        }
     }
 
     // ── Test 11: EngageHostile co-located → Likely ──

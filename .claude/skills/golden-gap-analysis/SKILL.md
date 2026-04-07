@@ -29,12 +29,14 @@ If this script fails, **stop and report the error**. Do not analyze stale genera
 
 Exception: if the refresh fails because live `golden_*` source has missing or duplicate `// Scenario` metadata that the inventory tool reports directly, fix that local metadata problem first, rerun the command, and only stop if the refresh still fails or the failure is not clearly a local mechanical annotation issue.
 
+Exception: if the refresh fails because the golden test target or its dependencies do not compile, diagnose and fix the build error before retrying. Use systematic debugging if the cause is not immediately obvious. Only stop if the build failure persists after investigation or is unrelated to the golden test target.
+
 ## Phase 1 — Context Loading
 
 Read ALL of the following files completely:
 
 1. **Completed spec**: Find `specs/*{arg}*.md` or `archive/specs/*{arg}*.md`. Search `specs/` first, then `archive/specs/` if needed. If the user provides a specific canonical spec path, accept that path wherever the spec currently resides and note separately whether it is still active or already archived — do not treat location alone as the completion signal. If multiple matches, list them and ask the user to disambiguate.
-2. **Stale spec assessment**: If the resolved spec still lives in `specs/` but the implementation is already complete, explicitly decide whether it is (a) still the active roadmap authority for unfinished behavior, or (b) implemented but stale prose that has not yet been archived or reconciled. In the second case, prefer live code, generated golden coverage, and the completed ticket/archive chain over broader unlanded behavior claims in the spec text when judging gaps.
+2. **Stale spec assessment**: If the resolved spec still lives in `specs/` but the implementation is already complete, explicitly decide whether it is (a) still the active roadmap authority for unfinished behavior, or (b) implemented but stale prose that has not yet been archived or reconciled. Check `archive/tickets/` for the spec's decomposed tickets — if all tickets are completed and archived, the spec's implemented scope is defined by those tickets, not by the broader spec prose. In the second case, prefer live code, generated golden coverage, and the completed ticket/archive chain over broader unlanded behavior claims in the spec text when judging gaps.
 3. **Coverage dashboard**: `docs/golden-e2e-coverage.md` — pay special attention to:
    - "Evaluated and Rejected Scenarios" section
    - "Removed Backlog Items" section
@@ -60,6 +62,8 @@ From the completed spec and recent commits, enumerate:
 
 Name exact symbols and files. Do not infer from stale memory.
 
+For each new GoalKind variant, verify that `candidate_generation.rs` has an emission path (e.g., `emit_*_candidates`). GoalKind variants without candidate generation cannot be tested in golden E2E scenarios — note these as implementation gaps, not golden gaps.
+
 If the spec primarily adds or migrates a substrate, profile, or other state carrier without introducing new goal families, action surfaces, or planner operations, treat that explicitly as a different analysis shape. In those cases, the main question is whether the live golden suite already proves the spec's core emergent promise, not whether every moved field or read path needs its own golden.
 
 ### Step 2: Cross-Reference Against Coverage Matrix
@@ -79,6 +83,8 @@ The highest-value golden tests are those that demonstrate **emergent behavior ac
 - Agent decisions chain through multiple goal kinds and action domains
 - Information flows through perception, rumor, or discovery to trigger downstream decisions
 - The scenario would fail if any participating system were removed (true emergence, not coincidence)
+
+**GoalKind existence verification**: Before proposing a scenario that depends on a specific goal, first verify the `GoalKind` variant exists in `goal.rs`. If the action and `PlannerOpKind` exist but the `GoalKind` does not, the scenario cannot be autonomously planned — treat it as an implementation gap, not a golden gap candidate.
 
 **Candidate emission verification**: Before proposing a scenario that depends on a specific `GoalKind` being generated, grep `candidate_generation.rs` for that goal kind and verify there are no suppression filters (e.g., `sale_kinds` exclusions, `already_satisfied` gates, `evaluate_suppression` checks) that would prevent emission. A scenario that assumes a goal kind is available but the candidate generation silently filters it will fail at runtime with 0 candidates and no diagnostic output.
 
@@ -181,6 +187,10 @@ Use this structure in the conversation:
 ## Proposed Scenarios
 
 - <only when a spec was written>
+
+## Deferred Candidates
+
+- <candidates that are valid but blocked by implementation gaps or deferred for complexity — optional section>
 
 ## Dashboard Updates
 

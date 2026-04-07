@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 138
-- Contributing golden test files: 21
-- Associated tests: 297
+- Scenario blocks: 139
+- Contributing golden test files: 22
+- Associated tests: 299
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -570,6 +570,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 - ActionDomains: Transport, Social, Travel
 - Places: VillageSquare, GeneralStore, RulersHall, CommonHouse
 - Principles: 1, 7, 13, 16, 24
+
+### Scenario 120: Overdue Expectation Drives Search
+
+- Source: `golden_expectation.rs:311`
+- Systems: ExpectationCheck, AI, Travel, SearchPlace
+- GoalKinds: SearchForMissing
+- ActionDomains: Travel, Epistemic
+- Places: VillageSquare, OrchardFarm
+- Principles: 1, 3, 7, 8, 12, 17
+
+**Setup**: A searcher at VillageSquare holds one active RoutineReturn expectation for a passive subject expected at OrchardFarm, with deadline_tick=0 and grace_ticks=0 so ExpectationCheck makes it overdue after the opening tick. The searcher has ViolationDispositionProfile and PerceptionProfile; the subject is held at OrchardFarm with ControlSource::None so the scenario isolates expectation-driven search rather than unrelated autonomous motion.
+
+**Proves**: ExpectationCheck transitions the record to Overdue, AI generates and selects SearchForMissing, the selected plan includes remote travel and search_place at OrchardFarm, and the final search resolves the expectation to FoundSafe while updating LastSeenMemory locally.
+
+**Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue transition -> SearchForMissing candidate and plan selection -> travel commit -> search_place commit -> ExpectationStore resolution and LastSeenMemory update.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
@@ -1495,7 +1510,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
 
-- Source: `golden_social.rs:527`
+- Source: `golden_social.rs:529`
 - Systems: Perception, Conversation memory, Tell, AI, Travel
 - GoalKinds: ShareBelief, ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs, Travel
@@ -1510,19 +1525,19 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 98: Alarm survives critical stress while gossip is suppressed
 
-- Source: `golden_social.rs:2480`
+- Source: `golden_social.rs:2482`
 
 ### Scenario 99: Gossip acceptance diverges by listener CommunicationProfile
 
-- Source: `golden_social.rs:2662`
+- Source: `golden_social.rs:2664`
 
 ### Scenario 100: Alarm relays through a critically stressed intermediary
 
-- Source: `golden_social.rs:2837`
+- Source: `golden_social.rs:2839`
 
 ### Scenario 115: Contradictory location claims coexist and direct observation wins
 
-- Source: `golden_social.rs:3045`
+- Source: `golden_social.rs:3047`
 
 ### Scenario 88: Full Supply Chain Negotiated Restock To Consumption
 

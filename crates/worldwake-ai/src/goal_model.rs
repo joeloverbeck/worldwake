@@ -23,7 +23,8 @@ use worldwake_sim::{
     ConsultRecordActionPayload, DeclareSupportActionPayload, InvestigateActionPayload,
     LootActionPayload, PostBountyActionPayload, PostNoticeActionPayload,
     PressForceClaimActionPayload, PunishActionPayload, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
+    RuntimeBeliefView, SearchPlaceActionPayload, TellActionPayload, TradeActionPayload,
+    TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -242,6 +243,29 @@ fn build_attack_payload_override(
         }
         _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
     }
+}
+
+fn build_search_place_payload_override(
+    goal: &GoalKind,
+    state: &PlanningState<'_>,
+    targets: &[EntityId],
+) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+    let GoalKind::SearchForMissing { subject, .. } = goal else {
+        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+    };
+    let actor = state.snapshot().actor();
+    let actor_place = state
+        .effective_place(actor)
+        .ok_or(GoalPayloadOverrideError::MissingActorPlace)?;
+    let Some(target_place) = targets.first().copied() else {
+        return Err(GoalPayloadOverrideError::MissingTarget);
+    };
+    if target_place != actor_place {
+        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+    }
+    Ok(Some(ActionPayload::SearchPlace(SearchPlaceActionPayload {
+        subject: *subject,
+    })))
 }
 
 fn build_declare_support_payload_override(
@@ -616,11 +640,11 @@ impl GoalKindPlannerExt for GoalKind {
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
             PlannerOpKind::AskWitness
-            | PlannerOpKind::SearchPlace
             | PlannerOpKind::AskAboutPerson
             | PlannerOpKind::ReportMissing
             | PlannerOpKind::EscortToSafety
             | PlannerOpKind::ReportFound => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            PlannerOpKind::SearchPlace => build_search_place_payload_override(self, state, targets),
             PlannerOpKind::Accuse => build_accuse_payload_override(self),
             PlannerOpKind::Fine | PlannerOpKind::Exile => build_punish_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
@@ -1002,6 +1026,12 @@ impl GoalKindPlannerExt for GoalKind {
 
         if matches!(self, GoalKind::InvestigateViolation { .. })
             && step.op_kind == PlannerOpKind::Investigate
+        {
+            return true;
+        }
+
+        if matches!(self, GoalKind::SearchForMissing { .. })
+            && step.op_kind == PlannerOpKind::SearchPlace
         {
             return true;
         }
@@ -2041,6 +2071,18 @@ impl GroundedGoal {
                 GoalKind::InvestigateViolation { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
+            PlannerOpKind::SearchPlace => match &self.key.kind {
+                GoalKind::SearchForMissing { .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::ActorPlace]
+                    ) && actor_place.is_some() =>
+                {
+                    RootCandidateSynthesis::Targets(vec![actor_place.expect("checked is_some")])
+                }
+                GoalKind::SearchForMissing { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
             PlannerOpKind::EstablishCamp => match &self.key.kind {
                 GoalKind::EstablishBanditCamp { .. }
                     if matches!(
@@ -2191,8 +2233,8 @@ mod tests {
         AccuseActionPayload, ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId,
         ActionPayload, AskWitnessPayload, BribeActionPayload, ConsultRecordActionPayload,
         DurationExpr, Interruptibility, InvestigateActionPayload, PunishActionPayload,
-        QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView, SearchPlaceActionPayload,
+        TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
         estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
@@ -3955,6 +3997,68 @@ mod tests {
     }
 
     #[test]
+    fn search_for_missing_builds_search_place_payload_override_when_colocated() {
+        let actor = entity(1);
+        let place = entity(10);
+        let subject = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, subject]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor, subject]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([subject]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SearchForMissing {
+            subject,
+            last_seen: Some(place),
+        };
+        let def = ActionDef {
+            id: ActionDefId(26),
+            name: "search_place".to_string(),
+            domain: ActionDomain::Epistemic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::SearchPlace,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[place], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::SearchPlace(SearchPlaceActionPayload {
+                subject,
+            }))
+        );
+    }
+
+    #[test]
     fn accuse_goal_builds_accuse_payload_override() {
         let actor = entity(1);
         let accused = entity(10);
@@ -4639,6 +4743,54 @@ mod tests {
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, semantics, Some(entity(99))),
             RootCandidateSynthesis::NoSynthesisPath
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_search_place_root_targets_only_when_colocated() {
+        let place = entity(10);
+        let subject = entity(11);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Place(place),
+            key: GoalKey::from(GoalKind::SearchForMissing {
+                subject,
+                last_seen: Some(place),
+            }),
+            evidence_entities: BTreeSet::from([subject]),
+            evidence_places: BTreeSet::from([place]),
+        };
+        let def = ActionDef {
+            id: ActionDefId(27),
+            name: "search_place".to_string(),
+            domain: ActionDomain::Epistemic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::SearchPlace,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(place)),
+            RootCandidateSynthesis::Targets(vec![place])
         );
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, semantics, None),

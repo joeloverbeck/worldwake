@@ -772,10 +772,9 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                         }
                         | worldwake_core::InstitutionalClaim::Verdict { effective_tick, .. }
                         | worldwake_core::InstitutionalClaim::MissingPersonStatus {
-                            effective_tick, ..
-                        } => {
-                            effective_tick.0
-                        }
+                            effective_tick,
+                            ..
+                        } => effective_tick.0,
                     }),
                     std::cmp::Reverse(worldwake_core::institutional_knowledge_chain_len(
                         belief.source,

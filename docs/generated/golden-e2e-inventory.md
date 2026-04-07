@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 22
-- Files contributing `golden_*` tests: 22
-- Total `golden_*` tests: 312
+- Golden test files: 23
+- Files contributing `golden_*` tests: 23
+- Total `golden_*` tests: 314
 
 ## Per-File Inventory
 
@@ -19,6 +19,7 @@ Do not hand-edit it.
 | `golden_commodity_opportunity.rs` | 3 |
 | `golden_determinism.rs` | 12 |
 | `golden_emergent.rs` | 51 |
+| `golden_expectation.rs` | 2 |
 | `golden_experience_preferences.rs` | 6 |
 | `golden_integration.rs` | 30 |
 | `golden_merchant_selling.rs` | 20 |
@@ -183,6 +184,11 @@ Do not hand-edit it.
 - `golden_secondary_jurisdiction_punishment_replays_deterministically`
 - `golden_dual_discovery_converges_without_double_accusation`
 - `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
+
+### `golden_expectation.rs`
+
+- `golden_overdue_expectation_drives_search`
+- `golden_overdue_expectation_drives_search_replays_deterministically`
 
 ### `golden_experience_preferences.rs`
 
