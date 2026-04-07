@@ -3352,7 +3352,6 @@ fn emit_report_found_candidates(
                 | ExpectationOutcome::FoundDead { at_place: found_place },
         } = record.state
         else {
-            eprintln!("[ReportFound] record {:?} state={:?} — not Found*", record.id, record.state);
             continue;
         };
 

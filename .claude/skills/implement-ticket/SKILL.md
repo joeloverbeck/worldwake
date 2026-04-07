@@ -128,6 +128,12 @@ Specific persisted-shape checks:
 - If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself rather than assuming the downstream consumer crate named in the ticket is the only edit surface.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
 
+#### Performance and allocation sweep
+
+- When a ticket eliminates allocation on a hot path (e.g., replacing `format!` with a structured enum variant), verify all consumers of the changed return type: `.is_ok()`, `.unwrap_err()`, `.map_err()`, pattern matches, `Display`/`to_string()` formatting. Confirm no caller depends on the old allocation shape (e.g., string content matching).
+- When adding a new enum variant to replace an allocating variant, include the exhaustive-match and downstream-mapping sweep from the "new enum variant" guidance in Section 5.9.
+- When a performance ticket adds a boolean fast-path alongside an existing `Result`-returning function, verify both paths agree on the same inputs.
+
 #### Repo rules
 
 - Ticket fidelity from [CLAUDE.md](../../../CLAUDE.md)
@@ -244,7 +250,7 @@ Do not assume every schema macro reference needs a new import — verify actual 
 6. Preserve critical invariants from [CLAUDE.md](../../../CLAUDE.md): belief-only planning, information locality, append-only event log, determinism, conservation, unique location.
 7. When authoritative validation or affordance-surface behavior changes, verify the full AI pipeline per `Authoritative-To-AI Impact Rule` in [CLAUDE.md](../../../CLAUDE.md). If the change removes candidates earlier, update stale downstream expectations.
 8. When widening an action into a new custody or state regime, audit related stored state carriers for stale markers.
-9. When adding a new enum variant, search for exhaustive matches and state validators in dependent crates before broad verification. Also search for hardcoded array/vec inventories (`const ALL`, test-only `ALL_KEYS` arrays) and count assertions (`assert_eq!(keys.len(), N)`) that mirror the enum's variant set. These are not pattern matches and won't produce compiler errors — they silently become incomplete or fail at runtime. Also check runtime-reachable wildcard catch-all matches that panic on unexpected variants, such as the `(strategy, goal_kind) => unreachable!(...)` arm in `feasibility.rs`.
+9. When adding a new enum variant, search for exhaustive matches and state validators in dependent crates before broad verification. Also search for hardcoded array/vec inventories (`const ALL`, test-only `ALL_KEYS` arrays) and count assertions (`assert_eq!(keys.len(), N)`) that mirror the enum's variant set. These are not pattern matches and won't produce compiler errors — they silently become incomplete or fail at runtime. Also check runtime-reachable wildcard catch-all matches that panic on unexpected variants, such as the `(strategy, goal_kind) => unreachable!(...)` arm in `feasibility.rs`. When adding a new variant to a shared error enum, also sweep: `Display` impl, cross-crate error-mapping functions (e.g., `map_reservation_error` in `start_gate.rs`), variant-inventory tests (e.g., `each_variant_displays_non_empty`), and crate-root re-exports.
 10. When a new variant is not supposed to be live yet, land explicit inert dispatch/policy/ranking branches. Do not prematurely wire real runtime behavior.
 11. When adding, removing, or replacing an `EntityKind`, include kind-classification and lifecycle-routing helpers in the sweep.
 12. When adding a field to a shared model, search for hand-written constructors and test literals across sibling modules, including same-crate test modules. When adding a field whose value differs per dispatch variant but the current code shares a single constant across multiple variants (or-patterned match arms), split the shared constant into per-variant constants. Update the match arms and any test inventories that reference the old shared constant name.
@@ -287,6 +293,7 @@ Typical order:
 - When new registered actions or systems cause broad failures, triage for catalog-order drift, completeness assertions, and registry-expansion fallout before assuming the feature's runtime logic is broken.
 - If a focused failing proof exposes a real production contradiction in a ticket currently marked test-only or `Engine Changes: None`, update the ticket sections that define scope (`Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Out of Scope`) before continuing. Do not leave the ticket describing "tests only" work once live code changes are required.
 - When a ticket fixes a repeated pattern across multiple call sites, run a post-implementation pattern sweep (e.g., grep for the unfixed pattern) to confirm no sites were missed. Record the sweep result in the ticket Outcome.
+- When a workspace-wide verification command fails on files outside the ticket's owned surface (e.g., untracked binaries, pre-existing lint failures), verify the failure is unrelated by running the same command scoped to the ticket's owned crates. Record the pre-existing failure and the scoped-pass result in the ticket Outcome. Do not fix unrelated failures as part of the ticket.
 
 Use the repo-approved commands from [CLAUDE.md](../../../CLAUDE.md):
 

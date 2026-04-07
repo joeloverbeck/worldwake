@@ -3529,10 +3529,10 @@ mod tests {
         assert!(world.can_exercise_control(holder, item).is_ok());
 
         let blocked_owner = world.can_exercise_control(owner, item).unwrap_err();
-        assert!(matches!(blocked_owner, WorldError::PreconditionFailed(_)));
+        assert!(matches!(blocked_owner, WorldError::ControlDenied { .. }));
 
         let unrelated = world.can_exercise_control(stranger, item).unwrap_err();
-        assert!(matches!(unrelated, WorldError::PreconditionFailed(_)));
+        assert!(matches!(unrelated, WorldError::ControlDenied { .. }));
     }
 
     #[test]
@@ -3583,7 +3583,7 @@ mod tests {
         world.set_owner(item, faction).unwrap();
 
         let err = world.can_exercise_control(outsider, item).unwrap_err();
-        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+        assert!(matches!(err, WorldError::ControlDenied { .. }));
     }
 
     #[test]
@@ -3601,7 +3601,7 @@ mod tests {
         // Office is vacant — no one holds it
 
         let err = world.can_exercise_control(outsider, item).unwrap_err();
-        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+        assert!(matches!(err, WorldError::ControlDenied { .. }));
     }
 
     #[test]
@@ -3623,7 +3623,7 @@ mod tests {
         world.set_possessor(item, possessor).unwrap();
 
         let err = world.can_exercise_control(member, item).unwrap_err();
-        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+        assert!(matches!(err, WorldError::ControlDenied { .. }));
     }
 
     #[test]
@@ -3671,7 +3671,7 @@ mod tests {
         // Office is vacant — agent does not hold it
 
         let err = world.can_exercise_control(agent, item).unwrap_err();
-        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+        assert!(matches!(err, WorldError::ControlDenied { .. }));
     }
 
     #[test]

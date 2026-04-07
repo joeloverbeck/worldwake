@@ -1,6 +1,7 @@
 use super::World;
 use crate::{
-    CommodityKind, EffectiveRight, EntityId, Quantity, RightKind, UniqueItemKind, WorldError,
+    CommodityKind, ControlDeniedReason, EffectiveRight, EntityId, Quantity, RightKind,
+    UniqueItemKind, WorldError,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -173,13 +174,17 @@ impl World {
         match self.collect_control_rights(actor, entity) {
             ControlOutcome::Allowed(_) => Ok(()),
             ControlOutcome::BlockedByPossessor(holder) => {
-                Err(WorldError::PreconditionFailed(format!(
-                    "entity {entity} is possessed by {holder}, so {actor} cannot exercise control"
-                )))
+                Err(WorldError::ControlDenied {
+                    actor,
+                    entity,
+                    reason: ControlDeniedReason::BlockedByPossessor(holder),
+                })
             }
-            ControlOutcome::NoRights => Err(WorldError::PreconditionFailed(format!(
-                "entity {actor} neither possesses nor owns {entity}"
-            ))),
+            ControlOutcome::NoRights => Err(WorldError::ControlDenied {
+                actor,
+                entity,
+                reason: ControlDeniedReason::NoRights,
+            }),
         }
     }
 
