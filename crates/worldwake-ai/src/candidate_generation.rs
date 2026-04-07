@@ -1197,11 +1197,12 @@ fn emit_social_candidates(
                     }),
             );
 
+        let speaker_beliefs = ctx.view.agent_belief_store(ctx.agent);
         for topic in selection.selected.iter().copied() {
-            let Some(speaker_beliefs) = ctx.view.agent_belief_store(ctx.agent) else {
+            let Some(speaker_beliefs) = speaker_beliefs else {
                 continue;
             };
-            let communication_class = classify_communication(&topic, &speaker_beliefs);
+            let communication_class = classify_communication(&topic, speaker_beliefs);
             let mut evidence = Evidence::with_entity(listener);
             evidence.places.insert(place);
             let mut trace = EvidenceTrace::default();
@@ -4713,6 +4714,43 @@ mod tests {
     static SALE_LOT_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(5000);
 
     impl TestBeliefView {
+        /// Synthesize an `AgentBeliefStore` from scattered test fields and insert
+        /// it into `belief_stores`. Call after populating `beliefs`,
+        /// `social_observations`, and/or `institutional_claims` for an agent.
+        fn sync_belief_store(&mut self, agent: EntityId) {
+            let known_entities = self
+                .beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            let social_observations = self
+                .social_observations
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default();
+            let institutional_beliefs = self
+                .institutional_claims
+                .iter()
+                .filter(|((claim_agent, _), _)| *claim_agent == agent)
+                .map(|((_, key), claims)| (*key, claims.clone()))
+                .collect();
+            self.belief_stores.insert(
+                agent,
+                AgentBeliefStore {
+                    entity_claims: BTreeMap::new(),
+                    next_claim_id: worldwake_core::ClaimId(0),
+                    known_entities,
+                    social_observations,
+                    told_beliefs: BTreeMap::new(),
+                    heard_beliefs: BTreeMap::new(),
+                    asked_witnesses: BTreeMap::new(),
+                    institutional_beliefs,
+                },
+            );
+        }
+
         /// Register a seller as having listed lots of `commodity` at `place`.
         /// Creates a synthetic lot entity and maps it to the seller.
         fn register_seller(&mut self, place: EntityId, commodity: CommodityKind, seller: EntityId) {
@@ -4764,40 +4802,8 @@ mod tests {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
-            self.belief_stores.get(&agent).cloned().or_else(|| {
-                let has_any_subjective_memory = self.beliefs.contains_key(&agent)
-                    || self.social_observations.contains_key(&agent)
-                    || self
-                        .institutional_claims
-                        .keys()
-                        .any(|(claim_agent, _)| *claim_agent == agent);
-                has_any_subjective_memory.then(|| AgentBeliefStore {
-                    entity_claims: BTreeMap::new(),
-                    next_claim_id: worldwake_core::ClaimId(0),
-                    known_entities: self
-                        .beliefs
-                        .get(&agent)
-                        .cloned()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .collect(),
-                    social_observations: self
-                        .social_observations
-                        .get(&agent)
-                        .cloned()
-                        .unwrap_or_default(),
-                    told_beliefs: BTreeMap::new(),
-                    heard_beliefs: BTreeMap::new(),
-                    asked_witnesses: BTreeMap::new(),
-                    institutional_beliefs: self
-                        .institutional_claims
-                        .iter()
-                        .filter(|((claim_agent, _), _)| *claim_agent == agent)
-                        .map(|((_, key), claims)| (*key, claims.clone()))
-                        .collect(),
-                })
-            })
+        fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
+            self.belief_stores.get(&agent)
         }
 
         fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
@@ -10394,6 +10400,7 @@ mod tests {
             ],
         );
 
+        view.sync_belief_store(speaker);
         let candidates = generate_candidates(
             &view,
             speaker,
@@ -10535,6 +10542,7 @@ mod tests {
             vec![(dead_subject, dead_belief), (rumor_subject, rumor_belief)],
         );
 
+        view.sync_belief_store(speaker);
         let candidates = generate_candidates(
             &view,
             speaker,
@@ -10647,6 +10655,7 @@ mod tests {
             }],
         );
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -10757,6 +10766,7 @@ mod tests {
             vec![told_memory(listener, subject, 10, &old_belief)],
         );
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -10871,6 +10881,7 @@ mod tests {
         view.told_beliefs
             .insert(speaker, vec![told_memory(listener, subject, 1, &belief)]);
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -10946,6 +10957,7 @@ mod tests {
             vec![told_memory(listener, recent_subject, 10, &recent_belief)],
         );
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -12639,6 +12651,7 @@ mod tests {
         view.beliefs
             .insert(speaker, vec![known_entity(subject, place)]);
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -12718,6 +12731,7 @@ mod tests {
             )],
         );
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,

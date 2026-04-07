@@ -1,9 +1,9 @@
 # PERF-003: Eliminate `AgentBeliefStore` clone in candidate generation and persist paths
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — `worldwake-sim` belief view, `worldwake-ai` candidate generation, `worldwake-core` world transaction
+**Engine Changes**: Yes — `worldwake-sim` belief view traits, `worldwake-ai` candidate generation + planning state
 **Deps**: None
 
 ## Problem
@@ -91,3 +91,28 @@ Update the trait method signature. `PerAgentBeliefView` already borrows `&AgentB
 2. `cargo test -p worldwake-sim`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
 4. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-07.
+
+- Changed `GoalBeliefView::agent_belief_store` and `RuntimeBeliefView::agent_belief_store` trait signatures from `Option<AgentBeliefStore>` (owned) to `Option<&AgentBeliefStore>` (borrowed) in `belief_view.rs`.
+- Updated the forwarding macro `impl_goal_belief_view_for_runtime!` to match the new return type.
+- `PerAgentBeliefView` now returns `Some(self.belief_store)` (zero-cost reference) instead of `self.belief_store.clone()`.
+- `PlanningState` now returns `Some(&self.snapshot.actor_belief_store)` instead of cloning.
+- `PlanningSnapshot::new` uses `.cloned().unwrap_or_default()` since it needs an owned copy for snapshot construction.
+- `emit_social_candidates` in `candidate_generation.rs` hoisted the `agent_belief_store` call above the `for topic` loop, eliminating per-topic repeated lookup.
+- Test mock `TestBeliefView::agent_belief_store` simplified to `self.belief_stores.get(&agent)`. Added `sync_belief_store` helper to synthesize stores from scattered test fields. Updated 8 social-candidate tests to call `sync_belief_store` before `generate_candidates`.
+
+## Deviations
+
+- Ticket proposed only changing the trait signature. Implementation also hoisted the call above the loop in `emit_social_candidates`, which is complementary — the trait change eliminates the clone, and the hoist eliminates the repeated HashMap lookup.
+- `Files to Touch` listed `planning_snapshot.rs` as optional. It was required because `PlanningSnapshot::new` uses `.unwrap_or_default()` which doesn't work on `&AgentBeliefStore`. Added `.cloned()` before `.unwrap_or_default()` — this is the one remaining clone, needed because `PlanningSnapshot` must own its data.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai` (1069 tests including 152 candidate_generation tests + 36 planner conformance)
+- Passed `cargo clippy -p worldwake-ai --lib -- -D warnings`
+- Passed `cargo clippy -p worldwake-sim --all-targets -- -D warnings`
+- Passed `cargo test --workspace`
+- Note: `cargo clippy -p worldwake-ai --all-targets` has pre-existing failures in untracked `perf_diag.rs` binary, unrelated to this ticket.

@@ -343,7 +343,7 @@ impl PlanningSnapshot {
         Self {
             actor,
             current_tick: view.current_tick(),
-            actor_belief_store: view.agent_belief_store(actor).unwrap_or_default(),
+            actor_belief_store: view.agent_belief_store(actor).cloned().unwrap_or_default(),
             entities,
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),

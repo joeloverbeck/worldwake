@@ -134,6 +134,7 @@ Specific persisted-shape checks:
 - When adding a new enum variant to replace an allocating variant, include the exhaustive-match and downstream-mapping sweep from the "new enum variant" guidance in Section 5.9.
 - When a performance ticket adds a boolean fast-path alongside an existing `Result`-returning function, verify both paths agree on the same inputs.
 - When refactoring a function to accept pre-computed results by reference instead of re-computing internally, enumerate all call sites and verify each passes the correct pre-computed data. Confirm no call site depended on the function internally re-computing fresh state mid-sequence.
+- When changing a trait method's return type from owned to borrowed (`T` → `&T`), identify test mocks that construct the return value on-the-fly — they cannot return references to temporaries. Refactor those mocks to pre-populate owned storage and return references into it, rather than reverting to an owned return type or using `Cow`.
 
 #### Repo rules
 

@@ -52,7 +52,7 @@ pub trait GoalBeliefView {
         let _ = agent;
         Vec::new()
     }
-    fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
+    fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
         let _ = agent;
         None
     }
@@ -381,7 +381,7 @@ pub trait RuntimeBeliefView {
         let _ = agent;
         Vec::new()
     }
-    fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
+    fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
         let _ = agent;
         None
     }
@@ -814,7 +814,7 @@ macro_rules! impl_goal_belief_view {
             fn agent_belief_store(
                 &self,
                 agent: worldwake_core::EntityId,
-            ) -> Option<worldwake_core::AgentBeliefStore> {
+            ) -> Option<&worldwake_core::AgentBeliefStore> {
                 $crate::RuntimeBeliefView::agent_belief_store(self, agent)
             }
 
