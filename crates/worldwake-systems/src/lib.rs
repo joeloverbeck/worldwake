@@ -72,7 +72,7 @@ pub use patrol_actions::register_patrol_action;
 pub use perception::perception_system;
 pub use production::resource_regeneration_system;
 pub use production_actions::{register_craft_actions, register_harvest_actions};
-pub use report_actions::register_report_missing_action;
+pub use report_actions::{register_report_found_action, register_report_missing_action};
 pub use search_actions::register_search_place_action;
 pub use stock_actions::register_stock_actions;
 pub use tell_actions::register_tell_action;

@@ -29,12 +29,12 @@ use worldwake_core::{
     BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule,
     EntityId, EntityKind, ExpectationRecord, ExpectationState, GoalKey, GoalKind,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData,
-    OpportunityAnchor, OpportunityKey, PerceptionSource, ProofRequirement,
-    PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData,
-    RecordKind, RewardSource, RightKind, SocialObservation, SocialObservationDetail, TellTopic,
-    TheftFacts, Tick, UtilityProfile, ViolationId, ViolationKind, ViolationMemory,
-    classify_communication, current_institutional_belief_topics, load_per_unit,
+    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
+    OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
+    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
+    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
+    UtilityProfile, ViolationId, ViolationKind, ViolationMemory, classify_communication,
+    current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
@@ -3299,7 +3299,10 @@ fn emit_search_candidates(
             entity: record.subject,
             expected_place: record.expected_place,
         };
-        if ctx.violation_memory.is_recorded(&missing_violation, ctx.current_tick) {
+        if ctx
+            .violation_memory
+            .is_recorded(&missing_violation, ctx.current_tick)
+        {
             continue;
         }
 
@@ -4385,16 +4388,15 @@ mod tests {
         EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
         ExpectationRecord, ExpectationState, ExpectationStore, GoalKey, GoalKind,
         HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
-        LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
-        PerceptionSource, Permille, ProofRequirement, PunishmentFineSelectionTrace,
-        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-        RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
-        SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic,
-        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        UtilityProfile, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause,
-        WoundId,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource,
+        Permille, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
+        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
+        ResourceSource, RewardSource, RightKind, SharedTellState, SocialObservation,
+        SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+        ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -12825,9 +12827,7 @@ mod tests {
                 subject,
                 expected_place,
                 4,
-                ExpectationBasis::DutyAssignment {
-                    office: entity(40),
-                },
+                ExpectationBasis::DutyAssignment { office: entity(40) },
             )]),
         );
         view.last_seen_memories.insert(

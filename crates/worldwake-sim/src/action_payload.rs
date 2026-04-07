@@ -30,6 +30,7 @@ pub enum ActionPayload {
     AskAboutPerson(AskAboutPersonActionPayload),
     SearchPlace(SearchPlaceActionPayload),
     ReportMissing(ReportMissingActionPayload),
+    ReportFound(ReportFoundActionPayload),
     EscortToSafety(EscortToSafetyActionPayload),
     QueueForFacilityUse(QueueForFacilityUsePayload),
     StaffMarket(StaffMarketPayload),
@@ -215,6 +216,14 @@ impl ActionPayload {
     }
 
     #[must_use]
+    pub const fn as_report_found(&self) -> Option<&ReportFoundActionPayload> {
+        match self {
+            Self::ReportFound(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub const fn as_escort_to_safety(&self) -> Option<&EscortToSafetyActionPayload> {
         match self {
             Self::EscortToSafety(payload) => Some(payload),
@@ -375,6 +384,12 @@ pub struct ReportMissingActionPayload {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct ReportFoundActionPayload {
+    pub target: EntityId,
+    pub expectation_id: ExpectationId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct EscortToSafetyActionPayload {
     pub subject: EntityId,
     pub destination: EntityId,
@@ -424,9 +439,9 @@ mod tests {
         DeclareSupportActionPayload, EscortToSafetyActionPayload, EstablishCampActionPayload,
         HarvestActionPayload, InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
         PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
-        QueueForFacilityUsePayload, ReportMissingActionPayload, SearchPlaceActionPayload,
-        StaffMarketPayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload, YieldForceClaimActionPayload,
+        QueueForFacilityUsePayload, ReportFoundActionPayload, ReportMissingActionPayload,
+        SearchPlaceActionPayload, StaffMarketPayload, TellActionPayload, ThreatenActionPayload,
+        TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{
@@ -649,6 +664,16 @@ mod tests {
         }
     }
 
+    fn sample_report_found_payload() -> ReportFoundActionPayload {
+        ReportFoundActionPayload {
+            target: EntityId {
+                slot: 52,
+                generation: 0,
+            },
+            expectation_id: ExpectationId(43),
+        }
+    }
+
     fn sample_search_place_payload() -> SearchPlaceActionPayload {
         SearchPlaceActionPayload {
             subject: EntityId {
@@ -782,6 +807,7 @@ mod tests {
         assert_traits::<AskAboutPersonActionPayload>();
         assert_traits::<SearchPlaceActionPayload>();
         assert_traits::<ReportMissingActionPayload>();
+        assert_traits::<ReportFoundActionPayload>();
         assert_traits::<EscortToSafetyActionPayload>();
         assert_traits::<QueueForFacilityUsePayload>();
         assert_traits::<AskWitnessPayload>();
@@ -812,6 +838,7 @@ mod tests {
         let ask_about_person = ActionPayload::AskAboutPerson(sample_ask_about_person_payload());
         let search_place = ActionPayload::SearchPlace(sample_search_place_payload());
         let report_missing = ActionPayload::ReportMissing(sample_report_missing_payload());
+        let report_found = ActionPayload::ReportFound(sample_report_found_payload());
 
         assert_eq!(
             consult.as_consult_record(),
@@ -1001,6 +1028,18 @@ mod tests {
         assert_eq!(report_missing.as_ask_about_person(), None);
         assert_eq!(report_missing.as_search_place(), None);
         assert_eq!(report_missing.as_queue_for_facility_use(), None);
+
+        assert_eq!(report_found.as_consult_record(), None);
+        assert_eq!(report_found.as_tell(), None);
+        assert_eq!(report_found.as_accuse(), None);
+        assert_eq!(report_found.as_report_missing(), None);
+        assert_eq!(
+            report_found.as_report_found(),
+            Some(&sample_report_found_payload())
+        );
+        assert_eq!(report_found.as_ask_about_person(), None);
+        assert_eq!(report_found.as_search_place(), None);
+        assert_eq!(report_found.as_queue_for_facility_use(), None);
     }
 
     #[test]
@@ -1072,6 +1111,7 @@ mod tests {
         let ask_about_person = ActionPayload::AskAboutPerson(sample_ask_about_person_payload());
         let search_place = ActionPayload::SearchPlace(sample_search_place_payload());
         let report_missing = ActionPayload::ReportMissing(sample_report_missing_payload());
+        let report_found = ActionPayload::ReportFound(sample_report_found_payload());
         let escort = ActionPayload::EscortToSafety(sample_escort_to_safety_payload());
         let post_bounty = ActionPayload::PostBounty(sample_post_bounty_payload());
         let post_notice = ActionPayload::PostNotice(sample_post_notice_payload());
@@ -1193,6 +1233,17 @@ mod tests {
         assert_eq!(report_missing.as_escort_to_safety(), None);
 
         assert_eq!(
+            report_found.as_report_found(),
+            Some(&sample_report_found_payload())
+        );
+        assert_eq!(report_found.as_report_missing(), None);
+        assert_eq!(report_found.as_post_bounty(), None);
+        assert_eq!(report_found.as_ask_witness(), None);
+        assert_eq!(report_found.as_ask_about_person(), None);
+        assert_eq!(report_found.as_search_place(), None);
+        assert_eq!(report_found.as_escort_to_safety(), None);
+
+        assert_eq!(
             escort.as_escort_to_safety(),
             Some(&sample_escort_to_safety_payload())
         );
@@ -1243,6 +1294,7 @@ mod tests {
         assert_eq!(none.as_ask_about_person(), None);
         assert_eq!(none.as_search_place(), None);
         assert_eq!(none.as_report_missing(), None);
+        assert_eq!(none.as_report_found(), None);
         assert_eq!(none.as_escort_to_safety(), None);
         assert_eq!(none.as_post_bounty(), None);
         assert_eq!(none.as_post_notice(), None);
@@ -1411,6 +1463,16 @@ mod tests {
     #[test]
     fn search_place_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::SearchPlace(sample_search_place_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn report_found_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::ReportFound(sample_report_found_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

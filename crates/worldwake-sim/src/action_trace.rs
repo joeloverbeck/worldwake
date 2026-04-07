@@ -52,6 +52,10 @@ pub enum ActionTraceDetail {
     ReportMissing {
         expectation_id: ExpectationId,
     },
+    ReportFound {
+        target: EntityId,
+        expectation_id: ExpectationId,
+    },
     EscortToSafety {
         subject: EntityId,
         destination: EntityId,
@@ -382,6 +386,10 @@ impl ActionTraceDetail {
             ActionPayload::ReportMissing(payload) => Some(Self::ReportMissing {
                 expectation_id: payload.expectation_id,
             }),
+            ActionPayload::ReportFound(payload) => Some(Self::ReportFound {
+                target: payload.target,
+                expectation_id: payload.expectation_id,
+            }),
             ActionPayload::EscortToSafety(payload) => Some(Self::EscortToSafety {
                 subject: payload.subject,
                 destination: payload.destination,
@@ -435,6 +443,12 @@ impl ActionTraceDetail {
             }
             Self::ReportMissing { expectation_id } => {
                 format!("report_missing expectation {expectation_id}")
+            }
+            Self::ReportFound {
+                target,
+                expectation_id,
+            } => {
+                format!("report_found target {target} expectation {expectation_id}")
             }
             Self::EscortToSafety {
                 subject,
@@ -807,6 +821,26 @@ mod tests {
             )),
             Some(ActionTraceDetail::ReportMissing {
                 expectation_id: worldwake_core::ExpectationId(9),
+            })
+        );
+    }
+
+    #[test]
+    fn detail_from_payload_extracts_report_found_identity() {
+        let target = EntityId {
+            slot: 12,
+            generation: 0,
+        };
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::ReportFound(
+                crate::ReportFoundActionPayload {
+                    target,
+                    expectation_id: worldwake_core::ExpectationId(10),
+                }
+            )),
+            Some(ActionTraceDetail::ReportFound {
+                target,
+                expectation_id: worldwake_core::ExpectationId(10),
             })
         );
     }

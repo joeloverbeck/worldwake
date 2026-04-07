@@ -21,8 +21,7 @@ use worldwake_core::{
     ExpectationState, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OpportunityAnchor,
     OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey, TellTopic,
-    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
-    failure_ratio_permille,
+    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -1543,11 +1542,11 @@ mod tests {
         InstitutionalKnowledgeSource, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
         MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, OpportunityAnchor,
         PatrolProfile, PatrolRoute, PerceptionSource, Permille, PreferenceProfile,
-        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation,
-        ReliabilityRecord, ResourceSource, RewardSource, RightKind, RouteExperience, SourceKey,
-        SourceReliability, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
-        WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
+        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation, ReliabilityRecord,
+        ResourceSource, RewardSource, RightKind, RouteExperience, SourceKey, SourceReliability,
+        TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, UtilityProfile, ViolationId, ViolationKind, WorkstationTag, Wound,
+        WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RuntimeBeliefView,
@@ -2960,23 +2959,14 @@ mod tests {
         view.expectation_stores.insert(
             agent,
             expectation_store([
-                overdue_expectation(
-                    1,
-                    agent,
-                    subject,
-                    place,
-                    8,
-                    ExpectationBasis::SocialPromise,
-                ),
+                overdue_expectation(1, agent, subject, place, 8, ExpectationBasis::SocialPromise),
                 overdue_expectation(
                     2,
                     agent,
                     subject,
                     place,
                     8,
-                    ExpectationBasis::DutyAssignment {
-                        office: entity(40),
-                    },
+                    ExpectationBasis::DutyAssignment { office: entity(40) },
                 ),
             ]),
         );
