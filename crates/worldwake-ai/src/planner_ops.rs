@@ -692,8 +692,8 @@ fn controlled_facility_for_stock_container(
         .entities
         .iter()
         .find_map(|(facility, snapshot)| {
-            let policy = snapshot.stock_storage_policy.as_ref()?;
-            (snapshot.effective_place == Some(place)
+            let policy = snapshot.facility.stock_storage_policy.as_ref()?;
+            (snapshot.spatial.effective_place == Some(place)
                 && policy.stock_container == container
                 && state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))
             .then_some((
@@ -715,8 +715,8 @@ fn controlled_facility_for_display_container(
         .entities
         .iter()
         .find_map(|(facility, snapshot)| {
-            let policy = snapshot.stock_storage_policy.as_ref()?;
-            (snapshot.effective_place == Some(place)
+            let policy = snapshot.facility.stock_storage_policy.as_ref()?;
+            (snapshot.spatial.effective_place == Some(place)
                 && policy.display_container == Some(container)
                 && state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))
             .then_some((
@@ -738,8 +738,8 @@ fn controlled_facility_for_any_storage_container(
         .entities
         .iter()
         .find_map(|(facility, snapshot)| {
-            let policy = snapshot.stock_storage_policy.as_ref()?;
-            (snapshot.effective_place == Some(place)
+            let policy = snapshot.facility.stock_storage_policy.as_ref()?;
+            (snapshot.spatial.effective_place == Some(place)
                 && (policy.stock_container == container
                     || policy.display_container == Some(container))
                 && state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))

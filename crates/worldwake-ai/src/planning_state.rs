@@ -310,7 +310,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         self.snapshot
             .entities
             .get(&record)
-            .and_then(|snapshot| snapshot.record_data.clone())
+            .and_then(|snapshot| snapshot.political.record_data.clone())
     }
 
     /// Count hypothetical support declarations for `candidate` at `office`,
@@ -471,7 +471,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .and_then(|snapshot| snapshot.kind),
+                .and_then(|snapshot| snapshot.entity.kind),
             PlanningEntityRef::Hypothetical(entity) => self
                 .hypothetical_registry
                 .get(&entity)
@@ -504,11 +504,11 @@ impl<'snapshot> PlanningState<'snapshot> {
             .get(&(holder, kind))
             .copied()
             .or_else(|| match holder {
-                PlanningEntityRef::Authoritative(holder) => self
-                    .snapshot
-                    .entities
-                    .get(&holder)
-                    .and_then(|snapshot| snapshot.commodity_quantities.get(&kind).copied()),
+                PlanningEntityRef::Authoritative(holder) => {
+                    self.snapshot.entities.get(&holder).and_then(|snapshot| {
+                        snapshot.inventory.commodity_quantities.get(&kind).copied()
+                    })
+                }
                 PlanningEntityRef::Hypothetical(_) => None,
             })
             .unwrap_or(Quantity(0))
@@ -526,7 +526,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                     .snapshot
                     .entities
                     .get(&entity)
-                    .and_then(|snapshot| snapshot.direct_container)
+                    .and_then(|snapshot| snapshot.inventory.direct_container)
                     .map(PlanningEntityRef::Authoritative),
                 PlanningEntityRef::Hypothetical(_) => None,
             },
@@ -545,7 +545,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                     .snapshot
                     .entities
                     .get(&entity)
-                    .and_then(|snapshot| snapshot.direct_possessor)
+                    .and_then(|snapshot| snapshot.inventory.direct_possessor)
                     .map(PlanningEntityRef::Authoritative),
                 PlanningEntityRef::Hypothetical(_) => None,
             },
@@ -560,7 +560,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         self.snapshot
             .entities
             .get(&entity)
-            .and_then(|snapshot| snapshot.stock_storage_policy.clone())
+            .and_then(|snapshot| snapshot.facility.stock_storage_policy.clone())
     }
 
     #[must_use]
@@ -650,7 +650,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .and_then(|snapshot| snapshot.item_lot_commodity),
+                .and_then(|snapshot| snapshot.inventory.item_lot_commodity),
             PlanningEntityRef::Hypothetical(entity) => self
                 .hypothetical_registry
                 .get(&entity)
@@ -668,7 +668,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .and_then(|snapshot| snapshot.carry_capacity),
+                .and_then(|snapshot| snapshot.inventory.carry_capacity),
             PlanningEntityRef::Hypothetical(_) => None,
         }
     }
@@ -691,7 +691,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .map(|snapshot| snapshot.intrinsic_load),
+                .map(|snapshot| snapshot.inventory.intrinsic_load),
             PlanningEntityRef::Hypothetical(_) => Some(LoadUnits(0)),
         }
     }
@@ -765,7 +765,7 @@ impl<'snapshot> PlanningState<'snapshot> {
             self.snapshot
                 .entities
                 .get(&agent)
-                .and_then(|snapshot| snapshot.homeostatic_needs)
+                .and_then(|snapshot| snapshot.profiles.homeostatic_needs)
         })
     }
 
@@ -793,7 +793,7 @@ impl<'snapshot> PlanningState<'snapshot> {
     pub fn pain_summary(&self, entity: EntityId) -> Option<Permille> {
         self.pain_overrides.get(&entity).copied().or_else(|| {
             self.snapshot.entities.get(&entity).map(|snapshot| {
-                let total = snapshot.wounds.iter().fold(0u16, |acc, wound| {
+                let total = snapshot.combat.wounds.iter().fold(0u16, |acc, wound| {
                     acc.saturating_add(wound.severity.value())
                 });
                 Permille::new(total.min(1000)).unwrap()
@@ -858,7 +858,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&facility)
-                .and_then(|snapshot| snapshot.facility_queue.as_ref())
+                .and_then(|snapshot| snapshot.temporal.facility_queue.as_ref())
                 .and_then(|queue| queue.actor_queue_position),
         }
     }
@@ -870,7 +870,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&facility)
-                .and_then(|snapshot| snapshot.facility_queue.as_ref())
+                .and_then(|snapshot| snapshot.temporal.facility_queue.as_ref())
                 .and_then(|queue| queue.active_grant.as_ref()),
         }
     }
@@ -920,7 +920,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                     .snapshot
                     .entities
                     .get(&entity)
-                    .and_then(|snapshot| snapshot.effective_place),
+                    .and_then(|snapshot| snapshot.spatial.effective_place),
                 PlanningEntityRef::Hypothetical(_) => None,
             }
         };
@@ -954,6 +954,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         {
             candidates.extend(
                 snapshot
+                    .inventory
                     .direct_possessions
                     .iter()
                     .copied()
@@ -961,6 +962,7 @@ impl<'snapshot> PlanningState<'snapshot> {
             );
             candidates.extend(
                 snapshot
+                    .inventory
                     .direct_contents
                     .iter()
                     .copied()
@@ -1022,8 +1024,8 @@ impl<'snapshot> PlanningState<'snapshot> {
             .entities
             .iter()
             .filter_map(|(facility, snapshot)| {
-                let policy = snapshot.stock_storage_policy.as_ref()?;
-                (snapshot.effective_place == Some(place)
+                let policy = snapshot.facility.stock_storage_policy.as_ref()?;
+                (snapshot.spatial.effective_place == Some(place)
                     && self.can_control_ref(agent, PlanningEntityRef::Authoritative(*facility)))
                 .then_some(PlanningEntityRef::Authoritative(policy.stock_container))
             })
@@ -1072,7 +1074,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .is_some_and(|snapshot| snapshot.action_flags.controllable_by_actor),
+                .is_some_and(|snapshot| snapshot.control.controllable_by_actor),
             PlanningEntityRef::Hypothetical(_) => false,
         }
     }
@@ -1107,7 +1109,7 @@ impl ControlBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&entity)
-            .and_then(|snapshot| snapshot.owner)
+            .and_then(|snapshot| snapshot.control.owner)
     }
 
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
@@ -1116,14 +1118,14 @@ impl ControlBeliefView for PlanningState<'_> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .is_some_and(|snapshot| snapshot.action_flags.controllable_by_actor)
+                .is_some_and(|snapshot| snapshot.control.controllable_by_actor)
     }
 
     fn has_control(&self, entity: EntityId) -> bool {
         self.snapshot
             .entities
             .get(&entity)
-            .is_some_and(|snapshot| snapshot.action_flags.has_control)
+            .is_some_and(|snapshot| snapshot.control.has_control)
     }
 }
 
@@ -1136,7 +1138,7 @@ impl EntityBeliefView for PlanningState<'_> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .is_some_and(|snapshot| snapshot.alive)
+                .is_some_and(|snapshot| snapshot.entity.alive)
     }
 
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
@@ -1150,14 +1152,14 @@ impl EntityBeliefView for PlanningState<'_> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .is_some_and(|snapshot| snapshot.dead)
+                .is_some_and(|snapshot| snapshot.entity.dead)
     }
 
     fn is_incapacitated(&self, entity: EntityId) -> bool {
         self.snapshot
             .entities
             .get(&entity)
-            .is_some_and(|snapshot| snapshot.incapacitated)
+            .is_some_and(|snapshot| snapshot.entity.incapacitated)
     }
 
     fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
@@ -1182,7 +1184,7 @@ impl ProfileBeliefView for PlanningState<'_> {
             self.snapshot
                 .entities
                 .get(&agent)
-                .and_then(|snapshot| snapshot.homeostatic_needs)
+                .and_then(|snapshot| snapshot.profiles.homeostatic_needs)
         })
     }
 
@@ -1190,14 +1192,14 @@ impl ProfileBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.drive_thresholds)
+            .and_then(|snapshot| snapshot.profiles.drive_thresholds)
     }
 
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.metabolism_profile)
+            .and_then(|snapshot| snapshot.profiles.metabolism_profile)
     }
 }
 
@@ -1275,7 +1277,7 @@ impl SpatialBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.patrol_route.clone())
+            .and_then(|snapshot| snapshot.spatial.patrol_route.clone())
     }
 
     fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
@@ -1286,7 +1288,7 @@ impl SpatialBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&entity)
-            .and_then(|snapshot| snapshot.in_transit_state.clone())
+            .and_then(|snapshot| snapshot.spatial.in_transit_state.clone())
     }
 
     fn adjacent_places_with_travel_ticks(
@@ -1310,7 +1312,7 @@ impl TemporalBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&entity)
-            .and_then(|snapshot| snapshot.facility_queue.as_ref())
+            .and_then(|snapshot| snapshot.temporal.facility_queue.as_ref())
             .is_some()
     }
 
@@ -1333,7 +1335,7 @@ impl TemporalBeliefView for PlanningState<'_> {
                 .entities
                 .get(&entity)
                 .into_iter()
-                .flat_map(|snapshot| snapshot.reservation_ranges.iter())
+                .flat_map(|snapshot| snapshot.temporal.reservation_ranges.iter())
                 .any(|existing| existing.overlaps(&range))
     }
 
@@ -1342,7 +1344,7 @@ impl TemporalBeliefView for PlanningState<'_> {
             .snapshot
             .entities
             .get(&entity)
-            .map(|snapshot| snapshot.reservation_ranges.clone())
+            .map(|snapshot| snapshot.temporal.reservation_ranges.clone())
             .unwrap_or_default();
         if let Some(shadows) = self.reservation_shadows.get(&entity) {
             ranges.extend(shadows.iter().copied());
@@ -1451,7 +1453,7 @@ impl SocialBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.theft_disposition_profile.clone())
+            .and_then(|snapshot| snapshot.social.theft_disposition_profile.clone())
     }
 
     fn intention_disposition_profile(
@@ -1654,7 +1656,7 @@ impl PoliticalBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.justice_disposition_profile.clone())
+            .and_then(|snapshot| snapshot.political.justice_disposition_profile.clone())
     }
 
     fn violation_disposition_profile(
@@ -1664,7 +1666,7 @@ impl PoliticalBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.violation_disposition_profile.clone())
+            .and_then(|snapshot| snapshot.political.violation_disposition_profile.clone())
     }
 
     fn active_violation_records(&self, agent: EntityId) -> Vec<worldwake_core::RecordedViolation> {
@@ -1766,14 +1768,14 @@ impl CombatBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.combat_profile)
+            .and_then(|snapshot| snapshot.combat.combat_profile)
     }
 
     fn courage(&self, agent: EntityId) -> Option<Permille> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.courage)
+            .and_then(|snapshot| snapshot.combat.courage)
     }
 
     fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
@@ -1786,7 +1788,7 @@ impl CombatBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .map(|snapshot| snapshot.wounds.clone())
+            .map(|snapshot| snapshot.combat.wounds.clone())
             .unwrap_or_default()
     }
 
@@ -1798,6 +1800,7 @@ impl CombatBeliefView for PlanningState<'_> {
             .get(&agent)
             .map(|snapshot| {
                 snapshot
+                    .combat
                     .hostile_targets
                     .iter()
                     .copied()
@@ -1825,6 +1828,7 @@ impl CombatBeliefView for PlanningState<'_> {
             .get(&agent)
             .map(|snapshot| {
                 snapshot
+                    .combat
                     .visible_hostiles
                     .iter()
                     .copied()
@@ -1852,6 +1856,7 @@ impl CombatBeliefView for PlanningState<'_> {
             .get(&agent)
             .map(|snapshot| {
                 snapshot
+                    .combat
                     .current_attackers
                     .iter()
                     .copied()
@@ -1875,14 +1880,14 @@ impl CombatBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.patrol_profile.clone())
+            .and_then(|snapshot| snapshot.combat.patrol_profile.clone())
     }
 
     fn has_wounds(&self, entity: EntityId) -> bool {
         self.snapshot
             .entities
             .get(&entity)
-            .is_some_and(|snapshot| !snapshot.wounds.is_empty())
+            .is_some_and(|snapshot| !snapshot.combat.wounds.is_empty())
     }
 }
 
@@ -1891,7 +1896,7 @@ impl EconomicBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.trade_disposition_profile.clone())
+            .and_then(|snapshot| snapshot.economic.trade_disposition_profile.clone())
     }
 
     fn controlled_commodity_quantity_at_place(
@@ -1966,7 +1971,7 @@ impl EconomicBeliefView for PlanningState<'_> {
                 self.snapshot
                     .entities
                     .get(&lot)
-                    .and_then(|snapshot| snapshot.seller_for_sale_lot)
+                    .and_then(|snapshot| snapshot.economic.seller_for_sale_lot)
             })
     }
 
@@ -1978,7 +1983,7 @@ impl EconomicBeliefView for PlanningState<'_> {
                 self.snapshot
                     .entities
                     .get(&lot)
-                    .is_some_and(|snapshot| snapshot.has_sale_listing)
+                    .is_some_and(|snapshot| snapshot.economic.has_sale_listing)
             })
     }
 
@@ -1986,7 +1991,7 @@ impl EconomicBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .map(|snapshot| snapshot.demand_memory.clone())
+            .map(|snapshot| snapshot.economic.demand_memory.clone())
             .unwrap_or_default()
     }
 
@@ -1994,7 +1999,7 @@ impl EconomicBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.merchandise_profile.clone())
+            .and_then(|snapshot| snapshot.economic.merchandise_profile.clone())
     }
 }
 
@@ -2025,7 +2030,7 @@ impl InventoryBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&holder)
-            .and_then(|snapshot| snapshot.unique_item_counts.get(&kind).copied())
+            .and_then(|snapshot| snapshot.inventory.unique_item_counts.get(&kind).copied())
             .unwrap_or(0)
     }
 
@@ -2044,7 +2049,7 @@ impl InventoryBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&entity)
-            .and_then(|snapshot| snapshot.item_lot_consumable_profile)
+            .and_then(|snapshot| snapshot.inventory.item_lot_consumable_profile)
     }
 
     fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
@@ -2075,7 +2080,7 @@ impl InventoryBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .map(|snapshot| snapshot.known_recipes.clone())
+            .map(|snapshot| snapshot.inventory.known_recipes.clone())
             .unwrap_or_default()
     }
 }
@@ -2085,7 +2090,7 @@ impl FacilityBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&entity)
-            .and_then(|snapshot| snapshot.workstation_tag)
+            .and_then(|snapshot| snapshot.facility.workstation_tag)
     }
 
     fn stock_storage_policy(
@@ -2100,7 +2105,7 @@ impl FacilityBeliefView for PlanningState<'_> {
             .snapshot
             .entities
             .get(&entity)
-            .and_then(|snapshot| snapshot.resource_source.clone())?;
+            .and_then(|snapshot| snapshot.facility.resource_source.clone())?;
         if let Some(quantity) = self.resource_quantity_overrides.get(&entity).copied() {
             source.available_quantity = quantity;
         }
@@ -2111,7 +2116,7 @@ impl FacilityBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&entity)
-            .is_some_and(|snapshot| snapshot.has_production_job)
+            .is_some_and(|snapshot| snapshot.facility.has_production_job)
     }
 
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
@@ -3082,7 +3087,7 @@ mod tests {
             snapshot
                 .entities
                 .get(&field)
-                .and_then(|entity| entity.facility_queue.as_ref())
+                .and_then(|entity| entity.temporal.facility_queue.as_ref())
                 .and_then(|queue| queue.active_grant.as_ref()),
             Some(&ContentionGrant {
                 actor,
@@ -3528,10 +3533,22 @@ mod tests {
         let base = PlanningState::new(&snapshot);
         let moved = base.clone().move_actor_to(field);
 
-        let base_wounds = &base.snapshot().entities.get(&actor).unwrap().wounds;
-        let moved_wounds = &moved.snapshot().entities.get(&actor).unwrap().wounds;
-        let base_demand = &base.snapshot().entities.get(&actor).unwrap().demand_memory;
-        let moved_demand = &moved.snapshot().entities.get(&actor).unwrap().demand_memory;
+        let base_wounds = &base.snapshot().entities.get(&actor).unwrap().combat.wounds;
+        let moved_wounds = &moved.snapshot().entities.get(&actor).unwrap().combat.wounds;
+        let base_demand = &base
+            .snapshot()
+            .entities
+            .get(&actor)
+            .unwrap()
+            .economic
+            .demand_memory;
+        let moved_demand = &moved
+            .snapshot()
+            .entities
+            .get(&actor)
+            .unwrap()
+            .economic
+            .demand_memory;
 
         assert!(std::ptr::eq(base_wounds.as_ptr(), moved_wounds.as_ptr()));
         assert!(std::ptr::eq(base_demand.as_ptr(), moved_demand.as_ptr()));

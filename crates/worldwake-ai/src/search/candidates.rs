@@ -580,7 +580,7 @@ pub(super) fn search_candidates_from_affordance(
         .snapshot()
         .entities
         .get(&facility)
-        .and_then(|entity| entity.facility_queue.as_ref())
+        .and_then(|entity| entity.temporal.facility_queue.as_ref())
         .is_none()
     {
         return Vec::new();

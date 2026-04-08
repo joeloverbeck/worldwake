@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Medium
 **Engine Changes**: Yes — GoalBeliefView trait, impl_goal_belief_view! macro, test mock ergonomics
-**Deps**: S75BELVDECOM-007
+**Deps**: archive/tickets/S75BELVDECOM-007-snapshot-entity-sub-struct-decomposition.md
 
 ## Problem
 

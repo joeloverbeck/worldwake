@@ -389,7 +389,7 @@ fn office_register_for_goal(
         .entities
         .iter()
         .filter_map(|(&entity, snapshot)| {
-            let record_data = snapshot.record_data.as_ref()?;
+            let record_data = snapshot.political.record_data.as_ref()?;
             (record_data.record_kind == RecordKind::OfficeRegister).then_some((
                 entity,
                 record_data.home_place,

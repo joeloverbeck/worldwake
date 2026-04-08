@@ -37,6 +37,7 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 - When the ticket's owned surface is partially landed in the worktree, treat the live state as baseline; limit edits to the missing slice.
 - Keep tracked-vs-untracked state in mind when reading diffs and close-out evidence: untracked ticket drafts and newly created files will not appear in ordinary `git diff` output.
 - Cross-check `Deps` against `What to Change` for additive tickets that assume earlier slices landed.
+- For staged decomposition tickets, verify whether any temporary carrier or intermediate shape named in the ticket still exists on the current branch. If an earlier slice already removed it, narrow the ticket to the remaining live debt before planning edits.
 - When roadmap summary, active spec, and live ticket disagree, compare all three and record which is authoritative.
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
 - Described architecture still matches live code.
@@ -70,6 +71,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - Save/load version boundaries and `SAVE_FORMAT_VERSION` gates
 - Crate-root re-exports and downstream imports for new shared types
 - When a new shared type is defined under a submodule, verify the actual public import path before patching downstream crates. Do not assume a crate-root re-export exists or will be added unless the live code already provides it.
+- When a flat internal carrier becomes nested or is decomposed into sub-structs, sweep both the type name and the moved field names across the owning crate before editing. Direct field reads in secondary consumers often sit outside the obvious constructor or main access layer and will not be found by constructor-only sweeps.
 
 Specific persisted-shape checks:
 - Worldwake does not support legacy saves by default. When persisted shape changes, update the current save format and keep older versions rejected unless the user explicitly asks for compatibility work.

@@ -111,17 +111,25 @@ pub(crate) struct SnapshotFacilityQueue {
     pub(crate) active_grant: Option<ContentionGrant>,
 }
 
-// S75-002 intentionally flattens lifecycle state onto SnapshotEntity before the
-// broader sub-struct decomposition tracked by S75-007.
-#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SnapshotEntity {
+pub(crate) struct SnapshotEntityCore {
     pub(crate) kind: Option<EntityKind>,
+    pub(crate) alive: bool,
+    pub(crate) dead: bool,
+    pub(crate) incapacitated: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotSpatial {
     pub(crate) effective_place: Option<EntityId>,
     pub(crate) in_transit_state: Option<InTransitOnEdge>,
+    pub(crate) patrol_route: Option<PatrolRoute>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotInventory {
     pub(crate) direct_container: Option<EntityId>,
     pub(crate) direct_possessor: Option<EntityId>,
-    pub(crate) owner: Option<EntityId>,
     pub(crate) direct_possessions: BTreeSet<EntityId>,
     pub(crate) direct_contents: BTreeSet<EntityId>,
     pub(crate) known_recipes: Vec<RecipeId>,
@@ -131,97 +139,159 @@ pub(crate) struct SnapshotEntity {
     pub(crate) carry_capacity: Option<LoadUnits>,
     pub(crate) intrinsic_load: LoadUnits,
     pub(crate) item_lot_consumable_profile: Option<CommodityConsumableProfile>,
-    pub(crate) workstation_tag: Option<WorkstationTag>,
-    pub(crate) stock_storage_policy: Option<StockStoragePolicy>,
-    pub(crate) resource_source: Option<ResourceSource>,
-    pub(crate) has_production_job: bool,
-    pub(crate) action_flags: SnapshotActionFlags,
-    pub(crate) alive: bool,
-    pub(crate) dead: bool,
-    pub(crate) incapacitated: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotCombat {
     pub(crate) wounds: Vec<Wound>,
-    pub(crate) homeostatic_needs: Option<HomeostaticNeeds>,
-    pub(crate) drive_thresholds: Option<DriveThresholds>,
-    pub(crate) metabolism_profile: Option<MetabolismProfile>,
-    pub(crate) trade_disposition_profile: Option<TradeDispositionProfile>,
     pub(crate) patrol_profile: Option<PatrolProfile>,
-    pub(crate) patrol_route: Option<PatrolRoute>,
-    pub(crate) theft_disposition_profile: Option<TheftDispositionProfile>,
-    pub(crate) justice_disposition_profile: Option<JusticeDispositionProfile>,
-    pub(crate) violation_disposition_profile: Option<ViolationDispositionProfile>,
     pub(crate) combat_profile: Option<CombatProfile>,
     pub(crate) courage: Option<Permille>,
-    pub(crate) record_data: Option<RecordData>,
     pub(crate) hostile_targets: Vec<EntityId>,
     pub(crate) visible_hostiles: Vec<EntityId>,
     pub(crate) current_attackers: Vec<EntityId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotSocial {
+    pub(crate) theft_disposition_profile: Option<TheftDispositionProfile>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotEconomic {
+    pub(crate) trade_disposition_profile: Option<TradeDispositionProfile>,
     pub(crate) demand_memory: Vec<DemandObservation>,
     pub(crate) merchandise_profile: Option<MerchandiseProfile>,
     pub(crate) has_sale_listing: bool,
     pub(crate) seller_for_sale_lot: Option<EntityId>,
-    pub(crate) reservation_ranges: Vec<TickRange>,
-    pub(crate) facility_queue: Option<SnapshotFacilityQueue>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotPolitical {
+    pub(crate) justice_disposition_profile: Option<JusticeDispositionProfile>,
+    pub(crate) violation_disposition_profile: Option<ViolationDispositionProfile>,
+    pub(crate) record_data: Option<RecordData>,
     /// For Office entities: authoritative office metadata preserved for planning.
     pub(crate) office_data: Option<OfficeData>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotTemporal {
+    pub(crate) reservation_ranges: Vec<TickRange>,
+    pub(crate) facility_queue: Option<SnapshotFacilityQueue>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotProfiles {
+    pub(crate) homeostatic_needs: Option<HomeostaticNeeds>,
+    pub(crate) drive_thresholds: Option<DriveThresholds>,
+    pub(crate) metabolism_profile: Option<MetabolismProfile>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotFacility {
+    pub(crate) workstation_tag: Option<WorkstationTag>,
+    pub(crate) stock_storage_policy: Option<StockStoragePolicy>,
+    pub(crate) resource_source: Option<ResourceSource>,
+    pub(crate) has_production_job: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotControl {
+    pub(crate) owner: Option<EntityId>,
+    pub(crate) controllable_by_actor: bool,
+    pub(crate) has_control: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotEntity {
+    pub(crate) entity: SnapshotEntityCore,
+    pub(crate) spatial: SnapshotSpatial,
+    pub(crate) inventory: SnapshotInventory,
+    pub(crate) combat: SnapshotCombat,
+    pub(crate) social: SnapshotSocial,
+    pub(crate) economic: SnapshotEconomic,
+    pub(crate) political: SnapshotPolitical,
+    pub(crate) temporal: SnapshotTemporal,
+    pub(crate) profiles: SnapshotProfiles,
+    pub(crate) facility: SnapshotFacility,
+    pub(crate) control: SnapshotControl,
 }
 
 impl Default for SnapshotEntity {
     fn default() -> Self {
         Self {
-            kind: None,
-            effective_place: None,
-            in_transit_state: None,
-            direct_container: None,
-            direct_possessor: None,
-            owner: None,
-            direct_possessions: BTreeSet::new(),
-            direct_contents: BTreeSet::new(),
-            known_recipes: Vec::new(),
-            unique_item_counts: BTreeMap::new(),
-            commodity_quantities: BTreeMap::new(),
-            item_lot_commodity: None,
-            carry_capacity: None,
-            intrinsic_load: LoadUnits(0),
-            item_lot_consumable_profile: None,
-            workstation_tag: None,
-            stock_storage_policy: None,
-            resource_source: None,
-            has_production_job: false,
-            action_flags: SnapshotActionFlags::default(),
-            alive: false,
-            dead: false,
-            incapacitated: false,
-            wounds: Vec::new(),
-            homeostatic_needs: None,
-            drive_thresholds: None,
-            metabolism_profile: None,
-            trade_disposition_profile: None,
-            patrol_profile: None,
-            patrol_route: None,
-            theft_disposition_profile: None,
-            justice_disposition_profile: None,
-            violation_disposition_profile: None,
-            combat_profile: None,
-            courage: None,
-            record_data: None,
-            hostile_targets: Vec::new(),
-            visible_hostiles: Vec::new(),
-            current_attackers: Vec::new(),
-            demand_memory: Vec::new(),
-            merchandise_profile: None,
-            has_sale_listing: false,
-            seller_for_sale_lot: None,
-            reservation_ranges: Vec::new(),
-            facility_queue: None,
-            office_data: None,
+            entity: SnapshotEntityCore {
+                kind: None,
+                alive: false,
+                dead: false,
+                incapacitated: false,
+            },
+            spatial: SnapshotSpatial {
+                effective_place: None,
+                in_transit_state: None,
+                patrol_route: None,
+            },
+            inventory: SnapshotInventory {
+                direct_container: None,
+                direct_possessor: None,
+                direct_possessions: BTreeSet::new(),
+                direct_contents: BTreeSet::new(),
+                known_recipes: Vec::new(),
+                unique_item_counts: BTreeMap::new(),
+                commodity_quantities: BTreeMap::new(),
+                item_lot_commodity: None,
+                carry_capacity: None,
+                intrinsic_load: LoadUnits(0),
+                item_lot_consumable_profile: None,
+            },
+            combat: SnapshotCombat {
+                wounds: Vec::new(),
+                patrol_profile: None,
+                combat_profile: None,
+                courage: None,
+                hostile_targets: Vec::new(),
+                visible_hostiles: Vec::new(),
+                current_attackers: Vec::new(),
+            },
+            social: SnapshotSocial {
+                theft_disposition_profile: None,
+            },
+            economic: SnapshotEconomic {
+                trade_disposition_profile: None,
+                demand_memory: Vec::new(),
+                merchandise_profile: None,
+                has_sale_listing: false,
+                seller_for_sale_lot: None,
+            },
+            political: SnapshotPolitical {
+                justice_disposition_profile: None,
+                violation_disposition_profile: None,
+                record_data: None,
+                office_data: None,
+            },
+            temporal: SnapshotTemporal {
+                reservation_ranges: Vec::new(),
+                facility_queue: None,
+            },
+            profiles: SnapshotProfiles {
+                homeostatic_needs: None,
+                drive_thresholds: None,
+                metabolism_profile: None,
+            },
+            facility: SnapshotFacility {
+                workstation_tag: None,
+                stock_storage_policy: None,
+                resource_source: None,
+                has_production_job: false,
+            },
+            control: SnapshotControl {
+                owner: None,
+                controllable_by_actor: false,
+                has_control: false,
+            },
         }
     }
-}
-
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct SnapshotActionFlags {
-    pub(crate) controllable_by_actor: bool,
-    pub(crate) has_control: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -422,13 +492,14 @@ impl PlanningSnapshot {
             .iter()
             .filter_map(|(&entity, snapshot)| {
                 snapshot
+                    .inventory
                     .direct_container
                     .map(|container| (entity, container))
             })
             .collect::<Vec<_>>();
         for (entity, container) in content_edges {
             if let Some(container_snapshot) = entities.get_mut(&container) {
-                container_snapshot.direct_contents.insert(entity);
+                container_snapshot.inventory.direct_contents.insert(entity);
             }
         }
 
@@ -545,7 +616,7 @@ impl PlanningSnapshot {
     pub(crate) fn seat(&self, office: EntityId) -> Option<EntityId> {
         self.entities
             .get(&office)
-            .and_then(|snapshot| snapshot.office_data.as_ref())
+            .and_then(|snapshot| snapshot.political.office_data.as_ref())
             .map(|office_data| office_data.seat)
     }
 
@@ -581,7 +652,7 @@ impl PlanningSnapshot {
     pub(crate) fn succession_law(&self, office: EntityId) -> Option<SuccessionLaw> {
         self.entities
             .get(&office)
-            .and_then(|snapshot| snapshot.office_data.as_ref())
+            .and_then(|snapshot| snapshot.political.office_data.as_ref())
             .map(|office_data| office_data.succession_law.clone())
     }
 
@@ -589,7 +660,7 @@ impl PlanningSnapshot {
     pub(crate) fn office_data(&self, office: EntityId) -> Option<OfficeData> {
         self.entities
             .get(&office)
-            .and_then(|snapshot| snapshot.office_data.clone())
+            .and_then(|snapshot| snapshot.political.office_data.clone())
     }
 
     #[must_use]
@@ -748,8 +819,12 @@ fn build_snapshot_entity(
     included_places: &BTreeSet<EntityId>,
 ) -> SnapshotEntity {
     let kind = view.entity_kind(entity);
+    let alive = view.is_alive(entity);
+    let dead = view.is_dead(entity);
+    let incapacitated = view.is_incapacitated(entity);
     let effective_place = view.effective_place(entity);
     let in_transit_state = view.in_transit_state(entity);
+    let patrol_route = view.patrol_route(entity);
     let direct_container = view.direct_container(entity);
     let direct_possessor = view.direct_possessor(entity);
     let owner = view.believed_owner_of(entity);
@@ -771,29 +846,23 @@ fn build_snapshot_entity(
     let stock_storage_policy = view.stock_storage_policy(entity);
     let resource_source = view.resource_source(entity);
     let has_production_job = view.has_production_job(entity);
-    let action_flags = SnapshotActionFlags {
-        controllable_by_actor: view.can_control(actor, entity),
-        has_control: view.has_control(entity),
-    };
-    let alive = view.is_alive(entity);
-    let dead = view.is_dead(entity);
-    let incapacitated = view.is_incapacitated(entity);
+    let controllable_by_actor = view.can_control(actor, entity);
+    let has_control = view.has_control(entity);
     let wounds = view.wounds(entity);
-    let homeostatic_needs = view.homeostatic_needs(entity);
-    let drive_thresholds = view.drive_thresholds(entity);
-    let metabolism_profile = view.metabolism_profile(entity);
-    let trade_disposition_profile = view.trade_disposition_profile(entity);
     let patrol_profile = view.patrol_profile(entity);
-    let patrol_route = view.patrol_route(entity);
-    let theft_disposition_profile = view.theft_disposition_profile(entity);
-    let justice_disposition_profile = view.justice_disposition_profile(entity);
-    let violation_disposition_profile = view.violation_disposition_profile(entity);
     let combat_profile = view.combat_profile(entity);
     let courage = view.courage(entity);
-    let record_data = view.record_data(entity);
     let hostile_targets = view.hostile_targets_of(entity);
     let visible_hostiles = view.visible_hostiles_for(entity);
     let current_attackers = view.current_attackers_of(entity);
+    let homeostatic_needs = view.homeostatic_needs(entity);
+    let drive_thresholds = view.drive_thresholds(entity);
+    let metabolism_profile = view.metabolism_profile(entity);
+    let theft_disposition_profile = view.theft_disposition_profile(entity);
+    let trade_disposition_profile = view.trade_disposition_profile(entity);
+    let justice_disposition_profile = view.justice_disposition_profile(entity);
+    let violation_disposition_profile = view.violation_disposition_profile(entity);
+    let record_data = view.record_data(entity);
     let demand_memory = view.demand_memory(entity);
     let merchandise_profile = view.merchandise_profile(entity);
     let has_sale_listing = view.has_sale_listing(entity);
@@ -803,52 +872,75 @@ fn build_snapshot_entity(
     let office_data = view.office_data(entity);
 
     SnapshotEntity {
-        kind,
-        effective_place,
-        in_transit_state,
-        direct_container,
-        direct_possessor,
-        owner,
-        direct_possessions,
-        direct_contents: BTreeSet::new(),
-        known_recipes,
-        unique_item_counts,
-        commodity_quantities,
-        item_lot_commodity,
-        carry_capacity,
-        intrinsic_load,
-        item_lot_consumable_profile,
-        workstation_tag,
-        stock_storage_policy,
-        resource_source,
-        has_production_job,
-        action_flags,
-        alive,
-        dead,
-        incapacitated,
-        wounds,
-        homeostatic_needs,
-        drive_thresholds,
-        metabolism_profile,
-        trade_disposition_profile,
-        patrol_profile,
-        patrol_route,
-        theft_disposition_profile,
-        justice_disposition_profile,
-        violation_disposition_profile,
-        combat_profile,
-        courage,
-        record_data,
-        hostile_targets,
-        visible_hostiles,
-        current_attackers,
-        demand_memory,
-        merchandise_profile,
-        has_sale_listing,
-        seller_for_sale_lot,
-        reservation_ranges,
-        facility_queue,
-        office_data,
+        entity: SnapshotEntityCore {
+            kind,
+            alive,
+            dead,
+            incapacitated,
+        },
+        spatial: SnapshotSpatial {
+            effective_place,
+            in_transit_state,
+            patrol_route,
+        },
+        inventory: SnapshotInventory {
+            direct_container,
+            direct_possessor,
+            direct_possessions,
+            direct_contents: BTreeSet::new(),
+            known_recipes,
+            unique_item_counts,
+            commodity_quantities,
+            item_lot_commodity,
+            carry_capacity,
+            intrinsic_load,
+            item_lot_consumable_profile,
+        },
+        combat: SnapshotCombat {
+            wounds,
+            patrol_profile,
+            combat_profile,
+            courage,
+            hostile_targets,
+            visible_hostiles,
+            current_attackers,
+        },
+        social: SnapshotSocial {
+            theft_disposition_profile,
+        },
+        economic: SnapshotEconomic {
+            trade_disposition_profile,
+            demand_memory,
+            merchandise_profile,
+            has_sale_listing,
+            seller_for_sale_lot,
+        },
+        political: SnapshotPolitical {
+            justice_disposition_profile,
+            violation_disposition_profile,
+            record_data,
+            office_data,
+        },
+        temporal: SnapshotTemporal {
+            reservation_ranges,
+            facility_queue,
+        },
+        profiles: SnapshotProfiles {
+            homeostatic_needs,
+            drive_thresholds,
+            metabolism_profile,
+        },
+        facility: SnapshotFacility {
+            workstation_tag,
+            stock_storage_policy,
+            resource_source,
+            has_production_job,
+        },
+        control: SnapshotControl {
+            owner,
+            controllable_by_actor,
+            has_control,
+        },
     }
 }
 
@@ -2168,21 +2260,21 @@ mod tests {
             snapshot
                 .entities
                 .get(&actor)
-                .and_then(|entity| entity.carry_capacity),
+                .and_then(|entity| entity.inventory.carry_capacity),
             Some(LoadUnits(9))
         );
         assert_eq!(
             snapshot
                 .entities
                 .get(&lot)
-                .map(|entity| entity.intrinsic_load),
+                .map(|entity| entity.inventory.intrinsic_load),
             Some(LoadUnits(6))
         );
         assert_eq!(
             snapshot
                 .entities
                 .get(&place)
-                .map(|entity| entity.intrinsic_load),
+                .map(|entity| entity.inventory.intrinsic_load),
             Some(LoadUnits(0))
         );
     }
@@ -2213,7 +2305,12 @@ mod tests {
             snapshot
                 .entities
                 .get(&lot)
-                .and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Bread))
+                .and_then(|entity| {
+                    entity
+                        .inventory
+                        .commodity_quantities
+                        .get(&CommodityKind::Bread)
+                })
                 .copied(),
             Some(Quantity(3))
         );
@@ -2221,7 +2318,12 @@ mod tests {
             snapshot
                 .entities
                 .get(&lot)
-                .and_then(|entity| entity.commodity_quantities.get(&CommodityKind::Water))
+                .and_then(|entity| {
+                    entity
+                        .inventory
+                        .commodity_quantities
+                        .get(&CommodityKind::Water)
+                })
                 .copied(),
             None
         );
@@ -2251,7 +2353,7 @@ mod tests {
             snapshot
                 .entities
                 .get(&facility)
-                .and_then(|entity| entity.facility_queue.as_ref())
+                .and_then(|entity| entity.temporal.facility_queue.as_ref())
                 .and_then(|queue| queue.actor_queue_position),
             Some(2)
         );
@@ -2293,7 +2395,7 @@ mod tests {
             snapshot
                 .entities
                 .get(&facility)
-                .and_then(|entity| entity.facility_queue.as_ref())
+                .and_then(|entity| entity.temporal.facility_queue.as_ref())
                 .and_then(|queue| queue.active_grant.clone()),
             Some(ContentionGrant {
                 actor: other,
@@ -2327,7 +2429,7 @@ mod tests {
             snapshot
                 .entities
                 .get(&facility)
-                .and_then(|entity| entity.facility_queue.as_ref()),
+                .and_then(|entity| entity.temporal.facility_queue.as_ref()),
             None
         );
     }
@@ -2462,7 +2564,7 @@ mod tests {
             snapshot
                 .entities
                 .get(&facility)
-                .and_then(|entity| entity.facility_queue.as_ref()),
+                .and_then(|entity| entity.temporal.facility_queue.as_ref()),
             Some(&SnapshotFacilityQueue {
                 actor_queue_position: None,
                 active_grant: None,

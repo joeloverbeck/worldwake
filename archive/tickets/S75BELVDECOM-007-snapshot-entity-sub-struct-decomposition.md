@@ -1,6 +1,6 @@
 # S75BELVDECOM-007: SnapshotEntity domain sub-struct decomposition
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — SnapshotEntity struct layout in worldwake-ai
@@ -10,11 +10,11 @@
 
 After all sub-traits are extracted (tickets 001-006), SnapshotEntity remains a flat struct with ~44 fields. This ticket reorganizes those fields into domain sub-structs that mirror the 11 sub-traits, making the RuntimeBeliefView ↔ SnapshotEntity projection relationship explicit and auditable.
 
-## Assumption Reassessment (2026-04-08)
+## Assumption Reassessment (2026-04-09)
 
-1. `SnapshotEntity` confirmed at `crates/worldwake-ai/src/planning_snapshot.rs:115` with `pub(crate)` visibility and 44 fields. Derives `Clone, Debug, Eq, PartialEq` (no Serialize/Deserialize — internal type).
-2. `SnapshotLifecycle` and `SnapshotActionFlags` are expected to be dissolved by tickets 002 and 004 respectively before this ticket executes.
-3. All field accesses to SnapshotEntity are within `crates/worldwake-ai/` (the struct is `pub(crate)`). No cross-crate blast radius.
+1. `SnapshotEntity` was still the remaining flat planner mirror after tickets 002-006, and the live read surface included not just `planning_snapshot.rs` / `planning_state.rs` but also direct field reads in `goal_model.rs`, `planner_ops.rs`, and `search/candidates.rs`.
+2. `SnapshotLifecycle` and `SnapshotActionFlags` had already been dissolved before this ticket executed. The live remaining shape debt was the flat `SnapshotEntity` itself.
+3. All direct `SnapshotEntity` accesses remained inside `crates/worldwake-ai/` because the type is `pub(crate)`, so the blast radius stayed intra-crate.
 
 ## Architecture Check
 
@@ -117,3 +117,21 @@ Find-and-replace all `entity.field_name` accesses to use the domain prefix (e.g.
 2. `cargo test -p worldwake-ai`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Implemented the `SnapshotEntity` decomposition in `crates/worldwake-ai/src/planning_snapshot.rs` by replacing the flat planner mirror with domain-shaped sub-structs: `SnapshotEntityCore`, `SnapshotSpatial`, `SnapshotInventory`, `SnapshotCombat`, `SnapshotSocial`, `SnapshotEconomic`, `SnapshotPolitical`, `SnapshotTemporal`, `SnapshotProfiles`, `SnapshotFacility`, and `SnapshotControl`. `SnapshotEntity` now composes those sub-structs inline, and `build_snapshot_entity` populates them directly from the belief-view domain boundaries established by tickets 002-006.
+- Updated all live planner-side field reads to the new domain prefixes in `crates/worldwake-ai/src/planning_state.rs`, plus the remaining direct snapshot readers in `crates/worldwake-ai/src/goal_model.rs`, `crates/worldwake-ai/src/planner_ops.rs`, and `crates/worldwake-ai/src/search/candidates.rs`. Snapshot-focused tests in `crates/worldwake-ai/src/planning_snapshot.rs` and planner-state tests were migrated to the new nested layout.
+- Deviation from the original ticket wording: the live read surface was broader than the initial file list, and `SnapshotActionFlags` had already been removed before this ticket executed, so implementation was carried through the real remaining access sites instead of the older assumption set.
+
+No behavior or planner data content changed; the ticket stayed a shape-only refactor.
+
+## Verification
+
+1. `cargo fmt --all`
+2. `cargo build --workspace`
+3. `cargo test -p worldwake-ai`
+4. `cargo test --workspace`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
