@@ -1,6 +1,6 @@
 # S75BELVDECOM-006: Extract SocialBeliefView + PoliticalBeliefView sub-traits
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: Yes — RuntimeBeliefView trait decomposition (largest batch: 36 methods)
@@ -73,10 +73,31 @@ After this ticket, RuntimeBeliefView's body should be empty — all 113 methods 
 
 ### New/Modified Tests
 
-1. None — pure structural refactor.
+1. No new dedicated tests were added; existing focused, golden, and all-target verification covered the trait-split fallout and planning snapshot behavior.
 
 ### Commands
 
 1. `cargo build --workspace`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+4. `cargo fmt --all`
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- `SocialBeliefView` and `PoliticalBeliefView` now own the extracted social and political methods in `crates/worldwake-sim/src/belief_view.rs`, and `RuntimeBeliefView` is now purely compositional.
+- Production impl ownership is split in `crates/worldwake-sim/src/per_agent_belief_view.rs` and `crates/worldwake-ai/src/planning_state.rs`.
+- `crates/worldwake-ai/src/planning_snapshot.rs` now carries the actor-local political proof surfaces needed for `PlanningState` to preserve prior behavior (`bandit_factions_of`, `active_violation_records`, `offices_contested_by`, `loyalty_to`).
+- Remaining AI/sim/systems mocks, UFCS fallout, helper-method fallout, and golden-office fallout were migrated to `SocialBeliefView` / `PoliticalBeliefView`.
+
+## Deviations
+
+- The ticket began as a pure structural split, but the lawful planner boundary also required widening `PlanningSnapshot` with existing actor-local political state so `PlanningState` could implement the moved methods without behavior loss.
+
+## Verification Result
+
+- Passed `cargo fmt --all`
+- Passed `cargo build --workspace`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

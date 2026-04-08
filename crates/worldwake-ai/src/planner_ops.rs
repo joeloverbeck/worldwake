@@ -1225,7 +1225,9 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {}
+
+    impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
@@ -1240,6 +1242,8 @@ mod tests {
             None
         }
     }
+
+    impl worldwake_sim::PoliticalBeliefView for TestBeliefView {}
 
     impl worldwake_sim::CombatBeliefView for TestBeliefView {
         fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {

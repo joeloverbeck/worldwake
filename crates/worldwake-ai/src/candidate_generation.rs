@@ -4912,7 +4912,9 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {}
+
+    impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
@@ -4928,37 +4930,6 @@ mod tests {
                 .unwrap_or_default()
         }
 
-        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
-            self.institutional_claims
-                .iter()
-                .filter(|((claim_agent, _), _)| *claim_agent == agent)
-                .flat_map(|(_, claims)| claims.iter().cloned())
-                .collect()
-        }
-
-        fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
-            self.factions_by_member
-                .get(&entity)
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
-            self.factions_of(entity)
-                .into_iter()
-                .filter(|faction| self.bandit_factions.contains(faction))
-                .collect()
-        }
-
-        fn locally_observed_bandit_camp_faction_at(
-            &self,
-            agent: EntityId,
-            place: EntityId,
-        ) -> Option<EntityId> {
-            (self.effective_place(agent) == Some(place))
-                .then(|| self.local_bandit_camps.get(&place).copied())
-                .flatten()
-        }
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
@@ -4993,12 +4964,6 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
-        }
-        fn justice_disposition_profile(
-            &self,
-            agent: EntityId,
-        ) -> Option<worldwake_core::JusticeDispositionProfile> {
-            self.justice_disposition_profiles.get(&agent).cloned()
         }
         fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
             self.tell_profiles
@@ -5100,6 +5065,47 @@ mod tests {
                 None => RecipientKnowledgeStatus::UnknownToSpeaker,
             })
         }
+    }
+
+    impl worldwake_sim::PoliticalBeliefView for TestBeliefView {
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+            self.institutional_claims
+                .iter()
+                .filter(|((claim_agent, _), _)| *claim_agent == agent)
+                .flat_map(|(_, claims)| claims.iter().cloned())
+                .collect()
+        }
+
+        fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+            self.factions_by_member
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+            self.factions_of(entity)
+                .into_iter()
+                .filter(|faction| self.bandit_factions.contains(faction))
+                .collect()
+        }
+
+        fn locally_observed_bandit_camp_faction_at(
+            &self,
+            agent: EntityId,
+            place: EntityId,
+        ) -> Option<EntityId> {
+            (self.effective_place(agent) == Some(place))
+                .then(|| self.local_bandit_camps.get(&place).copied())
+                .flatten()
+        }
+
+        fn justice_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<worldwake_core::JusticeDispositionProfile> {
+            self.justice_disposition_profiles.get(&agent).cloned()
+        }
 
         fn record_data(&self, record: EntityId) -> Option<RecordData> {
             self.record_data.get(&record).cloned()
@@ -5170,6 +5176,18 @@ mod tests {
                 .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
+        fn believed_support_declarations_for_office(
+            &self,
+            office: EntityId,
+        ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+            self.support_declaration_beliefs
+                .iter()
+                .filter_map(|(&(belief_office, supporter), read)| {
+                    (belief_office == office).then_some((supporter, read.clone()))
+                })
+                .collect()
+        }
+
         fn institutional_belief_claims(
             &self,
             agent: EntityId,
@@ -5186,6 +5204,13 @@ mod tests {
             agent: EntityId,
         ) -> Option<worldwake_core::ViolationDispositionProfile> {
             self.violation_disposition_profiles.get(&agent).cloned()
+        }
+
+        fn active_violation_records(
+            &self,
+            _agent: EntityId,
+        ) -> Vec<worldwake_core::RecordedViolation> {
+            Vec::new()
         }
     }
 

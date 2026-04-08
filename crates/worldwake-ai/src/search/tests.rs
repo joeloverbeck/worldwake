@@ -305,7 +305,9 @@ impl TemporalBeliefView for TestBeliefView {
     }
 }
 
-impl RuntimeBeliefView for TestBeliefView {
+impl RuntimeBeliefView for TestBeliefView {}
+
+impl worldwake_sim::SocialBeliefView for TestBeliefView {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         self.known_entity_beliefs
             .get(&agent)
@@ -330,6 +332,9 @@ impl RuntimeBeliefView for TestBeliefView {
     ) -> Option<worldwake_core::IntentionDispositionProfile> {
         None
     }
+}
+
+impl worldwake_sim::PoliticalBeliefView for TestBeliefView {
     fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
         self.record_data.get(&record).cloned()
     }

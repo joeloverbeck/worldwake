@@ -1261,7 +1261,9 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for StubTellBeliefView {
+    impl RuntimeBeliefView for StubTellBeliefView {}
+
+    impl worldwake_sim::SocialBeliefView for StubTellBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
@@ -1271,13 +1273,6 @@ mod tests {
             agent: EntityId,
         ) -> Vec<worldwake_core::SocialObservation> {
             self.social_observations
-                .get(&agent)
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
-            self.institutional_claims
                 .get(&agent)
                 .cloned()
                 .unwrap_or_default()
@@ -1310,6 +1305,15 @@ mod tests {
             self.recipient_statuses
                 .get(&(actor, counterparty, *topic))
                 .copied()
+        }
+    }
+
+    impl worldwake_sim::PoliticalBeliefView for StubTellBeliefView {
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+            self.institutional_claims
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
         }
     }
 

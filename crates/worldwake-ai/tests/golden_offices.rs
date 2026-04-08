@@ -19,8 +19,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind, InputKind,
-    OfficeSuccessionOutcome, PerAgentBeliefView, PostNoticeActionPayload,
-    PressForceClaimActionPayload, RequestProvenance, RuntimeBeliefView, SpatialBeliefView,
+    OfficeSuccessionOutcome, PerAgentBeliefView, PoliticalBeliefView, PostNoticeActionPayload,
+    PressForceClaimActionPayload, RequestProvenance, SocialBeliefView, SpatialBeliefView,
     SupportCountTrace, SupportResolutionTrace, VacancyTimerTrace, YieldForceClaimActionPayload,
     get_affordances,
 };
@@ -2446,13 +2446,13 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
         evidence_places: BTreeSet::new(),
     };
     assert!(
-        RuntimeBeliefView::known_entity_beliefs(&snapshot_state, claimant)
+        SocialBeliefView::known_entity_beliefs(&snapshot_state, claimant)
             .into_iter()
             .any(|(entity, _)| entity == office),
         "planning snapshot should retain the office in actor known-entity beliefs"
     );
     assert!(
-        RuntimeBeliefView::office_data(&snapshot_state, office).is_some(),
+        PoliticalBeliefView::office_data(&snapshot_state, office).is_some(),
         "planning snapshot should retain office data for the force-law office"
     );
     assert_eq!(

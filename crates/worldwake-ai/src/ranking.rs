@@ -1578,7 +1578,7 @@ mod tests {
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
         EconomicBeliefView, EntityBeliefView, ProfileBeliefView, RecipeDefinition,
-        RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
+        RuntimeBeliefView, SocialBeliefView, SpatialBeliefView, TemporalBeliefView,
     };
 
     #[derive(Clone, Default)]
@@ -1747,15 +1747,11 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {}
+
+    impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
-        }
-        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
-            self.institutional_claims
-                .get(&agent)
-                .cloned()
-                .unwrap_or_default()
         }
         fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
             self.beliefs.values().find_map(|beliefs| {
@@ -1813,18 +1809,22 @@ mod tests {
         ) -> Option<EpistemicDispositionProfile> {
             self.epistemic_profiles.get(&agent).cloned()
         }
-        fn justice_disposition_profile(
-            &self,
-            agent: EntityId,
-        ) -> Option<JusticeDispositionProfile> {
-            self.justice_profiles.get(&agent).cloned()
-        }
         fn intention_disposition_profile(
             &self,
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
         }
+    }
+
+    impl worldwake_sim::PoliticalBeliefView for TestBeliefView {
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+            self.institutional_claims
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
+
         fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
             self.factions_by_member
                 .get(&entity)
@@ -1854,6 +1854,12 @@ mod tests {
         }
         fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
             self.loyalties.get(&(subject, target)).copied()
+        }
+        fn justice_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<JusticeDispositionProfile> {
+            self.justice_profiles.get(&agent).cloned()
         }
         fn active_violation_records(&self, agent: EntityId) -> Vec<RecordedViolation> {
             self.active_violation_records

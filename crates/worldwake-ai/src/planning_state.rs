@@ -17,8 +17,8 @@ use worldwake_core::{
 use worldwake_sim::{
     ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
     EconomicBeliefView, EntityBeliefView, FacilityBeliefView, InventoryBeliefView,
-    ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
-    estimate_duration_from_beliefs,
+    PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView,
+    TemporalBeliefView, estimate_duration_from_beliefs,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -1361,7 +1361,7 @@ impl TemporalBeliefView for PlanningState<'_> {
     }
 }
 
-impl RuntimeBeliefView for PlanningState<'_> {
+impl SocialBeliefView for PlanningState<'_> {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         if agent != self.snapshot.actor() {
             return Vec::new();
@@ -1384,14 +1384,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
         }
 
         self.snapshot.actor_known_social_observations.clone()
-    }
-
-    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
-        if agent != self.snapshot.actor() {
-            return Vec::new();
-        }
-
-        self.snapshot.actor_known_institutional_beliefs.clone()
     }
 
     fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
@@ -1460,23 +1452,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .entities
             .get(&agent)
             .and_then(|snapshot| snapshot.theft_disposition_profile.clone())
-    }
-
-    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.justice_disposition_profile.clone())
-    }
-
-    fn violation_disposition_profile(
-        &self,
-        agent: EntityId,
-    ) -> Option<ViolationDispositionProfile> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.violation_disposition_profile.clone())
     }
 
     fn intention_disposition_profile(
@@ -1625,6 +1600,80 @@ impl RuntimeBeliefView for PlanningState<'_> {
             None => RecipientKnowledgeStatus::UnknownToSpeaker,
         })
     }
+}
+
+impl PoliticalBeliefView for PlanningState<'_> {
+    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot.actor_known_institutional_beliefs.clone()
+    }
+
+    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        self.snapshot
+            .actor_known_institutional_beliefs
+            .iter()
+            .filter_map(|belief| match belief.claim {
+                worldwake_core::InstitutionalClaim::FactionMembership {
+                    faction,
+                    member,
+                    active: true,
+                    ..
+                } if member == entity => Some(faction),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        if entity == self.snapshot.actor() {
+            return self.snapshot.actor_bandit_factions.clone();
+        }
+
+        self.factions_of(entity)
+            .into_iter()
+            .filter(|faction| self.snapshot.actor_bandit_factions.contains(faction))
+            .collect()
+    }
+
+    fn locally_observed_bandit_camp_faction_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+    ) -> Option<EntityId> {
+        (agent == self.snapshot.actor() && self.effective_place(agent) == Some(place))
+            .then(|| self.bandit_camp_faction_at(place))
+            .flatten()
+    }
+
+    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.justice_disposition_profile.clone())
+    }
+
+    fn violation_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<ViolationDispositionProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.violation_disposition_profile.clone())
+    }
+
+    fn active_violation_records(&self, agent: EntityId) -> Vec<worldwake_core::RecordedViolation> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot.actor_active_violation_records.clone()
+    }
 
     fn record_data(&self, record: EntityId) -> Option<RecordData> {
         PlanningState::record_data(self, record)
@@ -1641,11 +1690,42 @@ impl RuntimeBeliefView for PlanningState<'_> {
         PlanningState::believed_office_holder(self, office)
     }
 
+    fn believed_force_controller(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+        PlanningState::believed_force_controller(self, office)
+    }
+
+    fn believed_membership(
+        &self,
+        faction: EntityId,
+        member: EntityId,
+    ) -> InstitutionalBeliefRead<bool> {
+        self.snapshot
+            .actor_belief_store
+            .believed_membership(faction, member)
+    }
+
     fn believed_faction_rally_point(
         &self,
         faction: EntityId,
     ) -> InstitutionalBeliefRead<Option<EntityId>> {
         PlanningState::believed_faction_rally_point(self, faction)
+    }
+
+    fn offices_contested_by(&self, claimant: EntityId) -> Vec<EntityId> {
+        if claimant != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot.actor_contested_offices.clone()
+    }
+
+    fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
+        (subject == self.snapshot.actor())
+            .then(|| self.snapshot.actor_loyalties.get(&target).copied())
+            .flatten()
     }
 
     fn believed_support_declaration(
@@ -1662,7 +1742,24 @@ impl RuntimeBeliefView for PlanningState<'_> {
     ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
         PlanningState::believed_support_declarations_for_office(self, office)
     }
+
+    fn institutional_belief_claims(
+        &self,
+        agent: EntityId,
+        key: worldwake_core::InstitutionalBeliefKey,
+    ) -> Vec<BelievedInstitutionalClaim> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot
+            .actor_belief_store
+            .get_institutional_beliefs(&key)
+            .map_or_else(Vec::new, ToOwned::to_owned)
+    }
 }
+
+impl RuntimeBeliefView for PlanningState<'_> {}
 
 impl CombatBeliefView for PlanningState<'_> {
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
@@ -2061,9 +2158,10 @@ mod tests {
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
         CombatBeliefView, Constraint, ControlBeliefView, DeterministicRng, DurationExpr,
-        EconomicBeliefView, EntityBeliefView, GoalBeliefView, Interruptibility, Precondition,
-        ProfileBeliefView, ReservationReq, RuntimeBeliefView, SpatialBeliefView, TargetSpec,
-        TemporalBeliefView, estimate_duration_from_beliefs, get_affordances,
+        EconomicBeliefView, EntityBeliefView, GoalBeliefView, Interruptibility,
+        PoliticalBeliefView, Precondition, ProfileBeliefView, ReservationReq, RuntimeBeliefView,
+        SocialBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
+        estimate_duration_from_beliefs, get_affordances,
     };
     use worldwake_systems::register_office_actions;
 
@@ -2316,7 +2414,9 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for StubBeliefView {
+    impl RuntimeBeliefView for StubBeliefView {}
+
+    impl SocialBeliefView for StubBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
@@ -2339,13 +2439,6 @@ mod tests {
             self.theft_profiles.get(&agent).cloned()
         }
 
-        fn justice_disposition_profile(
-            &self,
-            agent: EntityId,
-        ) -> Option<JusticeDispositionProfile> {
-            self.justice_profiles.get(&agent).cloned()
-        }
-
         fn intention_disposition_profile(
             &self,
             _agent: EntityId,
@@ -2358,6 +2451,15 @@ mod tests {
 
         fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
             self.told_beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+    }
+
+    impl PoliticalBeliefView for StubBeliefView {
+        fn justice_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<JusticeDispositionProfile> {
+            self.justice_profiles.get(&agent).cloned()
         }
 
         fn violation_disposition_profile(
@@ -3141,11 +3243,11 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::known_entity_beliefs(&state, actor),
+            SocialBeliefView::known_entity_beliefs(&state, actor),
             view.beliefs.get(&actor).cloned().unwrap()
         );
         assert_eq!(
-            RuntimeBeliefView::tell_profile(&state, actor),
+            SocialBeliefView::tell_profile(&state, actor),
             view.tell_profiles.get(&actor).copied()
         );
     }
@@ -3166,14 +3268,14 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::believed_activity_of(&state, observed),
+            SocialBeliefView::believed_activity_of(&state, observed),
             Some(&BelievedActivity {
                 action_domain: ActionDomain::Production,
                 target: Some(entity(40)),
                 observed_tick: Tick(9),
             })
         );
-        assert_eq!(RuntimeBeliefView::believed_activity_of(&state, actor), None);
+        assert_eq!(SocialBeliefView::believed_activity_of(&state, actor), None);
     }
 
     #[test]
@@ -3211,11 +3313,11 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(&state, town, ActionDomain::Production, None),
+            SocialBeliefView::agents_active_at(&state, town, ActionDomain::Production, None),
             vec![producer, other_target]
         );
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(
+            SocialBeliefView::agents_active_at(
                 &state,
                 town,
                 ActionDomain::Production,
@@ -3224,11 +3326,11 @@ mod tests {
             vec![producer]
         );
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(&state, town, ActionDomain::Trade, Some(source)),
+            SocialBeliefView::agents_active_at(&state, town, ActionDomain::Trade, Some(source)),
             vec![trader]
         );
         assert!(
-            RuntimeBeliefView::agents_active_at(&state, field, ActionDomain::Trade, Some(source))
+            SocialBeliefView::agents_active_at(&state, field, ActionDomain::Trade, Some(source))
                 .is_empty()
         );
     }
@@ -3240,7 +3342,7 @@ mod tests {
             build_planning_snapshot(&view, actor, &BTreeSet::from([bread]), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot);
 
-        assert_eq!(RuntimeBeliefView::tell_profile(&state, actor), None);
+        assert_eq!(SocialBeliefView::tell_profile(&state, actor), None);
     }
 
     #[test]
@@ -3311,7 +3413,7 @@ mod tests {
 
         assert_eq!(TemporalBeliefView::current_tick(&state), Tick(8));
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(
+            SocialBeliefView::told_belief_memory(
                 &state,
                 actor,
                 listener,
@@ -3321,7 +3423,7 @@ mod tests {
             Some(Tick(6))
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(
+            SocialBeliefView::recipient_knowledge_status(
                 &state,
                 actor,
                 listener,
@@ -3390,8 +3492,8 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::office_data(&state, office),
-            RuntimeBeliefView::office_data(&view, office)
+            PoliticalBeliefView::office_data(&state, office),
+            PoliticalBeliefView::office_data(&view, office)
         );
 
         let mut defs = ActionDefRegistry::new();
@@ -4368,19 +4470,19 @@ mod tests {
             view.patrol_routes.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::epistemic_disposition_profile(&state, actor),
+            SocialBeliefView::epistemic_disposition_profile(&state, actor),
             view.epistemic_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::theft_disposition_profile(&state, actor),
+            SocialBeliefView::theft_disposition_profile(&state, actor),
             view.theft_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::justice_disposition_profile(&state, actor),
+            PoliticalBeliefView::justice_disposition_profile(&state, actor),
             view.justice_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::violation_disposition_profile(&state, actor),
+            PoliticalBeliefView::violation_disposition_profile(&state, actor),
             view.violation_profiles.get(&actor).cloned()
         );
         assert_eq!(

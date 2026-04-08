@@ -552,35 +552,7 @@ pub trait EconomicBeliefView {
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
 }
 
-pub trait FacilityBeliefView {
-    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
-    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
-        let _ = facility;
-        None
-    }
-    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
-    fn has_production_job(&self, entity: EntityId) -> bool;
-    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
-    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
-}
-
-/// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
-/// failure handling, and duration estimation.
-///
-/// This trait is intentionally broader than `GoalBeliefView`. Callers should only depend on it
-/// when they truly need runtime-only helpers such as reservations, queue state, or duration
-/// estimation.
-pub trait RuntimeBeliefView:
-    ControlBeliefView
-    + EntityBeliefView
-    + ProfileBeliefView
-    + SpatialBeliefView
-    + TemporalBeliefView
-    + InventoryBeliefView
-    + CombatBeliefView
-    + EconomicBeliefView
-    + FacilityBeliefView
-{
+pub trait SocialBeliefView {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
         Vec::new()
@@ -592,26 +564,6 @@ pub trait RuntimeBeliefView:
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         let _ = agent;
         Vec::new()
-    }
-    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
-        let _ = agent;
-        Vec::new()
-    }
-    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
-        let _ = entity;
-        Vec::new()
-    }
-    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
-        let _ = entity;
-        Vec::new()
-    }
-    fn locally_observed_bandit_camp_faction_at(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-    ) -> Option<EntityId> {
-        let _ = (agent, place);
-        None
     }
     fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
         let _ = entity;
@@ -657,10 +609,6 @@ pub trait RuntimeBeliefView:
         let _ = agent;
         None
     }
-    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
-        let _ = agent;
-        None
-    }
     fn intention_disposition_profile(&self, agent: EntityId)
     -> Option<IntentionDispositionProfile>;
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
@@ -695,6 +643,33 @@ pub trait RuntimeBeliefView:
         key: &worldwake_core::AskWitnessMemoryKey,
     ) -> Option<worldwake_core::AskWitnessMemory> {
         let _ = (actor, key);
+        None
+    }
+}
+
+pub trait PoliticalBeliefView {
+    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+        let _ = agent;
+        Vec::new()
+    }
+    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        let _ = entity;
+        Vec::new()
+    }
+    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        let _ = entity;
+        Vec::new()
+    }
+    fn locally_observed_bandit_camp_faction_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+    ) -> Option<EntityId> {
+        let _ = (agent, place);
+        None
+    }
+    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
+        let _ = agent;
         None
     }
     fn violation_disposition_profile(
@@ -778,6 +753,39 @@ pub trait RuntimeBeliefView:
     }
 }
 
+pub trait FacilityBeliefView {
+    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
+        let _ = facility;
+        None
+    }
+    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn has_production_job(&self, entity: EntityId) -> bool;
+    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
+    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+}
+
+/// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
+/// failure handling, and duration estimation.
+///
+/// This trait is intentionally broader than `GoalBeliefView`. Callers should only depend on it
+/// when they truly need runtime-only helpers such as reservations, queue state, or duration
+/// estimation.
+pub trait RuntimeBeliefView:
+    ControlBeliefView
+    + EntityBeliefView
+    + ProfileBeliefView
+    + SpatialBeliefView
+    + TemporalBeliefView
+    + InventoryBeliefView
+    + CombatBeliefView
+    + EconomicBeliefView
+    + SocialBeliefView
+    + PoliticalBeliefView
+    + FacilityBeliefView
+{
+}
+
 #[macro_export]
 macro_rules! impl_goal_belief_view {
     ($ty:ty) => {
@@ -845,42 +853,42 @@ macro_rules! impl_goal_belief_view {
                 worldwake_core::EntityId,
                 worldwake_core::BelievedEntityState,
             )> {
-                $crate::RuntimeBeliefView::known_entity_beliefs(self, agent)
+                $crate::SocialBeliefView::known_entity_beliefs(self, agent)
             }
 
             fn agent_belief_store(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<&worldwake_core::AgentBeliefStore> {
-                $crate::RuntimeBeliefView::agent_belief_store(self, agent)
+                $crate::SocialBeliefView::agent_belief_store(self, agent)
             }
 
             fn known_social_observations(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::SocialObservation> {
-                $crate::RuntimeBeliefView::known_social_observations(self, agent)
+                $crate::SocialBeliefView::known_social_observations(self, agent)
             }
 
             fn known_institutional_beliefs(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::BelievedInstitutionalClaim> {
-                $crate::RuntimeBeliefView::known_institutional_beliefs(self, agent)
+                $crate::PoliticalBeliefView::known_institutional_beliefs(self, agent)
             }
 
             fn factions_of(
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::factions_of(self, entity)
+                $crate::PoliticalBeliefView::factions_of(self, entity)
             }
 
             fn bandit_factions_of(
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::bandit_factions_of(self, entity)
+                $crate::PoliticalBeliefView::bandit_factions_of(self, entity)
             }
 
             fn locally_observed_bandit_camp_faction_at(
@@ -888,7 +896,7 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
                 place: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::locally_observed_bandit_camp_faction_at(
+                $crate::PoliticalBeliefView::locally_observed_bandit_camp_faction_at(
                     self, agent, place,
                 )
             }
@@ -897,7 +905,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<&worldwake_core::BelievedActivity> {
-                $crate::RuntimeBeliefView::believed_activity_of(self, entity)
+                $crate::SocialBeliefView::believed_activity_of(self, entity)
             }
 
             fn agents_active_at(
@@ -906,7 +914,7 @@ macro_rules! impl_goal_belief_view {
                 domain: worldwake_core::ActionDomain,
                 target: Option<worldwake_core::EntityId>,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::agents_active_at(self, place, domain, target)
+                $crate::SocialBeliefView::agents_active_at(self, place, domain, target)
             }
 
             fn adjacent_places_with_travel_ticks(
@@ -1124,14 +1132,14 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> worldwake_core::BeliefConfidencePolicy {
-                $crate::RuntimeBeliefView::belief_confidence_policy(self, agent)
+                $crate::SocialBeliefView::belief_confidence_policy(self, agent)
             }
 
             fn observation_fidelity(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> worldwake_core::Permille {
-                $crate::RuntimeBeliefView::observation_fidelity(self, agent)
+                $crate::SocialBeliefView::observation_fidelity(self, agent)
             }
 
             fn patrol_profile(
@@ -1159,28 +1167,28 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EpistemicDispositionProfile> {
-                $crate::RuntimeBeliefView::epistemic_disposition_profile(self, agent)
+                $crate::SocialBeliefView::epistemic_disposition_profile(self, agent)
             }
 
             fn theft_disposition_profile(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::TheftDispositionProfile> {
-                $crate::RuntimeBeliefView::theft_disposition_profile(self, agent)
+                $crate::SocialBeliefView::theft_disposition_profile(self, agent)
             }
 
             fn justice_disposition_profile(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::JusticeDispositionProfile> {
-                $crate::RuntimeBeliefView::justice_disposition_profile(self, agent)
+                $crate::PoliticalBeliefView::justice_disposition_profile(self, agent)
             }
 
             fn tell_profile(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::TellProfile> {
-                $crate::RuntimeBeliefView::tell_profile(self, agent)
+                $crate::SocialBeliefView::tell_profile(self, agent)
             }
 
             fn told_belief_memories(
@@ -1190,7 +1198,7 @@ macro_rules! impl_goal_belief_view {
                 worldwake_core::TellMemoryKey,
                 worldwake_core::ToldBeliefMemory,
             )> {
-                $crate::RuntimeBeliefView::told_belief_memories(self, agent)
+                $crate::SocialBeliefView::told_belief_memories(self, agent)
             }
 
             fn told_belief_memory(
@@ -1199,7 +1207,7 @@ macro_rules! impl_goal_belief_view {
                 counterparty: worldwake_core::EntityId,
                 topic: &worldwake_core::TellTopic,
             ) -> Option<worldwake_core::ToldBeliefMemory> {
-                $crate::RuntimeBeliefView::told_belief_memory(self, actor, counterparty, topic)
+                $crate::SocialBeliefView::told_belief_memory(self, actor, counterparty, topic)
             }
 
             fn recipient_knowledge_status(
@@ -1208,7 +1216,7 @@ macro_rules! impl_goal_belief_view {
                 counterparty: worldwake_core::EntityId,
                 topic: &worldwake_core::TellTopic,
             ) -> Option<worldwake_core::RecipientKnowledgeStatus> {
-                $crate::RuntimeBeliefView::recipient_knowledge_status(
+                $crate::SocialBeliefView::recipient_knowledge_status(
                     self,
                     actor,
                     counterparty,
@@ -1221,7 +1229,7 @@ macro_rules! impl_goal_belief_view {
                 actor: worldwake_core::EntityId,
                 key: &worldwake_core::AskWitnessMemoryKey,
             ) -> Option<worldwake_core::AskWitnessMemory> {
-                $crate::RuntimeBeliefView::ask_witness_memory(self, actor, key)
+                $crate::SocialBeliefView::ask_witness_memory(self, actor, key)
             }
 
             fn courage(&self, agent: worldwake_core::EntityId) -> Option<worldwake_core::Permille> {
@@ -1232,14 +1240,14 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::ViolationDispositionProfile> {
-                $crate::RuntimeBeliefView::violation_disposition_profile(self, agent)
+                $crate::PoliticalBeliefView::violation_disposition_profile(self, agent)
             }
 
             fn active_violation_records(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::RecordedViolation> {
-                $crate::RuntimeBeliefView::active_violation_records(self, agent)
+                $crate::PoliticalBeliefView::active_violation_records(self, agent)
             }
 
             fn merchandise_profile(
@@ -1267,7 +1275,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::SourceReliability> {
-                $crate::RuntimeBeliefView::source_reliability(self, agent)
+                $crate::SocialBeliefView::source_reliability(self, agent)
             }
 
             fn preference_profile(
@@ -1281,14 +1289,14 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::ExpectationStore> {
-                $crate::RuntimeBeliefView::expectation_store(self, agent)
+                $crate::SocialBeliefView::expectation_store(self, agent)
             }
 
             fn last_seen_memory(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::LastSeenMemory> {
-                $crate::RuntimeBeliefView::last_seen_memory(self, agent)
+                $crate::SocialBeliefView::last_seen_memory(self, agent)
             }
 
             fn utility_profile(
@@ -1360,21 +1368,21 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 record: worldwake_core::EntityId,
             ) -> Option<worldwake_core::RecordData> {
-                $crate::RuntimeBeliefView::record_data(self, record)
+                $crate::PoliticalBeliefView::record_data(self, record)
             }
 
             fn office_data(
                 &self,
                 office: worldwake_core::EntityId,
             ) -> Option<worldwake_core::OfficeData> {
-                $crate::RuntimeBeliefView::office_data(self, office)
+                $crate::PoliticalBeliefView::office_data(self, office)
             }
 
             fn believed_office_holder(
                 &self,
                 office: worldwake_core::EntityId,
             ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
-                $crate::RuntimeBeliefView::believed_office_holder(self, office)
+                $crate::PoliticalBeliefView::believed_office_holder(self, office)
             }
 
             fn believed_force_controller(
@@ -1382,7 +1390,7 @@ macro_rules! impl_goal_belief_view {
                 office: worldwake_core::EntityId,
             ) -> worldwake_core::InstitutionalBeliefRead<(Option<worldwake_core::EntityId>, bool)>
             {
-                $crate::RuntimeBeliefView::believed_force_controller(self, office)
+                $crate::PoliticalBeliefView::believed_force_controller(self, office)
             }
 
             fn believed_membership(
@@ -1390,14 +1398,14 @@ macro_rules! impl_goal_belief_view {
                 faction: worldwake_core::EntityId,
                 member: worldwake_core::EntityId,
             ) -> worldwake_core::InstitutionalBeliefRead<bool> {
-                $crate::RuntimeBeliefView::believed_membership(self, faction, member)
+                $crate::PoliticalBeliefView::believed_membership(self, faction, member)
             }
 
             fn believed_faction_rally_point(
                 &self,
                 faction: worldwake_core::EntityId,
             ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
-                $crate::RuntimeBeliefView::believed_faction_rally_point(self, faction)
+                $crate::PoliticalBeliefView::believed_faction_rally_point(self, faction)
             }
 
             fn loyalty_to(
@@ -1405,7 +1413,7 @@ macro_rules! impl_goal_belief_view {
                 subject: worldwake_core::EntityId,
                 target: worldwake_core::EntityId,
             ) -> Option<worldwake_core::Permille> {
-                $crate::RuntimeBeliefView::loyalty_to(self, subject, target)
+                $crate::PoliticalBeliefView::loyalty_to(self, subject, target)
             }
 
             fn believed_support_declaration(
@@ -1413,7 +1421,7 @@ macro_rules! impl_goal_belief_view {
                 office: worldwake_core::EntityId,
                 supporter: worldwake_core::EntityId,
             ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
-                $crate::RuntimeBeliefView::believed_support_declaration(self, office, supporter)
+                $crate::PoliticalBeliefView::believed_support_declaration(self, office, supporter)
             }
 
             fn believed_support_declarations_for_office(
@@ -1423,7 +1431,7 @@ macro_rules! impl_goal_belief_view {
                 worldwake_core::EntityId,
                 worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>>,
             )> {
-                $crate::RuntimeBeliefView::believed_support_declarations_for_office(self, office)
+                $crate::PoliticalBeliefView::believed_support_declarations_for_office(self, office)
             }
 
             fn institutional_belief_claims(
@@ -1431,7 +1439,7 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
                 key: worldwake_core::InstitutionalBeliefKey,
             ) -> Vec<worldwake_core::BelievedInstitutionalClaim> {
-                $crate::RuntimeBeliefView::institutional_belief_claims(self, agent, key)
+                $crate::PoliticalBeliefView::institutional_belief_claims(self, agent, key)
             }
         }
     };

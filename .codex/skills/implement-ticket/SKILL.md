@@ -117,6 +117,7 @@ Specific persisted-shape checks:
 - When the ticket says information should be "internalized," search for an existing belief lane or consumer before inventing a new belief substrate.
 - When the ticket changes historical event content or view semantics, inspect renderers and detail views for reconstruction from live runtime state instead of stored event records.
 - When making a new action handler's affordance enumeration live through the planner's search pipeline, verify that every `RuntimeBeliefView` method the handler calls is implemented on `PlanningState` (via `PlanningSnapshot`), not just on `PerAgentBeliefView`. The planning state's view defaults most trait methods to `None`; affordance enumeration that depends on actor-local carriers (`expectation_store`, `ask_witness_memory`, `last_seen_memory`) silently produces zero payloads if the snapshot doesn't include the carrier.
+- For trait-extraction tickets that move `RuntimeBeliefView` methods onto new sub-traits, audit `PlanningState` / `PlanningSnapshot` parity before broad mock fallout. If a moved method is implemented on `PlanningState`, verify the snapshot already carries the lawful backing state for that method. When it does not, widen the snapshot boundary deliberately rather than defaulting the planning-side method to `None`, empty collections, or invented placeholder fields.
 
 #### Registry and schema checks
 
@@ -141,6 +142,7 @@ Specific persisted-shape checks:
 - Include helper methods and test-local impl internals in that sweep. Calls like `self.moved_method(...)` inside mock helpers, adapter helpers, or test-only impl blocks can also require the new trait import or explicit `<Self as NewTrait>::method(...)` after the split.
 - When a trait split touches large mock, adapter, or test-stub impl blocks, prefer replacing the whole impl partition in one pass instead of patching methods incrementally. Half-migrated impls can strand methods on the wrong trait and create noisy intermediate compile states that obscure the real remaining fallout.
 - Include shared golden harnesses and golden test infrastructure in trait-split fallout sweeps. Method moves can leave old trait imports or UFCS calls in `golden_*` helpers even after ordinary unit-test mocks are green.
+- Prioritize broken production implementors over broad mock cleanup when the first compile wave points there. If a real `PerAgentBeliefView`, `PlanningState`, or similar live boundary is still structurally wrong after the split, fix that production path first and then use an all-target compile sweep to enumerate the remaining test/mock/golden fallout.
 
 #### Performance and allocation sweep
 

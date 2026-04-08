@@ -795,7 +795,9 @@ mod tests {
         }
     }
 
-    impl crate::RuntimeBeliefView for StubBeliefView {
+    impl crate::RuntimeBeliefView for StubBeliefView {}
+
+    impl crate::SocialBeliefView for StubBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
@@ -818,6 +820,8 @@ mod tests {
             worldwake_core::BeliefConfidencePolicy::default()
         }
     }
+
+    impl crate::PoliticalBeliefView for StubBeliefView {}
 
     impl crate::CombatBeliefView for StubBeliefView {
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {

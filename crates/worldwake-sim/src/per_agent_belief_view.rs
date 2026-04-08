@@ -1,8 +1,9 @@
 use crate::{
     ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
     CombatBeliefView, ControlBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView,
-    FacilityBeliefView, InventoryBeliefView, ProfileBeliefView, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView, estimate_duration_from_beliefs,
+    FacilityBeliefView, InventoryBeliefView, PoliticalBeliefView, ProfileBeliefView,
+    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView,
+    TemporalBeliefView, estimate_duration_from_beliefs,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -668,7 +669,7 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
     }
 }
 
-impl RuntimeBeliefView for PerAgentBeliefView<'_> {
+impl SocialBeliefView for PerAgentBeliefView<'_> {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         if agent != self.agent {
             return Vec::new();
@@ -691,64 +692,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         }
 
         self.belief_store.social_observations.clone()
-    }
-
-    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.belief_store
-            .institutional_beliefs
-            .values()
-            .flat_map(|beliefs| beliefs.iter().cloned())
-            .collect()
-    }
-
-    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
-        if entity == self.agent {
-            return self.world.factions_of(entity);
-        }
-
-        self.known_institutional_beliefs(self.agent)
-            .into_iter()
-            .filter_map(|belief| match belief.claim {
-                worldwake_core::InstitutionalClaim::FactionMembership {
-                    faction,
-                    member,
-                    active: true,
-                    ..
-                } if member == entity => Some(faction),
-                _ => None,
-            })
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    }
-
-    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
-        self.factions_of(entity)
-            .into_iter()
-            .filter(|faction| {
-                self.world
-                    .get_component_bandit_faction_policy(*faction)
-                    .is_some()
-            })
-            .collect()
-    }
-
-    fn locally_observed_bandit_camp_faction_at(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-    ) -> Option<EntityId> {
-        if agent != self.agent || self.world.effective_place(agent) != Some(place) {
-            return None;
-        }
-
-        self.world
-            .get_component_bandit_camp(place)
-            .map(|camp| camp.faction)
     }
 
     fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
@@ -840,16 +783,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .then(|| {
                 self.world
                     .get_component_theft_disposition_profile(agent)
-                    .cloned()
-            })
-            .flatten()
-    }
-
-    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
-        (agent == self.agent)
-            .then(|| {
-                self.world
-                    .get_component_justice_disposition_profile(agent)
                     .cloned()
             })
             .flatten()
@@ -947,6 +880,76 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         self.belief_store
             .ask_witness_memory(key, self.current_tick, profile.ask_memory_retention_ticks)
             .cloned()
+    }
+}
+
+impl PoliticalBeliefView for PerAgentBeliefView<'_> {
+    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.belief_store
+            .institutional_beliefs
+            .values()
+            .flat_map(|beliefs| beliefs.iter().cloned())
+            .collect()
+    }
+
+    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        if entity == self.agent {
+            return self.world.factions_of(entity);
+        }
+
+        self.known_institutional_beliefs(self.agent)
+            .into_iter()
+            .filter_map(|belief| match belief.claim {
+                worldwake_core::InstitutionalClaim::FactionMembership {
+                    faction,
+                    member,
+                    active: true,
+                    ..
+                } if member == entity => Some(faction),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        self.factions_of(entity)
+            .into_iter()
+            .filter(|faction| {
+                self.world
+                    .get_component_bandit_faction_policy(*faction)
+                    .is_some()
+            })
+            .collect()
+    }
+
+    fn locally_observed_bandit_camp_faction_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+    ) -> Option<EntityId> {
+        if agent != self.agent || self.world.effective_place(agent) != Some(place) {
+            return None;
+        }
+
+        self.world
+            .get_component_bandit_camp(place)
+            .map(|camp| camp.faction)
+    }
+
+    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_justice_disposition_profile(agent)
+                    .cloned()
+            })
+            .flatten()
     }
 
     fn violation_disposition_profile(
@@ -1071,6 +1074,8 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .unwrap_or_default()
     }
 }
+
+impl RuntimeBeliefView for PerAgentBeliefView<'_> {}
 
 impl InventoryBeliefView for PerAgentBeliefView<'_> {
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
@@ -1936,11 +1941,11 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::known_entity_beliefs(&view, agent),
+            crate::SocialBeliefView::known_entity_beliefs(&view, agent),
             vec![(other, entity_belief(place, true, 2, 4))]
         );
         assert!(
-            RuntimeBeliefView::known_entity_beliefs(&view, other).is_empty(),
+            crate::SocialBeliefView::known_entity_beliefs(&view, other).is_empty(),
             "belief enumeration should not expose another agent's store through this view"
         );
     }
@@ -1969,16 +1974,19 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::believed_activity_of(&view, other),
+            crate::SocialBeliefView::believed_activity_of(&view, other),
             Some(&worldwake_core::BelievedActivity {
                 action_domain: ActionDomain::Production,
                 target: Some(entity(40)),
                 observed_tick: Tick(8),
             })
         );
-        assert_eq!(RuntimeBeliefView::believed_activity_of(&view, agent), None);
         assert_eq!(
-            RuntimeBeliefView::believed_activity_of(&view, unknown),
+            crate::SocialBeliefView::believed_activity_of(&view, agent),
+            None
+        );
+        assert_eq!(
+            crate::SocialBeliefView::believed_activity_of(&view, unknown),
             None
         );
     }
@@ -2026,11 +2034,11 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(&view, place, ActionDomain::Production, None),
+            crate::SocialBeliefView::agents_active_at(&view, place, ActionDomain::Production, None),
             vec![a, c]
         );
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(
+            crate::SocialBeliefView::agents_active_at(
                 &view,
                 place,
                 ActionDomain::Production,
@@ -2039,11 +2047,16 @@ mod tests {
             vec![a]
         );
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(&view, place, ActionDomain::Trade, Some(source)),
+            crate::SocialBeliefView::agents_active_at(
+                &view,
+                place,
+                ActionDomain::Trade,
+                Some(source)
+            ),
             vec![b]
         );
         assert!(
-            RuntimeBeliefView::agents_active_at(
+            crate::SocialBeliefView::agents_active_at(
                 &view,
                 other_place,
                 ActionDomain::Trade,
@@ -2094,22 +2107,27 @@ mod tests {
         let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&view, agent, listener, &topic)
+            crate::SocialBeliefView::told_belief_memory(&view, agent, listener, &topic)
                 .map(|m| m.told_tick),
             Some(Tick(4))
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&view, agent, listener, &topic),
+            crate::SocialBeliefView::recipient_knowledge_status(&view, agent, listener, &topic),
             Some(RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief)
         );
 
         let expired_view = PerAgentBeliefView::new_at_tick(agent, Tick(60), &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&expired_view, agent, listener, &topic),
+            crate::SocialBeliefView::told_belief_memory(&expired_view, agent, listener, &topic),
             None
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&expired_view, agent, listener, &topic,),
+            crate::SocialBeliefView::recipient_knowledge_status(
+                &expired_view,
+                agent,
+                listener,
+                &topic,
+            ),
             Some(RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired)
         );
     }
@@ -2150,19 +2168,19 @@ mod tests {
         let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::told_belief_memories(&view, agent).len(),
+            crate::SocialBeliefView::told_belief_memories(&view, agent).len(),
             1
         );
         assert!(
-            RuntimeBeliefView::told_belief_memories(&view, other).is_empty(),
+            crate::SocialBeliefView::told_belief_memories(&view, other).is_empty(),
             "conversation memory should remain actor-local"
         );
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&view, other, listener, &topic),
+            crate::SocialBeliefView::told_belief_memory(&view, other, listener, &topic),
             None
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&view, other, listener, &topic),
+            crate::SocialBeliefView::recipient_knowledge_status(&view, other, listener, &topic),
             None
         );
     }
@@ -2183,7 +2201,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::tell_profile(&view, agent), None);
+        assert_eq!(crate::SocialBeliefView::tell_profile(&view, agent), None);
     }
 
     #[test]
@@ -2310,7 +2328,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::source_reliability(&view, agent),
+            crate::SocialBeliefView::source_reliability(&view, agent),
             Some(source_reliability.clone())
         );
         assert_eq!(
@@ -2334,7 +2352,10 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::source_reliability(&view, agent), None);
+        assert_eq!(
+            crate::SocialBeliefView::source_reliability(&view, agent),
+            None
+        );
         assert_eq!(GoalBeliefView::source_reliability(&view, agent), None);
     }
 
@@ -2423,7 +2444,7 @@ mod tests {
             .confidence_policy;
 
         assert_eq!(
-            RuntimeBeliefView::belief_confidence_policy(&view, agent),
+            crate::SocialBeliefView::belief_confidence_policy(&view, agent),
             expected
         );
         assert_eq!(
@@ -2450,7 +2471,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        let _ = RuntimeBeliefView::belief_confidence_policy(&view, other);
+        let _ = crate::SocialBeliefView::belief_confidence_policy(&view, other);
     }
 
     #[test]
@@ -3096,29 +3117,31 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::office_data(&view, office)
+            crate::PoliticalBeliefView::office_data(&view, office)
                 .unwrap()
                 .jurisdiction,
             BTreeSet::from([place])
         );
         assert_eq!(
-            RuntimeBeliefView::office_data(&view, office).unwrap().seat,
+            crate::PoliticalBeliefView::office_data(&view, office)
+                .unwrap()
+                .seat,
             place
         );
         assert_eq!(
-            RuntimeBeliefView::believed_office_holder(&view, office),
+            crate::PoliticalBeliefView::believed_office_holder(&view, office),
             InstitutionalBeliefRead::Certain(Some(holder))
         );
         assert_eq!(
-            RuntimeBeliefView::believed_membership(&view, faction, agent),
+            crate::PoliticalBeliefView::believed_membership(&view, faction, agent),
             InstitutionalBeliefRead::Certain(true)
         );
         assert_eq!(
-            RuntimeBeliefView::loyalty_to(&view, agent, holder),
+            crate::PoliticalBeliefView::loyalty_to(&view, agent, holder),
             Some(Permille::new(620).unwrap())
         );
         assert_eq!(
-            RuntimeBeliefView::believed_support_declaration(&view, office, agent),
+            crate::PoliticalBeliefView::believed_support_declaration(&view, office, agent),
             InstitutionalBeliefRead::Certain(Some(holder))
         );
     }
@@ -3156,7 +3179,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::believed_office_holder(&view, office),
+            crate::PoliticalBeliefView::believed_office_holder(&view, office),
             InstitutionalBeliefRead::Certain(Some(holder))
         );
     }
@@ -3201,7 +3224,7 @@ mod tests {
         );
 
         assert_eq!(
-            RuntimeBeliefView::believed_force_controller(&view, office),
+            crate::PoliticalBeliefView::believed_force_controller(&view, office),
             InstitutionalBeliefRead::Certain((Some(entity(173)), false))
         );
         assert_eq!(
@@ -3249,11 +3272,11 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::believed_support_declaration(&view, office, supporter),
+            crate::PoliticalBeliefView::believed_support_declaration(&view, office, supporter),
             InstitutionalBeliefRead::Certain(Some(candidate))
         );
         assert_eq!(
-            RuntimeBeliefView::believed_support_declarations_for_office(&view, office),
+            crate::PoliticalBeliefView::believed_support_declarations_for_office(&view, office),
             vec![(supporter, InstitutionalBeliefRead::Certain(Some(candidate)),)]
         );
     }
@@ -3656,7 +3679,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_membership(&view, faction, agent),
+            crate::PoliticalBeliefView::believed_membership(&view, faction, agent),
             InstitutionalBeliefRead::Certain(true)
         );
     }
@@ -3693,7 +3716,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_faction_rally_point(&view, faction),
+            crate::PoliticalBeliefView::believed_faction_rally_point(&view, faction),
             InstitutionalBeliefRead::Certain(Some(rally_place))
         );
     }

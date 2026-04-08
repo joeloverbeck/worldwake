@@ -8,7 +8,7 @@ use worldwake_core::{
     EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds,
     InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
     MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
-    PlaceTag, Quantity, RecipeId, RecordData, ResourceSource, SocialObservation,
+    PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation, ResourceSource, SocialObservation,
     StockStoragePolicy, SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick,
     TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
     ViolationDispositionProfile, WorkstationTag, Wound,
@@ -329,6 +329,10 @@ pub struct PlanningSnapshot {
     pub(crate) actor_known_social_observations: Vec<SocialObservation>,
     pub(crate) actor_known_institutional_beliefs: Vec<BelievedInstitutionalClaim>,
     pub(crate) actor_told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
+    pub(crate) actor_bandit_factions: Vec<EntityId>,
+    pub(crate) actor_active_violation_records: Vec<RecordedViolation>,
+    pub(crate) actor_contested_offices: Vec<EntityId>,
+    pub(crate) actor_loyalties: BTreeMap<EntityId, Permille>,
     pub(crate) actor_office_holder_beliefs: BTreeMap<EntityId, SupportBeliefRead>,
     pub(crate) actor_force_controller_beliefs: BTreeMap<EntityId, ForceControllerBeliefRead>,
     /// Baseline believed-certain support declarations per office: (supporter, candidate) pairs.
@@ -452,6 +456,17 @@ impl PlanningSnapshot {
             actor_known_social_observations,
             actor_known_institutional_beliefs: view.known_institutional_beliefs(actor),
             actor_told_beliefs: view.told_belief_memories(actor).into_iter().collect(),
+            actor_bandit_factions: view.bandit_factions_of(actor),
+            actor_active_violation_records: view.active_violation_records(actor),
+            actor_contested_offices: view.offices_contested_by(actor),
+            actor_loyalties: included_entities
+                .iter()
+                .copied()
+                .filter_map(|target| {
+                    view.loyalty_to(actor, target)
+                        .map(|strength| (target, strength))
+                })
+                .collect(),
             actor_office_holder_beliefs: included_entities
                 .iter()
                 .copied()
@@ -1093,7 +1108,8 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
+        PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView,
+        TemporalBeliefView,
     };
 
     use crate::PlannerOpKind;
@@ -1287,7 +1303,9 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for StubBeliefView {
+    impl RuntimeBeliefView for StubBeliefView {}
+
+    impl worldwake_sim::SocialBeliefView for StubBeliefView {
         fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
             self.confidence_policies
                 .get(&agent)
@@ -1316,7 +1334,9 @@ mod tests {
                 .cloned()
                 .unwrap_or_default()
         }
+    }
 
+    impl worldwake_sim::PoliticalBeliefView for StubBeliefView {
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
             self.office_data.get(&office).cloned()
         }

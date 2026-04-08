@@ -25,7 +25,7 @@ use worldwake_sim::{
     InventoryBeliefView, InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
     PostNoticeActionPayload, PressForceClaimActionPayload, ProfileBeliefView, PunishActionPayload,
     RecipeDefinition, RecipeRegistry, ReportFoundActionPayload, ReportMissingActionPayload,
-    RuntimeBeliefView, SearchPlaceActionPayload, SpatialBeliefView, TellActionPayload,
+    SearchPlaceActionPayload, SocialBeliefView, SpatialBeliefView, TellActionPayload,
     TemporalBeliefView, TradeActionPayload, TransportActionPayload,
 };
 
@@ -3275,16 +3275,11 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {}
+
+    impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.known_entity_beliefs
-                .get(&agent)
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
-            self.known_institutional_beliefs
                 .get(&agent)
                 .cloned()
                 .unwrap_or_default()
@@ -3310,6 +3305,24 @@ mod tests {
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
         }
+
+        fn ask_witness_memory(
+            &self,
+            actor: EntityId,
+            key: &AskWitnessMemoryKey,
+        ) -> Option<AskWitnessMemory> {
+            self.ask_witness_memories.get(&(actor, *key)).cloned()
+        }
+    }
+
+    impl worldwake_sim::PoliticalBeliefView for TestBeliefView {
+        fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+            self.known_institutional_beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
+
         fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
             self.record_data.get(&record).cloned()
         }
@@ -3369,14 +3382,6 @@ mod tests {
                     (belief_office == office).then_some((supporter, read.clone()))
                 })
                 .collect()
-        }
-
-        fn ask_witness_memory(
-            &self,
-            actor: EntityId,
-            key: &AskWitnessMemoryKey,
-        ) -> Option<AskWitnessMemory> {
-            self.ask_witness_memories.get(&(actor, *key)).cloned()
         }
     }
 

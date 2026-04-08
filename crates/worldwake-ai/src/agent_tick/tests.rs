@@ -1618,7 +1618,9 @@ impl TemporalBeliefView for QueuePatienceBeliefView {
     }
 }
 
-impl RuntimeBeliefView for QueuePatienceBeliefView {
+impl RuntimeBeliefView for QueuePatienceBeliefView {}
+
+impl worldwake_sim::SocialBeliefView for QueuePatienceBeliefView {
     fn belief_confidence_policy(&self, _agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
         worldwake_core::BeliefConfidencePolicy::default()
     }
@@ -1629,6 +1631,8 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
         None
     }
 }
+
+impl worldwake_sim::PoliticalBeliefView for QueuePatienceBeliefView {}
 
 impl CombatBeliefView for QueuePatienceBeliefView {
     fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {

@@ -10,7 +10,7 @@ use worldwake_sim::{
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, AskAboutPersonActionPayload, CommitOutcome, Constraint,
     DeterministicRng, DurationExpr, Interruptibility, PerAgentBeliefView, Precondition,
-    RuntimeBeliefView, TargetSpec,
+    RuntimeBeliefView, SocialBeliefView, TargetSpec,
 };
 
 pub fn register_ask_about_person_action(

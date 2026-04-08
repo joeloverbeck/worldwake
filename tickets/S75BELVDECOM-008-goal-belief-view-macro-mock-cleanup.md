@@ -13,7 +13,7 @@ After all RuntimeBeliefView sub-traits are extracted and SnapshotEntity is decom
 ## Assumption Reassessment (2026-04-08)
 
 1. `GoalBeliefView` confirmed at `belief_view.rs:34` with 92 methods. It is a separate trait (not a sub-trait of RuntimeBeliefView).
-2. `impl_goal_belief_view!` macro confirmed at `belief_view.rs:754`. Used by `PerAgentBeliefView` and `PlanningState` to mechanically delegate GoalBeliefView reads. After `S75BELVDECOM-002` through `S75BELVDECOM-005`, delegations already route through `EntityBeliefView`, `ProfileBeliefView`, `SpatialBeliefView`, `TemporalBeliefView`, `InventoryBeliefView`, `FacilityBeliefView`, `CombatBeliefView`, and `EconomicBeliefView`, so the remaining work is to finish trait-level decomposition rather than to introduce the first sub-trait-aware delegations.
+2. `impl_goal_belief_view!` macro confirmed at `belief_view.rs:754`. Used by `PerAgentBeliefView` and `PlanningState` to mechanically delegate GoalBeliefView reads. After `S75BELVDECOM-002` through `S75BELVDECOM-006`, delegations already route through `EntityBeliefView`, `ProfileBeliefView`, `SpatialBeliefView`, `TemporalBeliefView`, `InventoryBeliefView`, `FacilityBeliefView`, `CombatBeliefView`, `EconomicBeliefView`, `SocialBeliefView`, and `PoliticalBeliefView`, so the remaining work is to finish trait-level decomposition rather than to introduce the first sub-trait-aware delegations.
 3. Test mocks across AI/sim/systems now already implement split RuntimeBeliefView sub-traits after `S75BELVDECOM-005`, but they still carry repetitive boilerplate. Mock helper infrastructure remains a valid cleanup target for the remaining GoalBeliefView-facing surfaces.
 
 ## Architecture Check

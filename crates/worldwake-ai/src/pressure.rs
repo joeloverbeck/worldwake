@@ -243,7 +243,9 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl RuntimeBeliefView for TestBeliefView {}
+
+    impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
@@ -256,6 +258,9 @@ mod tests {
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
         }
+    }
+
+    impl worldwake_sim::PoliticalBeliefView for TestBeliefView {
         fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
             self.bandit_membership
                 .get(&entity)
