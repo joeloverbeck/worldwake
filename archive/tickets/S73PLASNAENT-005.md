@@ -1,6 +1,6 @@
 # S73PLASNAENT-005: Complete deferred soak-behavior validation for S73 cap/filter change
 
-**Status**: PENDING
+**Status**: DEFERRED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -68,3 +68,19 @@ None — verification is command-based and existing soak coverage is named in As
 ### Commands
 
 1. `cargo test -p worldwake-ai --features soak --test golden_soak`
+
+## Outcome
+
+Completion date: 2026-04-08
+
+This ticket was archived without local implementation because the full `golden_soak` proof surface is expected to run in GitHub CI rather than as a required local verification step.
+
+## Deviations
+
+1. The original local follow-up assumed the multi-seed soak run needed an active ticket owner in the local worktree.
+2. Repository workflow clarification: the long-running `cargo test -p worldwake-ai --features soak --test golden_soak` surface normally runs in CI, so keeping this as an active local ticket would overstate local work still required.
+
+## Verification Result
+
+1. Not run locally by design: `cargo test -p worldwake-ai --features soak --test golden_soak`
+2. Rationale recorded: full soak verification is expected to occur in GitHub CI.

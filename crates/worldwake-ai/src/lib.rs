@@ -26,6 +26,7 @@ pub mod plan_revalidation;
 pub mod plan_selection;
 pub mod planner_duration_contract;
 pub mod planner_ops;
+pub mod perf_telemetry;
 pub mod planning_snapshot;
 pub mod planning_state;
 pub mod pressure;

@@ -74,6 +74,7 @@ Specific persisted-shape checks:
 - When behavior depends on helper math, scaling, or threshold arithmetic, inspect the exact live helper implementation and correct stale numeric prose.
 - When the ticket proposes concrete default or profile values, compare against live fixtures, schema samples, and roundtrip examples.
 - When migrating a shared field's type, verify whether that field carries more than one world meaning. If one scalar collapses distinct semantics, correct the ticket to split them.
+- When a benchmark or profiling ticket introduces segmented telemetry, verify whether each configured segment is guaranteed to produce samples on the claimed proof surface. If a lawful run can yield zero samples for a segment, correct the ticket and output contract to allow an explicit empty-state result (for example `NA`) instead of forcing a fabricated numeric ratio or threshold.
 
 #### Action and behavior domain checks
 

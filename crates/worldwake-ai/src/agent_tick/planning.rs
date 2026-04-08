@@ -6,6 +6,7 @@ use crate::decision_trace::{
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::GoalKindPlannerExt;
+use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::search::PlanSearchResult;
 use crate::{
@@ -15,6 +16,7 @@ use crate::{
     select_best_plan,
 };
 use std::collections::BTreeMap;
+use std::time::Instant;
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockedIntentMemory, CognitiveProfile, ExecutionBudget,
     IntentionFrame, Permille, Tick,
@@ -593,106 +595,111 @@ pub(super) fn plan_and_validate_next_step(
     action_handlers: &ActionHandlerRegistry,
     recipe_registry: &RecipeRegistry,
 ) -> (Option<PlannedStep>, Option<bool>) {
-    // A second read view covers plan selection and step validation after the active-action fork.
-    let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
-    let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
-    let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
-    if should_plan {
-        if let Some(step) = try_continue_snapshot_plan(
-            &view,
-            runtime,
-            ranked_candidates,
-            active_goal_key,
-            agent,
-            action_defs,
-            action_handlers,
-        ) {
-            return (Some(step), Some(true));
-        }
-
-        invalidate_exhausted_goals(
-            &mut runtime.exhaustion_cache,
-            &view,
-            agent,
-            view.in_transit_state(agent).is_some(),
-            runtime.dirty.contains(DirtySet::FACILITIES),
-            runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
-        );
-
-        let plans = build_candidate_plans(
-            world,
-            scheduler,
-            agent,
-            ranked_candidates,
-            blocked_memory,
-            tick,
-            cognitive,
-            execution_budget,
-            semantics_table,
-            action_defs,
-            action_handlers,
-            recipe_registry,
-            false,
-            false,
-            &runtime.exhaustion_cache,
-        );
-
-        // Record newly exhausted goals for next tick.
-        record_exhausted_goals(
-            runtime,
-            &view,
-            agent,
-            recipe_registry,
-            &plans,
-            tick,
-            cognitive,
-        );
-        for plan in &plans {
-            if plan.result.is_found() {
-                runtime.exhaustion_cache.remove(&plan.opportunity);
-            }
-        }
-        let selection_plans = selection_candidates(&plans);
-
-        if let Some(selected_plan) = select_best_plan(
-            ranked_candidates,
-            &selection_plans,
-            active_goal_key,
-            runtime,
-            jc.as_ref(),
-            crate::SelectionPolicy {
-                side_benefit_weight,
-                default_switch_margin,
-                frame_switch_margin,
-            },
-        ) {
-            adopt_selected_plan(
+    let planning_start = Instant::now();
+    let result = (|| {
+        // A second read view covers plan selection and step validation after the active-action fork.
+        let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
+        let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
+        let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
+        if should_plan {
+            if let Some(step) = try_continue_snapshot_plan(
+                &view,
                 runtime,
-                active_goal,
-                jc,
-                facility_intents,
                 ranked_candidates,
-                selected_plan,
-                tick,
-            );
-        } else {
-            clear_current_plan(runtime, active_goal, jc, facility_intents, ranked_candidates);
-        }
-        runtime.dirty = DirtySet::default();
-    }
+                active_goal_key,
+                agent,
+                action_defs,
+                action_handlers,
+            ) {
+                return (Some(step), Some(true));
+            }
 
-    let next_step = current_step(runtime).cloned();
-    let next_step_valid = next_step.as_ref().map(|step| {
-        revalidate_next_step(
-            &view,
-            agent,
-            step,
-            &runtime.materialization_bindings,
-            action_defs,
-            action_handlers,
-        )
-    });
-    (next_step, next_step_valid)
+            invalidate_exhausted_goals(
+                &mut runtime.exhaustion_cache,
+                &view,
+                agent,
+                view.in_transit_state(agent).is_some(),
+                runtime.dirty.contains(DirtySet::FACILITIES),
+                runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
+            );
+
+            let plans = build_candidate_plans(
+                world,
+                scheduler,
+                agent,
+                ranked_candidates,
+                blocked_memory,
+                tick,
+                cognitive,
+                execution_budget,
+                semantics_table,
+                action_defs,
+                action_handlers,
+                recipe_registry,
+                false,
+                false,
+                &runtime.exhaustion_cache,
+            );
+
+            // Record newly exhausted goals for next tick.
+            record_exhausted_goals(
+                runtime,
+                &view,
+                agent,
+                recipe_registry,
+                &plans,
+                tick,
+                cognitive,
+            );
+            for plan in &plans {
+                if plan.result.is_found() {
+                    runtime.exhaustion_cache.remove(&plan.opportunity);
+                }
+            }
+            let selection_plans = selection_candidates(&plans);
+
+            if let Some(selected_plan) = select_best_plan(
+                ranked_candidates,
+                &selection_plans,
+                active_goal_key,
+                runtime,
+                jc.as_ref(),
+                crate::SelectionPolicy {
+                    side_benefit_weight,
+                    default_switch_margin,
+                    frame_switch_margin,
+                },
+            ) {
+                adopt_selected_plan(
+                    runtime,
+                    active_goal,
+                    jc,
+                    facility_intents,
+                    ranked_candidates,
+                    selected_plan,
+                    tick,
+                );
+            } else {
+                clear_current_plan(runtime, active_goal, jc, facility_intents, ranked_candidates);
+            }
+            runtime.dirty = DirtySet::default();
+        }
+
+        let next_step = current_step(runtime).cloned();
+        let next_step_valid = next_step.as_ref().map(|step| {
+            revalidate_next_step(
+                &view,
+                agent,
+                step,
+                &runtime.materialization_bindings,
+                action_defs,
+                action_handlers,
+            )
+        });
+        (next_step, next_step_valid)
+    })();
+    record_planning_phase_duration(tick, planning_start.elapsed());
+    result
 }
 
 /// Wrapper around `plan_and_validate_next_step` that also captures trace data.

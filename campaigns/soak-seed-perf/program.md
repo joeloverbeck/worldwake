@@ -27,6 +27,8 @@ cargo run --release -p worldwake-ai --bin soak_seed_perf -- <seed>
 
 The runner reuses the same T30 world construction and the same one-seed per-run invariants, but it does not go through the Rust test harness or the 10-seed aggregate assertions. Once the campaign begins, this harness is immutable. Do not modify it during the loop.
 
+The runner may emit additional diagnostic keys for segmented telemetry, but `duration_ms` remains the campaign's primary parse key and acceptance metric.
+
 ## Seed Rotation And Comparison Rule
 
 This campaign uses a fixed deterministic seed cycle:
