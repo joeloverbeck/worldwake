@@ -973,11 +973,11 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionPayload, BribeActionPayload,
-        ConsultRecordActionPayload, DeclareSupportActionPayload, DurationExpr, MaterializationTag,
-        PressForceClaimActionPayload, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
-        ControlBeliefView, RuntimeBeliefView, TellActionPayload, ThreatenActionPayload,
-        TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
-        estimate_duration_from_beliefs,
+        ConsultRecordActionPayload, ControlBeliefView, DeclareSupportActionPayload, DurationExpr,
+        EntityBeliefView, MaterializationTag, PressForceClaimActionPayload, ProfileBeliefView,
+        QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+        TellActionPayload, ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        YieldForceClaimActionPayload, estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -1135,7 +1135,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl EntityBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }
@@ -1143,7 +1143,30 @@ mod tests {
         fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
             self.kinds.get(&entity).copied()
         }
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
 
+    impl ProfileBeliefView for TestBeliefView {
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs.get(&agent).copied()
+        }
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.thresholds.get(&agent).copied()
+        }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            Some(MetabolismProfile::default())
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -1248,34 +1271,14 @@ mod tests {
             Vec::new()
         }
 
-        fn is_dead(&self, entity: EntityId) -> bool {
-            !self.is_alive(entity)
-        }
-
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
-
         fn has_wounds(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-            self.needs.get(&agent).copied()
-        }
-
-        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-            self.thresholds.get(&agent).copied()
         }
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            Some(MetabolismProfile::default())
         }
 
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
@@ -1346,10 +1349,6 @@ mod tests {
 
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
-        }
-
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
 
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {

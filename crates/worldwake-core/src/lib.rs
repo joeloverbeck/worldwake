@@ -91,18 +91,19 @@ pub use action_domain::ActionDomain;
 pub use allocator::EntityAllocator;
 pub use bandit_camp::{BanditCamp, BanditFactionPolicy};
 pub use belief::{
-    AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy, BeliefStoreDiff,
-    BelievedActivity, BelievedArtifactState, BelievedBountyTerms, BelievedContentionState,
-    BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState, HeardBeliefDisposition,
-    HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
-    RecipientKnowledgeStatus, SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState,
-    SocialObservation, SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile,
-    TellTopic, ToldBeliefMemory, belief_confidence, build_believed_entity_state,
-    build_observed_entity_snapshot, current_institutional_belief_topics,
-    institutional_claim_same_memory_lane, institutional_claim_subject_entity,
-    institutional_knowledge_chain_len, recipient_knowledge_status, share_equivalent,
-    social_observation_is_redundant_for_listener, social_observation_is_relayable,
-    tell_subject_is_directly_observable_by_listener, to_shared_belief_snapshot,
+    AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
+    BeliefStoreDiff, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
+    BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState,
+    HeardBeliefDisposition, HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot,
+    PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus, SharedBeliefSnapshot,
+    SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
+    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
+    belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
+    current_institutional_belief_topics, institutional_claim_same_memory_lane,
+    institutional_claim_subject_entity, institutional_knowledge_chain_len,
+    recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
+    social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
+    to_shared_belief_snapshot,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
@@ -133,8 +134,7 @@ pub use crime::{
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
-    RelationDelta,
-    RelationKind, RelationValue, ReservationDelta, StateDelta,
+    RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
 pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};

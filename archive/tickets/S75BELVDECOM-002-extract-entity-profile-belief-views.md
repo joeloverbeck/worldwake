@@ -1,10 +1,10 @@
 # S75BELVDECOM-002: Extract EntityBeliefView + ProfileBeliefView sub-traits
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — RuntimeBeliefView trait decomposition, SnapshotLifecycle dissolution
-**Deps**: S75BELVDECOM-001
+**Deps**: archive/tickets/S75BELVDECOM-001-extract-control-belief-view.md
 
 ## Problem
 
@@ -12,14 +12,34 @@ Continue RuntimeBeliefView decomposition by extracting EntityBeliefView (8 metho
 
 ## Assumption Reassessment (2026-04-08)
 
-1. EntityBeliefView methods confirmed on RuntimeBeliefView: `is_alive`, `is_dead`, `is_incapacitated`, `entity_kind`, `corpse_entities_at`, `bandit_flee_wound_threshold`, `bandit_camp_establishment_ticks`, `locally_observed_is_dead`.
-2. ProfileBeliefView methods confirmed: `homeostatic_needs`, `drive_thresholds`, `metabolism_profile`, `preference_profile`, `utility_profile`.
-3. `SnapshotLifecycle` at `planning_snapshot.rs:220` has 3 fields: `alive`, `dead`, `incapacitated`. These correspond to EntityBeliefView methods and should migrate into the entity domain.
+1. `ControlBeliefView` was already extracted by `S75BELVDECOM-001`; live `RuntimeBeliefView` in `crates/worldwake-sim/src/belief_view.rs` still owns the entity/profile methods this ticket targets.
+2. Entity-domain methods still on `RuntimeBeliefView` are `is_alive`, `is_dead`, `is_incapacitated`, `entity_kind`, `corpse_entities_at`, `bandit_flee_wound_threshold`, `bandit_camp_establishment_ticks`, and `locally_observed_is_dead`.
+3. Profile-domain methods still on `RuntimeBeliefView` are `homeostatic_needs`, `drive_thresholds`, `metabolism_profile`, `preference_profile`, and `utility_profile`.
+4. `SnapshotLifecycle` still exists in `crates/worldwake-ai/src/planning_snapshot.rs`, and `PlanningState` still reads `snapshot.lifecycle.*`; those fields should move onto `SnapshotEntity` in this ticket.
 
 ## Architecture Check
 
 1. Same supertrait pattern as 001. EntityBeliefView and ProfileBeliefView are added as additional supertrait bounds on RuntimeBeliefView. No backward-compatibility shims.
 2. Dissolving SnapshotLifecycle into SnapshotEntityCore is a preparation step for ticket 007's full sub-struct decomposition — it ensures the lifecycle fields are already in the right domain grouping.
+
+## Outcome
+
+Completed on 2026-04-08.
+
+- `EntityBeliefView` and `ProfileBeliefView` now own the extracted methods, and `RuntimeBeliefView` composes them as supertraits.
+- Production impls were split in `PerAgentBeliefView` and `PlanningState`.
+- `SnapshotLifecycle` was dissolved into flat `SnapshotEntity` fields.
+- Touched test/mock belief views were migrated to the new sub-trait split.
+
+Deviations from original plan:
+
+- Verification exposed a real regression where the production bandit policy entity methods had fallen back to default `None` after the split. The implemented fix restored those reads in `PerAgentBeliefView` and threaded flee/establishment policy through `PlanningSnapshot` and `PlanningState`.
+
+Verification results:
+
+- Passed `cargo fmt --all`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
 
 ## Verification Layers
 
@@ -85,10 +105,11 @@ Add `EntityBeliefView` and `ProfileBeliefView` to worldwake-sim's exports.
 
 ### New/Modified Tests
 
-1. None — pure structural refactor. Existing golden and unit tests are the behavior proof.
+1. Added `per_agent_belief_view::tests::bandit_policy_entity_methods_read_from_authoritative_faction_policy`.
+2. Added `planning_state::tests::planning_state_preserves_bandit_policy_queries_from_snapshot`.
 
 ### Commands
 
-1. `cargo build --workspace`
+1. `cargo fmt --all`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace --all-targets -- -D warnings`

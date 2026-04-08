@@ -15,8 +15,8 @@ use worldwake_core::{
     ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit, to_shared_belief_snapshot,
 };
 use worldwake_sim::{
-    ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RuntimeBeliefView,
-    estimate_duration_from_beliefs,
+    ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
+    ProfileBeliefView, RuntimeBeliefView, estimate_duration_from_beliefs,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -1125,11 +1125,7 @@ impl ControlBeliefView for PlanningState<'_> {
     }
 }
 
-impl RuntimeBeliefView for PlanningState<'_> {
-    fn current_tick(&self) -> worldwake_core::Tick {
-        self.snapshot.current_tick
-    }
-
+impl EntityBeliefView for PlanningState<'_> {
     fn is_alive(&self, entity: EntityId) -> bool {
         !self
             .removed_entities
@@ -1138,11 +1134,74 @@ impl RuntimeBeliefView for PlanningState<'_> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .is_some_and(|snapshot| snapshot.lifecycle.alive)
+                .is_some_and(|snapshot| snapshot.alive)
     }
 
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
         self.entity_kind_ref(PlanningEntityRef::Authoritative(entity))
+    }
+
+    fn is_dead(&self, entity: EntityId) -> bool {
+        self.removed_entities
+            .contains(&PlanningEntityRef::Authoritative(entity))
+            || self
+                .snapshot
+                .entities
+                .get(&entity)
+                .is_some_and(|snapshot| snapshot.dead)
+    }
+
+    fn is_incapacitated(&self, entity: EntityId) -> bool {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .is_some_and(|snapshot| snapshot.incapacitated)
+    }
+
+    fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+        self.snapshot.bandit_flee_wound_threshold(faction)
+    }
+
+    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<std::num::NonZeroU32> {
+        self.snapshot.bandit_camp_establishment_ticks(faction)
+    }
+
+    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| self.is_dead(*entity))
+            .collect()
+    }
+}
+
+impl ProfileBeliefView for PlanningState<'_> {
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+        self.needs_overrides.get(&agent).copied().or_else(|| {
+            self.snapshot
+                .entities
+                .get(&agent)
+                .and_then(|snapshot| snapshot.homeostatic_needs)
+        })
+    }
+
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.drive_thresholds)
+    }
+
+    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.metabolism_profile)
+    }
+}
+
+impl RuntimeBeliefView for PlanningState<'_> {
+    fn current_tick(&self) -> worldwake_core::Tick {
+        self.snapshot.current_tick
     }
 
     fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -1468,44 +1527,11 @@ impl RuntimeBeliefView for PlanningState<'_> {
         ranges
     }
 
-    fn is_dead(&self, entity: EntityId) -> bool {
-        self.removed_entities
-            .contains(&PlanningEntityRef::Authoritative(entity))
-            || self
-                .snapshot
-                .entities
-                .get(&entity)
-                .is_some_and(|snapshot| snapshot.lifecycle.dead)
-    }
-
-    fn is_incapacitated(&self, entity: EntityId) -> bool {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .is_some_and(|snapshot| snapshot.lifecycle.incapacitated)
-    }
-
     fn has_wounds(&self, entity: EntityId) -> bool {
         self.snapshot
             .entities
             .get(&entity)
             .is_some_and(|snapshot| !snapshot.wounds.is_empty())
-    }
-
-    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-        self.needs_overrides.get(&agent).copied().or_else(|| {
-            self.snapshot
-                .entities
-                .get(&agent)
-                .and_then(|snapshot| snapshot.homeostatic_needs)
-        })
-    }
-
-    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.drive_thresholds)
     }
 
     fn belief_confidence_policy(&self, agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
@@ -1515,13 +1541,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
             "belief_confidence_policy is a self-authoritative read and must only be requested for the planning actor"
         );
         self.snapshot.actor_confidence_policy
-    }
-
-    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.metabolism_profile)
     }
 
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
@@ -1545,19 +1564,13 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .and_then(|snapshot| snapshot.patrol_route.clone())
     }
 
-    fn expectation_store(
-        &self,
-        agent: EntityId,
-    ) -> Option<worldwake_core::ExpectationStore> {
+    fn expectation_store(&self, agent: EntityId) -> Option<worldwake_core::ExpectationStore> {
         (agent == self.snapshot.actor())
             .then_some(self.snapshot.actor_expectation_store.clone())
             .flatten()
     }
 
-    fn last_seen_memory(
-        &self,
-        agent: EntityId,
-    ) -> Option<worldwake_core::LastSeenMemory> {
+    fn last_seen_memory(&self, agent: EntityId) -> Option<worldwake_core::LastSeenMemory> {
         (agent == self.snapshot.actor())
             .then_some(self.snapshot.actor_last_seen_memory.clone())
             .flatten()
@@ -1979,17 +1992,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .flatten()
     }
 
-    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<std::num::NonZeroU32> {
-        self.snapshot.bandit_camp_establishment_ticks(faction)
-    }
-
-    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| self.is_dead(*entity))
-            .collect()
-    }
-
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
         self.snapshot
             .entities
@@ -2044,9 +2046,9 @@ mod tests {
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
-        Constraint, ControlBeliefView, DeterministicRng, DurationExpr, GoalBeliefView,
-        Interruptibility, Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
-        estimate_duration_from_beliefs, get_affordances,
+        Constraint, ControlBeliefView, DeterministicRng, DurationExpr, EntityBeliefView,
+        GoalBeliefView, Interruptibility, Precondition, ProfileBeliefView, ReservationReq,
+        RuntimeBeliefView, TargetSpec, estimate_duration_from_beliefs, get_affordances,
     };
     use worldwake_systems::register_office_actions;
 
@@ -2086,9 +2088,12 @@ mod tests {
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
+        bandit_factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
         record_data: BTreeMap<EntityId, RecordData>,
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         combat_profiles: BTreeMap<EntityId, CombatProfile>,
+        bandit_flee_thresholds: BTreeMap<EntityId, Permille>,
+        bandit_establishment_ticks: BTreeMap<EntityId, NonZeroU32>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, ContentionGrant>,
         courages: BTreeMap<EntityId, Permille>,
@@ -2137,9 +2142,12 @@ mod tests {
                 wounds: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
                 attackers: BTreeMap::new(),
+                bandit_factions_by_member: BTreeMap::new(),
                 record_data: BTreeMap::new(),
                 consultation_speed_factors: BTreeMap::new(),
                 combat_profiles: BTreeMap::new(),
+                bandit_flee_thresholds: BTreeMap::new(),
+                bandit_establishment_ticks: BTreeMap::new(),
                 facility_queue_positions: BTreeMap::new(),
                 facility_grants: BTreeMap::new(),
                 courages: BTreeMap::new(),
@@ -2165,17 +2173,56 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for StubBeliefView {
-        fn current_tick(&self) -> Tick {
-            self.current_tick
-        }
-
+    impl EntityBeliefView for StubBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }
 
         fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
             self.kinds.get(&entity).copied()
+        }
+
+        fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+            self.bandit_flee_thresholds.get(&faction).copied()
+        }
+
+        fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
+            self.bandit_establishment_ticks.get(&faction).copied()
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_at(place)
+                .into_iter()
+                .filter(|entity| self.is_dead(*entity))
+                .collect()
+        }
+    }
+
+    impl ProfileBeliefView for StubBeliefView {
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs.get(&agent).copied()
+        }
+
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.thresholds.get(&agent).copied()
+        }
+
+        fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+            self.metabolism_profiles.get(&agent).copied()
+        }
+    }
+
+    impl RuntimeBeliefView for StubBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
         }
 
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -2319,26 +2366,10 @@ mod tests {
             self.reservations.get(&entity).cloned().unwrap_or_default()
         }
 
-        fn is_dead(&self, entity: EntityId) -> bool {
-            !self.is_alive(entity)
-        }
-
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
-
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds
                 .get(&entity)
                 .is_some_and(|wounds| !wounds.is_empty())
-        }
-
-        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-            self.needs.get(&agent).copied()
-        }
-
-        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-            self.thresholds.get(&agent).copied()
         }
 
         fn belief_confidence_policy(
@@ -2346,10 +2377,6 @@ mod tests {
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
-            self.metabolism_profiles.get(&agent).copied()
         }
 
         fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
@@ -2462,6 +2489,13 @@ mod tests {
                 .collect()
         }
 
+        fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+            self.bandit_factions_by_member
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
+        }
+
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
             self.wounds.get(&agent).cloned().unwrap_or_default()
         }
@@ -2523,13 +2557,6 @@ mod tests {
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
-        }
-
-        fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
-            self.entities_at(place)
-                .into_iter()
-                .filter(|entity| self.is_dead(*entity))
-                .collect()
         }
 
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
@@ -2805,10 +2832,10 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::entity_kind(&state, corpse),
+            EntityBeliefView::entity_kind(&state, corpse),
             Some(EntityKind::Agent)
         );
-        assert!(RuntimeBeliefView::is_dead(&state, corpse));
+        assert!(EntityBeliefView::is_dead(&state, corpse));
         assert_eq!(
             RuntimeBeliefView::effective_place(&state, corpse),
             Some(town)
@@ -2981,8 +3008,8 @@ mod tests {
         let removed = base.clone().mark_removed(bread);
 
         assert_eq!(get_affordances(&base, actor, &registry, &handlers).len(), 1);
-        assert!(RuntimeBeliefView::is_dead(&removed, bread));
-        assert!(!RuntimeBeliefView::is_alive(&removed, bread));
+        assert!(EntityBeliefView::is_dead(&removed, bread));
+        assert!(!EntityBeliefView::is_alive(&removed, bread));
         assert!(
             RuntimeBeliefView::entities_at(&removed, entity(10))
                 .iter()
@@ -2996,10 +3023,10 @@ mod tests {
         let (view, actor, _town, _field, _bread) = test_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot).consume_commodity(CommodityKind::Bread);
-        let thresholds = RuntimeBeliefView::drive_thresholds(&state, actor).unwrap();
+        let thresholds = ProfileBeliefView::drive_thresholds(&state, actor).unwrap();
 
         assert!(
-            RuntimeBeliefView::homeostatic_needs(&state, actor)
+            ProfileBeliefView::homeostatic_needs(&state, actor)
                 .unwrap()
                 .hunger
                 < thresholds.hunger.low()
@@ -3011,11 +3038,34 @@ mod tests {
         let (view, actor, _town, _field, _bread) = test_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot).consume_commodity(CommodityKind::Apple);
-        let thresholds = RuntimeBeliefView::drive_thresholds(&state, actor).unwrap();
-        let needs = RuntimeBeliefView::homeostatic_needs(&state, actor).unwrap();
+        let thresholds = ProfileBeliefView::drive_thresholds(&state, actor).unwrap();
+        let needs = ProfileBeliefView::homeostatic_needs(&state, actor).unwrap();
 
         assert!(needs.hunger < thresholds.hunger.low());
         assert!(needs.thirst < thresholds.thirst.low());
+    }
+
+    #[test]
+    fn planning_state_preserves_bandit_policy_queries_from_snapshot() {
+        let (mut view, actor, _town, _field, _bread) = test_view();
+        let faction = entity(77);
+        let flee_threshold = Permille::new(650).unwrap();
+        let establish_ticks = NonZeroU32::new(8).unwrap();
+        view.bandit_factions_by_member.insert(actor, vec![faction]);
+        view.bandit_flee_thresholds.insert(faction, flee_threshold);
+        view.bandit_establishment_ticks
+            .insert(faction, establish_ticks);
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            EntityBeliefView::bandit_flee_wound_threshold(&state, faction),
+            Some(flee_threshold)
+        );
+        assert_eq!(
+            EntityBeliefView::bandit_camp_establishment_ticks(&state, faction),
+            Some(establish_ticks)
+        );
     }
 
     #[test]
@@ -3369,8 +3419,8 @@ mod tests {
         );
         assert!(!base.reservation_conflicts(bread, range));
         assert!(branched.reservation_conflicts(bread, range));
-        assert!(RuntimeBeliefView::is_alive(&base, bread));
-        assert!(RuntimeBeliefView::is_dead(&branched, bread));
+        assert!(EntityBeliefView::is_alive(&base, bread));
+        assert!(EntityBeliefView::is_dead(&branched, bread));
     }
 
     #[test]
@@ -4297,7 +4347,7 @@ mod tests {
             view.combat_profiles.get(&actor).copied()
         );
         assert_eq!(
-            RuntimeBeliefView::metabolism_profile(&state, actor),
+            ProfileBeliefView::metabolism_profile(&state, actor),
             view.metabolism_profiles.get(&actor).copied()
         );
 

@@ -1166,7 +1166,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for StubTellBeliefView {
+    impl worldwake_sim::EntityBeliefView for StubTellBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }
@@ -1175,6 +1175,34 @@ mod tests {
             self.kinds.get(&entity).copied()
         }
 
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
+    impl worldwake_sim::ProfileBeliefView for StubTellBeliefView {
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+    }
+
+    impl RuntimeBeliefView for StubTellBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.places.get(&entity).copied()
         }
@@ -1299,24 +1327,8 @@ mod tests {
             Vec::new()
         }
 
-        fn is_dead(&self, entity: EntityId) -> bool {
-            !self.is_alive(entity)
-        }
-
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
-
         fn has_wounds(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            None
-        }
-
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-            None
         }
 
         fn belief_confidence_policy(
@@ -1324,10 +1336,6 @@ mod tests {
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
         }
 
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
@@ -1414,10 +1422,6 @@ mod tests {
 
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
-        }
-
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
 
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {

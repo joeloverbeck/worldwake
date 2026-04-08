@@ -1,5 +1,6 @@
 //! Typed event-log deltas over canonical world semantics.
 
+use crate::BeliefStoreDiff;
 use crate::{
     ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, BanditCamp, BanditFactionPolicy,
     BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance,
@@ -18,7 +19,6 @@ use crate::{
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
     component_schema::with_component_schema_entries,
 };
-use crate::BeliefStoreDiff;
 use serde::{Deserialize, Serialize};
 
 macro_rules! define_component_kind {

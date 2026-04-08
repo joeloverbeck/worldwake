@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — SnapshotEntity struct layout in worldwake-ai
-**Deps**: S75BELVDECOM-002, S75BELVDECOM-003, S75BELVDECOM-004, S75BELVDECOM-005, S75BELVDECOM-006
+**Deps**: archive/tickets/S75BELVDECOM-002-extract-entity-profile-belief-views.md, S75BELVDECOM-003, S75BELVDECOM-004, S75BELVDECOM-005, S75BELVDECOM-006
 
 ## Problem
 

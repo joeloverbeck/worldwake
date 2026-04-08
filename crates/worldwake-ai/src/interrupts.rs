@@ -1,8 +1,7 @@
 use crate::{
-    AgentDecisionRuntime, DecisionContext, FramePlanRelation, GoalKey, GoalPriorityClass,
-    RankedGoal, classify_frame_plan_relation,
+    AgentDecisionRuntime, DecisionContext, FramePlanRelation, GoalDispatchKey, GoalKey,
+    GoalPriorityClass, RankedGoal, classify_frame_plan_relation,
     frame_switch_policy::compare_relation_aware_goal_switch,
-    GoalDispatchKey,
     goal_policy::{FreeInterruptRole, PenaltyInterruptEligibility},
     goal_switching::{GoalSwitchKind, compare_goal_switch},
     plan_selection::SelectionCandidatePlan,

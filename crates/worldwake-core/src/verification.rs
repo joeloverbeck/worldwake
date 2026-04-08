@@ -970,6 +970,9 @@ mod tests {
 
         let hash_after = hash_world(&world).unwrap();
 
-        assert_eq!(hash_before, hash_after, "hash_world must not change after compaction");
+        assert_eq!(
+            hash_before, hash_after,
+            "hash_world must not change after compaction"
+        );
     }
 }

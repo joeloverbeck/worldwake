@@ -4,7 +4,7 @@ mod golden_harness;
 
 use golden_harness::*;
 use std::collections::BTreeMap;
-use worldwake_ai::{DecisionOutcome, GoalKind, GoalKey, SelectedPlanSource};
+use worldwake_ai::{DecisionOutcome, GoalKey, GoalKind, SelectedPlanSource};
 use worldwake_core::{
     AgentData, BeliefConfidencePolicy, BelievedEntityState, BodyPart, ControlSource,
     DeprivationKind, ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord,
@@ -182,13 +182,16 @@ fn missing_person_status_claim(
     h.world
         .get_component_record_data(office_register)
         .and_then(|record_data| {
-            record_data.active_entries().into_iter().find_map(|entry| match entry.claim {
-                claim @ InstitutionalClaim::MissingPersonStatus {
-                    subject: claim_subject,
-                    ..
-                } if claim_subject == subject => Some(claim),
-                _ => None,
-            })
+            record_data
+                .active_entries()
+                .into_iter()
+                .find_map(|entry| match entry.claim {
+                    claim @ InstitutionalClaim::MissingPersonStatus {
+                        subject: claim_subject,
+                        ..
+                    } if claim_subject == subject => Some(claim),
+                    _ => None,
+                })
         })
 }
 
@@ -469,7 +472,8 @@ fn run_report_missing_chain(seed: Seed) -> ReportMissingScenarioOutcome {
                     .find(|attempt| attempt.goal == report_goal)
                     .map(|attempt| format!("{attempt:?}"));
             }
-            if planning.selection.selected_goal() == Some(report_goal) && report_selected_tick.is_none()
+            if planning.selection.selected_goal() == Some(report_goal)
+                && report_selected_tick.is_none()
             {
                 report_selected_tick = Some(Tick(tick));
             }
@@ -814,8 +818,8 @@ fn run_escort_to_safety(seed: Seed) -> EscortScenarioOutcome {
 
     let escort_generated_tick = escort_generated_tick
         .expect("decision trace should generate EscortToSafety for wounded co-located entity");
-    let escort_selected_tick = escort_selected_tick
-        .expect("decision trace should select EscortToSafety in this scenario");
+    let escort_selected_tick =
+        escort_selected_tick.expect("decision trace should select EscortToSafety in this scenario");
     assert!(
         escort_generated_tick <= escort_selected_tick,
         "EscortToSafety should be selected no earlier than generated: generated={escort_generated_tick:?} selected={escort_selected_tick:?}"
@@ -1238,7 +1242,7 @@ fn run_report_found_after_search(seed: Seed) -> ReportFoundScenarioOutcome {
         // candidates can be generated.
         if found_search {
             social_enabled = true;
-            let tick_val = search_commit.unwrap().0 .0;
+            let tick_val = search_commit.unwrap().0.0;
             let mut txn = new_txn(&mut h.world, tick_val);
             txn.set_component_utility_profile(
                 searcher,
@@ -1272,10 +1276,10 @@ fn run_report_found_after_search(seed: Seed) -> ReportFoundScenarioOutcome {
         }
     }
 
-    let search_commit = search_commit
-        .expect("searcher should commit search_place for the missing subject");
-    let report_commit = report_commit
-        .expect("searcher should commit report_found after finding the subject");
+    let search_commit =
+        search_commit.expect("searcher should commit search_place for the missing subject");
+    let report_commit =
+        report_commit.expect("searcher should commit report_found after finding the subject");
     assert!(
         search_commit < report_commit,
         "search_place should commit before report_found: search={search_commit:?} report={report_commit:?}"

@@ -663,7 +663,7 @@ mod tests {
     // ---- Epoch compaction tests (S72) ----
 
     use super::CheckpointData;
-    use crate::{EntityKind, EntityDelta, StateDelta};
+    use crate::{EntityDelta, EntityKind, StateDelta};
 
     fn pending_with_deltas(tick: Tick, deltas: Vec<StateDelta>) -> PendingEvent {
         PendingEvent::from_payload(EventPayload {
@@ -769,7 +769,11 @@ mod tests {
         log.strip_deltas_before(Tick(3));
 
         // Events at ticks 1,2 should have empty state_deltas
-        for id in log.events_at_tick(Tick(1)).iter().chain(log.events_at_tick(Tick(2)).iter()) {
+        for id in log
+            .events_at_tick(Tick(1))
+            .iter()
+            .chain(log.events_at_tick(Tick(2)).iter())
+        {
             let record = log.get(*id).unwrap();
             assert!(
                 record.state_deltas().is_empty(),

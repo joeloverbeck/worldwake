@@ -37,17 +37,16 @@ use worldwake_core::{
     BeliefConfidencePolicy, BelievedActivity, BelievedInstitutionalClaim, BountyTarget,
     BountyTerms, CombatProfile, CommodityKind, Container, ControlSource, DeadAt, DemandMemory,
     DemandObservation, DemandObservationReason, EffectiveRight, EligibilityRule, EntityId,
-    EvidenceKind, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes,
-    MerchandiseProfile, MetabolismProfile, NoticeTopic,
-    PerceptionProfile, PerceptionSource, PlaceTag, ProductionOutputOwner, ProofRequirement,
-    PrototypePlace, PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind,
-    ResourceSource, RewardSource, RightKind, Seed, SocialObservationDetail, StateHash,
-    SuccessionLaw, TellProfile, TellTopic, TheftDispositionProfile, TheftFacts, Tick, Topology,
-    TradeDispositionProfile, TravelEdge, TravelEdgeId, UtilityProfile, ViolationDispositionProfile,
-    ViolationKind, ViolationMemory, WorkstationTag, hash_event_log, hash_world,
-    prototype_place_entity, total_authoritative_commodity_quantity,
-    verify_authoritative_conservation,
+    EvidenceKind, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile,
+    MetabolismProfile, NoticeTopic, PerceptionProfile, PerceptionSource, PlaceTag,
+    ProductionOutputOwner, ProofRequirement, PrototypePlace, PursuitProfile, Quantity, RecordData,
+    RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, Seed,
+    SocialObservationDetail, StateHash, SuccessionLaw, TellProfile, TellTopic,
+    TheftDispositionProfile, TheftFacts, Tick, Topology, TradeDispositionProfile, TravelEdge,
+    TravelEdgeId, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
+    WorkstationTag, hash_event_log, hash_world, prototype_place_entity,
+    total_authoritative_commodity_quantity, verify_authoritative_conservation,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind, CombatActionPayload,
@@ -2526,7 +2525,6 @@ fn t29_wrongful_accusation_seed_2() {
         "T29 wrongful accusation scenario must replay deterministically"
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // T22R: Bandit Camp Destruction → Diaspora → Reconstitution → Economic Effect

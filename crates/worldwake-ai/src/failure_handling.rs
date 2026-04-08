@@ -1001,19 +1001,18 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerKey,
         BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant, ContentionIntents,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
-        HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant,
+        ContentionIntents, DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState,
+        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
-        ActionStartFailureReason, CombatActionPayload, CraftActionPayload,
-        ControlBeliefView, DeclareSupportActionPayload, DurationExpr, InterruptReason,
-        ReplanNeeded,
-        RequestAttemptTrace, RequestBindingKind, RequestProvenance, ResolvedRequestTrace,
-        RuntimeBeliefView, TradeActionPayload,
+        ActionStartFailureReason, CombatActionPayload, ControlBeliefView, CraftActionPayload,
+        DeclareSupportActionPayload, DurationExpr, EntityBeliefView, InterruptReason,
+        ProfileBeliefView, ReplanNeeded, RequestAttemptTrace, RequestBindingKind,
+        RequestProvenance, ResolvedRequestTrace, RuntimeBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]
@@ -1054,13 +1053,37 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl EntityBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }
         fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
             self.entity_kinds.get(&entity).copied()
         }
+        fn is_dead(&self, entity: EntityId) -> bool {
+            self.dead.contains(&entity)
+        }
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
+    impl ProfileBeliefView for TestBeliefView {
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -1163,31 +1186,16 @@ mod tests {
         fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
             self.facility_grants.get(&facility)
         }
-        fn is_dead(&self, entity: EntityId) -> bool {
-            self.dead.contains(&entity)
-        }
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds
                 .get(&entity)
                 .is_some_and(|wounds| !wounds.is_empty())
-        }
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            None
-        }
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-            None
         }
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
         }
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
@@ -1249,9 +1257,6 @@ mod tests {
         }
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
-        }
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
             None

@@ -46,10 +46,11 @@ use worldwake_core::{
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
     AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControlBeliefView,
-    ControllerState, DeterministicRng, DurationExpr, Materialization, MaterializationTag,
-    PerAgentBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SaveError,
-    SaveableRuntime, Scheduler, SystemDispatchTable, SystemExecutionContext, SystemId,
-    SystemManifest, TickStepServices, TransportActionPayload, step_tick,
+    ControllerState, DeterministicRng, DurationExpr, EntityBeliefView, Materialization,
+    MaterializationTag, PerAgentBeliefView, ProfileBeliefView, RecipeDefinition, RecipeRegistry,
+    RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SystemDispatchTable,
+    SystemExecutionContext, SystemId, SystemManifest, TickStepServices, TransportActionPayload,
+    step_tick,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -100,7 +101,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         structural_block_ticks: reasoning.structural_block_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
-        max_snapshot_entities_per_place: CognitiveProfile::default().max_snapshot_entities_per_place,
+        max_snapshot_entities_per_place: CognitiveProfile::default()
+            .max_snapshot_entities_per_place,
     }
 }
 
@@ -1526,13 +1528,37 @@ impl ControlBeliefView for QueuePatienceBeliefView {
     }
 }
 
-impl RuntimeBeliefView for QueuePatienceBeliefView {
+impl EntityBeliefView for QueuePatienceBeliefView {
     fn is_alive(&self, _entity: EntityId) -> bool {
         true
     }
     fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
         None
     }
+    fn is_dead(&self, _entity: EntityId) -> bool {
+        false
+    }
+    fn is_incapacitated(&self, _entity: EntityId) -> bool {
+        false
+    }
+    fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+        Vec::new()
+    }
+}
+
+impl ProfileBeliefView for QueuePatienceBeliefView {
+    fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+        None
+    }
+    fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+        None
+    }
+    fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+        None
+    }
+}
+
+impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
         self.place
     }
@@ -1627,26 +1653,11 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
         Vec::new()
     }
-    fn is_dead(&self, _entity: EntityId) -> bool {
-        false
-    }
-    fn is_incapacitated(&self, _entity: EntityId) -> bool {
-        false
-    }
     fn has_wounds(&self, _entity: EntityId) -> bool {
         false
     }
-    fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-        None
-    }
-    fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-        None
-    }
     fn belief_confidence_policy(&self, _agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
         worldwake_core::BeliefConfidencePolicy::default()
-    }
-    fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-        None
     }
     fn trade_disposition_profile(
         &self,
@@ -1695,9 +1706,6 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     }
     fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
         None
-    }
-    fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-        Vec::new()
     }
     fn in_transit_state(&self, _entity: EntityId) -> Option<worldwake_core::InTransitOnEdge> {
         None

@@ -34,8 +34,9 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, ControlBeliefView, DurationExpr,
-    PerAgentBeliefView, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView, TradeActionPayload, TransportActionPayload, estimate_duration_from_beliefs,
+    EntityBeliefView, PerAgentBeliefView, ProfileBeliefView, QueueForFacilityUsePayload,
+    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, TradeActionPayload,
+    TransportActionPayload, estimate_duration_from_beliefs,
 };
 use worldwake_systems::build_full_action_registries;
 
@@ -52,7 +53,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         structural_block_ticks: reasoning.structural_block_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
-        max_snapshot_entities_per_place: CognitiveProfile::default().max_snapshot_entities_per_place,
+        max_snapshot_entities_per_place: CognitiveProfile::default()
+            .max_snapshot_entities_per_place,
     }
 }
 
@@ -224,15 +226,39 @@ impl ControlBeliefView for TestBeliefView {
     }
 }
 
-impl RuntimeBeliefView for TestBeliefView {
-    fn current_tick(&self) -> Tick {
-        self.current_tick
-    }
+impl EntityBeliefView for TestBeliefView {
     fn is_alive(&self, entity: EntityId) -> bool {
         self.alive.contains(&entity)
     }
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
         self.kinds.get(&entity).copied()
+    }
+    fn is_dead(&self, entity: EntityId) -> bool {
+        !self.is_alive(entity)
+    }
+    fn is_incapacitated(&self, _entity: EntityId) -> bool {
+        false
+    }
+    fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+        Vec::new()
+    }
+}
+
+impl ProfileBeliefView for TestBeliefView {
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+        self.needs.get(&agent).copied()
+    }
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+        self.thresholds.get(&agent).copied()
+    }
+    fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+        Some(MetabolismProfile::default())
+    }
+}
+
+impl RuntimeBeliefView for TestBeliefView {
+    fn current_tick(&self) -> Tick {
+        self.current_tick
     }
     fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
         self.effective_places.get(&entity).copied()
@@ -345,28 +371,13 @@ impl RuntimeBeliefView for TestBeliefView {
     fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
         Vec::new()
     }
-    fn is_dead(&self, entity: EntityId) -> bool {
-        !self.is_alive(entity)
-    }
-    fn is_incapacitated(&self, _entity: EntityId) -> bool {
-        false
-    }
     fn has_wounds(&self, entity: EntityId) -> bool {
         self.wounds
             .get(&entity)
             .is_some_and(|wounds| !wounds.is_empty())
     }
-    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-        self.needs.get(&agent).copied()
-    }
-    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-        self.thresholds.get(&agent).copied()
-    }
     fn belief_confidence_policy(&self, _agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
         worldwake_core::BeliefConfidencePolicy::default()
-    }
-    fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-        Some(MetabolismProfile::default())
     }
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
         self.trade_profiles.get(&agent).cloned()
@@ -457,9 +468,6 @@ impl RuntimeBeliefView for TestBeliefView {
             .get(&office)
             .cloned()
             .unwrap_or(worldwake_core::InstitutionalBeliefRead::Unknown)
-    }
-    fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-        Vec::new()
     }
     fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
         None

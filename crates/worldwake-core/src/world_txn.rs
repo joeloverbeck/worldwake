@@ -7,9 +7,9 @@ use crate::{
 };
 use crate::{
     BeliefStoreDiff, CauseRef, ComponentDelta, ComponentDiff, ComponentKind, ComponentValue,
-    EntityDelta, EventLog, EventPayload,
-    EventTag, EvidenceRef, PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta,
-    RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
+    EntityDelta, EventLog, EventPayload, EventTag, EvidenceRef, PendingEvent, ProvenanceEntry,
+    QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
+    VisibilitySpec, WitnessData,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
@@ -1060,7 +1060,9 @@ impl<'w> WorldTxn<'w> {
                             diff: ComponentDiff::BeliefStore(diff),
                         }
                     }
-                    _ => unreachable!("AgentBeliefStore component_kind with non-AgentBeliefStore ComponentValue"),
+                    _ => unreachable!(
+                        "AgentBeliefStore component_kind with non-AgentBeliefStore ComponentValue"
+                    ),
                 }
             } else {
                 // First-time set: no base state to diff against.
@@ -1973,14 +1975,13 @@ mod tests {
     use super::WorldTxn;
     use crate::{
         AgentBeliefStore, BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim,
-        BlockedIntentMemory,
-        CognitiveProfile, CommunicationProfile, DemandMemory, EpistemicDispositionProfile,
-        ExecutionBudget, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
-        InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
-        MerchandiseProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-        PatrolRoute, PerceptionProfile, PerceptionSource, PreferenceProfile, RecordData,
-        RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
-        TradeDispositionProfile, UtilityProfile,
+        BlockedIntentMemory, CognitiveProfile, CommunicationProfile, DemandMemory,
+        EpistemicDispositionProfile, ExecutionBudget, FactionData, FactionPurpose,
+        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+        InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
+        OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
+        PerceptionSource, PreferenceProfile, RecordData, RecordEntryId, RecordKind,
+        SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
@@ -1997,10 +1998,9 @@ mod tests {
     };
     use crate::{
         CarryCapacity, CauseRef, ComponentDelta, ComponentDiff, ComponentKind, ComponentValue,
-        EntityDelta,
-        EventLog, EventTag, EventView, EvidenceRef, InTransitOnEdge, KnownRecipes, MismatchKind,
-        QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
-        TravelEdgeId, VisibilitySpec, WitnessData, WoundId,
+        EntityDelta, EventLog, EventTag, EventView, EvidenceRef, InTransitOnEdge, KnownRecipes,
+        MismatchKind, QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta,
+        StateDelta, TravelEdgeId, VisibilitySpec, WitnessData, WoundId,
     };
     use std::collections::{BTreeMap, BTreeSet};
 

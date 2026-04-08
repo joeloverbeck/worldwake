@@ -57,7 +57,9 @@ fn main() {
             let rss_delta = rss - prev_rss;
             let mb_per_event = if new_events > 0 {
                 #[allow(clippy::cast_precision_loss)]
-                { rss_delta / new_events as f64 }
+                {
+                    rss_delta / new_events as f64
+                }
             } else {
                 0.0
             };
@@ -80,12 +82,9 @@ fn main() {
     eprintln!("\ntotal_elapsed_ms={}", global_start.elapsed().as_millis());
     eprintln!("final_rss_mb={:.1}", rss_mb());
     eprintln!("final_events={}", h.event_log.len());
-    eprintln!(
-        "avg_kb_per_event={:.1}",
-        {
-            #[allow(clippy::cast_precision_loss)]
-            let count = h.event_log.len() as f64;
-            rss_mb() * 1024.0 / count
-        }
-    );
+    eprintln!("avg_kb_per_event={:.1}", {
+        #[allow(clippy::cast_precision_loss)]
+        let count = h.event_log.len() as f64;
+        rss_mb() * 1024.0 / count
+    });
 }

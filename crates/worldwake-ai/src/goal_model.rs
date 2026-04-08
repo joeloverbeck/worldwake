@@ -19,13 +19,12 @@ use worldwake_core::{
     belief_confidence,
 };
 use worldwake_sim::{
-    AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload,
-    AskWitnessPayload, CombatActionPayload,
-    ConsultRecordActionPayload, DeclareSupportActionPayload, EscortToSafetyActionPayload,
-    InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
-    PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
-    RecipeDefinition, RecipeRegistry, ReportFoundActionPayload, ReportMissingActionPayload,
-    RuntimeBeliefView,
+    AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
+    CombatActionPayload, ConsultRecordActionPayload, DeclareSupportActionPayload, EntityBeliefView,
+    EscortToSafetyActionPayload, InvestigateActionPayload, LootActionPayload,
+    PostBountyActionPayload, PostNoticeActionPayload, PressForceClaimActionPayload,
+    ProfileBeliefView, PunishActionPayload, RecipeDefinition, RecipeRegistry,
+    ReportFoundActionPayload, ReportMissingActionPayload, RuntimeBeliefView,
     SearchPlaceActionPayload, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
@@ -638,20 +637,16 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::AskWitness => {
-                Err(GoalPayloadOverrideError::UnsupportedGoal)
-            }
+            PlannerOpKind::AskWitness => Err(GoalPayloadOverrideError::UnsupportedGoal),
             PlannerOpKind::ReportFound => match self {
                 GoalKind::ReportFound { expectation_id, .. } => {
                     let Some(&target) = targets.first() else {
                         return Err(GoalPayloadOverrideError::UnsupportedGoal);
                     };
-                    Ok(Some(ActionPayload::ReportFound(
-                        ReportFoundActionPayload {
-                            target,
-                            expectation_id: *expectation_id,
-                        },
-                    )))
+                    Ok(Some(ActionPayload::ReportFound(ReportFoundActionPayload {
+                        target,
+                        expectation_id: *expectation_id,
+                    })))
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
@@ -693,9 +688,11 @@ impl GoalKindPlannerExt for GoalKind {
                 GoalKind::ReportMissing {
                     expectation_id: Some(expectation_id),
                     ..
-                } => Ok(Some(ActionPayload::ReportMissing(ReportMissingActionPayload {
-                    expectation_id: *expectation_id,
-                }))),
+                } => Ok(Some(ActionPayload::ReportMissing(
+                    ReportMissingActionPayload {
+                        expectation_id: *expectation_id,
+                    },
+                ))),
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
             PlannerOpKind::SearchPlace => build_search_place_payload_override(self, state, targets),
@@ -1057,9 +1054,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Fine
             | PlannerOpKind::Exile => state,
             PlannerOpKind::EscortToSafety => match self {
-                GoalKind::EscortToSafety { destination, .. } => {
-                    state.move_actor_to(*destination)
-                }
+                GoalKind::EscortToSafety { destination, .. } => state.move_actor_to(*destination),
                 _ => state,
             },
         }
@@ -2277,10 +2272,11 @@ mod tests {
     use worldwake_sim::{
         AccuseActionPayload, ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId,
         ActionPayload, AskWitnessPayload, BribeActionPayload, ConsultRecordActionPayload,
-        ControlBeliefView, DurationExpr, Interruptibility, InvestigateActionPayload,
-        PunishActionPayload, QueueForFacilityUsePayload, RecipeRegistry, ReportMissingActionPayload,
-        RuntimeBeliefView, SearchPlaceActionPayload, TellActionPayload, ThreatenActionPayload,
-        TradeActionPayload, TransportActionPayload, estimate_duration_from_beliefs,
+        ControlBeliefView, DurationExpr, EntityBeliefView, Interruptibility,
+        InvestigateActionPayload, ProfileBeliefView, PunishActionPayload,
+        QueueForFacilityUsePayload, RecipeRegistry, ReportMissingActionPayload, RuntimeBeliefView,
+        SearchPlaceActionPayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
+        TransportActionPayload, estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -3179,17 +3175,40 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
-        fn current_tick(&self) -> Tick {
-            self.current_tick
-        }
-
+    impl EntityBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }
 
         fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
             self.kinds.get(&entity).copied()
+        }
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
+    impl ProfileBeliefView for TestBeliefView {
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs.get(&agent).copied()
+        }
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.thresholds.get(&agent).copied()
+        }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            Some(MetabolismProfile::default())
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
         }
 
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -3328,36 +3347,16 @@ mod tests {
             Vec::new()
         }
 
-        fn is_dead(&self, entity: EntityId) -> bool {
-            !self.is_alive(entity)
-        }
-
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
-
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds
                 .get(&entity)
                 .is_some_and(|wounds| !wounds.is_empty())
-        }
-
-        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-            self.needs.get(&agent).copied()
-        }
-
-        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-            self.thresholds.get(&agent).copied()
         }
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            Some(MetabolismProfile::default())
         }
 
         fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
@@ -3470,10 +3469,6 @@ mod tests {
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
-        }
-
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
 
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {

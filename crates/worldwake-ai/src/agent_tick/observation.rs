@@ -242,16 +242,18 @@ fn reinstate_current_plan_candidate(
         evidence_entities,
         evidence_places,
     });
-    candidates.diagnostics.evidence.entry(opportunity).or_insert(
-        crate::CandidateEvidenceTrace {
+    candidates
+        .diagnostics
+        .evidence
+        .entry(opportunity)
+        .or_insert(crate::CandidateEvidenceTrace {
             opportunity,
             contributors: Vec::new(),
             exclusions: Vec::new(),
             knowledge_path: KnowledgePath::default(),
             legality: None,
             pursuit: None,
-        },
-    );
+        });
 }
 
 pub(super) fn handle_facility_queue_transitions(
@@ -437,7 +439,14 @@ pub(super) fn reconcile_in_flight_state(
     }
 
     runtime.step_in_flight = false;
-    *jc = advance_completed_step(runtime, active_goal, facility_intents, jc.as_ref(), step.op_kind, ctx.tick);
+    *jc = advance_completed_step(
+        runtime,
+        active_goal,
+        facility_intents,
+        jc.as_ref(),
+        step.op_kind,
+        ctx.tick,
+    );
     Ok(())
 }
 
@@ -675,12 +684,14 @@ pub(super) fn unique_item_signature(
 mod tests {
     use super::reinstate_current_plan_candidate;
     use crate::{
-        AgentDecisionRuntime, CommodityPurpose, GroundedGoal,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        AgentDecisionRuntime, CommodityPurpose, GroundedGoal, PlanTerminalKind, PlannedPlan,
+        PlannedStep, PlannerOpKind, PlanningEntityRef,
         candidate_generation::{CandidateGenerationDiagnostics, CandidateGenerationResult},
     };
     use std::collections::BTreeSet;
-    use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind, OpportunityAnchor};
+    use worldwake_core::{
+        ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind, OpportunityAnchor,
+    };
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -735,13 +746,15 @@ mod tests {
         assert!(candidates.candidates.iter().any(|candidate| {
             candidate.key == goal && candidate.anchor == OpportunityAnchor::Place(market)
         }));
-        assert!(candidates
-            .diagnostics
-            .evidence
-            .contains_key(&worldwake_core::OpportunityKey {
-                goal_key: goal,
-                anchor: OpportunityAnchor::Place(market),
-            }));
+        assert!(
+            candidates
+                .diagnostics
+                .evidence
+                .contains_key(&worldwake_core::OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(market),
+                })
+        );
     }
 
     #[test]

@@ -252,8 +252,8 @@ mod tests {
         WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RuntimeBeliefView,
-        estimate_duration_from_beliefs,
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
+        ProfileBeliefView, RuntimeBeliefView, estimate_duration_from_beliefs,
     };
 
     #[derive(Default)]
@@ -279,7 +279,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl EntityBeliefView for TestBeliefView {
         fn is_alive(&self, _entity: EntityId) -> bool {
             true
         }
@@ -288,6 +288,34 @@ mod tests {
             None
         }
 
+        fn is_dead(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
+    impl ProfileBeliefView for TestBeliefView {
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
@@ -391,24 +419,8 @@ mod tests {
             Vec::new()
         }
 
-        fn is_dead(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
-
         fn has_wounds(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            None
-        }
-
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-            None
         }
 
         fn belief_confidence_policy(
@@ -416,10 +428,6 @@ mod tests {
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
         }
 
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
@@ -490,10 +498,6 @@ mod tests {
 
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
-        }
-
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
 
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {

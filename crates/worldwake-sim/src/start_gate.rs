@@ -300,9 +300,7 @@ fn map_reservation_error(err: WorldError, entity: worldwake_core::EntityId) -> A
     match err {
         WorldError::ConflictingReservation { .. } => ActionError::ReservationUnavailable(entity),
         WorldError::PreconditionFailed(msg) => ActionError::PreconditionFailed(msg),
-        err @ WorldError::ControlDenied { .. } => {
-            ActionError::PreconditionFailed(err.to_string())
-        }
+        err @ WorldError::ControlDenied { .. } => ActionError::PreconditionFailed(err.to_string()),
         other => ActionError::InternalError(other.to_string()),
     }
 }

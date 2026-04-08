@@ -176,7 +176,8 @@ pub fn record_planning_phase_duration(tick: Tick, elapsed: Duration) {
 #[cfg(test)]
 mod tests {
     use super::{
-        PlanningTelemetryConfig, PlanningTelemetrySession, TickWindow, record_planning_phase_duration,
+        PlanningTelemetryConfig, PlanningTelemetrySession, TickWindow,
+        record_planning_phase_duration,
     };
     use std::time::Duration;
     use worldwake_core::Tick;

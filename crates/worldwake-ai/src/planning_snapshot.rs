@@ -5,13 +5,13 @@ use worldwake_core::{
     ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
     BelievedInstitutionalClaim, BlockedIntentMemory, BlockingFact, CombatProfile,
     CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds, LastSeenMemory,
-    InTransitOnEdge,
-    InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity,
-    RecipeId, RecordData, ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw,
-    TellMemoryKey, TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds,
+    InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
+    PlaceTag, Quantity, RecipeId, RecordData, ResourceSource, SocialObservation,
+    StockStoragePolicy, SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick,
+    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -111,6 +111,9 @@ pub(crate) struct SnapshotFacilityQueue {
     pub(crate) active_grant: Option<ContentionGrant>,
 }
 
+// S75-002 intentionally flattens lifecycle state onto SnapshotEntity before the
+// broader sub-struct decomposition tracked by S75-007.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SnapshotEntity {
     pub(crate) kind: Option<EntityKind>,
@@ -132,7 +135,9 @@ pub(crate) struct SnapshotEntity {
     pub(crate) stock_storage_policy: Option<StockStoragePolicy>,
     pub(crate) resource_source: Option<ResourceSource>,
     pub(crate) action_flags: SnapshotActionFlags,
-    pub(crate) lifecycle: SnapshotLifecycle,
+    pub(crate) alive: bool,
+    pub(crate) dead: bool,
+    pub(crate) incapacitated: bool,
     pub(crate) wounds: Vec<Wound>,
     pub(crate) homeostatic_needs: Option<HomeostaticNeeds>,
     pub(crate) drive_thresholds: Option<DriveThresholds>,
@@ -181,7 +186,9 @@ impl Default for SnapshotEntity {
             stock_storage_policy: None,
             resource_source: None,
             action_flags: SnapshotActionFlags::default(),
-            lifecycle: SnapshotLifecycle::default(),
+            alive: false,
+            dead: false,
+            incapacitated: false,
             wounds: Vec::new(),
             homeostatic_needs: None,
             drive_thresholds: None,
@@ -214,13 +221,6 @@ pub(crate) struct SnapshotActionFlags {
     pub(crate) has_production_job: bool,
     pub(crate) controllable_by_actor: bool,
     pub(crate) has_control: bool,
-}
-
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct SnapshotLifecycle {
-    pub(crate) alive: bool,
-    pub(crate) dead: bool,
-    pub(crate) incapacitated: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -340,6 +340,7 @@ pub struct PlanningSnapshot {
     pub(crate) actor_consultation_speed_factor: Option<Permille>,
     pub(crate) actor_expectation_store: Option<ExpectationStore>,
     pub(crate) actor_last_seen_memory: Option<LastSeenMemory>,
+    pub(crate) actor_bandit_flee_thresholds: BTreeMap<EntityId, Permille>,
     pub(crate) actor_bandit_establishment_ticks: BTreeMap<EntityId, NonZeroU32>,
     /// All-pairs shortest travel times between snapshot places.
     /// Computed via Floyd-Warshall during construction. O(n^3) where n is
@@ -497,6 +498,14 @@ impl PlanningSnapshot {
             actor_last_seen_memory: view.last_seen_memory(actor),
             actor_epistemic_profile: view.epistemic_disposition_profile(actor),
             actor_consultation_speed_factor: view.consultation_speed_factor(actor),
+            actor_bandit_flee_thresholds: view
+                .bandit_factions_of(actor)
+                .into_iter()
+                .filter_map(|faction| {
+                    view.bandit_flee_wound_threshold(faction)
+                        .map(|threshold| (faction, threshold))
+                })
+                .collect(),
             actor_bandit_establishment_ticks: view
                 .bandit_factions_of(actor)
                 .into_iter()
@@ -570,6 +579,11 @@ impl PlanningSnapshot {
     #[must_use]
     pub(crate) fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
         self.actor_bandit_establishment_ticks.get(&faction).copied()
+    }
+
+    #[must_use]
+    pub(crate) fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+        self.actor_bandit_flee_thresholds.get(&faction).copied()
     }
 
     #[must_use]
@@ -745,11 +759,9 @@ fn build_snapshot_entity(
         controllable_by_actor: view.can_control(actor, entity),
         has_control: view.has_control(entity),
     };
-    let lifecycle = SnapshotLifecycle {
-        alive: view.is_alive(entity),
-        dead: view.is_dead(entity),
-        incapacitated: view.is_incapacitated(entity),
-    };
+    let alive = view.is_alive(entity);
+    let dead = view.is_dead(entity);
+    let incapacitated = view.is_incapacitated(entity);
     let wounds = view.wounds(entity);
     let homeostatic_needs = view.homeostatic_needs(entity);
     let drive_thresholds = view.drive_thresholds(entity);
@@ -794,7 +806,9 @@ fn build_snapshot_entity(
         stock_storage_policy,
         resource_source,
         action_flags,
-        lifecycle,
+        alive,
+        dead,
+        incapacitated,
         wounds,
         homeostatic_needs,
         drive_thresholds,
@@ -1067,16 +1081,17 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
-        BlockedIntentMemory, CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
-        DriveThresholds, EligibilityRule, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        PatrolProfile, PatrolRoute, Quantity, RecipeId, ResourceSource, SuccessionLaw,
-        TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound,
+        ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BlockedIntentMemory,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
+        DemandObservation, DriveThresholds, EligibilityRule, EntityId, EntityKind,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Quantity, RecipeId,
+        ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange,
+        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RuntimeBeliefView,
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
+        ProfileBeliefView, RuntimeBeliefView,
     };
 
     use crate::PlannerOpKind;
@@ -1156,17 +1171,45 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for StubBeliefView {
-        fn current_tick(&self) -> Tick {
-            self.current_tick
-        }
-
+    impl EntityBeliefView for StubBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }
 
         fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
             self.kinds.get(&entity).copied()
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
+    impl ProfileBeliefView for StubBeliefView {
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+    }
+
+    impl RuntimeBeliefView for StubBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
         }
 
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -1287,24 +1330,8 @@ mod tests {
             Vec::new()
         }
 
-        fn is_dead(&self, entity: EntityId) -> bool {
-            !self.is_alive(entity)
-        }
-
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
-
         fn has_wounds(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            None
-        }
-
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-            None
         }
 
         fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
@@ -1312,10 +1339,6 @@ mod tests {
                 .get(&agent)
                 .copied()
                 .unwrap_or_default()
-        }
-
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
         }
 
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
@@ -1409,10 +1432,6 @@ mod tests {
 
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
-        }
-
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
 
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
@@ -1653,7 +1672,8 @@ mod tests {
         view.kinds.insert(artifact, EntityKind::SocialArtifact);
         view.kinds.insert(faction, EntityKind::Faction);
         view.effective_places.insert(actor, place);
-        view.entities_at.insert(place, vec![actor, record, artifact, faction]);
+        view.entities_at
+            .insert(place, vec![actor, record, artifact, faction]);
         view.known_entity_beliefs.insert(
             actor,
             vec![

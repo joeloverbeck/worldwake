@@ -364,22 +364,52 @@ pub trait ControlBeliefView {
     fn has_control(&self, entity: EntityId) -> bool;
 }
 
-/// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
-/// failure handling, and duration estimation.
-///
-/// This trait is intentionally broader than `GoalBeliefView`. Callers should only depend on it
-/// when they truly need runtime-only helpers such as reservations, queue state, or duration
-/// estimation.
-pub trait RuntimeBeliefView: ControlBeliefView {
-    fn current_tick(&self) -> Tick {
-        Tick(0)
-    }
+pub trait EntityBeliefView {
     fn is_alive(&self, entity: EntityId) -> bool;
     fn locally_observed_is_dead(&self, agent: EntityId, entity: EntityId) -> bool {
         let _ = agent;
         self.is_dead(entity)
     }
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
+    fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+        let _ = faction;
+        None
+    }
+    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
+        let _ = faction;
+        None
+    }
+    fn is_dead(&self, entity: EntityId) -> bool {
+        !self.is_alive(entity)
+    }
+    fn is_incapacitated(&self, entity: EntityId) -> bool;
+    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+}
+
+pub trait ProfileBeliefView {
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
+    fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+        let _ = agent;
+        None
+    }
+    fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
+        let _ = agent;
+        None
+    }
+}
+
+/// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
+/// failure handling, and duration estimation.
+///
+/// This trait is intentionally broader than `GoalBeliefView`. Callers should only depend on it
+/// when they truly need runtime-only helpers such as reservations, queue state, or duration
+/// estimation.
+pub trait RuntimeBeliefView: ControlBeliefView + EntityBeliefView + ProfileBeliefView {
+    fn current_tick(&self) -> Tick {
+        Tick(0)
+    }
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn is_in_transit(&self, entity: EntityId) -> bool;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
@@ -462,14 +492,6 @@ pub trait RuntimeBeliefView: ControlBeliefView {
         place: EntityId,
         commodity: CommodityKind,
     ) -> Vec<EntityId>;
-    fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
-        let _ = faction;
-        None
-    }
-    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
-        let _ = faction;
-        None
-    }
     fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind>;
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
@@ -518,19 +540,12 @@ pub trait RuntimeBeliefView: ControlBeliefView {
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits>;
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool;
     fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange>;
-    fn is_dead(&self, entity: EntityId) -> bool {
-        !self.is_alive(entity)
-    }
-    fn is_incapacitated(&self, entity: EntityId) -> bool;
     fn has_wounds(&self, entity: EntityId) -> bool;
-    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
-    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
     fn observation_fidelity(&self, agent: EntityId) -> Permille {
         let _ = agent;
         Permille::new_unchecked(1000)
     }
-    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
     fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
         let _ = agent;
@@ -544,19 +559,11 @@ pub trait RuntimeBeliefView: ControlBeliefView {
         let _ = agent;
         None
     }
-    fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
-        let _ = agent;
-        None
-    }
     fn expectation_store(&self, agent: EntityId) -> Option<ExpectationStore> {
         let _ = agent;
         None
     }
     fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
-        let _ = agent;
-        None
-    }
-    fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
         let _ = agent;
         None
     }
@@ -664,7 +671,6 @@ pub trait RuntimeBeliefView: ControlBeliefView {
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
-    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
     fn record_data(&self, record: EntityId) -> Option<RecordData> {
         let _ = record;
         None
@@ -753,11 +759,11 @@ macro_rules! impl_goal_belief_view {
             }
 
             fn is_alive(&self, entity: worldwake_core::EntityId) -> bool {
-                $crate::RuntimeBeliefView::is_alive(self, entity)
+                $crate::EntityBeliefView::is_alive(self, entity)
             }
 
             fn is_dead(&self, entity: worldwake_core::EntityId) -> bool {
-                $crate::RuntimeBeliefView::is_dead(self, entity)
+                $crate::EntityBeliefView::is_dead(self, entity)
             }
 
             fn locally_observed_is_dead(
@@ -765,14 +771,14 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
                 entity: worldwake_core::EntityId,
             ) -> bool {
-                $crate::RuntimeBeliefView::locally_observed_is_dead(self, agent, entity)
+                $crate::EntityBeliefView::locally_observed_is_dead(self, agent, entity)
             }
 
             fn entity_kind(
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityKind> {
-                $crate::RuntimeBeliefView::entity_kind(self, entity)
+                $crate::EntityBeliefView::entity_kind(self, entity)
             }
 
             fn effective_place(
@@ -955,7 +961,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 faction: worldwake_core::EntityId,
             ) -> Option<worldwake_core::Permille> {
-                $crate::RuntimeBeliefView::bandit_flee_wound_threshold(self, faction)
+                $crate::EntityBeliefView::bandit_flee_wound_threshold(self, faction)
             }
 
             fn item_lot_commodity(
@@ -1065,7 +1071,7 @@ macro_rules! impl_goal_belief_view {
             }
 
             fn is_incapacitated(&self, entity: worldwake_core::EntityId) -> bool {
-                $crate::RuntimeBeliefView::is_incapacitated(self, entity)
+                $crate::EntityBeliefView::is_incapacitated(self, entity)
             }
 
             fn has_wounds(&self, entity: worldwake_core::EntityId) -> bool {
@@ -1076,14 +1082,14 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::HomeostaticNeeds> {
-                $crate::RuntimeBeliefView::homeostatic_needs(self, agent)
+                $crate::ProfileBeliefView::homeostatic_needs(self, agent)
             }
 
             fn drive_thresholds(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::DriveThresholds> {
-                $crate::RuntimeBeliefView::drive_thresholds(self, agent)
+                $crate::ProfileBeliefView::drive_thresholds(self, agent)
             }
 
             fn belief_confidence_policy(
@@ -1240,7 +1246,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::PreferenceProfile> {
-                $crate::RuntimeBeliefView::preference_profile(self, agent)
+                $crate::ProfileBeliefView::preference_profile(self, agent)
             }
 
             fn expectation_store(
@@ -1261,7 +1267,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::UtilityProfile> {
-                $crate::RuntimeBeliefView::utility_profile(self, agent)
+                $crate::ProfileBeliefView::utility_profile(self, agent)
             }
 
             fn wounds(&self, agent: worldwake_core::EntityId) -> Vec<worldwake_core::Wound> {
@@ -1319,7 +1325,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 place: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::corpse_entities_at(self, place)
+                $crate::EntityBeliefView::corpse_entities_at(self, place)
             }
 
             fn record_data(

@@ -28,8 +28,7 @@ use worldwake_core::{
     ArtifactPostingContext, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
     BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule,
     EntityId, EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState, GoalKey,
-    GoalKind,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
     OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
     PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
@@ -3333,7 +3332,11 @@ fn emit_report_found_candidates(
     ctx: &GenerationContext<'_>,
 ) {
     // Guard: social weight must be nonzero (reporting is a social action).
-    if ctx.view.utility_profile(ctx.agent).is_none_or(|u| u.social_weight.value() == 0) {
+    if ctx
+        .view
+        .utility_profile(ctx.agent)
+        .is_none_or(|u| u.social_weight.value() == 0)
+    {
         return;
     }
 
@@ -3348,9 +3351,15 @@ fn emit_report_found_candidates(
         }
         let ExpectationState::Resolved {
             outcome:
-                ExpectationOutcome::FoundSafe { at_place: found_place }
-                | ExpectationOutcome::FoundWounded { at_place: found_place }
-                | ExpectationOutcome::FoundDead { at_place: found_place },
+                ExpectationOutcome::FoundSafe {
+                    at_place: found_place,
+                }
+                | ExpectationOutcome::FoundWounded {
+                    at_place: found_place,
+                }
+                | ExpectationOutcome::FoundDead {
+                    at_place: found_place,
+                },
         } = record.state
         else {
             continue;
@@ -3426,7 +3435,11 @@ fn emit_escort_candidates(
     };
 
     // Guard: agent must value care actions.
-    if ctx.view.utility_profile(ctx.agent).is_none_or(|u| u.care_weight.value() == 0) {
+    if ctx
+        .view
+        .utility_profile(ctx.agent)
+        .is_none_or(|u| u.care_weight.value() == 0)
+    {
         return;
     }
 
@@ -4552,8 +4565,9 @@ mod tests {
         ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RecipeDefinition,
-        RecipeRegistry, RuntimeBeliefView, TellTopicOmissionReason,
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
+        ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+        TellTopicOmissionReason,
     };
 
     struct TestBeliefView {
@@ -4787,17 +4801,53 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
-        fn current_tick(&self) -> Tick {
-            self.current_tick
-        }
-
+    impl EntityBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity) && !self.dead.contains(&entity)
         }
 
         fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
             self.entity_kinds.get(&entity).copied()
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            self.dead.contains(&entity)
+        }
+
+        fn is_incapacitated(&self, entity: EntityId) -> bool {
+            self.incapacitated.contains(&entity)
+        }
+
+        fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+            self.bandit_flee_thresholds.get(&faction).copied()
+        }
+
+        fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.corpses_at.get(&place).cloned().unwrap_or_default()
+        }
+    }
+
+    impl ProfileBeliefView for TestBeliefView {
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.homeostatic_needs.get(&agent).copied()
+        }
+
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.drive_thresholds.get(&agent).copied()
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+
+        fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
+            self.utility_profiles.get(&agent).cloned()
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
         }
 
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
@@ -4985,32 +5035,13 @@ mod tests {
                 .unwrap_or_default()
         }
 
-        fn is_dead(&self, entity: EntityId) -> bool {
-            self.dead.contains(&entity)
-        }
-
-        fn is_incapacitated(&self, entity: EntityId) -> bool {
-            self.incapacitated.contains(&entity)
-        }
-
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds
                 .get(&entity)
                 .is_some_and(|wounds| !wounds.is_empty())
         }
-
-        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-            self.homeostatic_needs.get(&agent).copied()
-        }
-
-        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-            self.drive_thresholds.get(&agent).copied()
-        }
         fn courage(&self, agent: EntityId) -> Option<Permille> {
             self.courage.get(&agent).copied()
-        }
-        fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
-            self.bandit_flee_thresholds.get(&faction).copied()
         }
         fn belief_confidence_policy(
             &self,
@@ -5019,16 +5050,8 @@ mod tests {
             worldwake_core::BeliefConfidencePolicy::default()
         }
 
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
-        }
-
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
-        }
-
-        fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
-            self.utility_profiles.get(&agent).cloned()
         }
 
         fn expectation_store(&self, agent: EntityId) -> Option<ExpectationStore> {
@@ -5237,10 +5260,6 @@ mod tests {
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
-        }
-
-        fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
-            self.corpses_at.get(&place).cloned().unwrap_or_default()
         }
 
         fn record_data(&self, record: EntityId) -> Option<RecordData> {

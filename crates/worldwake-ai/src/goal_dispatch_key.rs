@@ -232,23 +232,17 @@ mod tests {
     fn test_goal_dispatch_key_payload_sensitive_share_belief_splits() {
         let alarm = GoalKind::ShareBelief {
             listener: entity(1),
-            topic: TellTopic::EntityBelief {
-                subject: entity(2),
-            },
+            topic: TellTopic::EntityBelief { subject: entity(2) },
             communication_class: CommunicationClass::Alarm,
         };
         let testimony = GoalKind::ShareBelief {
             listener: entity(1),
-            topic: TellTopic::EntityBelief {
-                subject: entity(2),
-            },
+            topic: TellTopic::EntityBelief { subject: entity(2) },
             communication_class: CommunicationClass::Testimony,
         };
         let gossip = GoalKind::ShareBelief {
             listener: entity(1),
-            topic: TellTopic::EntityBelief {
-                subject: entity(2),
-            },
+            topic: TellTopic::EntityBelief { subject: entity(2) },
             communication_class: CommunicationClass::Gossip,
         };
 
@@ -276,15 +270,11 @@ mod tests {
         };
         let warning = GoalKind::PostNotice {
             posting,
-            topic: NoticeTopic::ThreatWarning {
-                place: entity(11),
-            },
+            topic: NoticeTopic::ThreatWarning { place: entity(11) },
         };
         let vacancy = GoalKind::PostNotice {
             posting,
-            topic: NoticeTopic::OfficeVacancy {
-                office: entity(12),
-            },
+            topic: NoticeTopic::OfficeVacancy { office: entity(12) },
         };
         let shortage = GoalKind::PostNotice {
             posting,

@@ -17,12 +17,12 @@ use std::{
 };
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
-    CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationRecord,
-    ExpectationOutcome, ExpectationState, GoalKey, GoalKind, HomeostaticNeeds,
-    InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey, TellTopic,
-    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, failure_ratio_permille,
+    CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome,
+    ExpectationRecord, ExpectationState, GoalKey, GoalKind, HomeostaticNeeds,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
+    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey,
+    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
+    failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -648,9 +648,7 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
         GoalKind::SearchForMissing { .. }
         | GoalKind::ReportMissing { .. }
-        | GoalKind::ReportFound { .. } => {
-            expectation_response_motive(&candidate.key.kind, context)
-        }
+        | GoalKind::ReportFound { .. } => expectation_response_motive(&candidate.key.kind, context),
         GoalKind::EscortToSafety { subject, .. } => {
             // Escort motive is lower than TreatWounds so that agents prefer
             // healing a co-located wounded entity over escorting them away.
@@ -1578,8 +1576,8 @@ mod tests {
         WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RecipeDefinition,
-        RuntimeBeliefView,
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
+        ProfileBeliefView, RecipeDefinition, RuntimeBeliefView,
     };
 
     #[derive(Clone, Default)]
@@ -1651,13 +1649,43 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl EntityBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
         }
         fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
             self.entity_kinds.get(&entity).copied()
         }
+        fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+            self.bandit_flee_thresholds.get(&faction).copied()
+        }
+        fn is_dead(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
+    impl ProfileBeliefView for TestBeliefView {
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs.get(&agent).copied()
+        }
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.thresholds.get(&agent).copied()
+        }
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+        fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+            self.preference_profiles.get(&agent).copied()
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -1742,9 +1770,6 @@ mod tests {
         ) -> Vec<EntityId> {
             Vec::new()
         }
-        fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
-            self.bandit_flee_thresholds.get(&faction).copied()
-        }
         fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
             self.item_lot_commodities.get(&entity).copied()
         }
@@ -1781,22 +1806,10 @@ mod tests {
         fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
             Vec::new()
         }
-        fn is_dead(&self, _entity: EntityId) -> bool {
-            false
-        }
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds
                 .get(&entity)
                 .is_some_and(|wounds| !wounds.is_empty())
-        }
-        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-            self.needs.get(&agent).copied()
-        }
-        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-            self.thresholds.get(&agent).copied()
         }
         fn courage(&self, agent: EntityId) -> Option<Permille> {
             self.courage.get(&agent).copied()
@@ -1806,9 +1819,6 @@ mod tests {
                 .confidence_policies
                 .get(&agent)
                 .expect("tests must seed a confidence policy for the acting agent")
-        }
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
         }
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
@@ -1824,9 +1834,6 @@ mod tests {
         }
         fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
             self.source_reliabilities.get(&agent).cloned()
-        }
-        fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
-            self.preference_profiles.get(&agent).copied()
         }
         fn expectation_store(&self, agent: EntityId) -> Option<ExpectationStore> {
             self.expectation_stores.get(&agent).cloned()
@@ -1936,9 +1943,6 @@ mod tests {
         }
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
-        }
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
         fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
             self.loyalties.get(&(subject, target)).copied()

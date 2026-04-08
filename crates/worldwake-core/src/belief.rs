@@ -886,8 +886,7 @@ pub struct BeliefStoreDiff {
     pub asked_witnesses_removed: Vec<AskWitnessMemoryKey>,
     pub entity_claims_set: Vec<(EntityId, Vec<EntityBeliefClaim>)>,
     pub entity_claims_removed: Vec<EntityId>,
-    pub institutional_beliefs_set:
-        Vec<(InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>)>,
+    pub institutional_beliefs_set: Vec<(InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>)>,
     pub institutional_beliefs_removed: Vec<InstitutionalBeliefKey>,
 }
 
@@ -922,8 +921,7 @@ impl BeliefStoreDiff {
         let asked_witnesses_removed =
             diff_btree_map_removed(&before.asked_witnesses, &after.asked_witnesses);
 
-        let entity_claims_set =
-            diff_btree_map_set(&before.entity_claims, &after.entity_claims);
+        let entity_claims_set = diff_btree_map_set(&before.entity_claims, &after.entity_claims);
         let entity_claims_removed =
             diff_btree_map_removed(&before.entity_claims, &after.entity_claims);
 
@@ -972,7 +970,9 @@ impl BeliefStoreDiff {
         // Social observations: remove from front, append to tail.
         let remove = self.social_observations_removed_count as usize;
         if remove > 0 {
-            result.social_observations.drain(..remove.min(result.social_observations.len()));
+            result
+                .social_observations
+                .drain(..remove.min(result.social_observations.len()));
         }
         result
             .social_observations
@@ -5315,9 +5315,15 @@ mod tests {
     #[test]
     fn belief_store_diff_identity() {
         let mut store = AgentBeliefStore::new();
-        store.known_entities.insert(entity(1), make_believed_entity(Tick(10)));
-        store.social_observations.push(make_social_observation(Tick(5)));
-        store.told_beliefs.insert(make_tell_key(2), make_told_memory(Tick(3)));
+        store
+            .known_entities
+            .insert(entity(1), make_believed_entity(Tick(10)));
+        store
+            .social_observations
+            .push(make_social_observation(Tick(5)));
+        store
+            .told_beliefs
+            .insert(make_tell_key(2), make_told_memory(Tick(3)));
         store.next_claim_id = ClaimId(42);
 
         let diff = BeliefStoreDiff::compute(&store, &store);
@@ -5328,13 +5334,21 @@ mod tests {
     #[test]
     fn belief_store_diff_roundtrip_known_entities() {
         let mut before = AgentBeliefStore::new();
-        before.known_entities.insert(entity(1), make_believed_entity(Tick(1)));
-        before.known_entities.insert(entity(2), make_believed_entity(Tick(2)));
+        before
+            .known_entities
+            .insert(entity(1), make_believed_entity(Tick(1)));
+        before
+            .known_entities
+            .insert(entity(2), make_believed_entity(Tick(2)));
 
         let mut after = before.clone();
         after.known_entities.remove(&entity(1)); // removed
-        after.known_entities.insert(entity(3), make_believed_entity(Tick(3))); // added
-        after.known_entities.insert(entity(2), make_believed_entity(Tick(20))); // changed
+        after
+            .known_entities
+            .insert(entity(3), make_believed_entity(Tick(3))); // added
+        after
+            .known_entities
+            .insert(entity(2), make_believed_entity(Tick(20))); // changed
 
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert!(!diff.is_empty());
@@ -5346,15 +5360,25 @@ mod tests {
     #[test]
     fn belief_store_diff_roundtrip_social_observations() {
         let mut before = AgentBeliefStore::new();
-        before.social_observations.push(make_social_observation(Tick(1)));
-        before.social_observations.push(make_social_observation(Tick(2)));
-        before.social_observations.push(make_social_observation(Tick(3)));
+        before
+            .social_observations
+            .push(make_social_observation(Tick(1)));
+        before
+            .social_observations
+            .push(make_social_observation(Tick(2)));
+        before
+            .social_observations
+            .push(make_social_observation(Tick(3)));
 
         // Evict first entry, add two new ones.
         let mut after = before.clone();
         after.social_observations.remove(0);
-        after.social_observations.push(make_social_observation(Tick(4)));
-        after.social_observations.push(make_social_observation(Tick(5)));
+        after
+            .social_observations
+            .push(make_social_observation(Tick(4)));
+        after
+            .social_observations
+            .push(make_social_observation(Tick(5)));
 
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.social_observations_removed_count, 1);
@@ -5365,13 +5389,21 @@ mod tests {
     #[test]
     fn belief_store_diff_roundtrip_told_heard_beliefs() {
         let mut before = AgentBeliefStore::new();
-        before.told_beliefs.insert(make_tell_key(1), make_told_memory(Tick(1)));
-        before.heard_beliefs.insert(make_tell_key(2), make_heard_memory(Tick(2)));
+        before
+            .told_beliefs
+            .insert(make_tell_key(1), make_told_memory(Tick(1)));
+        before
+            .heard_beliefs
+            .insert(make_tell_key(2), make_heard_memory(Tick(2)));
 
         let mut after = before.clone();
         after.told_beliefs.remove(&make_tell_key(1)); // removed
-        after.told_beliefs.insert(make_tell_key(3), make_told_memory(Tick(3))); // added
-        after.heard_beliefs.insert(make_tell_key(2), make_heard_memory(Tick(20))); // changed
+        after
+            .told_beliefs
+            .insert(make_tell_key(3), make_told_memory(Tick(3))); // added
+        after
+            .heard_beliefs
+            .insert(make_tell_key(2), make_heard_memory(Tick(20))); // changed
 
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.told_beliefs_removed.len(), 1);
@@ -5384,11 +5416,15 @@ mod tests {
     #[test]
     fn belief_store_diff_roundtrip_asked_witnesses() {
         let mut before = AgentBeliefStore::new();
-        before.asked_witnesses.insert(make_ask_witness_key(1), make_ask_witness_memory(Tick(1)));
+        before
+            .asked_witnesses
+            .insert(make_ask_witness_key(1), make_ask_witness_memory(Tick(1)));
 
         let mut after = before.clone();
         after.asked_witnesses.remove(&make_ask_witness_key(1));
-        after.asked_witnesses.insert(make_ask_witness_key(2), make_ask_witness_memory(Tick(2)));
+        after
+            .asked_witnesses
+            .insert(make_ask_witness_key(2), make_ask_witness_memory(Tick(2)));
 
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.asked_witnesses_removed.len(), 1);
@@ -5399,11 +5435,15 @@ mod tests {
     #[test]
     fn belief_store_diff_roundtrip_entity_claims() {
         let mut before = AgentBeliefStore::new();
-        before.entity_claims.insert(entity(1), vec![make_entity_claim(1, Tick(1))]);
+        before
+            .entity_claims
+            .insert(entity(1), vec![make_entity_claim(1, Tick(1))]);
 
         let mut after = before.clone();
         after.entity_claims.remove(&entity(1));
-        after.entity_claims.insert(entity(2), vec![make_entity_claim(2, Tick(2))]);
+        after
+            .entity_claims
+            .insert(entity(2), vec![make_entity_claim(2, Tick(2))]);
 
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.entity_claims_removed.len(), 1);
@@ -5420,7 +5460,9 @@ mod tests {
         );
 
         let mut after = before.clone();
-        after.institutional_beliefs.remove(&make_institutional_key(50));
+        after
+            .institutional_beliefs
+            .remove(&make_institutional_key(50));
         after.institutional_beliefs.insert(
             make_institutional_key(51),
             vec![make_institutional_claim(Tick(2))],
@@ -5449,12 +5491,24 @@ mod tests {
     fn belief_store_diff_roundtrip_mixed_mutations() {
         let mut before = AgentBeliefStore::new();
         before.next_claim_id = ClaimId(5);
-        before.known_entities.insert(entity(1), make_believed_entity(Tick(1)));
-        before.social_observations.push(make_social_observation(Tick(1)));
-        before.told_beliefs.insert(make_tell_key(1), make_told_memory(Tick(1)));
-        before.heard_beliefs.insert(make_tell_key(2), make_heard_memory(Tick(2)));
-        before.asked_witnesses.insert(make_ask_witness_key(1), make_ask_witness_memory(Tick(1)));
-        before.entity_claims.insert(entity(1), vec![make_entity_claim(1, Tick(1))]);
+        before
+            .known_entities
+            .insert(entity(1), make_believed_entity(Tick(1)));
+        before
+            .social_observations
+            .push(make_social_observation(Tick(1)));
+        before
+            .told_beliefs
+            .insert(make_tell_key(1), make_told_memory(Tick(1)));
+        before
+            .heard_beliefs
+            .insert(make_tell_key(2), make_heard_memory(Tick(2)));
+        before
+            .asked_witnesses
+            .insert(make_ask_witness_key(1), make_ask_witness_memory(Tick(1)));
+        before
+            .entity_claims
+            .insert(entity(1), vec![make_entity_claim(1, Tick(1))]);
         before.institutional_beliefs.insert(
             make_institutional_key(50),
             vec![make_institutional_claim(Tick(1))],
@@ -5462,12 +5516,22 @@ mod tests {
 
         let mut after = before.clone();
         after.next_claim_id = ClaimId(10);
-        after.known_entities.insert(entity(2), make_believed_entity(Tick(5)));
-        after.social_observations.push(make_social_observation(Tick(5)));
+        after
+            .known_entities
+            .insert(entity(2), make_believed_entity(Tick(5)));
+        after
+            .social_observations
+            .push(make_social_observation(Tick(5)));
         after.told_beliefs.remove(&make_tell_key(1));
-        after.heard_beliefs.insert(make_tell_key(3), make_heard_memory(Tick(5)));
-        after.asked_witnesses.insert(make_ask_witness_key(3), make_ask_witness_memory(Tick(5)));
-        after.entity_claims.insert(entity(2), vec![make_entity_claim(2, Tick(5))]);
+        after
+            .heard_beliefs
+            .insert(make_tell_key(3), make_heard_memory(Tick(5)));
+        after
+            .asked_witnesses
+            .insert(make_ask_witness_key(3), make_ask_witness_memory(Tick(5)));
+        after
+            .entity_claims
+            .insert(entity(2), vec![make_entity_claim(2, Tick(5))]);
         after.institutional_beliefs.insert(
             make_institutional_key(51),
             vec![make_institutional_claim(Tick(5))],
@@ -5481,13 +5545,21 @@ mod tests {
     #[test]
     fn belief_store_diff_social_observations_full_replacement() {
         let mut before = AgentBeliefStore::new();
-        before.social_observations.push(make_social_observation(Tick(1)));
-        before.social_observations.push(make_social_observation(Tick(2)));
+        before
+            .social_observations
+            .push(make_social_observation(Tick(1)));
+        before
+            .social_observations
+            .push(make_social_observation(Tick(2)));
 
         // Completely different observations.
         let mut after = AgentBeliefStore::new();
-        after.social_observations.push(make_social_observation(Tick(10)));
-        after.social_observations.push(make_social_observation(Tick(11)));
+        after
+            .social_observations
+            .push(make_social_observation(Tick(10)));
+        after
+            .social_observations
+            .push(make_social_observation(Tick(11)));
 
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.apply(&before), after);
@@ -5496,11 +5568,15 @@ mod tests {
     #[test]
     fn belief_store_diff_serialization_roundtrip() {
         let mut before = AgentBeliefStore::new();
-        before.known_entities.insert(entity(1), make_believed_entity(Tick(1)));
+        before
+            .known_entities
+            .insert(entity(1), make_believed_entity(Tick(1)));
         before.next_claim_id = ClaimId(5);
 
         let mut after = before.clone();
-        after.known_entities.insert(entity(2), make_believed_entity(Tick(2)));
+        after
+            .known_entities
+            .insert(entity(2), make_believed_entity(Tick(2)));
         after.next_claim_id = ClaimId(10);
 
         let diff = BeliefStoreDiff::compute(&before, &after);

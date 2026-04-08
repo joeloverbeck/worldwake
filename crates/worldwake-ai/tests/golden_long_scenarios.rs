@@ -20,12 +20,12 @@ use worldwake_ai::{AgentTickDriver, DecisionOutcome};
 use worldwake_core::{
     AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, CombatProfile,
     CommodityKind, Container, ControlSource, DeadAt, DemandMemory, DemandObservation,
-    DemandObservationReason, EligibilityRule, EntityId, FactionPurpose, GoalKind,
-    HomeostaticNeeds, InstitutionalKnowledgeSource, MerchandiseProfile, MetabolismProfile,
-    PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, PlaceTag,
-    ProductionOutputOwner, PursuitProfile, Quantity, ResourceSource, Seed, StateHash,
-    SuccessionLaw, TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, TravelEdge,
-    TravelEdgeId, UtilityProfile, WorkstationTag, hash_event_log, hash_world,
+    DemandObservationReason, EligibilityRule, EntityId, FactionPurpose, GoalKind, HomeostaticNeeds,
+    InstitutionalKnowledgeSource, MerchandiseProfile, MetabolismProfile, PatrolProfile,
+    PatrolRoute, PerceptionProfile, PerceptionSource, PlaceTag, ProductionOutputOwner,
+    PursuitProfile, Quantity, ResourceSource, Seed, StateHash, SuccessionLaw,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId,
+    UtilityProfile, WorkstationTag, hash_event_log, hash_world,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState};
 
@@ -888,9 +888,7 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
         }
 
         // Incremental: track guard political goal generation (Verification 3).
-        if !guard_generated_political_goal
-            && let Some(sink) = h.driver.trace_sink()
-        {
+        if !guard_generated_political_goal && let Some(sink) = h.driver.trace_sink() {
             for &guard in &guards {
                 if let Some(trace) = sink.trace_at(guard, processed_tick)
                     && let DecisionOutcome::Planning(ref planning) = trace.outcome
@@ -1665,9 +1663,7 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
         }
 
         // Incremental: track guard political goal generation (Verification 3).
-        if !guard_generated_political_goal
-            && let Some(sink) = h.driver.trace_sink()
-        {
+        if !guard_generated_political_goal && let Some(sink) = h.driver.trace_sink() {
             for &guard in &guards {
                 if let Some(trace) = sink.trace_at(guard, processed_tick) {
                     let found = match &trace.outcome {
