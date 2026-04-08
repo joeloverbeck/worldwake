@@ -9,6 +9,7 @@ pub struct CognitiveProfile {
     pub snapshot_travel_horizon: u8,
     pub max_node_expansions: u16,
     pub switch_margin: Permille,
+    pub planning_switch_margin: Permille,
     pub transient_block_ticks: u32,
     pub unknown_block_ticks: u32,
     pub structural_block_ticks: u32,
@@ -25,6 +26,7 @@ impl Default for CognitiveProfile {
             snapshot_travel_horizon: 6,
             max_node_expansions: 224,
             switch_margin: Permille::new_unchecked(100),
+            planning_switch_margin: Permille::new_unchecked(150),
             transient_block_ticks: 20,
             unknown_block_ticks: 5,
             structural_block_ticks: 200,
@@ -63,6 +65,10 @@ mod tests {
         assert_eq!(profile.snapshot_travel_horizon, 6);
         assert_eq!(profile.max_node_expansions, 224);
         assert_eq!(profile.switch_margin, crate::Permille::new(100).unwrap());
+        assert_eq!(
+            profile.planning_switch_margin,
+            crate::Permille::new(150).unwrap()
+        );
         assert_eq!(profile.transient_block_ticks, 20);
         assert_eq!(profile.unknown_block_ticks, 5);
         assert_eq!(profile.structural_block_ticks, 200);
@@ -79,6 +85,7 @@ mod tests {
             snapshot_travel_horizon: 9,
             max_node_expansions: 512,
             switch_margin: crate::Permille::new(175).unwrap(),
+            planning_switch_margin: crate::Permille::new(225).unwrap(),
             transient_block_ticks: 12,
             unknown_block_ticks: 9,
             structural_block_ticks: 320,

@@ -1150,9 +1150,10 @@ fn run_report_found_after_search(seed: Seed) -> ReportFoundScenarioOutcome {
     );
     set_violation_profile(&mut h, searcher, violation_profile(), 0);
 
-    // OfficeRegister at OrchardFarm — created BEFORE the Subject so that its
-    // EntityId sorts lower, making the planner's affordance enumeration prefer
-    // the Record target over the co-located Agent target for report_found.
+    // OfficeRegister at OrchardFarm. ReportFound now surfaces planner-visible
+    // OfficeRegister targets only; direct agent notification remains a lower-
+    // level action path because another agent's overdue expectation is not
+    // available on the searcher's lawful belief surface.
     let office_register = seed_office_register(&mut h.world, &mut h.event_log, ORCHARD_FARM);
 
     // Subject at OrchardFarm — passive, doesn't move.
@@ -1309,22 +1310,22 @@ fn run_report_found_after_search(seed: Seed) -> ReportFoundScenarioOutcome {
 // Setup: A searcher at VillageSquare holds one active RoutineReturn expectation
 //   for a passive subject expected at OrchardFarm, with deadline_tick=0 and
 //   grace_ticks=0. The searcher has LastSeenMemory pointing to OrchardFarm.
-//   An OfficeRegister exists at VillageSquare. The subject is at OrchardFarm
+//   An OfficeRegister exists at OrchardFarm. The subject is at OrchardFarm
 //   with ControlSource::None.
 //
 // Proves: After SearchForMissing resolves the expectation via search_place at
 //   OrchardFarm (FoundSafe), the resolved state drives a new GoalKind::ReportFound
 //   candidate (P10: aftermath creates future hooks). The planner selects
-//   ReportFound as a progress-barrier terminal, travels back to VillageSquare,
-//   and commits report_found, writing MissingPersonStatus::FoundSafe to the
+//   ReportFound as a progress-barrier terminal at OrchardFarm and commits
+//   report_found, writing MissingPersonStatus::FoundSafe to the local
 //   OfficeRegister (P17: violated expectation drives institutional response).
 //   The full chain demonstrates emergent multi-goal sequencing through state
 //   transitions (P1), not scripted chains.
 //
 // Chain: ExpectationStore Active -> ExpectationCheck Overdue -> SearchForMissing
 //   candidate -> travel to OrchardFarm -> search_place commit -> ExpectationStore
-//   Resolved(FoundSafe) -> ReportFound candidate -> travel to VillageSquare ->
-//   report_found commit -> OfficeRegister MissingPersonStatus::FoundSafe.
+//   Resolved(FoundSafe) -> ReportFound candidate -> report_found commit ->
+//   OfficeRegister MissingPersonStatus::FoundSafe.
 #[test]
 fn golden_report_found_after_search() {
     let _ = run_report_found_after_search(Seed([0x6B; 32]));

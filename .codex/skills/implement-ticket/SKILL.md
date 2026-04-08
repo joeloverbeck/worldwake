@@ -5,7 +5,7 @@ description: "Implement or reassess a Worldwake ticket. Use when asked to work f
 
 # Worldwake Ticket Implementation
 
-Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase.
+Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase.
 
 ## Workflow
 
@@ -20,6 +20,8 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 ### 2. Reassess assumptions before coding
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
+
+For planner-root, snapshot-completeness, or planner-traceability tickets, cite the relevant live contract from [docs/planner-contracts.md](../../../docs/planner-contracts.md) during reassessment instead of reconstructing planner behavior from archived tickets, stale scenario prose, or local implementation fragments alone.
 
 For trivial single-file additive tickets, scale the reassessment down deliberately: read the ticket, cited references, and owned symbol/file; confirm the dependency path is present; and run a narrow existence/fallout sweep for prior implementation or obvious constructor/usage fallout. Do not skip reassessment, but do not force the full matrix when the owned surface is genuinely small and local.
 
@@ -295,6 +297,7 @@ Typical order:
 - If a focused failing proof exposes a real production contradiction in a ticket currently marked test-only or `Engine Changes: None`, update the ticket sections that define scope (`Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Out of Scope`) before continuing. Do not leave the ticket describing "tests only" work once live code changes are required.
 - When a ticket fixes a repeated pattern across multiple call sites, run a post-implementation pattern sweep (e.g., grep for the unfixed pattern) to confirm no sites were missed. Record the sweep result in the ticket Outcome.
 - When a workspace-wide verification command fails on files outside the ticket's owned surface (e.g., untracked binaries, pre-existing lint failures), verify the failure is unrelated by running the same command scoped to the ticket's owned crates. Record the pre-existing failure and the scoped-pass result in the ticket Outcome. Do not fix unrelated failures as part of the ticket.
+- When broader verification fails on a golden in the same domain, action family, or planner path as the ticket's owned behavior, do one contract-level triage pass before labeling it unrelated: check whether the failure is stale setup only, a lower-layer production contradiction, or a real AI-pipeline mismatch. Only treat it as unrelated after that bounded triage.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md):
 
@@ -323,7 +326,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - After scenario metadata changes, refresh the generated golden inventory/docs as part of the verification surface.
 - When a golden test must isolate one goal from a competing goal family that shares the same observable input (e.g., EscortToSafety vs TreatWounds for wounded entities), use belief-source manipulation: seed beliefs via `PerceptionSource::Report` instead of `DirectObservation` to prevent candidate emission paths that gate on direct observation. This is a scenario isolation technique, not a production constraint.
 - When a golden scenario depends on motive arithmetic driven by metabolism rates or profile values, estimate the crossover tick (when the competing need overtakes the initial driver) from the rate differential. Start with conservative values that produce the crossover well within the tick budget. If the first run misses the milestone, adjust rates rather than expanding the tick budget.
-- When a golden scenario requires an action to target a specific entity kind from `EntityAtActorPlaceAnyOf`, and multiple co-located entities match different kinds, the affordance enumeration returns them in EntityId order. Create the preferred target entity BEFORE competing entities in the test setup to ensure the lower EntityId is tried first. Document this ordering dependency in the scenario rationale.
+- When a golden scenario depends on a specific target subtype from a shared target surface such as `EntityAtActorPlaceAnyOf`, verify the full live selection path before relying on setup ordering: affordance enumeration, belief prerequisites, planner snapshot inclusion/filtering, any planner-side reordering, and authoritative validation. Treat `EntityId` order only as a lower-layer tie-breaker when the live path actually preserves that ordering end to end.
 
 #### Migration verification checklist
 

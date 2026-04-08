@@ -381,6 +381,12 @@ fn enumerate_report_found_payloads(
     let Some(target) = targets.first().copied() else {
         return Vec::new();
     };
+    let Some(record_data) = view.record_data(target) else {
+        return Vec::new();
+    };
+    if record_data.record_kind != RecordKind::OfficeRegister {
+        return Vec::new();
+    }
     let Some(store) = view.expectation_store(actor) else {
         return Vec::new();
     };
@@ -427,10 +433,16 @@ fn validate_report_found_payload_override(
     let Some(target) = targets.first().copied() else {
         return false;
     };
+    let Some(record_data) = view.record_data(target) else {
+        return false;
+    };
     let Some(payload) = payload.as_report_found() else {
         return false;
     };
     if payload.target != target {
+        return false;
+    }
+    if record_data.record_kind != RecordKind::OfficeRegister {
         return false;
     }
 
@@ -1430,8 +1442,11 @@ mod tests {
     }
 
     #[test]
-    fn report_found_affordance_enumerates_resolved_found_expectations_for_colocated_listener() {
-        let (mut world, actor, listener, subject, place, other_place) = setup_fixture();
+    fn report_found_affordance_enumerates_resolved_found_expectations_for_local_office_register() {
+        let (mut world, actor, _listener, subject, place, other_place) = setup_fixture();
+        let office_register =
+            create_record(&mut world, place, actor, RecordKind::OfficeRegister, 2);
+        seed_entity_belief(&mut world, actor, office_register, 3);
         let expectation_id = seed_expectation(
             &mut world,
             actor,
@@ -1442,13 +1457,6 @@ mod tests {
                     at_place: other_place,
                 },
             },
-        );
-        seed_expectation(
-            &mut world,
-            listener,
-            subject,
-            place,
-            ExpectationState::Overdue,
         );
         seed_last_seen_record(
             &mut world,
@@ -1468,10 +1476,10 @@ mod tests {
         let affordances = get_affordances(&view, actor, &defs, &handlers);
         assert!(affordances.iter().any(|affordance| {
             affordance.def_id == report_found_id
-                && affordance.bound_targets == vec![listener]
+                && affordance.bound_targets == vec![office_register]
                 && affordance.payload_override
                     == Some(ActionPayload::ReportFound(ReportFoundActionPayload {
-                        target: listener,
+                        target: office_register,
                         expectation_id,
                     }))
         }));
@@ -1650,9 +1658,9 @@ mod tests {
     }
 
     #[test]
-    fn report_found_requires_listener_overdue_expectation_at_authoritative_validation() {
+    fn report_found_does_not_surface_listener_targets_without_local_office_register() {
         let (mut world, actor, listener, subject, place, other_place) = setup_fixture();
-        seed_expectation(
+        let expectation_id = seed_expectation(
             &mut world,
             actor,
             subject,
@@ -1682,16 +1690,16 @@ mod tests {
         assert!(
             affordances
                 .iter()
-                .any(|affordance| affordance.def_id == report_found_id),
-            "actor-side belief evidence should still surface report_found affordances"
+                .all(|affordance| affordance.def_id != report_found_id),
+            "report_found should stay absent without a planner-visible OfficeRegister target"
         );
-        assert!(validate_report_found_payload_override(
+        assert!(!validate_report_found_payload_override(
             defs.get(report_found_id).unwrap(),
             actor,
             &[listener],
             &ActionPayload::ReportFound(ReportFoundActionPayload {
                 target: listener,
-                expectation_id: ExpectationId(1),
+                expectation_id,
             }),
             &view,
         ));
@@ -1704,7 +1712,7 @@ mod tests {
             &[listener],
             &ActionPayload::ReportFound(ReportFoundActionPayload {
                 target: listener,
-                expectation_id: ExpectationId(1),
+                expectation_id,
             }),
             &world,
         );

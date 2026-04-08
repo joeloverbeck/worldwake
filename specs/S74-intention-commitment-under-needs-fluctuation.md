@@ -22,28 +22,35 @@ Extend the existing `switch_margin` concept — which currently applies only dur
 
 **Current behavior** (planning path, `try_continue_snapshot_plan`):
 1. If dirty set is snapshot-only AND agent has a current plan:
-2. Check if current goal is ranked #1 AND matches the plan's opportunity
-3. If yes → continue plan (fast path)
-4. If no → fall through to full GOAP search
+2. If dirty set is needs-only (`is_needs_only()`): check if current goal is in the **top 2** ranked candidates → continue plan (existing heuristic from soak-seed-perf experiments)
+3. Otherwise: check if current goal is ranked #1 AND matches the plan's opportunity → continue plan
+4. If neither condition holds → fall through to full GOAP search
+
+The top-2 heuristic reduces replanning frequency but is unprincipled — it was tuned empirically and has no cognitive meaning. This spec replaces it with a margin-based mechanism.
 
 **Proposed behavior**:
 1. If dirty set is snapshot-only AND agent has a current plan:
 2. Check if current goal is ranked #1 AND matches the plan's opportunity → continue (unchanged)
-3. **NEW**: If current goal is NOT #1, check if the top-ranked goal's effective priority exceeds the current goal's effective priority by more than `planning_switch_margin`:
-   - If the margin is NOT exceeded → continue plan (the challenger isn't compelling enough to abandon a valid plan)
-   - If the margin IS exceeded → fall through to full GOAP search (genuine priority shift)
-4. In all cases, if the plan's next step fails revalidation → fall through (the plan is invalid regardless of ranking)
+3. **NEW**: If current goal is NOT #1, apply the planning switch margin check:
+   - **Cross-class bypass**: If the top-ranked goal has a strictly higher `GoalPriorityClass` than the current goal (e.g., Critical vs. Medium), always fall through to full GOAP search — a priority class upgrade is always compelling enough to abandon a plan
+   - **Same-class margin**: If both goals share the same `GoalPriorityClass`, check if the top-ranked goal's `motive_score` exceeds the current goal's `motive_score` by more than `planning_switch_margin`. If the margin is NOT exceeded → continue plan. If exceeded → fall through to full GOAP search
+4. If the current goal is NOT present in the ranked candidates at all → fall through (goal became infeasible)
+5. In all cases, if the plan's next step fails revalidation → fall through (the plan is invalid regardless of ranking)
 
 ### Planning Switch Margin Parameter
 
 Add `planning_switch_margin: Permille` to `CognitiveProfile`:
 - **Default**: `Permille(150)` — a 15% priority advantage is needed to dislodge a committed plan
-- **Semantics**: the top-ranked goal must have `effective_priority >= current_goal_priority + planning_switch_margin` to trigger full replanning
+- **Semantics**: within the same `GoalPriorityClass`, the top-ranked goal must have `motive_score >= current_goal_motive_score + planning_switch_margin` to trigger full replanning. If the top-ranked goal has a strictly higher `GoalPriorityClass`, the margin is bypassed (always replan)
 - **Interaction with existing `switch_margin`**: `planning_switch_margin` applies during the planning path (no active action). `switch_margin` applies during the active-action interrupt path. They serve the same purpose in different phases.
 
 ### Priority Comparison
 
-The effective priority comparison uses the existing `RankedGoal` priority class and effective priority fields. No new ranking logic is needed — the comparison reuses the ranking infrastructure that `rank_candidates` already produces.
+The comparison uses the existing `RankedGoal` fields: `priority_class: GoalPriorityClass` and `motive_score: u32`. No new ranking logic is needed — the comparison reuses the ranking infrastructure that `rank_candidates` already produces.
+
+**Cross-class semantics**: `GoalPriorityClass` is an ordered enum (Background < Low < Medium < High < Critical). When the top-ranked goal's `priority_class` strictly exceeds the current goal's `priority_class`, the margin is bypassed and full replanning triggers immediately. This prevents a commitment margin from blocking genuinely urgent goals (e.g., a Critical survival goal should always dislodge a Medium economic goal).
+
+**Same-class semantics**: When both goals share the same `priority_class`, the margin comparison applies to `motive_score`: `top.motive_score >= current.motive_score + planning_switch_margin`. The `motive_score` is a post-discount priority value already computed by `rank_candidates`, so no additional scoring is needed.
 
 The comparison requires finding the current goal in the ranked candidates list. If the current goal is NOT present in the ranked candidates at all (it was completely filtered or blocked), the plan is abandoned — this preserves responsiveness to goals that become entirely infeasible.
 
@@ -85,7 +92,7 @@ The dampener is `planning_switch_margin: Permille`, a concrete per-agent paramet
 | `HomeostaticNeeds` component | Authoritative stored state (unchanged) |
 | `observation_snapshot_changed` NEEDS dirty bit | Derived computation (unchanged — still exact equality) |
 | `planning_switch_margin` | Authoritative stored state (CognitiveProfile parameter) |
-| RankedGoal effective priority | Derived computation (already computed by `rank_candidates`) |
+| RankedGoal `priority_class` + `motive_score` | Derived computation (already computed by `rank_candidates`) |
 | Plan continuation decision | Derived computation (now uses margin comparison) |
 
 ## Implementation
@@ -96,9 +103,9 @@ The dampener is `planning_switch_margin: Permille`, a concrete per-agent paramet
 
 **Crate: worldwake-ai** (agent_tick/planning.rs)
 
-2. Modify `try_continue_snapshot_plan` to accept ranked candidates' effective priorities and compare against `planning_switch_margin` when the current goal is not ranked #1.
-3. Modify the traced variant in `plan_and_validate_next_step_traced` consistently.
-4. Remove the `is_needs_only()` fast path from the `soak-seed-perf` campaign (exp-004/005) — this spec supersedes it with a principled mechanism.
+2. Extend `try_continue_snapshot_plan` signature to accept `&CognitiveProfile` (or `planning_switch_margin: Permille`). Replace the `is_needs_only()` top-2 heuristic with the margin-based comparison: cross-class bypass on `GoalPriorityClass`, same-class margin check on `motive_score`.
+3. Modify the traced variant in `plan_and_validate_next_step_traced` (inline logic at ~lines 786-836) consistently with the same margin-based comparison.
+4. Remove the `is_needs_only()` top-2 heuristic from `try_continue_snapshot_plan` (`planning.rs`), which this spec supersedes with a principled mechanism.
 
 **Crate: worldwake-ai** (dirty_set.rs)
 
@@ -127,7 +134,7 @@ The dampener is `planning_switch_margin: Permille`, a concrete per-agent paramet
 1. All existing golden tests pass (with margin adjustment for timing-sensitive tests)
 2. Soak seeds 0–4 all show improvement (no seed-specific regression)
 3. Agents still switch goals when a genuinely higher-priority goal emerges (margin is not infinite)
-4. Agents with `planning_switch_margin = 0` behave identically to the current system (backward-compatible)
+4. Agents with `planning_switch_margin = 0` trigger full replanning on every ranking shift within the same priority class (no commitment inertia), confirming the margin is a pure additive mechanism
 5. Decision traces include the margin comparison result for debuggability (Principle 29)
 
 ## Scenario Profile Contract

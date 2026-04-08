@@ -33,8 +33,9 @@ const ITEM_INTERACTING_OPS: [PlannerOpKind; 8] = [
     PlannerOpKind::Heal,
 ];
 
-const INSTITUTIONAL_OPS: [PlannerOpKind; 13] = [
+const INSTITUTIONAL_OPS: [PlannerOpKind; 14] = [
     PlannerOpKind::ConsultRecord,
+    PlannerOpKind::ReportFound,
     PlannerOpKind::PostBounty,
     PlannerOpKind::ClaimBounty,
     PlannerOpKind::PostNotice,
@@ -1701,6 +1702,38 @@ mod tests {
             &BlockedIntentMemory::default(),
             Tick(0),
             &[PlannerOpKind::ConsultRecord],
+            u16::MAX,
+        );
+
+        assert!(snapshot.entities.contains_key(&record));
+    }
+
+    #[test]
+    fn snapshot_filter_includes_records_for_report_found() {
+        let actor = entity(1);
+        let place = entity(10);
+        let record = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(record, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(record, place);
+        view.entities_at.insert(place, vec![actor, record]);
+        view.known_entity_beliefs
+            .insert(actor, vec![(record, sample_belief(true, 4))]);
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::ReportFound],
             u16::MAX,
         );
 

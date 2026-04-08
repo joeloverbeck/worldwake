@@ -550,6 +550,7 @@ mod tests {
                 snapshot_travel_horizon: 5,
                 max_node_expansions: 320,
                 switch_margin: Permille::new(175).unwrap(),
+                planning_switch_margin: Permille::new(225).unwrap(),
                 transient_block_ticks: 12,
                 unknown_block_ticks: 6,
                 structural_block_ticks: 250,
