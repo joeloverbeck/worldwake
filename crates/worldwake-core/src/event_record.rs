@@ -189,6 +189,14 @@ impl EventRecord {
     pub fn from_payload(event_id: EventId, payload: EventPayload) -> Self {
         PendingEvent::from_payload(payload).into_record(event_id)
     }
+
+    /// Strip the heavy `state_deltas` payload, releasing the backing allocation.
+    /// Used by epoch compaction to reclaim memory from events older than the
+    /// latest checkpoint.
+    pub(crate) fn strip_state_deltas(&mut self) {
+        self.payload.state_deltas.clear();
+        self.payload.state_deltas.shrink_to_fit();
+    }
 }
 
 #[cfg(test)]

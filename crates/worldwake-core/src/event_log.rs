@@ -5,6 +5,24 @@ use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Serialized `World` snapshot at a specific tick, used for epoch compaction.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CheckpointData {
+    world_snapshot: Vec<u8>,
+}
+
+impl CheckpointData {
+    #[must_use]
+    pub fn new(world_snapshot: Vec<u8>) -> Self {
+        Self { world_snapshot }
+    }
+
+    #[must_use]
+    pub fn world_snapshot(&self) -> &[u8] {
+        &self.world_snapshot
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EventLog {
     events: Vec<EventRecord>,
@@ -14,6 +32,10 @@ pub struct EventLog {
     by_place: BTreeMap<EntityId, Vec<EventId>>,
     by_tag: BTreeMap<EventTag, Vec<EventId>>,
     by_cause: BTreeMap<EventId, Vec<EventId>>,
+    /// Periodic `World` snapshots for epoch compaction. Key: tick.
+    checkpoints: BTreeMap<Tick, CheckpointData>,
+    /// Ticks between checkpoint snapshots. 0 = disabled.
+    compaction_interval: u32,
 }
 
 impl EventLog {
@@ -27,6 +49,8 @@ impl EventLog {
             by_place: BTreeMap::new(),
             by_tag: BTreeMap::new(),
             by_cause: BTreeMap::new(),
+            checkpoints: BTreeMap::new(),
+            compaction_interval: 0,
         }
     }
 
@@ -149,6 +173,47 @@ impl EventLog {
         self.events.is_empty()
     }
 
+    pub fn set_compaction_interval(&mut self, interval: u32) {
+        self.compaction_interval = interval;
+    }
+
+    #[must_use]
+    pub fn compaction_interval(&self) -> u32 {
+        self.compaction_interval
+    }
+
+    pub fn add_checkpoint(&mut self, tick: Tick, data: CheckpointData) {
+        self.checkpoints.insert(tick, data);
+    }
+
+    #[must_use]
+    pub fn latest_checkpoint(&self) -> Option<(&Tick, &CheckpointData)> {
+        self.checkpoints.iter().next_back()
+    }
+
+    pub fn prune_old_checkpoints(&mut self, max: usize) {
+        while self.checkpoints.len() > max {
+            if let Some(&oldest_tick) = self.checkpoints.keys().next() {
+                self.checkpoints.remove(&oldest_tick);
+            }
+        }
+    }
+
+    pub fn strip_deltas_before(&mut self, cutoff_tick: Tick) {
+        let event_ids: Vec<EventId> = self
+            .by_tick
+            .range(..cutoff_tick)
+            .flat_map(|(_, ids)| ids.iter().copied())
+            .collect();
+        for event_id in event_ids {
+            if let Some(index) = usize::try_from(event_id.0).ok()
+                && let Some(record) = self.events.get_mut(index)
+            {
+                record.strip_state_deltas();
+            }
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn from_records_for_test(events: Vec<EventRecord>) -> Self {
         let mut log = Self {
@@ -159,6 +224,8 @@ impl EventLog {
             by_place: BTreeMap::new(),
             by_tag: BTreeMap::new(),
             by_cause: BTreeMap::new(),
+            checkpoints: BTreeMap::new(),
+            compaction_interval: 0,
         };
 
         for record in &log.events {
@@ -591,5 +658,191 @@ mod tests {
             Tick(2),
             CauseRef::Event(EventId(root.0 + 1)),
         ));
+    }
+
+    // ---- Epoch compaction tests (S72) ----
+
+    use super::CheckpointData;
+    use crate::{EntityKind, EntityDelta, StateDelta};
+
+    fn pending_with_deltas(tick: Tick, deltas: Vec<StateDelta>) -> PendingEvent {
+        PendingEvent::from_payload(EventPayload {
+            tick,
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(entity(1)),
+            action_name: None,
+            target_ids: vec![],
+            evidence: Vec::new(),
+            place_id: Some(entity(4)),
+            state_deltas: deltas,
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::WorldMutation]),
+        })
+    }
+
+    fn sample_delta() -> StateDelta {
+        StateDelta::Entity(EntityDelta::Created {
+            entity: entity(99),
+            kind: EntityKind::Agent,
+        })
+    }
+
+    #[test]
+    fn compaction_interval_defaults_to_zero() {
+        let log = EventLog::new();
+        assert_eq!(log.compaction_interval(), 0);
+    }
+
+    #[test]
+    fn set_compaction_interval_round_trips() {
+        let mut log = EventLog::new();
+        log.set_compaction_interval(50);
+        assert_eq!(log.compaction_interval(), 50);
+    }
+
+    #[test]
+    fn add_and_retrieve_checkpoint() {
+        let mut log = EventLog::new();
+        let data = CheckpointData::new(vec![1, 2, 3, 4]);
+        log.add_checkpoint(Tick(50), data.clone());
+
+        let (tick, retrieved) = log.latest_checkpoint().unwrap();
+        assert_eq!(*tick, Tick(50));
+        assert_eq!(retrieved.world_snapshot(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn latest_checkpoint_returns_most_recent() {
+        let mut log = EventLog::new();
+        log.add_checkpoint(Tick(50), CheckpointData::new(vec![1]));
+        log.add_checkpoint(Tick(100), CheckpointData::new(vec![2]));
+        log.add_checkpoint(Tick(150), CheckpointData::new(vec![3]));
+
+        let (tick, data) = log.latest_checkpoint().unwrap();
+        assert_eq!(*tick, Tick(150));
+        assert_eq!(data.world_snapshot(), &[3]);
+    }
+
+    #[test]
+    fn latest_checkpoint_returns_none_when_empty() {
+        let log = EventLog::new();
+        assert!(log.latest_checkpoint().is_none());
+    }
+
+    #[test]
+    fn prune_old_checkpoints_keeps_most_recent() {
+        let mut log = EventLog::new();
+        log.add_checkpoint(Tick(50), CheckpointData::new(vec![1]));
+        log.add_checkpoint(Tick(100), CheckpointData::new(vec![2]));
+        log.add_checkpoint(Tick(150), CheckpointData::new(vec![3]));
+
+        log.prune_old_checkpoints(2);
+
+        assert_eq!(log.checkpoints.len(), 2);
+        assert!(log.checkpoints.contains_key(&Tick(100)));
+        assert!(log.checkpoints.contains_key(&Tick(150)));
+        assert!(!log.checkpoints.contains_key(&Tick(50)));
+    }
+
+    #[test]
+    fn prune_old_checkpoints_noop_when_under_max() {
+        let mut log = EventLog::new();
+        log.add_checkpoint(Tick(50), CheckpointData::new(vec![1]));
+
+        log.prune_old_checkpoints(2);
+
+        assert_eq!(log.checkpoints.len(), 1);
+    }
+
+    #[test]
+    fn strip_deltas_before_clears_old_events_preserves_recent() {
+        let mut log = EventLog::new();
+
+        // Emit events at ticks 1-5, each with a non-empty state_delta
+        for t in 1..=5 {
+            log.emit(pending_with_deltas(Tick(t), vec![sample_delta()]));
+        }
+
+        // Strip events before tick 3
+        log.strip_deltas_before(Tick(3));
+
+        // Events at ticks 1,2 should have empty state_deltas
+        for id in log.events_at_tick(Tick(1)).iter().chain(log.events_at_tick(Tick(2)).iter()) {
+            let record = log.get(*id).unwrap();
+            assert!(
+                record.state_deltas().is_empty(),
+                "event at tick {:?} should have been stripped",
+                record.tick()
+            );
+        }
+
+        // Events at ticks 3,4,5 should still have their deltas
+        for t in 3..=5 {
+            for id in log.events_at_tick(Tick(t)) {
+                let record = log.get(*id).unwrap();
+                assert_eq!(
+                    record.state_deltas().len(),
+                    1,
+                    "event at tick {:?} should NOT have been stripped",
+                    record.tick()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn strip_deltas_before_is_idempotent() {
+        let mut log = EventLog::new();
+        log.emit(pending_with_deltas(Tick(1), vec![sample_delta()]));
+        log.emit(pending_with_deltas(Tick(5), vec![sample_delta()]));
+
+        log.strip_deltas_before(Tick(3));
+        log.strip_deltas_before(Tick(3));
+
+        let record = log.get(EventId(0)).unwrap();
+        assert!(record.state_deltas().is_empty());
+        let record = log.get(EventId(1)).unwrap();
+        assert_eq!(record.state_deltas().len(), 1);
+    }
+
+    #[test]
+    fn strip_deltas_preserves_non_delta_event_fields() {
+        let mut log = EventLog::new();
+        log.emit(pending_with_deltas(Tick(1), vec![sample_delta()]));
+
+        let before_actor = log.get(EventId(0)).unwrap().actor_id();
+        let before_tags = log.get(EventId(0)).unwrap().tags().clone();
+
+        log.strip_deltas_before(Tick(5));
+
+        let after = log.get(EventId(0)).unwrap();
+        assert!(after.state_deltas().is_empty());
+        assert_eq!(after.actor_id(), before_actor);
+        assert_eq!(*after.tags(), before_tags);
+    }
+
+    #[test]
+    fn checkpoint_data_roundtrips_through_bincode() {
+        let data = CheckpointData::new(vec![10, 20, 30, 40, 50]);
+        let bytes = bincode::serialize(&data).unwrap();
+        let roundtrip: CheckpointData = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, data);
+    }
+
+    #[test]
+    fn event_log_with_checkpoints_roundtrips_through_bincode() {
+        let mut log = EventLog::new();
+        log.set_compaction_interval(50);
+        log.emit(pending(Tick(1)));
+        log.add_checkpoint(Tick(50), CheckpointData::new(vec![1, 2, 3]));
+
+        let bytes = bincode::serialize(&log).unwrap();
+        let roundtrip: EventLog = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, log);
+        assert_eq!(roundtrip.compaction_interval(), 50);
+        assert!(roundtrip.latest_checkpoint().is_some());
     }
 }

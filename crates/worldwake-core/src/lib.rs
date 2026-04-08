@@ -141,7 +141,7 @@ pub use entity::{EntityKind, EntityMeta};
 pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBeliefClaim};
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
 pub use error::{ControlDeniedReason, WorldError};
-pub use event_log::EventLog;
+pub use event_log::{CheckpointData, EventLog};
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
 pub use evidence::{DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence};
