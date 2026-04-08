@@ -1,6 +1,6 @@
 # S72EVELOGEPO-003: Verification adaptation and integration tests
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — test-only verification infrastructure change
@@ -147,3 +147,19 @@ Run the full golden test suite. Compaction is enabled by default (interval=50 vi
 2. `cargo test -p worldwake-ai` (golden tests)
 3. `cargo clippy --workspace --all-targets -- -D warnings`
 4. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-08.
+
+- Adapted `ExpectedWorldState::from_event_log` in `verification.rs` to use checkpoint-based reconstruction: if `latest_checkpoint()` exists, deserializes `World` from it, extracts base state via `ActualWorldState::from_world`, then replays only remaining deltas
+- Added 3 new tests: `verification_roundtrip_with_compaction`, `compacted_log_verification_matches_live_world`, `hash_world_stable_across_compaction`
+- No changes to `world.rs` — reused existing `ActualWorldState::from_world` instead of adding new test-only accessors
+
+Deviation from ticket: Ticket proposed adding `#[cfg(test)]` accessor methods on `World` (`all_entity_kinds`, `all_components`, `all_relations`, `all_reservations`). Not needed — `ActualWorldState::from_world` already provides this extraction via public `World` query methods, making the adaptation simpler with zero production code changes.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core -- verification_roundtrip_with_compaction compacted_log_verification hash_world_stable` (3 focused tests)
+- Passed `cargo clippy --workspace --all-targets -- -D warnings` (clean)
+- Passed `cargo test --workspace` (all suites, 0 failures, 1045 core tests)

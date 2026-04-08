@@ -172,11 +172,27 @@ struct ExpectedWorldState {
 #[cfg(test)]
 impl ExpectedWorldState {
     fn from_event_log(event_log: &EventLog) -> Self {
-        let mut entity_kinds = BTreeMap::<EntityId, EntityKind>::new();
-        let mut archived = BTreeSet::<EntityId>::new();
-        let mut components = BTreeMap::<(EntityId, ComponentKind), ComponentValue>::new();
-        let mut relations = BTreeSet::<RelationValue>::new();
-        let mut reservations = BTreeMap::<ReservationId, ReservationRecord>::new();
+        let (mut entity_kinds, mut archived, mut components, mut relations, mut reservations) =
+            if let Some((_checkpoint_tick, data)) = event_log.latest_checkpoint() {
+                let world: World = bincode::deserialize(data.world_snapshot())
+                    .expect("checkpoint World must deserialize");
+                let base = ActualWorldState::from_world(&world);
+                (
+                    base.entity_states,
+                    BTreeSet::<EntityId>::new(),
+                    base.components,
+                    base.relations,
+                    base.reservations,
+                )
+            } else {
+                (
+                    BTreeMap::new(),
+                    BTreeSet::new(),
+                    BTreeMap::new(),
+                    BTreeSet::new(),
+                    BTreeMap::new(),
+                )
+            };
 
         for index in 0..event_log.len() {
             let expected_id = EventId(u64::try_from(index).expect("event count exceeds u64"));
@@ -830,5 +846,130 @@ mod tests {
                 if detail.contains("components has unexpected entry")
                     && detail.contains("WoundList")
         )));
+    }
+
+    // ---- Epoch compaction verification tests (S72) ----
+
+    use crate::{CheckpointData, hash_world};
+
+    #[test]
+    fn verification_roundtrip_with_compaction() {
+        let mut world = test_world();
+        let mut log = EventLog::new();
+
+        // Create some entities and components via WorldTxn
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            Some(entity(10)),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::WorldMutation);
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(agent, entity(10)).unwrap();
+        txn.commit(&mut log);
+
+        // Record expected state before compaction (full replay)
+        let before = super::ExpectedWorldState::from_event_log(&log);
+
+        // Compact: add checkpoint and strip old deltas
+        let snapshot = bincode::serialize(&world).unwrap();
+        log.add_checkpoint(Tick(1), CheckpointData::new(snapshot));
+        log.strip_deltas_before(Tick(1));
+
+        // Reconstruct after compaction (checkpoint-based)
+        let after = super::ExpectedWorldState::from_event_log(&log);
+
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn compacted_log_verification_matches_live_world() {
+        let mut world = test_world();
+        let mut log = EventLog::new();
+
+        // First transaction at tick 1
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            Some(entity(10)),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::WorldMutation);
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        let item = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(5))
+            .unwrap();
+        txn.set_ground_location(agent, entity(10)).unwrap();
+        txn.set_ground_location(item, entity(10)).unwrap();
+        txn.commit(&mut log);
+
+        // Checkpoint at tick 2 (captures state after tick 1)
+        let snapshot = bincode::serialize(&world).unwrap();
+        log.add_checkpoint(Tick(2), CheckpointData::new(snapshot));
+        log.strip_deltas_before(Tick(2));
+
+        // Second transaction at tick 3 (after checkpoint)
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(3),
+            CauseRef::Bootstrap,
+            None,
+            Some(entity(10)),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::WorldMutation);
+        let container = txn
+            .create_container(Container {
+                capacity: LoadUnits(20),
+                allowed_commodities: None,
+                allows_unique_items: true,
+                allows_nested_containers: true,
+            })
+            .unwrap();
+        txn.set_ground_location(container, entity(10)).unwrap();
+        txn.put_into_container(item, container).unwrap();
+        txn.commit(&mut log);
+
+        // Verification should match live world (checkpoint + post-checkpoint deltas)
+        assert_eq!(verify_event_covers_world_state(&world, &log), Ok(()));
+    }
+
+    #[test]
+    fn hash_world_stable_across_compaction() {
+        let mut world = test_world();
+        let mut log = EventLog::new();
+
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            Some(entity(10)),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::WorldMutation);
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(agent, entity(10)).unwrap();
+        txn.commit(&mut log);
+
+        let hash_before = hash_world(&world).unwrap();
+
+        // Compact the event log
+        let snapshot = bincode::serialize(&world).unwrap();
+        log.add_checkpoint(Tick(2), CheckpointData::new(snapshot));
+        log.strip_deltas_before(Tick(2));
+
+        let hash_after = hash_world(&world).unwrap();
+
+        assert_eq!(hash_before, hash_after, "hash_world must not change after compaction");
     }
 }
