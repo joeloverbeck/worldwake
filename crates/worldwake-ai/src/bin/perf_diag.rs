@@ -23,7 +23,11 @@ fn rss_mb() -> f64 {
     std::fs::read_to_string("/proc/self/statm")
         .ok()
         .and_then(|s| s.split_whitespace().nth(1)?.parse::<u64>().ok())
-        .map_or(0.0, |pages| (pages * 4096) as f64 / (1024.0 * 1024.0))
+        .map_or(0.0, |pages| {
+            #[allow(clippy::cast_precision_loss)]
+            let bytes = (pages * 4096) as f64;
+            bytes / (1024.0 * 1024.0)
+        })
 }
 
 fn main() {
@@ -52,7 +56,8 @@ fn main() {
             let new_events = event_count - prev_events;
             let rss_delta = rss - prev_rss;
             let mb_per_event = if new_events > 0 {
-                rss_delta / new_events as f64
+                #[allow(clippy::cast_precision_loss)]
+                { rss_delta / new_events as f64 }
             } else {
                 0.0
             };
@@ -77,6 +82,10 @@ fn main() {
     eprintln!("final_events={}", h.event_log.len());
     eprintln!(
         "avg_kb_per_event={:.1}",
-        rss_mb() * 1024.0 / h.event_log.len() as f64
+        {
+            #[allow(clippy::cast_precision_loss)]
+            let count = h.event_log.len() as f64;
+            rss_mb() * 1024.0 / count
+        }
     );
 }
