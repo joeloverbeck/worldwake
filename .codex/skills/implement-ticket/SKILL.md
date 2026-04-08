@@ -42,6 +42,7 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 - Described architecture still matches live code.
 - Stated coverage gaps are real and correctly classified.
 - When reassessment changes the live root cause or owned surface, update all ticket sections that encode scope and proof, not just problem prose: `Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Acceptance Criteria`, and `Test Plan`.
+- When a ticket names campaign, harness, or telemetry metrics as proof obligations, verify the live output contract before accepting that prose. Confirm the actual emitted keys, counters, and summary carrier instead of assuming the ticket's metric names are still current.
 - When replacing inline code with a delegation to data populated by a prior ticket, verify line-by-line that the prior ticket's data captures every branch of the original code. Staged migrations risk silent behavior loss if the data ticket was incomplete.
 
 #### Golden-specific reassessment
@@ -176,6 +177,8 @@ When reassessment narrows ownership or proves that a listed command belongs to d
 When reassessment converts a ticket into a reassessment-only, doc-only, or no-production-change completion, remove leftover placeholder scaffolding from acceptance criteria, verification, test-plan, and command sections so the finished ticket does not mix resolved scope with pre-reassessment TODO text.
 
 Treat a stale acceptance criterion, scenario assertion surface, or proof target as a low-risk auto-correction only when the live symbols and behavior make the narrower honest contract directionally unambiguous. In that case, record: ticket says / live contract has / correction applied / why safe, and update the acceptance text plus any affected proof-surface sections in the same pass.
+
+If all owned proof surfaces already pass and the live outcome is only factual validation plus adjacent-fallout triage, convert the ticket immediately to a validation-only close-out. Remove stale "modify tests if needed" or similar implementation scaffolding, keep the proof surface honest, and create a follow-up ticket for any remaining production or performance work rather than leaving the current ticket half-implementation, half-handoff.
 
 #### Escalation decision tree
 
@@ -335,6 +338,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - When a golden test must isolate one goal from a competing goal family that shares the same observable input (e.g., EscortToSafety vs TreatWounds for wounded entities), use belief-source manipulation: seed beliefs via `PerceptionSource::Report` instead of `DirectObservation` to prevent candidate emission paths that gate on direct observation. This is a scenario isolation technique, not a production constraint.
 - When a golden scenario depends on motive arithmetic driven by metabolism rates or profile values, estimate the crossover tick (when the competing need overtakes the initial driver) from the rate differential. Start with conservative values that produce the crossover well within the tick budget. If the first run misses the milestone, adjust rates rather than expanding the tick budget.
 - When a golden scenario depends on a specific target subtype from a shared target surface such as `EntityAtActorPlaceAnyOf`, verify the full live selection path before relying on setup ordering: affordance enumeration, belief prerequisites, planner snapshot inclusion/filtering, any planner-side reordering, and authoritative validation. Treat `EntityId` order only as a lower-layer tie-breaker when the live path actually preserves that ordering end to end.
+- When a ticket mixes correctness validation with campaign or soak performance claims, bifurcate the result explicitly: if correctness/golden proof passes but performance still regresses, close the behavior-validation slice honestly and create or update a dedicated follow-up ticket for the remaining optimization or baseline-contract work.
 
 #### Migration verification checklist
 
