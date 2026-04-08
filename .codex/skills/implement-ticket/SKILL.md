@@ -14,16 +14,20 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 1. Read the target ticket file.
 2. Read every directly relevant reference (specs, docs, code symbols, test files).
 3. When the user supplies a glob or shorthand, confirm the exact live file path before reading or relying on it.
-4. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
+4. Check whether the active ticket file is tracked or untracked in the current worktree before planning reassessment notes or close-out edits. Untracked ticket drafts are valid active state, but remember they will not appear in ordinary `git diff` output.
+5. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
 
 ### 2. Reassess assumptions before coding
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
+For trivial single-file additive tickets, scale the reassessment down deliberately: read the ticket, cited references, and owned symbol/file; confirm the dependency path is present; and run a narrow existence/fallout sweep for prior implementation or obvious constructor/usage fallout. Do not skip reassessment, but do not force the full matrix when the owned surface is genuinely small and local.
+
 #### Reference and baseline validation
 
 - Referenced files, types, functions, modules, commands, and tests exist.
 - When the ticket's owned surface is partially landed in the worktree, treat the live state as baseline; limit edits to the missing slice.
+- Keep tracked-vs-untracked state in mind when reading diffs and close-out evidence: untracked ticket drafts and newly created files will not appear in ordinary `git diff` output.
 - Cross-check `Deps` against `What to Change` for additive tickets that assume earlier slices landed.
 - When roadmap summary, active spec, and live ticket disagree, compare all three and record which is authoritative.
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
@@ -37,6 +41,7 @@ Verify the ticket against the current codebase, not stale architectural memory. 
 - When a shared concept has both upstream producers and downstream consumers, compare their semantics directly. If the consumer already supports a broader shape, correct the ticket to own that parity fix.
 - If a claimed divergence is proved at lower layers but not stably isolatable as a golden without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative.
 - For golden communication or information-path tickets, verify separately what actually degrades: provenance, confidence, communication class, eligibility, ranking, or another distinct mechanism.
+- When a ticket proposes extending an existing trace/debug carrier, verify the exact live coverage of that carrier before coding. If the current trace only covers one subpath, correct the ticket to either stay within that subpath or explicitly widen the trace surface as owned scope.
 
 #### Shared type, serialization, and persisted-shape sweep
 
@@ -47,6 +52,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - Error, trace, request, and report carriers that store embedded enums by value
 - Save/load version boundaries and `SAVE_FORMAT_VERSION` gates
 - Crate-root re-exports and downstream imports for new shared types
+- When a new shared type is defined under a submodule, verify the actual public import path before patching downstream crates. Do not assume a crate-root re-export exists or will be added unless the live code already provides it.
 
 Specific persisted-shape checks:
 - Worldwake does not support legacy saves by default. When persisted shape changes, update the current save format and keep older versions rejected unless the user explicitly asks for compatibility work.
@@ -64,15 +70,19 @@ Specific persisted-shape checks:
 #### Action and behavior domain checks
 
 - When a ticket mixes action admission rules with periodic maintenance behavior, identify which layer already owns each invariant.
+- When a system or maintenance ticket claims a new transition-specific event/log surface, verify first whether ordinary `WorldTxn` component-delta events are already the canonical carrier. Do not widen scope to a bespoke event payload unless the live codebase actually needs a new carrier.
 - When attaching aftermath or evidence to an existing action family, verify whether the handler spans multiple custody, location, or target subcases. Narrow to the applicable subtype.
 - When the ticket relies on passive perception of place-bound state, verify the place entity is observed through the same path as co-located entities. If not, correct the ticket to own the explicit current-place projection path.
 - When the ticket changes contested access to a scarce affordance, decide explicitly whether the domain uses pure race resolution or lawful waiting via queue/grant/reservation. Surface contradictions with 1-3-1.
 - When the ticket names S44 contention helpers, verify helper semantics match the live `ContentionPolicy` shape for that domain.
 - When widening a shared callback or execution signature, search dependent crates for both production call paths and test-only handler registrations.
+- When a shared execution or runtime context struct gains a field, search for manual struct literals across both production and test code, not only typed function signatures or handler registrations.
 
 #### AI pipeline and affordance checks
 
 - When affordance generation depends on self-authoritative profile reads, verify those prerequisites in both production code and test harnesses.
+- When proving real affordance enumeration against co-located agents, items, or places, verify whether the affordance query also depends on the actor already believing those targets are present. If so, seed the corresponding belief/perception prerequisite in tests instead of assuming authoritative co-location alone will expose the affordance.
+- When a ticket tries to gate one agent's affordance on another agent's private belief carriers (for example `ExpectationStore`, `LastSeenMemory`, or `ViolationMemory`), verify the read surface first. In `PerAgentBeliefView`-style boundaries these carriers may be self-only, so cross-agent checks may need to stay actor-local at affordance time and move the other-agent requirement to authoritative start/commit validation instead of pretending the actor can lawfully inspect it.
 - When the ticket asks an existing query to distinguish new enum variants, verify the current read surface exposes enough information. If not, correct the ticket to include read-surface widening.
 - When the ticket depends on UtilityProfile or disposition gating, verify the belief/read trait exposes that carrier. If the gate exists only on authoritative components, correct the ticket to include read-surface widening.
 - When the ticket claims a goal family should become behaviorally selectable, check the full AI admission path: candidate generation, goal-policy suppression, ranking, selection. A variant emitted only under conditions a suppression rule blocks requires ticket correction.
@@ -82,6 +92,7 @@ Specific persisted-shape checks:
 - When the ticket gates behavior on a typed right from a specific provenance source, verify whether right existence alone is lawful or the producing carrier is part of the contract.
 - When a staged ticket introduces a shared enum before all variants are producible, distinguish "type surface lands now" from "variant becomes live now." Test reserved variants as absent.
 - When adding a new shared enum variant ahead of integration tickets, sweep dependent exhaustive tables. Prefer bounded compile-safe inert branches over reusing older variant behavior.
+- When adding a new shared enum variant, also check bounded non-owner exhaustive consumers such as ranking/policy code, failure handling, observation/runtime helpers, relay-selection or ordering helpers, renderers, and detail-formatting surfaces. If those consumers only need compile-safe inert handling and do not widen behavioral scope, absorb them into the ticket rather than treating them as a separate architecture change.
 - When the ticket keeps an action family unified while widening to new entity kinds, inspect `TargetSpec`, affordance enumeration, authoritative validation, planner semantics, and payload validators.
 - When extending a projected belief or derived state, check for parallel snapshot builders, event carriers, or projection helpers that also reconstruct that model.
 - When a new world artifact becomes perceivable and the spec says discovery affects behavior, verify at least one lawful downstream consumer exists. Do not land decorative but causally inert snapshot fields.
@@ -92,6 +103,7 @@ Specific persisted-shape checks:
 
 - For component-registration tickets, check hardcoded schema inventories, sample `ComponentValue` enumerations, and manifest-style tests.
 - When registering a new authoritative component, search for hand-maintained `ComponentKind` inventories and sample builders outside the registration macro.
+- When a scenario ticket adds authoritative components to places, verify whether place entities are topology-owned and created before `World::new(topology)`. If so, land component assignment in the bootstrap `WorldTxn` phase rather than the topology builder.
 - When renaming or replacing an authoritative identifier, search display strings, manifest inventories, serialized name surfaces, and identity-assertion tests.
 - When adding or reordering a `SystemId`, verify separately whether runtime dispatch uses a dense ordinal (`SystemId::ALL`) vs. a distinct manifest (`SystemManifest::canonical()`). Update each independently.
 - When introducing a new shared type alongside an existing model family, include crate-root re-exports and downstream imports in the sweep.
@@ -99,6 +111,7 @@ Specific persisted-shape checks:
 #### Trait surface checks
 
 - When extending a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or generated surfaces. Distinguish the canonical consumer boundary from implementation-detail mirrors.
+- If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself rather than assuming the downstream consumer crate named in the ticket is the only edit surface.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
 
 #### Repo rules
@@ -132,6 +145,8 @@ If the active ticket predates the current template and does not already have an 
 
 When a correction changes the real fallout surface, update every affected ticket section (`What to Change`, `Files to Touch`, `Verification Layers`, `Test Plan`), not just one list.
 
+When reassessment converts a ticket into a reassessment-only, doc-only, or no-production-change completion, remove leftover placeholder scaffolding from acceptance criteria, verification, test-plan, and command sections so the finished ticket does not mix resolved scope with pre-reassessment TODO text.
+
 Treat a stale acceptance criterion, scenario assertion surface, or proof target as a low-risk auto-correction only when the live symbols and behavior make the narrower honest contract directionally unambiguous. In that case, record: ticket says / live contract has / correction applied / why safe, and update the acceptance text plus any affected proof-surface sections in the same pass.
 
 #### Escalation decision tree
@@ -161,6 +176,10 @@ Separate:
 
 When the ticket inherits broader spec language, distinguish the end-state architecture claim from the narrower contract this ticket owns after reassessment. Do not keep proof surface broad just because the parent spec states the larger destination.
 
+When the parent spec describes an eventual causal story but the current ticket only owns substrate or maintenance scaffolding, keep those separate explicitly. If the spec's end-state locality or behavior prose is broader than the live mechanism this ticket can honestly land, narrow the ticket to the current owned mechanism and name the deferred downstream behavior instead of over-claiming the present slice.
+
+When a ticket bundles multiple deliverables and reassessment narrows the ticket to only one lawful slice, verify explicitly that every removed deliverable is still owned by an existing active ticket. If any removed deliverable no longer has a live owner, create the follow-up ticket before coding instead of leaving that work implicit.
+
 If the ticket's requested invariant exposes a production contradiction, correct the scope first.
 
 #### Golden scope narrowing
@@ -174,6 +193,7 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 
 When shared types change, include the sweep surfaces from Section 2 ("Shared type, serialization, and migration sweep") in the task list. Additional scope guidance:
 - Before editing, run a concrete constructor/shape sweep for the changed type across workspace crates (for example `rg -n 'BlockedIntent \\{' crates`), then rerun the same sweep before final verification to confirm no live literal or helper was missed.
+- For broad shared-struct shape changes, it is acceptable to land the shared type first and then use sequential `cargo build` / `cargo test` compile failures to enumerate the remaining fallout. Prefer this over guessing when the compiler can authoritatively surface every missing literal or helper site.
 - When behavior moves between carriers, rewrite setup paths onto the new authoritative carrier rather than only deleting the stale field.
 - When a constructor begins seeding defaults it previously omitted, reassess tests proving "missing component" behavior — prefer rewriting to the new constructor contract.
 - When new components participate in persisted world state, expand save/load fixture builders so persistence tests actually serialize and deserialize the new components.
@@ -213,11 +233,14 @@ Do not assume every schema macro reference needs a new import — verify actual 
 11. When adding, removing, or replacing an `EntityKind`, include kind-classification and lifecycle-routing helpers in the sweep.
 12. When adding a field to a shared model, search for hand-written constructors and test literals across sibling modules, including same-crate test modules.
 13. When turning a single-shot action into a staged lifecycle, prove each phase separately: start admission, intermediate evolution, commit conditions, abort aftermath.
-14. When splitting uniform behavior into variant-specific rules, rewrite existing compressed tests into per-case proofs.
-15. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, search tests.
-16. When one goal family spans multiple target subtypes, verify operator availability per subtype. Check for stale operators leaking across subtypes.
-17. When a goal family ends in a place-sensitive terminal action, add focused coverage for both target satisfaction and return-to-terminal-place legality.
-18. When a colocated leaf action becomes live, verify the colocated terminal case separately from travel-plus-leaf planning.
+14. When an action uses a profile-driven or expression-driven duration, make test helpers derive or tolerate the real completion window. Do not copy a nearby fixed-duration helper and assume the same tick cadence.
+15. When splitting uniform behavior into variant-specific rules, rewrite existing compressed tests into per-case proofs.
+16. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, heuristic/guidance surfaces (`goal_relevant_places`, evidence-place fallback, travel-pruning inputs when relevant), search tests.
+17. When a planner goal must synthesize a runtime payload, verify the activation chain end to end: the goal carries enough identity to build the payload, root/current-place guidance makes the operator reachable, and terminal-step semantics treat the action as goal-satisfying rather than leaf-only.
+18. When the first planner fix only makes an operator partially live, immediately re-check the rest of the same operator chain before declaring success: candidate shape, root synthesis, payload construction, terminal semantics, and the focused planner proof.
+19. When one goal family spans multiple target subtypes, verify operator availability per subtype. Check for stale operators leaking across subtypes.
+20. When a goal family ends in a place-sensitive terminal action, add focused coverage for both target satisfaction and return-to-terminal-place legality.
+21. When a colocated leaf action becomes live, verify the colocated terminal case separately from travel-plus-leaf planning.
 
 ### 6. Verify at the right boundary
 
@@ -235,8 +258,11 @@ Typical order:
 - Check that focused selectors actually match new/changed test names — thematic filters can miss sibling tests with different prefixes.
 - Prefer separate `cargo test` invocations per selector over combining exact test names in one command.
 - Run multiple `cargo test` or `cargo clippy` commands sequentially, not in parallel — lock contention makes parallel runs unreliable.
+- Treat focused selectors the same way: even narrow `cargo test` invocations should run one at a time, never through parallel tool wrappers.
+- When a broad verification run dies by `SIGKILL` or another likely environment/resource kill after focused suites are already green, rerun the named interrupted/failing suite in isolation before deciding whether to repeat the full broad run. Record that distinction in the ticket outcome instead of treating the killed broad run as a semantic failure by default.
 - After changing code post-verification, rerun narrowest affected tests and any stale broader commands.
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
+- When CI/compile fallout follows a shared context-field change, sweep manual struct literals as well as direct function call sites before the next verification pass.
 - When a migration reshapes a common API surface, expect lint fallout as well as compile fallout. Satisfy trait expectations like `Default` instead of suppressing lints.
 - When long-running verification commands are in flight, reuse those sessions rather than spawning duplicates.
 - When new registered actions or systems cause broad failures, triage for catalog-order drift, completeness assertions, and registry-expansion fallout before assuming the feature's runtime logic is broken.
@@ -264,6 +290,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - When a golden transport/delivery/claim chain is about durable aftermath, avoid over-specifying intermediate substeps unless that substep is the owned contract.
 - When a golden still fails after lawful setup, reassess whether it exposed a missing lower-layer contract. Fix the production boundary first.
 - If the architecture change invalidates the old invariant, rewrite the scenario and update its header/comments.
+- When adding `// Scenario ...` metadata, keep `Setup`, `Proves`, and `Cross-system chain` entries in the generator-friendly live format used by current golden files. After regenerating docs, inspect the generated scenario-map prose for truncation or malformed wrapped fields before closing the ticket.
 - When adding or renumbering `// Scenario N:` blocks, treat identifiers as repo-global. Pre-scan nearby or highest live IDs and resolve collisions.
 - After scenario metadata changes, refresh the generated golden inventory/docs as part of the verification surface.
 
@@ -315,10 +342,13 @@ If the user asked only for implementation or analysis, do not archive. Keep fact
 - Append factual close-out notes to the active ticket using the same minimal structure expected later at archival: `## Outcome`, verification results, and any explicit deviations from the original ticket wording or scope that were accepted during reassessment.
 - If the active ticket is short-form or pre-template, add only the minimum missing sections needed to make reassessment and close-out traceable. The usual minimum is `## Assumption Reassessment`, `## Outcome`, optional `## Deviations`, and `## Verification Result`.
 
+Default assumption: unless the user explicitly asks to archive, says "full ticket completion," or otherwise requests the archival workflow, treat the task as implementation-only and do not archive in this turn.
+
 Before finishing:
 - Re-check `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff. Remove reassessment-only fallout that did not become real edits.
 - If reassessment or verification changed the semantic contract the ticket describes, also re-check `Problem`, `Architecture Check`, and `Acceptance Criteria` so the ticket's narrative matches the landed behavior rather than an earlier draft.
 - Re-check inline code snippets, example signatures, or API sketches against the final landed shape.
+- If formatting was required in a dirty worktree, check immediately for formatter spillover into already-modified files outside the ticket's owned surface and call that out explicitly in close-out repo-state notes.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
 
 Minimal active-ticket close-out shape:

@@ -10,8 +10,9 @@ use crate::{
 };
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, InstitutionalClaim, PunishmentFineStartFailureTrace,
-    PunishmentFineTraceFacts, PunishmentKind, RecordKind, TellTopic, Tick, ViolationId, World,
+    ActionDefId, CommodityKind, EntityId, ExpectationId, InstitutionalClaim,
+    PunishmentFineStartFailureTrace, PunishmentFineTraceFacts, PunishmentKind, RecordKind,
+    TellTopic, Tick, ViolationId, World,
 };
 
 /// A single action lifecycle event recorded during `step_tick()`.
@@ -40,6 +41,24 @@ pub enum ActionTraceDetail {
         target: EntityId,
         topic_entity: Option<EntityId>,
         topic_commodity: Option<CommodityKind>,
+    },
+    AskAboutPerson {
+        target: EntityId,
+        subject: EntityId,
+    },
+    SearchPlace {
+        subject: EntityId,
+    },
+    ReportMissing {
+        expectation_id: ExpectationId,
+    },
+    ReportFound {
+        target: EntityId,
+        expectation_id: ExpectationId,
+    },
+    EscortToSafety {
+        subject: EntityId,
+        destination: EntityId,
     },
 }
 
@@ -357,6 +376,24 @@ impl ActionTraceDetail {
                 topic_entity: payload.topic_entity,
                 topic_commodity: payload.topic_commodity,
             }),
+            ActionPayload::AskAboutPerson(payload) => Some(Self::AskAboutPerson {
+                target: payload.target,
+                subject: payload.subject,
+            }),
+            ActionPayload::SearchPlace(payload) => Some(Self::SearchPlace {
+                subject: payload.subject,
+            }),
+            ActionPayload::ReportMissing(payload) => Some(Self::ReportMissing {
+                expectation_id: payload.expectation_id,
+            }),
+            ActionPayload::ReportFound(payload) => Some(Self::ReportFound {
+                target: payload.target,
+                expectation_id: payload.expectation_id,
+            }),
+            ActionPayload::EscortToSafety(payload) => Some(Self::EscortToSafety {
+                subject: payload.subject,
+                destination: payload.destination,
+            }),
             ActionPayload::None
             | ActionPayload::ConsultRecord(_)
             | ActionPayload::Bribe(_)
@@ -397,6 +434,27 @@ impl ActionTraceDetail {
                 format!(
                     "ask_witness target {target} entity {topic_entity:?} commodity {topic_commodity:?}"
                 )
+            }
+            Self::AskAboutPerson { target, subject } => {
+                format!("ask_about_person target {target} subject {subject}")
+            }
+            Self::SearchPlace { subject } => {
+                format!("search_place subject {subject}")
+            }
+            Self::ReportMissing { expectation_id } => {
+                format!("report_missing expectation {expectation_id}")
+            }
+            Self::ReportFound {
+                target,
+                expectation_id,
+            } => {
+                format!("report_found target {target} expectation {expectation_id}")
+            }
+            Self::EscortToSafety {
+                subject,
+                destination,
+            } => {
+                format!("escort_to_safety subject {subject} destination {destination}")
             }
         }
     }
@@ -491,8 +549,9 @@ impl Default for ActionTraceSink {
 mod tests {
     use super::*;
     use crate::{
-        ActionAbortRequestReason, AskWitnessPayload, PunishActionPayload, RequestAttemptTrace,
-        RequestBindingKind, RequestProvenance, ResolvedRequestTrace, TellActionPayload,
+        ActionAbortRequestReason, AskAboutPersonActionPayload, AskWitnessPayload,
+        PunishActionPayload, RequestAttemptTrace, RequestBindingKind, RequestProvenance,
+        ResolvedRequestTrace, SearchPlaceActionPayload, TellActionPayload,
     };
     use worldwake_core::{
         CauseRef, CommodityKind, ControlSource, EventLog, InstitutionalClaim,
@@ -719,6 +778,74 @@ mod tests {
     }
 
     #[test]
+    fn detail_from_payload_extracts_ask_about_person_identity() {
+        let target = EntityId {
+            slot: 9,
+            generation: 0,
+        };
+        let subject = EntityId {
+            slot: 10,
+            generation: 1,
+        };
+
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::AskAboutPerson(
+                AskAboutPersonActionPayload { target, subject }
+            )),
+            Some(ActionTraceDetail::AskAboutPerson { target, subject })
+        );
+    }
+
+    #[test]
+    fn detail_from_payload_extracts_search_place_identity() {
+        let subject = EntityId {
+            slot: 11,
+            generation: 0,
+        };
+
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::SearchPlace(
+                SearchPlaceActionPayload { subject }
+            )),
+            Some(ActionTraceDetail::SearchPlace { subject })
+        );
+    }
+
+    #[test]
+    fn detail_from_payload_extracts_report_missing_identity() {
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::ReportMissing(
+                crate::ReportMissingActionPayload {
+                    expectation_id: worldwake_core::ExpectationId(9),
+                }
+            )),
+            Some(ActionTraceDetail::ReportMissing {
+                expectation_id: worldwake_core::ExpectationId(9),
+            })
+        );
+    }
+
+    #[test]
+    fn detail_from_payload_extracts_report_found_identity() {
+        let target = EntityId {
+            slot: 12,
+            generation: 0,
+        };
+        assert_eq!(
+            ActionTraceDetail::from_payload(&ActionPayload::ReportFound(
+                crate::ReportFoundActionPayload {
+                    target,
+                    expectation_id: worldwake_core::ExpectationId(10),
+                }
+            )),
+            Some(ActionTraceDetail::ReportFound {
+                target,
+                expectation_id: worldwake_core::ExpectationId(10),
+            })
+        );
+    }
+
+    #[test]
     fn summary_includes_typed_detail_when_present() {
         let listener = EntityId {
             slot: 7,
@@ -744,6 +871,49 @@ mod tests {
         assert!(summary.contains("tell listener"));
         assert!(summary.contains(&listener.to_string()));
         assert!(summary.contains("EntityBelief"));
+    }
+
+    #[test]
+    fn summary_includes_ask_about_person_detail_when_present() {
+        let target = EntityId {
+            slot: 11,
+            generation: 0,
+        };
+        let subject = EntityId {
+            slot: 12,
+            generation: 0,
+        };
+        let event = sample_event(
+            6,
+            ActionTraceKind::Started {
+                targets: vec![target],
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::AskAboutPerson { target, subject }));
+
+        assert!(event.summary().contains("ask_about_person"));
+        assert!(event.summary().contains("subject"));
+    }
+
+    #[test]
+    fn summary_includes_search_place_detail_when_present() {
+        let subject = EntityId {
+            slot: 13,
+            generation: 0,
+        };
+        let event = sample_event(
+            7,
+            ActionTraceKind::Started {
+                targets: vec![EntityId {
+                    slot: 14,
+                    generation: 0,
+                }],
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::SearchPlace { subject }));
+
+        assert!(event.summary().contains("search_place"));
+        assert!(event.summary().contains(&subject.to_string()));
     }
 
     #[test]
@@ -857,6 +1027,24 @@ mod tests {
         assert!(summary.contains("ask_witness target"));
         assert!(summary.contains(&target.to_string()));
         assert!(summary.contains("Apple"));
+    }
+
+    #[test]
+    fn summary_includes_report_missing_detail_when_present() {
+        let committed = sample_event(
+            2,
+            ActionTraceKind::Committed {
+                instance_id: ActionInstanceId(1),
+                outcome: CommitOutcome::empty(),
+            },
+        )
+        .with_detail(Some(ActionTraceDetail::ReportMissing {
+            expectation_id: worldwake_core::ExpectationId(12),
+        }));
+
+        let summary = committed.summary();
+        assert!(summary.contains("committed"));
+        assert!(summary.contains("report_missing expectation exp12"));
     }
 
     #[test]
@@ -1012,6 +1200,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: crate::DurationExpr::Fixed(std::num::NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: crate::Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,

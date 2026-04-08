@@ -53,6 +53,7 @@ fn trade_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         reservation_requirements: vec![],
         duration: DurationExpr::ActorTradeDisposition,
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,
@@ -1367,6 +1368,7 @@ fn staff_market_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         reservation_requirements: vec![],
         duration: DurationExpr::ActorMarketPresence,
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![Precondition::ActorAlive],
         visibility: VisibilitySpec::SamePlace,

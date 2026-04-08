@@ -17,6 +17,7 @@ pub struct PerceptionTraceEvent {
     pub sequence_in_tick: u32,
     pub observer: EntityId,
     pub event_id: EventId,
+    pub effective_fidelity: u16,
     pub observation_passed: bool,
     /// Entities whose snapshots were recorded by this observer from this event.
     pub entity_observations: Vec<EntityId>,
@@ -34,12 +35,13 @@ impl PerceptionTraceEvent {
             "FAILED"
         };
         format!(
-            "tick {} seq {}: {} observed {} ({}), {} entities, {} institutional claims",
+            "tick {} seq {}: {} observed {} ({} @ {}‰), {} entities, {} institutional claims",
             self.tick.0,
             self.sequence_in_tick,
             self.observer,
             self.event_id,
             status,
+            self.effective_fidelity,
             self.entity_observations.len(),
             self.institutional_claims.len(),
         )
@@ -159,6 +161,7 @@ mod tests {
             sequence_in_tick: 0,
             observer,
             event_id: EventId(tick),
+            effective_fidelity: if passed { 1000 } else { 0 },
             observation_passed: passed,
             entity_observations: vec![],
             institutional_claims: vec![],
@@ -272,6 +275,7 @@ mod tests {
         let summary = event.summary();
         assert!(summary.contains("tick 3"));
         assert!(summary.contains("passed"));
+        assert!(summary.contains("@ 1000‰"));
         assert!(summary.contains("2 entities"));
         assert!(summary.contains("0 institutional claims"));
 

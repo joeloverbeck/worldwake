@@ -1,11 +1,13 @@
 use crate::{
-    register_accuse_action, register_artifact_actions, register_ask_witness_action,
-    register_attack_action, register_bury_action, register_consult_record_action,
-    register_craft_actions, register_defend_action, register_establish_camp_action,
-    register_exile_action, register_fine_action, register_harvest_actions, register_heal_action,
+    register_accuse_action, register_artifact_actions, register_ask_about_person_action,
+    register_ask_witness_action, register_attack_action, register_bury_action,
+    register_consult_record_action, register_craft_actions, register_defend_action,
+    register_escort_to_safety_action, register_establish_camp_action, register_exile_action,
+    register_fine_action, register_harvest_actions, register_heal_action,
     register_investigate_action, register_loot_action, register_needs_actions,
     register_office_actions, register_patrol_action, register_queue_for_care_target_action,
     register_queue_for_corpse_use_action, register_queue_for_facility_use_action,
+    register_report_found_action, register_report_missing_action, register_search_place_action,
     register_staff_market_action, register_stock_actions, register_tell_action,
     register_trade_action, register_transport_actions, register_travel_actions,
 };
@@ -48,6 +50,11 @@ pub fn register_all_actions(
     let _ = register_investigate_action(defs, handlers);
     let _ = register_patrol_action(defs, handlers);
     let _ = register_ask_witness_action(defs, handlers);
+    let _ = register_ask_about_person_action(defs, handlers);
+    let _ = register_search_place_action(defs, handlers);
+    let _ = register_report_missing_action(defs, handlers);
+    let _ = register_report_found_action(defs, handlers);
+    let _ = register_escort_to_safety_action(defs, handlers);
     let _ = register_accuse_action(defs, handlers);
     let _ = register_fine_action(defs, handlers);
     let _ = register_exile_action(defs, handlers);
@@ -117,6 +124,11 @@ mod tests {
             "investigate",
             "patrol",
             "ask_witness",
+            "ask_about_person",
+            "search_place",
+            "report_missing",
+            "report_found",
+            "escort_to_safety",
             "accuse",
             "fine",
             "exile",

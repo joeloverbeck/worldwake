@@ -300,6 +300,9 @@ fn map_reservation_error(err: WorldError, entity: worldwake_core::EntityId) -> A
     match err {
         WorldError::ConflictingReservation { .. } => ActionError::ReservationUnavailable(entity),
         WorldError::PreconditionFailed(msg) => ActionError::PreconditionFailed(msg),
+        err @ WorldError::ControlDenied { .. } => {
+            ActionError::PreconditionFailed(err.to_string())
+        }
         other => ActionError::InternalError(other.to_string()),
     }
 }
@@ -429,6 +432,7 @@ mod tests {
             reservation_requirements,
             duration: DurationExpr::Fixed(duration),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
@@ -509,6 +513,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -587,6 +592,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::CombatWeapon,
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
@@ -624,6 +630,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -690,6 +697,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::ActorDefendStance,
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
@@ -724,6 +732,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -786,6 +795,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -848,6 +858,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(3),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -915,6 +926,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -1015,6 +1027,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(5),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -1080,6 +1093,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -1098,6 +1112,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(3),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -1150,6 +1165,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(1),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -1189,6 +1205,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(1),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();
@@ -1269,6 +1286,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(2),
                 recipe_registry: &TEST_RECIPES,
+                action_defs: &defs,
             },
         )
         .unwrap_err();

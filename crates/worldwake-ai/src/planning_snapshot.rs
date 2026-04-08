@@ -4,7 +4,8 @@ use worldwake_core::{
     ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
     BelievedInstitutionalClaim, BlockedIntentMemory, BlockingFact, CombatProfile,
     CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
+    EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds, LastSeenMemory,
+    InTransitOnEdge,
     InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
     MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity,
     RecipeId, RecordData, ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw,
@@ -252,6 +253,8 @@ pub struct PlanningSnapshot {
     pub(crate) actor_tell_profile: Option<TellProfile>,
     pub(crate) actor_epistemic_profile: Option<EpistemicDispositionProfile>,
     pub(crate) actor_consultation_speed_factor: Option<Permille>,
+    pub(crate) actor_expectation_store: Option<ExpectationStore>,
+    pub(crate) actor_last_seen_memory: Option<LastSeenMemory>,
     pub(crate) actor_bandit_establishment_ticks: BTreeMap<EntityId, NonZeroU32>,
     /// All-pairs shortest travel times between snapshot places.
     /// Computed via Floyd-Warshall during construction. O(n^3) where n is
@@ -340,7 +343,7 @@ impl PlanningSnapshot {
         Self {
             actor,
             current_tick: view.current_tick(),
-            actor_belief_store: view.agent_belief_store(actor).unwrap_or_default(),
+            actor_belief_store: view.agent_belief_store(actor).cloned().unwrap_or_default(),
             entities,
             places,
             blocked_facility_uses: blocked_facility_uses.clone(),
@@ -391,6 +394,8 @@ impl PlanningSnapshot {
                 .collect(),
             actor_confidence_policy,
             actor_tell_profile: view.tell_profile(actor),
+            actor_expectation_store: view.expectation_store(actor),
+            actor_last_seen_memory: view.last_seen_memory(actor),
             actor_epistemic_profile: view.epistemic_disposition_profile(actor),
             actor_consultation_speed_factor: view.consultation_speed_factor(actor),
             actor_bandit_establishment_ticks: view

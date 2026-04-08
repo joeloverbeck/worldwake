@@ -113,6 +113,7 @@ pub enum DurationExpr {
     TravelToTarget {
         target_index: u8,
     },
+    EscortRouteTravel,
     ActorMetabolism {
         kind: MetabolismDurationKind,
     },
@@ -139,6 +140,7 @@ impl DurationExpr {
             Self::ConsultRecord { .. }
             | Self::TargetConsumable { .. }
             | Self::TravelToTarget { .. }
+            | Self::EscortRouteTravel
             | Self::ActorMetabolism { .. }
             | Self::ActorTradeDisposition
             | Self::ActorMarketPresence
@@ -193,6 +195,22 @@ impl DurationExpr {
                         format!("no directed travel edge connects {origin} -> {target}")
                     })?;
                 Ok(ActionDuration::new(edge.travel_time_ticks()))
+            }
+            Self::EscortRouteTravel => {
+                let target = payload
+                    .as_escort_to_safety()
+                    .map(|payload| payload.destination)
+                    .ok_or_else(|| {
+                        "escort route duration requires escort_to_safety payload".to_string()
+                    })?;
+                let origin = world
+                    .effective_place(actor)
+                    .ok_or_else(|| format!("actor {actor} has no effective place"))?;
+                let route = world
+                    .topology()
+                    .shortest_path(origin, target)
+                    .ok_or_else(|| format!("no route connects {origin} -> {target}"))?;
+                Ok(ActionDuration::new(route.total_travel_time))
             }
             Self::ActorMetabolism { kind } => {
                 let profile = world

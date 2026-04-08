@@ -24,7 +24,11 @@ macro_rules! define_system_ids {
             ///   are visible to co-located observers in the same tick via `force_control_claims_for_event()`.
             ///   Without this ordering, `Perception` cannot project institutional beliefs from political events
             ///   (violates Principle 7: locality of information).
-            /// - `Perception` runs before `EvidenceDecay` so same-tick observers can still
+            /// - `Perception` runs before `ExpectationCheck` so same-tick belief updates land
+            ///   before clock-based overdue transitions are evaluated.
+            /// - `ExpectationCheck` runs before `EvidenceDecay` so newly overdue expectations
+            ///   become visible before later cleanup runs.
+            /// - `Perception` also runs before `EvidenceDecay` so same-tick observers can still
             ///   perceive fresh scene evidence before cleanup runs.
             /// - `EvidenceDecay` runs before `Patrol` so authoritative route adaptation only sees
             ///   scene evidence that remains live after the tick's decay boundary.
@@ -63,6 +67,7 @@ define_system_ids! {
     (BanditCamp, "bandit_camp"),
     (Patrol, "patrol"),
     (EvidenceDecay, "evidence_decay"),
+    (ExpectationCheck, "expectation_check"),
 }
 
 impl fmt::Display for SystemId {
@@ -107,6 +112,7 @@ impl SystemManifest {
             SystemId::Contention,
             SystemId::Politics,
             SystemId::Perception,
+            SystemId::ExpectationCheck,
             SystemId::EvidenceDecay,
             SystemId::Patrol,
         ])
@@ -180,6 +186,7 @@ mod tests {
         assert_eq!(SystemId::Contention.to_string(), "contention");
         assert_eq!(SystemId::Perception.to_string(), "perception");
         assert_eq!(SystemId::EvidenceDecay.to_string(), "evidence_decay");
+        assert_eq!(SystemId::ExpectationCheck.to_string(), "expectation_check");
         assert_eq!(SystemId::Politics.to_string(), "politics");
         assert_eq!(SystemId::Patrol.to_string(), "patrol");
     }
@@ -200,6 +207,7 @@ mod tests {
                 SystemId::BanditCamp,
                 SystemId::Patrol,
                 SystemId::EvidenceDecay,
+                SystemId::ExpectationCheck,
             ]
         );
     }
@@ -264,10 +272,32 @@ mod tests {
                 SystemId::Contention,
                 SystemId::Politics,
                 SystemId::Perception,
+                SystemId::ExpectationCheck,
                 SystemId::EvidenceDecay,
                 SystemId::Patrol,
             ]
         );
+    }
+
+    #[test]
+    fn canonical_manifest_places_expectation_check_between_perception_and_evidence_decay() {
+        let manifest = SystemManifest::canonical();
+        let ordered = manifest.ordered_ids();
+        let perception_index = ordered
+            .iter()
+            .position(|id| *id == SystemId::Perception)
+            .unwrap();
+        let expectation_index = ordered
+            .iter()
+            .position(|id| *id == SystemId::ExpectationCheck)
+            .unwrap();
+        let evidence_decay_index = ordered
+            .iter()
+            .position(|id| *id == SystemId::EvidenceDecay)
+            .unwrap();
+
+        assert_eq!(expectation_index, perception_index + 1);
+        assert_eq!(evidence_decay_index, expectation_index + 1);
     }
 
     #[test]

@@ -9,11 +9,12 @@ use serde::Deserialize;
 use worldwake_core::{
     CarryCapacity, CognitiveProfile, CombatProfile, CommodityValuationProfile,
     CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
-    EpistemicDispositionProfile, ExecutionBudget, HomeostaticNeeds, IntentionDispositionProfile,
-    JusticeDispositionProfile, MetabolismProfile, PatrolProfile, PerceptionProfile,
-    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
-    WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, MetabolismProfile,
+    PatrolProfile, PerceptionProfile, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
+    Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag, items::CommodityKind,
+    topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -39,6 +40,8 @@ pub struct PlaceDef {
     pub name: String,
     #[serde(default)]
     pub tags: Vec<PlaceTag>,
+    #[serde(default)]
+    pub visibility_profile: Option<PlaceVisibilityProfile>,
 }
 
 /// A travel edge connecting two places.
@@ -83,6 +86,10 @@ pub struct AgentDef {
     pub communication_profile: Option<CommunicationProfile>,
     #[serde(default)]
     pub preference_profile: Option<PreferenceProfile>,
+    #[serde(default)]
+    pub expectation_store: Option<ExpectationStore>,
+    #[serde(default)]
+    pub last_seen_memory: Option<LastSeenMemory>,
     #[serde(default)]
     pub drive_thresholds: Option<DriveThresholds>,
     #[serde(default)]
@@ -164,6 +171,7 @@ fn default_true() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use worldwake_core::Permille;
 
     /// Deserialize with RON extensions that the scenario loader will use.
     fn from_ron_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> T {
@@ -190,6 +198,7 @@ mod tests {
         assert_eq!(def.places.len(), 1);
         assert_eq!(def.places[0].name, "Village");
         assert_eq!(def.places[0].tags, vec![PlaceTag::Village]);
+        assert_eq!(def.places[0].visibility_profile, None);
         assert!(def.edges.is_empty());
         assert_eq!(def.agents.len(), 1);
         assert_eq!(def.agents[0].name, "Alice");
@@ -392,6 +401,49 @@ mod tests {
     }
 
     #[test]
+    fn test_place_def_deserializes_visibility_profile() {
+        let ron_str = r#"(
+            seed: 7,
+            places: [
+                (
+                    name: "Forest",
+                    tags: [Forest],
+                    visibility_profile: (
+                        base_concealment: 400,
+                    ),
+                ),
+            ],
+            agents: [
+                (name: "Scout", location: "Forest", control: Ai),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(
+            def.places[0].visibility_profile,
+            Some(PlaceVisibilityProfile {
+                base_concealment: Permille::new(400).unwrap(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_place_def_visibility_profile_defaults_to_none() {
+        let ron_str = r#"(
+            seed: 8,
+            places: [
+                (name: "Square", tags: [Village]),
+            ],
+            agents: [
+                (name: "Watcher", location: "Square", control: Ai),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(def.places[0].visibility_profile, None);
+    }
+
+    #[test]
     fn test_agent_def_default_optional_fields() {
         let ron_str = r#"(
             seed: 1,
@@ -419,6 +471,8 @@ mod tests {
         assert!(agent.intention_disposition.is_none());
         assert!(agent.communication_profile.is_none());
         assert!(agent.preference_profile.is_none());
+        assert!(agent.expectation_store.is_none());
+        assert!(agent.last_seen_memory.is_none());
         assert!(agent.drive_thresholds.is_none());
         assert!(agent.metabolism_profile.is_none());
         assert!(agent.carry_capacity.is_none());

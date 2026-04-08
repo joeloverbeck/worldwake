@@ -1156,6 +1156,29 @@ impl GoldenHarness {
         self.institutional_knowledge_trace.as_ref()
     }
 
+    /// Clears accumulated trace data to prevent OOM in long-running tests.
+    /// Call periodically (e.g. every 500 ticks) in tests that run thousands of ticks.
+    pub fn clear_traces(&mut self) {
+        if let Some(ref mut sink) = self.driver.trace_sink_mut() {
+            sink.clear();
+        }
+        if let Some(ref mut sink) = self.action_trace {
+            sink.clear();
+        }
+        if let Some(ref mut sink) = self.request_resolution_trace {
+            sink.clear();
+        }
+        if let Some(ref mut sink) = self.politics_trace {
+            sink.clear();
+        }
+        if let Some(ref mut sink) = self.perception_trace {
+            sink.clear();
+        }
+        if let Some(ref mut sink) = self.institutional_knowledge_trace {
+            sink.clear();
+        }
+    }
+
     pub fn step_once(&mut self) -> TickStepResult {
         let mut controllers = AutonomousControllerRuntime::new(vec![&mut self.driver]);
         step_tick(

@@ -64,6 +64,14 @@ fn combined_relevant_places_internal(
     include_guidance_trace: bool,
 ) -> CombinedRelevantPlaces {
     let mut places = goal.key.kind.goal_relevant_places(state, recipes);
+    if places.is_empty()
+        && matches!(
+            goal.key.kind,
+            worldwake_core::GoalKind::SearchForMissing { .. }
+        )
+    {
+        places.extend(goal.evidence_places.iter().copied());
+    }
     let goal_relevant_places_for_trace = include_guidance_trace.then(|| places.clone());
     let base_len = places.len();
     let prerequisite_places = goal

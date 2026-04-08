@@ -4,9 +4,9 @@ use crate::{
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CognitiveProfile, EntityId,
-    FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame, Permille,
-    SuspensionReason, Tick,
+    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CognitiveProfile,
+    ContentionIntents, EntityId, FrameAssumption, FrameClearReason, FrameState, IntentionDomain,
+    IntentionFrame, Permille, SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -137,6 +137,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
     blocked_memory: &mut BlockedIntentMemory,
+    facility_intents: &mut ContentionIntents,
     agent: EntityId,
     step: &PlannedStep,
     tick: Tick,
@@ -196,6 +197,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
     runtime.current_plan = None;
     runtime.current_step_index = 0;
     runtime.materialization_bindings.clear();
+    facility_intents.intents.clear();
     runtime.dirty.insert(DirtySet::FRAME_BLOCKAGE);
     (true, updated_frame)
 }
@@ -383,6 +385,7 @@ pub(super) fn check_patience_exhaustion(
     frame: &IntentionFrame,
     agent_place: Option<EntityId>,
     blocked_memory: &mut BlockedIntentMemory,
+    facility_intents: &mut ContentionIntents,
     runtime: &mut AgentDecisionRuntime,
     tick: Tick,
     structural_block_ticks: u32,
@@ -408,6 +411,7 @@ pub(super) fn check_patience_exhaustion(
     runtime.current_plan = None;
     runtime.current_step_index = 0;
     runtime.materialization_bindings.clear();
+    facility_intents.intents.clear();
     runtime.dirty.insert(DirtySet::FRAME_PATIENCE);
     true
 }

@@ -43,6 +43,7 @@ pub fn register_travel_actions(
         reservation_requirements: Vec::new(),
         duration: DurationExpr::TravelToTarget { target_index: 0 },
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: Permille::new_unchecked(100),
         interruptibility: Interruptibility::InterruptibleWithPenalty,
         commit_conditions: vec![
             Precondition::TargetExists(0),
@@ -72,6 +73,7 @@ fn travel_state(
         Some(
             ActionState::Empty
             | ActionState::Heal { .. }
+            | ActionState::Escort { .. }
             | ActionState::Investigate { .. }
             | ActionState::Trade { .. },
         )
@@ -82,13 +84,13 @@ fn travel_state(
     }
 }
 
-fn direct_possessions(txn: &WorldTxn<'_>, actor: EntityId) -> Vec<EntityId> {
+pub(crate) fn direct_possessions(txn: &WorldTxn<'_>, actor: EntityId) -> Vec<EntityId> {
     let mut possessions = txn.possessions_of(actor);
     possessions.sort();
     possessions
 }
 
-fn had_combat_during_travel(
+pub(crate) fn had_combat_during_travel(
     event_log: &EventLog,
     agent: EntityId,
     start_tick: Tick,
@@ -106,7 +108,7 @@ fn had_combat_during_travel(
         })
 }
 
-fn record_route_experience(
+pub(crate) fn record_route_experience(
     txn: &mut WorldTxn<'_>,
     actor: EntityId,
     edge_id: TravelEdgeId,
@@ -203,6 +205,18 @@ fn start_travel(
     .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_tag(EventTag::Travel);
 
+    apply_travel_body_cost(instance, txn);
+
+    Ok(Some(ActionState::Travel {
+        edge_id,
+        origin,
+        destination,
+        departure_tick,
+        arrival_tick,
+    }))
+}
+
+pub(crate) fn apply_travel_body_cost(instance: &mut ActionInstance, txn: &WorldTxn<'_>) {
     // Resolve per-agent travel body cost from MetabolismProfile.
     // Cost = basal_rate * travel_multiplier / 1000 for each need.
     if let Some(profile) = txn.get_component_metabolism_profile(instance.actor) {
@@ -234,14 +248,6 @@ fn start_travel(
         );
         instance.body_cost_override = Some(cost);
     }
-
-    Ok(Some(ActionState::Travel {
-        edge_id,
-        origin,
-        destination,
-        departure_tick,
-        arrival_tick,
-    }))
 }
 
 #[allow(clippy::unnecessary_wraps)]

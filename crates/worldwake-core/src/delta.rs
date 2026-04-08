@@ -6,10 +6,11 @@ use crate::{
     CommodityKind, CommodityValuationProfile, CommunicationProfile, Container,
     ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
     DemandMemory, DeprivationExposure, DriveThresholds, EntityId, EntityKind,
-    EpistemicDispositionProfile, ExecutionBudget, FactionData, HomeostaticNeeds, InTransitOnEdge,
-    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
-    MerchandiseProfile, MetabolismProfile, Name, NoticeContent, OfficeData, OfficeForceProfile,
-    OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PreferenceProfile,
+    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, FactionData, HomeostaticNeeds,
+    InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
+    JusticeDispositionProfile, KnownRecipes, LastSeenMemory, MerchandiseProfile, MetabolismProfile,
+    Name, NoticeContent, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
+    PatrolRoute, PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile,
     ProductionJob, ProductionOutputOwnershipPolicy, PursuitProfile, Quantity, RecordData,
     ReservationRecord, ResourceSource, RouteExperience, SaleListing, SceneEvidence,
     SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
@@ -17,6 +18,7 @@ use crate::{
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
     component_schema::with_component_schema_entries,
 };
+use crate::BeliefStoreDiff;
 use serde::{Deserialize, Serialize};
 
 macro_rules! define_component_kind {
@@ -174,6 +176,32 @@ pub enum EntityDelta {
     Archived { entity: EntityId, kind: EntityKind },
 }
 
+/// Compact structural diff for a specific component type.
+///
+/// Each variant wraps the diff type for one component kind. New component
+/// diff types are added as new variants here.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ComponentDiff {
+    BeliefStore(BeliefStoreDiff),
+}
+
+impl ComponentDiff {
+    /// Apply this diff to a `ComponentValue`, producing the updated value.
+    ///
+    /// Panics if the diff variant does not match the component value variant.
+    #[must_use]
+    pub fn apply_to_component_value(&self, base: &ComponentValue) -> ComponentValue {
+        match self {
+            ComponentDiff::BeliefStore(diff) => {
+                let ComponentValue::AgentBeliefStore(store) = base else {
+                    panic!("BeliefStore diff applied to non-AgentBeliefStore ComponentValue");
+                };
+                ComponentValue::AgentBeliefStore(diff.clone().apply(store))
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ComponentDelta {
@@ -182,6 +210,11 @@ pub enum ComponentDelta {
         component_kind: ComponentKind,
         before: Option<ComponentValue>,
         after: ComponentValue,
+    },
+    CompactSet {
+        entity: EntityId,
+        component_kind: ComponentKind,
+        diff: ComponentDiff,
     },
     Removed {
         entity: EntityId,
@@ -233,8 +266,8 @@ pub enum StateDelta {
 #[cfg(test)]
 mod tests {
     use super::{
-        ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
-        RelationKind, RelationValue, ReservationDelta, StateDelta,
+        ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
+        RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
         ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, ArtifactKind,
@@ -243,15 +276,16 @@ mod tests {
         CombatProfile, CombatStance, CommodityKind, CommunicationProfile, Container,
         ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
         DeprivationExposure, DeprivationKind, DriveThresholds, EntityId, EntityKind,
-        EpistemicDispositionProfile, EventId, ExecutionBudget, FactionData, FrameState, GoalKey,
-        GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry,
-        IntentionDispositionProfile, IntentionDomain, IntentionDomainTag, IntentionFrame, ItemLot,
-        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, Name,
-        NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile, OfficeForceState,
-        PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille, ProductionJob,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, ProvenanceEntry,
-        PursuitProfile, Quantity, QueuedContentionIntent, RecordData, RecordEntryId, RecordKind,
-        ReservationId, ReservationRecord, ResourceSource, RewardSource, SaleListing, SceneEvidence,
+        EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, FactionData,
+        FrameState, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
+        InstitutionalRecordEntry, IntentionDispositionProfile, IntentionDomain, IntentionDomainTag,
+        IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastSeenMemory,
+        LoadUnits, LotOperation, MetabolismProfile, Name, NoticeContent, NoticeTopic, OfficeData,
+        OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
+        PerceptionSource, Permille, PlaceVisibilityProfile, ProductionJob, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, ProofRequirement, ProvenanceEntry, PursuitProfile,
+        Quantity, QueuedContentionIntent, RecordData, RecordEntryId, RecordKind, ReservationId,
+        ReservationRecord, ResourceSource, RewardSource, SaleListing, SceneEvidence,
         StockAssignment, StockAssignmentKind, StockStoragePolicy, TellProfile,
         TheftDispositionProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
         ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
@@ -456,6 +490,39 @@ mod tests {
                     }],
                 )]),
             }),
+            ComponentValue::ExpectationStore(ExpectationStore {
+                records: BTreeMap::from([(
+                    crate::ExpectationId(3),
+                    crate::ExpectationRecord {
+                        id: crate::ExpectationId(3),
+                        owner: entity(44),
+                        subject: entity(45),
+                        expected_place: entity(46),
+                        deadline_tick: Tick(17),
+                        grace_ticks: 6,
+                        basis: crate::ExpectationBasis::RoutineReturn,
+                        state: crate::ExpectationState::Overdue,
+                        created_tick: Tick(11),
+                    },
+                )]),
+                next_expectation_id: crate::ExpectationId(4),
+            }),
+            ComponentValue::LastSeenMemory(LastSeenMemory {
+                records: BTreeMap::from([(
+                    entity(47),
+                    crate::LastSeenRecord {
+                        subject: entity(47),
+                        place: entity(48),
+                        observed_tick: Tick(18),
+                        source: entity(49),
+                        provenance: crate::LastSeenProvenance::Hearsay {
+                            original_observer: entity(50),
+                            chain_depth: 1,
+                        },
+                    },
+                )]),
+                capacity: 9,
+            }),
             ComponentValue::PerceptionProfile(PerceptionProfile {
                 entity_memory_capacity: 16,
                 entity_claim_capacity: 16,
@@ -545,6 +612,9 @@ mod tests {
                     decay_ticks: 50,
                 }],
                 next_entry_id: 2,
+            }),
+            ComponentValue::PlaceVisibilityProfile(PlaceVisibilityProfile {
+                base_concealment: Permille::new(375).unwrap(),
             }),
             ComponentValue::BanditFactionPolicy(BanditFactionPolicy {
                 min_regroup_count: 3,
@@ -755,6 +825,8 @@ mod tests {
                 ComponentKind::NoticeContent,
                 ComponentKind::BlockedIntentMemory,
                 ComponentKind::AgentBeliefStore,
+                ComponentKind::ExpectationStore,
+                ComponentKind::LastSeenMemory,
                 ComponentKind::PerceptionProfile,
                 ComponentKind::TellProfile,
                 ComponentKind::CommunicationProfile,
@@ -777,6 +849,7 @@ mod tests {
                 ComponentKind::ProductionOutputOwnershipPolicy,
                 ComponentKind::BanditCamp,
                 ComponentKind::SceneEvidence,
+                ComponentKind::PlaceVisibilityProfile,
                 ComponentKind::BanditFactionPolicy,
                 ComponentKind::ProductionJob,
                 ComponentKind::InTransitOnEdge,
@@ -1120,5 +1193,49 @@ mod tests {
             let roundtrip: StateDelta = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, delta);
         }
+    }
+
+    #[test]
+    fn compact_set_serialization_roundtrip() {
+        let diff = ComponentDiff::BeliefStore(crate::BeliefStoreDiff::default());
+        let delta = ComponentDelta::CompactSet {
+            entity: entity(1),
+            component_kind: ComponentKind::AgentBeliefStore,
+            diff: diff.clone(),
+        };
+
+        let bytes = bincode::serialize(&delta).unwrap();
+        let roundtrip: ComponentDelta = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, delta);
+    }
+
+    #[test]
+    fn compact_set_in_state_delta_serialization_roundtrip() {
+        let diff = ComponentDiff::BeliefStore(crate::BeliefStoreDiff::default());
+        let delta = StateDelta::Component(ComponentDelta::CompactSet {
+            entity: entity(1),
+            component_kind: ComponentKind::AgentBeliefStore,
+            diff,
+        });
+
+        let bytes = bincode::serialize(&delta).unwrap();
+        let roundtrip: StateDelta = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, delta);
+    }
+
+    #[test]
+    fn existing_set_serialization_unchanged_after_compact_set_addition() {
+        let set_delta = ComponentDelta::Set {
+            entity: entity(3),
+            component_kind: ComponentKind::Name,
+            before: Some(ComponentValue::Name(Name("Old".to_string()))),
+            after: ComponentValue::Name(Name("New".to_string())),
+        };
+
+        // Serialize, deserialize, verify equality — confirms the Set variant's
+        // bincode index is unchanged by the CompactSet addition.
+        let bytes = bincode::serialize(&set_delta).unwrap();
+        let roundtrip: ComponentDelta = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(roundtrip, set_delta);
     }
 }

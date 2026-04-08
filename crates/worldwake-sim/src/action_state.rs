@@ -25,6 +25,13 @@ pub enum ActionState {
         departure_tick: Tick,
         arrival_tick: Tick,
     },
+    Escort {
+        subject: EntityId,
+        destination: EntityId,
+        leg_index: u16,
+        departure_tick: Tick,
+        arrival_tick: Tick,
+    },
     Trade {
         round: u32,
         initiator_role: TradeRole,
@@ -94,6 +101,19 @@ mod tests {
                 },
                 departure_tick: Tick(7),
                 arrival_tick: Tick(10),
+            },
+            ActionState::Escort {
+                subject: EntityId {
+                    slot: 9,
+                    generation: 0,
+                },
+                destination: EntityId {
+                    slot: 10,
+                    generation: 0,
+                },
+                leg_index: 2,
+                departure_tick: Tick(11),
+                arrival_tick: Tick(15),
             },
             ActionState::Trade {
                 round: 2,

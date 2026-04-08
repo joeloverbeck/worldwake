@@ -27,15 +27,16 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     ArtifactPostingContext, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
     BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule,
-    EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-    PunishmentKind, Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
-    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
-    ViolationKind, ViolationMemory, classify_communication, current_institutional_belief_topics,
-    load_per_unit, social_observation_is_redundant_for_listener,
-    tell_subject_is_directly_observable_by_listener,
+    EntityId, EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState, GoalKey,
+    GoalKind,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
+    OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
+    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
+    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
+    UtilityProfile, ViolationId, ViolationKind, ViolationMemory, classify_communication,
+    current_institutional_belief_topics, load_per_unit,
+    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
     GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
@@ -254,6 +255,9 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_patrol_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_recorded_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_search_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_report_found_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_escort_candidates(&mut candidates, &mut diagnostics, &ctx);
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
@@ -1193,11 +1197,12 @@ fn emit_social_candidates(
                     }),
             );
 
+        let speaker_beliefs = ctx.view.agent_belief_store(ctx.agent);
         for topic in selection.selected.iter().copied() {
-            let Some(speaker_beliefs) = ctx.view.agent_belief_store(ctx.agent) else {
+            let Some(speaker_beliefs) = speaker_beliefs else {
                 continue;
             };
-            let communication_class = classify_communication(&topic, &speaker_beliefs);
+            let communication_class = classify_communication(&topic, speaker_beliefs);
             let mut evidence = Evidence::with_entity(listener);
             evidence.places.insert(place);
             let mut trace = EvidenceTrace::default();
@@ -3237,6 +3242,264 @@ fn emit_recorded_violation_candidates(
     }
 }
 
+fn emit_search_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    if ctx.view.violation_disposition_profile(ctx.agent).is_none() {
+        return;
+    }
+
+    let Some(store) = ctx.view.expectation_store(ctx.agent) else {
+        return;
+    };
+    let last_seen_memory = ctx.view.last_seen_memory(ctx.agent);
+    let mut strongest_by_subject: BTreeMap<EntityId, ExpectationRecord> = BTreeMap::new();
+
+    for record in store.records.values().copied() {
+        if record.owner != ctx.agent || record.state != ExpectationState::Overdue {
+            continue;
+        }
+
+        strongest_by_subject
+            .entry(record.subject)
+            .and_modify(|current| {
+                if search_candidate_record_order(record, *current, ctx.current_tick).is_gt() {
+                    *current = record;
+                }
+            })
+            .or_insert(record);
+    }
+
+    for record in strongest_by_subject.into_values() {
+        let last_seen_place = last_seen_memory
+            .as_ref()
+            .and_then(|memory| memory.records.get(&record.subject))
+            .map(|record| record.place);
+
+        let mut evidence = Evidence::with_entity(record.subject);
+        evidence.places.insert(record.expected_place);
+        if let Some(last_seen_place) = last_seen_place {
+            evidence.places.insert(last_seen_place);
+        }
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::SearchForMissing {
+                subject: record.subject,
+                last_seen: last_seen_place,
+            },
+            last_seen_place.map_or(
+                OpportunityAnchor::Entity(record.subject),
+                OpportunityAnchor::Place,
+            ),
+            evidence.clone(),
+            EvidenceTrace::default(),
+        );
+
+        let missing_violation = ViolationKind::EntityMissing {
+            entity: record.subject,
+            expected_place: record.expected_place,
+        };
+        if ctx
+            .violation_memory
+            .is_recorded(&missing_violation, ctx.current_tick)
+        {
+            continue;
+        }
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::ReportMissing {
+                subject: record.subject,
+                to_office: None,
+                expectation_id: Some(record.id),
+            },
+            OpportunityAnchor::Entity(record.subject),
+            evidence,
+            EvidenceTrace::default(),
+        );
+    }
+}
+
+/// Emit [`GoalKind::ReportFound`] candidates when the agent has a resolved
+/// Found* expectation and the last-seen record matches the found place.
+fn emit_report_found_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    // Guard: social weight must be nonzero (reporting is a social action).
+    if ctx.view.utility_profile(ctx.agent).is_none_or(|u| u.social_weight.value() == 0) {
+        return;
+    }
+
+    let Some(store) = ctx.view.expectation_store(ctx.agent) else {
+        return;
+    };
+    let last_seen_memory = ctx.view.last_seen_memory(ctx.agent);
+
+    for record in store.records.values().copied() {
+        if record.owner != ctx.agent {
+            continue;
+        }
+        let ExpectationState::Resolved {
+            outcome:
+                ExpectationOutcome::FoundSafe { at_place: found_place }
+                | ExpectationOutcome::FoundWounded { at_place: found_place }
+                | ExpectationOutcome::FoundDead { at_place: found_place },
+        } = record.state
+        else {
+            continue;
+        };
+
+        // The last-seen record must confirm the found place (matches
+        // reportable_found_expectation in report_actions.rs).
+        let last_seen_matches = last_seen_memory
+            .as_ref()
+            .and_then(|memory| memory.records.get(&record.subject))
+            .is_some_and(|ls| ls.place == found_place);
+        if !last_seen_matches {
+            continue;
+        }
+
+        let mut evidence = Evidence::with_entity(record.subject);
+        evidence.places.insert(found_place);
+        evidence.places.insert(record.expected_place);
+        if let Some(place) = ctx.place {
+            evidence.places.insert(place);
+        }
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::ReportFound {
+                subject: record.subject,
+                expectation_id: record.id,
+            },
+            OpportunityAnchor::Entity(record.subject),
+            evidence,
+            EvidenceTrace::default(),
+        );
+    }
+}
+
+fn search_candidate_record_order(
+    left: ExpectationRecord,
+    right: ExpectationRecord,
+    current_tick: Tick,
+) -> std::cmp::Ordering {
+    expectation_basis_weight(left)
+        .cmp(&expectation_basis_weight(right))
+        .then_with(|| overdue_ticks(left, current_tick).cmp(&overdue_ticks(right, current_tick)))
+        .then_with(|| left.id.cmp(&right.id))
+}
+
+fn expectation_basis_weight(record: ExpectationRecord) -> u8 {
+    match record.basis {
+        worldwake_core::ExpectationBasis::DutyAssignment { .. }
+        | worldwake_core::ExpectationBasis::EscortObligation { .. } => 3,
+        worldwake_core::ExpectationBasis::DeliveryCommitment { .. } => 2,
+        worldwake_core::ExpectationBasis::RoutineReturn
+        | worldwake_core::ExpectationBasis::SocialPromise => 1,
+    }
+}
+
+fn overdue_ticks(record: ExpectationRecord, current_tick: Tick) -> u64 {
+    current_tick
+        .0
+        .saturating_sub(record.deadline_tick.0.saturating_add(record.grace_ticks))
+}
+
+/// Emit [`GoalKind::EscortToSafety`] candidates when the agent observes a
+/// wounded co-located entity and knows at least one reachable destination.
+fn emit_escort_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let Some(actor_place) = ctx.place else {
+        return;
+    };
+
+    // Guard: agent must value care actions.
+    if ctx.view.utility_profile(ctx.agent).is_none_or(|u| u.care_weight.value() == 0) {
+        return;
+    }
+
+    let colocated = ctx.view.entities_at(actor_place);
+    for entity in &colocated {
+        let subject = *entity;
+        if subject == ctx.agent || !ctx.view.has_wounds(subject) || ctx.view.is_dead(subject) {
+            continue;
+        }
+
+        // Suppress when a TreatWounds candidate already covers this patient.
+        // TreatWounds provides in-place care; escorting is only valuable when
+        // no direct-observation TreatWounds path exists for this entity.
+        let already_covered_by_care = candidates.iter().any(|c| {
+            matches!(
+                c.key.kind,
+                GoalKind::TreatWounds { patient } if patient == subject
+            )
+        });
+        if already_covered_by_care {
+            continue;
+        }
+
+        // Find at least one reachable destination that is not the current place.
+        let adjacent: Vec<EntityId> = ctx
+            .view
+            .adjacent_places_with_travel_ticks(actor_place)
+            .into_iter()
+            .map(|(place, _)| place)
+            .collect();
+        if adjacent.is_empty() {
+            continue;
+        }
+        // Pick the first adjacent place as the destination for the candidate.
+        // The affordance enumeration at runtime will expand all reachable
+        // destinations; the candidate only needs *a* plausible target for the
+        // planner's A* heuristic to guide the agent.
+        let destination = adjacent[0];
+
+        let mut evidence = Evidence::with_entity(subject);
+        evidence.places.insert(actor_place);
+        evidence.places.insert(destination);
+
+        let mut trace = EvidenceTrace::default();
+        if ctx.tracing_enabled
+            && let Some((_, belief)) = ctx
+                .view
+                .known_entity_beliefs(ctx.agent)
+                .into_iter()
+                .find(|(e, _)| *e == subject)
+        {
+            trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                subject,
+                aspect: BeliefAspect::Wounded,
+                source: belief.source,
+                observed_tick: belief.observed_tick,
+            });
+        }
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::EscortToSafety {
+                subject,
+                destination,
+            },
+            OpportunityAnchor::Place(destination),
+            evidence,
+            trace,
+        );
+    }
+}
+
 /// Detect expectation violations by comparing stale beliefs against current
 /// perception at the agent's current location.  Returns pending violation
 /// records for the caller to apply to [`ViolationMemory`].
@@ -4275,16 +4538,18 @@ mod tests {
         BodyPart, BountyTarget, BountyTerms, CombatProfile, CommodityConsumableProfile,
         CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
         DemandObservationReason, DriveThresholds, EffectiveRight, EligibilityRule, EntityId,
-        EntityKind, EpistemicDispositionProfile, GoalKey, GoalKind, HomeostaticNeedId,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
-        PerceptionSource, Permille, ProofRequirement, PunishmentFineSelectionTrace,
-        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-        RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
-        SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic,
-        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        UtilityProfile, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
+        EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
+        ExpectationRecord, ExpectationState, ExpectationStore, GoalKey, GoalKind,
+        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource,
+        Permille, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
+        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
+        ResourceSource, RewardSource, RightKind, SharedTellState, SocialObservation,
+        SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+        ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
@@ -4362,6 +4627,8 @@ mod tests {
         patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
         pursuit_profiles: BTreeMap<EntityId, worldwake_core::PursuitProfile>,
+        expectation_stores: BTreeMap<EntityId, ExpectationStore>,
+        last_seen_memories: BTreeMap<EntityId, LastSeenMemory>,
         reservation_ranges: BTreeMap<EntityId, Vec<TickRange>>,
         in_transit: BTreeSet<EntityId>,
         believed_owners: BTreeMap<EntityId, EntityId>,
@@ -4435,6 +4702,8 @@ mod tests {
                 patrol_profiles: BTreeMap::new(),
                 patrol_routes: BTreeMap::new(),
                 pursuit_profiles: BTreeMap::new(),
+                expectation_stores: BTreeMap::new(),
+                last_seen_memories: BTreeMap::new(),
                 reservation_ranges: BTreeMap::new(),
                 in_transit: BTreeSet::new(),
                 believed_owners: BTreeMap::new(),
@@ -4445,6 +4714,43 @@ mod tests {
     static SALE_LOT_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(5000);
 
     impl TestBeliefView {
+        /// Synthesize an `AgentBeliefStore` from scattered test fields and insert
+        /// it into `belief_stores`. Call after populating `beliefs`,
+        /// `social_observations`, and/or `institutional_claims` for an agent.
+        fn sync_belief_store(&mut self, agent: EntityId) {
+            let known_entities = self
+                .beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            let social_observations = self
+                .social_observations
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default();
+            let institutional_beliefs = self
+                .institutional_claims
+                .iter()
+                .filter(|((claim_agent, _), _)| *claim_agent == agent)
+                .map(|((_, key), claims)| (*key, claims.clone()))
+                .collect();
+            self.belief_stores.insert(
+                agent,
+                AgentBeliefStore {
+                    entity_claims: BTreeMap::new(),
+                    next_claim_id: worldwake_core::ClaimId(0),
+                    known_entities,
+                    social_observations,
+                    told_beliefs: BTreeMap::new(),
+                    heard_beliefs: BTreeMap::new(),
+                    asked_witnesses: BTreeMap::new(),
+                    institutional_beliefs,
+                },
+            );
+        }
+
         /// Register a seller as having listed lots of `commodity` at `place`.
         /// Creates a synthetic lot entity and maps it to the seller.
         fn register_seller(&mut self, place: EntityId, commodity: CommodityKind, seller: EntityId) {
@@ -4496,40 +4802,8 @@ mod tests {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
-            self.belief_stores.get(&agent).cloned().or_else(|| {
-                let has_any_subjective_memory = self.beliefs.contains_key(&agent)
-                    || self.social_observations.contains_key(&agent)
-                    || self
-                        .institutional_claims
-                        .keys()
-                        .any(|(claim_agent, _)| *claim_agent == agent);
-                has_any_subjective_memory.then(|| AgentBeliefStore {
-                    entity_claims: BTreeMap::new(),
-                    next_claim_id: worldwake_core::ClaimId(0),
-                    known_entities: self
-                        .beliefs
-                        .get(&agent)
-                        .cloned()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .collect(),
-                    social_observations: self
-                        .social_observations
-                        .get(&agent)
-                        .cloned()
-                        .unwrap_or_default(),
-                    told_beliefs: BTreeMap::new(),
-                    heard_beliefs: BTreeMap::new(),
-                    asked_witnesses: BTreeMap::new(),
-                    institutional_beliefs: self
-                        .institutional_claims
-                        .iter()
-                        .filter(|((claim_agent, _), _)| *claim_agent == agent)
-                        .map(|((_, key), claims)| (*key, claims.clone()))
-                        .collect(),
-                })
-            })
+        fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
+            self.belief_stores.get(&agent)
         }
 
         fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
@@ -4753,6 +5027,14 @@ mod tests {
 
         fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
             self.utility_profiles.get(&agent).cloned()
+        }
+
+        fn expectation_store(&self, agent: EntityId) -> Option<ExpectationStore> {
+            self.expectation_stores.get(&agent).cloned()
+        }
+
+        fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
+            self.last_seen_memories.get(&agent).cloned()
         }
 
         fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
@@ -5128,6 +5410,65 @@ mod tests {
             counterparty: None,
             reason: DemandObservationReason::WantedToBuyButNoSeller,
         }
+    }
+
+    fn overdue_expectation(
+        id: u64,
+        owner: EntityId,
+        subject: EntityId,
+        expected_place: EntityId,
+        deadline_tick: u64,
+        basis: ExpectationBasis,
+    ) -> ExpectationRecord {
+        ExpectationRecord {
+            id: ExpectationId(id),
+            owner,
+            subject,
+            expected_place,
+            deadline_tick: Tick(deadline_tick),
+            grace_ticks: 0,
+            basis,
+            state: ExpectationState::Overdue,
+            created_tick: Tick(deadline_tick.saturating_sub(1)),
+        }
+    }
+
+    fn active_expectation(
+        id: u64,
+        owner: EntityId,
+        subject: EntityId,
+        expected_place: EntityId,
+        deadline_tick: u64,
+    ) -> ExpectationRecord {
+        ExpectationRecord {
+            state: ExpectationState::Active,
+            ..overdue_expectation(
+                id,
+                owner,
+                subject,
+                expected_place,
+                deadline_tick,
+                ExpectationBasis::RoutineReturn,
+            )
+        }
+    }
+
+    fn last_seen(subject: EntityId, place: EntityId, observed_tick: u64) -> LastSeenRecord {
+        LastSeenRecord {
+            subject,
+            place,
+            observed_tick: Tick(observed_tick),
+            source: subject,
+            provenance: LastSeenProvenance::DirectObservation,
+        }
+    }
+
+    fn expectation_store(records: impl IntoIterator<Item = ExpectationRecord>) -> ExpectationStore {
+        let mut store = ExpectationStore::default();
+        for record in records {
+            store.records.insert(record.id, record);
+        }
+        store
     }
 
     fn sample_recipe(
@@ -10059,6 +10400,7 @@ mod tests {
             ],
         );
 
+        view.sync_belief_store(speaker);
         let candidates = generate_candidates(
             &view,
             speaker,
@@ -10200,6 +10542,7 @@ mod tests {
             vec![(dead_subject, dead_belief), (rumor_subject, rumor_belief)],
         );
 
+        view.sync_belief_store(speaker);
         let candidates = generate_candidates(
             &view,
             speaker,
@@ -10312,6 +10655,7 @@ mod tests {
             }],
         );
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -10422,6 +10766,7 @@ mod tests {
             vec![told_memory(listener, subject, 10, &old_belief)],
         );
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -10536,6 +10881,7 @@ mod tests {
         view.told_beliefs
             .insert(speaker, vec![told_memory(listener, subject, 1, &belief)]);
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -10611,6 +10957,7 @@ mod tests {
             vec![told_memory(listener, recent_subject, 10, &recent_belief)],
         );
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -12304,6 +12651,7 @@ mod tests {
         view.beliefs
             .insert(speaker, vec![known_entity(subject, place)]);
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -12383,6 +12731,7 @@ mod tests {
             )],
         );
 
+        view.sync_belief_store(speaker);
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
@@ -12619,6 +12968,252 @@ mod tests {
             investigation_motive_weight: pm(500),
             ownership_motive_bonus: pm(200),
         }
+    }
+
+    #[test]
+    fn overdue_expectation_emits_search_and_report_missing_goals() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let home = entity(10);
+        let expected_place = entity(11);
+        let last_seen_place = entity(12);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, home);
+        view.entities_at.insert(home, vec![agent]);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.expectation_stores.insert(
+            agent,
+            expectation_store([overdue_expectation(
+                1,
+                agent,
+                subject,
+                expected_place,
+                4,
+                ExpectationBasis::DutyAssignment { office: entity(40) },
+            )]),
+        );
+        view.last_seen_memories.insert(
+            agent,
+            LastSeenMemory {
+                records: BTreeMap::from([(subject, last_seen(subject, last_seen_place, 5))]),
+                capacity: 20,
+            },
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            false,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::SearchForMissing {
+                subject,
+                last_seen: Some(last_seen_place),
+            }
+        ));
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::ReportMissing {
+                subject,
+                to_office: None,
+                expectation_id: Some(ExpectationId(1)),
+            }
+        ));
+    }
+
+    #[test]
+    fn active_expectation_does_not_emit_missing_response_goals() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let home = entity(10);
+        let expected_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, home);
+        view.entities_at.insert(home, vec![agent]);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.expectation_stores.insert(
+            agent,
+            expectation_store([active_expectation(1, agent, subject, expected_place, 9)]),
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            false,
+        );
+
+        assert!(!result.candidates.iter().any(|candidate| {
+            matches!(
+                candidate.key.kind,
+                GoalKind::SearchForMissing { subject: goal_subject, .. }
+                    | GoalKind::ReportMissing { subject: goal_subject, .. }
+                    if goal_subject == subject
+            )
+        }));
+    }
+
+    #[test]
+    fn blocked_search_goal_is_filtered_from_missing_response_candidates() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let home = entity(10);
+        let last_seen_place = entity(12);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, home);
+        view.entities_at.insert(home, vec![agent]);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.expectation_stores.insert(
+            agent,
+            expectation_store([overdue_expectation(
+                1,
+                agent,
+                subject,
+                home,
+                4,
+                ExpectationBasis::RoutineReturn,
+            )]),
+        );
+        view.last_seen_memories.insert(
+            agent,
+            LastSeenMemory {
+                records: BTreeMap::from([(subject, last_seen(subject, last_seen_place, 5))]),
+                capacity: 20,
+            },
+        );
+
+        let mut blocked = BlockedIntentMemory::default();
+        let goal_key = GoalKey::from(GoalKind::SearchForMissing {
+            subject,
+            last_seen: Some(last_seen_place),
+        });
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key,
+                place: Some(last_seen_place),
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::NoKnownPath,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(20),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            false,
+        );
+
+        assert!(!contains_goal(
+            &result.candidates,
+            GoalKind::SearchForMissing {
+                subject,
+                last_seen: Some(last_seen_place),
+            }
+        ));
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::ReportMissing {
+                subject,
+                to_office: None,
+                expectation_id: Some(ExpectationId(1)),
+            }
+        ));
+    }
+
+    #[test]
+    fn active_missing_violation_suppresses_report_missing_candidate() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let home = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, home);
+        view.entities_at.insert(home, vec![agent]);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.expectation_stores.insert(
+            agent,
+            expectation_store([overdue_expectation(
+                1,
+                agent,
+                subject,
+                home,
+                4,
+                ExpectationBasis::SocialPromise,
+            )]),
+        );
+
+        let mut violation_memory = ViolationMemory::default();
+        violation_memory.record(
+            ViolationKind::EntityMissing {
+                entity: subject,
+                expected_place: home,
+            },
+            Tick(8),
+            50,
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &violation_memory,
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            false,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::SearchForMissing {
+                subject,
+                last_seen: None,
+            }
+        ));
+        assert!(!contains_goal(
+            &result.candidates,
+            GoalKind::ReportMissing {
+                subject,
+                to_office: None,
+                expectation_id: Some(ExpectationId(1)),
+            }
+        ));
     }
 
     fn belief_at_place(place: EntityId, tick: Tick) -> BelievedEntityState {

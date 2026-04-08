@@ -31,6 +31,7 @@ Read ALL of these files before any analysis:
 2. **`tickets/_TEMPLATE.md`** — the canonical ticket structure; every ticket you produce must follow this template exactly
 3. **`tickets/README.md`** — the ticket authoring contract; understand the required sections and checks
 4. **`docs/FOUNDATIONS.md`** — architectural commandments; every ticket must align with these principles. Skip if read earlier in this session and not modified since.
+5. **`docs/precision-rules.md`** — precision rules for technical claims; governs Assumption Reassessment and Verification Layers sections. Skip if read earlier in this session and not modified since.
 
 ### Step 2: Codebase Validation
 

@@ -7,13 +7,14 @@ use crate::{
     ComponentValue, Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
     ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator,
     EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
-    FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame,
-    ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
-    MetabolismProfile, Name, NoticeContent, OfficeData, OfficeForceProfile, OfficeForceState,
-    PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PreferenceProfile,
-    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
-    RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence,
-    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    ExpectationStore, FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
+    IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastSeenMemory, LoadUnits,
+    LotOperation, MerchandiseProfile, MetabolismProfile, Name, NoticeContent, OfficeData,
+    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag,
+    PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
+    ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, RecordData,
+    RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence, SourceReliability,
+    StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
     TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
     UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
     WoundList, component_schema::with_component_schema_entries,
@@ -156,6 +157,8 @@ impl World {
             world.insert_component_name(entity, Name(name.to_string()))?;
             world.insert_component_agent_data(entity, AgentData { control_source })?;
             world.insert_component_agent_belief_store(entity, AgentBeliefStore::new())?;
+            world.insert_component_expectation_store(entity, ExpectationStore::default())?;
+            world.insert_component_last_seen_memory(entity, LastSeenMemory::default())?;
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
@@ -3526,10 +3529,10 @@ mod tests {
         assert!(world.can_exercise_control(holder, item).is_ok());
 
         let blocked_owner = world.can_exercise_control(owner, item).unwrap_err();
-        assert!(matches!(blocked_owner, WorldError::PreconditionFailed(_)));
+        assert!(matches!(blocked_owner, WorldError::ControlDenied { .. }));
 
         let unrelated = world.can_exercise_control(stranger, item).unwrap_err();
-        assert!(matches!(unrelated, WorldError::PreconditionFailed(_)));
+        assert!(matches!(unrelated, WorldError::ControlDenied { .. }));
     }
 
     #[test]
@@ -3580,7 +3583,7 @@ mod tests {
         world.set_owner(item, faction).unwrap();
 
         let err = world.can_exercise_control(outsider, item).unwrap_err();
-        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+        assert!(matches!(err, WorldError::ControlDenied { .. }));
     }
 
     #[test]
@@ -3598,7 +3601,7 @@ mod tests {
         // Office is vacant — no one holds it
 
         let err = world.can_exercise_control(outsider, item).unwrap_err();
-        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+        assert!(matches!(err, WorldError::ControlDenied { .. }));
     }
 
     #[test]
@@ -3620,7 +3623,7 @@ mod tests {
         world.set_possessor(item, possessor).unwrap();
 
         let err = world.can_exercise_control(member, item).unwrap_err();
-        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+        assert!(matches!(err, WorldError::ControlDenied { .. }));
     }
 
     #[test]
@@ -3668,7 +3671,7 @@ mod tests {
         // Office is vacant — agent does not hold it
 
         let err = world.can_exercise_control(agent, item).unwrap_err();
-        assert!(matches!(err, WorldError::PreconditionFailed(_)));
+        assert!(matches!(err, WorldError::ControlDenied { .. }));
     }
 
     #[test]
@@ -3704,6 +3707,64 @@ mod tests {
 
         assert!(world.can_exercise_control(actor, satchel).is_ok());
         assert!(world.can_exercise_control(actor, bread).is_ok());
+    }
+
+    #[test]
+    fn has_control_agrees_with_can_exercise_control() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let faction = world.create_faction("River Pact", Tick(1)).unwrap();
+        let office = world.create_office("Mayor", Tick(1)).unwrap();
+        let owner = world
+            .create_agent("Aster", ControlSource::Ai, Tick(2))
+            .unwrap();
+        let holder = world
+            .create_agent("Bram", ControlSource::Ai, Tick(3))
+            .unwrap();
+        let member = world
+            .create_agent("Cora", ControlSource::Ai, Tick(4))
+            .unwrap();
+        let stranger = world
+            .create_agent("Dara", ControlSource::Ai, Tick(5))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Apple, Quantity(1), Tick(6))
+            .unwrap();
+
+        // Unowned, unpossessed — no one has control
+        assert_eq!(
+            world.has_control(owner, item),
+            world.can_exercise_control(owner, item).is_ok()
+        );
+
+        // Direct ownership
+        world.set_owner(item, owner).unwrap();
+        assert!(world.has_control(owner, item));
+        assert_eq!(
+            world.has_control(stranger, item),
+            world.can_exercise_control(stranger, item).is_ok()
+        );
+
+        // Possession overrides ownership
+        world.set_possessor(item, holder).unwrap();
+        assert!(world.has_control(holder, item));
+        assert!(!world.has_control(owner, item));
+        assert_eq!(
+            world.has_control(owner, item),
+            world.can_exercise_control(owner, item).is_ok()
+        );
+
+        // Faction authority
+        world.clear_possessor(item).unwrap();
+        world.set_owner(item, faction).unwrap();
+        world.add_member(member, faction).unwrap();
+        assert!(world.has_control(member, item));
+        assert!(!world.has_control(stranger, item));
+
+        // Office authority
+        world.set_owner(item, office).unwrap();
+        world.assign_office(office, owner).unwrap();
+        assert!(world.has_control(owner, item));
+        assert!(!world.has_control(stranger, item));
     }
 
     #[test]

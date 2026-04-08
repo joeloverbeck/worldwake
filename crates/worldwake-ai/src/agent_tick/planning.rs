@@ -496,11 +496,13 @@ fn adopt_selected_plan(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
     ranked_candidates: &[RankedGoal],
     selected_plan: PlannedPlan,
     tick: Tick,
 ) {
     runtime.materialization_bindings.clear();
+    facility_intents.intents.clear();
     *active_goal = Some(ActiveGoal {
         goal_key: selected_plan.goal,
         adopted_at: tick,
@@ -521,6 +523,7 @@ fn clear_current_plan(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
     ranked_candidates: &[RankedGoal],
 ) {
     if jc.is_some() {
@@ -528,6 +531,7 @@ fn clear_current_plan(
     }
     *jc = None;
     runtime.materialization_bindings.clear();
+    facility_intents.intents.clear();
     *active_goal = None;
     runtime.current_plan = None;
     runtime.current_step_index = 0;
@@ -544,6 +548,7 @@ pub(super) fn plan_and_validate_next_step(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
     blocked_memory: &BlockedIntentMemory,
@@ -635,12 +640,13 @@ pub(super) fn plan_and_validate_next_step(
                 runtime,
                 active_goal,
                 jc,
+                facility_intents,
                 ranked_candidates,
                 selected_plan,
                 tick,
             );
         } else {
-            clear_current_plan(runtime, active_goal, jc, ranked_candidates);
+            clear_current_plan(runtime, active_goal, jc, facility_intents, ranked_candidates);
         }
         runtime.dirty = DirtySet::default();
     }
@@ -673,6 +679,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
     blocked_memory: &BlockedIntentMemory,
@@ -702,6 +709,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             runtime,
             active_goal,
             jc,
+            facility_intents,
             agent,
             ranked_candidates,
             blocked_memory,
@@ -910,6 +918,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             }
 
             runtime.materialization_bindings.clear();
+            facility_intents.intents.clear();
             *active_goal = Some(ActiveGoal {
                 goal_key: selected_plan.goal,
                 adopted_at: tick,
@@ -930,6 +939,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             }
             *jc = None;
             runtime.materialization_bindings.clear();
+            facility_intents.intents.clear();
             *active_goal = None;
             runtime.current_plan = None;
             runtime.current_step_index = 0;
@@ -1804,6 +1814,7 @@ mod tests {
         };
         let mut active_goal = None;
         let mut frame = None;
+        let mut facility_intents = worldwake_core::ContentionIntents::default();
 
         let (_, _, _, plan_search_trace, _) = super::plan_and_validate_next_step_traced(
             &world,
@@ -1811,6 +1822,7 @@ mod tests {
             &mut runtime,
             &mut active_goal,
             &mut frame,
+            &mut facility_intents,
             agent,
             &ranked_candidates,
             &worldwake_core::BlockedIntentMemory::default(),

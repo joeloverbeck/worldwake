@@ -105,6 +105,7 @@ mod tests {
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
             duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
@@ -187,10 +188,12 @@ mod tests {
     }
 
     fn execution_context(recipes: &RecipeRegistry) -> ActionExecutionContext<'_> {
+        let base = ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(1));
         ActionExecutionContext {
-            cause: CauseRef::Bootstrap,
-            tick: Tick(1),
+            cause: base.cause,
+            tick: base.tick,
             recipe_registry: recipes,
+            action_defs: base.action_defs,
         }
     }
 

@@ -5,144 +5,117 @@ description: "Review a just-implemented Worldwake ticket after coding is finishe
 
 # Post-Ticket Review
 
-Use this skill after implementation is finished for a ticket. The goal is to close the completed ticket cleanly, then inspect the implemented work for architectural follow-up work without muddying the completed change.
+Post-implementation review and follow-up planning. Archives the completed ticket, inspects the work for architectural follow-up, and creates tickets when warranted.
 
 Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), [tickets/README.md](../../../tickets/README.md), and [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) before making changes.
 
-This skill may:
-- update the completed ticket's `Outcome` and verification notes when the correction is factual and unambiguous
-- archive the completed ticket
-- create new tickets in `tickets/`
-- update existing active tickets in `tickets/` when that is better than opening a duplicate
+**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), archive it, create new tickets in `tickets/`, update existing active tickets.
 
-This skill must not modify production code or tests. It is a post-implementation review and follow-up planning workflow.
+**Forbidden**: modifying production code or tests.
 
 ## Workflow
 
 ### 1. Resolve the target ticket
 
-1. Use the provided ticket name if one was supplied.
-2. If the just-finished ticket was already archived in the current session, use that archived ticket directly.
-3. Otherwise, search active tickets for the most recently touched candidate and use that ticket.
-4. Confirm the implementation state for that ticket is present locally, whether committed or not.
-5. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all reads, writes, searches, and archival actions.
-6. If the target ticket cannot be identified confidently, stop and ask for clarification.
+1. Use the provided ticket name if supplied.
+2. If the just-finished ticket was already archived this session, use that archived ticket.
+3. Otherwise, search active tickets for the most recently touched candidate.
+4. Confirm the implementation state is present locally (committed or not).
+5. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
+6. If the target ticket cannot be identified confidently, stop and ask.
 
 ### 2. Check archival readiness
 
-1. Read the target ticket at its current path and confirm its current status.
-2. Confirm the ticket's `Outcome` section and verification notes accurately describe the implemented work and the verification already performed.
-3. Fix factual, unambiguous ticket handoff issues directly:
-   - missing or incomplete `Outcome`
-   - inaccurate verification notes
-   - archival mechanics required by [docs/archival-workflow.md](../../../docs/archival-workflow.md)
-4. If the ticket still has unresolved in-scope deliverables relative to its current text, stop and report archival as blocked. Do not write completion handoff text yet; implementation must resume first.
-   - This includes stale source-golden headers, generated scenario docs, or other owned proof-surface prose when they no longer match the implemented contract. Treat that as incomplete handoff work, not as a separate follow-up ticket by default.
-5. If the ticket is still active and the scoped work is complete, apply the archival checks above before moving it to the archive.
-6. If the ticket is already archived, validate the archived handoff content rather than reopening or moving it again.
-7. Do not revise the completed ticket's problem statement, scope, or acceptance criteria except where archival mechanics require factual completion notes.
-8. If archival readiness is ambiguous, use the 1-3-1 rule from [AGENTS.md](../../../AGENTS.md) before proceeding.
-9. If the ticket is ready and still active, archive it.
-10. If an earlier post-ticket review pass blocked archival, treat a later pass as the authoritative handoff step only after the remaining in-scope implementation has landed.
+1. Read the target ticket and confirm its current status.
+2. Confirm `Outcome` and verification notes accurately describe the implemented work.
+3. Fix factual, unambiguous handoff issues directly: missing/incomplete `Outcome`, inaccurate verification notes, archival mechanics per [docs/archival-workflow.md](../../../docs/archival-workflow.md).
+4. If unresolved in-scope deliverables remain, stop and report archival as blocked — implementation must resume first.
+   - This includes stale source-golden headers, generated scenario docs, or owned proof-surface prose that no longer matches the implemented contract. Treat as incomplete handoff, not a separate follow-up ticket.
+5. If already archived, validate the archived handoff content rather than reopening.
+6. Do not revise the ticket's problem statement, scope, or acceptance criteria except for factual completion notes required by archival mechanics.
+7. If archival readiness is ambiguous, apply the 1-3-1 rule.
+8. Archive if ready. If a prior review pass blocked archival, treat this pass as the authoritative handoff step only after remaining in-scope implementation has landed.
 
 ### 3. Establish the review surface
 
 Review the actual local implementation state, not an idealized committed state.
 
-Start with:
-- the completed ticket
-- the files changed for that work
-- directly relevant tests, traces, and docs
+**Starting surface**:
+- The completed ticket, changed files, directly relevant tests/traces/docs
 
-Broaden the review when the implementation touches a known boundary or contract:
-- shared abstractions across crates
-- planner or authoritative-validation boundaries
-- information-path contracts
-- traceability surfaces
-- test harness or golden proof surfaces
+**Broaden when the implementation touches a known boundary**:
+- Shared abstractions across crates
+- Planner or authoritative-validation boundaries
+- Information-path contracts
+- Traceability surfaces
+- Test harness or golden proof surfaces
 
-The review covers:
-- production architecture
-- test architecture
-- traceability/debuggability
-- ticket and documentation handoff quality
-- active downstream ticket roadmap drift when the completed work changed what remains to be done
+**Review dimensions**:
+- Production architecture
+- Test architecture
+- Traceability/debuggability
+- Ticket and documentation handoff quality
+- Active downstream ticket roadmap drift
 
 ### 4. Audit against FOUNDATIONS and architecture quality
 
 Assess whether the completed work:
-- aligns with [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
-- preserves repo invariants from [AGENTS.md](../../../AGENTS.md)
-- leaves the touched subsystem clean, robust, and extensible
+- Aligns with [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
+- Preserves repo invariants from [AGENTS.md](../../../AGENTS.md)
+- Leaves the touched subsystem clean, robust, and extensible
 
 Look for:
-- direct `FOUNDATIONS` contradictions
-- architectural contradictions the completed ticket exposed but did not resolve
-- duplicated or competing information paths
-- weak abstraction boundaries
-- fragile test architecture or proof surfaces
-- missing traceability needed to debug the canonical path
-- cleanup or design debt near the touched subsystem that the implementation surfaced
+- Direct `FOUNDATIONS` contradictions
+- Architectural contradictions the ticket exposed but did not resolve
+- Duplicated or competing information paths
+- Weak abstraction boundaries
+- Fragile test architecture or proof surfaces
+- Missing traceability for the canonical path
+- Cleanup or design debt surfaced by the implementation
 
-Separate findings into:
-- problems solved by the completed ticket
-- residual concerns left behind
-- new concerns exposed by the implementation
+Separate findings into: problems solved, residual concerns, newly exposed concerns.
 
 ### 5. Decide whether follow-up work is warranted
 
-Create or update follow-up tickets when findings are backed by concrete evidence and materially improve:
-- `FOUNDATIONS` alignment
-- cleanliness
-- robustness
-- extensibility
-- test architecture
-- traceability
+Create or update follow-up tickets only when findings are backed by concrete evidence and materially improve FOUNDATIONS alignment, cleanliness, robustness, extensibility, test architecture, or traceability. Do not create tickets for vague stylistic preferences or speculative cleanup.
 
-Do not create tickets for vague stylistic preferences or speculative cleanup.
+Prefer small, distinct tickets split by architectural concern. Use the 1-3-1 rule when ticket splitting or dependency structure is genuinely unclear.
 
-When a concern is already covered by an active ticket in [tickets/](../../../tickets):
-- if the existing ticket fully covers it, cite that ticket in the report and do not duplicate it
-- if the existing ticket should be expanded or clarified to capture the concern accurately, update that ticket factually
+#### Create vs. update vs. cite decision
 
-When the completed ticket materially resolves assumptions owned by nearby active tickets, update those tickets factually to remove already-delivered work, stale failure claims, or obsolete roadmap ownership.
+| Situation | Action |
+|-----------|--------|
+| Concern fully covered by an active ticket | Cite that ticket in the report; do not duplicate |
+| Active ticket partially covers the concern | Update that ticket factually to capture it accurately |
+| No active ticket covers the concern | Create a new follow-up ticket |
 
-When a completed ticket in a staged chain lands only a shared type surface, reserved enum variant, or other non-live substrate slice, explicitly check nearby active tickets for confusion between "the symbol now exists" and "the behavior is now live." If those tickets still accurately reserve the first live behavior for a later slice, cite them as covered; if not, update them factually before archival so the active roadmap does not imply already-live behavior.
+#### Active-ticket maintenance checks
 
-When a completed ticket was corrected or narrowed during implementation, explicitly check whether nearby active tickets still assume the older broader boundary. If the remaining slice is still real and no active ticket cleanly owns it, create a new follow-up ticket and update adjacent `Deps` factually before archival so the roadmap still matches the implemented end-to-end activation path.
+Run these checks before archival to keep the active roadmap accurate:
 
-When a completed ticket falsifies or materially narrows a claim still present in an active spec under `specs/`, explicitly classify that as active spec drift during the review. If reconciling the spec is already in scope for the current handoff, update it factually. Otherwise, create or update the follow-up ticket that now owns bringing the active spec back into alignment with the live evidence, and name that ownership clearly in the report.
-
-Prefer small, distinct tickets split by architectural concern.
-
-When a new follow-up ticket changes architectural ordering or prerequisites, also check adjacent active tickets in the same subsystem sequence and update their scope or `Deps` factually if needed.
-
-If ticket splitting or dependency structure is genuinely unclear, use the 1-3-1 rule before creating or editing tickets.
+- **Delivered work overlap**: When the completed ticket materially resolves assumptions owned by nearby active tickets, update those tickets to remove already-delivered work, stale failure claims, or obsolete roadmap ownership.
+- **Substrate-only slices**: When the completed ticket landed only a shared type surface, reserved enum variant, or other non-live substrate, check nearby active tickets for confusion between "the symbol now exists" and "the behavior is now live." Cite if accurate; update if not.
+- **Scope narrowing**: When the completed ticket was corrected or narrowed during implementation, check whether nearby active tickets still assume the older broader boundary. If the remaining slice is real and no active ticket owns it, create a follow-up and update adjacent `Deps`.
+- **Active spec drift**: When the completed ticket falsifies or narrows a claim in an active spec under `specs/`, classify that as active spec drift. Update the spec factually if in scope for this handoff; otherwise create/update a follow-up ticket that owns bringing the spec into alignment.
+- **Dependency chain impact**: When a new follow-up ticket changes architectural ordering or prerequisites, also check adjacent active tickets in the same subsystem sequence and update their scope or `Deps` factually.
 
 ### 6. Author follow-up tickets
 
 When a new ticket is warranted:
-1. Create it from [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md).
-2. Follow the contract in [tickets/README.md](../../../tickets/README.md).
-3. Reassess the new ticket against current code and docs before finalizing its text.
-4. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
-5. Keep the ticket bounded to one coherent concern.
+1. Create from [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) per [tickets/README.md](../../../tickets/README.md).
+2. Reassess against current code and docs before finalizing.
+3. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
+4. Keep bounded to one coherent concern.
 
 Set fields using evidence, not placeholders:
 - `Priority`: infer from impact and blast radius
 - `Effort`: infer from likely implementation scope
 - `Engine Changes`: reflect whether production architecture must change
-- `Deps`: include both strict blockers and strong sequencing dependencies
+- `Deps`: include strict blockers and strong sequencing dependencies (may point to newly created or existing active tickets)
 
-Dependencies may point to:
-- newly created tickets from this review
-- existing active tickets in `tickets/`
-
-Create high-confidence tickets directly. Ask before creating a ticket only when the scope or dependency graph is uncertain.
+Create high-confidence tickets directly. Ask before creating only when scope or dependency graph is uncertain.
 
 ### 7. Present the report
-
-Return a structured report in the conversation with these sections:
 
 ```markdown
 # Post-Ticket Review: <ticket-id>
@@ -194,7 +167,7 @@ Return a structured report in the conversation with these sections:
 - **Created**: <ticket ids with one-line rationale and deps>
 - **Updated**: <ticket ids with one-line rationale>
 - **Covered by existing tickets**: <ticket ids and why no new ticket was created>
-- **Adjacent roadmap still valid**: <nearby active tickets that remain relevant context but were not updated and did not directly absorb a newly discovered concern>
+- **Adjacent roadmap still valid**: <nearby active tickets that remain relevant context but were not updated>
 
 ## 1-3-1 Decisions
 
@@ -206,16 +179,13 @@ Return a structured report in the conversation with these sections:
 **Follow-up**: <N new tickets, N updated tickets, N covered by existing tickets>
 ```
 
-If no follow-up tickets are warranted, still report the reviewed areas and state that no new ticket was needed.
+If no follow-up tickets are warranted, still report reviewed areas and state that no new ticket was needed.
 
 ## Guardrails
 
-- Do not modify production code or tests in this workflow.
-- Review the local implementation state as it exists now, committed or not.
-- Archive the completed ticket when it is ready; do not leave it active just because follow-up work exists.
+- Do not modify production code or tests.
+- Review local implementation state as it exists now, committed or not.
 - Only change the completed ticket's `Outcome`, verification notes, and archival mechanics.
 - Every finding must be backed by concrete code, test, trace, ticket, or documentation evidence.
 - Reject any follow-up suggestion that would violate [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md).
-- Prefer updating an existing active ticket over opening a duplicate when the concern is already substantially covered there.
-- Keep follow-up tickets small and architecture-focused.
 - Use 1-3-1 when archival readiness, ticket decomposition, or dependency ordering is genuinely ambiguous.

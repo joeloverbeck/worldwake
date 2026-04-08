@@ -122,6 +122,7 @@ These campaign files are expected to evolve during the loop:
 - `seed-baselines.tsv`
 - `musings.md`
 - `lessons.jsonl`
+- `program.md.backup` (auto-created by meta-loop before meta-reviews)
 
 ## Baseline Procedure
 
@@ -220,4 +221,9 @@ REGRESSION_CHECK_INTERVAL = 5
 PIVOT_CHECK_INTERVAL = 10
 MAX_ITERATIONS = unlimited
 CHECKS_TIMEOUT = 300
+CEILING_THRESHOLD = 10
+MIN_CONFIDENCE_RUNS = 2
+meta_improvement = true
+META_REVIEW_INTERVAL = 20
+META_TRIAL_WINDOW = 10
 ```

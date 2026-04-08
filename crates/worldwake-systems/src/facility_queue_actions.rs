@@ -49,6 +49,7 @@ fn queue_for_facility_use_action_def(id: ActionDefId, handler: ActionHandlerId) 
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
         body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1), pm(1)),
+        attention_cost: Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::TargetExists(0),

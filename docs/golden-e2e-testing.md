@@ -3,7 +3,7 @@
 Use this document when adding or revising tests under `crates/worldwake-ai/tests/golden_*.rs`.
 
 It exists to keep golden assertions aligned with the architecture instead of drifting into brittle scheduler-coupled checks.
-For the live mechanical inventory and docs-sync validation workflow, use `python3 scripts/golden_inventory.py --write --check-docs` and the generated artifacts at `docs/generated/golden-e2e-inventory.md` and `docs/generated/golden-scenario-map.md`.
+For the live mechanical inventory and docs-sync validation workflow, use `python3 scripts/golden_inventory.py --write --check-docs` and the generated artifacts at `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`, and `docs/generated/golden-scenario-details/`.
 
 ## Assertion Hierarchy
 
@@ -455,6 +455,6 @@ After editing scenario metadata, run:
 
     python3 scripts/golden_inventory.py --write --check-docs
 
-This regenerates `docs/generated/golden-scenario-map.md`,
-`docs/generated/golden-e2e-inventory.md`, and
-`docs/generated/golden-coverage-matrix.md`. Commit all three.
+This regenerates `docs/generated/golden-scenario-index.md`,
+`docs/generated/golden-scenario-details/`, `docs/generated/golden-e2e-inventory.md`,
+and `docs/generated/golden-coverage-matrix.md`. Commit all generated artifacts.

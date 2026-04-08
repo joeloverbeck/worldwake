@@ -18,6 +18,7 @@ use crate::{
     epistemic::EpistemicDispositionProfile,
     evidence::SceneEvidence,
     execution_budget::ExecutionBudget,
+    expectation::{ExpectationStore, LastSeenMemory},
     experience::{PreferenceProfile, RouteExperience, SourceReliability},
     factions::FactionData,
     institutional::RecordData,
@@ -26,6 +27,7 @@ use crate::{
     intention_frame::IntentionFrame,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
+    observation_context::PlaceVisibilityProfile,
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     patrol::{PatrolProfile, PatrolRoute},
     production::{

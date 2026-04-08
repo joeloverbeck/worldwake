@@ -1,5 +1,7 @@
 # S56: Context-Modulated Perception Exposure
 
+**Status**: COMPLETED
+
 ## Summary
 
 Replace static `observation_fidelity` with context-modulated perception that accounts for agent state (fatigue, action occupancy) and environmental properties (concealment, place visibility). Currently every observation is a flat probability roll against a fixed per-agent `Permille`. This spec makes observation probability a function of concrete local conditions, creating natural information asymmetry from physical circumstances.
@@ -10,7 +12,7 @@ Phase 6: Architectural Substrates II
 
 ## Status
 
-Draft
+Completed on 2026-04-06.
 
 ## Crates
 
@@ -325,3 +327,34 @@ An agent with fidelity 800, fatigue 700 (penalty 120), combat action (attention_
 17. **Validation patterns**: See Golden Tests section. Key invariants: (a) effective fidelity ≤ base fidelity (penalties can only reduce), (b) zero base fidelity → zero effective fidelity regardless of other factors, (c) all penalties at zero → effective equals base, (d) multiplicative stacking produces expected numerical results.
 
 18. **Save/load**: `PlaceVisibilityProfile` is a stored component — survives save/load via standard component serialization. `ObservationContext` is transient — not saved. `ActionDef.attention_cost` is part of action definitions (code-defined, not save state). `Permille::ZERO` is a constant.
+
+## Outcome
+
+Completed on 2026-04-06.
+
+- Added `Permille::ZERO`, `ObservationContext`, and `PlaceVisibilityProfile` in `worldwake-core`.
+- Added `ActionDef.attention_cost` across the shared action surface in `worldwake-sim` and live action registrations in `worldwake-systems`.
+- Integrated context-modulated perception in `worldwake-systems` using fatigue, active-action occupancy, and place concealment, and exposed witnessed-event `effective_fidelity` in perception tracing.
+- Added scenario support for `PlaceVisibilityProfile` in `worldwake-cli`.
+- Added golden E2E coverage for concealment, fatigue, attention cost, and multiplicative stacking in `crates/worldwake-ai/tests/golden_perception_exposure.rs`, with regenerated golden inventory/docs.
+
+## Deviations
+
+- The strongest honest golden proof surface landed as witnessed-event perception tracing via `PerceptionTraceEvent.effective_fidelity`; passive local-observation count assertions were not added because that path does not yet expose an equally strong golden trace/debug carrier.
+- The scenario integration write for `PlaceVisibilityProfile` landed in the bootstrap `WorldTxn` path after topology construction, not directly inside topology building.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core -- permille_zero_constant`
+- Passed `cargo test -p worldwake-core -- observation_context`
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo build --workspace`
+- Passed `cargo test --workspace`
+- Passed `cargo test -p worldwake-sim -- perception_trace`
+- Passed `cargo test -p worldwake-systems -- perception`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo test -p worldwake-ai --test golden_perception_exposure`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test -p worldwake-cli`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

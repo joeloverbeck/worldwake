@@ -1,6 +1,6 @@
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, CognitiveProfile, EntityId, FrameState,
-    IntentionFrame, Permille, Tick,
+    ActiveGoal, BlockedIntentMemory, CauseRef, CognitiveProfile, ContentionIntents, EntityId,
+    FrameState, IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, Interruptibility, PerAgentBeliefView, RuntimeBeliefView,
@@ -115,6 +115,7 @@ pub(super) fn handle_active_action_phase(
                     cause: CauseRef::SystemTick(tick),
                     tick,
                     recipe_registry: ctx.recipe_registry,
+                    action_defs,
                 },
                 worldwake_sim::InterruptReason::Reprioritized,
             )
@@ -175,6 +176,7 @@ pub(super) fn goal_switch_margin_details(
 pub(super) fn advance_completed_step(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
+    facility_intents: &mut ContentionIntents,
     jc: Option<&IntentionFrame>,
     completed_op_kind: crate::PlannerOpKind,
     tick: Tick,
@@ -215,6 +217,7 @@ pub(super) fn advance_completed_step(
             runtime.current_step_index = 0;
             runtime.dirty.insert(DirtySet::PLAN_FINISHED);
             runtime.materialization_bindings.clear();
+            facility_intents.intents.clear();
         }
         PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
             if completed_plan_relation == Some(crate::FramePlanRelation::SuspendsFrame) {
@@ -233,6 +236,7 @@ pub(super) fn advance_completed_step(
             runtime.current_step_index = 0;
             runtime.dirty.insert(DirtySet::PLAN_FINISHED);
             runtime.materialization_bindings.clear();
+            facility_intents.intents.clear();
         }
     }
 
@@ -246,6 +250,7 @@ pub(super) fn handle_current_step_failure(
     active_goal: Option<worldwake_core::GoalKey>,
     jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
+    facility_intents: &mut ContentionIntents,
     agent: EntityId,
     step: &PlannedStep,
     execution_failure: Option<ExecutionFailure<'_>>,
@@ -274,6 +279,7 @@ pub(super) fn handle_current_step_failure(
         runtime,
         jc,
         blocked_memory,
+        facility_intents,
         cognitive,
     );
     runtime.step_in_flight = false;

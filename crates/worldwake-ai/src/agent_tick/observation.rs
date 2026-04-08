@@ -132,6 +132,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         runtime.current_plan = None;
         runtime.current_step_index = 0;
         runtime.materialization_bindings.clear();
+        facility_intents.intents.clear();
         runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
     }
 
@@ -315,6 +316,7 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            facility_intents,
             agent,
             &step,
             Some(ExecutionFailure::Replan(signal)),
@@ -329,6 +331,7 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            facility_intents,
             agent,
             &step,
             Some(ExecutionFailure::Start(start_failure)),
@@ -344,6 +347,7 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            facility_intents,
             agent,
             &step,
             None,
@@ -359,6 +363,7 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            facility_intents,
             agent,
             &step,
             None,
@@ -367,7 +372,7 @@ pub(super) fn reconcile_in_flight_state(
     }
 
     runtime.step_in_flight = false;
-    *jc = advance_completed_step(runtime, active_goal, jc.as_ref(), step.op_kind, ctx.tick);
+    *jc = advance_completed_step(runtime, active_goal, facility_intents, jc.as_ref(), step.op_kind, ctx.tick);
     Ok(())
 }
 
@@ -441,6 +446,11 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::YieldForceClaim
         | crate::PlannerOpKind::Investigate
         | crate::PlannerOpKind::AskWitness
+        | crate::PlannerOpKind::SearchPlace
+        | crate::PlannerOpKind::AskAboutPerson
+        | crate::PlannerOpKind::ReportMissing
+        | crate::PlannerOpKind::EscortToSafety
+        | crate::PlannerOpKind::ReportFound
         | crate::PlannerOpKind::ClaimBounty
         | crate::PlannerOpKind::PostBounty
         | crate::PlannerOpKind::PostNotice

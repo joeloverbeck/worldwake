@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, NoticeTopic,
-    ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource, TellTopic,
-    Tick, UniqueItemKind, ViolationId, WorkstationTag,
+    ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, ExpectationId,
+    NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource,
+    TellTopic, Tick, TravelEdgeId, UniqueItemKind, ViolationId, WorkstationTag,
 };
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -27,6 +27,11 @@ pub enum ActionPayload {
     Loot(LootActionPayload),
     Investigate(InvestigateActionPayload),
     AskWitness(AskWitnessPayload),
+    AskAboutPerson(AskAboutPersonActionPayload),
+    SearchPlace(SearchPlaceActionPayload),
+    ReportMissing(ReportMissingActionPayload),
+    ReportFound(ReportFoundActionPayload),
+    EscortToSafety(EscortToSafetyActionPayload),
     QueueForFacilityUse(QueueForFacilityUsePayload),
     StaffMarket(StaffMarketPayload),
     PostBounty(PostBountyActionPayload),
@@ -187,6 +192,46 @@ impl ActionPayload {
     }
 
     #[must_use]
+    pub const fn as_ask_about_person(&self) -> Option<&AskAboutPersonActionPayload> {
+        match self {
+            Self::AskAboutPerson(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_search_place(&self) -> Option<&SearchPlaceActionPayload> {
+        match self {
+            Self::SearchPlace(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_report_missing(&self) -> Option<&ReportMissingActionPayload> {
+        match self {
+            Self::ReportMissing(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_report_found(&self) -> Option<&ReportFoundActionPayload> {
+        match self {
+            Self::ReportFound(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_escort_to_safety(&self) -> Option<&EscortToSafetyActionPayload> {
+        match self {
+            Self::EscortToSafety(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub const fn as_staff_market(&self) -> Option<&StaffMarketPayload> {
         match self {
             Self::StaffMarket(payload) => Some(payload),
@@ -323,6 +368,37 @@ pub struct AskWitnessPayload {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct AskAboutPersonActionPayload {
+    pub target: EntityId,
+    pub subject: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct SearchPlaceActionPayload {
+    pub subject: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct ReportMissingActionPayload {
+    pub expectation_id: ExpectationId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct ReportFoundActionPayload {
+    pub target: EntityId,
+    pub expectation_id: ExpectationId,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct EscortToSafetyActionPayload {
+    pub subject: EntityId,
+    pub destination: EntityId,
+    pub intended_heal_action: ActionDefId,
+    pub route_places: Vec<EntityId>,
+    pub route_edges: Vec<TravelEdgeId>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct QueueForFacilityUsePayload {
     pub intended_action: ActionDefId,
 }
@@ -358,19 +434,20 @@ pub struct PostNoticeActionPayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        AccuseActionPayload, ActionPayload, AskWitnessPayload, BribeActionPayload,
-        CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
-        DeclareSupportActionPayload, EstablishCampActionPayload, HarvestActionPayload,
-        InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
+        AccuseActionPayload, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
+        BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
+        DeclareSupportActionPayload, EscortToSafetyActionPayload, EstablishCampActionPayload,
+        HarvestActionPayload, InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
         PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
-        QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload, ThreatenActionPayload,
+        QueueForFacilityUsePayload, ReportFoundActionPayload, ReportMissingActionPayload,
+        SearchPlaceActionPayload, StaffMarketPayload, TellActionPayload, ThreatenActionPayload,
         TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use worldwake_core::{
-        ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, NoticeTopic,
-        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource,
-        TellTopic, Tick, UniqueItemKind, ViolationId, WorkstationTag,
+        ActionDefId, BountyTarget, CombatWeaponRef, CommodityKind, EntityId, ExpectationId,
+        NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId,
+        RewardSource, TellTopic, Tick, TravelEdgeId, UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn assert_traits<T: Clone + Eq + std::fmt::Debug + Serialize + DeserializeOwned>() {}
@@ -568,6 +645,73 @@ mod tests {
         }
     }
 
+    fn sample_ask_about_person_payload() -> AskAboutPersonActionPayload {
+        AskAboutPersonActionPayload {
+            target: EntityId {
+                slot: 44,
+                generation: 0,
+            },
+            subject: EntityId {
+                slot: 45,
+                generation: 1,
+            },
+        }
+    }
+
+    fn sample_report_missing_payload() -> ReportMissingActionPayload {
+        ReportMissingActionPayload {
+            expectation_id: ExpectationId(42),
+        }
+    }
+
+    fn sample_report_found_payload() -> ReportFoundActionPayload {
+        ReportFoundActionPayload {
+            target: EntityId {
+                slot: 52,
+                generation: 0,
+            },
+            expectation_id: ExpectationId(43),
+        }
+    }
+
+    fn sample_search_place_payload() -> SearchPlaceActionPayload {
+        SearchPlaceActionPayload {
+            subject: EntityId {
+                slot: 46,
+                generation: 0,
+            },
+        }
+    }
+
+    fn sample_escort_to_safety_payload() -> EscortToSafetyActionPayload {
+        EscortToSafetyActionPayload {
+            subject: EntityId {
+                slot: 48,
+                generation: 0,
+            },
+            destination: EntityId {
+                slot: 49,
+                generation: 0,
+            },
+            intended_heal_action: ActionDefId(27),
+            route_places: vec![
+                EntityId {
+                    slot: 47,
+                    generation: 0,
+                },
+                EntityId {
+                    slot: 48,
+                    generation: 0,
+                },
+                EntityId {
+                    slot: 49,
+                    generation: 0,
+                },
+            ],
+            route_edges: vec![TravelEdgeId(5), TravelEdgeId(7)],
+        }
+    }
+
     fn sample_post_bounty_payload() -> PostBountyActionPayload {
         PostBountyActionPayload {
             posting_place: EntityId {
@@ -660,6 +804,11 @@ mod tests {
         assert_traits::<CombatActionPayload>();
         assert_traits::<LootActionPayload>();
         assert_traits::<InvestigateActionPayload>();
+        assert_traits::<AskAboutPersonActionPayload>();
+        assert_traits::<SearchPlaceActionPayload>();
+        assert_traits::<ReportMissingActionPayload>();
+        assert_traits::<ReportFoundActionPayload>();
+        assert_traits::<EscortToSafetyActionPayload>();
         assert_traits::<QueueForFacilityUsePayload>();
         assert_traits::<AskWitnessPayload>();
         assert_traits::<StaffMarketPayload>();
@@ -686,6 +835,10 @@ mod tests {
         let declare_support = ActionPayload::DeclareSupport(sample_declare_support_payload());
         let press_force_claim = ActionPayload::PressForceClaim(sample_press_force_claim_payload());
         let yield_force_claim = ActionPayload::YieldForceClaim(sample_yield_force_claim_payload());
+        let ask_about_person = ActionPayload::AskAboutPerson(sample_ask_about_person_payload());
+        let search_place = ActionPayload::SearchPlace(sample_search_place_payload());
+        let report_missing = ActionPayload::ReportMissing(sample_report_missing_payload());
+        let report_found = ActionPayload::ReportFound(sample_report_found_payload());
 
         assert_eq!(
             consult.as_consult_record(),
@@ -748,6 +901,7 @@ mod tests {
         assert_eq!(threaten.as_transport(), None);
         assert_eq!(threaten.as_craft(), None);
         assert_eq!(threaten.as_trade(), None);
+        assert_eq!(threaten.as_report_missing(), None);
 
         assert_eq!(accuse.as_consult_record(), None);
         assert_eq!(accuse.as_tell(), None);
@@ -756,6 +910,7 @@ mod tests {
         assert_eq!(accuse.as_accuse(), Some(&sample_accuse_payload()));
         assert_eq!(accuse.as_punish(), None);
         assert_eq!(accuse.as_establish_camp(), None);
+        assert_eq!(accuse.as_report_missing(), None);
 
         assert_eq!(punish.as_consult_record(), None);
         assert_eq!(punish.as_tell(), None);
@@ -840,6 +995,51 @@ mod tests {
             Some(&sample_yield_force_claim_payload())
         );
         assert_eq!(yield_force_claim.as_harvest(), None);
+
+        assert_eq!(ask_about_person.as_consult_record(), None);
+        assert_eq!(ask_about_person.as_tell(), None);
+        assert_eq!(ask_about_person.as_accuse(), None);
+        assert_eq!(
+            ask_about_person.as_ask_about_person(),
+            Some(&sample_ask_about_person_payload())
+        );
+        assert_eq!(ask_about_person.as_ask_witness(), None);
+        assert_eq!(ask_about_person.as_search_place(), None);
+        assert_eq!(ask_about_person.as_report_missing(), None);
+
+        assert_eq!(search_place.as_consult_record(), None);
+        assert_eq!(search_place.as_tell(), None);
+        assert_eq!(search_place.as_accuse(), None);
+        assert_eq!(search_place.as_ask_about_person(), None);
+        assert_eq!(
+            search_place.as_search_place(),
+            Some(&sample_search_place_payload())
+        );
+        assert_eq!(search_place.as_ask_witness(), None);
+        assert_eq!(search_place.as_report_missing(), None);
+
+        assert_eq!(report_missing.as_consult_record(), None);
+        assert_eq!(report_missing.as_tell(), None);
+        assert_eq!(report_missing.as_accuse(), None);
+        assert_eq!(
+            report_missing.as_report_missing(),
+            Some(&sample_report_missing_payload())
+        );
+        assert_eq!(report_missing.as_ask_about_person(), None);
+        assert_eq!(report_missing.as_search_place(), None);
+        assert_eq!(report_missing.as_queue_for_facility_use(), None);
+
+        assert_eq!(report_found.as_consult_record(), None);
+        assert_eq!(report_found.as_tell(), None);
+        assert_eq!(report_found.as_accuse(), None);
+        assert_eq!(report_found.as_report_missing(), None);
+        assert_eq!(
+            report_found.as_report_found(),
+            Some(&sample_report_found_payload())
+        );
+        assert_eq!(report_found.as_ask_about_person(), None);
+        assert_eq!(report_found.as_search_place(), None);
+        assert_eq!(report_found.as_queue_for_facility_use(), None);
     }
 
     #[test]
@@ -908,6 +1108,11 @@ mod tests {
         let investigate = ActionPayload::Investigate(sample_investigate_payload());
         let queue = ActionPayload::QueueForFacilityUse(sample_queue_payload());
         let ask_witness = ActionPayload::AskWitness(sample_ask_witness_payload());
+        let ask_about_person = ActionPayload::AskAboutPerson(sample_ask_about_person_payload());
+        let search_place = ActionPayload::SearchPlace(sample_search_place_payload());
+        let report_missing = ActionPayload::ReportMissing(sample_report_missing_payload());
+        let report_found = ActionPayload::ReportFound(sample_report_found_payload());
+        let escort = ActionPayload::EscortToSafety(sample_escort_to_safety_payload());
         let post_bounty = ActionPayload::PostBounty(sample_post_bounty_payload());
         let post_notice = ActionPayload::PostNotice(sample_post_notice_payload());
 
@@ -995,13 +1200,63 @@ mod tests {
             ask_witness.as_ask_witness(),
             Some(&sample_ask_witness_payload())
         );
+        assert_eq!(ask_witness.as_ask_about_person(), None);
+        assert_eq!(ask_witness.as_search_place(), None);
+        assert_eq!(ask_witness.as_report_missing(), None);
         assert_eq!(ask_witness.as_post_bounty(), None);
         assert_eq!(ask_witness.as_post_notice(), None);
+
+        assert_eq!(
+            ask_about_person.as_ask_about_person(),
+            Some(&sample_ask_about_person_payload())
+        );
+        assert_eq!(ask_about_person.as_ask_witness(), None);
+        assert_eq!(ask_about_person.as_search_place(), None);
+        assert_eq!(ask_about_person.as_report_missing(), None);
+
+        assert_eq!(
+            search_place.as_search_place(),
+            Some(&sample_search_place_payload())
+        );
+        assert_eq!(search_place.as_ask_witness(), None);
+        assert_eq!(search_place.as_ask_about_person(), None);
+        assert_eq!(search_place.as_report_missing(), None);
+
+        assert_eq!(
+            report_missing.as_report_missing(),
+            Some(&sample_report_missing_payload())
+        );
+        assert_eq!(report_missing.as_post_bounty(), None);
+        assert_eq!(report_missing.as_ask_witness(), None);
+        assert_eq!(report_missing.as_ask_about_person(), None);
+        assert_eq!(report_missing.as_search_place(), None);
+        assert_eq!(report_missing.as_escort_to_safety(), None);
+
+        assert_eq!(
+            report_found.as_report_found(),
+            Some(&sample_report_found_payload())
+        );
+        assert_eq!(report_found.as_report_missing(), None);
+        assert_eq!(report_found.as_post_bounty(), None);
+        assert_eq!(report_found.as_ask_witness(), None);
+        assert_eq!(report_found.as_ask_about_person(), None);
+        assert_eq!(report_found.as_search_place(), None);
+        assert_eq!(report_found.as_escort_to_safety(), None);
+
+        assert_eq!(
+            escort.as_escort_to_safety(),
+            Some(&sample_escort_to_safety_payload())
+        );
+        assert_eq!(escort.as_ask_about_person(), None);
+        assert_eq!(escort.as_search_place(), None);
+        assert_eq!(escort.as_report_missing(), None);
 
         assert_eq!(
             post_bounty.as_post_bounty(),
             Some(&sample_post_bounty_payload())
         );
+        assert_eq!(post_bounty.as_report_missing(), None);
+        assert_eq!(post_bounty.as_escort_to_safety(), None);
         assert_eq!(post_bounty.as_post_notice(), None);
         assert_eq!(post_bounty.as_trade(), None);
 
@@ -1009,6 +1264,8 @@ mod tests {
             post_notice.as_post_notice(),
             Some(&sample_post_notice_payload())
         );
+        assert_eq!(post_notice.as_report_missing(), None);
+        assert_eq!(post_notice.as_escort_to_safety(), None);
         assert_eq!(post_notice.as_post_bounty(), None);
         assert_eq!(post_notice.as_tell(), None);
     }
@@ -1034,6 +1291,11 @@ mod tests {
         assert_eq!(none.as_investigate(), None);
         assert_eq!(none.as_queue_for_facility_use(), None);
         assert_eq!(none.as_ask_witness(), None);
+        assert_eq!(none.as_ask_about_person(), None);
+        assert_eq!(none.as_search_place(), None);
+        assert_eq!(none.as_report_missing(), None);
+        assert_eq!(none.as_report_found(), None);
+        assert_eq!(none.as_escort_to_safety(), None);
         assert_eq!(none.as_post_bounty(), None);
         assert_eq!(none.as_post_notice(), None);
     }
@@ -1191,6 +1453,26 @@ mod tests {
     #[test]
     fn ask_witness_entity_only_payload_roundtrips_through_bincode() {
         let payload = ActionPayload::AskWitness(sample_ask_witness_entity_only_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn search_place_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::SearchPlace(sample_search_place_payload());
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn report_found_payload_roundtrips_through_bincode() {
+        let payload = ActionPayload::ReportFound(sample_report_found_payload());
 
         let bytes = bincode::serialize(&payload).unwrap();
         let roundtrip: ActionPayload = bincode::deserialize(&bytes).unwrap();

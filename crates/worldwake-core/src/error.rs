@@ -3,6 +3,13 @@
 use crate::EntityId;
 use std::fmt;
 
+/// Reason control over an entity was denied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlDeniedReason {
+    BlockedByPossessor(EntityId),
+    NoRights,
+}
+
 /// Unified error type for world simulation failures.
 #[derive(Debug, Clone)]
 pub enum WorldError {
@@ -34,6 +41,11 @@ pub enum WorldError {
     },
     ConflictingReservation {
         entity: EntityId,
+    },
+    ControlDenied {
+        actor: EntityId,
+        entity: EntityId,
+        reason: ControlDeniedReason,
     },
     PreconditionFailed(String),
     CommitFailed(String),
@@ -78,6 +90,19 @@ impl fmt::Display for WorldError {
             Self::ConflictingReservation { entity } => {
                 write!(f, "conflicting reservation on {entity}")
             }
+            Self::ControlDenied {
+                actor,
+                entity,
+                reason,
+            } => match reason {
+                ControlDeniedReason::BlockedByPossessor(holder) => write!(
+                    f,
+                    "entity {entity} is possessed by {holder}, so {actor} cannot exercise control"
+                ),
+                ControlDeniedReason::NoRights => {
+                    write!(f, "entity {actor} neither possesses nor owns {entity}")
+                }
+            },
             Self::PreconditionFailed(msg) => write!(f, "precondition failed: {msg}"),
             Self::CommitFailed(msg) => write!(f, "commit failed: {msg}"),
             Self::DeterminismViolation(msg) => write!(f, "determinism violation: {msg}"),
@@ -135,6 +160,16 @@ mod tests {
                 container: id,
             },
             WorldError::ConflictingReservation { entity: id },
+            WorldError::ControlDenied {
+                actor: id,
+                entity: id,
+                reason: ControlDeniedReason::BlockedByPossessor(id),
+            },
+            WorldError::ControlDenied {
+                actor: id,
+                entity: id,
+                reason: ControlDeniedReason::NoRights,
+            },
             WorldError::PreconditionFailed("test".into()),
             WorldError::CommitFailed("test".into()),
             WorldError::DeterminismViolation("test".into()),

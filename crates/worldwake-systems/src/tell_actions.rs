@@ -57,6 +57,7 @@ fn tell_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,
@@ -150,6 +151,9 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
             accused,
             violation_id,
         },
+        InstitutionalClaim::MissingPersonStatus { subject, .. } => {
+            InstitutionalBeliefKey::MissingPersonStatus { subject }
+        }
     }
 }
 
@@ -2334,7 +2338,8 @@ mod tests {
             let _ = txn.commit(&mut log);
         }
         assert_eq!(
-            world.get_component_agent_belief_store(speaker)
+            world
+                .get_component_agent_belief_store(speaker)
                 .unwrap()
                 .get_entity(&subject)
                 .unwrap()
@@ -2364,14 +2369,17 @@ mod tests {
             claim.source == PerceptionSource::Rumor { chain_len: 2 }
                 && claim.value == worldwake_core::ClaimValue::Place(Some(place))
         }));
-        assert!(location_claims.iter().any(|claim| {
-            claim.source
-                == PerceptionSource::Report {
-                    from: speaker,
-                    chain_len: 1,
-                }
-                && claim.value == worldwake_core::ClaimValue::Place(None)
-        }), "claims={claims:?}");
+        assert!(
+            location_claims.iter().any(|claim| {
+                claim.source
+                    == PerceptionSource::Report {
+                        from: speaker,
+                        chain_len: 1,
+                    }
+                    && claim.value == worldwake_core::ClaimValue::Place(None)
+            }),
+            "claims={claims:?}"
+        );
         let summary = listener_store.get_entity(&subject).unwrap();
         assert_eq!(summary.last_known_place, None);
         assert_eq!(

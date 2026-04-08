@@ -16,9 +16,9 @@ use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{EntityId, EntityKind, EventId, EventView};
 use worldwake_sim::{
-    ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
-    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink,
-    RequestResolutionTraceSink, TickStepServices, step_tick,
+    ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime, InstitutionalKnowledgeTraceSink,
+    PerceptionTraceSink, PoliticalTraceSink, RequestResolutionTraceSink, TickStepServices,
+    step_tick,
 };
 
 #[derive(Parser)]
@@ -235,7 +235,11 @@ fn detect_anomalies(
 }
 
 type NeedExtractor = (&'static str, fn(&NeedsSample) -> u16);
-type NeedActionPair = (&'static str, fn(&NeedsSample) -> u16, &'static [&'static str]);
+type NeedActionPair = (
+    &'static str,
+    fn(&NeedsSample) -> u16,
+    &'static [&'static str],
+);
 
 /// Detect needs that stay above 750 permille for 100+ consecutive ticks.
 fn detect_sustained_critical_needs(stats: &AgentStats, anomalies: &mut Vec<Anomaly>) {
@@ -289,26 +293,26 @@ fn detect_unaddressed_needs(stats: &AgentStats, anomalies: &mut Vec<Anomaly>) {
     let need_action_pairs: &[NeedActionPair] = &[
         ("hunger", |s| s.hunger, &["eat"]),
         ("thirst", |s| s.thirst, &["drink"]),
-        (
-            "fatigue",
-            |s| s.fatigue,
-            &["sleep"],
-        ),
-        (
-            "bladder",
-            |s| s.bladder,
-            &["toilet", "relieve_wilderness"],
-        ),
+        ("fatigue", |s| s.fatigue, &["sleep"]),
+        ("bladder", |s| s.bladder, &["toilet", "relieve_wilderness"]),
         ("dirtiness", |s| s.dirtiness, &["wash"]),
     ];
 
     for &(need_name, extractor, relief_actions) in need_action_pairs {
-        let avg: u32 =
-            stats.needs_samples.iter().map(|s| u32::from(extractor(s))).sum::<u32>() / len;
+        let avg: u32 = stats
+            .needs_samples
+            .iter()
+            .map(|s| u32::from(extractor(s)))
+            .sum::<u32>()
+            / len;
         if avg > 750 {
             let any_attempted = relief_actions.iter().any(|action| {
                 let started = stats.actions_started.get(*action).copied().unwrap_or(0);
-                let failed = stats.actions_start_failed.get(*action).copied().unwrap_or(0);
+                let failed = stats
+                    .actions_start_failed
+                    .get(*action)
+                    .copied()
+                    .unwrap_or(0);
                 started + failed > 0
             });
             if !any_attempted {
@@ -424,7 +428,12 @@ fn format_report(
         writeln!(out, "### {}\n", stats.name).unwrap();
 
         // Action counts
-        writeln!(out, "**Actions** (total lifecycle events: {})\n", stats.total_actions()).unwrap();
+        writeln!(
+            out,
+            "**Actions** (total lifecycle events: {})\n",
+            stats.total_actions()
+        )
+        .unwrap();
         let all_action_names: BTreeSet<&String> = stats
             .actions_started
             .keys()
@@ -433,8 +442,16 @@ fn format_report(
             .chain(stats.actions_start_failed.keys())
             .collect();
         if !all_action_names.is_empty() {
-            writeln!(out, "| Action | Started | Committed | Aborted | StartFailed |").unwrap();
-            writeln!(out, "|--------|---------|-----------|---------|-------------|").unwrap();
+            writeln!(
+                out,
+                "| Action | Started | Committed | Aborted | StartFailed |"
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "|--------|---------|-----------|---------|-------------|"
+            )
+            .unwrap();
             for name in &all_action_names {
                 writeln!(
                     out,
@@ -488,38 +505,10 @@ fn format_report(
             writeln!(out, "**Needs trajectory** (‰)\n").unwrap();
             writeln!(out, "| Need | Min | Max | Avg |").unwrap();
             writeln!(out, "|------|-----|-----|-----|").unwrap();
-            writeln!(
-                out,
-                "| Hunger | {} | {} | {} |",
-                h_min,
-                h_max,
-                h_sum / len
-            )
-            .unwrap();
-            writeln!(
-                out,
-                "| Thirst | {} | {} | {} |",
-                t_min,
-                t_max,
-                t_sum / len
-            )
-            .unwrap();
-            writeln!(
-                out,
-                "| Fatigue | {} | {} | {} |",
-                f_min,
-                f_max,
-                f_sum / len
-            )
-            .unwrap();
-            writeln!(
-                out,
-                "| Bladder | {} | {} | {} |",
-                b_min,
-                b_max,
-                b_sum / len
-            )
-            .unwrap();
+            writeln!(out, "| Hunger | {} | {} | {} |", h_min, h_max, h_sum / len).unwrap();
+            writeln!(out, "| Thirst | {} | {} | {} |", t_min, t_max, t_sum / len).unwrap();
+            writeln!(out, "| Fatigue | {} | {} | {} |", f_min, f_max, f_sum / len).unwrap();
+            writeln!(out, "| Bladder | {} | {} | {} |", b_min, b_max, b_sum / len).unwrap();
             writeln!(
                 out,
                 "| Dirtiness | {} | {} | {} |",
@@ -802,11 +791,8 @@ fn format_report(
 
         // Told beliefs with unique counterparties
         let told_count = store.told_beliefs.len();
-        let told_counterparties: BTreeSet<EntityId> = store
-            .told_beliefs
-            .keys()
-            .map(|k| k.counterparty)
-            .collect();
+        let told_counterparties: BTreeSet<EntityId> =
+            store.told_beliefs.keys().map(|k| k.counterparty).collect();
         if told_counterparties.is_empty() {
             writeln!(out, "**Told beliefs**: {told_count}").unwrap();
         } else {
@@ -823,12 +809,7 @@ fn format_report(
         }
 
         // Heard beliefs
-        writeln!(
-            out,
-            "**Heard beliefs**: {}",
-            store.heard_beliefs.len()
-        )
-        .unwrap();
+        writeln!(out, "**Heard beliefs**: {}", store.heard_beliefs.len()).unwrap();
 
         // Institutional beliefs
         writeln!(
@@ -894,9 +875,7 @@ fn format_report(
                         Some(EntityKind::Facility) => {
                             if let Some(ws) = world.get_component_workstation_marker(*entity) {
                                 format!(" ({:?})", ws.0)
-                            } else if let Some(rs) =
-                                world.get_component_resource_source(*entity)
-                            {
+                            } else if let Some(rs) = world.get_component_resource_source(*entity) {
                                 format!(" (resource: {:?})", rs.commodity)
                             } else {
                                 " (facility)".to_string()
@@ -990,8 +969,7 @@ fn main() {
 
     for tick_num in 0..cli.ticks {
         let mut controllers = AutonomousControllerRuntime::new(vec![&mut driver]);
-        let (world, event_log, scheduler, controller, rng, recipe_registry) =
-            sim.tick_parts_mut();
+        let (world, event_log, scheduler, controller, rng, recipe_registry) = sim.tick_parts_mut();
 
         let current_tick = scheduler.current_tick();
 
@@ -1050,7 +1028,9 @@ fn main() {
                             .actions_start_failed
                             .entry(event.action_name.clone())
                             .or_insert(0) += 1;
-                        stats.action_sequence.push(format!("FAIL:{}", event.action_name));
+                        stats
+                            .action_sequence
+                            .push(format!("FAIL:{}", event.action_name));
                     }
                 }
             }
@@ -1064,10 +1044,7 @@ fn main() {
                     stats.observations_passed += 1;
                 }
                 for entity in &event.entity_observations {
-                    *stats
-                        .observation_entity_counts
-                        .entry(*entity)
-                        .or_insert(0) += 1;
+                    *stats.observation_entity_counts.entry(*entity).or_insert(0) += 1;
                 }
             }
         }
@@ -1109,10 +1086,7 @@ fn main() {
 
     let anomalies = detect_anomalies(&agent_stats, &perception_trace, sim.event_log());
 
-    eprintln!(
-        "Found {} anomalies. Writing report...",
-        anomalies.len()
-    );
+    eprintln!("Found {} anomalies. Writing report...", anomalies.len());
 
     let scenario_path_str = cli.scenario.display().to_string();
     let report = format_report(

@@ -427,6 +427,7 @@ fn attack_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         reservation_requirements: Vec::new(),
         duration: DurationExpr::CombatWeapon,
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::new_unchecked(400),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: preconditions,
         visibility: VisibilitySpec::SamePlace,
@@ -482,6 +483,7 @@ fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         reservation_requirements: Vec::new(),
         duration: DurationExpr::ActorDefendStance,
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::new_unchecked(400),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![Precondition::ActorAlive],
         visibility: VisibilitySpec::SamePlace,
@@ -519,6 +521,7 @@ fn loot_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::new_unchecked(400),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: preconditions,
         visibility: VisibilitySpec::SamePlace,
@@ -575,6 +578,7 @@ fn bury_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::new_unchecked(400),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: preconditions,
         visibility: VisibilitySpec::SamePlace,
@@ -603,6 +607,7 @@ fn queue_for_corpse_use_action_def(id: ActionDefId, handler: ActionHandlerId) ->
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::new_unchecked(400),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::TargetExists(0),
@@ -852,7 +857,7 @@ fn clear_entity_contention_state(
     Ok(())
 }
 
-fn ensure_care_contention_state(
+pub(crate) fn ensure_care_contention_state(
     txn: &mut WorldTxn<'_>,
     entity: EntityId,
 ) -> Result<(), ActionError> {
@@ -905,6 +910,7 @@ fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
             commodity: worldwake_core::CommodityKind::Medicine,
         },
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::new_unchecked(400),
         interruptibility: Interruptibility::InterruptibleWithPenalty,
         commit_conditions: vec![
             Precondition::TargetAlive(0),
@@ -937,6 +943,7 @@ fn queue_for_care_target_action_def(id: ActionDefId, handler: ActionHandlerId) -
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::new_unchecked(400),
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::TargetExists(0),

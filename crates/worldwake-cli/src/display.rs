@@ -198,6 +198,14 @@ pub fn format_state_delta(world: &World, delta: &StateDelta) -> String {
                 _ => format!("{component_kind:?}: set on {name}"),
             }
         }
+        StateDelta::Component(ComponentDelta::CompactSet {
+            entity,
+            component_kind,
+            diff,
+        }) => {
+            let name = entity_display_name(world, *entity);
+            format!("{component_kind:?}: compact diff on {name} ({diff:?})")
+        }
         StateDelta::Component(ComponentDelta::Removed {
             entity,
             component_kind,
@@ -306,6 +314,40 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::TreatWounds { patient } => {
             format!("TreatWounds({})", entity_display_name(world, *patient))
         }
+        GoalKind::SearchForMissing { subject, last_seen } => match last_seen {
+            Some(last_seen) => format!(
+                "SearchForMissing({} last seen at {})",
+                entity_display_name(world, *subject),
+                entity_display_name(world, *last_seen)
+            ),
+            None => format!("SearchForMissing({})", entity_display_name(world, *subject)),
+        },
+        GoalKind::ReportMissing {
+            subject, to_office, ..
+        } => match to_office {
+            Some(to_office) => format!(
+                "ReportMissing({} to {})",
+                entity_display_name(world, *subject),
+                entity_display_name(world, *to_office)
+            ),
+            None => format!("ReportMissing({})", entity_display_name(world, *subject)),
+        },
+        GoalKind::ReportFound {
+            subject,
+            expectation_id,
+        } => format!(
+            "ReportFound({} exp:{})",
+            entity_display_name(world, *subject),
+            expectation_id
+        ),
+        GoalKind::EscortToSafety {
+            subject,
+            destination,
+        } => format!(
+            "EscortToSafety({} → {})",
+            entity_display_name(world, *subject),
+            entity_display_name(world, *destination)
+        ),
         GoalKind::RegroupWithFaction { faction } => {
             format!(
                 "RegroupWithFaction({})",
@@ -640,6 +682,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Village".into(),
                 tags: vec![PlaceTag::Village],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -659,6 +702,8 @@ mod tests {
                 intention_disposition: None,
                 communication_profile: None,
                 preference_profile: None,
+                expectation_store: None,
+                last_seen_memory: None,
                 drive_thresholds: None,
                 metabolism_profile: None,
                 carry_capacity: None,
@@ -738,6 +783,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Village".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![
@@ -758,6 +804,8 @@ mod tests {
                     intention_disposition: None,
                     communication_profile: None,
                     preference_profile: None,
+                    expectation_store: None,
+                    last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
                     carry_capacity: None,
@@ -788,6 +836,8 @@ mod tests {
                     intention_disposition: None,
                     communication_profile: None,
                     preference_profile: None,
+                    expectation_store: None,
+                    last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
                     carry_capacity: None,

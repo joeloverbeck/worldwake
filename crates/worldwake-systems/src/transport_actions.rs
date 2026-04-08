@@ -64,6 +64,7 @@ pub fn register_transport_actions(
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::new_unchecked(100),
             interruptibility: Interruptibility::InterruptibleWithPenalty,
             commit_conditions: vec![
                 Precondition::TargetExists(0),
@@ -97,6 +98,7 @@ pub fn register_transport_actions(
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::MIN),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::new_unchecked(100),
             interruptibility: Interruptibility::InterruptibleWithPenalty,
             commit_conditions: vec![
                 Precondition::TargetExists(0),
@@ -132,6 +134,7 @@ pub fn register_transport_actions(
             reservation_requirements: Vec::new(),
             duration: DurationExpr::ActorTheftDisposition,
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::new_unchecked(100),
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![
                 Precondition::TargetExists(0),

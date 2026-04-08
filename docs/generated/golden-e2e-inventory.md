@@ -5,26 +5,29 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 21
-- Files contributing `golden_*` tests: 21
-- Total `golden_*` tests: 307
+- Golden test files: 24
+- Files contributing `golden_*` tests: 24
+- Total `golden_*` tests: 324
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
-| `golden_ai_decisions.rs` | 18 |
+| `golden_ai_decisions.rs` | 19 |
 | `golden_care.rs` | 18 |
 | `golden_combat.rs` | 27 |
 | `golden_commodity_opportunity.rs` | 3 |
 | `golden_determinism.rs` | 12 |
 | `golden_emergent.rs` | 51 |
+| `golden_expectation.rs` | 10 |
 | `golden_experience_preferences.rs` | 6 |
-| `golden_integration.rs` | 30 |
+| `golden_integration.rs` | 26 |
+| `golden_long_scenarios.rs` | 4 |
 | `golden_merchant_selling.rs` | 20 |
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
-| `golden_production.rs` | 28 |
+| `golden_perception_exposure.rs` | 4 |
+| `golden_production.rs` | 30 |
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 2 |
 | `golden_resilience.rs` | 2 |
@@ -55,6 +58,7 @@ Do not hand-edit it.
 - `golden_spatial_multi_hop_plan_replays_deterministically`
 - `golden_utility_weight_diversity_in_need_selection`
 - `golden_trace_enabled_scenario`
+- `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
 
 ### `golden_care.rs`
 
@@ -182,6 +186,19 @@ Do not hand-edit it.
 - `golden_dual_discovery_converges_without_double_accusation`
 - `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
 
+### `golden_expectation.rs`
+
+- `golden_overdue_expectation_drives_search`
+- `golden_overdue_expectation_drives_search_replays_deterministically`
+- `golden_report_missing_creates_violation_and_institutional_record`
+- `golden_report_missing_creates_violation_and_institutional_record_replays_deterministically`
+- `golden_escort_to_safety_after_finding_wounded`
+- `golden_escort_to_safety_after_finding_wounded_replays_deterministically`
+- `golden_ask_about_person_during_search`
+- `golden_ask_about_person_during_search_replays_deterministically`
+- `golden_report_found_after_search`
+- `golden_report_found_after_search_replays_deterministically`
+
 ### `golden_experience_preferences.rs`
 
 - `golden_hostile_completed_travel_flips_next_route_choice`
@@ -203,10 +220,6 @@ Do not hand-edit it.
 - `t28_pursuit_information_boundary_seed_2`
 - `t29_wrongful_accusation_seed_1`
 - `t29_wrongful_accusation_seed_2`
-- `t21_ruler_death_patrol_gap_seed_1`
-- `t21_ruler_death_patrol_gap_seed_2`
-- `t33_vacancy_crime_recovery_seed_1`
-- `t33_vacancy_crime_recovery_seed_2`
 - `t22_camp_reconstitution_seed_1`
 - `t22_camp_reconstitution_seed_2`
 - `golden_s45_bounty_lifecycle`
@@ -223,6 +236,13 @@ Do not hand-edit it.
 - `golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically`
 - `golden_s52_theft_evidence_discovery`
 - `golden_s52_theft_evidence_discovery_replays_deterministically`
+
+### `golden_long_scenarios.rs`
+
+- `t21_ruler_death_patrol_gap_seed_1`
+- `t21_ruler_death_patrol_gap_seed_2`
+- `t33_vacancy_crime_recovery_seed_1`
+- `t33_vacancy_crime_recovery_seed_2`
 
 ### `golden_merchant_selling.rs`
 
@@ -285,6 +305,13 @@ Do not hand-edit it.
 - `golden_patrol_driven_crime_discovery`
 - `golden_patrol_driven_crime_discovery_replays_deterministically`
 
+### `golden_perception_exposure.rs`
+
+- `golden_concealment_reduces_witnessed_event_fidelity`
+- `golden_fatigue_reduces_witnessed_event_fidelity`
+- `golden_attention_cost_reduces_witnessed_event_fidelity`
+- `golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity`
+
 ### `golden_production.rs`
 
 - `golden_resource_contention_with_conservation`
@@ -315,6 +342,8 @@ Do not hand-edit it.
 - `golden_unique_item_race_rejection_redirects_to_local_alternative_replays_deterministically`
 - `golden_faction_ownership_producer_owner_delegation`
 - `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
+- `golden_goal_switch_clears_contention_queue_entry`
+- `golden_goal_switch_clears_contention_queue_entry_replays_deterministically`
 
 ### `golden_pursuit.rs`
 

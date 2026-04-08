@@ -1,8 +1,8 @@
 use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
-    BlockingFact, ClearingBaseline, CognitiveProfile, CommodityKind, EntityId, GoalKey, GoalKind,
-    IntentionFrame, Quantity, Tick,
+    BlockingFact, ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, EntityId,
+    GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -30,6 +30,7 @@ pub fn handle_plan_failure(
     runtime: &mut AgentDecisionRuntime,
     jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockedIntentMemory,
+    facility_intents: &mut ContentionIntents,
     cognitive: &CognitiveProfile,
 ) {
     runtime.current_plan = None;
@@ -38,6 +39,7 @@ pub fn handle_plan_failure(
     }
     *jc = None;
     runtime.materialization_bindings.clear();
+    facility_intents.intents.clear();
 
     let blocking_fact = derive_blocking_fact(
         context.view,
@@ -68,12 +70,8 @@ pub fn handle_plan_failure(
     } else {
         None
     };
-    let (clearing_condition, baseline_snapshot) = derive_clearing_condition(
-        context.view,
-        context.agent,
-        blocking_fact,
-        &blocker_key,
-    );
+    let (clearing_condition, baseline_snapshot) =
+        derive_clearing_condition(context.view, context.agent, blocking_fact, &blocker_key);
 
     blocked_memory.record(BlockedIntent {
         blocker_key,
@@ -156,6 +154,11 @@ fn derive_blocking_fact(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
+        | PlannerOpKind::SearchPlace
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => {}
@@ -404,6 +407,11 @@ fn classify_input_failure(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
+        | PlannerOpKind::SearchPlace
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => None,
@@ -463,7 +471,12 @@ fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep
         | PlannerOpKind::PressForceClaim
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
-        | PlannerOpKind::AskWitness => view.entity_kind(target).is_none() || view.is_dead(target),
+        | PlannerOpKind::AskWitness
+        | PlannerOpKind::SearchPlace
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound => view.entity_kind(target).is_none() || view.is_dead(target),
         PlannerOpKind::Travel | PlannerOpKind::Patrol => false,
     }
 }
@@ -629,9 +642,7 @@ fn derive_clearing_condition(
             }),
         ),
         BlockingFact::MissingInput(commodity) => (
-            BlockerClearingCondition::InventoryChanged {
-                commodity,
-            },
+            BlockerClearingCondition::InventoryChanged { commodity },
             Some(ClearingBaseline::InventoryQuantity {
                 quantity: view.commodity_quantity(agent, commodity),
             }),
@@ -697,7 +708,8 @@ fn derive_clearing_condition(
             )
         }
         BlockingFact::SourceDepleted => {
-            let (Some(commodity), Some(place)) = (blocker_key.goal_key.commodity, blocker_key.place)
+            let (Some(commodity), Some(place)) =
+                (blocker_key.goal_key.commodity, blocker_key.place)
             else {
                 return (BlockerClearingCondition::TtlOnly, None);
             };
@@ -727,13 +739,10 @@ fn is_blocker_cleared(
             BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place },
             Some(ClearingBaseline::CommodityQuantity { quantity: baseline }),
         ) => match blocker.blocking_fact {
-            BlockingFact::SellerOutOfStock => blocker
-                .blocker_key
-                .target
-                .is_some_and(|seller| {
-                    view.entity_kind(seller).is_some()
-                        && view.commodity_quantity(seller, *commodity) > Quantity(0)
-                }),
+            BlockingFact::SellerOutOfStock => blocker.blocker_key.target.is_some_and(|seller| {
+                view.entity_kind(seller).is_some()
+                    && view.commodity_quantity(seller, *commodity) > Quantity(0)
+            }),
             BlockingFact::SourceDepleted => blocker
                 .blocker_key
                 .target
@@ -845,6 +854,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Wash
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::Investigate
+        | PlannerOpKind::SearchPlace
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => None,
         PlannerOpKind::Bury
@@ -858,6 +868,10 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::ConsultRecord
         | PlannerOpKind::Defend
         | PlannerOpKind::AskWitness
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::EscortToSafety
+        | PlannerOpKind::ReportFound
         | PlannerOpKind::Accuse
         | PlannerOpKind::Fine
         | PlannerOpKind::Exile
@@ -938,9 +952,15 @@ fn related_place(
         | PlannerOpKind::YieldForceClaim
         | PlannerOpKind::Investigate
         | PlannerOpKind::AskWitness
+        | PlannerOpKind::AskAboutPerson
+        | PlannerOpKind::ReportMissing
+        | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => view.effective_place(agent),
+        PlannerOpKind::SearchPlace | PlannerOpKind::EscortToSafety => {
+            goal_key.place.or_else(|| view.effective_place(agent))
+        }
     }
 }
 
@@ -980,11 +1000,11 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerKey,
-        BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile, ContentionGrant,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant, ContentionIntents,
+        DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
+        HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -1462,6 +1482,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
+            &mut ContentionIntents::default(),
             &cognitive(&ProfileFixture::default()),
         );
 
@@ -1508,12 +1529,8 @@ mod tests {
             action_def: Some(ActionDefId(1)),
         };
 
-        let (condition, baseline) = derive_clearing_condition(
-            &view,
-            agent,
-            BlockingFact::SellerOutOfStock,
-            &blocker_key,
-        );
+        let (condition, baseline) =
+            derive_clearing_condition(&view, agent, BlockingFact::SellerOutOfStock, &blocker_key);
 
         assert_eq!(
             condition,
@@ -1621,7 +1638,10 @@ mod tests {
         };
 
         for (fact, key) in [
-            (BlockingFact::Unknown, sample_blocker_key_for(GoalKey::from(GoalKind::Sleep))),
+            (
+                BlockingFact::Unknown,
+                sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
+            ),
             (
                 BlockingFact::PatienceExhausted,
                 sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
@@ -1721,7 +1741,10 @@ mod tests {
             condition,
             BlockerClearingCondition::ContentionChanged { facility }
         );
-        assert_eq!(baseline, Some(ClearingBaseline::ContentionPosition(Some(2))));
+        assert_eq!(
+            baseline,
+            Some(ClearingBaseline::ContentionPosition(Some(2)))
+        );
     }
 
     #[test]
@@ -1867,7 +1890,11 @@ mod tests {
             baseline_snapshot: None,
         };
 
-        assert!(is_blocker_cleared(&TestBeliefView::default(), agent, &blocker));
+        assert!(is_blocker_cleared(
+            &TestBeliefView::default(),
+            agent,
+            &blocker
+        ));
     }
 
     #[test]
@@ -1910,7 +1937,11 @@ mod tests {
             baseline_snapshot: None,
         };
 
-        assert!(!is_blocker_cleared(&TestBeliefView::default(), agent, &blocker));
+        assert!(!is_blocker_cleared(
+            &TestBeliefView::default(),
+            agent,
+            &blocker
+        ));
     }
 
     #[test]
@@ -2251,6 +2282,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
+            &mut ContentionIntents::default(),
             &cognitive(&budget),
         );
 
@@ -2402,6 +2434,7 @@ mod tests {
             &mut runtime,
             &mut jc,
             &mut blocked,
+            &mut ContentionIntents::default(),
             &cognitive(&budget),
         );
 
@@ -2444,10 +2477,11 @@ mod tests {
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(30),
-            clearing_condition: worldwake_core::BlockerClearingCondition::CommodityAvailabilityChanged {
-                commodity: CommodityKind::Bread,
-                place,
-            },
+            clearing_condition:
+                worldwake_core::BlockerClearingCondition::CommodityAvailabilityChanged {
+                    commodity: CommodityKind::Bread,
+                    place,
+                },
             baseline_snapshot: Some(ClearingBaseline::CommodityQuantity {
                 quantity: Quantity(0),
             }),

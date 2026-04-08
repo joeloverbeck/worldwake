@@ -6,13 +6,16 @@
 pub mod action_registry;
 pub mod artifact_actions;
 pub mod artifact_lifecycle;
+pub mod ask_about_person_actions;
 pub mod bandit_camp;
 pub mod bandit_camp_actions;
 pub mod combat;
 pub mod consult_record_actions;
 pub mod epistemic_actions;
+pub mod escort_actions;
 pub mod evidence_decay;
 mod evidence_support;
+pub mod expectation_check;
 mod experience_recording;
 pub mod facility_queue;
 pub mod facility_queue_actions;
@@ -28,6 +31,8 @@ pub mod patrol_actions;
 pub mod perception;
 pub mod production;
 pub mod production_actions;
+pub mod report_actions;
+pub mod search_actions;
 pub mod stock_actions;
 pub mod tell_actions;
 pub mod trade;
@@ -38,6 +43,7 @@ pub mod travel_actions;
 pub use action_registry::{ActionRegistries, build_full_action_registries, register_all_actions};
 pub use artifact_actions::register_artifact_actions;
 pub use artifact_lifecycle::artifact_lifecycle_system;
+pub use ask_about_person_actions::register_ask_about_person_action;
 pub use bandit_camp::bandit_camp_system;
 pub use bandit_camp_actions::register_establish_camp_action;
 pub use combat::{
@@ -47,7 +53,9 @@ pub use combat::{
 };
 pub use consult_record_actions::register_consult_record_action;
 pub use epistemic_actions::register_ask_witness_action;
+pub use escort_actions::register_escort_to_safety_action;
 pub use evidence_decay::evidence_decay_system;
+pub use expectation_check::check_overdue_expectations;
 pub use facility_queue::contention_system;
 pub use facility_queue_actions::register_queue_for_facility_use_action;
 pub use investigate_actions::register_investigate_action;
@@ -64,6 +72,8 @@ pub use patrol_actions::register_patrol_action;
 pub use perception::perception_system;
 pub use production::resource_regeneration_system;
 pub use production_actions::{register_craft_actions, register_harvest_actions};
+pub use report_actions::{register_report_found_action, register_report_missing_action};
+pub use search_actions::register_search_place_action;
 pub use stock_actions::register_stock_actions;
 pub use tell_actions::register_tell_action;
 pub use trade::{restock_candidates, trade_system_tick};
@@ -86,5 +96,6 @@ pub fn dispatch_table() -> SystemDispatchTable {
         bandit_camp_system,
         patrol_route_adaptation_system,
         evidence_decay_system,
+        check_overdue_expectations,
     ])
 }

@@ -113,6 +113,7 @@ fn harvest_action_def(
         reservation_requirements: vec![ReservationReq { target_index: 0 }],
         duration: DurationExpr::Fixed(recipe.work_ticks),
         body_cost_per_tick: recipe.body_cost_per_tick,
+        attention_cost: worldwake_core::Permille::new_unchecked(200),
         interruptibility: Interruptibility::InterruptibleWithPenalty,
         commit_conditions: preconditions,
         visibility: VisibilitySpec::ParticipantsOnly,
@@ -180,6 +181,7 @@ fn craft_action_def(
         reservation_requirements: vec![ReservationReq { target_index: 0 }],
         duration: DurationExpr::Fixed(recipe.work_ticks),
         body_cost_per_tick: recipe.body_cost_per_tick,
+        attention_cost: worldwake_core::Permille::new_unchecked(200),
         interruptibility: Interruptibility::InterruptibleWithPenalty,
         commit_conditions: preconditions
             .into_iter()
@@ -1241,6 +1243,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(nz(1)),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -2038,6 +2041,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(nz(1)),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,

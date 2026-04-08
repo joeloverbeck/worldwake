@@ -201,6 +201,18 @@ impl ExpectedWorldState {
                     }) => {
                         components.insert((*entity, *component_kind), after.clone());
                     }
+                    StateDelta::Component(ComponentDelta::CompactSet {
+                        entity,
+                        component_kind,
+                        diff,
+                    }) => {
+                        let key = (*entity, *component_kind);
+                        let base = components
+                            .get(&key)
+                            .expect("CompactSet requires a prior Set base state");
+                        let updated = diff.apply_to_component_value(base);
+                        components.insert(key, updated);
+                    }
                     StateDelta::Component(ComponentDelta::Removed {
                         entity,
                         component_kind,

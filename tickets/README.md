@@ -5,7 +5,7 @@ This directory contains active implementation tickets.
 To keep architecture clean, robust, and extensible, every new ticket must be created from `tickets/_TEMPLATE.md` and must satisfy the checks below.
 
 All precision rules for technical claims — ordering, layer naming, coverage gaps, scenario isolation, and domain-specific requirements — are defined in `docs/precision-rules.md`. Apply those rules when writing any ticket section.
-For golden-test tickets, treat `docs/generated/golden-e2e-inventory.md` as the canonical `golden_*` test-name inventory and `docs/generated/golden-scenario-map.md` as the canonical source-declared scenario-id inventory. Regenerate both with `python3 scripts/golden_inventory.py --write --check-docs`.
+For golden-test tickets, treat `docs/generated/golden-e2e-inventory.md` as the canonical `golden_*` test-name inventory, `docs/generated/golden-scenario-index.md` as the gameplay-level scenario overview, and `docs/generated/golden-scenario-details/` for per-file test-name-level detail. Regenerate all with `python3 scripts/golden_inventory.py --write --check-docs`.
 When a ticket depends on golden ordering or proof-surface choice, use `docs/golden-e2e-testing.md` as the canonical guide instead of reconstructing those rules from archived tickets.
 
 ## Core Architectural Contract

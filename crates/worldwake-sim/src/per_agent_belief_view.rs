@@ -9,14 +9,15 @@ use worldwake_core::{
     AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
     CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityValuationProfile, ContentionGrant, ControlSource, DemandObservation, DriveThresholds,
-    EffectiveRight, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+    EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
-    RecordedViolation, ResourceSource, RouteExperience, SocialObservation, SourceReliability,
-    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, World, Wound,
-    danger_ratio_permille, is_incapacitated, load_of_entity,
+    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
+    load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -430,8 +431,8 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
-    fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
-        (agent == self.agent).then(|| self.belief_store.clone())
+    fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
+        (agent == self.agent).then_some(self.belief_store)
     }
 
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
@@ -940,6 +941,18 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_preference_profile(agent).copied())
+            .flatten()
+    }
+
+    fn expectation_store(&self, agent: EntityId) -> Option<ExpectationStore> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_expectation_store(agent).cloned())
+            .flatten()
+    }
+
+    fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_last_seen_memory(agent).cloned())
             .flatten()
     }
 
@@ -1473,14 +1486,16 @@ mod tests {
     use worldwake_core::{
         ActionDefId, ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
         BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind, ControlSource,
-        EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, FactionData,
+        EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, ExpectationBasis,
+        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, OfficeData, PerceptionProfile, Permille, Place, PlaceTag,
-        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
-        ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
-        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId, build_believed_entity_state, build_prototype_world,
+        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+        OfficeData, PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
+        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
+        RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
+        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
+        build_prototype_world,
         test_utils::{
             sample_commodity_valuation_profile, sample_preference_profile, sample_route_experience,
             sample_source_reliability,
@@ -1604,6 +1619,7 @@ mod tests {
             reservation_requirements: Vec::<ReservationReq>::new(),
             duration: DurationExpr::CombatWeapon,
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
@@ -1617,6 +1633,90 @@ mod tests {
     fn per_agent_belief_view_implements_goal_and_runtime_surfaces() {
         assert_goal_belief_view::<PerAgentBeliefView<'_>>();
         assert_runtime_belief_view::<PerAgentBeliefView<'_>>();
+    }
+
+    #[test]
+    fn self_expectation_and_last_seen_queries_are_authoritative_only_for_self() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 5);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            let mut expectation_store = ExpectationStore::default();
+            expectation_store.records.insert(
+                ExpectationId(7),
+                ExpectationRecord {
+                    id: ExpectationId(7),
+                    owner: agent,
+                    subject: other,
+                    expected_place: place,
+                    deadline_tick: Tick(12),
+                    grace_ticks: 3,
+                    basis: ExpectationBasis::SocialPromise,
+                    state: ExpectationState::Active,
+                    created_tick: Tick(5),
+                },
+            );
+            txn.set_component_expectation_store(agent, expectation_store)
+                .unwrap();
+            txn.set_component_last_seen_memory(
+                agent,
+                LastSeenMemory {
+                    records: BTreeMap::from([(
+                        other,
+                        LastSeenRecord {
+                            subject: other,
+                            place,
+                            observed_tick: Tick(4),
+                            source: agent,
+                            provenance: LastSeenProvenance::DirectObservation,
+                        },
+                    )]),
+                    capacity: 9,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let expectation_store = GoalBeliefView::expectation_store(&view, agent)
+            .expect("self expectation store should be visible");
+        let last_seen_memory = GoalBeliefView::last_seen_memory(&view, agent)
+            .expect("self last-seen memory should be visible");
+
+        assert_eq!(expectation_store.records.len(), 1);
+        assert_eq!(
+            expectation_store.records.get(&ExpectationId(7)),
+            Some(&ExpectationRecord {
+                id: ExpectationId(7),
+                owner: agent,
+                subject: other,
+                expected_place: place,
+                deadline_tick: Tick(12),
+                grace_ticks: 3,
+                basis: ExpectationBasis::SocialPromise,
+                state: ExpectationState::Active,
+                created_tick: Tick(5),
+            })
+        );
+        assert_eq!(last_seen_memory.capacity, 9);
+        assert_eq!(
+            last_seen_memory.records.get(&other),
+            Some(&LastSeenRecord {
+                subject: other,
+                place,
+                observed_tick: Tick(4),
+                source: agent,
+                provenance: LastSeenProvenance::DirectObservation,
+            })
+        );
+        assert_eq!(GoalBeliefView::expectation_store(&view, other), None);
+        assert_eq!(GoalBeliefView::last_seen_memory(&view, other), None);
     }
 
     #[test]

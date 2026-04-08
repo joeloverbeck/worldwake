@@ -210,6 +210,13 @@ fn spawn_entities(
         WitnessData::default(),
     );
 
+    for place_def in &def.places {
+        let place_id = resolve_name(names, &place_def.name, "place visibility_profile")?;
+        if let Some(profile) = &place_def.visibility_profile {
+            txn.set_component_place_visibility_profile(place_id, profile.clone())?;
+        }
+    }
+
     for agent_def in &def.agents {
         spawn_agent(&mut txn, agent_def, names, &mut agent_locations)?;
     }
@@ -299,6 +306,10 @@ fn spawn_agent(
     txn.set_component_communication_profile(agent_id, communication)?;
     let preference = agent_def.preference_profile.unwrap_or_default();
     txn.set_component_preference_profile(agent_id, preference)?;
+    let expectation_store = agent_def.expectation_store.clone().unwrap_or_default();
+    txn.set_component_expectation_store(agent_id, expectation_store)?;
+    let last_seen_memory = agent_def.last_seen_memory.clone().unwrap_or_default();
+    txn.set_component_last_seen_memory(agent_id, last_seen_memory)?;
 
     if let Some(ref combat) = agent_def.combat_profile {
         txn.set_component_combat_profile(agent_id, *combat)?;
@@ -480,10 +491,11 @@ mod tests {
         BeliefConfidencePolicy, CarryCapacity, CognitiveProfile, CommodityKind,
         CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
         ControlSource, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-        HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
-        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PreferenceProfile, PursuitProfile,
-        Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
-        TradeCategory, ViolationDispositionProfile, WorkstationTag,
+        ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+        LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
+        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
+        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -504,6 +516,8 @@ mod tests {
             intention_disposition: None,
             communication_profile: None,
             preference_profile: None,
+            expectation_store: None,
+            last_seen_memory: None,
             drive_thresholds: None,
             metabolism_profile: None,
             carry_capacity: None,
@@ -526,6 +540,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Village".into(),
                 tags: vec![PlaceTag::Village],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Village", ControlSource::Human)],
@@ -566,10 +581,12 @@ mod tests {
                 PlaceDef {
                     name: "Town".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
                 PlaceDef {
                     name: "Forest".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
             ],
             edges: vec![],
@@ -613,6 +630,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Town".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
@@ -635,12 +653,58 @@ mod tests {
     }
 
     #[test]
+    fn test_spawn_applies_place_visibility_profile_when_present() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Forest".into(),
+                tags: vec![PlaceTag::Forest],
+                visibility_profile: Some(PlaceVisibilityProfile {
+                    base_concealment: Permille::new(400).unwrap(),
+                }),
+            }],
+            edges: vec![],
+            agents: vec![minimal_agent("Scout", "Forest", ControlSource::Ai)],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let forest = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+
+        assert_eq!(
+            world.get_component_place_visibility_profile(forest),
+            Some(&PlaceVisibilityProfile {
+                base_concealment: Permille::new(400).unwrap(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_spawn_leaves_place_visibility_profile_absent_by_default() {
+        let spawned = spawn_scenario(&minimal_def()).unwrap();
+        let world = spawned.state.world();
+        let village = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+
+        assert_eq!(world.get_component_place_visibility_profile(village), None);
+    }
+
+    #[test]
     fn test_spawn_items_at_place() {
         let def = ScenarioDef {
             seed: 1,
             places: vec![PlaceDef {
                 name: "Market".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Trader", "Market", ControlSource::Ai)],
@@ -686,6 +750,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Camp".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Warrior", "Camp", ControlSource::Human)],
@@ -724,10 +789,12 @@ mod tests {
                 PlaceDef {
                     name: "A".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
                 PlaceDef {
                     name: "B".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
             ],
             edges: vec![EdgeDef {
@@ -773,10 +840,12 @@ mod tests {
                 PlaceDef {
                     name: "X".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
                 PlaceDef {
                     name: "Y".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
             ],
             edges: vec![EdgeDef {
@@ -835,6 +904,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Town".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Lost", "Nowhere", ControlSource::Ai)],
@@ -866,10 +936,12 @@ mod tests {
                 PlaceDef {
                     name: "Smithy".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
                 PlaceDef {
                     name: "Orchard".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
             ],
             edges: vec![],
@@ -947,6 +1019,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Void".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Bot", "Void", ControlSource::Ai)],
@@ -978,6 +1051,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Home".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -1039,6 +1113,56 @@ mod tests {
         assert_eq!(
             world.get_component_preference_profile(agent),
             Some(&PreferenceProfile::default())
+        );
+        assert_eq!(
+            world.get_component_expectation_store(agent),
+            Some(&ExpectationStore::default())
+        );
+        assert_eq!(
+            world.get_component_last_seen_memory(agent),
+            Some(&LastSeenMemory::default())
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_with_last_seen_memory_override() {
+        let custom_memory = LastSeenMemory {
+            records: BTreeMap::new(),
+            capacity: 50,
+        };
+        let custom_expectation_store = ExpectationStore::default();
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Home".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                expectation_store: Some(custom_expectation_store.clone()),
+                last_seen_memory: Some(custom_memory.clone()),
+                ..minimal_agent("Searcher", "Home", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_expectation_store(agent),
+            Some(&custom_expectation_store)
+        );
+        assert_eq!(
+            world.get_component_last_seen_memory(agent),
+            Some(&custom_memory)
         );
     }
 
@@ -1111,6 +1235,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Town".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -1189,10 +1314,12 @@ mod tests {
                 PlaceDef {
                     name: "Gate".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
                 PlaceDef {
                     name: "Market".into(),
                     tags: vec![],
+                    visibility_profile: None,
                 },
             ],
             edges: vec![],
@@ -1306,6 +1433,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Gate".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {

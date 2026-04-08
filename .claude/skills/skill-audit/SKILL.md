@@ -47,7 +47,7 @@ Output this structure to the conversation (do not write to a file):
 
 **Skill path**: <path>
 **Session date**: YYYY-MM-DD
-**Session summary**: <1-2 sentence description of what work was done with this skill>
+**Session summary**: <1-2 sentence description of the session work that exercised the target skill>
 
 ## Alignment Check
 
@@ -94,6 +94,11 @@ Output this structure to the conversation (do not write to a file):
 - **FOUNDATIONS alignment is mandatory** — Any suggestion that would violate a principle in `docs/FOUNDATIONS.md` must be flagged and rejected, even if it would otherwise be an improvement.
 - **Scope discipline** — Do not propose expanding the skill's scope beyond its stated intent. The audit evaluates the skill as written, not what it could become.
 - **Session evidence required** — Every Issue and Improvement must cite specific session evidence (what happened, what was expected). Findings based purely on hypothetical scenarios belong in Features, not Issues.
-- **Follow-up implementation** — After the report is presented, the user may request implementation of specific suggestions. At that point, edit the target skill file directly — the "report only" guardrail applies only to the audit phase, not to user-directed follow-up. When implementing multiple suggestions, apply edits in document order (top to bottom) to minimize the chance of line-number shifts invalidating later edits. After making follow-up edits, re-read the modified sections to verify: (a) edits don't overlap or contradict each other, (b) cross-references between sections remain valid (phase numbers, step numbers, file paths), (c) the skill's sequential flow still reads coherently end-to-end, (d) new content makes sense in the surrounding context — e.g., numbering, terminology, and cross-references introduced by the edit are consistent with adjacent unchanged text.
+- **Follow-up implementation** — After the report is presented, the user may request implementation of specific suggestions. At that point, edit the target skill file directly — the "report only" guardrail applies only to the audit phase, not to user-directed follow-up. When implementing multiple suggestions, apply edits in document order (top to bottom) to minimize the chance of line-number shifts invalidating later edits. After making follow-up edits, re-read the modified sections and verify all of:
+  1. **No overlap or contradiction** — edits don't conflict with each other
+  2. **Cross-references valid** — phase numbers, step numbers, and file paths still point to the correct targets. Use pattern search (e.g., grep for `Step [0-9]`, `Phase [0-9]`, `Section [0-9]`, or `### [0-9]`) to confirm numbering continuity. Verify that any cross-references introduced by new text point to content that actually exists (e.g., if new text says "to mirror the Step 6 report structure," confirm Step 6 uses that terminology)
+  3. **Sequential flow coherent** — the skill reads coherently end-to-end after all edits
+  4. **Contextual consistency** — numbering, terminology, and cross-references introduced by each edit are consistent with adjacent unchanged text
+  5. **Frontmatter integrity** — if any edit touched the YAML frontmatter block, verify the `---` delimiters are intact and the YAML parses correctly (name, description, and arguments are present and properly quoted)
 - **Cross-skill consistency** — If the target skill is part of a multi-skill workflow (e.g., plan/implement/evaluate cycle), scan sibling skills for inconsistent file references, terminology, or shared constants. Report cross-skill inconsistencies as Issues.
 - **Repeated audit shortcut** — If the same skill has been audited 2+ times in the current session and the most recent audit found 0 findings, note "Skill stable — no new session evidence since last audit" and skip the full checklist unless the skill was modified between audits.

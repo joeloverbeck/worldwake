@@ -2,16 +2,18 @@ use crate::{
     ActionDuration, ActionPayload, DurationExpr, RecipeDefinition,
     action_semantics::consultation_duration_ticks,
 };
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant, DemandObservation,
-    DriveThresholds, EffectiveRight, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
-    RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
+    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds,
+    InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
     RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
     TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
     UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
@@ -50,7 +52,7 @@ pub trait GoalBeliefView {
         let _ = agent;
         Vec::new()
     }
-    fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
+    fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
         let _ = agent;
         None
     }
@@ -256,6 +258,14 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn expectation_store(&self, agent: EntityId) -> Option<ExpectationStore> {
+        let _ = agent;
+        None
+    }
+    fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
+        let _ = agent;
+        None
+    }
     fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
         let _ = agent;
         None
@@ -371,7 +381,7 @@ pub trait RuntimeBeliefView {
         let _ = agent;
         Vec::new()
     }
-    fn agent_belief_store(&self, agent: EntityId) -> Option<AgentBeliefStore> {
+    fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
         let _ = agent;
         None
     }
@@ -532,6 +542,14 @@ pub trait RuntimeBeliefView {
         None
     }
     fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+        let _ = agent;
+        None
+    }
+    fn expectation_store(&self, agent: EntityId) -> Option<ExpectationStore> {
+        let _ = agent;
+        None
+    }
+    fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
         let _ = agent;
         None
     }
@@ -796,7 +814,7 @@ macro_rules! impl_goal_belief_view {
             fn agent_belief_store(
                 &self,
                 agent: worldwake_core::EntityId,
-            ) -> Option<worldwake_core::AgentBeliefStore> {
+            ) -> Option<&worldwake_core::AgentBeliefStore> {
                 $crate::RuntimeBeliefView::agent_belief_store(self, agent)
             }
 
@@ -1222,6 +1240,20 @@ macro_rules! impl_goal_belief_view {
                 $crate::RuntimeBeliefView::preference_profile(self, agent)
             }
 
+            fn expectation_store(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::ExpectationStore> {
+                $crate::RuntimeBeliefView::expectation_store(self, agent)
+            }
+
+            fn last_seen_memory(
+                &self,
+                agent: worldwake_core::EntityId,
+            ) -> Option<worldwake_core::LastSeenMemory> {
+                $crate::RuntimeBeliefView::last_seen_memory(self, agent)
+            }
+
             fn utility_profile(
                 &self,
                 agent: worldwake_core::EntityId,
@@ -1403,6 +1435,11 @@ pub fn estimate_duration_from_beliefs(
                     (adjacent == target).then_some(ActionDuration::new(ticks.get()))
                 })
         }
+        DurationExpr::EscortRouteTravel => {
+            let target = payload.as_escort_to_safety()?.destination;
+            let origin = view.effective_place(actor)?;
+            estimate_route_duration_from_beliefs(view, origin, target).map(ActionDuration::new)
+        }
         DurationExpr::ActorMetabolism { kind } => {
             let profile = view.metabolism_profile(actor)?;
             let ticks = match kind {
@@ -1477,14 +1514,279 @@ pub fn estimate_duration_from_beliefs(
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq)]
+struct BeliefRouteQueueEntry {
+    total_ticks: u32,
+    place: EntityId,
+}
+
+impl Ord for BeliefRouteQueueEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other
+            .total_ticks
+            .cmp(&self.total_ticks)
+            .then_with(|| self.place.cmp(&other.place))
+    }
+}
+
+impl PartialOrd for BeliefRouteQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn estimate_route_duration_from_beliefs(
+    view: &dyn RuntimeBeliefView,
+    from: EntityId,
+    to: EntityId,
+) -> Option<u32> {
+    if from == to {
+        return Some(0);
+    }
+
+    let mut best = BTreeMap::new();
+    best.insert(from, 0_u32);
+    let mut frontier = BinaryHeap::new();
+    frontier.push(BeliefRouteQueueEntry {
+        total_ticks: 0,
+        place: from,
+    });
+
+    while let Some(entry) = frontier.pop() {
+        let known = *best.get(&entry.place)?;
+        if entry.total_ticks != known {
+            continue;
+        }
+        if entry.place == to {
+            return Some(entry.total_ticks);
+        }
+
+        for (adjacent, ticks) in view.adjacent_places_with_travel_ticks(entry.place) {
+            let candidate = entry.total_ticks.saturating_add(ticks.get());
+            let should_replace = best
+                .get(&adjacent)
+                .is_none_or(|existing| candidate < *existing);
+            if should_replace {
+                best.insert(adjacent, candidate);
+                frontier.push(BeliefRouteQueueEntry {
+                    total_ticks: candidate,
+                    place: adjacent,
+                });
+            }
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::estimate_duration_from_beliefs;
-    use crate::{ActionPayload, DurationExpr, PerAgentBeliefView};
+    use crate::{ActionPayload, DurationExpr, GoalBeliefView, PerAgentBeliefView};
     use worldwake_core::{
-        AgentBeliefStore, CauseRef, ControlSource, EventLog, PatrolProfile, Permille, Tick,
-        VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        AgentBeliefStore, CauseRef, CommodityConsumableProfile, CommodityKind, ControlSource,
+        DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
+        LoadUnits, PatrolProfile, Permille, Quantity, ResourceSource, Tick, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };
+
+    struct StubGoalBeliefView;
+
+    impl GoalBeliefView for StubGoalBeliefView {
+        fn is_alive(&self, _entity: EntityId) -> bool {
+            true
+        }
+
+        fn is_dead(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
+            None
+        }
+
+        fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, std::num::NonZeroU32)> {
+            Vec::new()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: worldwake_core::RecipeId) -> bool {
+            false
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<worldwake_core::RecipeId> {
+            Vec::new()
+        }
+
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
+
+        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
+            Quantity(0)
+        }
+
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
+            None
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn merchandise_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::MerchandiseProfile> {
+            None
+        }
+
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn belief_confidence_policy(
+            &self,
+            _agent: EntityId,
+        ) -> worldwake_core::BeliefConfidencePolicy {
+            worldwake_core::BeliefConfidencePolicy::default()
+        }
+
+        fn wounds(&self, _agent: EntityId) -> Vec<worldwake_core::Wound> {
+            Vec::new()
+        }
+
+        fn hostile_targets_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn listed_sale_lots_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
         WorldTxn::new(
@@ -1566,5 +1868,17 @@ mod tests {
             ),
             Some(crate::ActionDuration::new(13))
         );
+    }
+
+    #[test]
+    fn goal_belief_view_expectation_defaults_return_none() {
+        let view = StubGoalBeliefView;
+        let agent = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+
+        assert_eq!(view.expectation_store(agent), None);
+        assert_eq!(view.last_seen_memory(agent), None);
     }
 }

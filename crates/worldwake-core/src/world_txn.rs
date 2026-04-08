@@ -6,7 +6,8 @@ use crate::{
     build_observed_entity_snapshot, component_schema::with_component_schema_entries,
 };
 use crate::{
-    CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventPayload,
+    BeliefStoreDiff, CauseRef, ComponentDelta, ComponentDiff, ComponentKind, ComponentValue,
+    EntityDelta, EventLog, EventPayload,
     EventTag, EvidenceRef, PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta,
     RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
 };
@@ -1039,12 +1040,46 @@ impl<'w> WorldTxn<'w> {
             let _ = remove(&mut self.staged_world, entity)?;
         }
         insert(&mut self.staged_world, entity, component.clone())?;
-        self.deltas.push(StateDelta::Component(ComponentDelta::Set {
-            entity,
-            component_kind,
-            before: before.map(&wrap),
-            after: wrap(component),
-        }));
+
+        // For AgentBeliefStore with a prior value, emit a compact structural
+        // diff instead of full before+after snapshots. This reduces per-event
+        // memory from ~300 KB to ~1-5 KB for belief store updates.
+        let delta = if component_kind == ComponentKind::AgentBeliefStore {
+            if let Some(before_val) = before {
+                let before_wrapped = wrap(before_val);
+                let after_wrapped = wrap(component);
+                match (&before_wrapped, &after_wrapped) {
+                    (
+                        ComponentValue::AgentBeliefStore(before_store),
+                        ComponentValue::AgentBeliefStore(after_store),
+                    ) => {
+                        let diff = BeliefStoreDiff::compute(before_store, after_store);
+                        ComponentDelta::CompactSet {
+                            entity,
+                            component_kind,
+                            diff: ComponentDiff::BeliefStore(diff),
+                        }
+                    }
+                    _ => unreachable!("AgentBeliefStore component_kind with non-AgentBeliefStore ComponentValue"),
+                }
+            } else {
+                // First-time set: no base state to diff against.
+                ComponentDelta::Set {
+                    entity,
+                    component_kind,
+                    before: None,
+                    after: wrap(component),
+                }
+            }
+        } else {
+            ComponentDelta::Set {
+                entity,
+                component_kind,
+                before: before.map(&wrap),
+                after: wrap(component),
+            }
+        };
+        self.deltas.push(StateDelta::Component(delta));
         Ok(())
     }
 
@@ -1186,7 +1221,9 @@ impl<'w> WorldTxn<'w> {
                     }
                 },
                 StateDelta::Component(component_delta) => match component_delta {
-                    ComponentDelta::Set { entity, .. } | ComponentDelta::Removed { entity, .. } => {
+                    ComponentDelta::Set { entity, .. }
+                    | ComponentDelta::CompactSet { entity, .. }
+                    | ComponentDelta::Removed { entity, .. } => {
                         entities.insert(*entity);
                     }
                 },
@@ -1935,7 +1972,8 @@ fn observed_evidence_entities(evidence: &EvidenceRef) -> BTreeSet<EntityId> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
+        AgentBeliefStore, BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim,
+        BlockedIntentMemory,
         CognitiveProfile, CommunicationProfile, DemandMemory, EpistemicDispositionProfile,
         ExecutionBudget, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
         InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
@@ -1952,12 +1990,14 @@ mod tests {
     };
     use crate::{
         BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
-        DeprivationExposure, EntityId, EntityKind, HomeostaticNeeds, LoadUnits, LotOperation, Name,
-        Permille, Place, PlaceTag, Quantity, ReservationId, ReservationRecord, ResourceSource,
-        Tick, TickRange, Topology, UniqueItemKind, World, WorldError,
+        DeprivationExposure, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds,
+        LastSeenMemory, LoadUnits, LotOperation, Name, Permille, Place, PlaceTag,
+        PlaceVisibilityProfile, Quantity, ReservationId, ReservationRecord, ResourceSource, Tick,
+        TickRange, Topology, UniqueItemKind, World, WorldError,
     };
     use crate::{
-        CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
+        CarryCapacity, CauseRef, ComponentDelta, ComponentDiff, ComponentKind, ComponentValue,
+        EntityDelta,
         EventLog, EventTag, EventView, EvidenceRef, InTransitOnEdge, KnownRecipes, MismatchKind,
         QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
         TravelEdgeId, VisibilitySpec, WitnessData, WoundId,
@@ -2036,6 +2076,12 @@ mod tests {
             abandonment_grace_ticks: std::num::NonZeroU32::new(5).unwrap(),
             flee_wound_threshold: Permille::new(650).unwrap(),
             rally_place: Some(entity(62)),
+        }
+    }
+
+    fn sample_place_visibility_profile() -> PlaceVisibilityProfile {
+        PlaceVisibilityProfile {
+            base_concealment: Permille::new(375).unwrap(),
         }
     }
 
@@ -2354,6 +2400,18 @@ mod tests {
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,
+                    component_kind: ComponentKind::ExpectationStore,
+                    before: None,
+                    after: ComponentValue::ExpectationStore(ExpectationStore::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::LastSeenMemory,
+                    before: None,
+                    after: ComponentValue::LastSeenMemory(LastSeenMemory::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
                     component_kind: ComponentKind::PerceptionProfile,
                     before: None,
                     after: ComponentValue::PerceptionProfile(PerceptionProfile::default()),
@@ -2603,7 +2661,7 @@ mod tests {
         assert!(txn.deltas().iter().any(|delta| {
             matches!(
                 delta,
-                StateDelta::Component(ComponentDelta::Set {
+                StateDelta::Component(ComponentDelta::CompactSet {
                     entity,
                     component_kind: ComponentKind::AgentBeliefStore,
                     ..
@@ -2676,7 +2734,7 @@ mod tests {
         assert!(txn.deltas().iter().any(|delta| {
             matches!(
                 delta,
-                StateDelta::Component(ComponentDelta::Set {
+                StateDelta::Component(ComponentDelta::CompactSet {
                     entity,
                     component_kind: ComponentKind::AgentBeliefStore,
                     ..
@@ -4027,6 +4085,44 @@ mod tests {
     }
 
     #[test]
+    fn set_component_place_visibility_profile_records_component_delta_and_updates_world_on_commit()
+    {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let before = sample_place_visibility_profile();
+        let after = PlaceVisibilityProfile {
+            base_concealment: Permille::new(640).unwrap(),
+        };
+        world
+            .insert_component_place_visibility_profile(place, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_place_visibility_profile(place, after.clone())
+            .unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: place,
+                component_kind: ComponentKind::PlaceVisibilityProfile,
+                before: Some(ComponentValue::PlaceVisibilityProfile(before)),
+                after: ComponentValue::PlaceVisibilityProfile(after.clone()),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(
+            world.get_component_place_visibility_profile(place),
+            Some(&after)
+        );
+    }
+
+    #[test]
     fn set_component_carry_capacity_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -4523,15 +4619,18 @@ mod tests {
         txn.set_component_agent_belief_store(agent, after.clone())
             .unwrap();
 
+        // Belief store updates emit CompactSet with a structural diff.
+        let expected_diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(
             txn.deltas(),
-            &[StateDelta::Component(ComponentDelta::Set {
+            &[StateDelta::Component(ComponentDelta::CompactSet {
                 entity: agent,
                 component_kind: ComponentKind::AgentBeliefStore,
-                before: Some(ComponentValue::AgentBeliefStore(before)),
-                after: ComponentValue::AgentBeliefStore(after.clone()),
+                diff: ComponentDiff::BeliefStore(expected_diff.clone()),
             })]
         );
+        // Verify roundtrip: applying the diff to `before` produces `after`.
+        assert_eq!(expected_diff.apply(&before), after);
 
         let mut log = EventLog::new();
         let event_id = txn.commit(&mut log);
@@ -5139,6 +5238,36 @@ mod tests {
 
         assert_eq!(record.state_deltas().len(), 1);
         assert_eq!(world.get_component_bandit_faction_policy(faction), None);
+    }
+
+    #[test]
+    fn clear_component_place_visibility_profile_records_removed_delta_and_updates_world_on_commit()
+    {
+        let mut world = World::new(test_topology()).unwrap();
+        let place = entity(2);
+        let before = sample_place_visibility_profile();
+        world
+            .insert_component_place_visibility_profile(place, before.clone())
+            .unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_place_visibility_profile(place).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: place,
+                component_kind: ComponentKind::PlaceVisibilityProfile,
+                before: ComponentValue::PlaceVisibilityProfile(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_place_visibility_profile(place), None);
     }
 
     #[test]

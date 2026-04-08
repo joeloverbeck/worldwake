@@ -44,9 +44,9 @@ Read ALL of these files before any analysis:
 1. **The assessment document** (from the argument) — read the entire file
 2. **`docs/FOUNDATIONS.md`** — architectural commandments. Skip if read earlier in this session and not modified since.
 3. **`docs/spec-drafting-rules.md`** — spec format requirements. Skip if read earlier in this session and not modified since.
-4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. Also determine the highest completed phase number for use in Phase 3.
+4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. Also determine the highest completed phase number for use in Phase 3. If the file does not exist in `specs/`, check `archive/specs/IMPLEMENTATION-ORDER*.md` for the most recently archived version and read that instead.
 
-**Pre-flight check**: If `specs/IMPLEMENTATION-ORDER.md` exists, warn the user that Phase 3 will overwrite it with a fresh file containing only the new phase. Suggest archiving or backing it up before proceeding (see `docs/archival-workflow.md`). If the user has not archived it, ask whether to continue.
+**Pre-flight check**: If `specs/IMPLEMENTATION-ORDER.md` exists in `specs/`, note its presence for Step 10. Do not warn about overwriting yet — the write strategy (append vs. fresh) depends on the number and nature of accepted proposals, which is not known until after triage. If the file was already archived (read from `archive/`), note that no active file exists.
 
 #### Step 2: Extract Proposals
 
@@ -65,14 +65,18 @@ From the assessment document, extract every distinct proposal. For each proposal
 For each proposal, validate the assessment's assumptions against the actual codebase:
 
 1. **Grep/Glob** for types, functions, files, and components the proposal references. Confirm they exist and have the shape the assessment assumes. The external LLM may have outdated or inaccurate assumptions about the codebase.
-2. **Check if already addressed**: Some proposals may describe problems that have already been fixed in recent work. Cross-reference against completed specs in `specs/IMPLEMENTATION-ORDER.md`.
+2. **Check if already addressed**: Some proposals may describe problems that have already been fixed in recent work. Cross-reference against completed specs in `specs/IMPLEMENTATION-ORDER.md` (or its archived equivalent if already archived).
 3. **Verify FOUNDATIONS alignment**: Confirm the proposal's cited FOUNDATIONS principles are correct (right number, right name). Check whether the proposal itself would violate any principles it doesn't cite.
 4. **Assess benefit**: Would this change create meaningful downstream consequences (Principle 5)? Or is it "nice to have" without real emergent payoff?
 5. **Check for overlap with active specs**: Glob `specs/S*.md` and check whether any existing active spec already covers the proposal's scope. If so, classify as Reject with reason "already covered by S{N}."
 
 When the proposal count is large (>5), use up to 3 Explore agents in parallel to validate different proposal groups simultaneously. Provide each agent with the proposals it should validate and the checklist above. Group proposals by codebase area (e.g., AI/planner proposals together, perception proposals together, ECS/core proposals together) so each agent can efficiently share grep context. If proposals span many areas, group by estimated validation complexity instead.
 
-#### Step 4: Classify Each Proposal
+#### Step 4: Auto-Detect Next S-Number
+
+Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. Increment by 1 for the first new spec. This is needed before presenting the triage report so that spec number assignments are concrete.
+
+#### Step 5: Classify Each Proposal
 
 For each proposal, assign one of three classifications:
 
@@ -80,7 +84,7 @@ For each proposal, assign one of three classifications:
 - **Reject**: The proposal's assumptions are wrong (already addressed, codebase differs from what assessment assumes), it violates FOUNDATIONS, or it fails YAGNI (no meaningful downstream consequences). Record: the specific reason for rejection.
 - **Scope-Down**: The core idea is valuable but the proposal is too ambitious or mixes concerns. Record: what the reduced spec would cover, what is deferred to later.
 
-#### Step 5: Present Triage Report
+#### Step 6: Present Triage Report
 
 Present the triage to the user in a structured format:
 
@@ -106,7 +110,7 @@ Present the triage to the user in a structured format:
 [If any proposals are ambiguous, ask here. Max 3 questions.]
 ```
 
-When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options. When open-ended, present in the report.
+Omit classification sections that have 0 entries (e.g., skip the "Rejected" header entirely if nothing was rejected). When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options. When open-ended, present in the report.
 
 **Wait for user response.** Do not proceed to Phase 2 until the user has approved or adjusted the triage. Treat classifications as approved unless the user explicitly changes them.
 
@@ -117,10 +121,6 @@ If the user reclassifies proposals (e.g., "accept P5 too" or "reject P2"), updat
 ### Phase 2 — Spec Writing
 
 After the triage is approved:
-
-#### Step 6: Auto-Detect Next S-Number
-
-Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. Increment by 1 for the first new spec, continue sequentially.
 
 #### Step 7: Write Draft Specs
 
@@ -144,7 +144,7 @@ Each spec MUST follow project conventions from `docs/spec-drafting-rules.md`:
 
 These are **draft specs**. They contain the architectural shape and key deliverables but expect a `/reassess-spec` pass before ticket decomposition. Do not attempt exhaustive codebase validation of every reference — that is reassess-spec's job.
 
-When writing multiple specs (>3), use Explore agents in parallel to trace codebase references for different specs simultaneously.
+When writing multiple specs (>3) and the existing context from Phase 1 is insufficient to write them confidently, use Explore agents in parallel to trace additional codebase references for different specs simultaneously.
 
 #### Step 8: Verify and Present Written Specs
 
@@ -177,7 +177,9 @@ A spec depends on another if it: (a) references types or components the other sp
 
 Determine the next phase number from the completed phases in the old `specs/IMPLEMENTATION-ORDER.md` (read in Step 1). Increment the highest completed phase number by 1.
 
-Write a **fresh** `specs/IMPLEMENTATION-ORDER.md` with the following structure:
+**Append vs. fresh**: If only 1-2 independent specs were accepted and they have no dependencies on unreleased specs in the current active phase, offer the user a choice: (a) append to the existing phase as parallel Wave 1 items (recommended for small additions), or (b) create a new phase. For single-spec results, appending is the default recommendation. If appending, edit the existing `specs/IMPLEMENTATION-ORDER.md` to add the new spec(s) to the dependency graph and Wave 1 list — do not overwrite. If creating a new phase or if no active IMPLEMENTATION-ORDER.md exists, warn the user that a fresh file will be written and suggest archiving the old one (see `docs/archival-workflow.md`).
+
+**When writing a fresh file**, use the following structure:
 
 ```markdown
 # Implementation Order & Dependency Graph
@@ -215,10 +217,12 @@ S50, S51 (parallel)
 ...
 
 ### Phase Gate
-- [ ] <gate criterion 1>
-- [ ] <gate criterion 2>
+- [ ] All specs reassessed and ticket-decomposed
+- [ ] All wave specs implemented and passing golden E2E tests
+- [ ] Canonical regressions addressed by this phase fully producible
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [ ] `cargo test --workspace` passing
 - [ ] Golden E2E coverage for each new spec's core behavior
-- ...
 ```
 
 Match the existing style from the current `specs/IMPLEMENTATION-ORDER.md` but start fresh — do not carry forward completed work details beyond the one-line reference.

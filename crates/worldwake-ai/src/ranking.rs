@@ -17,11 +17,12 @@ use std::{
 };
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
-    CommunicationClass, DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey,
-    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
-    failure_ratio_permille,
+    CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationRecord,
+    ExpectationOutcome, ExpectationState, GoalKey, GoalKind, HomeostaticNeeds,
+    InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OpportunityAnchor,
+    OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey, TellTopic,
+    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -450,6 +451,10 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
         }
         GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
+        | GoalKind::SearchForMissing { .. }
+        | GoalKind::ReportMissing { .. }
+        | GoalKind::ReportFound { .. }
+        | GoalKind::EscortToSafety { .. }
         | GoalKind::ShareBelief { .. }
         | GoalKind::InvestigateViolation { .. }
         | GoalKind::Patrol { .. }
@@ -641,6 +646,19 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             score_product(context.utility.social_weight, boosted_pressure)
         }
         GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::SearchForMissing { .. }
+        | GoalKind::ReportMissing { .. }
+        | GoalKind::ReportFound { .. } => {
+            expectation_response_motive(&candidate.key.kind, context)
+        }
+        GoalKind::EscortToSafety { subject, .. } => {
+            // Escort motive is lower than TreatWounds so that agents prefer
+            // healing a co-located wounded entity over escorting them away.
+            // Quarter the score to ensure TreatWounds always outranks escort
+            // when both compete for the same patient.
+            let subject_pain = derive_pain_pressure(context.view, subject);
+            score_product(context.utility.care_weight, subject_pain) / 4
+        }
         GoalKind::Patrol { .. } => patrol_motive(context),
         GoalKind::StealItem { .. } => theft_motive(context),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
@@ -651,6 +669,78 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             .map_or(0, |loyalty| {
                 score_product(context.utility.social_weight, loyalty)
             }),
+    }
+}
+
+fn expectation_response_motive(goal_kind: &GoalKind, context: &RankingContext<'_>) -> u32 {
+    let signal = expectation_response_signal(goal_kind, context);
+    if signal == 0 {
+        return 0;
+    }
+
+    let weight = match goal_kind {
+        GoalKind::SearchForMissing { .. } => context.utility.care_weight,
+        GoalKind::ReportMissing { .. } | GoalKind::ReportFound { .. } => {
+            context.utility.social_weight
+        }
+        _ => return 0,
+    };
+
+    u32::from(weight.value()).saturating_mul(signal)
+}
+
+fn expectation_response_signal(goal_kind: &GoalKind, context: &RankingContext<'_>) -> u32 {
+    let subject = match goal_kind {
+        GoalKind::SearchForMissing { subject, .. }
+        | GoalKind::ReportMissing { subject, .. }
+        | GoalKind::ReportFound { subject, .. } => *subject,
+        _ => return 0,
+    };
+
+    let Some(store) = context.view.expectation_store(context.agent) else {
+        return 0;
+    };
+
+    let is_report_found = matches!(goal_kind, GoalKind::ReportFound { .. });
+    store
+        .records
+        .values()
+        .filter(|record| {
+            record.owner == context.agent
+                && record.subject == subject
+                && if is_report_found {
+                    matches!(
+                        record.state,
+                        ExpectationState::Resolved {
+                            outcome: ExpectationOutcome::FoundSafe { .. }
+                                | ExpectationOutcome::FoundWounded { .. }
+                                | ExpectationOutcome::FoundDead { .. }
+                        }
+                    )
+                } else {
+                    record.state == ExpectationState::Overdue
+                }
+        })
+        .map(|record| expectation_signal_from_record(*record, context.current_tick))
+        .max()
+        .unwrap_or(0)
+}
+
+fn expectation_signal_from_record(record: ExpectationRecord, current_tick: Tick) -> u32 {
+    let overdue = current_tick
+        .0
+        .saturating_sub(record.deadline_tick.0.saturating_add(record.grace_ticks))
+        .max(1);
+    let overdue = u32::try_from(overdue).unwrap_or(u32::MAX);
+    let basis_weight = u32::from(expectation_basis_weight(record.basis));
+    basis_weight.saturating_mul(overdue)
+}
+
+fn expectation_basis_weight(basis: ExpectationBasis) -> u8 {
+    match basis {
+        ExpectationBasis::DutyAssignment { .. } | ExpectationBasis::EscortObligation { .. } => 3,
+        ExpectationBasis::DeliveryCommitment { .. } => 2,
+        ExpectationBasis::RoutineReturn | ExpectationBasis::SocialPromise => 1,
     }
 }
 
@@ -705,9 +795,11 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                         | worldwake_core::InstitutionalClaim::Accusation {
                             effective_tick, ..
                         }
-                        | worldwake_core::InstitutionalClaim::Verdict { effective_tick, .. } => {
-                            effective_tick.0
-                        }
+                        | worldwake_core::InstitutionalClaim::Verdict { effective_tick, .. }
+                        | worldwake_core::InstitutionalClaim::MissingPersonStatus {
+                            effective_tick,
+                            ..
+                        } => effective_tick.0,
                     }),
                     std::cmp::Reverse(worldwake_core::institutional_knowledge_chain_len(
                         belief.source,
@@ -1413,6 +1505,7 @@ fn institutional_claim_priority(claim: &worldwake_core::InstitutionalClaim) -> u
         worldwake_core::InstitutionalClaim::FactionMembership { .. } => 4,
         worldwake_core::InstitutionalClaim::Accusation { .. } => 5,
         worldwake_core::InstitutionalClaim::Verdict { .. } => 6,
+        worldwake_core::InstitutionalClaim::MissingPersonStatus { .. } => 7,
     }
 }
 
@@ -1446,6 +1539,10 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::PunishAccused { .. } => 25,
         GoalKind::PostBounty { .. } => 26,
         GoalKind::PostNotice { .. } => 27,
+        GoalKind::SearchForMissing { .. } => 28,
+        GoalKind::ReportMissing { .. } => 29,
+        GoalKind::EscortToSafety { .. } => 30,
+        GoalKind::ReportFound { .. } => 31,
     }
 }
 
@@ -1469,14 +1566,16 @@ mod tests {
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         CommodityValuationProfile, DemandObservation, DemandObservationReason, DeprivationKind,
         DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
+        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
-        PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity,
-        RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
-        RouteExperience, SourceKey, SourceReliability, TellTopic, TheftDispositionProfile,
-        TheftFacts, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        ViolationId, ViolationKind, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
+        InstitutionalKnowledgeSource, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, OpportunityAnchor,
+        PatrolProfile, PatrolRoute, PerceptionSource, Permille, PreferenceProfile,
+        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation, ReliabilityRecord,
+        ResourceSource, RewardSource, RightKind, RouteExperience, SourceKey, SourceReliability,
+        TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, UtilityProfile, ViolationId, ViolationKind, WorkstationTag, Wound,
+        WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RuntimeBeliefView,
@@ -1524,6 +1623,8 @@ mod tests {
         patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
         active_violation_records: BTreeMap<EntityId, Vec<RecordedViolation>>,
+        expectation_stores: BTreeMap<EntityId, ExpectationStore>,
+        last_seen_memories: BTreeMap<EntityId, LastSeenMemory>,
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
@@ -1719,6 +1820,12 @@ mod tests {
         }
         fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
             self.preference_profiles.get(&agent).copied()
+        }
+        fn expectation_store(&self, agent: EntityId) -> Option<ExpectationStore> {
+            self.expectation_stores.get(&agent).cloned()
+        }
+        fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
+            self.last_seen_memories.get(&agent).cloned()
         }
         fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
             self.patrol_profiles.get(&agent).cloned()
@@ -2036,6 +2143,35 @@ mod tests {
             observed_tick: Tick(9),
             source: PerceptionSource::DirectObservation,
         }
+    }
+
+    fn overdue_expectation(
+        id: u64,
+        owner: EntityId,
+        subject: EntityId,
+        expected_place: EntityId,
+        deadline_tick: u64,
+        basis: ExpectationBasis,
+    ) -> ExpectationRecord {
+        ExpectationRecord {
+            id: ExpectationId(id),
+            owner,
+            subject,
+            expected_place,
+            deadline_tick: Tick(deadline_tick),
+            grace_ticks: 0,
+            basis,
+            state: ExpectationState::Overdue,
+            created_tick: Tick(deadline_tick.saturating_sub(1)),
+        }
+    }
+
+    fn expectation_store(records: impl IntoIterator<Item = ExpectationRecord>) -> ExpectationStore {
+        let mut store = ExpectationStore::default();
+        for record in records {
+            store.records.insert(record.id, record);
+        }
+        store
     }
 
     fn utility() -> UtilityProfile {
@@ -2773,6 +2909,153 @@ mod tests {
     ) -> super::RankingOutcome {
         let dc = build_decision_context(view, agent);
         rank_candidates(candidates, view, agent, current_tick, utility, &dc)
+    }
+
+    #[test]
+    fn search_for_missing_goal_has_non_zero_motive_for_overdue_expectation() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let place = entity(10);
+        let mut view = base_view(agent);
+        view.expectation_stores.insert(
+            agent,
+            expectation_store([overdue_expectation(
+                1,
+                agent,
+                subject,
+                place,
+                4,
+                ExpectationBasis::RoutineReturn,
+            )]),
+        );
+
+        let outcome = rank(
+            &[goal(GoalKind::SearchForMissing {
+                subject,
+                last_seen: Some(place),
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(outcome.zero_motive.is_empty());
+        assert_eq!(outcome.ranked.len(), 1);
+        assert_eq!(outcome.ranked[0].motive_score, 200 * 6);
+    }
+
+    #[test]
+    fn report_missing_goal_has_non_zero_motive_for_overdue_expectation() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let place = entity(10);
+        let mut view = base_view(agent);
+        view.expectation_stores.insert(
+            agent,
+            expectation_store([overdue_expectation(
+                1,
+                agent,
+                subject,
+                place,
+                7,
+                ExpectationBasis::RoutineReturn,
+            )]),
+        );
+
+        let outcome = rank(
+            &[goal(GoalKind::ReportMissing {
+                subject,
+                to_office: None,
+                expectation_id: None,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(outcome.zero_motive.is_empty());
+        assert_eq!(outcome.ranked.len(), 1);
+        assert_eq!(outcome.ranked[0].motive_score, 150 * 3);
+    }
+
+    #[test]
+    fn duty_assignment_missing_search_outranks_social_promise() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let place = entity(10);
+        let mut view = base_view(agent);
+        view.expectation_stores.insert(
+            agent,
+            expectation_store([
+                overdue_expectation(1, agent, subject, place, 8, ExpectationBasis::SocialPromise),
+                overdue_expectation(
+                    2,
+                    agent,
+                    subject,
+                    place,
+                    8,
+                    ExpectationBasis::DutyAssignment { office: entity(40) },
+                ),
+            ]),
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::SearchForMissing {
+                subject,
+                last_seen: Some(place),
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].motive_score, 200 * 6);
+    }
+
+    #[test]
+    fn missing_response_goals_are_zero_motive_without_matching_overdue_expectation() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let view = base_view(agent);
+
+        let outcome = rank(
+            &[
+                goal(GoalKind::SearchForMissing {
+                    subject,
+                    last_seen: None,
+                }),
+                goal(GoalKind::ReportMissing {
+                    subject,
+                    to_office: None,
+                    expectation_id: None,
+                }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert_eq!(
+            outcome.zero_motive,
+            vec![
+                GoalKey::from(GoalKind::SearchForMissing {
+                    subject,
+                    last_seen: None,
+                }),
+                GoalKey::from(GoalKind::ReportMissing {
+                    subject,
+                    to_office: None,
+                    expectation_id: None,
+                }),
+            ]
+        );
+        assert!(outcome.ranked.is_empty());
     }
 
     #[test]

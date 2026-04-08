@@ -13,17 +13,20 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose, EntityId,
-    EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
+    ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
+    EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
     OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
     belief_confidence,
 };
 use worldwake_sim::{
-    AccuseActionPayload, ActionDef, ActionPayload, AskWitnessPayload, CombatActionPayload,
-    ConsultRecordActionPayload, DeclareSupportActionPayload, InvestigateActionPayload,
-    LootActionPayload, PostBountyActionPayload, PostNoticeActionPayload,
-    PressForceClaimActionPayload, PunishActionPayload, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView, TellActionPayload, TradeActionPayload, TransportActionPayload,
+    AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload,
+    AskWitnessPayload, CombatActionPayload,
+    ConsultRecordActionPayload, DeclareSupportActionPayload, EscortToSafetyActionPayload,
+    InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
+    PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
+    RecipeDefinition, RecipeRegistry, ReportFoundActionPayload, ReportMissingActionPayload,
+    RuntimeBeliefView,
+    SearchPlaceActionPayload, TellActionPayload, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -157,33 +160,29 @@ pub(crate) fn grounded_goal_epistemic_subjects(
             );
             (anchored_here || goal.evidence_places.contains(&place)).then_some(subject)
         })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
         .collect()
 }
 
 pub(crate) fn grounded_goal_matches_epistemic_barrier(
-    goal: &GroundedGoal,
-    state: &PlanningState<'_>,
+    subjects: &[EpistemicSubject],
     op_kind: PlannerOpKind,
     authoritative_targets: &[EntityId],
     payload: Option<&ActionPayload>,
 ) -> bool {
-    let subjects = grounded_goal_epistemic_subjects(goal, state);
     if subjects.is_empty() {
         return false;
     }
 
     match (op_kind, payload) {
-        (PlannerOpKind::Travel, _) => subjects.into_iter().any(|subject| match subject {
+        (PlannerOpKind::Travel, _) => subjects.iter().any(|subject| match subject {
             EpistemicSubject::EntityLocation { place, .. }
             | EpistemicSubject::SupplyAvailability { place, .. } => {
-                authoritative_targets.contains(&place)
+                authoritative_targets.contains(place)
             }
         }),
         (PlannerOpKind::AskWitness, Some(ActionPayload::AskWitness(ask))) => subjects
-            .into_iter()
-            .any(|subject| ask_witness_payload_matches_subject(ask, subject)),
+            .iter()
+            .any(|subject| ask_witness_payload_matches_subject(ask, *subject)),
         _ => false,
     }
 }
@@ -242,6 +241,29 @@ fn build_attack_payload_override(
         }
         _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
     }
+}
+
+fn build_search_place_payload_override(
+    goal: &GoalKind,
+    state: &PlanningState<'_>,
+    targets: &[EntityId],
+) -> Result<Option<ActionPayload>, GoalPayloadOverrideError> {
+    let GoalKind::SearchForMissing { subject, .. } = goal else {
+        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+    };
+    let actor = state.snapshot().actor();
+    let actor_place = state
+        .effective_place(actor)
+        .ok_or(GoalPayloadOverrideError::MissingActorPlace)?;
+    let Some(target_place) = targets.first().copied() else {
+        return Err(GoalPayloadOverrideError::MissingTarget);
+    };
+    if target_place != actor_place {
+        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+    }
+    Ok(Some(ActionPayload::SearchPlace(SearchPlaceActionPayload {
+        subject: *subject,
+    })))
 }
 
 fn build_declare_support_payload_override(
@@ -463,6 +485,9 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }
             | GoalKind::TreatWounds { .. }
+            | GoalKind::SearchForMissing { .. }
+            | GoalKind::ReportMissing { .. }
+            | GoalKind::EscortToSafety { .. }
             | GoalKind::LootCorpse { .. }
             | GoalKind::BuryCorpse { .. }
             | GoalKind::FulfillBounty { .. }
@@ -475,7 +500,8 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Patrol { .. }
             | GoalKind::StealItem { .. }
             | GoalKind::Accuse { .. }
-            | GoalKind::PunishAccused { .. } => Some(BTreeSet::new()),
+            | GoalKind::PunishAccused { .. }
+            | GoalKind::ReportFound { .. } => Some(BTreeSet::new()),
         }
     }
 
@@ -612,7 +638,67 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
-            PlannerOpKind::AskWitness => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            PlannerOpKind::AskWitness => {
+                Err(GoalPayloadOverrideError::UnsupportedGoal)
+            }
+            PlannerOpKind::ReportFound => match self {
+                GoalKind::ReportFound { expectation_id, .. } => {
+                    let Some(&target) = targets.first() else {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    };
+                    Ok(Some(ActionPayload::ReportFound(
+                        ReportFoundActionPayload {
+                            target,
+                            expectation_id: *expectation_id,
+                        },
+                    )))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
+            PlannerOpKind::AskAboutPerson => match self {
+                GoalKind::SearchForMissing { subject, .. } => {
+                    let Some(&target) = targets.first() else {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    };
+                    Ok(Some(ActionPayload::AskAboutPerson(
+                        AskAboutPersonActionPayload {
+                            target,
+                            subject: *subject,
+                        },
+                    )))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
+            PlannerOpKind::EscortToSafety => match self {
+                GoalKind::EscortToSafety {
+                    subject,
+                    destination,
+                } => {
+                    // Candidate generation already verified wound state; the
+                    // planner only needs a plausible payload.  Route fields are
+                    // filled at action start, not during planning.
+                    Ok(Some(ActionPayload::EscortToSafety(
+                        EscortToSafetyActionPayload {
+                            subject: *subject,
+                            destination: *destination,
+                            intended_heal_action: ActionDefId(u32::MAX),
+                            route_places: Vec::new(),
+                            route_edges: Vec::new(),
+                        },
+                    )))
+                }
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
+            PlannerOpKind::ReportMissing => match self {
+                GoalKind::ReportMissing {
+                    expectation_id: Some(expectation_id),
+                    ..
+                } => Ok(Some(ActionPayload::ReportMissing(ReportMissingActionPayload {
+                    expectation_id: *expectation_id,
+                }))),
+                _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
+            },
+            PlannerOpKind::SearchPlace => build_search_place_payload_override(self, state, targets),
             PlannerOpKind::Accuse => build_accuse_payload_override(self),
             PlannerOpKind::Fine | PlannerOpKind::Exile => build_punish_payload_override(self),
             PlannerOpKind::Attack => build_attack_payload_override(self, targets),
@@ -963,9 +1049,19 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::YieldForceClaim
             | PlannerOpKind::Investigate
             | PlannerOpKind::AskWitness
+            | PlannerOpKind::SearchPlace
+            | PlannerOpKind::AskAboutPerson
+            | PlannerOpKind::ReportMissing
+            | PlannerOpKind::ReportFound
             | PlannerOpKind::Accuse
             | PlannerOpKind::Fine
             | PlannerOpKind::Exile => state,
+            PlannerOpKind::EscortToSafety => match self {
+                GoalKind::EscortToSafety { destination, .. } => {
+                    state.move_actor_to(*destination)
+                }
+                _ => state,
+            },
         }
     }
 
@@ -983,59 +1079,17 @@ impl GoalKindPlannerExt for GoalKind {
             );
         }
 
-        if matches!(self, GoalKind::ShareBelief { .. }) && step.op_kind == PlannerOpKind::Tell {
-            return true;
-        }
-
-        if matches!(self, GoalKind::InvestigateViolation { .. })
-            && step.op_kind == PlannerOpKind::Investigate
+        if matches!(self, GoalKind::ReportFound { .. })
+            && step.op_kind == PlannerOpKind::ReportFound
         {
             return true;
         }
 
-        if matches!(self, GoalKind::Patrol { .. }) && step.op_kind == PlannerOpKind::Patrol {
-            return true;
-        }
-
-        if matches!(self, GoalKind::FulfillBounty { .. })
-            && step.op_kind == PlannerOpKind::ClaimBounty
+        // Direct per-goal op_kind barriers — delegated to the declaration table.
+        let decl = crate::GoalDispatchKey::from_goal_kind(self).declaration();
+        if !decl.progress_barrier_ops.is_empty()
+            && decl.progress_barrier_ops.contains(&step.op_kind)
         {
-            return true;
-        }
-
-        if matches!(self, GoalKind::Accuse { .. }) && step.op_kind == PlannerOpKind::Accuse {
-            return true;
-        }
-
-        if matches!(self, GoalKind::SellCommodity { .. })
-            && step.op_kind == PlannerOpKind::StaffMarket
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::PunishAccused { .. })
-            && matches!(step.op_kind, PlannerOpKind::Fine | PlannerOpKind::Exile)
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::PostBounty { .. }) && step.op_kind == PlannerOpKind::PostBounty
-        {
-            return true;
-        }
-
-        if matches!(self, GoalKind::PostNotice { .. }) && step.op_kind == PlannerOpKind::PostNotice
-        {
-            return true;
-        }
-
-        if matches!(
-            self,
-            GoalKind::ClaimOffice { .. } | GoalKind::SupportCandidateForOffice { .. }
-        ) && matches!(
-            step.op_kind,
-            PlannerOpKind::DeclareSupport | PlannerOpKind::PressForceClaim
-        ) {
             return true;
         }
 
@@ -1082,16 +1136,13 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(thresholds) = state.drive_thresholds(actor) else {
                     return false;
                 };
-                commodity
-                    .spec()
-                    .consumable_profile
-                    .is_some_and(|profile| {
-                        let relieves_hunger = profile.hunger_relief_per_unit.value() > 0
-                            && needs.hunger >= thresholds.hunger.low();
-                        let relieves_thirst = profile.thirst_relief_per_unit.value() > 0
-                            && needs.thirst >= thresholds.thirst.low();
-                        !(relieves_hunger || relieves_thirst)
-                    })
+                commodity.spec().consumable_profile.is_some_and(|profile| {
+                    let relieves_hunger = profile.hunger_relief_per_unit.value() > 0
+                        && needs.hunger >= thresholds.hunger.low();
+                    let relieves_thirst = profile.thirst_relief_per_unit.value() > 0
+                        && needs.thirst >= thresholds.thirst.low();
+                    !(relieves_hunger || relieves_thirst)
+                })
             }
             GoalKind::AcquireCommodity { commodity, purpose } => match purpose {
                 CommodityPurpose::SelfConsume
@@ -1168,7 +1219,14 @@ impl GoalKindPlannerExt for GoalKind {
                         .listed_sale_lots_at(home_place.unwrap(), *commodity)
                         .is_empty()
             }
+            GoalKind::EscortToSafety {
+                subject,
+                destination,
+            } => state.effective_place(*subject) == Some(*destination),
             GoalKind::ProduceCommodity { .. }
+            | GoalKind::SearchForMissing { .. }
+            | GoalKind::ReportMissing { .. }
+            | GoalKind::ReportFound { .. }
             | GoalKind::ShareBelief { .. }
             | GoalKind::RestockCommodity { .. }
             | GoalKind::PostBounty { .. }
@@ -1216,7 +1274,14 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::TreatWounds { patient: target } => {
                 state.effective_place(*target).into_iter().collect()
             }
-            GoalKind::Sleep
+            GoalKind::SearchForMissing { last_seen, .. } => last_seen.iter().copied().collect(),
+            GoalKind::ReportMissing { to_office, .. } => match to_office {
+                Some(office) => vec![*office],
+                None => state.effective_place(actor).into_iter().collect(),
+            },
+            GoalKind::EscortToSafety { destination, .. } => vec![*destination],
+            GoalKind::ReportFound { .. }
+            | GoalKind::Sleep
             | GoalKind::Wash
             | GoalKind::ReduceDanger
             | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
@@ -1431,7 +1496,12 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::ClaimBounty
             | PlannerOpKind::PostBounty
             | PlannerOpKind::PostNotice
-            | PlannerOpKind::Bury => {}
+            | PlannerOpKind::Bury
+            | PlannerOpKind::SearchPlace
+            | PlannerOpKind::AskAboutPerson
+            | PlannerOpKind::ReportMissing
+            | PlannerOpKind::EscortToSafety
+            | PlannerOpKind::ReportFound => {}
         }
 
         // Terminal ops on flexible goals — always pass.
@@ -1449,6 +1519,9 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::ReduceDanger
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }
+            | GoalKind::SearchForMissing { .. }
+            | GoalKind::ReportMissing { .. }
+            | GoalKind::ReportFound { .. }
             | GoalKind::ProduceCommodity { .. }
             | GoalKind::SellCommodity { .. }
             | GoalKind::RestockCommodity { .. }
@@ -1485,6 +1558,13 @@ impl GoalKindPlannerExt for GoalKind {
             }
             GoalKind::ShareBelief { listener, .. } => authoritative_targets.contains(listener),
             GoalKind::MoveCargo { destination, .. } => authoritative_targets.contains(destination),
+            GoalKind::EscortToSafety {
+                subject,
+                destination,
+            } => {
+                authoritative_targets.contains(subject)
+                    || authoritative_targets.contains(destination)
+            }
             GoalKind::PostBounty { posting, .. } | GoalKind::PostNotice { posting, .. } => {
                 authoritative_targets.contains(&posting.posting_place)
             }
@@ -2011,6 +2091,31 @@ impl GroundedGoal {
                 GoalKind::InvestigateViolation { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
+            PlannerOpKind::SearchPlace => match &self.key.kind {
+                GoalKind::SearchForMissing { .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::ActorPlace]
+                    ) && actor_place.is_some() =>
+                {
+                    RootCandidateSynthesis::Targets(vec![actor_place.expect("checked is_some")])
+                }
+                GoalKind::SearchForMissing { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::ReportMissing => match &self.key.kind {
+                GoalKind::ReportMissing {
+                    to_office: None, ..
+                } if matches!(
+                    def.targets.as_slice(),
+                    [worldwake_sim::TargetSpec::ActorPlace]
+                ) && actor_place.is_some() =>
+                {
+                    RootCandidateSynthesis::Targets(vec![actor_place.expect("checked is_some")])
+                }
+                GoalKind::ReportMissing { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
             PlannerOpKind::EstablishCamp => match &self.key.kind {
                 GoalKind::EstablishBanditCamp { .. }
                     if matches!(
@@ -2107,6 +2212,18 @@ impl GroundedGoal {
                 GoalKind::PostNotice { .. } => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
+            PlannerOpKind::EscortToSafety => match &self.key.kind {
+                GoalKind::EscortToSafety { subject, .. }
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) =>
+                {
+                    RootCandidateSynthesis::Targets(vec![*subject])
+                }
+                GoalKind::EscortToSafety { .. } => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
             _ => RootCandidateSynthesis::UnsupportedGoalOp,
         }
     }
@@ -2161,9 +2278,9 @@ mod tests {
         AccuseActionPayload, ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId,
         ActionPayload, AskWitnessPayload, BribeActionPayload, ConsultRecordActionPayload,
         DurationExpr, Interruptibility, InvestigateActionPayload, PunishActionPayload,
-        QueueForFacilityUsePayload, RecipeRegistry, RuntimeBeliefView, TellActionPayload,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
-        estimate_duration_from_beliefs,
+        QueueForFacilityUsePayload, RecipeRegistry, ReportMissingActionPayload,
+        RuntimeBeliefView, SearchPlaceActionPayload, TellActionPayload, ThreatenActionPayload,
+        TradeActionPayload, TransportActionPayload, estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -2462,6 +2579,54 @@ mod tests {
         assert_eq!(
             goal.relevant_op_kinds(),
             &[PlannerOpKind::Travel, PlannerOpKind::Attack]
+        );
+    }
+
+    #[test]
+    fn search_for_missing_goal_relevant_ops_stay_reserved_to_search_surface() {
+        let goal = GoalKind::SearchForMissing {
+            subject: entity_id(4, 2),
+            last_seen: Some(entity_id(7, 0)),
+        };
+
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[
+                PlannerOpKind::Travel,
+                PlannerOpKind::AskAboutPerson,
+                PlannerOpKind::SearchPlace,
+            ]
+        );
+    }
+
+    #[test]
+    fn report_missing_goal_relevant_ops_stay_reserved_to_report_surface() {
+        let goal = GoalKind::ReportMissing {
+            subject: entity_id(4, 3),
+            to_office: Some(entity_id(8, 0)),
+            expectation_id: None,
+        };
+        let (view, actor, ..) = spatial_view();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[PlannerOpKind::Travel, PlannerOpKind::ReportMissing]
+        );
+        assert!(!goal.is_satisfied(&state));
+    }
+
+    #[test]
+    fn escort_to_safety_goal_relevant_ops_stay_reserved_to_escort_surface() {
+        let goal = GoalKind::EscortToSafety {
+            subject: entity_id(4, 4),
+            destination: entity_id(9, 0),
+        };
+
+        assert_eq!(
+            goal.relevant_op_kinds(),
+            &[PlannerOpKind::Travel, PlannerOpKind::EscortToSafety]
         );
     }
 
@@ -3488,6 +3653,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::Hidden,
@@ -3575,6 +3741,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::Hidden,
@@ -3642,6 +3809,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::Hidden,
@@ -3711,6 +3879,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::Hidden,
@@ -3786,6 +3955,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::Hidden,
@@ -3845,6 +4015,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::Hidden,
@@ -3867,6 +4038,131 @@ mod tests {
             payload,
             Some(ActionPayload::Investigate(InvestigateActionPayload {
                 violation_id: worldwake_core::ViolationId(7),
+            }))
+        );
+    }
+
+    #[test]
+    fn search_for_missing_builds_search_place_payload_override_when_colocated() {
+        let actor = entity(1);
+        let place = entity(10);
+        let subject = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, subject]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor, subject]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([subject]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SearchForMissing {
+            subject,
+            last_seen: Some(place),
+        };
+        let def = ActionDef {
+            id: ActionDefId(26),
+            name: "search_place".to_string(),
+            domain: ActionDomain::Epistemic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::SearchPlace,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[place], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::SearchPlace(SearchPlaceActionPayload {
+                subject,
+            }))
+        );
+    }
+
+    #[test]
+    fn report_missing_builds_payload_override_from_expectation_id() {
+        let actor = entity(1);
+        let place = entity(10);
+        let subject = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, subject]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor, subject]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([subject]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ReportMissing {
+            subject,
+            to_office: None,
+            expectation_id: Some(worldwake_core::ExpectationId(7)),
+        };
+        let def = ActionDef {
+            id: ActionDefId(37),
+            name: "report_missing".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::ReportMissing,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[place], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::ReportMissing(ReportMissingActionPayload {
+                expectation_id: worldwake_core::ExpectationId(7),
             }))
         );
     }
@@ -3908,6 +4204,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -3978,6 +4275,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4035,6 +4333,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4078,6 +4377,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4117,6 +4417,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4166,6 +4467,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4225,6 +4527,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4270,6 +4573,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4314,6 +4618,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4357,6 +4662,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4397,6 +4703,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4438,6 +4745,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4479,6 +4787,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4521,6 +4830,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -4542,6 +4852,103 @@ mod tests {
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, semantics, Some(entity(99))),
             RootCandidateSynthesis::NoSynthesisPath
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_search_place_root_targets_only_when_colocated() {
+        let place = entity(10);
+        let subject = entity(11);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Place(place),
+            key: GoalKey::from(GoalKind::SearchForMissing {
+                subject,
+                last_seen: Some(place),
+            }),
+            evidence_entities: BTreeSet::from([subject]),
+            evidence_places: BTreeSet::from([place]),
+        };
+        let def = ActionDef {
+            id: ActionDefId(27),
+            name: "search_place".to_string(),
+            domain: ActionDomain::Epistemic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::SearchPlace,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(place)),
+            RootCandidateSynthesis::Targets(vec![place])
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
+    fn grounded_goal_synthesizes_report_missing_root_targets_when_local_and_unbound() {
+        let place = entity(10);
+        let subject = entity(11);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Entity(subject),
+            key: GoalKey::from(GoalKind::ReportMissing {
+                subject,
+                to_office: None,
+                expectation_id: Some(worldwake_core::ExpectationId(9)),
+            }),
+            evidence_entities: BTreeSet::from([subject]),
+            evidence_places: BTreeSet::from([place]),
+        };
+        let def = ActionDef {
+            id: ActionDefId(28),
+            name: "report_missing".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::ActorPlace],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::ReportMissing,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(place)),
+            RootCandidateSynthesis::Targets(vec![place])
         );
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, semantics, None),
@@ -4577,6 +4984,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::Hidden,
@@ -4876,16 +5284,15 @@ mod tests {
             evidence_places: BTreeSet::from([remote]),
         };
 
+        let subjects = grounded_goal_epistemic_subjects(&goal, &state);
         assert!(grounded_goal_matches_epistemic_barrier(
-            &goal,
-            &state,
+            &subjects,
             PlannerOpKind::Travel,
             &[remote],
             None,
         ));
         assert!(grounded_goal_matches_epistemic_barrier(
-            &goal,
-            &state,
+            &subjects,
             PlannerOpKind::AskWitness,
             &[witness],
             Some(&ActionPayload::AskWitness(AskWitnessPayload {
@@ -4895,8 +5302,7 @@ mod tests {
             })),
         ));
         assert!(!grounded_goal_matches_epistemic_barrier(
-            &goal,
-            &state,
+            &subjects,
             PlannerOpKind::AskWitness,
             &[witness],
             Some(&ActionPayload::AskWitness(AskWitnessPayload {
@@ -4906,8 +5312,7 @@ mod tests {
             })),
         ));
         assert!(!grounded_goal_matches_epistemic_barrier(
-            &goal,
-            &state,
+            &subjects,
             PlannerOpKind::Travel,
             &[town],
             None,
@@ -5216,6 +5621,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::NonInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -5293,6 +5699,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::NonInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -5345,6 +5752,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::NonInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -5381,6 +5789,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::NonInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -5655,6 +6064,21 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let places = GoalKind::ReduceDanger.goal_relevant_places(&state, &recipes);
         assert!(places.is_empty());
+    }
+
+    #[test]
+    fn report_missing_without_office_uses_actor_place_as_relevant_place() {
+        let (view, actor, place_a, _place_b, _place_c) = spatial_view();
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ReportMissing {
+            subject: entity(20),
+            to_office: None,
+            expectation_id: None,
+        };
+
+        assert_eq!(goal.goal_relevant_places(&state, &recipes), vec![place_a]);
     }
 
     #[test]
@@ -6315,6 +6739,19 @@ mod tests {
             GoalKind::TreatWounds {
                 patient: entity(99),
             },
+            GoalKind::SearchForMissing {
+                subject: entity(95),
+                last_seen: Some(place_b),
+            },
+            GoalKind::ReportMissing {
+                subject: entity(95),
+                to_office: Some(entity(94)),
+                expectation_id: None,
+            },
+            GoalKind::EscortToSafety {
+                subject: entity(99),
+                destination: place_b,
+            },
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(0),
             },
@@ -6364,7 +6801,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 23);
+        assert_eq!(goals.len(), 26);
         for goal in &goals {
             let _ = goal.goal_relevant_places(&state, &recipes);
         }
@@ -6394,6 +6831,19 @@ mod tests {
             GoalKind::ReduceDanger,
             GoalKind::RegroupWithFaction { faction: actor },
             GoalKind::TreatWounds { patient: place_b },
+            GoalKind::SearchForMissing {
+                subject: actor,
+                last_seen: Some(place_b),
+            },
+            GoalKind::ReportMissing {
+                subject: place_b,
+                to_office: Some(actor),
+                expectation_id: None,
+            },
+            GoalKind::EscortToSafety {
+                subject: actor,
+                destination: place_b,
+            },
             GoalKind::ProduceCommodity {
                 recipe_id: RecipeId(0),
             },
@@ -8808,6 +9258,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::Hidden,
@@ -8925,6 +9376,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::NonInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,
@@ -8994,6 +9446,7 @@ mod tests {
             reservation_requirements: Vec::new(),
             duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::NonInterruptible,
             commit_conditions: Vec::new(),
             visibility: VisibilitySpec::SamePlace,

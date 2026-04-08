@@ -188,7 +188,9 @@ fn format_duration_estimate(duration: &worldwake_sim::DurationExpr) -> String {
     use worldwake_sim::DurationExpr;
     match duration {
         DurationExpr::Fixed(n) => format!(" — {} ticks", n.get()),
-        DurationExpr::TravelToTarget { .. } => " — travel time".to_string(),
+        DurationExpr::TravelToTarget { .. } | DurationExpr::EscortRouteTravel => {
+            " — travel time".to_string()
+        }
         DurationExpr::TargetConsumable { .. } => " — per unit".to_string(),
         DurationExpr::ActorMetabolism { .. }
         | DurationExpr::ActorTradeDisposition
@@ -232,6 +234,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Village".into(),
                 tags: vec![PlaceTag::Village],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -257,6 +260,8 @@ mod tests {
                 intention_disposition: None,
                 communication_profile: None,
                 preference_profile: None,
+                expectation_store: None,
+                last_seen_memory: None,
                 drive_thresholds: None,
                 metabolism_profile: None,
                 carry_capacity: None,
@@ -296,6 +301,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Village".into(),
                 tags: vec![PlaceTag::Village],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -315,6 +321,8 @@ mod tests {
                 intention_disposition: None,
                 communication_profile: None,
                 preference_profile: None,
+                expectation_store: None,
+                last_seen_memory: None,
                 drive_thresholds: None,
                 metabolism_profile: None,
                 carry_capacity: None,

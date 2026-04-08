@@ -330,6 +330,7 @@ mod tests {
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
             duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: VisibilitySpec::SamePlace,
@@ -420,6 +421,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(10),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
         )
         .unwrap();
@@ -458,6 +460,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             InterruptReason::DangerNearby,
         )
@@ -501,6 +504,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             InterruptReason::DangerNearby,
         )
@@ -551,6 +555,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             InterruptReason::Reprioritized,
         )
@@ -590,6 +595,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             ExternalAbortReason::TargetDestroyed,
         )
@@ -638,6 +644,7 @@ mod tests {
                 cause: CauseRef::Bootstrap,
                 tick: Tick(11),
                 recipe_registry: test_recipes(),
+                action_defs: &defs,
             },
             ExternalAbortReason::TargetDestroyed,
         )

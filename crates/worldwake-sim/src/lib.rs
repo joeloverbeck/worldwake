@@ -67,13 +67,14 @@ pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionHandlerId, ActionInstanceId};
 pub use action_instance::ActionInstance;
 pub use action_payload::{
-    AccuseActionPayload, ActionPayload, AskWitnessPayload, BribeActionPayload, CombatActionPayload,
-    ConsultRecordActionPayload, CraftActionPayload, DeclareSupportActionPayload,
-    EstablishCampActionPayload, HarvestActionPayload, InvestigateActionPayload, LootActionPayload,
-    PostBountyActionPayload, PostNoticeActionPayload, PressForceClaimActionPayload,
-    PunishActionPayload, QueueForFacilityUsePayload, StaffMarketPayload, TellActionPayload,
-    ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
-    YieldForceClaimActionPayload,
+    AccuseActionPayload, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
+    BribeActionPayload, CombatActionPayload, ConsultRecordActionPayload, CraftActionPayload,
+    DeclareSupportActionPayload, EscortToSafetyActionPayload, EstablishCampActionPayload,
+    HarvestActionPayload, InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
+    PostNoticeActionPayload, PressForceClaimActionPayload, PunishActionPayload,
+    QueueForFacilityUsePayload, ReportFoundActionPayload, ReportMissingActionPayload,
+    SearchPlaceActionPayload, StaffMarketPayload, TellActionPayload, ThreatenActionPayload,
+    TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
 };
 pub use action_semantics::{
     Constraint, ConsumableEffect, DurationExpr, Interruptibility, MetabolismDurationKind,

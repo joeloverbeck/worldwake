@@ -5,6 +5,7 @@ use crate::{
     EntityBeliefAspect, EntityBeliefClaim, EntityId, EvidenceKind, InstitutionalBeliefKey,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity,
     ResourceSource, TheftFacts, Tick, WorkstationTag, World, Wound,
+    institutional::MissingPersonReportStatus,
     social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,9 @@ enum InstitutionalTellTopicKey {
     CrimeCase {
         accused: EntityId,
         violation_id: crate::ViolationId,
+    },
+    MissingPersonStatus {
+        subject: EntityId,
     },
 }
 
@@ -582,6 +586,27 @@ impl AgentBeliefStore {
     }
 
     #[must_use]
+    pub fn believed_missing_person_status(
+        &self,
+        subject: EntityId,
+    ) -> InstitutionalBeliefRead<MissingPersonReportStatus> {
+        derive_institutional_read(
+            self.institutional_beliefs
+                .get(&InstitutionalBeliefKey::MissingPersonStatus { subject })
+                .into_iter()
+                .flatten(),
+            |claim| match claim {
+                InstitutionalClaim::MissingPersonStatus {
+                    subject: claim_subject,
+                    status,
+                    ..
+                } if *claim_subject == subject => Some(*status),
+                _ => None,
+            },
+        )
+    }
+
+    #[must_use]
     pub fn believed_support_declarations_for_office(
         &self,
         office: EntityId,
@@ -648,6 +673,63 @@ impl AgentBeliefStore {
             })
             .min()
             .map(|(_, key, index)| (key, index))
+    }
+
+    /// Iterate over all known entity beliefs.
+    pub fn iter_known_entities(&self) -> impl Iterator<Item = (&EntityId, &BelievedEntityState)> {
+        self.known_entities.iter()
+    }
+
+    /// Get the raw entity claims for a subject.
+    #[must_use]
+    pub fn get_entity_claims(&self, id: &EntityId) -> Option<&[EntityBeliefClaim]> {
+        self.entity_claims.get(id).map(Vec::as_slice)
+    }
+
+    /// Iterate over all social observations.
+    pub fn iter_social_observations(&self) -> impl Iterator<Item = &SocialObservation> {
+        self.social_observations.iter()
+    }
+
+    /// Get raw institutional beliefs for a key.
+    #[must_use]
+    pub fn get_institutional_beliefs(
+        &self,
+        key: &InstitutionalBeliefKey,
+    ) -> Option<&[BelievedInstitutionalClaim]> {
+        self.institutional_beliefs.get(key).map(Vec::as_slice)
+    }
+
+    /// Check whether any institutional belief exists for a key.
+    #[must_use]
+    pub fn has_institutional_belief(&self, key: &InstitutionalBeliefKey) -> bool {
+        self.institutional_beliefs.contains_key(key)
+    }
+
+    /// Update the believed activity for a known entity.
+    /// Returns `true` if the belief was actually changed.
+    /// Returns `false` if the entity is not known or the activity was already equal.
+    pub fn update_believed_activity(
+        &mut self,
+        id: &EntityId,
+        activity: Option<BelievedActivity>,
+    ) -> bool {
+        if let Some(belief) = self.known_entities.get_mut(id)
+            && belief.believed_activity != activity
+        {
+            belief.believed_activity = activity;
+            return true;
+        }
+        false
+    }
+
+    /// Clear the believed activity for a known entity (set to None).
+    /// Returns `true` if it was previously Some.
+    pub fn clear_believed_activity(&mut self, id: &EntityId) -> bool {
+        if let Some(belief) = self.known_entities.get_mut(id) {
+            return belief.believed_activity.take().is_some();
+        }
+        false
     }
 }
 
@@ -768,6 +850,228 @@ fn entity_claims_for_snapshot(
 
 impl Component for AgentBeliefStore {}
 
+/// Compact structural diff between two `AgentBeliefStore` instances.
+///
+/// Captures only the mutations (added, removed, changed entries) rather than
+/// full snapshots. Used by event-log delta compaction to reduce memory.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BeliefStoreDiff {
+    pub next_claim_id: Option<ClaimId>,
+    pub known_entities_set: Vec<(EntityId, BelievedEntityState)>,
+    pub known_entities_removed: Vec<EntityId>,
+    pub social_observations_added: Vec<SocialObservation>,
+    pub social_observations_removed_count: u16,
+    pub told_beliefs_set: Vec<(TellMemoryKey, ToldBeliefMemory)>,
+    pub told_beliefs_removed: Vec<TellMemoryKey>,
+    pub heard_beliefs_set: Vec<(TellMemoryKey, HeardBeliefMemory)>,
+    pub heard_beliefs_removed: Vec<TellMemoryKey>,
+    pub asked_witnesses_set: Vec<(AskWitnessMemoryKey, AskWitnessMemory)>,
+    pub asked_witnesses_removed: Vec<AskWitnessMemoryKey>,
+    pub entity_claims_set: Vec<(EntityId, Vec<EntityBeliefClaim>)>,
+    pub entity_claims_removed: Vec<EntityId>,
+    pub institutional_beliefs_set:
+        Vec<(InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>)>,
+    pub institutional_beliefs_removed: Vec<InstitutionalBeliefKey>,
+}
+
+impl BeliefStoreDiff {
+    /// Compute the structural diff that transforms `before` into `after`.
+    ///
+    /// Invariant: `Self::compute(before, after).apply(before) == *after`
+    #[must_use]
+    pub fn compute(before: &AgentBeliefStore, after: &AgentBeliefStore) -> Self {
+        let next_claim_id =
+            (before.next_claim_id != after.next_claim_id).then_some(after.next_claim_id);
+
+        let known_entities_set = diff_btree_map_set(&before.known_entities, &after.known_entities);
+        let known_entities_removed =
+            diff_btree_map_removed(&before.known_entities, &after.known_entities);
+
+        // Social observations are append-heavy with front eviction.
+        // We record how many were removed from the front and which were added at the tail.
+        let (social_observations_removed_count, social_observations_added) =
+            diff_social_observations(&before.social_observations, &after.social_observations);
+
+        let told_beliefs_set = diff_btree_map_set(&before.told_beliefs, &after.told_beliefs);
+        let told_beliefs_removed =
+            diff_btree_map_removed(&before.told_beliefs, &after.told_beliefs);
+
+        let heard_beliefs_set = diff_btree_map_set(&before.heard_beliefs, &after.heard_beliefs);
+        let heard_beliefs_removed =
+            diff_btree_map_removed(&before.heard_beliefs, &after.heard_beliefs);
+
+        let asked_witnesses_set =
+            diff_btree_map_set(&before.asked_witnesses, &after.asked_witnesses);
+        let asked_witnesses_removed =
+            diff_btree_map_removed(&before.asked_witnesses, &after.asked_witnesses);
+
+        let entity_claims_set =
+            diff_btree_map_set(&before.entity_claims, &after.entity_claims);
+        let entity_claims_removed =
+            diff_btree_map_removed(&before.entity_claims, &after.entity_claims);
+
+        let institutional_beliefs_set =
+            diff_btree_map_set(&before.institutional_beliefs, &after.institutional_beliefs);
+        let institutional_beliefs_removed =
+            diff_btree_map_removed(&before.institutional_beliefs, &after.institutional_beliefs);
+
+        Self {
+            next_claim_id,
+            known_entities_set,
+            known_entities_removed,
+            social_observations_added,
+            social_observations_removed_count,
+            told_beliefs_set,
+            told_beliefs_removed,
+            heard_beliefs_set,
+            heard_beliefs_removed,
+            asked_witnesses_set,
+            asked_witnesses_removed,
+            entity_claims_set,
+            entity_claims_removed,
+            institutional_beliefs_set,
+            institutional_beliefs_removed,
+        }
+    }
+
+    /// Apply this diff to `base`, producing the `after` state.
+    ///
+    /// Invariant: `BeliefStoreDiff::compute(before, after).apply(before) == *after`
+    #[must_use]
+    pub fn apply(self, base: &AgentBeliefStore) -> AgentBeliefStore {
+        let mut result = base.clone();
+
+        if let Some(claim_id) = self.next_claim_id {
+            result.next_claim_id = claim_id;
+        }
+
+        for id in &self.known_entities_removed {
+            result.known_entities.remove(id);
+        }
+        for (id, state) in self.known_entities_set {
+            result.known_entities.insert(id, state);
+        }
+
+        // Social observations: remove from front, append to tail.
+        let remove = self.social_observations_removed_count as usize;
+        if remove > 0 {
+            result.social_observations.drain(..remove.min(result.social_observations.len()));
+        }
+        result
+            .social_observations
+            .extend(self.social_observations_added);
+
+        for key in &self.told_beliefs_removed {
+            result.told_beliefs.remove(key);
+        }
+        for (key, memory) in self.told_beliefs_set {
+            result.told_beliefs.insert(key, memory);
+        }
+
+        for key in &self.heard_beliefs_removed {
+            result.heard_beliefs.remove(key);
+        }
+        for (key, memory) in self.heard_beliefs_set {
+            result.heard_beliefs.insert(key, memory);
+        }
+
+        for key in &self.asked_witnesses_removed {
+            result.asked_witnesses.remove(key);
+        }
+        for (key, memory) in self.asked_witnesses_set {
+            result.asked_witnesses.insert(key, memory);
+        }
+
+        for id in &self.entity_claims_removed {
+            result.entity_claims.remove(id);
+        }
+        for (id, claims) in self.entity_claims_set {
+            result.entity_claims.insert(id, claims);
+        }
+
+        for key in &self.institutional_beliefs_removed {
+            result.institutional_beliefs.remove(key);
+        }
+        for (key, claims) in self.institutional_beliefs_set {
+            result.institutional_beliefs.insert(key, claims);
+        }
+
+        result
+    }
+
+    /// Returns `true` if this diff represents no changes.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.next_claim_id.is_none()
+            && self.known_entities_set.is_empty()
+            && self.known_entities_removed.is_empty()
+            && self.social_observations_added.is_empty()
+            && self.social_observations_removed_count == 0
+            && self.told_beliefs_set.is_empty()
+            && self.told_beliefs_removed.is_empty()
+            && self.heard_beliefs_set.is_empty()
+            && self.heard_beliefs_removed.is_empty()
+            && self.asked_witnesses_set.is_empty()
+            && self.asked_witnesses_removed.is_empty()
+            && self.entity_claims_set.is_empty()
+            && self.entity_claims_removed.is_empty()
+            && self.institutional_beliefs_set.is_empty()
+            && self.institutional_beliefs_removed.is_empty()
+    }
+}
+
+/// Compute entries that are new or changed in `after` relative to `before`.
+fn diff_btree_map_set<K: Clone + Ord, V: Clone + PartialEq>(
+    before: &BTreeMap<K, V>,
+    after: &BTreeMap<K, V>,
+) -> Vec<(K, V)> {
+    after
+        .iter()
+        .filter(|(k, v)| before.get(k) != Some(v))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+
+/// Compute keys that were removed from `before` (present in `before`, absent in `after`).
+fn diff_btree_map_removed<K: Clone + Ord, V>(
+    before: &BTreeMap<K, V>,
+    after: &BTreeMap<K, V>,
+) -> Vec<K> {
+    before
+        .keys()
+        .filter(|k| !after.contains_key(k))
+        .cloned()
+        .collect()
+}
+
+/// Diff social observations (`Vec`-based, not `BTreeMap`).
+///
+/// Social observations follow an append+evict pattern: new observations are
+/// pushed to the back, and capacity enforcement removes from the front.
+/// We diff by finding the longest common suffix between before and after,
+/// then recording how many were removed from the front and which were added
+/// at the tail.
+fn diff_social_observations(
+    before: &[SocialObservation],
+    after: &[SocialObservation],
+) -> (u16, Vec<SocialObservation>) {
+    // Observations are evicted from the front and added to the back.
+    // The surviving entries from `before` appear as a prefix of `after`.
+    // Find the longest suffix of `before` that matches a prefix of `after`.
+    let mut surviving = 0;
+    for candidate_removed in 0..=before.len() {
+        let remaining = &before[candidate_removed..];
+        if after.len() >= remaining.len() && after[..remaining.len()] == *remaining {
+            surviving = remaining.len();
+            break;
+        }
+    }
+
+    let removed = (before.len() - surviving) as u16;
+    let added = after[surviving..].to_vec();
+    (removed, added)
+}
+
 fn derive_institutional_read<'a, T>(
     beliefs: impl IntoIterator<Item = BelievedInstitutionalClaimRef<'a>>,
     extract: impl Fn(&InstitutionalClaim) -> Option<T>,
@@ -847,6 +1151,9 @@ fn institutional_tell_topic_key(claim: InstitutionalClaim) -> InstitutionalTellT
             accused,
             violation_id,
         },
+        InstitutionalClaim::MissingPersonStatus { subject, .. } => {
+            InstitutionalTellTopicKey::MissingPersonStatus { subject }
+        }
     }
 }
 
@@ -876,7 +1183,8 @@ fn institutional_claim_effective_tick(claim: InstitutionalClaim) -> Tick {
         | InstitutionalClaim::FactionRallyPoint { effective_tick, .. }
         | InstitutionalClaim::SupportDeclaration { effective_tick, .. }
         | InstitutionalClaim::Accusation { effective_tick, .. }
-        | InstitutionalClaim::Verdict { effective_tick, .. } => effective_tick,
+        | InstitutionalClaim::Verdict { effective_tick, .. }
+        | InstitutionalClaim::MissingPersonStatus { effective_tick, .. } => effective_tick,
     }
 }
 
@@ -1101,7 +1409,10 @@ pub fn institutional_claim_subject_entity(claim: InstitutionalClaim) -> EntityId
         InstitutionalClaim::FactionMembership { faction, .. }
         | InstitutionalClaim::FactionRallyPoint { faction, .. } => faction,
         InstitutionalClaim::Accusation { accused, .. }
-        | InstitutionalClaim::Verdict { accused, .. } => accused,
+        | InstitutionalClaim::Verdict { accused, .. }
+        | InstitutionalClaim::MissingPersonStatus {
+            subject: accused, ..
+        } => accused,
     }
 }
 
@@ -1341,6 +1652,18 @@ fn institutional_claim_same_content(left: InstitutionalClaim, right: Institution
                 && left_violation_id == right_violation_id
                 && left_punishment == right_punishment
         }
+        (
+            InstitutionalClaim::MissingPersonStatus {
+                subject: left_subject,
+                status: left_status,
+                ..
+            },
+            InstitutionalClaim::MissingPersonStatus {
+                subject: right_subject,
+                status: right_status,
+                ..
+            },
+        ) => left_subject == right_subject && left_status == right_status,
         _ => false,
     }
 }
@@ -3055,7 +3378,11 @@ mod tests {
 
         let claims = store.entity_claims.get(&entity(72)).unwrap();
         assert_eq!(claims.len(), 2);
-        assert!(claims.iter().any(|claim| claim.aspect == EntityBeliefAspect::Alive));
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Alive)
+        );
         assert!(
             claims
                 .iter()
@@ -4763,5 +5090,385 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn update_believed_activity_changes_known_entity() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(1);
+        store.known_entities.insert(id, sample_state(5, 3));
+
+        let activity = BelievedActivity {
+            action_domain: ActionDomain::Production,
+            target: Some(entity(10)),
+            observed_tick: Tick(6),
+        };
+
+        assert!(store.update_believed_activity(&id, Some(activity.clone())));
+        assert_eq!(
+            store.get_entity(&id).unwrap().believed_activity,
+            Some(activity.clone())
+        );
+    }
+
+    #[test]
+    fn update_believed_activity_noop_when_same() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(1);
+        let mut state = sample_state(5, 3);
+        let activity = BelievedActivity {
+            action_domain: ActionDomain::Trade,
+            target: None,
+            observed_tick: Tick(5),
+        };
+        state.believed_activity = Some(activity.clone());
+        store.known_entities.insert(id, state);
+
+        assert!(!store.update_believed_activity(&id, Some(activity)));
+    }
+
+    #[test]
+    fn update_believed_activity_unknown_entity() {
+        let mut store = AgentBeliefStore::new();
+        assert!(!store.update_believed_activity(&entity(99), None));
+    }
+
+    #[test]
+    fn clear_believed_activity_returns_true_when_some() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(2);
+        let mut state = sample_state(5, 1);
+        state.believed_activity = Some(BelievedActivity {
+            action_domain: ActionDomain::Production,
+            target: None,
+            observed_tick: Tick(5),
+        });
+        store.known_entities.insert(id, state);
+
+        assert!(store.clear_believed_activity(&id));
+        assert_eq!(store.get_entity(&id).unwrap().believed_activity, None);
+    }
+
+    #[test]
+    fn clear_believed_activity_returns_false_when_none() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(3);
+        store.known_entities.insert(id, sample_state(5, 1));
+
+        assert!(!store.clear_believed_activity(&id));
+    }
+
+    #[test]
+    fn clear_believed_activity_unknown_entity() {
+        let mut store = AgentBeliefStore::new();
+        assert!(!store.clear_believed_activity(&entity(99)));
+    }
+
+    // ── BeliefStoreDiff tests ──────────────────────────────────────────
+
+    use super::BeliefStoreDiff;
+
+    fn make_believed_entity(tick: Tick) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: Some(entity(100)),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: vec![],
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: tick,
+            source: PerceptionSource::DirectObservation,
+        }
+    }
+
+    fn make_social_observation(tick: Tick) -> SocialObservation {
+        SocialObservation {
+            detail: SocialObservationDetail::WitnessedCooperation {
+                actor: entity(1),
+                counterpart: entity(2),
+            },
+            place: entity(10),
+            observed_tick: tick,
+            source: PerceptionSource::DirectObservation,
+        }
+    }
+
+    fn make_tell_key(counterparty_slot: u32) -> TellMemoryKey {
+        TellMemoryKey {
+            counterparty: entity(counterparty_slot),
+            topic: TellTopic::EntityBelief { subject: entity(1) },
+        }
+    }
+
+    fn make_told_memory(tick: Tick) -> ToldBeliefMemory {
+        ToldBeliefMemory {
+            shared_state: SharedTellState::SocialObservation(make_social_observation(tick)),
+            told_tick: tick,
+        }
+    }
+
+    fn make_heard_memory(tick: Tick) -> HeardBeliefMemory {
+        HeardBeliefMemory {
+            heard_state: SharedTellState::SocialObservation(make_social_observation(tick)),
+            heard_tick: tick,
+            disposition: HeardBeliefDisposition::Accepted,
+        }
+    }
+
+    fn make_ask_witness_key(counterparty_slot: u32) -> AskWitnessMemoryKey {
+        AskWitnessMemoryKey {
+            counterparty: entity(counterparty_slot),
+            topic_entity: Some(entity(1)),
+            topic_commodity: None,
+        }
+    }
+
+    fn make_ask_witness_memory(tick: Tick) -> AskWitnessMemory {
+        AskWitnessMemory { asked_tick: tick }
+    }
+
+    fn make_institutional_key(office_slot: u32) -> InstitutionalBeliefKey {
+        InstitutionalBeliefKey::OfficeHolderOf {
+            office: entity(office_slot),
+        }
+    }
+
+    fn make_institutional_claim(tick: Tick) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::OfficeHolder {
+                office: entity(50),
+                holder: Some(entity(51)),
+                effective_tick: tick,
+            },
+            source: InstitutionalKnowledgeSource::DirectObservation,
+            learned_tick: tick,
+            learned_at: Some(entity(100)),
+        }
+    }
+
+    fn make_entity_claim(subject_slot: u32, tick: Tick) -> EntityBeliefClaim {
+        EntityBeliefClaim {
+            claim_id: ClaimId(tick.0),
+            subject: entity(subject_slot),
+            aspect: EntityBeliefAspect::Alive,
+            value: ClaimValue::Bool(true),
+            source: PerceptionSource::DirectObservation,
+            acquired_tick: tick,
+            claimed_event_tick: Some(tick),
+            confidence: Permille::new(800).unwrap(),
+        }
+    }
+
+    #[test]
+    fn belief_store_diff_empty_stores() {
+        let a = AgentBeliefStore::new();
+        let b = AgentBeliefStore::new();
+        let diff = BeliefStoreDiff::compute(&a, &b);
+        assert!(diff.is_empty());
+        assert_eq!(diff, BeliefStoreDiff::default());
+        assert_eq!(diff.apply(&a), b);
+    }
+
+    #[test]
+    fn belief_store_diff_identity() {
+        let mut store = AgentBeliefStore::new();
+        store.known_entities.insert(entity(1), make_believed_entity(Tick(10)));
+        store.social_observations.push(make_social_observation(Tick(5)));
+        store.told_beliefs.insert(make_tell_key(2), make_told_memory(Tick(3)));
+        store.next_claim_id = ClaimId(42);
+
+        let diff = BeliefStoreDiff::compute(&store, &store);
+        assert!(diff.is_empty());
+        assert_eq!(diff.apply(&store), store);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_known_entities() {
+        let mut before = AgentBeliefStore::new();
+        before.known_entities.insert(entity(1), make_believed_entity(Tick(1)));
+        before.known_entities.insert(entity(2), make_believed_entity(Tick(2)));
+
+        let mut after = before.clone();
+        after.known_entities.remove(&entity(1)); // removed
+        after.known_entities.insert(entity(3), make_believed_entity(Tick(3))); // added
+        after.known_entities.insert(entity(2), make_believed_entity(Tick(20))); // changed
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert!(!diff.is_empty());
+        assert_eq!(diff.known_entities_removed, vec![entity(1)]);
+        assert_eq!(diff.known_entities_set.len(), 2); // entity(2) changed + entity(3) added
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_social_observations() {
+        let mut before = AgentBeliefStore::new();
+        before.social_observations.push(make_social_observation(Tick(1)));
+        before.social_observations.push(make_social_observation(Tick(2)));
+        before.social_observations.push(make_social_observation(Tick(3)));
+
+        // Evict first entry, add two new ones.
+        let mut after = before.clone();
+        after.social_observations.remove(0);
+        after.social_observations.push(make_social_observation(Tick(4)));
+        after.social_observations.push(make_social_observation(Tick(5)));
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.social_observations_removed_count, 1);
+        assert_eq!(diff.social_observations_added.len(), 2);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_told_heard_beliefs() {
+        let mut before = AgentBeliefStore::new();
+        before.told_beliefs.insert(make_tell_key(1), make_told_memory(Tick(1)));
+        before.heard_beliefs.insert(make_tell_key(2), make_heard_memory(Tick(2)));
+
+        let mut after = before.clone();
+        after.told_beliefs.remove(&make_tell_key(1)); // removed
+        after.told_beliefs.insert(make_tell_key(3), make_told_memory(Tick(3))); // added
+        after.heard_beliefs.insert(make_tell_key(2), make_heard_memory(Tick(20))); // changed
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.told_beliefs_removed.len(), 1);
+        assert_eq!(diff.told_beliefs_set.len(), 1);
+        assert_eq!(diff.heard_beliefs_set.len(), 1);
+        assert!(diff.heard_beliefs_removed.is_empty());
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_asked_witnesses() {
+        let mut before = AgentBeliefStore::new();
+        before.asked_witnesses.insert(make_ask_witness_key(1), make_ask_witness_memory(Tick(1)));
+
+        let mut after = before.clone();
+        after.asked_witnesses.remove(&make_ask_witness_key(1));
+        after.asked_witnesses.insert(make_ask_witness_key(2), make_ask_witness_memory(Tick(2)));
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.asked_witnesses_removed.len(), 1);
+        assert_eq!(diff.asked_witnesses_set.len(), 1);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_entity_claims() {
+        let mut before = AgentBeliefStore::new();
+        before.entity_claims.insert(entity(1), vec![make_entity_claim(1, Tick(1))]);
+
+        let mut after = before.clone();
+        after.entity_claims.remove(&entity(1));
+        after.entity_claims.insert(entity(2), vec![make_entity_claim(2, Tick(2))]);
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.entity_claims_removed.len(), 1);
+        assert_eq!(diff.entity_claims_set.len(), 1);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_institutional_beliefs() {
+        let mut before = AgentBeliefStore::new();
+        before.institutional_beliefs.insert(
+            make_institutional_key(50),
+            vec![make_institutional_claim(Tick(1))],
+        );
+
+        let mut after = before.clone();
+        after.institutional_beliefs.remove(&make_institutional_key(50));
+        after.institutional_beliefs.insert(
+            make_institutional_key(51),
+            vec![make_institutional_claim(Tick(2))],
+        );
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.institutional_beliefs_removed.len(), 1);
+        assert_eq!(diff.institutional_beliefs_set.len(), 1);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_next_claim_id() {
+        let mut before = AgentBeliefStore::new();
+        before.next_claim_id = ClaimId(10);
+
+        let mut after = before.clone();
+        after.next_claim_id = ClaimId(15);
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.next_claim_id, Some(ClaimId(15)));
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_mixed_mutations() {
+        let mut before = AgentBeliefStore::new();
+        before.next_claim_id = ClaimId(5);
+        before.known_entities.insert(entity(1), make_believed_entity(Tick(1)));
+        before.social_observations.push(make_social_observation(Tick(1)));
+        before.told_beliefs.insert(make_tell_key(1), make_told_memory(Tick(1)));
+        before.heard_beliefs.insert(make_tell_key(2), make_heard_memory(Tick(2)));
+        before.asked_witnesses.insert(make_ask_witness_key(1), make_ask_witness_memory(Tick(1)));
+        before.entity_claims.insert(entity(1), vec![make_entity_claim(1, Tick(1))]);
+        before.institutional_beliefs.insert(
+            make_institutional_key(50),
+            vec![make_institutional_claim(Tick(1))],
+        );
+
+        let mut after = before.clone();
+        after.next_claim_id = ClaimId(10);
+        after.known_entities.insert(entity(2), make_believed_entity(Tick(5)));
+        after.social_observations.push(make_social_observation(Tick(5)));
+        after.told_beliefs.remove(&make_tell_key(1));
+        after.heard_beliefs.insert(make_tell_key(3), make_heard_memory(Tick(5)));
+        after.asked_witnesses.insert(make_ask_witness_key(3), make_ask_witness_memory(Tick(5)));
+        after.entity_claims.insert(entity(2), vec![make_entity_claim(2, Tick(5))]);
+        after.institutional_beliefs.insert(
+            make_institutional_key(51),
+            vec![make_institutional_claim(Tick(5))],
+        );
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert!(!diff.is_empty());
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_social_observations_full_replacement() {
+        let mut before = AgentBeliefStore::new();
+        before.social_observations.push(make_social_observation(Tick(1)));
+        before.social_observations.push(make_social_observation(Tick(2)));
+
+        // Completely different observations.
+        let mut after = AgentBeliefStore::new();
+        after.social_observations.push(make_social_observation(Tick(10)));
+        after.social_observations.push(make_social_observation(Tick(11)));
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_serialization_roundtrip() {
+        let mut before = AgentBeliefStore::new();
+        before.known_entities.insert(entity(1), make_believed_entity(Tick(1)));
+        before.next_claim_id = ClaimId(5);
+
+        let mut after = before.clone();
+        after.known_entities.insert(entity(2), make_believed_entity(Tick(2)));
+        after.next_claim_id = ClaimId(10);
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        let bytes = bincode::serialize(&diff).expect("serialize");
+        let restored: BeliefStoreDiff = bincode::deserialize(&bytes).expect("deserialize");
+        assert_eq!(diff, restored);
+        assert_eq!(restored.apply(&before), after);
     }
 }

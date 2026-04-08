@@ -55,6 +55,7 @@ fn consult_record_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
         reservation_requirements: Vec::new(),
         duration: DurationExpr::ConsultRecord { target_index: 0 },
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::FreelyInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,
@@ -202,6 +203,9 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
             accused,
             violation_id,
         },
+        InstitutionalClaim::MissingPersonStatus { subject, .. } => {
+            InstitutionalBeliefKey::MissingPersonStatus { subject }
+        }
     }
 }
 
@@ -288,7 +292,7 @@ mod tests {
     use worldwake_core::{
         BelievedInstitutionalClaim, CauseRef, ControlSource, EventLog, PerceptionSource,
         RecordData, RecordEntryId, RecordKind, Seed, Tick, WitnessData,
-        build_believed_entity_state,
+        build_believed_entity_state, institutional::MissingPersonReportStatus,
     };
     use worldwake_sim::{
         ActionExecutionAuthority, ActionInstance, ActionInstanceId, ActionPayload, ActionState,
@@ -941,6 +945,50 @@ mod tests {
                 office,
                 controller: None,
                 contested: true,
+                effective_tick: Tick(1),
+            }
+        );
+    }
+
+    #[test]
+    fn consult_record_projects_missing_person_status_under_subject_key() {
+        let (mut world, actor, record, other_place) = setup_world(4, 1, 500);
+        let subject = entity(160);
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let _ = txn
+                .append_record_entry(
+                    record,
+                    InstitutionalClaim::MissingPersonStatus {
+                        subject,
+                        reporter: actor,
+                        status: MissingPersonReportStatus::FoundSafe {
+                            at_place: other_place,
+                        },
+                        effective_tick: Tick(1),
+                    },
+                )
+                .unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, def_id) = setup_registries();
+
+        run_consult_through_step_tick(&mut world, actor, record, &defs, &handlers, def_id);
+
+        let store = world.get_component_agent_belief_store(actor).unwrap();
+        let beliefs = store
+            .institutional_beliefs
+            .get(&InstitutionalBeliefKey::MissingPersonStatus { subject })
+            .unwrap();
+        assert_eq!(beliefs.len(), 1);
+        assert_eq!(
+            beliefs[0].claim,
+            InstitutionalClaim::MissingPersonStatus {
+                subject,
+                reporter: actor,
+                status: MissingPersonReportStatus::FoundSafe {
+                    at_place: other_place,
+                },
                 effective_tick: Tick(1),
             }
         );

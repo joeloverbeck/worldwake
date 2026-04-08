@@ -651,10 +651,12 @@ mod tests {
                 PlaceDef {
                     name: "Market Square".into(),
                     tags: vec![PlaceTag::Village, PlaceTag::Store],
+                    visibility_profile: None,
                 },
                 PlaceDef {
                     name: "Dark Forest".into(),
                     tags: vec![PlaceTag::Forest],
+                    visibility_profile: None,
                 },
             ],
             edges: vec![EdgeDef {
@@ -687,6 +689,8 @@ mod tests {
                     intention_disposition: None,
                     communication_profile: None,
                     preference_profile: None,
+                    expectation_store: None,
+                    last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
                     carry_capacity: None,
@@ -723,6 +727,8 @@ mod tests {
                     intention_disposition: None,
                     communication_profile: None,
                     preference_profile: None,
+                    expectation_store: None,
+                    last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
                     carry_capacity: None,

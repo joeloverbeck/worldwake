@@ -1186,8 +1186,8 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .collect()
     }
 
-    fn agent_belief_store(&self, agent: EntityId) -> Option<worldwake_core::AgentBeliefStore> {
-        (agent == self.snapshot.actor()).then(|| self.snapshot.actor_belief_store.clone())
+    fn agent_belief_store(&self, agent: EntityId) -> Option<&worldwake_core::AgentBeliefStore> {
+        (agent == self.snapshot.actor()).then_some(&self.snapshot.actor_belief_store)
     }
 
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
@@ -1540,6 +1540,24 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .entities
             .get(&agent)
             .and_then(|snapshot| snapshot.patrol_route.clone())
+    }
+
+    fn expectation_store(
+        &self,
+        agent: EntityId,
+    ) -> Option<worldwake_core::ExpectationStore> {
+        (agent == self.snapshot.actor())
+            .then_some(self.snapshot.actor_expectation_store.clone())
+            .flatten()
+    }
+
+    fn last_seen_memory(
+        &self,
+        agent: EntityId,
+    ) -> Option<worldwake_core::LastSeenMemory> {
+        (agent == self.snapshot.actor())
+            .then_some(self.snapshot.actor_last_seen_memory.clone())
+            .flatten()
     }
 
     fn epistemic_disposition_profile(
@@ -2647,6 +2665,7 @@ mod tests {
             reservation_requirements: vec![ReservationReq { target_index: 0 }],
             duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
             body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
             interruptibility: Interruptibility::FreelyInterruptible,
             commit_conditions: vec![Precondition::ActorAlive],
             visibility: worldwake_core::VisibilitySpec::SamePlace,

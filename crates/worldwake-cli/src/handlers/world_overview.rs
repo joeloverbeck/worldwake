@@ -188,14 +188,17 @@ mod tests {
                 PlaceDef {
                     name: "Market Square".into(),
                     tags: vec![PlaceTag::Village, PlaceTag::Store],
+                    visibility_profile: None,
                 },
                 PlaceDef {
                     name: "Forest Clearing".into(),
                     tags: vec![PlaceTag::Forest],
+                    visibility_profile: None,
                 },
                 PlaceDef {
                     name: "Mountain Pass".into(),
                     tags: vec![PlaceTag::Road],
+                    visibility_profile: None,
                 },
             ],
             edges: vec![
@@ -230,6 +233,8 @@ mod tests {
                     intention_disposition: None,
                     communication_profile: None,
                     preference_profile: None,
+                    expectation_store: None,
+                    last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
                     carry_capacity: None,
@@ -260,6 +265,8 @@ mod tests {
                     intention_disposition: None,
                     communication_profile: None,
                     preference_profile: None,
+                    expectation_store: None,
+                    last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
                     carry_capacity: None,
@@ -290,6 +297,8 @@ mod tests {
                     intention_disposition: None,
                     communication_profile: None,
                     preference_profile: None,
+                    expectation_store: None,
+                    last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
                     carry_capacity: None,
@@ -337,6 +346,7 @@ mod tests {
             places: vec![PlaceDef {
                 name: "Void".into(),
                 tags: vec![],
+                visibility_profile: None,
             }],
             edges: vec![],
             agents: vec![],

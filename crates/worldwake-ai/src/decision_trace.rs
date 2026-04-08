@@ -2003,6 +2003,15 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             "Verdict(accused={accused:?}, violation_id={violation_id:?}, punishment={punishment:?}, tick={})",
             effective_tick.0
         ),
+        InstitutionalClaim::MissingPersonStatus {
+            subject,
+            reporter,
+            status,
+            effective_tick,
+        } => format!(
+            "MissingPersonStatus(subject={subject:?}, reporter={reporter:?}, status={status:?}, tick={})",
+            effective_tick.0
+        ),
     }
 }
 
@@ -3750,6 +3759,7 @@ mod tests {
                 reservation_requirements: vec![],
                 duration: worldwake_sim::DurationExpr::Fixed(std::num::NonZeroU32::new(1).unwrap()),
                 body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+                attention_cost: worldwake_core::Permille::ZERO,
                 interruptibility: worldwake_sim::Interruptibility::FreelyInterruptible,
                 commit_conditions: vec![],
                 visibility: worldwake_core::VisibilitySpec::SamePlace,

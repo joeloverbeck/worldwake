@@ -52,6 +52,7 @@ pub mod event_record;
 pub mod event_tag;
 pub mod evidence;
 pub mod execution_budget;
+pub mod expectation;
 pub mod experience;
 pub mod factions;
 pub mod goal;
@@ -64,6 +65,7 @@ pub mod items;
 pub mod load;
 pub mod needs;
 pub mod numerics;
+pub mod observation_context;
 pub mod offices;
 pub mod patrol;
 pub mod production;
@@ -89,7 +91,7 @@ pub use action_domain::ActionDomain;
 pub use allocator::EntityAllocator;
 pub use bandit_camp::{BanditCamp, BanditFactionPolicy};
 pub use belief::{
-    AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
+    AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy, BeliefStoreDiff,
     BelievedActivity, BelievedArtifactState, BelievedBountyTerms, BelievedContentionState,
     BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState, HeardBeliefDisposition,
     HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot, PerceptionProfile, PerceptionSource,
@@ -130,19 +132,25 @@ pub use crime::{
     PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
 };
 pub use delta::{
-    ComponentDelta, ComponentKind, ComponentValue, EntityDelta, QuantityDelta, RelationDelta,
+    ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
+    RelationDelta,
     RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
 pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBeliefClaim};
 pub use epistemic::{EpistemicDispositionProfile, EpistemicSubject};
-pub use error::WorldError;
+pub use error::{ControlDeniedReason, WorldError};
 pub use event_log::EventLog;
 pub use event_record::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
 pub use event_tag::EventTag;
 pub use evidence::{DisturbanceKind, EvidenceEntry, EvidenceEntryId, EvidenceKind, SceneEvidence};
 pub use execution_budget::ExecutionBudget;
+pub use expectation::{
+    ExpectationBasis, ExpectationId, ExpectationOutcome, ExpectationRecord, ExpectationState,
+    ExpectationStore, LastSeenMemory, LastSeenProvenance, LastSeenRecord, SearchCondition,
+    SearchResult,
+};
 pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
     SourceReliability, danger_ratio_permille, failure_ratio_permille,
@@ -175,6 +183,7 @@ pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
 pub use numerics::{LoadUnits, Permille, Quantity};
+pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };

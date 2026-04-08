@@ -3,7 +3,7 @@
 
 use crate::goal_model::GoalPriorityClass;
 use crate::interrupts::InterruptTrigger;
-use worldwake_core::{CommodityPurpose, CommunicationClass, GoalKind, NoticeTopic};
+use worldwake_core::GoalKind;
 
 // ---------------------------------------------------------------------------
 // DecisionContext
@@ -90,131 +90,14 @@ pub enum GoalPolicyOutcome {
 }
 
 // ---------------------------------------------------------------------------
-// Policy lookup
-// ---------------------------------------------------------------------------
-
-/// Returns the authoritative decision policy for a goal family.
-///
-/// The match is exhaustive over all `GoalKind` variants. Adding a new variant
-/// without updating this function will produce a compile error.
-///
-/// `AcquireCommodity` is discriminated by `CommodityPurpose`: `SelfConsume`
-/// is treated as self-care; all other purposes are enterprise goals.
-pub fn goal_family_policy(kind: &GoalKind) -> GoalFamilyPolicy {
-    match kind {
-        // --- Self-care goals (survival needs) ---
-        GoalKind::ConsumeOwnedCommodity { .. }
-        | GoalKind::Sleep
-        | GoalKind::Relieve
-        | GoalKind::Wash => GoalFamilyPolicy {
-            suppression: SuppressionRule::Never,
-            penalty_interrupt: PenaltyInterruptEligibility::WhenCritical {
-                trigger: InterruptTrigger::CriticalSurvival,
-            },
-            free_interrupt: FreeInterruptRole::Reactive,
-        },
-
-        // AcquireCommodity: self-care when SelfConsume, enterprise otherwise
-        GoalKind::AcquireCommodity { purpose, .. } => match purpose {
-            CommodityPurpose::SelfConsume => GoalFamilyPolicy {
-                suppression: SuppressionRule::Never,
-                penalty_interrupt: PenaltyInterruptEligibility::WhenCritical {
-                    trigger: InterruptTrigger::CriticalSurvival,
-                },
-                free_interrupt: FreeInterruptRole::Reactive,
-            },
-            _ => GoalFamilyPolicy {
-                suppression: SuppressionRule::Never,
-                penalty_interrupt: PenaltyInterruptEligibility::Never,
-                free_interrupt: FreeInterruptRole::Normal,
-            },
-        },
-
-        // --- Danger goals ---
-        GoalKind::ReduceDanger => GoalFamilyPolicy {
-            suppression: SuppressionRule::Never,
-            penalty_interrupt: PenaltyInterruptEligibility::WhenCritical {
-                trigger: InterruptTrigger::CriticalDanger,
-            },
-            free_interrupt: FreeInterruptRole::Reactive,
-        },
-
-        // --- Care ---
-        GoalKind::TreatWounds { .. } => GoalFamilyPolicy {
-            suppression: SuppressionRule::Never,
-            penalty_interrupt: PenaltyInterruptEligibility::Never,
-            free_interrupt: FreeInterruptRole::Reactive,
-        },
-
-        // --- Combat + enterprise goals (no suppression, no penalty, normal interrupt) ---
-        GoalKind::EngageHostile { .. }
-        | GoalKind::RaidTarget { .. }
-        | GoalKind::ProduceCommodity { .. }
-        | GoalKind::SellCommodity { .. }
-        | GoalKind::RestockCommodity { .. }
-        | GoalKind::MoveCargo { .. }
-        | GoalKind::PostNotice {
-            topic: NoticeTopic::ThreatWarning { .. },
-            ..
-        } => GoalFamilyPolicy {
-            suppression: SuppressionRule::Never,
-            penalty_interrupt: PenaltyInterruptEligibility::Never,
-            free_interrupt: FreeInterruptRole::Normal,
-        },
-
-        // --- Corpse: loot is opportunistic ---
-        GoalKind::LootCorpse { .. } => GoalFamilyPolicy {
-            suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
-            penalty_interrupt: PenaltyInterruptEligibility::Never,
-            free_interrupt: FreeInterruptRole::Opportunistic,
-        },
-
-        // --- Social goals use class-dependent suppression but keep the same interrupt behavior ---
-        GoalKind::ShareBelief {
-            communication_class,
-            ..
-        } => GoalFamilyPolicy {
-            suppression: match communication_class {
-                CommunicationClass::Alarm => SuppressionRule::Never,
-                CommunicationClass::Testimony => {
-                    SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical)
-                }
-                CommunicationClass::Gossip => {
-                    SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High)
-                }
-            },
-            penalty_interrupt: PenaltyInterruptEligibility::Never,
-            free_interrupt: FreeInterruptRole::Normal,
-        },
-
-        // --- Corpse / political goals (suppressed under stress, normal interrupt) ---
-        GoalKind::BuryCorpse { .. }
-        | GoalKind::RegroupWithFaction { .. }
-        | GoalKind::EstablishBanditCamp { .. }
-        | GoalKind::FulfillBounty { .. }
-        | GoalKind::PostBounty { .. }
-        | GoalKind::PostNotice { .. }
-        | GoalKind::ClaimOffice { .. }
-        | GoalKind::SupportCandidateForOffice { .. }
-        | GoalKind::InvestigateViolation { .. }
-        | GoalKind::Patrol { .. }
-        | GoalKind::StealItem { .. }
-        | GoalKind::Accuse { .. }
-        | GoalKind::PunishAccused { .. } => GoalFamilyPolicy {
-            suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
-            penalty_interrupt: PenaltyInterruptEligibility::Never,
-            free_interrupt: FreeInterruptRole::Normal,
-        },
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Suppression evaluation
 // ---------------------------------------------------------------------------
 
 /// Evaluates whether a goal is suppressed given the current decision context.
 pub fn evaluate_suppression(kind: &GoalKind, context: &DecisionContext) -> GoalPolicyOutcome {
-    let policy = goal_family_policy(kind);
+    let policy = crate::GoalDispatchKey::from_goal_kind(kind)
+        .declaration()
+        .family_policy;
     match policy.suppression {
         SuppressionRule::Never => GoalPolicyOutcome::Available,
         SuppressionRule::WhenStressedAtOrAbove(threshold) => {
@@ -273,7 +156,7 @@ mod tests {
         ];
         for kind in &self_care {
             assert_eq!(
-                goal_family_policy(kind).suppression,
+                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.suppression,
                 SuppressionRule::Never,
                 "Self-care goal {kind:?} should never be suppressed"
             );
@@ -306,7 +189,7 @@ mod tests {
         ];
         for kind in &goals {
             assert_eq!(
-                goal_family_policy(kind).suppression,
+                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.suppression,
                 SuppressionRule::Never,
                 "Goal {kind:?} should never be suppressed"
             );
@@ -364,7 +247,7 @@ mod tests {
         ];
         for kind in &goals {
             assert_eq!(
-                goal_family_policy(kind).suppression,
+                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.suppression,
                 SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
                 "Goal {kind:?} should be suppressed when stressed at or above High"
             );
@@ -379,29 +262,35 @@ mod tests {
         };
 
         assert_eq!(
-            goal_family_policy(&GoalKind::ShareBelief {
+            crate::GoalDispatchKey::from_goal_kind(&GoalKind::ShareBelief {
                 listener,
                 topic,
                 communication_class: worldwake_core::CommunicationClass::Alarm,
             })
+            .declaration()
+            .family_policy
             .suppression,
             SuppressionRule::Never,
         );
         assert_eq!(
-            goal_family_policy(&GoalKind::ShareBelief {
+            crate::GoalDispatchKey::from_goal_kind(&GoalKind::ShareBelief {
                 listener,
                 topic,
                 communication_class: worldwake_core::CommunicationClass::Testimony,
             })
+            .declaration()
+            .family_policy
             .suppression,
             SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical),
         );
         assert_eq!(
-            goal_family_policy(&GoalKind::ShareBelief {
+            crate::GoalDispatchKey::from_goal_kind(&GoalKind::ShareBelief {
                 listener,
                 topic,
                 communication_class: worldwake_core::CommunicationClass::Gossip,
             })
+            .declaration()
+            .family_policy
             .suppression,
             SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
         );
@@ -425,7 +314,7 @@ mod tests {
         ];
         for kind in &self_care {
             assert_eq!(
-                goal_family_policy(kind).penalty_interrupt,
+                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.penalty_interrupt,
                 PenaltyInterruptEligibility::WhenCritical {
                     trigger: InterruptTrigger::CriticalSurvival
                 },
@@ -437,7 +326,7 @@ mod tests {
     #[test]
     fn penalty_critical_danger_for_reduce_danger() {
         assert_eq!(
-            goal_family_policy(&GoalKind::ReduceDanger).penalty_interrupt,
+            crate::GoalDispatchKey::from_goal_kind(&GoalKind::ReduceDanger).declaration().family_policy.penalty_interrupt,
             PenaltyInterruptEligibility::WhenCritical {
                 trigger: InterruptTrigger::CriticalDanger
             },
@@ -510,7 +399,7 @@ mod tests {
         ];
         for kind in &goals {
             assert_eq!(
-                goal_family_policy(kind).penalty_interrupt,
+                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.penalty_interrupt,
                 PenaltyInterruptEligibility::Never,
                 "Goal {kind:?} should have Never penalty interrupt"
             );
@@ -539,7 +428,7 @@ mod tests {
         ];
         for kind in &reactive {
             assert_eq!(
-                goal_family_policy(kind).free_interrupt,
+                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.free_interrupt,
                 FreeInterruptRole::Reactive,
                 "Goal {kind:?} should have Reactive free interrupt role"
             );
@@ -549,9 +438,11 @@ mod tests {
     #[test]
     fn free_interrupt_opportunistic_for_loot_corpse() {
         assert_eq!(
-            goal_family_policy(&GoalKind::LootCorpse {
+            crate::GoalDispatchKey::from_goal_kind(&GoalKind::LootCorpse {
                 corpse: dummy_entity()
             })
+            .declaration()
+            .family_policy
             .free_interrupt,
             FreeInterruptRole::Opportunistic,
         );
@@ -617,7 +508,7 @@ mod tests {
         ];
         for kind in &normal {
             assert_eq!(
-                goal_family_policy(kind).free_interrupt,
+                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.free_interrupt,
                 FreeInterruptRole::Normal,
                 "Goal {kind:?} should have Normal free interrupt role"
             );
@@ -632,7 +523,9 @@ mod tests {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::Restock,
         };
-        let policy = goal_family_policy(&enterprise_acquire);
+        let policy = crate::GoalDispatchKey::from_goal_kind(&enterprise_acquire)
+            .declaration()
+            .family_policy;
         assert_eq!(policy.suppression, SuppressionRule::Never);
         assert_eq!(policy.penalty_interrupt, PenaltyInterruptEligibility::Never);
         assert_eq!(policy.free_interrupt, FreeInterruptRole::Normal);
@@ -730,9 +623,11 @@ mod tests {
             GoalPolicyOutcome::Available,
         );
         assert_eq!(
-            goal_family_policy(&GoalKind::RaidTarget {
+            crate::GoalDispatchKey::from_goal_kind(&GoalKind::RaidTarget {
                 target: dummy_entity(),
             })
+            .declaration()
+            .family_policy
             .free_interrupt,
             FreeInterruptRole::Normal,
         );
@@ -759,9 +654,11 @@ mod tests {
             },
         );
         assert_eq!(
-            goal_family_policy(&GoalKind::RegroupWithFaction {
+            crate::GoalDispatchKey::from_goal_kind(&GoalKind::RegroupWithFaction {
                 faction: dummy_entity(),
             })
+            .declaration()
+            .family_policy
             .free_interrupt,
             FreeInterruptRole::Normal,
         );

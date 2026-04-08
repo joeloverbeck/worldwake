@@ -80,6 +80,7 @@ fn accuse_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::NonInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,
@@ -159,6 +160,7 @@ fn punishment_action_def(
         reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(NonZeroU32::MIN),
         body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
         interruptibility: Interruptibility::NonInterruptible,
         commit_conditions: vec![
             Precondition::ActorAlive,
