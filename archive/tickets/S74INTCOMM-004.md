@@ -1,6 +1,6 @@
 # S74INTCOMM-004: Refresh generated golden docs after Scenario 125 contract correction
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None — generated docs handoff only
@@ -75,3 +75,15 @@ Check Scenario 125 in both generated docs and confirm they now describe:
 
 1. `python3 scripts/golden_inventory.py --write --check-docs`
 2. `cargo test -p worldwake-ai --test golden_expectation`
+
+## Outcome
+
+Completed on 2026-04-08.
+
+- Regenerated the canonical golden scenario docs so Scenario 125 now matches the corrected local-report contract in `golden_expectation.rs`.
+- Updated `docs/generated/golden-scenario-index.md` and `docs/generated/golden-scenario-details/expectation.md` to describe the `OfficeRegister` at OrchardFarm, remove the stale return trip to VillageSquare, and shorten the cross-system chain accordingly.
+
+## Verification Result
+
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo test -p worldwake-ai --test golden_expectation`
