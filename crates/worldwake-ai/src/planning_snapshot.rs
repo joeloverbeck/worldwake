@@ -134,6 +134,7 @@ pub(crate) struct SnapshotEntity {
     pub(crate) workstation_tag: Option<WorkstationTag>,
     pub(crate) stock_storage_policy: Option<StockStoragePolicy>,
     pub(crate) resource_source: Option<ResourceSource>,
+    pub(crate) has_production_job: bool,
     pub(crate) action_flags: SnapshotActionFlags,
     pub(crate) alive: bool,
     pub(crate) dead: bool,
@@ -185,6 +186,7 @@ impl Default for SnapshotEntity {
             workstation_tag: None,
             stock_storage_policy: None,
             resource_source: None,
+            has_production_job: false,
             action_flags: SnapshotActionFlags::default(),
             alive: false,
             dead: false,
@@ -218,7 +220,6 @@ impl Default for SnapshotEntity {
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct SnapshotActionFlags {
-    pub(crate) has_production_job: bool,
     pub(crate) controllable_by_actor: bool,
     pub(crate) has_control: bool,
 }
@@ -754,8 +755,8 @@ fn build_snapshot_entity(
     let workstation_tag = view.workstation_tag(entity);
     let stock_storage_policy = view.stock_storage_policy(entity);
     let resource_source = view.resource_source(entity);
+    let has_production_job = view.has_production_job(entity);
     let action_flags = SnapshotActionFlags {
-        has_production_job: view.has_production_job(entity),
         controllable_by_actor: view.can_control(actor, entity),
         has_control: view.has_control(entity),
     };
@@ -805,6 +806,7 @@ fn build_snapshot_entity(
         workstation_tag,
         stock_storage_policy,
         resource_source,
+        has_production_job,
         action_flags,
         alive,
         dead,
@@ -1286,27 +1288,6 @@ mod tests {
     }
 
     impl RuntimeBeliefView for StubBeliefView {
-        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-            self.direct_possessions
-                .get(&holder)
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
-            false
-        }
-
-        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
-            0
-        }
-
-        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-            self.commodity_quantities
-                .get(&(holder, kind))
-                .copied()
-                .unwrap_or(Quantity(0))
-        }
         fn controlled_commodity_quantity_at_place(
             &self,
             _actor: EntityId,
@@ -1322,45 +1303,6 @@ mod tests {
             _commodity: CommodityKind,
         ) -> Vec<EntityId> {
             Vec::new()
-        }
-
-        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-            self.item_lot_commodities.get(&entity).copied()
-        }
-
-        fn item_lot_consumable_profile(
-            &self,
-            _entity: EntityId,
-        ) -> Option<CommodityConsumableProfile> {
-            None
-        }
-
-        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-            self.direct_containers.get(&entity).copied()
-        }
-
-        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-            self.direct_possessors.get(&entity).copied()
-        }
-
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
-            None
-        }
-
-        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
-            None
-        }
-
-        fn has_production_job(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
-            self.carry_capacities.get(&entity).copied()
-        }
-
-        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
-            self.entity_loads.get(&entity).copied()
         }
 
         fn has_wounds(&self, _entity: EntityId) -> bool {
@@ -1425,26 +1367,6 @@ mod tests {
             None
         }
 
-        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
-            Vec::new()
-        }
-
-        fn matching_workstations_at(
-            &self,
-            _place: EntityId,
-            _tag: WorkstationTag,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn resource_sources_at(
-            &self,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-
         fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
             Vec::new()
         }
@@ -1482,6 +1404,91 @@ mod tests {
                 .get(&office)
                 .cloned()
                 .unwrap_or_default()
+        }
+    }
+
+    impl worldwake_sim::InventoryBeliefView for StubBeliefView {
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
+
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodity_quantities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
+        }
+
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.item_lot_commodities.get(&entity).copied()
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+
+        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_containers.get(&entity).copied()
+        }
+
+        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_possessors.get(&entity).copied()
+        }
+
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
+        }
+
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+    }
+
+    impl worldwake_sim::FacilityBeliefView for StubBeliefView {
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
         }
     }
 

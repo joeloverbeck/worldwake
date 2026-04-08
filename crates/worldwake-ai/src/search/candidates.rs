@@ -11,8 +11,8 @@ use worldwake_core::{
     ActionDefId, BlockedIntentMemory, ContentionStatus, EntityId, GoalKind, Tick,
 };
 use worldwake_sim::{
-    ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
-    QueueForFacilityUsePayload, RuntimeBeliefView, SpatialBeliefView, get_affordances_for_defs,
+    ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, FacilityBeliefView,
+    QueueForFacilityUsePayload, SpatialBeliefView, get_affordances_for_defs,
 };
 
 use super::SearchNode;

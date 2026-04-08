@@ -470,6 +470,45 @@ pub trait TemporalBeliefView {
     ) -> Option<ActionDuration>;
 }
 
+pub trait InventoryBeliefView {
+    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
+    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
+    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+        let _ = recipe;
+        None
+    }
+    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
+    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
+    fn locally_observed_commodity_quantity(
+        &self,
+        agent: EntityId,
+        holder: EntityId,
+        kind: CommodityKind,
+    ) -> Quantity {
+        let _ = agent;
+        self.commodity_quantity(holder, kind)
+    }
+    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind>;
+    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
+    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
+    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
+    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits>;
+    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
+}
+
+pub trait FacilityBeliefView {
+    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
+        let _ = facility;
+        None
+    }
+    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn has_production_job(&self, entity: EntityId) -> bool;
+    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
+    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+}
+
 /// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
 /// failure handling, and duration estimation.
 ///
@@ -477,7 +516,13 @@ pub trait TemporalBeliefView {
 /// when they truly need runtime-only helpers such as reservations, queue state, or duration
 /// estimation.
 pub trait RuntimeBeliefView:
-    ControlBeliefView + EntityBeliefView + ProfileBeliefView + SpatialBeliefView + TemporalBeliefView
+    ControlBeliefView
+    + EntityBeliefView
+    + ProfileBeliefView
+    + SpatialBeliefView
+    + TemporalBeliefView
+    + InventoryBeliefView
+    + FacilityBeliefView
 {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
@@ -524,23 +569,6 @@ pub trait RuntimeBeliefView:
         let _ = (place, domain, target);
         Vec::new()
     }
-    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
-    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
-    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
-        let _ = recipe;
-        None
-    }
-    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32;
-    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity;
-    fn locally_observed_commodity_quantity(
-        &self,
-        agent: EntityId,
-        holder: EntityId,
-        kind: CommodityKind,
-    ) -> Quantity {
-        let _ = agent;
-        self.commodity_quantity(holder, kind)
-    }
     fn controlled_commodity_quantity_at_place(
         &self,
         agent: EntityId,
@@ -553,19 +581,6 @@ pub trait RuntimeBeliefView:
         place: EntityId,
         commodity: CommodityKind,
     ) -> Vec<EntityId>;
-    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind>;
-    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
-    fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
-    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
-    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
-    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
-        let _ = facility;
-        None
-    }
-    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
-    fn has_production_job(&self, entity: EntityId) -> bool;
-    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
-    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits>;
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
     fn observation_fidelity(&self, agent: EntityId) -> Permille {
@@ -683,9 +698,6 @@ pub trait RuntimeBeliefView:
         let _ = lot;
         false
     }
-    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
-    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
-    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn record_data(&self, record: EntityId) -> Option<RecordData> {
@@ -815,7 +827,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 holder: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::direct_possessions(self, holder)
+                $crate::InventoryBeliefView::direct_possessions(self, holder)
             }
 
             fn known_entity_beliefs(
@@ -901,21 +913,21 @@ macro_rules! impl_goal_belief_view {
                 actor: worldwake_core::EntityId,
                 recipe: worldwake_core::RecipeId,
             ) -> bool {
-                $crate::RuntimeBeliefView::knows_recipe(self, actor, recipe)
+                $crate::InventoryBeliefView::knows_recipe(self, actor, recipe)
             }
 
             fn known_recipes(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::RecipeId> {
-                $crate::RuntimeBeliefView::known_recipes(self, agent)
+                $crate::InventoryBeliefView::known_recipes(self, agent)
             }
 
             fn recipe_definition(
                 &self,
                 recipe: worldwake_core::RecipeId,
             ) -> Option<$crate::RecipeDefinition> {
-                $crate::RuntimeBeliefView::recipe_definition(self, recipe)
+                $crate::InventoryBeliefView::recipe_definition(self, recipe)
             }
 
             fn unique_item_count(
@@ -923,7 +935,7 @@ macro_rules! impl_goal_belief_view {
                 holder: worldwake_core::EntityId,
                 kind: worldwake_core::UniqueItemKind,
             ) -> u32 {
-                $crate::RuntimeBeliefView::unique_item_count(self, holder, kind)
+                $crate::InventoryBeliefView::unique_item_count(self, holder, kind)
             }
 
             fn commodity_quantity(
@@ -931,7 +943,7 @@ macro_rules! impl_goal_belief_view {
                 holder: worldwake_core::EntityId,
                 kind: worldwake_core::CommodityKind,
             ) -> worldwake_core::Quantity {
-                $crate::RuntimeBeliefView::commodity_quantity(self, holder, kind)
+                $crate::InventoryBeliefView::commodity_quantity(self, holder, kind)
             }
 
             fn locally_observed_commodity_quantity(
@@ -940,7 +952,7 @@ macro_rules! impl_goal_belief_view {
                 holder: worldwake_core::EntityId,
                 kind: worldwake_core::CommodityKind,
             ) -> worldwake_core::Quantity {
-                $crate::RuntimeBeliefView::locally_observed_commodity_quantity(
+                $crate::InventoryBeliefView::locally_observed_commodity_quantity(
                     self, agent, holder, kind,
                 )
             }
@@ -976,28 +988,28 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::CommodityKind> {
-                $crate::RuntimeBeliefView::item_lot_commodity(self, entity)
+                $crate::InventoryBeliefView::item_lot_commodity(self, entity)
             }
 
             fn item_lot_consumable_profile(
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::CommodityConsumableProfile> {
-                $crate::RuntimeBeliefView::item_lot_consumable_profile(self, entity)
+                $crate::InventoryBeliefView::item_lot_consumable_profile(self, entity)
             }
 
             fn direct_container(
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::direct_container(self, entity)
+                $crate::InventoryBeliefView::direct_container(self, entity)
             }
 
             fn direct_possessor(
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::direct_possessor(self, entity)
+                $crate::InventoryBeliefView::direct_possessor(self, entity)
             }
 
             fn believed_owner_of(
@@ -1019,14 +1031,14 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::WorkstationTag> {
-                $crate::RuntimeBeliefView::workstation_tag(self, entity)
+                $crate::FacilityBeliefView::workstation_tag(self, entity)
             }
 
             fn resource_source(
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::ResourceSource> {
-                $crate::RuntimeBeliefView::resource_source(self, entity)
+                $crate::FacilityBeliefView::resource_source(self, entity)
             }
 
             fn resource_sources_at(
@@ -1034,7 +1046,7 @@ macro_rules! impl_goal_belief_view {
                 place: worldwake_core::EntityId,
                 commodity: worldwake_core::CommodityKind,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::resource_sources_at(self, place, commodity)
+                $crate::FacilityBeliefView::resource_sources_at(self, place, commodity)
             }
 
             fn matching_workstations_at(
@@ -1042,11 +1054,11 @@ macro_rules! impl_goal_belief_view {
                 place: worldwake_core::EntityId,
                 tag: worldwake_core::WorkstationTag,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::matching_workstations_at(self, place, tag)
+                $crate::FacilityBeliefView::matching_workstations_at(self, place, tag)
             }
 
             fn has_production_job(&self, entity: worldwake_core::EntityId) -> bool {
-                $crate::RuntimeBeliefView::has_production_job(self, entity)
+                $crate::FacilityBeliefView::has_production_job(self, entity)
             }
 
             fn can_control(
@@ -1061,21 +1073,21 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 facility: worldwake_core::EntityId,
             ) -> Option<worldwake_core::StockStoragePolicy> {
-                $crate::RuntimeBeliefView::stock_storage_policy(self, facility)
+                $crate::FacilityBeliefView::stock_storage_policy(self, facility)
             }
 
             fn carry_capacity(
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::LoadUnits> {
-                $crate::RuntimeBeliefView::carry_capacity(self, entity)
+                $crate::InventoryBeliefView::carry_capacity(self, entity)
             }
 
             fn load_of_entity(
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::LoadUnits> {
-                $crate::RuntimeBeliefView::load_of_entity(self, entity)
+                $crate::InventoryBeliefView::load_of_entity(self, entity)
             }
 
             fn is_incapacitated(&self, entity: worldwake_core::EntityId) -> bool {

@@ -1157,28 +1157,6 @@ mod tests {
     }
 
     impl RuntimeBeliefView for TestBeliefView {
-        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-            self.direct_possessions
-                .get(&holder)
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
-            false
-        }
-
-        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
-            self.unique_items.get(&(holder, kind)).copied().unwrap_or(0)
-        }
-
-        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-            self.commodity_quantities
-                .get(&(holder, kind))
-                .copied()
-                .unwrap_or(Quantity(0))
-        }
-
         fn controlled_commodity_quantity_at_place(
             &self,
             _actor: EntityId,
@@ -1196,46 +1174,6 @@ mod tests {
         ) -> Vec<EntityId> {
             Vec::new()
         }
-
-        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-            self.lot_commodities.get(&entity).copied()
-        }
-
-        fn item_lot_consumable_profile(
-            &self,
-            _entity: EntityId,
-        ) -> Option<CommodityConsumableProfile> {
-            None
-        }
-
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
-        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
-            None
-        }
-
-        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-            self.resource_sources.get(&entity).cloned()
-        }
-
-        fn has_production_job(&self, entity: EntityId) -> bool {
-            self.production_jobs.contains(&entity)
-        }
-
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
-        }
-
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
-        }
-
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds
                 .get(&entity)
@@ -1291,8 +1229,81 @@ mod tests {
             self.lot_sellers.contains_key(&lot)
         }
 
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+    }
+
+    impl worldwake_sim::InventoryBeliefView for TestBeliefView {
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+
+        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+            self.unique_items.get(&(holder, kind)).copied().unwrap_or(0)
+        }
+
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodity_quantities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
+        }
+
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.lot_commodities.get(&entity).copied()
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
             Vec::new()
+        }
+    }
+
+    impl worldwake_sim::FacilityBeliefView for TestBeliefView {
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+            self.resource_sources.get(&entity).cloned()
+        }
+
+        fn has_production_job(&self, entity: EntityId) -> bool {
+            self.production_jobs.contains(&entity)
         }
 
         fn matching_workstations_at(
@@ -1307,18 +1318,11 @@ mod tests {
             self.entities_at(place)
                 .into_iter()
                 .filter(|entity| {
-                    self.resource_source(*entity)
+                    self.resource_sources
+                        .get(entity)
                         .is_some_and(|source| source.commodity == commodity)
                 })
                 .collect()
-        }
-
-        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
-            Vec::new()
-        }
-
-        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
-            None
         }
     }
 

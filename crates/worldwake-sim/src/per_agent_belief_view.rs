@@ -1,8 +1,8 @@
 use crate::{
     ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
-    ControlBeliefView, DurationExpr, EntityBeliefView, ProfileBeliefView, RecipeDefinition,
-    RecipeRegistry, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
-    estimate_duration_from_beliefs,
+    ControlBeliefView, DurationExpr, EntityBeliefView, FacilityBeliefView, InventoryBeliefView,
+    ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SpatialBeliefView,
+    TemporalBeliefView, estimate_duration_from_beliefs,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -780,73 +780,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         entities
     }
 
-    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-        if holder == self.agent {
-            return self.world.possessions_of(holder);
-        }
-
-        Vec::new()
-    }
-
-    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
-        (actor == self.agent)
-            && self
-                .world
-                .get_component_known_recipes(actor)
-                .is_some_and(|known| known.recipes.contains(&recipe))
-    }
-
-    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
-        self.recipe_registry
-            .and_then(|registry| registry.get(recipe))
-            .cloned()
-    }
-
-    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
-        if holder == self.agent {
-            return self.world.controlled_unique_item_count(holder, kind);
-        }
-
-        0
-    }
-
-    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-        if holder == self.agent {
-            return self.world.controlled_commodity_quantity(holder, kind);
-        }
-
-        self.believed_entity(holder)
-            .and_then(|state| state.last_known_inventory.get(&kind).copied())
-            .unwrap_or(Quantity(0))
-    }
-
-    fn locally_observed_commodity_quantity(
-        &self,
-        agent: EntityId,
-        holder: EntityId,
-        kind: CommodityKind,
-    ) -> Quantity {
-        if agent != self.agent {
-            return self.commodity_quantity(holder, kind);
-        }
-
-        let Some(agent_place) = self.world.effective_place(agent) else {
-            return self.commodity_quantity(holder, kind);
-        };
-        if self.world.effective_place(holder) != Some(agent_place) {
-            return self.commodity_quantity(holder, kind);
-        }
-
-        if let Some(source) = self.world.get_component_resource_source(holder)
-            && source.commodity == kind
-        {
-            return source.available_quantity;
-        }
-
-        self.world
-            .controlled_commodity_quantity_at_place(holder, agent_place, kind)
-    }
-
     fn controlled_commodity_quantity_at_place(
         &self,
         agent: EntityId,
@@ -881,84 +814,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         }
 
         self.authoritative_local_controlled_lots_for(agent, place, commodity)
-    }
-
-    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
-        accessible
-            .then(|| {
-                self.world
-                    .get_component_item_lot(entity)
-                    .map(|lot| lot.commodity)
-            })
-            .flatten()
-    }
-
-    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
-        let commodity = self.item_lot_commodity(entity)?;
-        commodity.spec().consumable_profile
-    }
-
-    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
-        accessible
-            .then(|| self.world.direct_container(entity))
-            .flatten()
-    }
-
-    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
-        accessible
-            .then(|| self.world.possessor_of(entity))
-            .flatten()
-    }
-
-    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
-        if entity == self.agent {
-            return self
-                .world
-                .get_component_workstation_marker(entity)
-                .map(|marker| marker.0);
-        }
-
-        self.believed_entity(entity)
-            .and_then(|state| state.workstation_tag)
-    }
-
-    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-        if entity == self.agent {
-            return self.world.get_component_resource_source(entity).cloned();
-        }
-
-        self.believed_entity(entity)
-            .and_then(|state| state.resource_source.clone())
-    }
-
-    fn has_production_job(&self, entity: EntityId) -> bool {
-        self.world.has_component_production_job(entity)
-    }
-
-    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
-        self.knows_entity(facility)
-            .then(|| {
-                self.world
-                    .get_component_stock_storage_policy(facility)
-                    .cloned()
-            })
-            .flatten()
-    }
-
-    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
-        self.world
-            .get_component_carry_capacity(entity)
-            .map(|CarryCapacity(capacity)| *capacity)
-    }
-
-    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
-        load_of_entity(self.world, entity).ok()
     }
 
     fn has_wounds(&self, entity: EntityId) -> bool {
@@ -1310,9 +1165,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
             .filter(|entity| self.world.has_component_sale_listing(*entity))
             .filter(|entity| {
-                // Facility-based visibility: lot must be displayed
-                // (StockAssignment::Displayed) and the facility controller
-                // must be alive and co-located at this place.
                 self.world
                     .get_component_stock_assignment(*entity)
                     .is_some_and(|assignment| {
@@ -1329,7 +1181,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         if !self.world.has_component_sale_listing(lot) {
             return None;
         }
-        // Derive seller from facility control rather than direct possession.
         let assignment = self.world.get_component_stock_assignment(lot)?;
         if assignment.kind != worldwake_core::StockAssignmentKind::Displayed {
             return None;
@@ -1340,34 +1191,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
 
     fn has_sale_listing(&self, lot: EntityId) -> bool {
         self.world.has_component_sale_listing(lot)
-    }
-
-    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.world
-            .get_component_known_recipes(agent)
-            .map(|known| known.recipes.iter().copied().collect())
-            .unwrap_or_default()
-    }
-
-    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| self.workstation_tag(*entity) == Some(tag))
-            .collect()
-    }
-
-    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| {
-                self.resource_source(*entity)
-                    .is_some_and(|source| source.commodity == commodity)
-            })
-            .collect()
     }
 
     fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
@@ -1442,7 +1265,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         if subject != self.agent {
             return None;
         }
-        if target != self.agent && self.believed_entity(target).is_none() {
+        if !self.knows_entity(target) {
             return None;
         }
 
@@ -1482,6 +1305,183 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     }
 }
 
+impl InventoryBeliefView for PerAgentBeliefView<'_> {
+    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+        if holder == self.agent {
+            return self.world.possessions_of(holder);
+        }
+
+        Vec::new()
+    }
+
+    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
+        (actor == self.agent)
+            && self
+                .world
+                .get_component_known_recipes(actor)
+                .is_some_and(|known| known.recipes.contains(&recipe))
+    }
+
+    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+        self.recipe_registry
+            .and_then(|registry| registry.get(recipe))
+            .cloned()
+    }
+
+    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+        if holder == self.agent {
+            return self.world.controlled_unique_item_count(holder, kind);
+        }
+
+        0
+    }
+
+    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+        if holder == self.agent {
+            return self.world.controlled_commodity_quantity(holder, kind);
+        }
+
+        self.believed_entity(holder)
+            .and_then(|state| state.last_known_inventory.get(&kind).copied())
+            .unwrap_or(Quantity(0))
+    }
+
+    fn locally_observed_commodity_quantity(
+        &self,
+        agent: EntityId,
+        holder: EntityId,
+        kind: CommodityKind,
+    ) -> Quantity {
+        if agent != self.agent {
+            return self.commodity_quantity(holder, kind);
+        }
+
+        let Some(agent_place) = self.world.effective_place(agent) else {
+            return self.commodity_quantity(holder, kind);
+        };
+        if self.world.effective_place(holder) != Some(agent_place) {
+            return self.commodity_quantity(holder, kind);
+        }
+
+        if let Some(source) = self.world.get_component_resource_source(holder)
+            && source.commodity == kind
+        {
+            return source.available_quantity;
+        }
+
+        self.world
+            .controlled_commodity_quantity_at_place(holder, agent_place, kind)
+    }
+
+    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+        let accessible =
+            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible
+            .then(|| {
+                self.world
+                    .get_component_item_lot(entity)
+                    .map(|lot| lot.commodity)
+            })
+            .flatten()
+    }
+
+    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
+        let commodity = self.item_lot_commodity(entity)?;
+        commodity.spec().consumable_profile
+    }
+
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+        let accessible =
+            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible
+            .then(|| self.world.direct_container(entity))
+            .flatten()
+    }
+
+    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+        let accessible =
+            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible
+            .then(|| self.world.possessor_of(entity))
+            .flatten()
+    }
+
+    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+        self.world
+            .get_component_carry_capacity(entity)
+            .map(|CarryCapacity(capacity)| *capacity)
+    }
+
+    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+        load_of_entity(self.world, entity).ok()
+    }
+
+    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .get_component_known_recipes(agent)
+            .map(|known| known.recipes.iter().copied().collect())
+            .unwrap_or_default()
+    }
+}
+
+impl FacilityBeliefView for PerAgentBeliefView<'_> {
+    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
+        if entity == self.agent {
+            return self
+                .world
+                .get_component_workstation_marker(entity)
+                .map(|marker| marker.0);
+        }
+
+        self.believed_entity(entity)
+            .and_then(|state| state.workstation_tag)
+    }
+
+    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+        if entity == self.agent {
+            return self.world.get_component_resource_source(entity).cloned();
+        }
+
+        self.believed_entity(entity)
+            .and_then(|state| state.resource_source.clone())
+    }
+
+    fn has_production_job(&self, entity: EntityId) -> bool {
+        self.world.has_component_production_job(entity)
+    }
+
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
+        self.knows_entity(facility)
+            .then(|| {
+                self.world
+                    .get_component_stock_storage_policy(facility)
+                    .cloned()
+            })
+            .flatten()
+    }
+
+    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| self.workstation_tag(*entity) == Some(tag))
+            .collect()
+    }
+
+    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| {
+                self.resource_source(*entity)
+                    .is_some_and(|source| source.commodity == commodity)
+            })
+            .collect()
+    }
+}
+
 crate::impl_goal_belief_view!(PerAgentBeliefView<'_>);
 
 #[cfg(test)]
@@ -1490,8 +1490,9 @@ mod tests {
     use crate::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
         ActionInstanceId, ActionPayload, ActionStatus, Constraint, ControlBeliefView, DurationExpr,
-        EntityBeliefView, GoalBeliefView, Interruptibility, Precondition, ProfileBeliefView,
-        ReservationReq, RuntimeBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
+        EntityBeliefView, FacilityBeliefView, GoalBeliefView, Interruptibility,
+        InventoryBeliefView, Precondition, ProfileBeliefView, ReservationReq, RuntimeBeliefView,
+        SpatialBeliefView, TargetSpec, TemporalBeliefView,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1761,7 +1762,7 @@ mod tests {
             Some(place)
         );
         assert_eq!(
-            RuntimeBeliefView::commodity_quantity(&view, agent, CommodityKind::Bread),
+            InventoryBeliefView::commodity_quantity(&view, agent, CommodityKind::Bread),
             world.controlled_commodity_quantity(agent, CommodityKind::Bread)
         );
         assert_eq!(
@@ -1771,7 +1772,7 @@ mod tests {
         assert!(!EntityBeliefView::is_alive(&view, other));
         assert!(EntityBeliefView::is_dead(&view, other));
         assert_eq!(
-            RuntimeBeliefView::commodity_quantity(&view, other, CommodityKind::Bread),
+            InventoryBeliefView::commodity_quantity(&view, other, CommodityKind::Bread),
             Quantity(7)
         );
         assert_eq!(
@@ -2498,7 +2499,7 @@ mod tests {
             "public route knowledge should include place identity"
         );
         assert!(
-            RuntimeBeliefView::matching_workstations_at(
+            FacilityBeliefView::matching_workstations_at(
                 &view,
                 remote_place,
                 WorkstationTag::OrchardRow
@@ -2507,12 +2508,18 @@ mod tests {
             "remote workstation discovery must not come from authoritative scans"
         );
         assert!(
-            RuntimeBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple)
+            FacilityBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple)
                 .is_empty(),
             "remote resource-source discovery must not come from authoritative scans"
         );
-        assert_eq!(RuntimeBeliefView::workstation_tag(&view, workstation), None);
-        assert_eq!(RuntimeBeliefView::resource_source(&view, workstation), None);
+        assert_eq!(
+            FacilityBeliefView::workstation_tag(&view, workstation),
+            None
+        );
+        assert_eq!(
+            FacilityBeliefView::resource_source(&view, workstation),
+            None
+        );
 
         let mut beliefs = AgentBeliefStore::new();
         beliefs.update_entity(
@@ -2544,7 +2551,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::matching_workstations_at(
+            FacilityBeliefView::matching_workstations_at(
                 &view,
                 remote_place,
                 WorkstationTag::OrchardRow
@@ -2552,15 +2559,15 @@ mod tests {
             vec![workstation]
         );
         assert_eq!(
-            RuntimeBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple),
+            FacilityBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple),
             vec![workstation]
         );
         assert_eq!(
-            RuntimeBeliefView::workstation_tag(&view, workstation),
+            FacilityBeliefView::workstation_tag(&view, workstation),
             Some(WorkstationTag::OrchardRow)
         );
         assert_eq!(
-            RuntimeBeliefView::resource_source(&view, workstation),
+            FacilityBeliefView::resource_source(&view, workstation),
             Some(ResourceSource {
                 commodity: CommodityKind::Apple,
                 available_quantity: Quantity(9),
@@ -3359,7 +3366,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(observer, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::locally_observed_commodity_quantity(
+            InventoryBeliefView::locally_observed_commodity_quantity(
                 &view,
                 observer,
                 holder,

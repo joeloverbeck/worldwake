@@ -606,8 +606,8 @@ mod tests {
         ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
         Constraint, ConsumableEffect, ControlBeliefView, DeterministicRng, DurationExpr,
-        Interruptibility, PerAgentBeliefView, Precondition, ReservationReq, SpatialBeliefView,
-        TargetSpec, TradeActionPayload,
+        Interruptibility, InventoryBeliefView, PerAgentBeliefView, Precondition, ReservationReq,
+        SpatialBeliefView, TargetSpec, TradeActionPayload,
     };
     use std::cell::Cell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -800,30 +800,6 @@ mod tests {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-            self.direct_possessions
-                .get(&holder)
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
-            self.known_recipes
-                .get(&actor)
-                .is_some_and(|recipes| recipes.contains(&recipe))
-        }
-
-        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
-            self.unique_items.get(&(holder, kind)).copied().unwrap_or(0)
-        }
-
-        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-            self.commodities
-                .get(&(holder, kind))
-                .copied()
-                .unwrap_or(Quantity(0))
-        }
-
         fn controlled_commodity_quantity_at_place(
             &self,
             actor: EntityId,
@@ -857,45 +833,6 @@ mod tests {
             entities.sort();
             entities.dedup();
             entities
-        }
-
-        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-            self.item_lot_commodities.get(&entity).copied()
-        }
-
-        fn item_lot_consumable_profile(
-            &self,
-            entity: EntityId,
-        ) -> Option<CommodityConsumableProfile> {
-            self.consumable_profiles.get(&entity).copied()
-        }
-
-        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-            self.direct_containers.get(&entity).copied()
-        }
-
-        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-            self.direct_possessors.get(&entity).copied()
-        }
-
-        fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
-            self.workstation_tags.get(&entity).copied()
-        }
-
-        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-            self.resource_sources.get(&entity).cloned()
-        }
-
-        fn has_production_job(&self, entity: EntityId) -> bool {
-            self.production_jobs.get(&entity).copied().unwrap_or(false)
-        }
-
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
-        }
-
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
         }
 
         fn has_wounds(&self, entity: EntityId) -> bool {
@@ -952,8 +889,86 @@ mod tests {
             None
         }
 
+        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+            self.demand_memories
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+            self.merchandise_profiles.get(&agent).cloned()
+        }
+    }
+
+    impl crate::InventoryBeliefView for StubBeliefView {
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
+            self.known_recipes
+                .get(&actor)
+                .is_some_and(|recipes| recipes.contains(&recipe))
+        }
+
+        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+            self.unique_items.get(&(holder, kind)).copied().unwrap_or(0)
+        }
+
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
+        }
+
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.item_lot_commodities.get(&entity).copied()
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            self.consumable_profiles.get(&entity).copied()
+        }
+
+        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_containers.get(&entity).copied()
+        }
+
+        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_possessors.get(&entity).copied()
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
         fn known_recipes(&self, actor: EntityId) -> Vec<RecipeId> {
             self.known_recipes.get(&actor).cloned().unwrap_or_default()
+        }
+    }
+
+    impl crate::FacilityBeliefView for StubBeliefView {
+        fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
+            self.workstation_tags.get(&entity).copied()
+        }
+
+        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+            self.resource_sources.get(&entity).cloned()
+        }
+
+        fn has_production_job(&self, entity: EntityId) -> bool {
+            self.production_jobs.get(&entity).copied().unwrap_or(false)
         }
 
         fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
@@ -978,17 +993,6 @@ mod tests {
                         .is_some_and(|source| source.commodity == commodity)
                 })
                 .collect()
-        }
-
-        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
-            self.demand_memories
-                .get(&agent)
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
-            self.merchandise_profiles.get(&agent).cloned()
         }
     }
 
