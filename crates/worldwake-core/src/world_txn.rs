@@ -6,7 +6,8 @@ use crate::{
     build_observed_entity_snapshot, component_schema::with_component_schema_entries,
 };
 use crate::{
-    CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta, EventLog, EventPayload,
+    BeliefStoreDiff, CauseRef, ComponentDelta, ComponentDiff, ComponentKind, ComponentValue,
+    EntityDelta, EventLog, EventPayload,
     EventTag, EvidenceRef, PendingEvent, ProvenanceEntry, QuantityDelta, RelationDelta,
     RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec, WitnessData,
 };
@@ -1039,12 +1040,46 @@ impl<'w> WorldTxn<'w> {
             let _ = remove(&mut self.staged_world, entity)?;
         }
         insert(&mut self.staged_world, entity, component.clone())?;
-        self.deltas.push(StateDelta::Component(ComponentDelta::Set {
-            entity,
-            component_kind,
-            before: before.map(&wrap),
-            after: wrap(component),
-        }));
+
+        // For AgentBeliefStore with a prior value, emit a compact structural
+        // diff instead of full before+after snapshots. This reduces per-event
+        // memory from ~300 KB to ~1-5 KB for belief store updates.
+        let delta = if component_kind == ComponentKind::AgentBeliefStore {
+            if let Some(before_val) = before {
+                let before_wrapped = wrap(before_val);
+                let after_wrapped = wrap(component);
+                match (&before_wrapped, &after_wrapped) {
+                    (
+                        ComponentValue::AgentBeliefStore(before_store),
+                        ComponentValue::AgentBeliefStore(after_store),
+                    ) => {
+                        let diff = BeliefStoreDiff::compute(before_store, after_store);
+                        ComponentDelta::CompactSet {
+                            entity,
+                            component_kind,
+                            diff: ComponentDiff::BeliefStore(diff),
+                        }
+                    }
+                    _ => unreachable!("AgentBeliefStore component_kind with non-AgentBeliefStore ComponentValue"),
+                }
+            } else {
+                // First-time set: no base state to diff against.
+                ComponentDelta::Set {
+                    entity,
+                    component_kind,
+                    before: None,
+                    after: wrap(component),
+                }
+            }
+        } else {
+            ComponentDelta::Set {
+                entity,
+                component_kind,
+                before: before.map(&wrap),
+                after: wrap(component),
+            }
+        };
+        self.deltas.push(StateDelta::Component(delta));
         Ok(())
     }
 
@@ -1937,7 +1972,8 @@ fn observed_evidence_entities(evidence: &EvidenceRef) -> BTreeSet<EntityId> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
+        AgentBeliefStore, BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim,
+        BlockedIntentMemory,
         CognitiveProfile, CommunicationProfile, DemandMemory, EpistemicDispositionProfile,
         ExecutionBudget, FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
         InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
@@ -1960,7 +1996,8 @@ mod tests {
         TickRange, Topology, UniqueItemKind, World, WorldError,
     };
     use crate::{
-        CarryCapacity, CauseRef, ComponentDelta, ComponentKind, ComponentValue, EntityDelta,
+        CarryCapacity, CauseRef, ComponentDelta, ComponentDiff, ComponentKind, ComponentValue,
+        EntityDelta,
         EventLog, EventTag, EventView, EvidenceRef, InTransitOnEdge, KnownRecipes, MismatchKind,
         QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
         TravelEdgeId, VisibilitySpec, WitnessData, WoundId,
@@ -2624,7 +2661,7 @@ mod tests {
         assert!(txn.deltas().iter().any(|delta| {
             matches!(
                 delta,
-                StateDelta::Component(ComponentDelta::Set {
+                StateDelta::Component(ComponentDelta::CompactSet {
                     entity,
                     component_kind: ComponentKind::AgentBeliefStore,
                     ..
@@ -2697,7 +2734,7 @@ mod tests {
         assert!(txn.deltas().iter().any(|delta| {
             matches!(
                 delta,
-                StateDelta::Component(ComponentDelta::Set {
+                StateDelta::Component(ComponentDelta::CompactSet {
                     entity,
                     component_kind: ComponentKind::AgentBeliefStore,
                     ..
@@ -4582,15 +4619,18 @@ mod tests {
         txn.set_component_agent_belief_store(agent, after.clone())
             .unwrap();
 
+        // Belief store updates emit CompactSet with a structural diff.
+        let expected_diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(
             txn.deltas(),
-            &[StateDelta::Component(ComponentDelta::Set {
+            &[StateDelta::Component(ComponentDelta::CompactSet {
                 entity: agent,
                 component_kind: ComponentKind::AgentBeliefStore,
-                before: Some(ComponentValue::AgentBeliefStore(before)),
-                after: ComponentValue::AgentBeliefStore(after.clone()),
+                diff: ComponentDiff::BeliefStore(expected_diff.clone()),
             })]
         );
+        // Verify roundtrip: applying the diff to `before` produces `after`.
+        assert_eq!(expected_diff.apply(&before), after);
 
         let mut log = EventLog::new();
         let event_id = txn.commit(&mut log);

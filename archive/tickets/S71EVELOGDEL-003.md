@@ -1,6 +1,6 @@
 # S71EVELOGDEL-003: Wire compact diff into `WorldTxn::replace_simple_component`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — delta emission path in `worldwake-core` world transaction
@@ -80,6 +80,26 @@ The existing early return at line 1034 (`if before.as_ref() == Some(&component) 
 
 ### Commands
 
-1. `cargo test -p worldwake-core world_txn` (targeted)
+1. `cargo test -p worldwake-core set_component_agent_belief_store` (targeted)
 2. `cargo test -p worldwake-core`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
+3. `cargo clippy -p worldwake-core --all-targets -- -D warnings`
+4. `cargo build --workspace`
+
+## Outcome
+
+Completed on 2026-04-08.
+
+- Specialized `replace_simple_component` in `world_txn.rs` to emit `ComponentDelta::CompactSet` when `component_kind == ComponentKind::AgentBeliefStore` and a prior value exists
+- First-time sets (no prior value) still emit `ComponentDelta::Set` with `before: None`
+- Updated 3 existing tests that asserted `ComponentDelta::Set` for belief store updates to expect `CompactSet`:
+  - `set_component_agent_belief_store_records_component_delta_and_updates_world_on_commit`
+  - `project_institutional_belief_records_component_delta_and_updates_world_on_commit`
+  - `replace_institutional_belief_overwrites_existing_key_and_updates_world_on_commit`
+- Added `BeliefStoreDiff` and `ComponentDiff` imports to `world_txn.rs` production and test code
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core set_component_agent_belief_store` — 1 test
+- Passed `cargo test -p worldwake-core` — 1030 tests
+- Passed `cargo clippy -p worldwake-core --all-targets -- -D warnings`
+- Passed `cargo build --workspace`
