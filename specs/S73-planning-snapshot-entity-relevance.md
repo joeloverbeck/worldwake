@@ -1,0 +1,109 @@
+# S73 — Planning Snapshot Entity Relevance
+
+## Motivation
+
+The GOAP planning snapshot (`PlanningSnapshot`) includes all entities an agent believes exist at places within `snapshot_travel_horizon` BFS hops. Over long simulations (10,000+ ticks), entities accumulate at places through lawful world processes — waste items from metabolism, produced goods, dropped possessions from dead agents, corpses, and traded commodities. None of these are ever pruned from the snapshot.
+
+Each GOAP node expansion calls `get_affordances_for_defs`, which iterates snapshot entities to find affordance targets. As the entity set grows, per-expansion cost grows linearly. Over 224 expansions per search, 2 searches per agent-tick, and 10,080 ticks, this creates a cumulative O(accumulated_entities × expansions × searches × ticks) cost that dominates wall-clock time in long-running soak tests.
+
+Profiling evidence from the `soak-seed-perf` campaign confirms: per-agent-tick planning cost increases 25x between early and late game (0.8ms → 20.7ms), tracking monotonically with event log length and entity accumulation.
+
+The current system cannot be fixed by tuning CognitiveProfile parameters — `max_node_expansions` and `snapshot_travel_horizon` are at their functional minimums (224 and 6 respectively; reducing either breaks golden tests). The root cause is architectural: the snapshot has no concept of entity relevance, so it includes everything.
+
+## Design
+
+### Goal-Aware Entity Inclusion
+
+Replace the current blanket `view.entities_at(place)` inclusion in `collect_entities` with a two-tier entity inclusion system:
+
+**Tier 1 — Always included (current behavior preserved):**
+- The actor entity
+- All evidence entities (goal-specific entities the candidate generation identified as relevant)
+- All places within travel horizon
+- All entities in the actor's direct possession chain (possessions, containers, possessors)
+
+**Tier 2 — Conditionally included (new filtering):**
+- Entities at places: included only if they pass a relevance predicate derived from the goal's `relevant_op_kinds()`:
+  - **Agents**: included if alive OR if the goal's relevant ops include `LootCorpse`
+  - **Workstations/Facilities**: always included (they're affordance infrastructure)
+  - **Offices**: always included (institutional targets)
+  - **Items**: included if the goal's relevant ops include `Consume`, `Trade`, `Craft`, `PickUp`, or `Equip`; excluded if the goal only involves `Travel`, `Attack`, `Tell`, `Ask`, or other non-item ops
+  - **Places**: always included (spatial navigation)
+
+The relevance predicate is derived from `GoalKind::relevant_op_kinds()`, which already exists and maps each goal kind to its relevant planner operation kinds. This keeps the filtering goal-aware without introducing new magic-number configuration.
+
+### Per-Place Entity Cap
+
+As a safety net against extreme accumulation, apply a per-place entity cap for Tier 2 entities after filtering. The cap is `max_snapshot_entities_per_place: u16`, a new field on `CognitiveProfile` (default: 50). When more than 50 filtered entities exist at a place, include only the 50 most recently observed (by `observed_tick` in the belief store). This ensures bounded worst-case snapshot size even for entity kinds that pass the relevance filter.
+
+### Implementation
+
+**Crate: worldwake-ai** (planning_snapshot.rs)
+
+1. Add a `SnapshotEntityFilter` struct that encodes the Tier 2 relevance predicate based on `relevant_op_kinds`.
+2. Modify `collect_entities` to accept a `SnapshotEntityFilter` and apply it to `entities_at(place)` results.
+3. Modify `build_planning_snapshot_with_blocked_facility_uses` to accept relevant op kinds and construct the filter.
+4. Modify `build_candidate_plans` (planning.rs) to pass the goal's relevant op kinds through to the snapshot builder.
+
+**Crate: worldwake-core** (cognitive_profile.rs)
+
+5. Add `max_snapshot_entities_per_place: u16` to `CognitiveProfile` (default: 50).
+
+### What This Does NOT Change
+
+- The belief store itself is unchanged — agents still accumulate observations through perception as before (Principle 14, 15, 16)
+- Authoritative world state is unchanged — items remain where they are (Principle 4)
+- The planning snapshot remains a derived view over belief state (Principle 27)
+- Goals that need dead agents (LootCorpse) or ground items (PickUp, Trade) still include them via op-kind filtering
+- The evidence entity set (Tier 1) is always included regardless of filtering, preserving goal-specific correctness
+
+## FND-01 Section H Analysis
+
+### H.1 Information-Path Analysis
+
+No information paths change. The planning snapshot is a derived computation from the agent's belief store (Principle 27). Filtering entities from the snapshot does not affect what the agent perceives, believes, remembers, or is told. The belief store continues to accumulate observations through the existing perception system (Principles 7, 14, 15).
+
+### H.2 Positive-Feedback Analysis
+
+**Identified loop**: More entities at places → larger planning snapshots → slower planning → more ticks spent planning vs. acting → potentially more idle accumulation.
+
+This is the loop this spec breaks. By capping snapshot entity inclusion, the positive feedback between entity accumulation and planning cost is dampened.
+
+### H.3 Concrete Dampeners
+
+The dampener is the per-place entity cap (`max_snapshot_entities_per_place`), which is a concrete per-agent parameter on `CognitiveProfile` (Principle 22 — agent diversity through concrete variation). It is not a naked numeric clamp on world state; it limits the agent's planning consideration set, analogous to bounded attention or working memory (Principle 20 — resource-bounded practical reasoning).
+
+### H.4 Stored State vs. Derived Read-Model
+
+| Item | Category |
+|------|----------|
+| `AgentBeliefStore` entity observations | Authoritative stored state (unchanged) |
+| `PlanningSnapshot` entity set | Derived read-model (filtered more strictly) |
+| `SnapshotEntityFilter` | Transient derived computation (per planning pass) |
+| `max_snapshot_entities_per_place` | Authoritative stored state (CognitiveProfile parameter) |
+
+## Principle Alignment
+
+| Principle | Alignment |
+|-----------|-----------|
+| P3 (Concrete State) | Entity cap is a concrete per-agent parameter, not an abstract score |
+| P12 (Performance May Compress Computation) | Snapshot filtering compresses what the planner considers, not what the world contains. Goals that need specific entity kinds still find them. |
+| P14 (World State ≠ Belief State) | Belief store unchanged; only the planner's working subset is narrowed |
+| P20 (Resource-Bounded Reasoning) | Bounded entity consideration is a form of bounded attention — architecturally coherent with resource-bounded practical reasoning |
+| P22 (Agent Diversity) | The cap is per-agent via CognitiveProfile, allowing different agents to have different planning capacity |
+| P26 (Systems Through State) | No cross-system coupling introduced |
+| P27 (Derived Summaries Are Caches) | Planning snapshot is explicitly a derived view, now with tighter derivation criteria |
+
+## Validation
+
+1. All existing golden tests pass (entity filtering preserves evidence entities and op-kind-relevant entities)
+2. `golden_loot_corpse_*` tests pass (dead agents included when goal uses LootCorpse op)
+3. Soak seed 0 planning cost does not grow superlinearly with tick count (the late-game spike is eliminated)
+4. Per-place entity cap does not change soak behavioral outcomes when set to 50 (safety margin above typical entity counts)
+
+## Scenario Profile Contract
+
+New field `max_snapshot_entities_per_place: u16` on `CognitiveProfile`:
+- **Universal**: yes (every agent has a CognitiveProfile)
+- **Default**: 50
+- **Scenario-definable**: yes (already part of `AgentDef` via CognitiveProfile)
