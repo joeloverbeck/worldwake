@@ -272,13 +272,28 @@ pub(super) fn build_candidate_plans(
             goal_key: ranked.grounded.key,
             anchor: ranked.grounded.anchor,
         };
+        // Apply search budget backoff for goals with 3+ consecutive exhaustion
+        // failures. Each failure beyond the 2nd halves the budget (floor 16).
+        // The first two retries use full budget to give goals a fair chance
+        // after conditions may have changed; subsequent retries reduce budget
+        // for chronically unsolvable goals.
+        let effective_cognitive = match exhaustion_cache.get(&opportunity) {
+            Some(entry) if entry.consecutive_failures >= 3 => {
+                let shift = u32::from(entry.consecutive_failures.saturating_sub(2).min(4));
+                let reduced = cognitive.max_node_expansions >> shift;
+                let mut c = *cognitive;
+                c.max_node_expansions = reduced.max(16);
+                c
+            }
+            _ => *cognitive,
+        };
         let result = search_plan(
             &snapshot,
             &ranked.grounded,
             semantics_table,
             action_defs,
             action_handlers,
-            cognitive,
+            &effective_cognitive,
             execution_budget,
             recipe_registry,
             blocked_memory,
@@ -398,17 +413,29 @@ fn try_continue_snapshot_plan(
         return None;
     }
 
-    let current_goal_still_top = ranked_candidates.first().is_some_and(|top| {
-        Some(top.grounded.key) == active_goal_key
-            && runtime.current_plan.as_ref().is_some_and(|plan| {
-                plan.opportunity
+    let plan = runtime.current_plan.as_ref()?;
+
+    // When the only change is homeostatic needs (which fluctuate every tick),
+    // accept continuation if the current goal is still in the top 2 ranked
+    // candidates. This prevents minor need fluctuations from triggering
+    // expensive GOAP search while ensuring the agent doesn't persist on
+    // a plan that has dropped far below the optimal priority.
+    let goal_acceptable = if runtime.dirty.is_needs_only() {
+        ranked_candidates.iter().take(2).any(|c| {
+            c.grounded.key == plan.opportunity.goal_key
+                && c.grounded.anchor == plan.opportunity.anchor
+        })
+    } else {
+        ranked_candidates.first().is_some_and(|top| {
+            Some(top.grounded.key) == active_goal_key
+                && plan.opportunity
                     == crate::OpportunityKey {
                         goal_key: top.grounded.key,
                         anchor: top.grounded.anchor,
                     }
-            })
-    });
-    if !current_goal_still_top {
+        })
+    };
+    if !goal_acceptable {
         return None;
     }
 
@@ -746,11 +773,18 @@ pub(super) fn plan_and_validate_next_step_traced(
 
     let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
     if should_plan {
-        if runtime.dirty.is_snapshot_only() && runtime.current_plan.is_some() {
-            let current_goal_still_top = ranked_candidates
-                .first()
-                .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
-            if current_goal_still_top && let Some(step) = current_step(runtime).cloned() {
+        if runtime.dirty.is_snapshot_only() && let Some(plan_for_trace) = runtime.current_plan.as_ref() {
+            let goal_acceptable = if runtime.dirty.is_needs_only() {
+                ranked_candidates.iter().take(2).any(|c| {
+                    c.grounded.key == plan_for_trace.opportunity.goal_key
+                        && c.grounded.anchor == plan_for_trace.opportunity.anchor
+                })
+            } else {
+                ranked_candidates.first().is_some_and(|top| {
+                    Some(top.grounded.key) == active_goal_key
+                })
+            };
+            if goal_acceptable && let Some(step) = current_step(runtime).cloned() {
                 let valid = revalidate_next_step(
                     &view,
                     agent,
@@ -2513,7 +2547,7 @@ mod tests {
     }
 
     #[test]
-    fn build_candidate_plans_uses_full_budget_for_retry_eligible_exhaustion_entry() {
+    fn build_candidate_plans_applies_budget_backoff_for_retry_eligible_exhaustion_entry() {
         let origin = entity(81);
         let market = entity(82);
         let mut world = World::new(cargo_topology(origin, market)).unwrap();
@@ -2548,6 +2582,8 @@ mod tests {
             goal_key: ranked_candidates[0].grounded.key,
             anchor: ranked_candidates[0].grounded.anchor,
         };
+        // 4 consecutive failures → backoff kicks in at 3+: shift = 4-2 = 2,
+        // effective budget = 128 >> 2 = 32
         let exhaustion_cache = BTreeMap::from([(
             opportunity,
             ExhaustionEntry {
@@ -2555,7 +2591,7 @@ mod tests {
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
                 next_retry_tick: Some(Tick(10)),
-                consecutive_failures: 2,
+                consecutive_failures: 4,
             },
         )]);
 
@@ -2569,15 +2605,13 @@ mod tests {
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
-                // Zero makes any hidden retry-budget override observable.
-                max_node_expansions: 0,
+                max_node_expansions: 128,
                 ..ProfileFixture::default()
             }),
             &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
-                // Zero makes any hidden retry-budget override observable.
-                max_node_expansions: 0,
+                max_node_expansions: 128,
                 ..ProfileFixture::default()
             }),
             &semantics,
@@ -2591,12 +2625,22 @@ mod tests {
 
         assert_eq!(plans.len(), 1);
         assert_eq!(plans[0].opportunity, opportunity);
+        // With 2 consecutive failures and base budget 128, effective budget is
+        // 128 >> 2 = 32. The search should exhaust at 32 expansions, not 128.
+        // With 4 consecutive failures and threshold 3, shift = 4-2 = 2,
+        // effective budget = 128 >> 2 = 32. The search may exhaust the frontier
+        // or budget at ≤32 expansions.
+        let expansions_used = match &plans[0].result {
+            PlanSearchResult::BudgetExhausted { expansions_used }
+            | PlanSearchResult::FrontierExhausted { expansions_used } => *expansions_used,
+            PlanSearchResult::Found(_) => 0,
+            PlanSearchResult::Unsupported => {
+                panic!("expected BudgetExhausted, FrontierExhausted, or Found, got Unsupported")
+            }
+        };
         assert!(
-            matches!(
-                plans[0].result,
-                PlanSearchResult::BudgetExhausted { expansions_used: 0 }
-            ),
-            "retry-eligible entries should receive the caller's exact max_node_expansions budget"
+            expansions_used <= 32,
+            "budget backoff should limit expansions to ≤32, got {expansions_used}"
         );
     }
 

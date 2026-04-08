@@ -141,6 +141,10 @@ pub struct AgentDecisionRuntime {
     #[serde(skip)]
     pub last_frame_clear_reason: Option<FrameClearReason>,
     pub step_in_flight: bool,
+    /// Set after dead-agent cleanup has run, so subsequent ticks can skip
+    /// the full `process_agent` path for dead agents.
+    #[serde(skip)]
+    pub dead_cleanup_done: bool,
     #[serde(skip)]
     pub dirty: DirtySet,
     #[serde(skip)]
@@ -469,6 +473,7 @@ mod tests {
                     (HypotheticalEntityId(6), entity(7)),
                 ]),
             },
+            dead_cleanup_done: false,
             exhaustion_cache: BTreeMap::from([(
                 OpportunityKey {
                     goal_key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
