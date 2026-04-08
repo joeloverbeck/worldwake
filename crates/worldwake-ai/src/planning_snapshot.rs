@@ -1075,7 +1075,9 @@ mod tests {
         TellMemoryKey, TellProfile, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
         UniqueItemKind, WorkstationTag, Wound,
     };
-    use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
+    use worldwake_sim::{
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RuntimeBeliefView,
+    };
 
     use crate::PlannerOpKind;
 
@@ -1137,6 +1139,20 @@ mod tests {
                 support_declaration_beliefs: BTreeMap::new(),
                 office_data: BTreeMap::new(),
             }
+        }
+    }
+
+    impl ControlBeliefView for StubBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            actor == entity
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.kinds.get(&entity) == Some(&EntityKind::Agent)
         }
     }
 
@@ -1229,10 +1245,6 @@ mod tests {
             self.direct_possessors.get(&entity).copied()
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -1257,14 +1269,6 @@ mod tests {
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-            actor == entity
-        }
-
-        fn has_control(&self, entity: EntityId) -> bool {
-            self.kinds.get(&entity) == Some(&EntityKind::Agent)
         }
 
         fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {

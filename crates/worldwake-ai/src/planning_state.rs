@@ -15,7 +15,8 @@ use worldwake_core::{
     ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit, to_shared_belief_snapshot,
 };
 use worldwake_sim::{
-    ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView, estimate_duration_from_beliefs,
+    ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RuntimeBeliefView,
+    estimate_duration_from_beliefs,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -1099,6 +1100,31 @@ impl PlanningState<'_> {
     }
 }
 
+impl ControlBeliefView for PlanningState<'_> {
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.owner)
+    }
+
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        actor == self.snapshot.actor()
+            && self
+                .snapshot
+                .entities
+                .get(&entity)
+                .is_some_and(|snapshot| snapshot.action_flags.controllable_by_actor)
+    }
+
+    fn has_control(&self, entity: EntityId) -> bool {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .is_some_and(|snapshot| snapshot.action_flags.has_control)
+    }
+}
+
 impl RuntimeBeliefView for PlanningState<'_> {
     fn current_tick(&self) -> worldwake_core::Tick {
         self.snapshot.current_tick
@@ -1350,13 +1376,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
             })
     }
 
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .and_then(|snapshot| snapshot.owner)
-    }
-
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
         self.snapshot
             .entities
@@ -1411,22 +1430,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .entities
             .get(&entity)
             .is_some_and(|snapshot| snapshot.action_flags.has_production_job)
-    }
-
-    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-        actor == self.snapshot.actor()
-            && self
-                .snapshot
-                .entities
-                .get(&entity)
-                .is_some_and(|snapshot| snapshot.action_flags.controllable_by_actor)
-    }
-
-    fn has_control(&self, entity: EntityId) -> bool {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .is_some_and(|snapshot| snapshot.action_flags.has_control)
     }
 
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
@@ -2041,9 +2044,9 @@ mod tests {
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
-        Constraint, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility, Precondition,
-        ReservationReq, RuntimeBeliefView, TargetSpec, estimate_duration_from_beliefs,
-        get_affordances,
+        Constraint, ControlBeliefView, DeterministicRng, DurationExpr, GoalBeliefView,
+        Interruptibility, Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
+        estimate_duration_from_beliefs, get_affordances,
     };
     use worldwake_systems::register_office_actions;
 
@@ -2145,6 +2148,20 @@ mod tests {
                 support_declaration_beliefs: BTreeMap::new(),
                 office_data: BTreeMap::new(),
             }
+        }
+    }
+
+    impl ControlBeliefView for StubBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            actor == entity || self.direct_possessor(entity) == Some(actor)
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.kinds.get(&entity) == Some(&EntityKind::Agent)
         }
     }
 
@@ -2260,10 +2277,6 @@ mod tests {
             self.direct_possessors.get(&entity).copied()
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -2284,14 +2297,6 @@ mod tests {
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-            actor == entity || self.direct_possessor(entity) == Some(actor)
-        }
-
-        fn has_control(&self, entity: EntityId) -> bool {
-            self.kinds.get(&entity) == Some(&EntityKind::Agent)
         }
 
         fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {

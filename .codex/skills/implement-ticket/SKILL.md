@@ -310,9 +310,11 @@ Typical order:
 - When a workspace-wide verification command fails on files outside the ticket's owned surface (e.g., untracked binaries, pre-existing lint failures), verify the failure is unrelated by running the same command scoped to the ticket's owned crates. Record the pre-existing failure and the scoped-pass result in the ticket Outcome. Do not fix unrelated failures as part of the ticket.
 - When broader verification fails on a golden in the same domain, action family, or planner path as the ticket's owned behavior, do one contract-level triage pass before labeling it unrelated: check whether the failure is stale setup only, a lower-layer production contradiction, or a real AI-pipeline mismatch. Only treat it as unrelated after that bounded triage.
 
-Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md):
+Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) as examples, but keep the owning verification boundary honest: when the affected surface lives in another workspace crate, prefer the equivalent narrow crate-scoped command first (for example `cargo test -p <affected-crate> <selector>`) before broadening.
 
 ```bash
+cargo test -p <affected-crate> <test_name>
+cargo test -p <affected-crate>
 cargo test -p worldwake-core <test_name>
 cargo test -p worldwake-core
 cargo test -p worldwake-ai

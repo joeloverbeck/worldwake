@@ -27,7 +27,7 @@ Derived from external gameplay assessment (`brainstorming/prioritary-gameplay-sy
 ### Dependency Graph
 
 ```text
-S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 ✅
+S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 ✅     S75 (independent, infra refactor)
      │                     │
      │                     ├── S61 (needs S60 for dens)
      ├── S63 (needs S59 ✅)│
@@ -50,6 +50,7 @@ S65 ─┘
 - **S62**: Boundary Processes and Remote Shocks — source regions, boundary channels, scheduled inflows, disruption mechanics
 - **S69**: ✅ COMPLETED — Goal Dispatch Consolidation — consolidated GoalFamilyPolicy and progress barrier ops into GoalDispatchDeclaration; expanded GoalDispatchKey with payload-aware ShareBelief/PostNotice variants
 - **S70**: Belief Store Query Encapsulation — add missing accessor/mutation methods to `AgentBeliefStore`, replace ~29 direct field accesses in `perception.rs` with API calls
+- **S75**: Belief View Domain Decomposition — decompose monolithic RuntimeBeliefView (~108 methods) into ~11 domain sub-traits via supertrait composition; restructure SnapshotEntity into matching domain sub-structs. Infrastructure refactor, no behavioral changes. Ticket PERCAPILEAK-001 seals one remaining S70 field-access gap.
 
 **Wave 2** (after Wave 1):
 - **S61**: Predator Ecology and Dens — predator agents with territory, hunger-driven roaming, den habitation, carcass/track evidence

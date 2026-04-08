@@ -22,6 +22,8 @@ Given a complex test suite, recover the as-built architecture of the exercised a
 
 **Optional**: `--prior-reports` — paths to earlier `missing-abstractions` or `architectural-abstractions` reports. The skill builds on previous analysis rather than rediscovering known issues.
 
+**Optional**: `--differential` — when the exercised module set has high overlap with a prior report (e.g., two tests that both short-circuit to all modules in the same crates), skip re-investigation of code paths already thoroughly covered and focus on code paths uniquely exercised or uniquely stressed by this test (e.g., save/load path, disruption injection). Auto-detected when overlap exceeds 80% of a prior report's module set.
+
 **Output**: Structured report at `reports/architectural-abstractions-<date>-<context>.md`. `<context>` is derived from the input: for a test file, strip the path prefix and `.rs` suffix; for a directory, use the directory name.
 
 ## Background
@@ -41,7 +43,7 @@ Starting from the test file(s), build a dependency graph of source modules:
 3. For each exercised source module, read its internal `use` and `mod` statements to add 1-2 levels of internal dependencies to the exercised set.
 4. Produce a deduplicated list of all source files exercised by the test suite. Exclude `lib.rs` barrel files and `mod.rs` files that only contain `mod` declarations.
 5. Read `docs/FOUNDATIONS.md` — hold it for Phase 6 validation. Do NOT apply it yet.
-6. Read any `prior_reports` if provided via `--prior-reports`. Also scan the `reports/` directory for existing `missing-abstractions-*` and `architectural-abstractions-*` reports matching the same test context. Treat discovered reports the same as explicitly provided ones — note already-identified issues to avoid rediscovery.
+6. Read any `prior_reports` if provided via `--prior-reports`. Also scan the `reports/` directory for existing `missing-abstractions-*` and `architectural-abstractions-*` reports matching the same test context. Additionally, scan for reports from related test contexts — test files that share the same harness setup, the same crate under test, or the same short-circuit scope (all modules in the same crates). Two test files that both exercise the entire `worldwake-ai` crate via `step_once()` loops produce overlapping coverage, so their reports are mutually relevant. Treat all discovered reports the same as explicitly provided ones — note already-identified issues to avoid rediscovery. If the exercised module set overlaps >80% with a prior report's scope, auto-activate `--differential` mode.
 7. Check for existing coverage/trace artifacts in the repo. Use them if present.
 8. Run bounded git history: `git log --since="6 months ago" --name-only` on exercised files to identify temporal coupling. From the output, group files by commit. For each commit, enumerate all cross-crate file pairs that changed together. Count how many commits each pair co-appears in. Report the top 20 cross-crate pairs with 3+ co-changes, ordered by frequency. Also report the crate-to-crate coupling matrix (total co-changing commits per crate pair).
 
@@ -79,6 +81,8 @@ Every later architectural inference must be tied back to scenario families. A fi
 
 **Soak/endurance tests**: When the test is a single function that runs the simulation for many ticks and checks invariants, derive scenario families from the invariant categories and emergence assertions rather than from test function boundaries. Each per-tick invariant check (e.g., conservation, needs bounds, unique placement) and each emergence threshold check (e.g., death, trade, political events) becomes a scenario family.
 
+**Resilience/chaos tests**: When the test injects external disruptions (kills, deletions, workstation removal, teleportation) and validates invariants hold despite them, derive scenario families from the disruption categories and the invariant categories they stress. The disruption injection protocol itself is a scenario family if it exercises a distinct code path (e.g., WorldTxn mutations distinct from normal system mutations). Similarly, serialization roundtrip tests (save/load mid-run with checkpoint hash comparison) form their own scenario family around the serialization boundary.
+
 **Sub-agent delegation**: For large test directories (>30 test files), delegate scenario extraction to 2-3 parallel Explore sub-agents, each handling a subset. Merge and deduplicate scenario families.
 
 ### Phase 3: TRACE
@@ -96,7 +100,7 @@ Each traceability link gets a confidence tag (high/medium/low) and a brief reaso
 
 The purpose of multi-strategy tracing is to catch hidden dependencies that `use` statements alone miss — trait dispatch, `SystemFn` registration, `register_action_handler` indirection, and temporal coupling are the most common sources of invisible links in this codebase.
 
-**After short-circuit**: When Phase 1's short-circuit determined all modules are exercised, skip the `use` statement and call graph strategies — they add no value when the answer is "everything is exercised." Focus Phase 3 on temporal coupling analysis (files that co-change across commits) and the confidence/reason-code tagging of module-to-scenario links. The traceability table still provides value by mapping modules to scenario families with confidence levels.
+**After short-circuit**: When Phase 1's short-circuit determined all modules are exercised, skip the `use` statement and call graph strategies — they add no value when the answer is "everything is exercised." Focus Phase 3 on temporal coupling analysis (files that co-change across commits) and the confidence/reason-code tagging of module-to-scenario links. The traceability table should focus on modules that are uniquely relevant to specific scenario families — modules that handle the test's distinctive code paths (e.g., save/load, disruption handling, invariant checking) rather than listing all exercised modules. A focused table of 10-15 key modules is more useful than an exhaustive listing of 200.
 
 ### Phase 4: DETECT FRACTURES
 
@@ -184,6 +188,8 @@ How many candidates survived validation?>
 | # | Fracture Type | Location | Evidence Sources | Severity |
 |---|--------------|----------|-----------------|----------|
 | 1 | <type> | <crates/modules involved> | <which signals> | HIGH/MEDIUM/LOW |
+
+If no new fractures are found, state this explicitly with an empty table. If prior reports identified fractures that this test also exercises, list them briefly below the table with status (unchanged / resolved / worsened) and a reference to the original report. Example: "Prior Fracture #1 (Overloaded abstraction, MEDIUM): RuntimeBeliefView — status unchanged, see golden-soak report."
 
 ## Candidate Abstractions
 

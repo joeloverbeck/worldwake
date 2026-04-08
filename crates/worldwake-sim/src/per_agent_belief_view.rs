@@ -1,6 +1,6 @@
 use crate::{
     ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
-    DurationExpr, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+    ControlBeliefView, DurationExpr, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
     estimate_duration_from_beliefs,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -348,6 +348,33 @@ fn adjusted_travel_ticks(
     NonZeroU32::new(effective_ticks).unwrap()
 }
 
+impl ControlBeliefView for PerAgentBeliefView<'_> {
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        let accessible =
+            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
+        accessible.then(|| self.world.owner_of(entity)).flatten()
+    }
+
+    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+        let accessible =
+            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
+        if !accessible {
+            return Vec::new();
+        }
+        self.world.effective_rights(actor, entity)
+    }
+
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        self.world.can_exercise_control(actor, entity).is_ok()
+    }
+
+    fn has_control(&self, entity: EntityId) -> bool {
+        self.world
+            .get_component_agent_data(entity)
+            .is_some_and(|agent_data| agent_data.control_source != ControlSource::None)
+    }
+}
+
 impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn current_tick(&self) -> Tick {
         self.current_tick
@@ -682,21 +709,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
-        accessible.then(|| self.world.owner_of(entity)).flatten()
-    }
-
-    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
-        let accessible =
-            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
-        if !accessible {
-            return Vec::new();
-        }
-        self.world.effective_rights(actor, entity)
-    }
-
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
         if entity == self.agent {
             return self
@@ -780,16 +792,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                     .cloned()
             })
             .flatten()
-    }
-
-    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-        self.world.can_exercise_control(actor, entity).is_ok()
-    }
-
-    fn has_control(&self, entity: EntityId) -> bool {
-        self.world
-            .get_component_agent_data(entity)
-            .is_some_and(|agent_data| agent_data.control_source != ControlSource::None)
     }
 
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
@@ -1478,8 +1480,9 @@ mod tests {
     use super::{PerAgentBeliefRuntime, PerAgentBeliefView};
     use crate::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionStatus, Constraint, DurationExpr, GoalBeliefView,
-        Interruptibility, Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
+        ActionInstanceId, ActionPayload, ActionStatus, Constraint, ControlBeliefView,
+        DurationExpr, GoalBeliefView, Interruptibility, Precondition, ReservationReq,
+        RuntimeBeliefView, TargetSpec,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -3255,7 +3258,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_owner_of(&view, lot),
+            ControlBeliefView::believed_owner_of(&view, lot),
             Some(agent)
         );
     }
@@ -3279,7 +3282,7 @@ mod tests {
         beliefs.update_entity(lot, entity_belief(place, true, 3, 10));
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        assert_eq!(RuntimeBeliefView::believed_owner_of(&view, lot), None);
+        assert_eq!(ControlBeliefView::believed_owner_of(&view, lot), None);
     }
 
     #[test]
@@ -3303,7 +3306,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        assert_eq!(RuntimeBeliefView::believed_owner_of(&view, lot), None);
+        assert_eq!(ControlBeliefView::believed_owner_of(&view, lot), None);
     }
 
     #[test]
@@ -3375,7 +3378,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_owner_of(&view, lot),
+            ControlBeliefView::believed_owner_of(&view, lot),
             Some(agent)
         );
     }
@@ -3400,7 +3403,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_rights(&view, agent, lot),
+            ControlBeliefView::believed_rights(&view, agent, lot),
             vec![EffectiveRight {
                 kind: RightKind::Ownership,
                 via: None,
@@ -3428,7 +3431,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert!(RuntimeBeliefView::believed_rights(&view, other, lot).is_empty());
+        assert!(ControlBeliefView::believed_rights(&view, other, lot).is_empty());
     }
 
     #[test]
@@ -3471,9 +3474,9 @@ mod tests {
         beliefs.update_entity(item, entity_belief(jurisdiction_place, true, 0, 2));
 
         let view = PerAgentBeliefView::new(observer, &world, &beliefs);
-        assert!(!RuntimeBeliefView::can_control(&view, holder, item));
+        assert!(!ControlBeliefView::can_control(&view, holder, item));
         assert_eq!(
-            RuntimeBeliefView::believed_rights(&view, holder, item),
+            ControlBeliefView::believed_rights(&view, holder, item),
             vec![EffectiveRight {
                 kind: RightKind::JurisdictionalAuthority,
                 via: Some(office),

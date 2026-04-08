@@ -1578,7 +1578,8 @@ mod tests {
         WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RuntimeBeliefView,
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RecipeDefinition,
+        RuntimeBeliefView,
     };
 
     #[derive(Clone, Default)]
@@ -1628,6 +1629,27 @@ mod tests {
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
+
+    impl ControlBeliefView for TestBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+            self.believed_rights
+                .get(&(actor, entity))
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
 
     impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
@@ -1738,15 +1760,6 @@ mod tests {
         fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-        fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
-            self.believed_rights
-                .get(&(actor, entity))
-                .cloned()
-                .unwrap_or_default()
-        }
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -1754,12 +1767,6 @@ mod tests {
             None
         }
         fn has_production_job(&self, _entity: EntityId) -> bool {
-            false
-        }
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-            false
-        }
-        fn has_control(&self, _entity: EntityId) -> bool {
             false
         }
         fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {

@@ -4833,7 +4833,7 @@ fn run_s51_autonomous_bounty_posting(seed: Seed) -> (StateHash, StateHash) {
             .expect("issuer should retain a belief store");
         let view = PerAgentBeliefView::new(issuer, &h.world, belief_store);
         let believed_rights =
-            worldwake_sim::RuntimeBeliefView::believed_rights(&view, issuer, accused);
+            worldwake_sim::ControlBeliefView::believed_rights(&view, issuer, accused);
         assert!(
             believed_rights.iter().any(|right| {
                 *right

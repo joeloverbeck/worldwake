@@ -354,13 +354,23 @@ pub trait GoalBeliefView {
     }
 }
 
+pub trait ControlBeliefView {
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
+    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+        let _ = (actor, entity);
+        Vec::new()
+    }
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool;
+    fn has_control(&self, entity: EntityId) -> bool;
+}
+
 /// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
 /// failure handling, and duration estimation.
 ///
 /// This trait is intentionally broader than `GoalBeliefView`. Callers should only depend on it
 /// when they truly need runtime-only helpers such as reservations, queue state, or duration
 /// estimation.
-pub trait RuntimeBeliefView {
+pub trait RuntimeBeliefView: ControlBeliefView {
     fn current_tick(&self) -> Tick {
         Tick(0)
     }
@@ -464,11 +474,6 @@ pub trait RuntimeBeliefView {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
-    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
-        let _ = (actor, entity);
-        Vec::new()
-    }
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
     fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
         let _ = facility;
@@ -509,8 +514,6 @@ pub trait RuntimeBeliefView {
     }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
     fn has_production_job(&self, entity: EntityId) -> bool;
-    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool;
-    fn has_control(&self, entity: EntityId) -> bool;
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits>;
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool;
@@ -987,7 +990,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::believed_owner_of(self, entity)
+                $crate::ControlBeliefView::believed_owner_of(self, entity)
             }
 
             fn believed_rights(
@@ -995,7 +998,7 @@ macro_rules! impl_goal_belief_view {
                 actor: worldwake_core::EntityId,
                 entity: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EffectiveRight> {
-                $crate::RuntimeBeliefView::believed_rights(self, actor, entity)
+                $crate::ControlBeliefView::believed_rights(self, actor, entity)
             }
 
             fn workstation_tag(
@@ -1037,7 +1040,7 @@ macro_rules! impl_goal_belief_view {
                 actor: worldwake_core::EntityId,
                 entity: worldwake_core::EntityId,
             ) -> bool {
-                $crate::RuntimeBeliefView::can_control(self, actor, entity)
+                $crate::ControlBeliefView::can_control(self, actor, entity)
             }
 
             fn stock_storage_policy(

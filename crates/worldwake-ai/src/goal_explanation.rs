@@ -65,8 +65,8 @@ mod tests {
         UtilityProfile, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, DurationExpr, RecipeRegistry, RuntimeBeliefView,
-        estimate_duration_from_beliefs,
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RecipeRegistry,
+        RuntimeBeliefView, estimate_duration_from_beliefs,
     };
 
     #[derive(Default)]
@@ -87,6 +87,21 @@ mod tests {
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
+
+    impl ControlBeliefView for TestBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            self.controlled_entities.contains(&entity)
+                || self.controllable.contains(&(actor, entity))
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.controlled_entities.contains(&entity)
+        }
+    }
 
     impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
@@ -182,10 +197,6 @@ mod tests {
             self.direct_possessors.get(&entity).copied()
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -220,15 +231,6 @@ mod tests {
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-            self.controlled_entities.contains(&entity)
-                || self.controllable.contains(&(actor, entity))
-        }
-
-        fn has_control(&self, entity: EntityId) -> bool {
-            self.controlled_entities.contains(&entity)
         }
 
         fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {

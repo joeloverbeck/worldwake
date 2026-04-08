@@ -252,7 +252,7 @@ mod tests {
         WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView,
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RuntimeBeliefView,
         estimate_duration_from_beliefs,
     };
 
@@ -264,6 +264,20 @@ mod tests {
     }
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
+
+    impl ControlBeliefView for TestBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
 
     impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, _entity: EntityId) -> bool {
@@ -349,10 +363,6 @@ mod tests {
             None
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -362,14 +372,6 @@ mod tests {
         }
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn has_control(&self, _entity: EntityId) -> bool {
             false
         }
 

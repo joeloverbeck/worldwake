@@ -458,7 +458,9 @@ mod tests {
         MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
-    use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
+    use worldwake_sim::{
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RuntimeBeliefView,
+    };
 
     /// Minimal mock for assumption tests.
     struct MockBeliefView {
@@ -478,6 +480,20 @@ mod tests {
     }
 
     worldwake_sim::impl_goal_belief_view!(MockBeliefView);
+
+    impl ControlBeliefView for MockBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
 
     impl RuntimeBeliefView for MockBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
@@ -541,9 +557,6 @@ mod tests {
         fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -551,12 +564,6 @@ mod tests {
             None
         }
         fn has_production_job(&self, _entity: EntityId) -> bool {
-            false
-        }
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-            false
-        }
-        fn has_control(&self, _entity: EntityId) -> bool {
             false
         }
         fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {

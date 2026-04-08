@@ -605,8 +605,9 @@ mod tests {
     use crate::{
         ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
-        Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
-        PerAgentBeliefView, Precondition, ReservationReq, TargetSpec, TradeActionPayload,
+        Constraint, ConsumableEffect, ControlBeliefView, DeterministicRng, DurationExpr,
+        Interruptibility, PerAgentBeliefView, Precondition, ReservationReq, TargetSpec,
+        TradeActionPayload,
     };
     use std::cell::Cell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -655,6 +656,23 @@ mod tests {
         wound_lists: BTreeMap<EntityId, Vec<Wound>>,
         believed_owners: BTreeMap<EntityId, EntityId>,
         entities_at_calls: Cell<u32>,
+    }
+
+    impl crate::ControlBeliefView for StubBeliefView {
+        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+            self.believed_owners.get(&entity).copied()
+        }
+
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            self.controllable
+                .get(&(actor, entity))
+                .copied()
+                .unwrap_or(false)
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.control.get(&entity).copied().unwrap_or(false)
+        }
     }
 
     impl crate::RuntimeBeliefView for StubBeliefView {
@@ -769,10 +787,6 @@ mod tests {
             self.direct_possessors.get(&entity).copied()
         }
 
-        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-            self.believed_owners.get(&entity).copied()
-        }
-
         fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
             self.workstation_tags.get(&entity).copied()
         }
@@ -783,17 +797,6 @@ mod tests {
 
         fn has_production_job(&self, entity: EntityId) -> bool {
             self.production_jobs.get(&entity).copied().unwrap_or(false)
-        }
-
-        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-            self.controllable
-                .get(&(actor, entity))
-                .copied()
-                .unwrap_or(false)
-        }
-
-        fn has_control(&self, entity: EntityId) -> bool {
-            self.control.get(&entity).copied().unwrap_or(false)
         }
 
         fn has_contention_policy(&self, entity: EntityId) -> bool {

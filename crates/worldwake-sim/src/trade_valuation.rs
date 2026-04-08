@@ -181,7 +181,7 @@ mod tests {
         TradeAcceptance, TradeRejectionReason, apply_bundle_changes, build_current_holdings,
         evaluate_trade_bundle, snapshot,
     };
-    use crate::{RecipeDefinition, RuntimeBeliefView, commodity_opportunity_score};
+    use crate::{ControlBeliefView, RecipeDefinition, RuntimeBeliefView, commodity_opportunity_score};
     use std::collections::BTreeMap;
     use std::num::NonZeroU8;
     use worldwake_core::{
@@ -204,6 +204,20 @@ mod tests {
         known_recipes: Vec<RecipeId>,
         recipe_definitions: BTreeMap<RecipeId, RecipeDefinition>,
         matching_workstations: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
+    }
+
+    impl ControlBeliefView for StubBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
     }
 
     impl RuntimeBeliefView for StubBeliefView {
@@ -291,10 +305,6 @@ mod tests {
             None
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -304,14 +314,6 @@ mod tests {
         }
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn has_control(&self, _entity: EntityId) -> bool {
             false
         }
 

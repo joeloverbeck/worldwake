@@ -731,6 +731,23 @@ impl AgentBeliefStore {
         }
         false
     }
+
+    /// Project a departed subject's believed place to a visible travel destination.
+    /// Returns `true` if the known entity existed and the projection was applied.
+    pub fn update_departure_projection(
+        &mut self,
+        id: &EntityId,
+        destination: EntityId,
+        observed_tick: Tick,
+    ) -> bool {
+        if let Some(belief) = self.known_entities.get_mut(id) {
+            belief.last_known_place = Some(destination);
+            belief.observed_tick = observed_tick;
+            belief.source = PerceptionSource::DirectObservation;
+            return true;
+        }
+        false
+    }
 }
 
 fn entity_claims_for_snapshot(
@@ -5162,6 +5179,27 @@ mod tests {
     fn clear_believed_activity_unknown_entity() {
         let mut store = AgentBeliefStore::new();
         assert!(!store.clear_believed_activity(&entity(99)));
+    }
+
+    #[test]
+    fn update_departure_projection_updates_known_entity() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(4);
+        let destination = entity(8);
+        store.known_entities.insert(id, sample_state(5, 1));
+
+        assert!(store.update_departure_projection(&id, destination, Tick(9)));
+
+        let belief = store.get_entity(&id).unwrap();
+        assert_eq!(belief.last_known_place, Some(destination));
+        assert_eq!(belief.observed_tick, Tick(9));
+        assert_eq!(belief.source, PerceptionSource::DirectObservation);
+    }
+
+    #[test]
+    fn update_departure_projection_unknown_entity() {
+        let mut store = AgentBeliefStore::new();
+        assert!(!store.update_departure_projection(&entity(99), entity(8), Tick(9)));
     }
 
     // ── BeliefStoreDiff tests ──────────────────────────────────────────

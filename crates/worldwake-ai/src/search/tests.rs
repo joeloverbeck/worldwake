@@ -33,9 +33,9 @@ use worldwake_core::{
     test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
-    ActionDefRegistry, ActionPayload, Affordance, DurationExpr, PerAgentBeliefView,
-    QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
-    TradeActionPayload, TransportActionPayload, estimate_duration_from_beliefs,
+    ActionDefRegistry, ActionPayload, Affordance, ControlBeliefView, DurationExpr,
+    PerAgentBeliefView, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
+    RuntimeBeliefView, TradeActionPayload, TransportActionPayload, estimate_duration_from_beliefs,
 };
 use worldwake_systems::build_full_action_registries;
 
@@ -210,6 +210,20 @@ impl Default for TestBeliefView {
     }
 }
 
+impl ControlBeliefView for TestBeliefView {
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        self.owners.get(&entity).copied()
+    }
+
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        self.controllable.contains(&(actor, entity))
+    }
+
+    fn has_control(&self, entity: EntityId) -> bool {
+        self.kinds.get(&entity) == Some(&EntityKind::Agent)
+    }
+}
+
 impl RuntimeBeliefView for TestBeliefView {
     fn current_tick(&self) -> Tick {
         self.current_tick
@@ -304,9 +318,6 @@ impl RuntimeBeliefView for TestBeliefView {
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
         self.direct_possessors.get(&entity).copied()
     }
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        self.owners.get(&entity).copied()
-    }
     fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
         None
     }
@@ -321,12 +332,6 @@ impl RuntimeBeliefView for TestBeliefView {
     }
     fn has_production_job(&self, _entity: EntityId) -> bool {
         false
-    }
-    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-        self.controllable.contains(&(actor, entity))
-    }
-    fn has_control(&self, entity: EntityId) -> bool {
-        self.kinds.get(&entity) == Some(&EntityKind::Agent)
     }
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
         self.carry_capacities.get(&entity).copied()

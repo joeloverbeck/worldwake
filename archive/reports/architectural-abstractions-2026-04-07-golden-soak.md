@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # Architectural Abstraction Recovery: golden-soak
 
 **Date**: 2026-04-07
@@ -164,3 +166,10 @@ Conservation checking (`verify_authoritative_conservation`) and event log causal
 - **Acceptable**: Action registration, system decoupling, affordance query, conservation/causal integrity, core-to-AI type dependencies — all architecturally sound.
 - **Needs investigation**: Tell-actions ↔ belief view coupling, core belief ↔ systems perception coupling — single-signal observations needing a second signal before action.
 - **Already identified (prior report)**: GoalDispatchDeclaration incomplete consolidation — acknowledged, not re-reported.
+
+## Outcome
+
+- Completion date: 2026-04-08
+- What actually changed: Archived this report after its actionable abstraction analysis was exploited.
+- Deviations from original plan: None. The report remains as a historical record and is no longer active planning material.
+- Verification results: Confirmed the report was marked completed before archival and moved into `archive/reports/`.

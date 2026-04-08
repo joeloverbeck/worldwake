@@ -45,11 +45,11 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
-    AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState, DeterministicRng,
-    DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView, RecipeDefinition,
-    RecipeRegistry, RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SystemDispatchTable,
-    SystemExecutionContext, SystemId, SystemManifest, TickStepServices, TransportActionPayload,
-    step_tick,
+    AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControlBeliefView,
+    ControllerState, DeterministicRng, DurationExpr, Materialization, MaterializationTag,
+    PerAgentBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SaveError,
+    SaveableRuntime, Scheduler, SystemDispatchTable, SystemExecutionContext, SystemId,
+    SystemManifest, TickStepServices, TransportActionPayload, step_tick,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -1512,6 +1512,20 @@ struct QueuePatienceBeliefView {
     patience_ticks: Option<NonZeroU32>,
 }
 
+impl ControlBeliefView for QueuePatienceBeliefView {
+    fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+        None
+    }
+
+    fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+        false
+    }
+
+    fn has_control(&self, _entity: EntityId) -> bool {
+        false
+    }
+}
+
 impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn is_alive(&self, _entity: EntityId) -> bool {
         true
@@ -1574,9 +1588,6 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
         None
     }
-    fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-        None
-    }
     fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
         None
     }
@@ -1602,12 +1613,6 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
         None
     }
     fn has_production_job(&self, _entity: EntityId) -> bool {
-        false
-    }
-    fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-        false
-    }
-    fn has_control(&self, _entity: EntityId) -> bool {
         false
     }
     fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {

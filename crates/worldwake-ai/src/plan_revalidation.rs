@@ -244,8 +244,8 @@ mod tests {
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, Constraint,
-        DeterministicRng, DurationExpr, Interruptibility, Precondition, RuntimeBeliefView,
-        TargetSpec, TransportActionPayload,
+        ControlBeliefView, DeterministicRng, DurationExpr, Interruptibility, Precondition,
+        RuntimeBeliefView, TargetSpec, TransportActionPayload,
     };
 
     #[derive(Default)]
@@ -262,6 +262,20 @@ mod tests {
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         pursuit_profiles: BTreeMap<EntityId, PursuitProfile>,
+    }
+
+    impl ControlBeliefView for TestBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_control(&self, _entity: EntityId) -> bool {
+            true
+        }
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -346,10 +360,6 @@ mod tests {
             None
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -360,14 +370,6 @@ mod tests {
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn has_control(&self, _entity: EntityId) -> bool {
-            true
         }
 
         fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {

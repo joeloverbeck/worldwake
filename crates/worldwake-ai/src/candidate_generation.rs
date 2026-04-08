@@ -4552,8 +4552,8 @@ mod tests {
         ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, DurationExpr, RecipeDefinition, RecipeRegistry,
-        RuntimeBeliefView, TellTopicOmissionReason,
+        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, RecipeDefinition,
+        RecipeRegistry, RuntimeBeliefView, TellTopicOmissionReason,
     };
 
     struct TestBeliefView {
@@ -4766,6 +4766,27 @@ mod tests {
 
     worldwake_sim::impl_goal_belief_view!(TestBeliefView);
 
+    impl ControlBeliefView for TestBeliefView {
+        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+            self.believed_owners.get(&entity).copied()
+        }
+
+        fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+            self.believed_rights
+                .get(&(actor, entity))
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            self.controllable.contains(&(actor, entity))
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.controlled_entities.contains(&entity)
+        }
+    }
+
     impl RuntimeBeliefView for TestBeliefView {
         fn current_tick(&self) -> Tick {
             self.current_tick
@@ -4933,17 +4954,6 @@ mod tests {
             self.direct_possessors.get(&entity).copied()
         }
 
-        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-            self.believed_owners.get(&entity).copied()
-        }
-
-        fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
-            self.believed_rights
-                .get(&(actor, entity))
-                .cloned()
-                .unwrap_or_default()
-        }
-
         fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
             self.workstation_tags.get(&entity).copied()
         }
@@ -4954,14 +4964,6 @@ mod tests {
 
         fn has_production_job(&self, entity: EntityId) -> bool {
             self.production_jobs.contains(&entity)
-        }
-
-        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-            self.controllable.contains(&(actor, entity))
-        }
-
-        fn has_control(&self, entity: EntityId) -> bool {
-            self.controlled_entities.contains(&entity)
         }
 
         fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {

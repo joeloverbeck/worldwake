@@ -975,8 +975,9 @@ mod tests {
         ActionDefRegistry, ActionDuration, ActionPayload, BribeActionPayload,
         ConsultRecordActionPayload, DeclareSupportActionPayload, DurationExpr, MaterializationTag,
         PressForceClaimActionPayload, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
-        RuntimeBeliefView, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload, YieldForceClaimActionPayload, estimate_duration_from_beliefs,
+        ControlBeliefView, RuntimeBeliefView, TellActionPayload, ThreatenActionPayload,
+        TradeActionPayload, TransportActionPayload, YieldForceClaimActionPayload,
+        estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -1120,6 +1121,20 @@ mod tests {
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
     }
 
+    impl ControlBeliefView for TestBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            actor == entity || self.direct_possessor(entity) == Some(actor)
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+    }
+
     impl RuntimeBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.contains(&entity)
@@ -1205,10 +1220,6 @@ mod tests {
             self.direct_possessors.get(&entity).copied()
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -1219,14 +1230,6 @@ mod tests {
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-            actor == entity || self.direct_possessor(entity) == Some(actor)
-        }
-
-        fn has_control(&self, entity: EntityId) -> bool {
-            self.kinds.get(&entity) == Some(&EntityKind::Agent)
         }
 
         fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {

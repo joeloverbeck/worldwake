@@ -1010,7 +1010,8 @@ mod tests {
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
         ActionStartFailureReason, CombatActionPayload, CraftActionPayload,
-        DeclareSupportActionPayload, DurationExpr, InterruptReason, ReplanNeeded,
+        ControlBeliefView, DeclareSupportActionPayload, DurationExpr, InterruptReason,
+        ReplanNeeded,
         RequestAttemptTrace, RequestBindingKind, RequestProvenance, ResolvedRequestTrace,
         RuntimeBeliefView, TradeActionPayload,
     };
@@ -1037,6 +1038,20 @@ mod tests {
         listed_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         lot_sellers: BTreeMap<EntityId, EntityId>,
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
+    }
+
+    impl ControlBeliefView for TestBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            true
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.entity_kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
     }
 
     impl RuntimeBeliefView for TestBeliefView {
@@ -1113,9 +1128,6 @@ mod tests {
         fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -1125,13 +1137,6 @@ mod tests {
         fn has_production_job(&self, entity: EntityId) -> bool {
             self.production_jobs.contains(&entity)
         }
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-            true
-        }
-        fn has_control(&self, entity: EntityId) -> bool {
-            self.entity_kinds.get(&entity) == Some(&EntityKind::Agent)
-        }
-
         fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
             None
         }
