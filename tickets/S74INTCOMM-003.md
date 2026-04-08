@@ -15,7 +15,7 @@ With the margin-based plan continuation in place (S74INTCOMM-002), golden tests 
 1. `golden_merchant_selling` at `crates/worldwake-ai/tests/golden_merchant_selling.rs` contains multiple scenarios. `loose_home_stock_is_staged_before_sell_goal_settles` is still plausibly margin-sensitive because it depends on need-driven switching, but `combined_market_trip_selected_for_side_benefit` is no longer owned here after S74INTCOMM-002 review.
 2. Soak-seed-perf campaign at `campaigns/soak-seed-perf/program.md` with binary harness at `crates/worldwake-ai/src/bin/soak_seed_perf.rs`. Seeds 0-4 rotation. The spec's motivation is reducing full planning passes from ~10,000 per agent over 10,000 ticks. The margin should significantly reduce this without introducing seed-specific regressions.
 3. All golden tests in `crates/worldwake-ai/tests/golden_*.rs` must pass. The margin change is global (every agent with a CognitiveProfile gets it), so all golden tests are potentially affected, not just `golden_merchant_selling`.
-4. S74INTCOMM-002 broad verification exposed `combined_market_trip_selected_for_side_benefit` and its replay twin as failures on the `DirtySet::PLAN_FINISHED` full-replan path in `crates/worldwake-ai/src/agent_tick/active_action.rs`, not on snapshot-only continuation. That production-side branch-stability contradiction is owned by S74INTCOMM-005 and must not be papered over here with test-only margin overrides.
+4. S74INTCOMM-002 broad verification exposed `combined_market_trip_selected_for_side_benefit` and its replay twin as a production-side branch-stability contradiction during in-progress replanning, not on snapshot-only continuation. S74INTCOMM-005 owns and resolves that engine path, so this ticket must not paper over it with test-only margin overrides.
 5. If a remaining golden genuinely needs margin adjustment, prefer per-agent `planning_switch_margin` overrides or stronger need pressure only when the test is proving rapid goal switching under need pressure rather than a separate production contract.
 
 ## Architecture Check
@@ -65,7 +65,7 @@ If any other golden test fails, apply the same analysis: determine whether the t
 ## Out of Scope
 
 - Modifying the margin comparison logic itself (S74INTCOMM-002)
-- Fixing the `PLAN_FINISHED` side-benefit branch-stability regression in `combined_market_trip_selected_for_side_benefit` (S74INTCOMM-005)
+- Fixing the in-progress replanning side-benefit branch-stability regression in `combined_market_trip_selected_for_side_benefit` (S74INTCOMM-005)
 - Changing the default `planning_switch_margin` value (that's a CognitiveProfile default in worldwake-core)
 - Performance optimization beyond what the margin provides (future work)
 - Adjusting non-golden test helpers (already done in S74INTCOMM-001)

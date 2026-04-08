@@ -29,6 +29,8 @@ When the ticket was authored by `/spec-to-tickets` in the current session from a
 
 When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), treat the audit as reassessment. Record findings in the reassessment section. If a gap is confirmed, auto-correct `Engine Changes`, `What to Change`, and `Files to Touch` before coding. If no gap exists, close with a reassessment-only Outcome documenting the audit trail.
 
+If focused traces, regression tests, or lower-layer proofs falsify the current implementation hypothesis after coding has already started, stop and reassess immediately. Restate the live boundary, update the ticket sections that define owned scope, remove stale partial edits from the disproved approach, and only then continue implementation. Do not carry a stale hypothesis forward just because code already exists.
+
 #### Reference and baseline validation
 
 - Referenced files, types, functions, modules, commands, and tests exist.
@@ -39,6 +41,7 @@ When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), tre
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
 - Described architecture still matches live code.
 - Stated coverage gaps are real and correctly classified.
+- When reassessment changes the live root cause or owned surface, update all ticket sections that encode scope and proof, not just problem prose: `Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Acceptance Criteria`, and `Test Plan`.
 - When replacing inline code with a delegation to data populated by a prior ticket, verify line-by-line that the prior ticket's data captures every branch of the original code. Staged migrations risk silent behavior loss if the data ticket was incomplete.
 
 #### Golden-specific reassessment
@@ -54,6 +57,7 @@ When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), tre
 - When the ticket adds candidate generation or goal model integration for a domain that already has golden coverage (e.g., Care, Combat, Expectation), run the existing golden suites for that domain as part of reassessment, before implementation begins. This catches cross-goal interference early — a new candidate emitter can cause goal-switching collisions with existing goal families for the same target entity.
 - When a golden ticket proposes specific GoalKind pairs to exercise a contention, planning, or action-lifecycle invariant, verify that each goal's declared ops (in `goal_dispatch_decl.rs`) include the required PlannerOpKind. If the goal family lacks the required op, correct the ticket's domain before coding.
 - When the ticket claims a specific scenario ID is free, verify by scanning all `golden_*.rs` files for that ID before accepting it. Update the ticket if the ID is already taken.
+- For planner continuity or same-goal branch-stability bugs, triage in this order before choosing a fix shape: is the committed branch absent from candidate generation, removed by a snapshot/read filter, reordered behind interleaved goals, or rejected later by search/start validation? Fix the earliest concrete layer that loses the branch; do not jump straight to continuity memory or downstream replanning glue.
 
 #### Shared type, serialization, and persisted-shape sweep
 

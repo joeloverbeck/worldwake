@@ -217,6 +217,7 @@ pub(super) fn build_candidate_plans(
     scheduler: &Scheduler,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
+    committed_opportunity: Option<OpportunityKey>,
     blocked_memory: &BlockedIntentMemory,
     current_tick: Tick,
     cognitive: &CognitiveProfile,
@@ -243,6 +244,8 @@ pub(super) fn build_candidate_plans(
             )
         })
         .collect();
+    let admitted_candidates =
+        prioritize_same_goal_replan_candidates(admitted_candidates, committed_opportunity);
     let candidates_to_plan: Vec<_> = admitted_candidates
         .into_iter()
         .take(usize::from(cognitive.max_candidates_to_plan))
@@ -327,6 +330,41 @@ pub(super) fn build_candidate_plans(
         }
     }
     results
+}
+
+fn prioritize_same_goal_replan_candidates(
+    candidates: Vec<&RankedGoal>,
+    committed_opportunity: Option<OpportunityKey>,
+) -> Vec<&RankedGoal> {
+    let Some(committed_opportunity) = committed_opportunity else {
+        return candidates;
+    };
+    if !candidates.iter().any(|candidate| {
+        candidate.grounded.key == committed_opportunity.goal_key
+            && candidate.grounded.anchor == committed_opportunity.anchor
+    }) {
+        return candidates;
+    }
+
+    let mut preferred = Vec::new();
+    let mut same_goal = Vec::new();
+    let mut rest = Vec::new();
+
+    for candidate in candidates {
+        let opportunity = OpportunityKey {
+            goal_key: candidate.grounded.key,
+            anchor: candidate.grounded.anchor,
+        };
+        if opportunity == committed_opportunity {
+            preferred.push(candidate);
+        } else if candidate.grounded.key == committed_opportunity.goal_key {
+            same_goal.push(candidate);
+        } else {
+            rest.push(candidate);
+        }
+    }
+
+    preferred.into_iter().chain(same_goal).chain(rest).collect()
 }
 
 fn opportunity_admitted_by_exhaustion(
@@ -643,6 +681,11 @@ pub(super) fn plan_and_validate_next_step(
         // A second read view covers plan selection and step validation after the active-action fork.
         let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
         let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
+        let committed_opportunity = runtime
+            .current_plan
+            .as_ref()
+            .map(|plan| plan.opportunity)
+            .filter(|opportunity| Some(opportunity.goal_key) == active_goal_key);
         let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
         if should_plan {
             if let Some(step) = try_continue_snapshot_plan(
@@ -671,6 +714,7 @@ pub(super) fn plan_and_validate_next_step(
                 scheduler,
                 agent,
                 ranked_candidates,
+                committed_opportunity,
                 blocked_memory,
                 tick,
                 cognitive,
@@ -888,6 +932,14 @@ pub(super) fn plan_and_validate_next_step_traced(
             scheduler,
             agent,
             ranked_candidates,
+            runtime
+                .current_plan
+                .as_ref()
+                .map(|plan| plan.opportunity)
+                .filter(|opportunity| {
+                    Some(opportunity.goal_key)
+                        == active_goal.as_ref().map(|active_goal| active_goal.goal_key)
+                }),
             blocked_memory,
             tick,
             cognitive,
@@ -1706,6 +1758,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
             &cognitive(&budget),
@@ -1790,6 +1843,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
             &cognitive(&budget),
@@ -1823,6 +1877,83 @@ mod tests {
         assert!(
             !matches!(plans[1].result, PlanSearchResult::Unsupported),
             "the later sibling opportunity should still be searched rather than suppressed before search"
+        );
+    }
+
+    #[test]
+    fn committed_opportunity_clusters_same_goal_siblings_ahead_of_interleaved_goals() {
+        let market = entity(23);
+        let origin = entity(24);
+        let inn = entity(25);
+        let bread_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let ranked_candidates = [
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(inn),
+                BTreeSet::new(),
+                BTreeSet::from([inn]),
+            )),
+            ranked_goal(GroundedGoal {
+                key: GoalKey::from(GoalKind::SellCommodity {
+                    commodity: CommodityKind::Firewood,
+                }),
+                anchor: OpportunityAnchor::Place(market),
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::from([market]),
+            }),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(market),
+                BTreeSet::new(),
+                BTreeSet::from([market]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(origin),
+                BTreeSet::new(),
+                BTreeSet::from([origin]),
+            )),
+        ];
+
+        let prioritized = super::prioritize_same_goal_replan_candidates(
+            ranked_candidates.iter().collect(),
+            Some(OpportunityKey {
+                goal_key: bread_goal,
+                anchor: OpportunityAnchor::Place(market),
+            }),
+        );
+
+        assert_eq!(
+            prioritized
+                .iter()
+                .map(|candidate| OpportunityKey {
+                    goal_key: candidate.grounded.key,
+                    anchor: candidate.grounded.anchor,
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                OpportunityKey {
+                    goal_key: bread_goal,
+                    anchor: OpportunityAnchor::Place(market),
+                },
+                OpportunityKey {
+                    goal_key: bread_goal,
+                    anchor: OpportunityAnchor::Place(inn),
+                },
+                OpportunityKey {
+                    goal_key: bread_goal,
+                    anchor: OpportunityAnchor::Place(origin),
+                },
+                OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::SellCommodity {
+                        commodity: CommodityKind::Firewood,
+                    }),
+                    anchor: OpportunityAnchor::Place(market),
+                },
+            ]
         );
     }
 
@@ -1889,6 +2020,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
             &cognitive(&budget),
@@ -2246,6 +2378,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
             &cognitive(&ProfileFixture {
@@ -2405,6 +2538,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
             &cognitive(&budget),
@@ -2811,6 +2945,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
             &cognitive(&ProfileFixture {
@@ -2918,6 +3053,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
             &cognitive(&ProfileFixture {
@@ -2998,6 +3134,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
             &cognitive(&ProfileFixture {
