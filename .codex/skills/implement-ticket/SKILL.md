@@ -232,6 +232,7 @@ Do not assume every schema macro reference needs a new import — verify actual 
 
 - Verify whether the live architecture uses forwarding macros, blanket impls, or paired runtime traits. Correct the ticket if the implementation boundary is broader than the prose.
 - When reassessment exposes multiple ownership shapes for a new API, decide the shape before broad implementation.
+- When a widely used helper or wrapper appears to need a signature change, verify whether it is actually the live production boundary or mainly a test/unfiltered convenience surface. If only a narrower production entry point needs the new behavior, prefer widening that path and preserving the broader helper unchanged rather than mechanically churning all callers.
 
 #### Staged work
 

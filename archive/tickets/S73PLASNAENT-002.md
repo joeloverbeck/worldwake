@@ -1,6 +1,6 @@
 # S73PLASNAENT-002: Goal-aware entity filtering in planning snapshot
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — worldwake-ai planning snapshot construction, snapshot builder signatures
@@ -22,12 +22,15 @@ Planning snapshot entity accumulation causes O(accumulated_entities) per-expansi
 8. `BelievedEntityState.alive` at `belief.rs:1285` exists — usable for agent alive check in filter.
 9. `build_planning_snapshot` (non-blocked variant, line 780) has ~240 call sites across 10 files — almost all in tests. These must accept a filter parameter. Providing `SnapshotEntityFilter::unfiltered()` preserves existing test behavior with minimal call-site changes.
 10. `build_planning_snapshot` is re-exported from `lib.rs:93` — signature change affects the public API of the `worldwake-ai` crate (crate-internal only, no external consumers).
+11. Reassessment correction: the live production path only widens `build_planning_snapshot_with_blocked_facility_uses` from `agent_tick/planning.rs`. Keeping the plain `build_planning_snapshot(...)` helper unfiltered and unchanged is the cleaner boundary because it avoids mass-updating ~240 test call sites that are not part of the production integration path. This is safe because the new filtering behavior is only supposed to become live when candidate planning threads goal-relevant ops and `cognitive.max_snapshot_entities_per_place` into the blocked-facility snapshot builder.
+12. `build_planning_snapshot_with_blocked_facility_uses(...)` currently has only four live callers: the production call in `agent_tick/planning.rs` and three focused tests in `search/tests.rs`. Those are the only required signature updates for this ticket.
+13. `RuntimeBeliefView::known_entity_beliefs(agent)` already exposes `BelievedEntityState.observed_tick`, so per-place cap recency ordering can be implemented from the actor's known beliefs without widening the trait surface.
 
 ## Architecture Check
 
 1. The filter is a transient derived computation (per planning pass), not stored state — aligns with P27. It is constructed from `relevant_op_kinds()` which already exists as the goal's declared planner operation set.
 2. No cross-system coupling — the filter reads `EntityKind` (worldwake-core) and `PlannerOpKind` (worldwake-ai internal). Both are already in scope at the snapshot construction site.
-3. No backward-compatibility shims. All callers are updated. Test callers use `SnapshotEntityFilter::unfiltered()`.
+3. No backward-compatibility shims. The plain unfiltered helper remains the existing test-facing contract; only the blocked-facility production path is widened to make the new behavior live where the planner actually constructs candidate snapshots.
 
 ## Verification Layers
 
@@ -37,10 +40,9 @@ Planning snapshot entity accumulation causes O(accumulated_entities) per-expansi
 4. Tier 2 filtering excludes dead agents when goal has no `Loot` op -> focused unit test
 5. Tier 2 filtering includes dead agents when goal has `Loot` op -> focused unit test
 6. Tier 2 filtering excludes records/artifacts when goal has no institutional ops -> focused unit test
-7. Per-place cap limits entities and prefers most recently observed -> focused unit test
-8. Per-place cap tie-breaking by EntityId is deterministic -> focused unit test
-9. All golden tests pass (correctness preservation) -> `cargo test -p worldwake-ai`
-10. `golden_loot_corpse_*` tests pass (dead agent inclusion for Loot goals) -> golden E2E
+7. Per-place cap limits entities and preserves deterministic recency ordering (`observed_tick` desc, `EntityId` desc) -> focused unit tests
+8. All golden tests pass (correctness preservation) -> `cargo test -p worldwake-ai`
+9. `golden_loot_corpse_*` tests pass (dead agent inclusion for Loot goals) -> golden E2E
 
 ## What to Change
 
@@ -64,7 +66,7 @@ Add a `fn includes(&self, kind: EntityKind, alive: bool) -> bool` method impleme
 
 ### 2. Modify collect_entities
 
-Change signature to accept `filter: &SnapshotEntityFilter` and `max_per_place: u16` and `view` (for observed_tick lookups).
+Change signature to accept `filter: SnapshotEntityFilter` and `max_per_place: u16` and `view` (for observed_tick lookups).
 
 Replace the blanket `included.extend(view.entities_at(*place))` (line 878) with:
 1. Collect `view.entities_at(*place)` into a temporary vec.
@@ -74,19 +76,17 @@ Replace the blanket `included.extend(view.entities_at(*place))` (line 878) with:
 
 The containment walk (lines 881-898) remains unchanged — it operates on whatever was included.
 
-### 3. Modify PlanningSnapshot::build and build_with_blocked_facility_uses
+### 3. Modify PlanningSnapshot::build_with_blocked_facility_uses
 
-Add `filter: &SnapshotEntityFilter` and `max_per_place: u16` parameters to both `PlanningSnapshot::build` and `PlanningSnapshot::build_with_blocked_facility_uses`. Thread them to `collect_entities`.
+Add `filter: SnapshotEntityFilter` and `max_per_place: u16` parameters to `PlanningSnapshot::build_with_blocked_facility_uses` and thread them to `collect_entities`.
+
+Keep `PlanningSnapshot::build` and the public `build_planning_snapshot(...)` helper as the unfiltered convenience path used by tests and helper code.
 
 ### 4. Modify public wrapper functions
 
-Update `build_planning_snapshot` (line 780) and `build_planning_snapshot_with_blocked_facility_uses` (line 797) signatures to accept `relevant_ops: &[PlannerOpKind]` and `max_per_place: u16`. Construct the `SnapshotEntityFilter` internally from `relevant_ops`.
+Keep `build_planning_snapshot(...)` unchanged as the unfiltered helper.
 
-For `build_planning_snapshot` specifically, also provide a convenience that test callers can use. Options:
-- Add `relevant_ops` and `max_per_place` parameters with test callers passing `&[]` and `u16::MAX` (unfiltered equivalent). OR
-- Keep the old signature as `build_planning_snapshot_unfiltered` for tests.
-
-Recommendation: add the parameters to both public functions. Test call sites pass `&[]` (empty ops = unfiltered via `SnapshotEntityFilter::from_relevant_ops(&[])` which should return unfiltered) and `u16::MAX` (effectively no cap). This is a mechanical find-and-replace across test sites.
+Update only `build_planning_snapshot_with_blocked_facility_uses(...)` to accept `relevant_ops: &[PlannerOpKind]` and `max_per_place: u16`, and construct the `SnapshotEntityFilter` internally from `relevant_ops`.
 
 ### 5. Thread from build_candidate_plans
 
@@ -117,15 +117,14 @@ let snapshot = build_planning_snapshot_with_blocked_facility_uses(
 
 This requires importing `GoalKindPlannerExt` trait if not already in scope.
 
-### 6. Update all test call sites
+### 6. Update blocked-facility test call sites
 
-Grep for `build_planning_snapshot(` and `build_planning_snapshot_with_blocked_facility_uses(` across `worldwake-ai`. Update each call to include the two new parameters (`&[]` and `u16::MAX` for unfiltered tests, or goal-specific ops for filter-exercising tests).
-
-Files with call sites (from grep): `planning_state.rs` (~40), `planning_snapshot.rs` (~17), `goal_model.rs` (~71 — includes non-call-site matches), `search/tests.rs` (~100), `planner_ops.rs` (~3), `agent_tick/tests.rs` (~1), `golden_offices.rs` (~2), `golden_care.rs` (~3), `planner_conformance.rs` (~2).
+Update the three focused `build_planning_snapshot_with_blocked_facility_uses(...)` call sites in `search/tests.rs` to pass explicit `relevant_ops` and `max_per_place` values.
 
 ### 7. Add focused unit tests for the filter
 
 Add tests in `planning_snapshot.rs` `#[cfg(test)]` module:
+- `snapshot_entity_filter_derives_item_and_institutional_flags` — verifies filter derivation and the unfiltered empty-op fallback for blocked-facility test callers.
 - `snapshot_filter_excludes_items_for_travel_only_goal` — set up entities at a place with mixed kinds, filter with `relevant_ops = &[PlannerOpKind::Travel]`, verify `ItemLot`/`UniqueItem` excluded.
 - `snapshot_filter_includes_items_for_trade_goal` — filter with ops including `Trade`, verify items included.
 - `snapshot_filter_excludes_dead_agents_without_loot` — dead agent at place, filter without `Loot`, verify excluded.
@@ -133,8 +132,7 @@ Add tests in `planning_snapshot.rs` `#[cfg(test)]` module:
 - `snapshot_filter_excludes_records_without_institutional_ops` — filter with `Travel` only, verify `Record`/`SocialArtifact`/`Faction` excluded.
 - `snapshot_filter_includes_records_with_institutional_ops` — filter with `ConsultRecord`, verify included.
 - `snapshot_per_place_cap_limits_entities` — place with 60 items, cap at 50, verify only 50 included.
-- `snapshot_per_place_cap_prefers_recent` — entities with different `observed_tick`, verify most recent kept.
-- `snapshot_per_place_cap_tiebreak_by_entity_id` — same `observed_tick`, verify deterministic EntityId ordering.
+- `snapshot_per_place_cap_prefers_recent_and_tiebreaks_by_entity_id` — verifies both recency ordering and deterministic same-tick `EntityId` ordering.
 - `snapshot_filter_always_includes_evidence_entities` — evidence entity is an item, filter excludes items, verify evidence entity still included (Tier 1).
 - `snapshot_filter_containment_walk_includes_inventory` — agent included, their possessed items should be in snapshot even if items filtered at place level.
 
@@ -142,14 +140,7 @@ Add tests in `planning_snapshot.rs` `#[cfg(test)]` module:
 
 - `crates/worldwake-ai/src/planning_snapshot.rs` (modify — add `SnapshotEntityFilter`, modify `collect_entities`, modify `build`/`build_with_blocked_facility_uses`, update test call sites, add new tests)
 - `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — thread `relevant_op_kinds()` and `max_snapshot_entities_per_place`)
-- `crates/worldwake-ai/src/planning_state.rs` (modify — update test call sites)
-- `crates/worldwake-ai/src/goal_model.rs` (modify — update test call sites)
 - `crates/worldwake-ai/src/search/tests.rs` (modify — update test call sites)
-- `crates/worldwake-ai/src/planner_ops.rs` (modify — update test call sites)
-- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — update test call sites)
-- `crates/worldwake-ai/tests/golden_offices.rs` (modify — update test call sites)
-- `crates/worldwake-ai/tests/golden_care.rs` (modify — update test call sites)
-- `crates/worldwake-ai/tests/planner_conformance.rs` (modify — update test call sites)
 
 ## Out of Scope
 
@@ -165,7 +156,7 @@ Add tests in `planning_snapshot.rs` `#[cfg(test)]` module:
 
 ### Tests That Must Pass
 
-1. All new focused unit tests for `SnapshotEntityFilter` (11 tests listed in What to Change section 7)
+1. All new focused unit tests for `SnapshotEntityFilter` and per-place capping (11 tests listed in What to Change section 7)
 2. All existing `planning_snapshot` tests pass with unfiltered parameters
 3. All golden tests: `cargo test -p worldwake-ai --test golden_emergent`
 4. `golden_loot_corpse_self_care_chain` passes (dead agent included for Loot goal)
@@ -175,7 +166,7 @@ Add tests in `planning_snapshot.rs` `#[cfg(test)]` module:
 ### Invariants
 
 1. Tier 1 entities (actor, evidence, places, possession chain) are always included regardless of filter settings
-2. `SnapshotEntityFilter::from_relevant_ops(&[])` (empty ops) produces unfiltered behavior — all entity kinds included
+2. The plain `build_planning_snapshot(...)` helper remains the unfiltered path used by existing tests and helper code
 3. The containment walk is unaffected by the filter — possessed items of included entities are always reachable
 4. Per-place cap `u16::MAX` effectively disables capping
 5. Planning snapshot remains a derived view over belief state (P27) — no stored filter state
@@ -192,10 +183,10 @@ Add tests in `planning_snapshot.rs` `#[cfg(test)]` module:
 5. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_filter_excludes_records_without_institutional_ops` — verifies record/artifact exclusion
 6. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_filter_includes_records_with_institutional_ops` — verifies record/artifact inclusion
 7. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_per_place_cap_limits_entities` — verifies cap enforcement
-8. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_per_place_cap_prefers_recent` — verifies recency ordering
-9. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_per_place_cap_tiebreak_by_entity_id` — verifies deterministic tiebreak
-10. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_filter_always_includes_evidence_entities` — verifies Tier 1 preservation
-11. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_filter_containment_walk_includes_inventory` — verifies possession walk unaffected
+8. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_per_place_cap_prefers_recent_and_tiebreaks_by_entity_id` — verifies recency ordering and deterministic tiebreak
+9. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_filter_always_includes_evidence_entities` — verifies Tier 1 preservation
+10. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_filter_containment_walk_includes_inventory` — verifies possession walk unaffected
+11. `crates/worldwake-ai/src/planning_snapshot.rs::snapshot_entity_filter_derives_item_and_institutional_flags` — verifies filter derivation and empty-op fallback
 
 ### Commands
 
@@ -203,5 +194,25 @@ Add tests in `planning_snapshot.rs` `#[cfg(test)]` module:
 2. `cargo test -p worldwake-ai -- snapshot_per_place_cap`
 3. `cargo test -p worldwake-ai --test golden_emergent -- golden_loot_corpse`
 4. `cargo test -p worldwake-ai`
-5. `cargo test --workspace`
-6. `cargo clippy --workspace --all-targets -- -D warnings`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-08.
+
+- Added `SnapshotEntityFilter` in `crates/worldwake-ai/src/planning_snapshot.rs` and applied goal-aware Tier 2 filtering at the `entities_at(place)` collection point before the containment walk.
+- Added per-place capping based on the actor's `known_entity_beliefs(actor)` recency metadata, keeping the most recent beliefs by `observed_tick` and breaking ties by descending `EntityId`.
+- Kept the plain `build_planning_snapshot(...)` helper unfiltered for the large existing test/helper surface, and widened only `build_planning_snapshot_with_blocked_facility_uses(...)` plus the production call in `crates/worldwake-ai/src/agent_tick/planning.rs` and the three focused `crates/worldwake-ai/src/search/tests.rs` callers.
+- Added eleven focused `planning_snapshot.rs` tests covering filter derivation, item/dead-agent/institutional inclusion rules, Tier 1 evidence preservation, containment-walk preservation, and cap ordering.
+
+## Deviations
+
+- Reassessment narrowed the API fallout from the original draft. The ticket initially proposed changing both public snapshot builders and updating ~240 plain `build_planning_snapshot(...)` call sites; the live code only required widening the blocked-facility snapshot path that candidate planning actually uses.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai -- snapshot_filter`
+- Passed `cargo test -p worldwake-ai -- snapshot_per_place_cap`
+- Passed `cargo test -p worldwake-ai --test golden_emergent -- golden_loot_corpse`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

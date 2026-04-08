@@ -3857,6 +3857,8 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         ProfileFixture::default().snapshot_travel_horizon,
         &blocked,
         Tick(3),
+        goal.key.kind.relevant_op_kinds(),
+        u16::MAX,
     );
     let queue_def = fixture
         .registry
@@ -3926,6 +3928,8 @@ fn search_trace_records_blocked_facility_use_root_filter() {
         ProfileFixture::default().snapshot_travel_horizon,
         &blocked,
         Tick(3),
+        goal.key.kind.relevant_op_kinds(),
+        u16::MAX,
     );
     let queue_def = fixture
         .registry
@@ -4052,6 +4056,8 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         ProfileFixture::default().snapshot_travel_horizon,
         &blocked,
         Tick(3),
+        goal.key.kind.relevant_op_kinds(),
+        u16::MAX,
     );
 
     let plan = search_plan(

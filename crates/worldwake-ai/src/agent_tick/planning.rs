@@ -5,6 +5,7 @@ use crate::decision_trace::{
     SelectedPlanSource, SelectedPlanTrace, SelectionTrace, SideBenefitTrace,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
+use crate::GoalKindPlannerExt;
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::search::PlanSearchResult;
 use crate::{
@@ -267,6 +268,8 @@ pub(super) fn build_candidate_plans(
             cognitive.snapshot_travel_horizon,
             blocked_memory,
             current_tick,
+            ranked.grounded.key.kind.relevant_op_kinds(),
+            cognitive.max_snapshot_entities_per_place,
         );
         let opportunity = OpportunityKey {
             goal_key: ranked.grounded.key,
