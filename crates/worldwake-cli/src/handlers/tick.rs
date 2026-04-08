@@ -232,6 +232,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
         let spawned = spawn_scenario(&def).unwrap();
         let agent_id = spawned
@@ -294,6 +295,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
         let spawned = spawn_scenario(&def).unwrap();
         let agent_id = spawned

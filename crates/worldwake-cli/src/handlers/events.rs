@@ -300,6 +300,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         }
     }
 

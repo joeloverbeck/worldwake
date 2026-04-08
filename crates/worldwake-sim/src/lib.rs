@@ -7,6 +7,7 @@ mod action_termination;
 mod action_validation;
 
 pub mod action_def;
+pub mod compaction;
 pub mod action_def_registry;
 pub mod action_duration;
 pub mod action_execution;
@@ -142,6 +143,7 @@ pub use social_relay::{
     listener_aware_tell_topic_selection, relayable_social_subjects, relayable_tell_topics,
 };
 pub use start_gate::start_action;
+pub use compaction::compact_event_log;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
 pub use tick_action::{TickOutcome, tick_action};

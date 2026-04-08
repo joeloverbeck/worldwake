@@ -1,6 +1,6 @@
 # S72EVELOGEPO-002: Scenario config and compaction SystemFn
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new SystemFn for event log compaction; ScenarioDef gains compaction_interval
@@ -159,3 +159,28 @@ Check `crates/worldwake-sim/Cargo.toml` for `bincode`. If missing, add it. world
 2. `cargo test -p worldwake-cli` (targeted)
 3. `cargo clippy --workspace --all-targets -- -D warnings`
 4. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-08.
+
+- Added `SystemId::Compaction` variant to `define_system_ids!` macro in `system_manifest.rs`
+- Added `Compaction` as the last entry in `SystemManifest::canonical()` (runs after all game systems)
+- Created `crates/worldwake-sim/src/compaction.rs` with `compact_event_log` SystemFn (4 unit tests)
+- Re-exported `compact_event_log` from `worldwake-sim` crate root
+- Registered `compact_event_log` in `dispatch_table()` in `worldwake-systems/src/lib.rs`
+- Added `compaction_interval: u32` field with `#[serde(default = "default_compaction_interval")]` (default: 50) to `ScenarioDef`
+- Wired `event_log.set_compaction_interval(def.compaction_interval)` in `assemble_state()`
+- Updated 28 test `ScenarioDef` struct literals across 8 files with `compaction_interval: 0`
+- Updated `system_manifest.rs` tests: `system_id_display_is_stable`, `system_id_all_matches_canonical_variant_order`, `canonical_manifest_matches_fixed_scheduler_order`
+
+Auto-corrections:
+- Ticket says `system_id.rs` / live code has `system_manifest.rs` — corrected; `SystemId` is defined via macro in `system_manifest.rs`
+- Ticket says dispatch table in `system_dispatch.rs` / live code has positional handler array in `worldwake-systems/src/lib.rs` — corrected; handler added there
+- Ticket says new `compaction.rs` module — confirmed as correct location in `worldwake-sim`
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-sim -- compaction` (4 focused tests)
+- Passed `cargo clippy --workspace --all-targets -- -D warnings` (clean)
+- Passed `cargo test --workspace` (all suites, 0 failures, 443 sim tests)

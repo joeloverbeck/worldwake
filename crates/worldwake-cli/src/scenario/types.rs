@@ -32,6 +32,14 @@ pub struct ScenarioDef {
     pub facilities: Vec<FacilityDef>,
     #[serde(default)]
     pub resource_sources: Vec<ResourceSourceDef>,
+    /// Ticks between checkpoint snapshots for event log compaction.
+    /// Default: 50. Set to 0 to disable compaction.
+    #[serde(default = "default_compaction_interval")]
+    pub compaction_interval: u32,
+}
+
+fn default_compaction_interval() -> u32 {
+    50
 }
 
 /// A place in the world graph.
