@@ -12,7 +12,7 @@ use worldwake_ai::{
     OpportunityKey, PlanTerminalKind, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    BeliefConfidencePolicy, CommodityKind, FrameState, HomeostaticNeeds,
+    BeliefConfidencePolicy, CognitiveProfile, CommodityKind, FrameState, HomeostaticNeeds,
     IntentionDispositionProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
     ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag, prototype_place_entity,
     total_live_lot_quantity,
@@ -1350,6 +1350,14 @@ fn golden_goal_switching_during_multi_leg_travel() {
                 commitment_switch_margin: pm(0),
                 domain_patience: std::collections::BTreeMap::new(),
                 default_patience_ticks: nz(4),
+            },
+        )
+        .unwrap();
+        txn.set_component_cognitive_profile(
+            agent,
+            CognitiveProfile {
+                planning_switch_margin: pm(0),
+                ..CognitiveProfile::default()
             },
         )
         .unwrap();

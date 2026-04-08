@@ -62,7 +62,8 @@ pub use decision_trace::{
     RootOperatorOmissionDetail, RootOperatorOmissionReason, RootOperatorOmissionTrace,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace, SocialCandidateOmission, TravelPruningTrace,
+    SelectedPlanTrace, SelectionTrace, SnapshotContinuationOutcome,
+    SnapshotContinuationTrace, SocialCandidateOmission, TravelPruningTrace,
     TravelSuccessorTrace, ViolationDetectionOmission, ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;

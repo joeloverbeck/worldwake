@@ -893,6 +893,9 @@ pub struct SelectionTrace {
     /// Explicit plan replacement summary when a fresh search displaces the
     /// current branch.
     pub plan_replacement: Option<SelectedPlanReplacementTrace>,
+    /// Snapshot-continuation comparison summary when the planner evaluated
+    /// whether to retain the current branch without a fresh search.
+    pub snapshot_continuation: Option<SnapshotContinuationTrace>,
 }
 
 impl SelectionTrace {
@@ -965,6 +968,39 @@ pub enum SelectedPlanSource {
     SearchSelection,
     RetainedCurrentPlan,
     SnapshotContinuation,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SnapshotContinuationOutcome {
+    ContinuedAsTopRanked,
+    ContinuedWithinMargin,
+    ReplannedHigherPriorityClass,
+    ReplannedMarginExceeded,
+    ReplannedCurrentOpportunityMissing,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotContinuationTrace {
+    pub current_opportunity: OpportunityKey,
+    pub current_priority_class: Option<GoalPriorityClass>,
+    pub current_motive_score: Option<u32>,
+    pub top_opportunity: Option<OpportunityKey>,
+    pub top_priority_class: Option<GoalPriorityClass>,
+    pub top_motive_score: Option<u32>,
+    pub planning_switch_margin: Permille,
+    pub motive_delta: Option<u32>,
+    pub outcome: SnapshotContinuationOutcome,
+}
+
+impl SnapshotContinuationTrace {
+    #[must_use]
+    pub const fn continues_plan(&self) -> bool {
+        matches!(
+            self.outcome,
+            SnapshotContinuationOutcome::ContinuedAsTopRanked
+                | SnapshotContinuationOutcome::ContinuedWithinMargin
+        )
+    }
 }
 
 /// Summary of a goal switch event.
@@ -2129,6 +2165,7 @@ mod tests {
                     goal_switch: None,
                     previous_goal: None,
                     plan_replacement: None,
+                    snapshot_continuation: None,
                 },
                 execution: ExecutionTrace {
                     enqueued_step: None,
@@ -2688,6 +2725,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -2737,6 +2775,7 @@ mod tests {
             goal_switch: None,
             previous_goal: None,
             plan_replacement: None,
+            snapshot_continuation: None,
         };
 
         assert_eq!(selection.selected_goal(), Some(goal));
@@ -2749,6 +2788,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             }
             .selected_goal_is(goal)
         );
@@ -2911,6 +2951,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -2992,6 +3033,7 @@ mod tests {
                     new_next_step: None,
                     kind: SelectedPlanReplacementKind::SameGoalSiblingReplaced,
                 }),
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3065,6 +3107,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3128,6 +3171,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3192,6 +3236,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3256,6 +3301,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3314,6 +3360,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3382,6 +3429,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3462,6 +3510,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3534,6 +3583,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3623,6 +3673,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -3728,6 +3779,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -4029,6 +4081,7 @@ mod tests {
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             },
             execution: ExecutionTrace {
                 enqueued_step: None,
@@ -4215,6 +4268,7 @@ mod tests {
                     goal_switch: None,
                     previous_goal: None,
                     plan_replacement: None,
+                    snapshot_continuation: None,
                 },
                 execution: ExecutionTrace {
                     enqueued_step: None,

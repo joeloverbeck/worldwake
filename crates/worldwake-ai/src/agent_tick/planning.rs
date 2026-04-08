@@ -3,6 +3,7 @@ use crate::decision_trace::{
     PlannedStepSummary, RankedGoalSummary, SameGoalPlanningStopReason, SameGoalPlanningTrace,
     SelectedPlanReplacementKind, SelectedPlanReplacementTrace, SelectedPlanSearchProvenance,
     SelectedPlanSource, SelectedPlanTrace, SelectionTrace, SideBenefitTrace,
+    SnapshotContinuationOutcome, SnapshotContinuationTrace,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::GoalKindPlannerExt;
@@ -405,11 +406,69 @@ pub(super) fn selection_candidates(plans: &[CandidatePlanSearch]) -> Vec<Selecti
         .collect()
 }
 
+fn ranked_goal_for_opportunity(
+    ranked_candidates: &[RankedGoal],
+    opportunity: OpportunityKey,
+) -> Option<&RankedGoal> {
+    ranked_candidates.iter().find(|candidate| {
+        candidate.grounded.key == opportunity.goal_key && candidate.grounded.anchor == opportunity.anchor
+    })
+}
+
+fn summarize_snapshot_continuation(
+    current_opportunity: OpportunityKey,
+    ranked_candidates: &[RankedGoal],
+    planning_switch_margin: Permille,
+) -> SnapshotContinuationTrace {
+    let top = ranked_candidates.first();
+    let current = ranked_goal_for_opportunity(ranked_candidates, current_opportunity);
+    let top_opportunity = top.map(|ranked| OpportunityKey {
+        goal_key: ranked.grounded.key,
+        anchor: ranked.grounded.anchor,
+    });
+    let motive_delta = top.zip(current).map(|(top, current)| {
+        top.motive_score.saturating_sub(current.motive_score)
+    });
+
+    let outcome = match (top, current) {
+        (_, None) | (None, Some(_)) => {
+            SnapshotContinuationOutcome::ReplannedCurrentOpportunityMissing
+        }
+        (Some(top), Some(_))
+            if top_opportunity == Some(current_opportunity) =>
+        {
+            SnapshotContinuationOutcome::ContinuedAsTopRanked
+        }
+        (Some(top), Some(current)) if top.priority_class > current.priority_class => {
+            SnapshotContinuationOutcome::ReplannedHigherPriorityClass
+        }
+        (Some(top), Some(current))
+            if top.motive_score
+                >= current.motive_score + u32::from(planning_switch_margin.value()) =>
+        {
+            SnapshotContinuationOutcome::ReplannedMarginExceeded
+        }
+        (Some(_), Some(_)) => SnapshotContinuationOutcome::ContinuedWithinMargin,
+    };
+
+    SnapshotContinuationTrace {
+        current_opportunity,
+        current_priority_class: current.map(|ranked| ranked.priority_class),
+        current_motive_score: current.map(|ranked| ranked.motive_score),
+        top_opportunity,
+        top_priority_class: top.map(|ranked| ranked.priority_class),
+        top_motive_score: top.map(|ranked| ranked.motive_score),
+        planning_switch_margin,
+        motive_delta,
+        outcome,
+    }
+}
+
 fn try_continue_snapshot_plan(
     view: &impl RuntimeBeliefView,
     runtime: &mut AgentDecisionRuntime,
     ranked_candidates: &[RankedGoal],
-    active_goal_key: Option<worldwake_core::GoalKey>,
+    planning_switch_margin: Permille,
     agent: worldwake_core::EntityId,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
@@ -419,28 +478,12 @@ fn try_continue_snapshot_plan(
     }
 
     let plan = runtime.current_plan.as_ref()?;
-
-    // When the only change is homeostatic needs (which fluctuate every tick),
-    // accept continuation if the current goal is still in the top 2 ranked
-    // candidates. This prevents minor need fluctuations from triggering
-    // expensive GOAP search while ensuring the agent doesn't persist on
-    // a plan that has dropped far below the optimal priority.
-    let goal_acceptable = if runtime.dirty.is_needs_only() {
-        ranked_candidates.iter().take(2).any(|c| {
-            c.grounded.key == plan.opportunity.goal_key
-                && c.grounded.anchor == plan.opportunity.anchor
-        })
-    } else {
-        ranked_candidates.first().is_some_and(|top| {
-            Some(top.grounded.key) == active_goal_key
-                && plan.opportunity
-                    == crate::OpportunityKey {
-                        goal_key: top.grounded.key,
-                        anchor: top.grounded.anchor,
-                    }
-        })
-    };
-    if !goal_acceptable {
+    let continuation = summarize_snapshot_continuation(
+        plan.opportunity,
+        ranked_candidates,
+        planning_switch_margin,
+    );
+    if !continuation.continues_plan() {
         return None;
     }
 
@@ -606,7 +649,7 @@ pub(super) fn plan_and_validate_next_step(
                 &view,
                 runtime,
                 ranked_candidates,
-                active_goal_key,
+                cognitive.planning_switch_margin,
                 agent,
                 action_defs,
                 action_handlers,
@@ -766,7 +809,6 @@ pub(super) fn plan_and_validate_next_step_traced(
 
     // Traced path: inline the logic to capture intermediate results.
     let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
-    let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     let mut plan_search_trace = PlanSearchTrace {
         attempts: Vec::new(),
         same_goal_trace: None,
@@ -778,23 +820,20 @@ pub(super) fn plan_and_validate_next_step_traced(
         goal_switch: None,
         previous_goal,
         plan_replacement: None,
+        snapshot_continuation: None,
     };
     let mut plan_continued = false;
 
     let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
     if should_plan {
         if runtime.dirty.is_snapshot_only() && let Some(plan_for_trace) = runtime.current_plan.as_ref() {
-            let goal_acceptable = if runtime.dirty.is_needs_only() {
-                ranked_candidates.iter().take(2).any(|c| {
-                    c.grounded.key == plan_for_trace.opportunity.goal_key
-                        && c.grounded.anchor == plan_for_trace.opportunity.anchor
-                })
-            } else {
-                ranked_candidates.first().is_some_and(|top| {
-                    Some(top.grounded.key) == active_goal_key
-                })
-            };
-            if goal_acceptable && let Some(step) = current_step(runtime).cloned() {
+            let continuation = summarize_snapshot_continuation(
+                plan_for_trace.opportunity,
+                ranked_candidates,
+                cognitive.planning_switch_margin,
+            );
+            selection_trace.snapshot_continuation = Some(continuation.clone());
+            if continuation.continues_plan() && let Some(step) = current_step(runtime).cloned() {
                 let valid = revalidate_next_step(
                     &view,
                     agent,
@@ -1058,15 +1097,18 @@ pub(super) fn plan_search_result_to_trace(
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidatePlanSearch, has_pending_budget_retry, record_exhausted_goals, selected_plan_value,
-        summarize_ranked_goal, summarize_selected_plan,
+        CandidatePlanSearch, has_pending_budget_retry, record_exhausted_goals,
+        selected_plan_value, summarize_ranked_goal, summarize_selected_plan,
+        summarize_snapshot_continuation,
     };
     use crate::{
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
         OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
         PlannedStep, ProfileFixture, RankedGoal, build_semantics_table,
-        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
+        decision_trace::{
+            CompetitionDiscount, SnapshotContinuationOutcome, SourceReliabilityDiscount,
+        },
         feasibility::FeasibilityHint,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -1294,6 +1336,27 @@ mod tests {
         }
     }
 
+    fn ranked_goal_with_score(
+        opportunity: OpportunityKey,
+        priority_class: GoalPriorityClass,
+        motive_score: u32,
+    ) -> RankedGoal {
+        RankedGoal {
+            grounded: GroundedGoal {
+                key: opportunity.goal_key,
+                anchor: opportunity.anchor,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+            },
+            priority_class,
+            motive_score,
+            provenance: None,
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: FeasibilityHint::Likely,
+        }
+    }
+
     #[test]
     fn summarize_ranked_goal_preserves_competition_discount() {
         let goal = acquire_goal(
@@ -1421,6 +1484,141 @@ mod tests {
         assert_eq!(summary.side_benefits.len(), 1);
         assert_eq!(summary.side_benefits[0].at_place, market);
         assert_eq!(summary.side_benefits[0].estimated_value, 30);
+    }
+
+    #[test]
+    fn snapshot_continuation_continues_when_same_class_delta_is_below_margin() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(41)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(42)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[
+                ranked_goal_with_score(top, GoalPriorityClass::High, 900),
+                ranked_goal_with_score(current, GoalPriorityClass::High, 800),
+            ],
+            Permille::new(150).unwrap(),
+        );
+
+        assert_eq!(trace.outcome, SnapshotContinuationOutcome::ContinuedWithinMargin);
+        assert_eq!(trace.motive_delta, Some(100));
+        assert!(trace.continues_plan());
+    }
+
+    #[test]
+    fn snapshot_continuation_replans_when_same_class_delta_meets_margin() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(43)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(44)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[
+                ranked_goal_with_score(top, GoalPriorityClass::High, 950),
+                ranked_goal_with_score(current, GoalPriorityClass::High, 800),
+            ],
+            Permille::new(150).unwrap(),
+        );
+
+        assert_eq!(trace.outcome, SnapshotContinuationOutcome::ReplannedMarginExceeded);
+        assert_eq!(trace.motive_delta, Some(150));
+        assert!(!trace.continues_plan());
+    }
+
+    #[test]
+    fn snapshot_continuation_replans_when_top_goal_has_higher_priority_class() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(45)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(46)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[
+                ranked_goal_with_score(top, GoalPriorityClass::Critical, 820),
+                ranked_goal_with_score(current, GoalPriorityClass::High, 1000),
+            ],
+            Permille::new(300).unwrap(),
+        );
+
+        assert_eq!(
+            trace.outcome,
+            SnapshotContinuationOutcome::ReplannedHigherPriorityClass
+        );
+        assert_eq!(trace.motive_delta, Some(0));
+        assert!(!trace.continues_plan());
+    }
+
+    #[test]
+    fn snapshot_continuation_replans_when_current_opportunity_is_missing() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(47)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(48)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[ranked_goal_with_score(top, GoalPriorityClass::High, 900)],
+            Permille::new(150).unwrap(),
+        );
+
+        assert_eq!(
+            trace.outcome,
+            SnapshotContinuationOutcome::ReplannedCurrentOpportunityMissing
+        );
+        assert_eq!(trace.current_priority_class, None);
+        assert_eq!(trace.current_motive_score, None);
+        assert_eq!(trace.motive_delta, None);
+        assert!(!trace.continues_plan());
+    }
+
+    #[test]
+    fn snapshot_continuation_margin_zero_replans_on_any_same_class_shift() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(49)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(50)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[
+                ranked_goal_with_score(top, GoalPriorityClass::High, 801),
+                ranked_goal_with_score(current, GoalPriorityClass::High, 800),
+            ],
+            Permille::ZERO,
+        );
+
+        assert_eq!(trace.outcome, SnapshotContinuationOutcome::ReplannedMarginExceeded);
+        assert_eq!(trace.motive_delta, Some(1));
+        assert!(!trace.continues_plan());
     }
 
     fn setup_agent_world() -> (World, worldwake_core::EntityId, worldwake_core::EntityId) {

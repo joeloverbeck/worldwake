@@ -45,10 +45,12 @@ When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), tre
 
 - Claimed missing scenarios are not already covered by current `golden_*` suites or generated golden inventory/docs.
 - Identify the strongest existing owning `golden_*` suite before accepting the ticket's proposed file list; reuse existing ownership surfaces instead of creating new golden files.
+- When same-domain verification fails, first check the referenced spec and any active sibling tickets for an explicit owner of that fallout before touching tests or broadening scope. If the failure is already named as downstream-owned work, document it and keep the current ticket boundary honest unless the user expands scope.
 - When a shared concept has both upstream producers and downstream consumers, compare their semantics directly. If the consumer already supports a broader shape, correct the ticket to own that parity fix.
 - If a claimed divergence is proved at lower layers but not stably isolatable as a golden without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative.
 - For golden communication or information-path tickets, verify separately what actually degrades: provenance, confidence, communication class, eligibility, ranking, or another distinct mechanism.
 - When a ticket proposes extending an existing trace/debug carrier, verify the exact live coverage of that carrier before coding. If the current trace only covers one subpath, correct the ticket to either stay within that subpath or explicitly widen the trace surface as owned scope.
+- Scan the referenced spec for explicitly anticipated golden fallout, timing-sensitive scenarios, or downstream validation tickets. Use that mapping when triaging new failures so spec-owned fallout is handed off deliberately instead of being rediscovered through ad hoc test edits.
 - When the ticket adds candidate generation or goal model integration for a domain that already has golden coverage (e.g., Care, Combat, Expectation), run the existing golden suites for that domain as part of reassessment, before implementation begins. This catches cross-goal interference early — a new candidate emitter can cause goal-switching collisions with existing goal families for the same target entity.
 - When a golden ticket proposes specific GoalKind pairs to exercise a contention, planning, or action-lifecycle invariant, verify that each goal's declared ops (in `goal_dispatch_decl.rs`) include the required PlannerOpKind. If the goal family lacks the required op, correct the ticket's domain before coding.
 - When the ticket claims a specific scenario ID is free, verify by scanning all `golden_*.rs` files for that ID before accepting it. Update the ticket if the ID is already taken.
@@ -164,6 +166,8 @@ Place these notes directly under the ticket's `Assumption Reassessment` section 
 If the active ticket predates the current template and does not already have an `Assumption Reassessment` section, add one before recording reassessment notes. Do not force the full template onto a short active ticket unless the missing sections are needed to keep the live scope honest.
 
 When a correction changes the real fallout surface, update every affected ticket section (`What to Change`, `Files to Touch`, `Verification Layers`, `Test Plan`), not just one list.
+
+When reassessment narrows ownership or proves that a listed command belongs to downstream-owned fallout, reconcile the ticket's success criteria in the same pass. Update `Acceptance Criteria`, `Tests That Must Pass`, `Verification Layers`, and command expectations so the close-out contract matches the live owned surface instead of leaving stale must-pass commands behind.
 
 When reassessment converts a ticket into a reassessment-only, doc-only, or no-production-change completion, remove leftover placeholder scaffolding from acceptance criteria, verification, test-plan, and command sections so the finished ticket does not mix resolved scope with pre-reassessment TODO text.
 

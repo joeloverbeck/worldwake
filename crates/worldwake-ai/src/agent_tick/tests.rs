@@ -4862,6 +4862,10 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let selected_plan = selection
         .selected_plan
         .expect("snapshot continuation should still expose the selected plan");
+    let snapshot_continuation = selection
+        .snapshot_continuation
+        .as_ref()
+        .expect("snapshot continuation should record comparison provenance");
 
     assert!(plan_continued);
     assert_eq!(continued_valid, Some(true));
@@ -4869,6 +4873,26 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         selection.selected_plan_source,
         Some(crate::SelectedPlanSource::SnapshotContinuation)
     );
+    assert_eq!(
+        snapshot_continuation.outcome,
+        crate::SnapshotContinuationOutcome::ContinuedAsTopRanked
+    );
+    assert!(snapshot_continuation.continues_plan());
+    assert_eq!(
+        snapshot_continuation.current_opportunity,
+        selection
+            .selected_opportunity
+            .expect("snapshot continuation should keep the same opportunity")
+    );
+    assert_eq!(
+        snapshot_continuation.top_opportunity,
+        selection.selected_opportunity
+    );
+    assert_eq!(
+        snapshot_continuation.planning_switch_margin,
+        cognitive(&budget).planning_switch_margin
+    );
+    assert_eq!(snapshot_continuation.motive_delta, Some(0));
     assert_eq!(selected_plan.next_step_index, Some(0));
     assert_eq!(
         selected_plan.search_provenance, None,

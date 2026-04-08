@@ -4,22 +4,23 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — test-only adjustments
-**Deps**: S74INTCOMM-002
+**Deps**: S74INTCOMM-002, S74INTCOMM-005
 
 ## Problem
 
-With the margin-based plan continuation in place (S74INTCOMM-002), golden tests that depend on rapid goal switching under need pressure may fail if the default `planning_switch_margin = 150` suppresses the switch. Specifically, `golden_merchant_selling` (`loose_home_stock_is_staged_before_sell_goal_settles`) depends on the agent switching goals when needs shift priorities. This ticket validates all golden tests and adjusts margin values or scenario parameters where needed, then confirms soak-seed-perf regression bounds.
+With the margin-based plan continuation in place (S74INTCOMM-002), golden tests that depend on rapid goal switching under need pressure may fail if the default `planning_switch_margin = 150` suppresses the switch. This ticket owns the post-implementation validation pass: rerun the golden suites, adjust per-agent margin values or scenario pressure only when a failure is genuinely margin-driven, and then confirm soak-seed-perf regression bounds.
 
 ## Assumption Reassessment (2026-04-08)
 
-1. `golden_merchant_selling` test at `crates/worldwake-ai/tests/golden_merchant_selling.rs`. The test exercises the seller-side lifecycle including stock staging and goal settlement under need pressure. If the priority shift between the merchant's current goal and the need-driven goal is less than 150 permille of `motive_score`, the margin will suppress the switch and the test may fail.
+1. `golden_merchant_selling` at `crates/worldwake-ai/tests/golden_merchant_selling.rs` contains multiple scenarios. `loose_home_stock_is_staged_before_sell_goal_settles` is still plausibly margin-sensitive because it depends on need-driven switching, but `combined_market_trip_selected_for_side_benefit` is no longer owned here after S74INTCOMM-002 review.
 2. Soak-seed-perf campaign at `campaigns/soak-seed-perf/program.md` with binary harness at `crates/worldwake-ai/src/bin/soak_seed_perf.rs`. Seeds 0-4 rotation. The spec's motivation is reducing full planning passes from ~10,000 per agent over 10,000 ticks. The margin should significantly reduce this without introducing seed-specific regressions.
 3. All golden tests in `crates/worldwake-ai/tests/golden_*.rs` must pass. The margin change is global (every agent with a CognitiveProfile gets it), so all golden tests are potentially affected, not just `golden_merchant_selling`.
-12. If `golden_merchant_selling` needs margin adjustment: the scenario isolates merchant selling lifecycle under need pressure. The intended branch is goal switching when needs drive a genuinely higher-priority goal. Setting a lower `planning_switch_margin` (e.g., 50) for the test agent preserves the rapid-switching behavior the test proves while keeping the margin mechanism active. Alternatively, strengthening the need pressure in the scenario so the priority delta exceeds 150 would test the margin bypass path naturally.
+4. S74INTCOMM-002 broad verification exposed `combined_market_trip_selected_for_side_benefit` and its replay twin as failures on the `DirtySet::PLAN_FINISHED` full-replan path in `crates/worldwake-ai/src/agent_tick/active_action.rs`, not on snapshot-only continuation. That production-side branch-stability contradiction is owned by S74INTCOMM-005 and must not be papered over here with test-only margin overrides.
+5. If a remaining golden genuinely needs margin adjustment, prefer per-agent `planning_switch_margin` overrides or stronger need pressure only when the test is proving rapid goal switching under need pressure rather than a separate production contract.
 
 ## Architecture Check
 
-1. Adjusting per-agent `planning_switch_margin` in golden test scenarios is the cleanest approach — it exercises the per-agent configurability that P22 mandates while keeping the test's intended invariant intact.
+1. Adjusting per-agent `planning_switch_margin` in golden test scenarios is the cleanest approach only for scenarios whose intended invariant is rapid goal switching under need pressure. Production-path contradictions exposed on non-snapshot replanning belong in their own engine ticket.
 2. No backwards-compatibility aliasing/shims introduced.
 
 ## Verification Layers
@@ -27,7 +28,7 @@ With the margin-based plan continuation in place (S74INTCOMM-002), golden tests 
 1. All golden tests pass with correct behavioral outcomes -> golden test suite pass (`cargo test -p worldwake-ai -- golden_`)
 2. Soak seeds 0-4 show reduced full planning passes -> soak-seed-perf campaign metrics (per-agent-tick planning cost and full GOAP search count)
 3. No seed-specific regression -> all 5 seeds pass soak validation bounds
-4. `golden_merchant_selling` preserves goal-switching invariant -> decision trace shows the merchant switching goals when need-driven priority exceeds the margin
+4. Margin-sensitive merchant golden preserves its intended goal-switching invariant -> decision trace shows the merchant switching goals when need-driven priority exceeds the margin
 
 ## What to Change
 
@@ -35,9 +36,9 @@ With the margin-based plan continuation in place (S74INTCOMM-002), golden tests 
 
 Run `cargo test -p worldwake-ai -- golden_` and note any failures introduced by the margin change.
 
-### 2. Adjust `golden_merchant_selling` if needed
+### 2. Adjust margin-sensitive merchant goldens if needed
 
-If the test fails because the margin suppresses a goal switch:
+If a merchant golden fails because the margin suppresses a goal switch:
 
 **Option A (preferred)**: Set a lower `planning_switch_margin` for the test's merchant agent in the scenario setup. This proves the agent CAN switch goals when the margin is low while the margin mechanism is still active.
 
@@ -54,16 +55,17 @@ Run the soak-seed-perf binary with seeds 0-4 and verify:
 
 ### 4. Adjust other golden tests if needed
 
-If any other golden test fails, apply the same analysis: determine whether the test exercises rapid goal switching under need pressure, and adjust the test agent's `planning_switch_margin` accordingly.
+If any other golden test fails, apply the same analysis: determine whether the test exercises rapid goal switching under need pressure, and adjust the test agent's `planning_switch_margin` accordingly. If the failure instead lands on a non-snapshot production path, stop and hand it to the owning engine ticket rather than widening this ticket.
 
 ## Files to Touch
 
-- `crates/worldwake-ai/tests/golden_merchant_selling.rs` (modify — if margin adjustment needed)
+- `crates/worldwake-ai/tests/golden_merchant_selling.rs` (modify — only for genuinely margin-driven scenarios such as `loose_home_stock_is_staged_before_sell_goal_settles`, not the side-benefit branch-stability regression owned by S74INTCOMM-005)
 - Other `crates/worldwake-ai/tests/golden_*.rs` files (modify — only if failures occur)
 
 ## Out of Scope
 
 - Modifying the margin comparison logic itself (S74INTCOMM-002)
+- Fixing the `PLAN_FINISHED` side-benefit branch-stability regression in `combined_market_trip_selected_for_side_benefit` (S74INTCOMM-005)
 - Changing the default `planning_switch_margin` value (that's a CognitiveProfile default in worldwake-core)
 - Performance optimization beyond what the margin provides (future work)
 - Adjusting non-golden test helpers (already done in S74INTCOMM-001)
@@ -73,7 +75,7 @@ If any other golden test fails, apply the same analysis: determine whether the t
 ### Tests That Must Pass
 
 1. `cargo test -p worldwake-ai -- golden_` — all golden tests pass
-2. `cargo test -p worldwake-ai -- golden_merchant_selling` — merchant selling lifecycle intact
+2. `cargo test -p worldwake-ai -- golden_merchant_selling` — margin-sensitive merchant goldens intact after S74INTCOMM-005 lands
 3. Existing suite: `cargo test --workspace`
 
 ### Invariants
@@ -87,7 +89,7 @@ If any other golden test fails, apply the same analysis: determine whether the t
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/tests/golden_merchant_selling.rs` — adjust `planning_switch_margin` if the default margin suppresses the intended goal switch. Document rationale.
+1. `crates/worldwake-ai/tests/golden_merchant_selling.rs` — adjust `planning_switch_margin` only if the remaining failing merchant scenario is genuinely margin-driven. Document rationale.
 2. Other golden tests — adjust only if failures occur.
 
 ### Commands

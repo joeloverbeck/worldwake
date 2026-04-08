@@ -1,6 +1,6 @@
 # S74INTCOMM-002: Replace `is_needs_only` heuristic with margin-based plan continuation
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — planning path decision logic, decision trace output
@@ -19,6 +19,7 @@ This ticket replaces it with a margin-based mechanism that has clear P21 semanti
 3. `RankedGoal` at `goal_model.rs:2233-2241` has `priority_class: GoalPriorityClass` and `motive_score: u32`. `GoalPriorityClass` is an ordered enum: `Background < Low < Medium < High < Critical` at `goal_model.rs:1981-1987`. The margin comparison will use `priority_class` for cross-class bypass and `motive_score` for same-class margin. Note: `planning_switch_margin` is `Permille` (newtype over `u16`) while `motive_score` is `u32` — implementation needs `.value() as u32` conversion for the comparison.
 4. `is_needs_only()` at `dirty_set.rs:119-121` has exactly 2 call sites: `planning.rs:428` and `planning.rs:787`. Both are replaced by this ticket.
 5. `DirtySet::is_snapshot_only()` at `dirty_set.rs:113` remains unchanged — the margin applies only within the snapshot-only path.
+6. Planner-traceability contract: `docs/planner-contracts.md` makes `SelectionTrace` the existing planner-owned selection provenance surface. There is no dedicated snapshot-continuation comparison field yet, so landing the ticket's trace requirement requires a bounded widening in `crates/worldwake-ai/src/decision_trace.rs` plus trace-test updates.
 7. This ticket replaces a heuristic (the top-2 rule). The missing substrate it was standing in for is P21 commitment inertia in the planning phase. This ticket introduces that substrate via the margin-based comparison. The change does not reopen unrelated regressions because: (a) all non-snapshot dirty bits still trigger full replanning (unchanged), (b) cross-class priority upgrades bypass the margin (always replan), and (c) the margin is per-agent, allowing test scenarios to set margin=0 for full replanning behavior.
 
 ## Architecture Check
@@ -28,11 +29,11 @@ This ticket replaces it with a margin-based mechanism that has clear P21 semanti
 
 ## Verification Layers
 
-1. Same-class margin gates plan continuation -> decision trace shows `SnapshotContinuation` with margin comparison result when top goal's motive_score is within margin
-2. Cross-class bypass triggers replanning -> decision trace shows full GOAP search when top goal has higher GoalPriorityClass
-3. Current goal absent from candidates abandons plan -> decision trace shows plan abandoned when current goal is filtered out
+1. Same-class margin gates plan continuation -> focused `planning.rs` unit test plus bounded `SelectionTrace` snapshot-continuation summary
+2. Cross-class bypass triggers replanning -> focused `planning.rs` unit test plus bounded `SelectionTrace` snapshot-continuation summary
+3. Current goal absent from candidates abandons plan -> focused `planning.rs` unit test plus bounded `SelectionTrace` snapshot-continuation summary
 4. Structural/frame dirty bits bypass margin entirely -> action trace confirms full planning on REPLAN_SIGNAL, ASSUMPTION_FAILED, etc. (existing behavior, unchanged)
-5. Per-agent margin=0 triggers full replanning on every ranking shift -> focused unit test
+5. Per-agent margin=0 triggers full replanning on every ranking shift -> focused `planning.rs` unit test
 
 ## What to Change
 
@@ -59,7 +60,7 @@ The `is_needs_only()` check is removed from the decision path.
 
 ### 2. Update traced variant consistently
 
-In `planning.rs` (traced variant, ~lines 786-836), apply the identical margin-based logic. Include the margin comparison result in the trace output (which goal was current, which was top-ranked, what the margin delta was, whether cross-class bypass triggered).
+In `planning.rs` (traced variant, ~lines 786-836), apply the identical margin-based logic. Record the margin comparison result through `SelectionTrace` in `decision_trace.rs` (current opportunity, top-ranked opportunity, motive delta, and whether cross-class bypass triggered).
 
 ### 3. Optional: annotate `is_needs_only()` as diagnostic-only
 
@@ -69,6 +70,8 @@ In `dirty_set.rs`, the `is_needs_only()` method can be retained with a doc comme
 
 - `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — both `try_continue_snapshot_plan` and traced variant)
 - `crates/worldwake-ai/src/dirty_set.rs` (modify — optional: annotate or remove `is_needs_only()`)
+- `crates/worldwake-ai/src/decision_trace.rs` (modify — bounded `SelectionTrace` widening for snapshot-continuation provenance)
+- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — traced runtime proof for snapshot-continuation provenance)
 
 ## Out of Scope
 
@@ -105,3 +108,22 @@ In `dirty_set.rs`, the `is_needs_only()` method can be retained with a doc comme
 1. `cargo test -p worldwake-ai -- planning` — targeted planning tests
 2. `cargo clippy --workspace --all-targets -- -D warnings` — lint verification
 3. `cargo test --workspace` — full suite
+
+## Outcome
+
+Completion date: 2026-04-08
+
+Implemented the planning-path commitment margin in `crates/worldwake-ai/src/agent_tick/planning.rs` by replacing the `is_needs_only()` top-2 heuristic with a shared snapshot-continuation comparison helper. Both the untraced and traced planning paths now use the same `planning_switch_margin` decision logic: continue when the current opportunity remains top-ranked, continue within same-class motive margin, and force fresh planning when a higher priority class wins or the current opportunity drops out.
+
+Bounded planner provenance was added through `SelectionTrace.snapshot_continuation` in `crates/worldwake-ai/src/decision_trace.rs`, with `SnapshotContinuationTrace` and `SnapshotContinuationOutcome` carrying the current opportunity, top opportunity, motive delta, applied margin, and comparison outcome. Focused planning tests now cover same-class below-margin continuation, at-margin replanning, cross-class bypass, missing-current-opportunity replanning, and zero-margin behavior; the traced `agent_tick` test now asserts the recorded snapshot-continuation provenance on a real continuation path.
+
+The same-domain `golden_goal_switching_during_multi_leg_travel` scenario needed an explicit `planning_switch_margin = 0` override to preserve the test's intended active interrupt/resume contract under the new default planning inertia.
+
+## Verification
+
+- Passed: `cargo test -p worldwake-ai planning`
+- Passed: `cargo test -p worldwake-ai --test golden_ai_decisions golden_goal_switching_during_multi_leg_travel`
+- Passed: `cargo clippy --workspace --all-targets -- -D warnings`
+- Investigated failure from `cargo test -p worldwake-ai` / `cargo test --workspace`: `combined_market_trip_selected_for_side_benefit` and `combined_market_trip_selected_for_side_benefit_replays_deterministically` in `crates/worldwake-ai/tests/golden_merchant_selling.rs`
+
+The remaining merchant golden failure is outside this ticket's owned contract. The executed branch loss occurs after travel-step completion forces `DirtySet::PLAN_FINISHED` in `crates/worldwake-ai/src/agent_tick/active_action.rs`, which triggers full replanning rather than snapshot-only continuation; `planning_switch_margin` is not consulted on that path. I did not fold a side-benefit replanning fix into this ticket; follow-up ownership is tracked separately from this completion handoff.

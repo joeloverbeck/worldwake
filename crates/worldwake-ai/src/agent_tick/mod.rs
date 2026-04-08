@@ -820,6 +820,7 @@ fn process_agent(
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             });
             let selected_patrol_anchor = selection.selected_opportunity.and_then(|opportunity| {
                 matches!(
