@@ -49,7 +49,7 @@ use worldwake_core::{
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
     EntityBeliefView, PerAgentBeliefRuntime, PerAgentBeliefView, RecipeRegistry, ReplanNeeded,
-    RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, TickInputError,
+    RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SpatialBeliefView, TickInputError,
 };
 
 pub struct AgentTickDriver {

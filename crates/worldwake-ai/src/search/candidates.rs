@@ -12,7 +12,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
-    QueueForFacilityUsePayload, RuntimeBeliefView, get_affordances_for_defs,
+    QueueForFacilityUsePayload, RuntimeBeliefView, SpatialBeliefView, get_affordances_for_defs,
 };
 
 use super::SearchNode;

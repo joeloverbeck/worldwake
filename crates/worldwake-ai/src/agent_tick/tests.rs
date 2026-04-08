@@ -48,9 +48,9 @@ use worldwake_sim::{
     AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControlBeliefView,
     ControllerState, DeterministicRng, DurationExpr, EntityBeliefView, Materialization,
     MaterializationTag, PerAgentBeliefView, ProfileBeliefView, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SystemDispatchTable,
-    SystemExecutionContext, SystemId, SystemManifest, TickStepServices, TransportActionPayload,
-    step_tick,
+    RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SpatialBeliefView,
+    SystemDispatchTable, SystemExecutionContext, SystemId, SystemManifest, TemporalBeliefView,
+    TickStepServices, TransportActionPayload, step_tick,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -1558,7 +1558,7 @@ impl ProfileBeliefView for QueuePatienceBeliefView {
     }
 }
 
-impl RuntimeBeliefView for QueuePatienceBeliefView {
+impl SpatialBeliefView for QueuePatienceBeliefView {
     fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
         self.place
     }
@@ -1568,10 +1568,58 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
         self.facilities_at_place.clone()
     }
-    fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+    fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
         Vec::new()
     }
-    fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+    fn place_has_tag(&self, _place: EntityId, _tag: worldwake_core::PlaceTag) -> bool {
+        false
+    }
+    fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+        false
+    }
+    fn in_transit_state(&self, _entity: EntityId) -> Option<worldwake_core::InTransitOnEdge> {
+        None
+    }
+    fn adjacent_places_with_travel_ticks(&self, _place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        Vec::new()
+    }
+}
+
+impl TemporalBeliefView for QueuePatienceBeliefView {
+    fn has_contention_policy(&self, entity: EntityId) -> bool {
+        self.facilities_at_place.contains(&entity)
+    }
+    fn facility_queue_position(&self, facility: EntityId, _actor: EntityId) -> Option<u32> {
+        self.queue_join_ticks.contains_key(&facility).then_some(0)
+    }
+    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
+        self.grants.get(&facility)
+    }
+    fn facility_queue_join_tick(&self, facility: EntityId, _actor: EntityId) -> Option<Tick> {
+        self.queue_join_ticks.get(&facility).copied()
+    }
+    fn facility_queue_patience_ticks(&self, _agent: EntityId) -> Option<NonZeroU32> {
+        self.patience_ticks
+    }
+    fn reservation_conflicts(&self, _entity: EntityId, _range: worldwake_core::TickRange) -> bool {
+        false
+    }
+    fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
+        Vec::new()
+    }
+    fn estimate_duration(
+        &self,
+        _actor: EntityId,
+        _duration: &DurationExpr,
+        _targets: &[EntityId],
+        _payload: &worldwake_sim::ActionPayload,
+    ) -> Option<ActionDuration> {
+        None
+    }
+}
+
+impl RuntimeBeliefView for QueuePatienceBeliefView {
+    fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
         Vec::new()
     }
     fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
@@ -1617,24 +1665,6 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
         None
     }
-    fn has_contention_policy(&self, entity: EntityId) -> bool {
-        self.facilities_at_place.contains(&entity)
-    }
-    fn facility_queue_position(&self, facility: EntityId, _actor: EntityId) -> Option<u32> {
-        self.queue_join_ticks.contains_key(&facility).then_some(0)
-    }
-    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
-        self.grants.get(&facility)
-    }
-    fn facility_queue_join_tick(&self, facility: EntityId, _actor: EntityId) -> Option<Tick> {
-        self.queue_join_ticks.get(&facility).copied()
-    }
-    fn facility_queue_patience_ticks(&self, _agent: EntityId) -> Option<NonZeroU32> {
-        self.patience_ticks
-    }
-    fn place_has_tag(&self, _place: EntityId, _tag: worldwake_core::PlaceTag) -> bool {
-        false
-    }
     fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
         None
     }
@@ -1646,12 +1676,6 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     }
     fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
         None
-    }
-    fn reservation_conflicts(&self, _entity: EntityId, _range: worldwake_core::TickRange) -> bool {
-        false
-    }
-    fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
-        Vec::new()
     }
     fn has_wounds(&self, _entity: EntityId) -> bool {
         false
@@ -1670,9 +1694,6 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
         _agent: EntityId,
     ) -> Option<IntentionDispositionProfile> {
         None
-    }
-    fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-        false
     }
     fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
         None
@@ -1705,21 +1726,6 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
         Vec::new()
     }
     fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
-        None
-    }
-    fn in_transit_state(&self, _entity: EntityId) -> Option<worldwake_core::InTransitOnEdge> {
-        None
-    }
-    fn adjacent_places_with_travel_ticks(&self, _place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
-        Vec::new()
-    }
-    fn estimate_duration(
-        &self,
-        _actor: EntityId,
-        _duration: &DurationExpr,
-        _targets: &[EntityId],
-        _payload: &worldwake_sim::ActionPayload,
-    ) -> Option<ActionDuration> {
         None
     }
 }

@@ -24,6 +24,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionHandlerRegistry, GoalBeliefView, RecipeRegistry, RuntimeBeliefView, Scheduler,
+    SpatialBeliefView,
 };
 
 use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};

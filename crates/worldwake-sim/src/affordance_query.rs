@@ -606,8 +606,8 @@ mod tests {
         ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
         Constraint, ConsumableEffect, ControlBeliefView, DeterministicRng, DurationExpr,
-        Interruptibility, PerAgentBeliefView, Precondition, ReservationReq, TargetSpec,
-        TradeActionPayload,
+        Interruptibility, PerAgentBeliefView, Precondition, ReservationReq, SpatialBeliefView,
+        TargetSpec, TradeActionPayload,
     };
     use std::cell::Cell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -711,7 +711,7 @@ mod tests {
         }
     }
 
-    impl crate::RuntimeBeliefView for StubBeliefView {
+    impl crate::SpatialBeliefView for StubBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.places.get(&entity).copied()
         }
@@ -726,6 +726,76 @@ mod tests {
             self.colocated.get(&place).cloned().unwrap_or_default()
         }
 
+        fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+            self.adjacent_places
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent_places(place)
+                .into_iter()
+                .map(|adjacent| (adjacent, NonZeroU32::MIN))
+                .collect()
+        }
+    }
+
+    impl crate::TemporalBeliefView for StubBeliefView {
+        fn has_contention_policy(&self, entity: EntityId) -> bool {
+            self.contention_policies
+                .get(&entity)
+                .copied()
+                .unwrap_or(false)
+        }
+
+        fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+            self.contention_positions.get(&(facility, actor)).copied()
+        }
+
+        fn facility_grant(&self, facility: EntityId) -> Option<&worldwake_core::ContentionGrant> {
+            self.contention_grants.get(&facility)
+        }
+
+        fn contention_queue_is_full(&self, entity: EntityId) -> bool {
+            self.contention_full.get(&entity).copied().unwrap_or(false)
+        }
+
+        fn reservation_conflicts(
+            &self,
+            _entity: EntityId,
+            _range: worldwake_core::TickRange,
+        ) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            duration: &crate::DurationExpr,
+            _targets: &[EntityId],
+            _payload: &crate::ActionPayload,
+        ) -> Option<crate::ActionDuration> {
+            duration.fixed_ticks().map(crate::ActionDuration::new)
+        }
+    }
+
+    impl crate::RuntimeBeliefView for StubBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
@@ -733,13 +803,6 @@ mod tests {
         fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
             self.direct_possessions
                 .get(&holder)
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places
-                .get(&place)
                 .cloned()
                 .unwrap_or_default()
         }
@@ -827,43 +890,12 @@ mod tests {
             self.production_jobs.get(&entity).copied().unwrap_or(false)
         }
 
-        fn has_contention_policy(&self, entity: EntityId) -> bool {
-            self.contention_policies
-                .get(&entity)
-                .copied()
-                .unwrap_or(false)
-        }
-
-        fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
-            self.contention_positions.get(&(facility, actor)).copied()
-        }
-
-        fn facility_grant(&self, facility: EntityId) -> Option<&worldwake_core::ContentionGrant> {
-            self.contention_grants.get(&facility)
-        }
-
-        fn contention_queue_is_full(&self, entity: EntityId) -> bool {
-            self.contention_full.get(&entity).copied().unwrap_or(false)
-        }
-
         fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
             None
         }
 
         fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
             None
-        }
-
-        fn reservation_conflicts(
-            &self,
-            _entity: EntityId,
-            _range: worldwake_core::TickRange,
-        ) -> bool {
-            false
-        }
-
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
-            Vec::new()
         }
 
         fn has_wounds(&self, entity: EntityId) -> bool {
@@ -879,10 +911,6 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
-        }
-
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
         }
 
         fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
@@ -961,30 +989,6 @@ mod tests {
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
-        }
-
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            self.adjacent_places(place)
-                .into_iter()
-                .map(|adjacent| (adjacent, NonZeroU32::MIN))
-                .collect()
-        }
-
-        fn estimate_duration(
-            &self,
-            _actor: EntityId,
-            duration: &crate::DurationExpr,
-            _targets: &[EntityId],
-            _payload: &crate::ActionPayload,
-        ) -> Option<crate::ActionDuration> {
-            duration.fixed_ticks().map(crate::ActionDuration::new)
         }
     }
 

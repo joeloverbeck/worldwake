@@ -127,7 +127,7 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        ProfileBeliefView, RuntimeBeliefView,
+        ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
     };
 
     #[derive(Default)]
@@ -192,7 +192,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl SpatialBeliefView for TestBeliefView {
         fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
@@ -202,10 +202,49 @@ mod tests {
         fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
-        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
-        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
+    }
+
+    impl TemporalBeliefView for TestBeliefView {
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &ActionPayload,
+        ) -> Option<ActionDuration> {
+            None
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
         fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
@@ -263,12 +302,6 @@ mod tests {
         fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
             None
         }
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
-            false
-        }
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
-            Vec::new()
-        }
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds
                 .get(&entity)
@@ -291,9 +324,6 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
-        }
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
         }
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
@@ -350,24 +380,6 @@ mod tests {
             Vec::new()
         }
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
-            None
-        }
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            _place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            Vec::new()
-        }
-        fn estimate_duration(
-            &self,
-            _actor: EntityId,
-            _duration: &DurationExpr,
-            _targets: &[EntityId],
-            _payload: &ActionPayload,
-        ) -> Option<ActionDuration> {
             None
         }
     }

@@ -20,8 +20,9 @@ use worldwake_core::{
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind, InputKind,
     OfficeSuccessionOutcome, PerAgentBeliefView, PostNoticeActionPayload,
-    PressForceClaimActionPayload, RequestProvenance, RuntimeBeliefView, SupportCountTrace,
-    SupportResolutionTrace, VacancyTimerTrace, YieldForceClaimActionPayload, get_affordances,
+    PressForceClaimActionPayload, RequestProvenance, RuntimeBeliefView, SpatialBeliefView,
+    SupportCountTrace, SupportResolutionTrace, VacancyTimerTrace, YieldForceClaimActionPayload,
+    get_affordances,
 };
 
 // ---------------------------------------------------------------------------
@@ -2455,7 +2456,7 @@ fn run_force_claim_ai_installation(seed: Seed) -> (StateHash, StateHash) {
         "planning snapshot should retain office data for the force-law office"
     );
     assert_eq!(
-        RuntimeBeliefView::effective_place(&snapshot_state, claimant),
+        SpatialBeliefView::effective_place(&snapshot_state, claimant),
         Some(VILLAGE_SQUARE),
         "planning snapshot should retain the claimant's local position"
     );

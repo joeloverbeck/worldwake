@@ -35,8 +35,8 @@ use worldwake_core::{
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, ControlBeliefView, DurationExpr,
     EntityBeliefView, PerAgentBeliefView, ProfileBeliefView, QueueForFacilityUsePayload,
-    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, TradeActionPayload,
-    TransportActionPayload, estimate_duration_from_beliefs,
+    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
+    TradeActionPayload, TransportActionPayload, estimate_duration_from_beliefs,
 };
 use worldwake_systems::build_full_action_registries;
 
@@ -256,10 +256,7 @@ impl ProfileBeliefView for TestBeliefView {
     }
 }
 
-impl RuntimeBeliefView for TestBeliefView {
-    fn current_tick(&self) -> Tick {
-        self.current_tick
-    }
+impl SpatialBeliefView for TestBeliefView {
     fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
         self.effective_places.get(&entity).copied()
     }
@@ -269,6 +266,45 @@ impl RuntimeBeliefView for TestBeliefView {
     fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
         self.entities_at.get(&place).cloned().unwrap_or_default()
     }
+    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+        self.adjacent_places_with_travel_ticks(place)
+            .into_iter()
+            .map(|(place, _)| place)
+            .collect()
+    }
+    fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+        false
+    }
+    fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+        None
+    }
+    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        self.adjacent.get(&place).cloned().unwrap_or_default()
+    }
+}
+
+impl TemporalBeliefView for TestBeliefView {
+    fn current_tick(&self) -> Tick {
+        self.current_tick
+    }
+    fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+        false
+    }
+    fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+        Vec::new()
+    }
+    fn estimate_duration(
+        &self,
+        actor: EntityId,
+        duration: &DurationExpr,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Option<worldwake_sim::ActionDuration> {
+        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
+    }
+}
+
+impl RuntimeBeliefView for TestBeliefView {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         self.known_entity_beliefs
             .get(&agent)
@@ -280,12 +316,6 @@ impl RuntimeBeliefView for TestBeliefView {
             .get(&holder)
             .cloned()
             .unwrap_or_default()
-    }
-    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-        self.adjacent_places_with_travel_ticks(place)
-            .into_iter()
-            .map(|(place, _)| place)
-            .collect()
     }
     fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
         false
@@ -365,12 +395,6 @@ impl RuntimeBeliefView for TestBeliefView {
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
         self.entity_loads.get(&entity).copied()
     }
-    fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
-        false
-    }
-    fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
-        Vec::new()
-    }
     fn has_wounds(&self, entity: EntityId) -> bool {
         self.wounds
             .get(&entity)
@@ -396,9 +420,6 @@ impl RuntimeBeliefView for TestBeliefView {
         _agent: EntityId,
     ) -> Option<worldwake_core::IntentionDispositionProfile> {
         None
-    }
-    fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-        false
     }
     fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
         Some(CombatProfile::new(
@@ -468,21 +489,6 @@ impl RuntimeBeliefView for TestBeliefView {
             .get(&office)
             .cloned()
             .unwrap_or(worldwake_core::InstitutionalBeliefRead::Unknown)
-    }
-    fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-        None
-    }
-    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
-        self.adjacent.get(&place).cloned().unwrap_or_default()
-    }
-    fn estimate_duration(
-        &self,
-        actor: EntityId,
-        duration: &DurationExpr,
-        targets: &[EntityId],
-        payload: &ActionPayload,
-    ) -> Option<worldwake_sim::ActionDuration> {
-        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
     }
 }
 

@@ -25,7 +25,8 @@ use worldwake_sim::{
     PostBountyActionPayload, PostNoticeActionPayload, PressForceClaimActionPayload,
     ProfileBeliefView, PunishActionPayload, RecipeDefinition, RecipeRegistry,
     ReportFoundActionPayload, ReportMissingActionPayload, RuntimeBeliefView,
-    SearchPlaceActionPayload, TellActionPayload, TradeActionPayload, TransportActionPayload,
+    SearchPlaceActionPayload, SpatialBeliefView, TellActionPayload, TemporalBeliefView,
+    TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2275,8 +2276,9 @@ mod tests {
         ControlBeliefView, DurationExpr, EntityBeliefView, Interruptibility,
         InvestigateActionPayload, ProfileBeliefView, PunishActionPayload,
         QueueForFacilityUsePayload, RecipeRegistry, ReportMissingActionPayload, RuntimeBeliefView,
-        SearchPlaceActionPayload, TellActionPayload, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload, estimate_duration_from_beliefs,
+        SearchPlaceActionPayload, SpatialBeliefView, TellActionPayload, TemporalBeliefView,
+        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
+        estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -3206,11 +3208,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
-        fn current_tick(&self) -> Tick {
-            self.current_tick
-        }
-
+    impl SpatialBeliefView for TestBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -3223,6 +3221,60 @@ mod tests {
             self.entities_at.get(&place).cloned().unwrap_or_default()
         }
 
+        fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+            self.adjacent_places_with_travel_ticks(place)
+                .into_iter()
+                .map(|(adjacent, _)| adjacent)
+                .collect()
+        }
+
+        fn place_has_tag(&self, place: EntityId, tag: worldwake_core::PlaceTag) -> bool {
+            self.place_tags
+                .get(&place)
+                .is_some_and(|tags| tags.contains(&tag))
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent.get(&place).cloned().unwrap_or_default()
+        }
+    }
+
+    impl TemporalBeliefView for TestBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
+        }
+
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            actor: EntityId,
+            duration: &DurationExpr,
+            targets: &[EntityId],
+            payload: &ActionPayload,
+        ) -> Option<ActionDuration> {
+            estimate_duration_from_beliefs(self, actor, duration, targets, payload)
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.known_entity_beliefs
                 .get(&agent)
@@ -3242,13 +3294,6 @@ mod tests {
                 .get(&holder)
                 .cloned()
                 .unwrap_or_default()
-        }
-
-        fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places_with_travel_ticks(place)
-                .into_iter()
-                .map(|(adjacent, _)| adjacent)
-                .collect()
         }
 
         fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
@@ -3339,14 +3384,6 @@ mod tests {
             self.entity_loads.get(&entity).copied()
         }
 
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
-            false
-        }
-
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
-            Vec::new()
-        }
-
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds
                 .get(&entity)
@@ -3376,10 +3413,6 @@ mod tests {
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
         }
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
-        }
-
         fn courage(&self, agent: EntityId) -> Option<Permille> {
             self.courage_values.get(&agent).copied()
         }
@@ -3446,12 +3479,6 @@ mod tests {
             Vec::new()
         }
 
-        fn place_has_tag(&self, place: EntityId, tag: worldwake_core::PlaceTag) -> bool {
-            self.place_tags
-                .get(&place)
-                .is_some_and(|tags| tags.contains(&tag))
-        }
-
         fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
             self.entities_at(place)
                 .into_iter()
@@ -3469,27 +3496,6 @@ mod tests {
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
-        }
-
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            self.adjacent.get(&place).cloned().unwrap_or_default()
-        }
-
-        fn estimate_duration(
-            &self,
-            actor: EntityId,
-            duration: &DurationExpr,
-            targets: &[EntityId],
-            payload: &ActionPayload,
-        ) -> Option<ActionDuration> {
-            estimate_duration_from_beliefs(self, actor, duration, targets, payload)
         }
 
         fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {

@@ -133,6 +133,9 @@ Specific persisted-shape checks:
 - If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself rather than assuming the downstream consumer crate named in the ticket is the only edit surface.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
 - When splitting methods onto a new trait that provides non-panicking defaults, verify each production implementor still overrides every behaviorally required method. Defaults like `None`, `false`, or empty collections can mask missing impls and survive compile/build verification until a golden or focused behavior test fails. Add at least one focused proof for any moved method whose default could silently preserve compilation while changing behavior.
+- After moving methods off an existing trait, sweep for stale UFCS calls on the old trait (for example `OldTrait::method(...)`) and for method-call sites that now require the new trait to be imported for resolution. Trait extraction fallout is often at the call-site/import layer, not only in impl blocks.
+- When a trait split touches large mock, adapter, or test-stub impl blocks, prefer replacing the whole impl partition in one pass instead of patching methods incrementally. Half-migrated impls can strand methods on the wrong trait and create noisy intermediate compile states that obscure the real remaining fallout.
+- Include shared golden harnesses and golden test infrastructure in trait-split fallout sweeps. Method moves can leave old trait imports or UFCS calls in `golden_*` helpers even after ordinary unit-test mocks are green.
 
 #### Performance and allocation sweep
 

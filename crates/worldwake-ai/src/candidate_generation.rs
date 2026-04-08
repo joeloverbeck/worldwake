@@ -4566,8 +4566,8 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
-        TellTopicOmissionReason,
+        ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SpatialBeliefView,
+        TellTopicOmissionReason, TemporalBeliefView,
     };
 
     struct TestBeliefView {
@@ -4845,11 +4845,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
-        fn current_tick(&self) -> Tick {
-            self.current_tick
-        }
-
+    impl SpatialBeliefView for TestBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -4862,6 +4858,61 @@ mod tests {
             self.entities_at.get(&place).cloned().unwrap_or_default()
         }
 
+        fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+            self.adjacent_places
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+            self.patrol_routes.get(&agent).cloned()
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent_places(place)
+                .into_iter()
+                .map(|adjacent| (adjacent, NonZeroU32::new(1).unwrap()))
+                .collect()
+        }
+    }
+
+    impl TemporalBeliefView for TestBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
+        }
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+        fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
+            self.reservation_ranges
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
+        }
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &ActionPayload,
+        ) -> Option<ActionDuration> {
+            None
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
             self.direct_possessions
                 .get(&holder)
@@ -4890,13 +4941,6 @@ mod tests {
                 .filter(|((claim_agent, _), _)| *claim_agent == agent)
                 .flat_map(|(_, claims)| claims.iter().cloned())
                 .collect()
-        }
-
-        fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places
-                .get(&place)
-                .cloned()
-                .unwrap_or_default()
         }
 
         fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
@@ -5024,17 +5068,6 @@ mod tests {
             self.entity_loads.get(&entity).copied()
         }
 
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
-            false
-        }
-
-        fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
-            self.reservation_ranges
-                .get(&entity)
-                .cloned()
-                .unwrap_or_default()
-        }
-
         fn has_wounds(&self, entity: EntityId) -> bool {
             self.wounds
                 .get(&entity)
@@ -5064,10 +5097,6 @@ mod tests {
 
         fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
             self.patrol_profiles.get(&agent).cloned()
-        }
-
-        fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
-            self.patrol_routes.get(&agent).cloned()
         }
 
         fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
@@ -5100,10 +5129,6 @@ mod tests {
         ) -> Option<worldwake_core::JusticeDispositionProfile> {
             self.justice_disposition_profiles.get(&agent).cloned()
         }
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
-        }
-
         fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
             self.tell_profiles
                 .get(&agent)
@@ -5329,30 +5354,6 @@ mod tests {
                 .get(&(office, supporter))
                 .cloned()
                 .unwrap_or(InstitutionalBeliefRead::Unknown)
-        }
-
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            self.adjacent_places(place)
-                .into_iter()
-                .map(|adjacent| (adjacent, NonZeroU32::new(1).unwrap()))
-                .collect()
-        }
-
-        fn estimate_duration(
-            &self,
-            _actor: EntityId,
-            _duration: &DurationExpr,
-            _targets: &[EntityId],
-            _payload: &ActionPayload,
-        ) -> Option<ActionDuration> {
-            None
         }
 
         fn institutional_belief_claims(

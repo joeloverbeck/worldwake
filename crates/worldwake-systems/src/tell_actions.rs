@@ -1202,7 +1202,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for StubTellBeliefView {
+    impl worldwake_sim::SpatialBeliefView for StubTellBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.places.get(&entity).copied()
         }
@@ -1221,6 +1221,47 @@ mod tests {
             entities
         }
 
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
+    }
+
+    impl worldwake_sim::TemporalBeliefView for StubTellBeliefView {
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &ActionPayload,
+        ) -> Option<worldwake_sim::ActionDuration> {
+            None
+        }
+    }
+
+    impl RuntimeBeliefView for StubTellBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
@@ -1243,10 +1284,6 @@ mod tests {
         }
 
         fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
 
@@ -1319,14 +1356,6 @@ mod tests {
             None
         }
 
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
-            false
-        }
-
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
-            Vec::new()
-        }
-
         fn has_wounds(&self, _entity: EntityId) -> bool {
             false
         }
@@ -1347,10 +1376,6 @@ mod tests {
             _agent: EntityId,
         ) -> Option<IntentionDispositionProfile> {
             None
-        }
-
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
         }
 
         fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
@@ -1421,27 +1446,6 @@ mod tests {
         }
 
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
-            None
-        }
-
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            _place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            Vec::new()
-        }
-
-        fn estimate_duration(
-            &self,
-            _actor: EntityId,
-            _duration: &DurationExpr,
-            _targets: &[EntityId],
-            _payload: &ActionPayload,
-        ) -> Option<worldwake_sim::ActionDuration> {
             None
         }
     }

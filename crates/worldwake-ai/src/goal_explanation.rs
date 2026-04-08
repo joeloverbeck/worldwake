@@ -66,7 +66,8 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        ProfileBeliefView, RecipeRegistry, RuntimeBeliefView, estimate_duration_from_beliefs,
+        ProfileBeliefView, RecipeRegistry, RuntimeBeliefView, SpatialBeliefView,
+        TemporalBeliefView, estimate_duration_from_beliefs,
     };
 
     #[derive(Default)]
@@ -134,7 +135,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl SpatialBeliefView for TestBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -147,15 +148,76 @@ mod tests {
             self.entities_at.get(&place).cloned().unwrap_or_default()
         }
 
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn place_has_tag(&self, _place: EntityId, _tag: PlaceTag) -> bool {
+            false
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
+    }
+
+    impl TemporalBeliefView for TestBeliefView {
+        fn has_contention_policy(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn facility_queue_position(&self, _facility: EntityId, _actor: EntityId) -> Option<u32> {
+            None
+        }
+
+        fn facility_grant(&self, _facility: EntityId) -> Option<&ContentionGrant> {
+            None
+        }
+
+        fn facility_queue_join_tick(&self, _facility: EntityId, _actor: EntityId) -> Option<Tick> {
+            None
+        }
+
+        fn facility_queue_patience_ticks(&self, _agent: EntityId) -> Option<NonZeroU32> {
+            None
+        }
+
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            actor: EntityId,
+            duration: &DurationExpr,
+            targets: &[EntityId],
+            payload: &ActionPayload,
+        ) -> Option<ActionDuration> {
+            estimate_duration_from_beliefs(self, actor, duration, targets, payload)
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
         fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
             self.direct_possessions
                 .get(&holder)
                 .cloned()
                 .unwrap_or_default()
-        }
-
-        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
 
         fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
@@ -224,30 +286,6 @@ mod tests {
             None
         }
 
-        fn has_contention_policy(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn facility_queue_position(&self, _facility: EntityId, _actor: EntityId) -> Option<u32> {
-            None
-        }
-
-        fn facility_grant(&self, _facility: EntityId) -> Option<&ContentionGrant> {
-            None
-        }
-
-        fn facility_queue_join_tick(&self, _facility: EntityId, _actor: EntityId) -> Option<Tick> {
-            None
-        }
-
-        fn facility_queue_patience_ticks(&self, _agent: EntityId) -> Option<NonZeroU32> {
-            None
-        }
-
-        fn place_has_tag(&self, _place: EntityId, _tag: PlaceTag) -> bool {
-            false
-        }
-
         fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
             None
         }
@@ -262,14 +300,6 @@ mod tests {
 
         fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
             None
-        }
-
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
-            false
-        }
-
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
-            Vec::new()
         }
 
         fn has_wounds(&self, _entity: EntityId) -> bool {
@@ -292,10 +322,6 @@ mod tests {
         ) -> Option<IntentionDispositionProfile> {
             None
         }
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
-        }
-
         fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
             None
         }
@@ -354,27 +380,6 @@ mod tests {
 
         fn tell_profile(&self, _agent: EntityId) -> Option<TellProfile> {
             Some(TellProfile::default())
-        }
-
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            _place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            Vec::new()
-        }
-
-        fn estimate_duration(
-            &self,
-            actor: EntityId,
-            duration: &DurationExpr,
-            targets: &[EntityId],
-            payload: &ActionPayload,
-        ) -> Option<ActionDuration> {
-            estimate_duration_from_beliefs(self, actor, duration, targets, payload)
         }
     }
 

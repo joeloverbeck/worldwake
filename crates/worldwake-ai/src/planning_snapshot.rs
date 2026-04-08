@@ -1091,7 +1091,7 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        ProfileBeliefView, RuntimeBeliefView,
+        ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
     };
 
     use crate::PlannerOpKind;
@@ -1207,11 +1207,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for StubBeliefView {
-        fn current_tick(&self) -> Tick {
-            self.current_tick
-        }
-
+    impl SpatialBeliefView for StubBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -1224,18 +1220,77 @@ mod tests {
             self.entities_at.get(&place).cloned().unwrap_or_default()
         }
 
-        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-            self.direct_possessions
-                .get(&holder)
-                .cloned()
-                .unwrap_or_default()
-        }
-
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
             self.adjacent_places_with_travel_ticks(place)
                 .into_iter()
                 .map(|(adjacent, _)| adjacent)
                 .collect()
+        }
+
+        fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+            self.patrol_routes.get(&agent).cloned()
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent.get(&place).cloned().unwrap_or_default()
+        }
+    }
+
+    impl TemporalBeliefView for StubBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
+        }
+
+        fn has_contention_policy(&self, entity: EntityId) -> bool {
+            self.exclusive_facilities.contains(&entity)
+        }
+
+        fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+            self.facility_queue_positions
+                .get(&(facility, actor))
+                .copied()
+        }
+
+        fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
+            self.facility_grants.get(&facility)
+        }
+
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &ActionPayload,
+        ) -> Option<ActionDuration> {
+            None
+        }
+    }
+
+    impl RuntimeBeliefView for StubBeliefView {
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
@@ -1292,20 +1347,6 @@ mod tests {
             None
         }
 
-        fn has_contention_policy(&self, entity: EntityId) -> bool {
-            self.exclusive_facilities.contains(&entity)
-        }
-
-        fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
-            self.facility_queue_positions
-                .get(&(facility, actor))
-                .copied()
-        }
-
-        fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
-            self.facility_grants.get(&facility)
-        }
-
         fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
             None
         }
@@ -1320,14 +1361,6 @@ mod tests {
 
         fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
             self.entity_loads.get(&entity).copied()
-        }
-
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
-            false
-        }
-
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
-            Vec::new()
         }
 
         fn has_wounds(&self, _entity: EntityId) -> bool {
@@ -1349,18 +1382,11 @@ mod tests {
             None
         }
 
-        fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
-            self.patrol_routes.get(&agent).cloned()
-        }
-
         fn intention_disposition_profile(
             &self,
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
-        }
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
         }
 
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
@@ -1438,17 +1464,6 @@ mod tests {
             self.office_data.get(&office).cloned()
         }
 
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            self.adjacent.get(&place).cloned().unwrap_or_default()
-        }
-
         fn believed_office_holder(
             &self,
             office: EntityId,
@@ -1467,16 +1482,6 @@ mod tests {
                 .get(&office)
                 .cloned()
                 .unwrap_or_default()
-        }
-
-        fn estimate_duration(
-            &self,
-            _actor: EntityId,
-            _duration: &DurationExpr,
-            _targets: &[EntityId],
-            _payload: &ActionPayload,
-        ) -> Option<ActionDuration> {
-            None
         }
     }
 

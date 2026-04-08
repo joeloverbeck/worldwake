@@ -245,7 +245,8 @@ mod tests {
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, Constraint,
         ControlBeliefView, DeterministicRng, DurationExpr, EntityBeliefView, Interruptibility,
-        Precondition, ProfileBeliefView, RuntimeBeliefView, TargetSpec, TransportActionPayload,
+        Precondition, ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TargetSpec,
+        TemporalBeliefView, TransportActionPayload,
     };
 
     #[derive(Default)]
@@ -309,7 +310,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl SpatialBeliefView for TestBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -322,15 +323,55 @@ mod tests {
             self.entities_at.get(&place).cloned().unwrap_or_default()
         }
 
-        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
-            Vec::new()
-        }
-
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
             self.adjacent_places
                 .get(&place)
                 .cloned()
                 .unwrap_or_default()
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent_with_ticks
+                .get(&place)
+                .cloned()
+                .unwrap_or_default()
+        }
+    }
+
+    impl TemporalBeliefView for TestBeliefView {
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &ActionPayload,
+        ) -> Option<ActionDuration> {
+            Some(ActionDuration::new(1))
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
         }
 
         fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
@@ -347,6 +388,7 @@ mod tests {
                 .copied()
                 .unwrap_or(Quantity(0))
         }
+
         fn controlled_commodity_quantity_at_place(
             &self,
             _actor: EntityId,
@@ -355,6 +397,7 @@ mod tests {
         ) -> Quantity {
             Quantity(0)
         }
+
         fn local_controlled_lots_for(
             &self,
             _actor: EntityId,
@@ -403,17 +446,10 @@ mod tests {
             self.entity_loads.get(&entity).copied()
         }
 
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
-            false
-        }
-
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
-            Vec::new()
-        }
-
         fn has_wounds(&self, _entity: EntityId) -> bool {
             false
         }
+
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
@@ -438,9 +474,6 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
-        }
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
         }
 
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
@@ -509,30 +542,6 @@ mod tests {
 
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
-        }
-
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            self.adjacent_with_ticks
-                .get(&place)
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn estimate_duration(
-            &self,
-            _actor: EntityId,
-            _duration: &DurationExpr,
-            _targets: &[EntityId],
-            _payload: &ActionPayload,
-        ) -> Option<ActionDuration> {
-            Some(ActionDuration::new(1))
         }
     }
 

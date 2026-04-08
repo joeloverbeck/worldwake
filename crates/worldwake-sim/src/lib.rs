@@ -98,7 +98,7 @@ pub use autonomous_controller::{
 };
 pub use belief_view::{
     ControlBeliefView, EntityBeliefView, GoalBeliefView, ProfileBeliefView, RuntimeBeliefView,
-    estimate_duration_from_beliefs,
+    SpatialBeliefView, TemporalBeliefView, estimate_duration_from_beliefs,
 };
 pub use commodity_opportunity::{CommodityOpportunityBreakdown, commodity_opportunity_score};
 pub use compaction::compact_event_log;

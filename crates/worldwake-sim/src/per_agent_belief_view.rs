@@ -1,7 +1,8 @@
 use crate::{
     ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
     ControlBeliefView, DurationExpr, EntityBeliefView, ProfileBeliefView, RecipeDefinition,
-    RecipeRegistry, RuntimeBeliefView, estimate_duration_from_beliefs,
+    RecipeRegistry, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
+    estimate_duration_from_beliefs,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -482,11 +483,7 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
     }
 }
 
-impl RuntimeBeliefView for PerAgentBeliefView<'_> {
-    fn current_tick(&self) -> Tick {
-        self.current_tick
-    }
-
+impl SpatialBeliefView for PerAgentBeliefView<'_> {
     fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
         if entity == self.agent {
             return self.world.effective_place(entity);
@@ -537,6 +534,141 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         entities
     }
 
+    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+        self.world.topology().neighbors(place)
+    }
+
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        self.world.place_has_tag(place, tag)
+    }
+
+    fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_route_experience(agent).cloned())
+            .flatten()
+    }
+
+    fn patrol_route(&self, agent: EntityId) -> Option<worldwake_core::PatrolRoute> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_patrol_route(agent).cloned())
+            .flatten()
+    }
+
+    fn route_exists(&self, from: EntityId, to: EntityId) -> bool {
+        self.world.topology().shortest_path(from, to).is_some()
+    }
+
+    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
+        if entity == self.agent {
+            return self.world.get_component_in_transit_on_edge(entity).cloned();
+        }
+
+        None
+    }
+
+    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        let route_experience = self.route_experience(self.agent);
+        let preference_profile = self.preference_profile(self.agent);
+
+        self.world
+            .topology()
+            .outgoing_edges(place)
+            .iter()
+            .filter_map(|edge_id| self.world.topology().edge(*edge_id))
+            .map(|edge| {
+                let base_ticks = NonZeroU32::new(edge.travel_time_ticks()).unwrap();
+                (
+                    edge.to(),
+                    adjusted_travel_ticks(
+                        base_ticks,
+                        edge.id(),
+                        route_experience.as_ref(),
+                        preference_profile,
+                    ),
+                )
+            })
+            .collect()
+    }
+}
+
+impl TemporalBeliefView for PerAgentBeliefView<'_> {
+    fn current_tick(&self) -> Tick {
+        self.current_tick
+    }
+
+    fn has_contention_policy(&self, entity: EntityId) -> bool {
+        self.world.get_component_contention_policy(entity).is_some()
+    }
+
+    fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+        self.world
+            .get_component_contention_queue(facility)
+            .and_then(|queue| queue.position_of(actor))
+    }
+
+    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
+        self.world
+            .get_component_contention_queue(facility)
+            .and_then(|queue| queue.granted.as_ref())
+    }
+
+    fn contention_queue_is_full(&self, entity: EntityId) -> bool {
+        let Some(policy) = self.world.get_component_contention_policy(entity) else {
+            return false;
+        };
+        let Some(queue) = self.world.get_component_contention_queue(entity) else {
+            return false;
+        };
+        policy
+            .max_waiters
+            .is_some_and(|limit| queue.waiting.len() >= usize::from(limit))
+    }
+
+    fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
+        self.world
+            .get_component_contention_queue(facility)
+            .and_then(|queue| {
+                queue
+                    .waiting
+                    .values()
+                    .find(|queued| queued.actor == actor)
+                    .map(|queued| queued.queued_at)
+            })
+    }
+
+    fn facility_queue_patience_ticks(&self, agent: EntityId) -> Option<NonZeroU32> {
+        self.world
+            .get_component_contention_disposition_profile(agent)
+            .and_then(|profile| profile.queue_patience_ticks)
+    }
+
+    fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
+        self.world
+            .reservations_for(entity)
+            .into_iter()
+            .any(|reservation| reservation.range.overlaps(&range))
+    }
+
+    fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
+        self.world
+            .reservations_for(entity)
+            .into_iter()
+            .map(|reservation| reservation.range)
+            .collect()
+    }
+
+    fn estimate_duration(
+        &self,
+        actor: EntityId,
+        duration: &DurationExpr,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Option<ActionDuration> {
+        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
+    }
+}
+
+impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         if agent != self.agent {
             return Vec::new();
@@ -654,10 +786,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         }
 
         Vec::new()
-    }
-
-    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-        self.world.topology().neighbors(place)
     }
 
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
@@ -800,56 +928,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .and_then(|state| state.workstation_tag)
     }
 
-    fn has_contention_policy(&self, entity: EntityId) -> bool {
-        self.world.get_component_contention_policy(entity).is_some()
-    }
-
-    fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
-        self.world
-            .get_component_contention_queue(facility)
-            .and_then(|queue| queue.position_of(actor))
-    }
-
-    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
-        self.world
-            .get_component_contention_queue(facility)
-            .and_then(|queue| queue.granted.as_ref())
-    }
-
-    fn contention_queue_is_full(&self, entity: EntityId) -> bool {
-        let Some(policy) = self.world.get_component_contention_policy(entity) else {
-            return false;
-        };
-        let Some(queue) = self.world.get_component_contention_queue(entity) else {
-            return false;
-        };
-        policy
-            .max_waiters
-            .is_some_and(|limit| queue.waiting.len() >= usize::from(limit))
-    }
-
-    fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
-        self.world
-            .get_component_contention_queue(facility)
-            .and_then(|queue| {
-                queue
-                    .waiting
-                    .values()
-                    .find(|queued| queued.actor == actor)
-                    .map(|queued| queued.queued_at)
-            })
-    }
-
-    fn facility_queue_patience_ticks(&self, agent: EntityId) -> Option<NonZeroU32> {
-        self.world
-            .get_component_contention_disposition_profile(agent)
-            .and_then(|profile| profile.queue_patience_ticks)
-    }
-
-    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
-        self.world.place_has_tag(place, tag)
-    }
-
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
         if entity == self.agent {
             return self.world.get_component_resource_source(entity).cloned();
@@ -881,21 +959,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
 
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
         load_of_entity(self.world, entity).ok()
-    }
-
-    fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
-        self.world
-            .reservations_for(entity)
-            .into_iter()
-            .any(|reservation| reservation.range.overlaps(&range))
-    }
-
-    fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
-        self.world
-            .reservations_for(entity)
-            .into_iter()
-            .map(|reservation| reservation.range)
-            .collect()
     }
 
     fn has_wounds(&self, entity: EntityId) -> bool {
@@ -951,12 +1014,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
-    fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_route_experience(agent).cloned())
-            .flatten()
-    }
-
     fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
         (agent == self.agent)
             .then(|| self.world.get_component_source_reliability(agent).cloned())
@@ -978,12 +1035,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_patrol_profile(agent).cloned())
-            .flatten()
-    }
-
-    fn patrol_route(&self, agent: EntityId) -> Option<worldwake_core::PatrolRoute> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_patrol_route(agent).cloned())
             .flatten()
     }
 
@@ -1040,10 +1091,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                     .cloned()
             })
             .flatten()
-    }
-
-    fn route_exists(&self, from: EntityId, to: EntityId) -> bool {
-        self.world.topology().shortest_path(from, to).is_some()
     }
 
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
@@ -1433,48 +1480,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .cloned()
             .unwrap_or_default()
     }
-
-    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
-        if entity == self.agent {
-            return self.world.get_component_in_transit_on_edge(entity).cloned();
-        }
-
-        None
-    }
-
-    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
-        let route_experience = self.route_experience(self.agent);
-        let preference_profile = self.preference_profile(self.agent);
-
-        self.world
-            .topology()
-            .outgoing_edges(place)
-            .iter()
-            .filter_map(|edge_id| self.world.topology().edge(*edge_id))
-            .map(|edge| {
-                let base_ticks = NonZeroU32::new(edge.travel_time_ticks()).unwrap();
-                (
-                    edge.to(),
-                    adjusted_travel_ticks(
-                        base_ticks,
-                        edge.id(),
-                        route_experience.as_ref(),
-                        preference_profile,
-                    ),
-                )
-            })
-            .collect()
-    }
-
-    fn estimate_duration(
-        &self,
-        actor: EntityId,
-        duration: &DurationExpr,
-        targets: &[EntityId],
-        payload: &ActionPayload,
-    ) -> Option<ActionDuration> {
-        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
-    }
 }
 
 crate::impl_goal_belief_view!(PerAgentBeliefView<'_>);
@@ -1486,7 +1491,7 @@ mod tests {
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
         ActionInstanceId, ActionPayload, ActionStatus, Constraint, ControlBeliefView, DurationExpr,
         EntityBeliefView, GoalBeliefView, Interruptibility, Precondition, ProfileBeliefView,
-        ReservationReq, RuntimeBeliefView, TargetSpec,
+        ReservationReq, RuntimeBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1752,7 +1757,7 @@ mod tests {
             world.get_component_homeostatic_needs(agent).copied()
         );
         assert_eq!(
-            RuntimeBeliefView::effective_place(&view, agent),
+            SpatialBeliefView::effective_place(&view, agent),
             Some(place)
         );
         assert_eq!(
@@ -1760,7 +1765,7 @@ mod tests {
             world.controlled_commodity_quantity(agent, CommodityKind::Bread)
         );
         assert_eq!(
-            RuntimeBeliefView::effective_place(&view, other),
+            SpatialBeliefView::effective_place(&view, other),
             Some(believed_place)
         );
         assert!(!EntityBeliefView::is_alive(&view, other));
@@ -1905,7 +1910,7 @@ mod tests {
 
         assert_eq!(world.effective_place(other), Some(place_b));
         assert_eq!(
-            RuntimeBeliefView::effective_place(&view, other),
+            SpatialBeliefView::effective_place(&view, other),
             Some(place_a)
         );
     }
@@ -2256,7 +2261,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::route_experience(&view, agent),
+            SpatialBeliefView::route_experience(&view, agent),
             Some(route_experience.clone())
         );
         assert_eq!(
@@ -2280,7 +2285,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::route_experience(&view, agent), None);
+        assert_eq!(SpatialBeliefView::route_experience(&view, agent), None);
         assert_eq!(GoalBeliefView::route_experience(&view, agent), None);
     }
 
@@ -2482,7 +2487,7 @@ mod tests {
         let empty_beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &empty_beliefs);
         assert!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, place)
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, place)
                 .iter()
                 .any(|(adjacent, _)| *adjacent == remote_place),
             "public route topology should remain available"
@@ -2619,7 +2624,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, base_ticks)]
         );
     }
@@ -2659,7 +2664,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, expected_ticks)]
         );
     }
@@ -2693,7 +2698,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, base_ticks)]
         );
     }
@@ -2734,7 +2739,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, expected_ticks)]
         );
     }
@@ -2778,7 +2783,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, expected_ticks)]
         );
     }
@@ -2829,7 +2834,8 @@ mod tests {
             vec![attacker]
         );
         assert_eq!(
-            view.estimate_duration(
+            TemporalBeliefView::estimate_duration(
+                &view,
                 agent,
                 &DurationExpr::TravelToTarget { target_index: 0 },
                 &[destination],
@@ -2918,7 +2924,8 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            view.estimate_duration(
+            TemporalBeliefView::estimate_duration(
+                &view,
                 agent,
                 &DurationExpr::ActorDefendStance,
                 &[],
@@ -2973,7 +2980,8 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            view.estimate_duration(
+            TemporalBeliefView::estimate_duration(
+                &view,
                 agent,
                 &DurationExpr::ConsultRecord { target_index: 0 },
                 &[record],

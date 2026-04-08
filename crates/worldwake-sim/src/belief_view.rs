@@ -400,16 +400,7 @@ pub trait ProfileBeliefView {
     }
 }
 
-/// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
-/// failure handling, and duration estimation.
-///
-/// This trait is intentionally broader than `GoalBeliefView`. Callers should only depend on it
-/// when they truly need runtime-only helpers such as reservations, queue state, or duration
-/// estimation.
-pub trait RuntimeBeliefView: ControlBeliefView + EntityBeliefView + ProfileBeliefView {
-    fn current_tick(&self) -> Tick {
-        Tick(0)
-    }
+pub trait SpatialBeliefView {
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn is_in_transit(&self, entity: EntityId) -> bool;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
@@ -417,6 +408,77 @@ pub trait RuntimeBeliefView: ControlBeliefView + EntityBeliefView + ProfileBelie
         let _ = agent;
         self.entities_at(place)
     }
+    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId>;
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        let _ = (place, tag);
+        false
+    }
+    fn place_has_any_tag_in(&self, place: EntityId, tag_set: PlaceTagSet) -> bool {
+        PlaceTag::ALL
+            .iter()
+            .any(|tag| tag_set.contains(*tag) && self.place_has_tag(place, *tag))
+    }
+    fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
+        let _ = agent;
+        None
+    }
+    fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+        let _ = agent;
+        None
+    }
+    fn route_exists(&self, from: EntityId, to: EntityId) -> bool;
+    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge>;
+    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
+}
+
+pub trait TemporalBeliefView {
+    fn current_tick(&self) -> Tick {
+        Tick(0)
+    }
+    fn has_contention_policy(&self, entity: EntityId) -> bool {
+        let _ = entity;
+        false
+    }
+    fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+        let _ = (facility, actor);
+        None
+    }
+    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
+        let _ = facility;
+        None
+    }
+    fn contention_queue_is_full(&self, entity: EntityId) -> bool {
+        let _ = entity;
+        false
+    }
+    fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
+        let _ = (facility, actor);
+        None
+    }
+    fn facility_queue_patience_ticks(&self, agent: EntityId) -> Option<NonZeroU32> {
+        let _ = agent;
+        None
+    }
+    fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool;
+    fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange>;
+    fn estimate_duration(
+        &self,
+        actor: EntityId,
+        duration: &DurationExpr,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Option<ActionDuration>;
+}
+
+/// Richer AI/runtime-facing surface for planning snapshots, affordance search, revalidation,
+/// failure handling, and duration estimation.
+///
+/// This trait is intentionally broader than `GoalBeliefView`. Callers should only depend on it
+/// when they truly need runtime-only helpers such as reservations, queue state, or duration
+/// estimation.
+pub trait RuntimeBeliefView:
+    ControlBeliefView + EntityBeliefView + ProfileBeliefView + SpatialBeliefView + TemporalBeliefView
+{
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
         Vec::new()
@@ -463,7 +525,6 @@ pub trait RuntimeBeliefView: ControlBeliefView + EntityBeliefView + ProfileBelie
         Vec::new()
     }
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId>;
-    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId>;
     fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool;
     fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
         let _ = recipe;
@@ -501,45 +562,10 @@ pub trait RuntimeBeliefView: ControlBeliefView + EntityBeliefView + ProfileBelie
         let _ = facility;
         None
     }
-    fn has_contention_policy(&self, entity: EntityId) -> bool {
-        let _ = entity;
-        false
-    }
-    fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
-        let _ = (facility, actor);
-        None
-    }
-    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
-        let _ = facility;
-        None
-    }
-    fn contention_queue_is_full(&self, entity: EntityId) -> bool {
-        let _ = entity;
-        false
-    }
-    fn facility_queue_join_tick(&self, facility: EntityId, actor: EntityId) -> Option<Tick> {
-        let _ = (facility, actor);
-        None
-    }
-    fn facility_queue_patience_ticks(&self, agent: EntityId) -> Option<NonZeroU32> {
-        let _ = agent;
-        None
-    }
-    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
-        let _ = (place, tag);
-        false
-    }
-    fn place_has_any_tag_in(&self, place: EntityId, tag_set: PlaceTagSet) -> bool {
-        PlaceTag::ALL
-            .iter()
-            .any(|tag| tag_set.contains(*tag) && self.place_has_tag(place, *tag))
-    }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
     fn has_production_job(&self, entity: EntityId) -> bool;
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits>;
-    fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool;
-    fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange>;
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
     fn observation_fidelity(&self, agent: EntityId) -> Permille {
@@ -548,10 +574,6 @@ pub trait RuntimeBeliefView: ControlBeliefView + EntityBeliefView + ProfileBelie
     }
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
     fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
-        let _ = agent;
-        None
-    }
-    fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
         let _ = agent;
         None
     }
@@ -568,10 +590,6 @@ pub trait RuntimeBeliefView: ControlBeliefView + EntityBeliefView + ProfileBelie
         None
     }
     fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
-        let _ = agent;
-        None
-    }
-    fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
         let _ = agent;
         None
     }
@@ -599,7 +617,6 @@ pub trait RuntimeBeliefView: ControlBeliefView + EntityBeliefView + ProfileBelie
     }
     fn intention_disposition_profile(&self, agent: EntityId)
     -> Option<IntentionDispositionProfile>;
-    fn route_exists(&self, from: EntityId, to: EntityId) -> bool;
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
         let _ = agent;
         None
@@ -739,15 +756,6 @@ pub trait RuntimeBeliefView: ControlBeliefView + EntityBeliefView + ProfileBelie
         let _ = (agent, key);
         Vec::new()
     }
-    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge>;
-    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
-    fn estimate_duration(
-        &self,
-        actor: EntityId,
-        duration: &DurationExpr,
-        targets: &[EntityId],
-        payload: &ActionPayload,
-    ) -> Option<ActionDuration>;
 }
 
 #[macro_export]
@@ -755,7 +763,7 @@ macro_rules! impl_goal_belief_view {
     ($ty:ty) => {
         impl $crate::GoalBeliefView for $ty {
             fn current_tick(&self) -> worldwake_core::Tick {
-                $crate::RuntimeBeliefView::current_tick(self)
+                $crate::TemporalBeliefView::current_tick(self)
             }
 
             fn is_alive(&self, entity: worldwake_core::EntityId) -> bool {
@@ -785,14 +793,14 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 entity: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::effective_place(self, entity)
+                $crate::SpatialBeliefView::effective_place(self, entity)
             }
 
             fn entities_at(
                 &self,
                 place: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::entities_at(self, place)
+                $crate::SpatialBeliefView::entities_at(self, place)
             }
 
             fn locally_observed_entities_at(
@@ -800,7 +808,7 @@ macro_rules! impl_goal_belief_view {
                 agent: worldwake_core::EntityId,
                 place: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::locally_observed_entities_at(self, agent, place)
+                $crate::SpatialBeliefView::locally_observed_entities_at(self, agent, place)
             }
 
             fn direct_possessions(
@@ -885,7 +893,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 place: worldwake_core::EntityId,
             ) -> Vec<(worldwake_core::EntityId, std::num::NonZeroU32)> {
-                $crate::RuntimeBeliefView::adjacent_places_with_travel_ticks(self, place)
+                $crate::SpatialBeliefView::adjacent_places_with_travel_ticks(self, place)
             }
 
             fn knows_recipe(
@@ -1117,7 +1125,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::PatrolRoute> {
-                $crate::RuntimeBeliefView::patrol_route(self, agent)
+                $crate::SpatialBeliefView::patrol_route(self, agent)
             }
 
             fn pursuit_profile(
@@ -1232,7 +1240,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::RouteExperience> {
-                $crate::RuntimeBeliefView::route_experience(self, agent)
+                $crate::SpatialBeliefView::route_experience(self, agent)
             }
 
             fn source_reliability(

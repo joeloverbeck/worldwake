@@ -1012,7 +1012,8 @@ mod tests {
         ActionStartFailureReason, CombatActionPayload, ControlBeliefView, CraftActionPayload,
         DeclareSupportActionPayload, DurationExpr, EntityBeliefView, InterruptReason,
         ProfileBeliefView, ReplanNeeded, RequestAttemptTrace, RequestBindingKind,
-        RequestProvenance, ResolvedRequestTrace, RuntimeBeliefView, TradeActionPayload,
+        RequestProvenance, ResolvedRequestTrace, RuntimeBeliefView, SpatialBeliefView,
+        TemporalBeliefView, TradeActionPayload,
     };
 
     #[derive(Default)]
@@ -1083,7 +1084,7 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for TestBeliefView {
+    impl SpatialBeliefView for TestBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -1092,12 +1093,6 @@ mod tests {
         }
         fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
             self.entities_at.get(&place).cloned().unwrap_or_default()
-        }
-        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-            self.direct_possessions
-                .get(&holder)
-                .cloned()
-                .unwrap_or_default()
         }
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
             self.adjacent_places
@@ -1108,156 +1103,10 @@ mod tests {
                 .map(|(place, _)| place)
                 .collect()
         }
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
-            false
-        }
-        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
-            self.unique_items.get(&(holder, kind)).copied().unwrap_or(0)
-        }
-        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-            self.commodity_quantities
-                .get(&(holder, kind))
-                .copied()
-                .unwrap_or(Quantity(0))
-        }
-        fn controlled_commodity_quantity_at_place(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Quantity {
-            Quantity(0)
-        }
-        fn local_controlled_lots_for(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-            self.lot_commodities.get(&entity).copied()
-        }
-        fn item_lot_consumable_profile(
-            &self,
-            _entity: EntityId,
-        ) -> Option<CommodityConsumableProfile> {
-            None
-        }
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
-            None
-        }
-        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-            self.resource_sources.get(&entity).cloned()
-        }
-        fn has_production_job(&self, entity: EntityId) -> bool {
-            self.production_jobs.contains(&entity)
-        }
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
-        }
-
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
-        }
-        fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
-            self.reservation_ranges(entity)
-                .into_iter()
-                .any(|existing| existing.overlaps(&range))
-        }
-        fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
-            self.reservation_ranges
-                .get(&entity)
-                .cloned()
-                .unwrap_or_default()
-        }
-        fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
-            self.facility_queue_positions
-                .get(&(facility, actor))
-                .copied()
-        }
-        fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
-            self.facility_grants.get(&facility)
-        }
-        fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds
-                .get(&entity)
-                .is_some_and(|wounds| !wounds.is_empty())
-        }
-        fn belief_confidence_policy(
-            &self,
-            _agent: EntityId,
-        ) -> worldwake_core::BeliefConfidencePolicy {
-            worldwake_core::BeliefConfidencePolicy::default()
-        }
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
-        }
-        fn intention_disposition_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<worldwake_core::IntentionDispositionProfile> {
-            None
-        }
         fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
             false
         }
-        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
-            None
-        }
-        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
-            self.wounds.get(&agent).cloned().unwrap_or_default()
-        }
-        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
-            self.hostiles.get(&agent).cloned().unwrap_or_default()
-        }
-        fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
-            self.attackers.get(&agent).cloned().unwrap_or_default()
-        }
-        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.listed_lots
-                .get(&(place, commodity))
-                .cloned()
-                .unwrap_or_default()
-        }
-        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
-            self.lot_sellers.get(&lot).copied()
-        }
-        fn has_sale_listing(&self, lot: EntityId) -> bool {
-            self.lot_sellers.contains_key(&lot)
-        }
-        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
-            Vec::new()
-        }
-        fn matching_workstations_at(
-            &self,
-            _place: EntityId,
-            _tag: WorkstationTag,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-        fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.entities_at(place)
-                .into_iter()
-                .filter(|entity| {
-                    self.resource_source(*entity)
-                        .is_some_and(|source| source.commodity == commodity)
-                })
-                .collect()
-        }
-        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
-            Vec::new()
-        }
-        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
-            None
-        }
+
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
             None
         }
@@ -1270,6 +1119,32 @@ mod tests {
                 .cloned()
                 .unwrap_or_default()
         }
+    }
+
+    impl TemporalBeliefView for TestBeliefView {
+        fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
+            self.reservation_ranges(entity)
+                .into_iter()
+                .any(|existing| existing.overlaps(&range))
+        }
+
+        fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
+            self.reservation_ranges
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+            self.facility_queue_positions
+                .get(&(facility, actor))
+                .copied()
+        }
+
+        fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
+            self.facility_grants.get(&facility)
+        }
+
         fn estimate_duration(
             &self,
             _actor: EntityId,
@@ -1278,6 +1153,172 @@ mod tests {
             _payload: &ActionPayload,
         ) -> Option<ActionDuration> {
             Some(ActionDuration::new(1))
+        }
+    }
+
+    impl RuntimeBeliefView for TestBeliefView {
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+
+        fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+            self.unique_items.get(&(holder, kind)).copied().unwrap_or(0)
+        }
+
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodity_quantities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
+        }
+
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.lot_commodities.get(&entity).copied()
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            _entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            None
+        }
+
+        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+            self.resource_sources.get(&entity).cloned()
+        }
+
+        fn has_production_job(&self, entity: EntityId) -> bool {
+            self.production_jobs.contains(&entity)
+        }
+
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
+        }
+
+        fn belief_confidence_policy(
+            &self,
+            _agent: EntityId,
+        ) -> worldwake_core::BeliefConfidencePolicy {
+            worldwake_core::BeliefConfidencePolicy::default()
+        }
+
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn intention_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::IntentionDispositionProfile> {
+            None
+        }
+
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
+        }
+
+        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+            self.wounds.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+            self.hostiles.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+            self.attackers.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+            self.listed_lots
+                .get(&(place, commodity))
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+            self.lot_sellers.get(&lot).copied()
+        }
+
+        fn has_sale_listing(&self, lot: EntityId) -> bool {
+            self.lot_sellers.contains_key(&lot)
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+
+        fn matching_workstations_at(
+            &self,
+            _place: EntityId,
+            _tag: WorkstationTag,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+            self.entities_at(place)
+                .into_iter()
+                .filter(|entity| {
+                    self.resource_source(*entity)
+                        .is_some_and(|source| source.commodity == commodity)
+                })
+                .collect()
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
         }
     }
 
