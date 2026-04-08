@@ -284,6 +284,7 @@ Typical order:
 - Run multiple `cargo test` or `cargo clippy` commands sequentially when they share the same build profile — lock contention makes parallel same-profile runs unreliable. Commands with different profiles (e.g., `cargo test` vs `cargo clippy`) can safely run in parallel.
 - Treat focused selectors the same way: even narrow same-profile `cargo test` invocations should run one at a time, never through parallel tool wrappers.
 - When a broad verification run dies by `SIGKILL` or another likely environment/resource kill after focused suites are already green, rerun the named interrupted/failing suite in isolation before deciding whether to repeat the full broad run. Record that distinction in the ticket outcome instead of treating the killed broad run as a semantic failure by default.
+- When a broader or longer-running verification command is intentionally waived after user direction, do not silently omit it or imply it passed. Record the exact completed command set plus the waived command in the ticket `Outcome` / `Verification Result`, and state that the narrower proof surface was accepted by user choice.
 - After changing code post-verification, rerun narrowest affected tests and any stale broader commands.
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
 - When CI/compile fallout follows a shared context-field change, sweep manual struct literals as well as direct function call sites before the next verification pass.
