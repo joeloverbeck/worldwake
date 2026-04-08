@@ -14,6 +14,7 @@ pub struct CognitiveProfile {
     pub structural_block_ticks: u32,
     pub initial_cooldown_ticks: u32,
     pub max_cooldown_ticks: u32,
+    pub max_snapshot_entities_per_place: u16,
 }
 
 impl Default for CognitiveProfile {
@@ -29,6 +30,7 @@ impl Default for CognitiveProfile {
             structural_block_ticks: 200,
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,
+            max_snapshot_entities_per_place: 50,
         }
     }
 }
@@ -66,6 +68,7 @@ mod tests {
         assert_eq!(profile.structural_block_ticks, 200);
         assert_eq!(profile.initial_cooldown_ticks, 4);
         assert_eq!(profile.max_cooldown_ticks, 64);
+        assert_eq!(profile.max_snapshot_entities_per_place, 50);
     }
 
     #[test]
@@ -81,6 +84,7 @@ mod tests {
             structural_block_ticks: 320,
             initial_cooldown_ticks: 6,
             max_cooldown_ticks: 72,
+            max_snapshot_entities_per_place: 75,
         };
 
         let bytes = bincode::serialize(&profile).unwrap();
