@@ -1226,37 +1226,11 @@ mod tests {
     }
 
     impl RuntimeBeliefView for TestBeliefView {
-        fn controlled_commodity_quantity_at_place(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Quantity {
-            Quantity(0)
-        }
-
-        fn local_controlled_lots_for(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn has_wounds(&self, _entity: EntityId) -> bool {
-            false
-        }
-
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
         }
 
         fn intention_disposition_profile(
@@ -1265,23 +1239,46 @@ mod tests {
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
         }
+    }
 
+    impl worldwake_sim::CombatBeliefView for TestBeliefView {
         fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
             None
         }
-
         fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
             Vec::new()
         }
-
         fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
-
         fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
 
+    impl worldwake_sim::EconomicBeliefView for TestBeliefView {
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+        fn local_controlled_lots_for(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
         fn listed_sale_lots_at(
             &self,
             _place: EntityId,
@@ -1289,15 +1286,12 @@ mod tests {
         ) -> Vec<EntityId> {
             Vec::new()
         }
-
         fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
             None
         }
-
         fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
             Vec::new()
         }
-
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
         }

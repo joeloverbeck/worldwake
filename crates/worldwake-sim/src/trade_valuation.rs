@@ -182,8 +182,9 @@ mod tests {
         evaluate_trade_bundle, snapshot,
     };
     use crate::{
-        ControlBeliefView, EntityBeliefView, ProfileBeliefView, RecipeDefinition,
-        RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView, commodity_opportunity_score,
+        CombatBeliefView, ControlBeliefView, EconomicBeliefView, EntityBeliefView,
+        ProfileBeliefView, RecipeDefinition, RuntimeBeliefView, SpatialBeliefView,
+        TemporalBeliefView, commodity_opportunity_score,
     };
     use std::collections::BTreeMap;
     use std::num::NonZeroU8;
@@ -317,38 +318,6 @@ mod tests {
             Vec::new()
         }
 
-        fn controlled_commodity_quantity_at_place(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Quantity {
-            Quantity(0)
-        }
-
-        fn local_controlled_lots_for(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn has_wounds(&self, _entity: EntityId) -> bool {
-            !self.wounds.is_empty()
-        }
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
-        }
-
-        fn commodity_valuation_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<CommodityValuationProfile> {
-            self.commodity_valuation_profile
-        }
-
         fn intention_disposition_profile(
             &self,
             _agent: EntityId,
@@ -366,7 +335,9 @@ mod tests {
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
         }
+    }
 
+    impl CombatBeliefView for StubBeliefView {
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
         }
@@ -380,6 +351,41 @@ mod tests {
         }
 
         fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            !self.wounds.is_empty()
+        }
+    }
+
+    impl EconomicBeliefView for StubBeliefView {
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn commodity_valuation_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<CommodityValuationProfile> {
+            self.commodity_valuation_profile
+        }
+
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
 

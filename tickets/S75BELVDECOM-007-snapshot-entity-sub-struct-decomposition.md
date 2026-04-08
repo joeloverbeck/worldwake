@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — SnapshotEntity struct layout in worldwake-ai
-**Deps**: archive/tickets/S75BELVDECOM-002-extract-entity-profile-belief-views.md, archive/tickets/S75BELVDECOM-003-extract-spatial-temporal-belief-views.md, archive/tickets/S75BELVDECOM-004-extract-inventory-facility-belief-views.md, S75BELVDECOM-005, S75BELVDECOM-006
+**Deps**: archive/tickets/S75BELVDECOM-002-extract-entity-profile-belief-views.md, archive/tickets/S75BELVDECOM-003-extract-spatial-temporal-belief-views.md, archive/tickets/S75BELVDECOM-004-extract-inventory-facility-belief-views.md, archive/tickets/S75BELVDECOM-005-extract-combat-economic-belief-views.md, S75BELVDECOM-006
 
 ## Problem
 

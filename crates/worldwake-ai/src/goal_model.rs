@@ -20,13 +20,13 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
-    CombatActionPayload, ConsultRecordActionPayload, DeclareSupportActionPayload, EntityBeliefView,
-    EscortToSafetyActionPayload, FacilityBeliefView, InventoryBeliefView, InvestigateActionPayload,
-    LootActionPayload, PostBountyActionPayload, PostNoticeActionPayload,
-    PressForceClaimActionPayload, ProfileBeliefView, PunishActionPayload, RecipeDefinition,
-    RecipeRegistry, ReportFoundActionPayload, ReportMissingActionPayload, RuntimeBeliefView,
-    SearchPlaceActionPayload, SpatialBeliefView, TellActionPayload, TemporalBeliefView,
-    TradeActionPayload, TransportActionPayload,
+    CombatActionPayload, CombatBeliefView, ConsultRecordActionPayload, DeclareSupportActionPayload,
+    EconomicBeliefView, EntityBeliefView, EscortToSafetyActionPayload, FacilityBeliefView,
+    InventoryBeliefView, InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
+    PostNoticeActionPayload, PressForceClaimActionPayload, ProfileBeliefView, PunishActionPayload,
+    RecipeDefinition, RecipeRegistry, ReportFoundActionPayload, ReportMissingActionPayload,
+    RuntimeBeliefView, SearchPlaceActionPayload, SpatialBeliefView, TellActionPayload,
+    TemporalBeliefView, TradeActionPayload, TransportActionPayload,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -3290,53 +3290,11 @@ mod tests {
                 .unwrap_or_default()
         }
 
-        fn controlled_commodity_quantity_at_place(
-            &self,
-            actor: EntityId,
-            place: EntityId,
-            commodity: CommodityKind,
-        ) -> Quantity {
-            self.controlled_quantities
-                .get(&(actor, place, commodity))
-                .copied()
-                .unwrap_or(Quantity(0))
-        }
-        fn local_controlled_lots_for(
-            &self,
-            actor: EntityId,
-            place: EntityId,
-            commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            let mut entities = self.entities_at(place);
-            entities.extend(
-                <Self as worldwake_sim::InventoryBeliefView>::direct_possessions(self, actor),
-            );
-            entities.sort();
-            entities.dedup();
-            entities
-                .into_iter()
-                .filter(|entity| {
-                    <Self as worldwake_sim::InventoryBeliefView>::item_lot_commodity(self, *entity)
-                        == Some(commodity)
-                })
-                .filter(|entity| self.can_control(actor, *entity))
-                .collect()
-        }
-
-        fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds
-                .get(&entity)
-                .is_some_and(|wounds| !wounds.is_empty())
-        }
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
-            self.trade_profiles.get(&agent).cloned()
         }
 
         fn epistemic_disposition_profile(
@@ -3352,68 +3310,6 @@ mod tests {
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
         }
-        fn courage(&self, agent: EntityId) -> Option<Permille> {
-            self.courage_values.get(&agent).copied()
-        }
-
-        fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
-            self.consultation_speed_factors.get(&agent).copied()
-        }
-
-        fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
-            if let Some(override_val) = self.combat_profiles.get(&agent) {
-                return *override_val;
-            }
-            Some(CombatProfile::new(
-                pm(1000),
-                pm(700),
-                pm(620),
-                pm(580),
-                pm(80),
-                pm(25),
-                pm(18),
-                pm(120),
-                pm(35),
-                NonZeroU32::new(6).unwrap(),
-                NonZeroU32::new(10).unwrap(),
-            ))
-        }
-
-        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
-            self.wounds.get(&agent).cloned().unwrap_or_default()
-        }
-
-        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
-            self.hostiles.get(&agent).cloned().unwrap_or_default()
-        }
-
-        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.listed_lots
-                .get(&(place, commodity))
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
-            self.lot_sellers.get(&lot).copied()
-        }
-
-        fn has_sale_listing(&self, lot: EntityId) -> bool {
-            self.lot_sellers.contains_key(&lot)
-        }
-
-        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
-            self.demand_memory.get(&agent).cloned().unwrap_or_default()
-        }
-
-        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
-            self.merchandise_profiles.get(&agent).cloned()
-        }
-
         fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
             self.record_data.get(&record).cloned()
         }
@@ -3481,6 +3377,116 @@ mod tests {
             key: &AskWitnessMemoryKey,
         ) -> Option<AskWitnessMemory> {
             self.ask_witness_memories.get(&(actor, *key)).cloned()
+        }
+    }
+
+    impl worldwake_sim::CombatBeliefView for TestBeliefView {
+        fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
+            if let Some(override_val) = self.combat_profiles.get(&agent) {
+                return *override_val;
+            }
+            Some(CombatProfile::new(
+                pm(1000),
+                pm(700),
+                pm(620),
+                pm(580),
+                pm(80),
+                pm(25),
+                pm(18),
+                pm(120),
+                pm(35),
+                NonZeroU32::new(6).unwrap(),
+                NonZeroU32::new(10).unwrap(),
+            ))
+        }
+
+        fn courage(&self, agent: EntityId) -> Option<Permille> {
+            self.courage_values.get(&agent).copied()
+        }
+
+        fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+            self.consultation_speed_factors.get(&agent).copied()
+        }
+
+        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+            self.wounds.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+            self.hostiles.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
+        }
+    }
+
+    impl worldwake_sim::EconomicBeliefView for TestBeliefView {
+        fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+            self.trade_profiles.get(&agent).cloned()
+        }
+
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Quantity {
+            self.controlled_quantities
+                .get(&(actor, place, commodity))
+                .copied()
+                .unwrap_or(Quantity(0))
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            let mut entities = self.entities_at(place);
+            entities.extend(
+                <Self as worldwake_sim::InventoryBeliefView>::direct_possessions(self, actor),
+            );
+            entities.sort();
+            entities.dedup();
+            entities
+                .into_iter()
+                .filter(|entity| {
+                    <Self as worldwake_sim::InventoryBeliefView>::item_lot_commodity(self, *entity)
+                        == Some(commodity)
+                })
+                .filter(|entity| self.can_control(actor, *entity))
+                .collect()
+        }
+
+        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+            self.listed_lots
+                .get(&(place, commodity))
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+            self.lot_sellers.get(&lot).copied()
+        }
+
+        fn has_sale_listing(&self, lot: EntityId) -> bool {
+            self.lot_sellers.contains_key(&lot)
+        }
+
+        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+            self.demand_memory.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+            self.merchandise_profiles.get(&agent).cloned()
         }
     }
 

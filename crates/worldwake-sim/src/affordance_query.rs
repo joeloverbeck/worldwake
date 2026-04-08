@@ -800,6 +800,52 @@ mod tests {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
+        fn intention_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::IntentionDispositionProfile> {
+            None
+        }
+
+        fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+            self.tell_profiles.get(&agent).copied()
+        }
+
+        fn belief_confidence_policy(
+            &self,
+            _agent: EntityId,
+        ) -> worldwake_core::BeliefConfidencePolicy {
+            worldwake_core::BeliefConfidencePolicy::default()
+        }
+    }
+
+    impl crate::CombatBeliefView for StubBeliefView {
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
+        }
+
+        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+            self.wound_lists.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            self.wounds.get(&entity).copied().unwrap_or(false)
+        }
+    }
+
+    impl crate::EconomicBeliefView for StubBeliefView {
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
         fn controlled_commodity_quantity_at_place(
             &self,
             actor: EntityId,
@@ -833,48 +879,6 @@ mod tests {
             entities.sort();
             entities.dedup();
             entities
-        }
-
-        fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds.get(&entity).copied().unwrap_or(false)
-        }
-
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
-        }
-
-        fn intention_disposition_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<worldwake_core::IntentionDispositionProfile> {
-            None
-        }
-
-        fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
-            self.tell_profiles.get(&agent).copied()
-        }
-
-        fn belief_confidence_policy(
-            &self,
-            _agent: EntityId,
-        ) -> worldwake_core::BeliefConfidencePolicy {
-            worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
-            None
-        }
-
-        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
-            self.wound_lists.get(&agent).cloned().unwrap_or_default()
-        }
-
-        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
 
         fn listed_sale_lots_at(

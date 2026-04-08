@@ -1283,37 +1283,11 @@ mod tests {
                 .unwrap_or_default()
         }
 
-        fn controlled_commodity_quantity_at_place(
-            &self,
-            _agent: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Quantity {
-            Quantity(0)
-        }
-
-        fn local_controlled_lots_for(
-            &self,
-            _agent: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn has_wounds(&self, _entity: EntityId) -> bool {
-            false
-        }
-
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
         }
 
         fn intention_disposition_profile(
@@ -1337,7 +1311,9 @@ mod tests {
                 .get(&(actor, counterparty, *topic))
                 .copied()
         }
+    }
 
+    impl worldwake_sim::CombatBeliefView for StubTellBeliefView {
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             None
         }
@@ -1351,6 +1327,34 @@ mod tests {
         }
 
         fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
+
+    impl worldwake_sim::EconomicBeliefView for StubTellBeliefView {
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
 

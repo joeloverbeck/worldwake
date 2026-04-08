@@ -19,8 +19,8 @@ use worldwake_core::{
     total_live_lot_quantity,
 };
 use worldwake_sim::{
-    ActionRequestMode, ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry,
-    RequestProvenance, RuntimeBeliefView,
+    ActionRequestMode, ActionTraceKind, EconomicBeliefView, InputKind, PerAgentBeliefView,
+    RecipeRegistry, RequestProvenance,
 };
 
 // ---------------------------------------------------------------------------

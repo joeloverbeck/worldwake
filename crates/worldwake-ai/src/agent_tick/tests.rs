@@ -45,12 +45,12 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
-    AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControlBeliefView,
-    ControllerState, DeterministicRng, DurationExpr, EntityBeliefView, Materialization,
-    MaterializationTag, PerAgentBeliefView, ProfileBeliefView, RecipeDefinition, RecipeRegistry,
-    RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SpatialBeliefView,
-    SystemDispatchTable, SystemExecutionContext, SystemId, SystemManifest, TemporalBeliefView,
-    TickStepServices, TransportActionPayload, step_tick,
+    AutonomousControllerRuntime, CombatBeliefView, CommitOutcome, CommittedAction,
+    ControlBeliefView, ControllerState, DeterministicRng, DurationExpr, EconomicBeliefView,
+    EntityBeliefView, Materialization, MaterializationTag, PerAgentBeliefView, ProfileBeliefView,
+    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler,
+    SpatialBeliefView, SystemDispatchTable, SystemExecutionContext, SystemId, SystemManifest,
+    TemporalBeliefView, TickStepServices, TransportActionPayload, step_tick,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -1619,6 +1619,42 @@ impl TemporalBeliefView for QueuePatienceBeliefView {
 }
 
 impl RuntimeBeliefView for QueuePatienceBeliefView {
+    fn belief_confidence_policy(&self, _agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
+        worldwake_core::BeliefConfidencePolicy::default()
+    }
+    fn intention_disposition_profile(
+        &self,
+        _agent: EntityId,
+    ) -> Option<IntentionDispositionProfile> {
+        None
+    }
+}
+
+impl CombatBeliefView for QueuePatienceBeliefView {
+    fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
+        None
+    }
+    fn wounds(&self, _agent: EntityId) -> Vec<worldwake_core::Wound> {
+        Vec::new()
+    }
+    fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+        Vec::new()
+    }
+    fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+        Vec::new()
+    }
+    fn has_wounds(&self, _entity: EntityId) -> bool {
+        false
+    }
+}
+
+impl EconomicBeliefView for QueuePatienceBeliefView {
+    fn trade_disposition_profile(
+        &self,
+        _agent: EntityId,
+    ) -> Option<worldwake_core::TradeDispositionProfile> {
+        None
+    }
     fn controlled_commodity_quantity_at_place(
         &self,
         _agent: EntityId,
@@ -1633,36 +1669,6 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
         _place: EntityId,
         _commodity: CommodityKind,
     ) -> Vec<EntityId> {
-        Vec::new()
-    }
-    fn has_wounds(&self, _entity: EntityId) -> bool {
-        false
-    }
-    fn belief_confidence_policy(&self, _agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
-        worldwake_core::BeliefConfidencePolicy::default()
-    }
-    fn trade_disposition_profile(
-        &self,
-        _agent: EntityId,
-    ) -> Option<worldwake_core::TradeDispositionProfile> {
-        None
-    }
-    fn intention_disposition_profile(
-        &self,
-        _agent: EntityId,
-    ) -> Option<IntentionDispositionProfile> {
-        None
-    }
-    fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
-        None
-    }
-    fn wounds(&self, _agent: EntityId) -> Vec<worldwake_core::Wound> {
-        Vec::new()
-    }
-    fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
-        Vec::new()
-    }
-    fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
         Vec::new()
     }
     fn listed_sale_lots_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {

@@ -1576,9 +1576,9 @@ mod tests {
         WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        ProfileBeliefView, RecipeDefinition, RuntimeBeliefView, SpatialBeliefView,
-        TemporalBeliefView,
+        ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
+        EconomicBeliefView, EntityBeliefView, ProfileBeliefView, RecipeDefinition,
+        RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
     };
 
     #[derive(Clone, Default)]
@@ -1789,44 +1789,11 @@ mod tests {
             entities.dedup();
             entities
         }
-        fn controlled_commodity_quantity_at_place(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Quantity {
-            Quantity(0)
-        }
-        fn local_controlled_lots_for(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-        fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds
-                .get(&entity)
-                .is_some_and(|wounds| !wounds.is_empty())
-        }
-        fn courage(&self, agent: EntityId) -> Option<Permille> {
-            self.courage.get(&agent).copied()
-        }
         fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
             *self
                 .confidence_policies
                 .get(&agent)
                 .expect("tests must seed a confidence policy for the acting agent")
-        }
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
-        }
-        fn commodity_valuation_profile(
-            &self,
-            agent: EntityId,
-        ) -> Option<CommodityValuationProfile> {
-            self.commodity_valuation_profiles.get(&agent).copied()
         }
         fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
             self.source_reliabilities.get(&agent).cloned()
@@ -1836,9 +1803,6 @@ mod tests {
         }
         fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
             self.last_seen_memories.get(&agent).cloned()
-        }
-        fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
-            self.patrol_profiles.get(&agent).cloned()
         }
         fn theft_disposition_profile(&self, agent: EntityId) -> Option<TheftDispositionProfile> {
             self.theft_profiles.get(&agent).cloned()
@@ -1861,35 +1825,11 @@ mod tests {
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
         }
-        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
-            None
-        }
-        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
-            self.wounds.get(&agent).cloned().unwrap_or_default()
-        }
         fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
             self.factions_by_member
                 .get(&entity)
                 .cloned()
                 .unwrap_or_default()
-        }
-        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
-            self.hostiles.get(&agent).cloned().unwrap_or_default()
-        }
-        fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
-            self.attackers.get(&agent).cloned().unwrap_or_default()
-        }
-        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.listed_sale_lots
-                .get(&(place, commodity))
-                .cloned()
-                .unwrap_or_default()
-        }
-        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
-            self.sale_lot_sellers.get(&lot).copied()
-        }
-        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
-            self.demand_memory.get(&agent).cloned().unwrap_or_default()
         }
         fn office_data(&self, office: EntityId) -> Option<OfficeData> {
             self.office_data.get(&office).cloned()
@@ -1912,9 +1852,6 @@ mod tests {
                 .cloned()
                 .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
-        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
-            self.merchandise_profiles.get(&agent).cloned()
-        }
         fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
             self.loyalties.get(&(subject, target)).copied()
         }
@@ -1923,6 +1860,75 @@ mod tests {
                 .get(&agent)
                 .cloned()
                 .unwrap_or_default()
+        }
+    }
+
+    impl CombatBeliefView for TestBeliefView {
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
+        }
+        fn courage(&self, agent: EntityId) -> Option<Permille> {
+            self.courage.get(&agent).copied()
+        }
+        fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+            self.wounds.get(&agent).cloned().unwrap_or_default()
+        }
+        fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+            self.hostiles.get(&agent).cloned().unwrap_or_default()
+        }
+        fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+            self.attackers.get(&agent).cloned().unwrap_or_default()
+        }
+        fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+            self.patrol_profiles.get(&agent).cloned()
+        }
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
+        }
+    }
+
+    impl EconomicBeliefView for TestBeliefView {
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+        fn commodity_valuation_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<CommodityValuationProfile> {
+            self.commodity_valuation_profiles.get(&agent).copied()
+        }
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+        fn local_controlled_lots_for(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+            self.listed_sale_lots
+                .get(&(place, commodity))
+                .cloned()
+                .unwrap_or_default()
+        }
+        fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+            self.sale_lot_sellers.get(&lot).copied()
+        }
+        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+            self.demand_memory.get(&agent).cloned().unwrap_or_default()
+        }
+        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+            self.merchandise_profiles.get(&agent).cloned()
         }
     }
 

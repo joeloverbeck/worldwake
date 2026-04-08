@@ -459,8 +459,9 @@ mod tests {
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
+        ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
+        EconomicBeliefView, EntityBeliefView, ProfileBeliefView, RuntimeBeliefView,
+        SpatialBeliefView, TemporalBeliefView,
     };
 
     /// Minimal mock for assumption tests.
@@ -572,6 +573,39 @@ mod tests {
     }
 
     impl RuntimeBeliefView for MockBeliefView {
+        fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {
+            BeliefConfidencePolicy::default()
+        }
+        fn intention_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<IntentionDispositionProfile> {
+            None
+        }
+    }
+
+    impl CombatBeliefView for MockBeliefView {
+        fn combat_profile(&self, _entity: EntityId) -> Option<CombatProfile> {
+            None
+        }
+        fn wounds(&self, _entity: EntityId) -> Vec<Wound> {
+            Vec::new()
+        }
+        fn visible_hostiles_for(&self, _entity: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn current_attackers_of(&self, _entity: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
+
+    impl EconomicBeliefView for MockBeliefView {
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
         fn controlled_commodity_quantity_at_place(
             &self,
             _a: EntityId,
@@ -586,33 +620,6 @@ mod tests {
             _p: EntityId,
             _c: CommodityKind,
         ) -> Vec<EntityId> {
-            Vec::new()
-        }
-        fn has_wounds(&self, _entity: EntityId) -> bool {
-            false
-        }
-        fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {
-            BeliefConfidencePolicy::default()
-        }
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
-        }
-        fn intention_disposition_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<IntentionDispositionProfile> {
-            None
-        }
-        fn combat_profile(&self, _entity: EntityId) -> Option<CombatProfile> {
-            None
-        }
-        fn wounds(&self, _entity: EntityId) -> Vec<Wound> {
-            Vec::new()
-        }
-        fn visible_hostiles_for(&self, _entity: EntityId) -> Vec<EntityId> {
-            Vec::new()
-        }
-        fn current_attackers_of(&self, _entity: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
         fn listed_sale_lots_at(

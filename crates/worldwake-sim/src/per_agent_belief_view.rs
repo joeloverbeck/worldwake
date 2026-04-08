@@ -1,8 +1,8 @@
 use crate::{
     ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
-    ControlBeliefView, DurationExpr, EntityBeliefView, FacilityBeliefView, InventoryBeliefView,
-    ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SpatialBeliefView,
-    TemporalBeliefView, estimate_duration_from_beliefs,
+    CombatBeliefView, ControlBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView,
+    FacilityBeliefView, InventoryBeliefView, ProfileBeliefView, RecipeDefinition, RecipeRegistry,
+    RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView, estimate_duration_from_beliefs,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -780,54 +780,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         entities
     }
 
-    fn controlled_commodity_quantity_at_place(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Quantity {
-        if agent != self.agent {
-            return Quantity(0);
-        }
-
-        self.authoritative_local_controlled_lots_for(agent, place, commodity)
-            .into_iter()
-            .filter_map(|entity| self.world.get_component_item_lot(entity))
-            .fold(Quantity(0), |total, lot| {
-                Quantity(
-                    total
-                        .0
-                        .checked_add(lot.quantity.0)
-                        .expect("local controlled commodity quantity overflowed"),
-                )
-            })
-    }
-
-    fn local_controlled_lots_for(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Vec<EntityId> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.authoritative_local_controlled_lots_for(agent, place, commodity)
-    }
-
-    fn has_wounds(&self, entity: EntityId) -> bool {
-        if entity == self.agent {
-            return self
-                .world
-                .get_component_wound_list(entity)
-                .is_some_and(|wounds| !wounds.wounds.is_empty());
-        }
-
-        self.believed_entity(entity)
-            .is_some_and(|state| !state.wounds.is_empty())
-    }
-
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
         assert_eq!(
             agent, self.agent,
@@ -849,26 +801,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             })
     }
 
-    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
-        (agent == self.agent)
-            .then(|| {
-                self.world
-                    .get_component_trade_disposition_profile(agent)
-                    .cloned()
-            })
-            .flatten()
-    }
-
-    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
-        (agent == self.agent)
-            .then(|| {
-                self.world
-                    .get_component_commodity_valuation_profile(agent)
-                    .copied()
-            })
-            .flatten()
-    }
-
     fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
         (agent == self.agent)
             .then(|| self.world.get_component_source_reliability(agent).cloned())
@@ -884,18 +816,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
         (agent == self.agent)
             .then(|| self.world.get_component_last_seen_memory(agent).cloned())
-            .flatten()
-    }
-
-    fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_patrol_profile(agent).cloned())
-            .flatten()
-    }
-
-    fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_pursuit_profile(agent).cloned())
             .flatten()
     }
 
@@ -1029,12 +949,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .cloned()
     }
 
-    fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_combat_profile(agent).copied())
-            .flatten()
-    }
-
     fn violation_disposition_profile(
         &self,
         agent: EntityId,
@@ -1063,153 +977,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                     .collect()
             })
             .unwrap_or_default()
-    }
-
-    fn courage(&self, agent: EntityId) -> Option<Permille> {
-        if agent == self.agent {
-            return self
-                .world
-                .get_component_utility_profile(agent)
-                .map(|p| p.courage);
-        }
-        self.believed_entity(agent)
-            .and_then(|state| state.last_known_courage)
-    }
-
-    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
-        (agent == self.agent)
-            .then(|| {
-                self.world
-                    .get_component_perception_profile(agent)
-                    .map(|profile| profile.consultation_speed_factor)
-            })
-            .flatten()
-    }
-
-    fn wounds(&self, agent: EntityId) -> Vec<Wound> {
-        if agent == self.agent {
-            return self
-                .world
-                .get_component_wound_list(agent)
-                .map(|wounds| wounds.wounds.clone())
-                .unwrap_or_default();
-        }
-
-        self.believed_entity(agent)
-            .map(|state| state.wounds.clone())
-            .unwrap_or_default()
-    }
-
-    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        let mut hostiles = self
-            .hostile_targets_of(agent)
-            .into_iter()
-            .chain(self.world.hostile_towards(agent))
-            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
-            .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| {
-                self.believed_entity(*entity)
-                    .is_some_and(|belief| belief.alive)
-            })
-            .collect::<BTreeSet<_>>();
-        hostiles.extend(self.current_attackers_of(agent));
-        hostiles.into_iter().collect()
-    }
-
-    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.world
-            .hostile_targets_of(agent)
-            .into_iter()
-            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
-            .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| {
-                self.believed_entity(*entity)
-                    .is_some_and(|belief| belief.alive)
-            })
-            .collect()
-    }
-
-    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
-        let Some(runtime) = self.runtime else {
-            return Vec::new();
-        };
-
-        runtime
-            .active_actions
-            .values()
-            .filter(|action| action.actor != agent)
-            .filter(|action| action.targets.contains(&agent))
-            .filter(|action| self.shares_local_context(agent, action.actor))
-            .filter_map(|action| {
-                let def = runtime.action_defs.get(action.def_id)?;
-                (def.domain.counts_as_combat_engagement() && def.name == "attack")
-                    .then_some(action.actor)
-            })
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    }
-
-    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::ItemLot))
-            .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
-            .filter(|entity| self.world.has_component_sale_listing(*entity))
-            .filter(|entity| {
-                self.world
-                    .get_component_stock_assignment(*entity)
-                    .is_some_and(|assignment| {
-                        assignment.kind == worldwake_core::StockAssignmentKind::Displayed
-                            && self
-                                .facility_controller_at(assignment.facility, place)
-                                .is_some()
-                    })
-            })
-            .collect()
-    }
-
-    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
-        if !self.world.has_component_sale_listing(lot) {
-            return None;
-        }
-        let assignment = self.world.get_component_stock_assignment(lot)?;
-        if assignment.kind != worldwake_core::StockAssignmentKind::Displayed {
-            return None;
-        }
-        let place = self.effective_place(lot)?;
-        self.facility_controller_at(assignment.facility, place)
-    }
-
-    fn has_sale_listing(&self, lot: EntityId) -> bool {
-        self.world.has_component_sale_listing(lot)
-    }
-
-    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.world
-            .get_component_demand_memory(agent)
-            .map(|memory| memory.observations.clone())
-            .unwrap_or_default()
-    }
-
-    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
-        if agent == self.agent || self.believed_entity(agent).is_some() {
-            return self.world.get_component_merchandise_profile(agent).cloned();
-        }
-
-        None
     }
 
     fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
@@ -1428,6 +1195,243 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
     }
 }
 
+impl CombatBeliefView for PerAgentBeliefView<'_> {
+    fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_combat_profile(agent).copied())
+            .flatten()
+    }
+
+    fn courage(&self, agent: EntityId) -> Option<Permille> {
+        if agent == self.agent {
+            return self
+                .world
+                .get_component_utility_profile(agent)
+                .map(|p| p.courage);
+        }
+        self.believed_entity(agent)
+            .and_then(|state| state.last_known_courage)
+    }
+
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_perception_profile(agent)
+                    .map(|profile| profile.consultation_speed_factor)
+            })
+            .flatten()
+    }
+
+    fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+        if agent == self.agent {
+            return self
+                .world
+                .get_component_wound_list(agent)
+                .map(|wounds| wounds.wounds.clone())
+                .unwrap_or_default();
+        }
+
+        self.believed_entity(agent)
+            .map(|state| state.wounds.clone())
+            .unwrap_or_default()
+    }
+
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .hostile_targets_of(agent)
+            .into_iter()
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.shares_local_context(agent, *entity))
+            .filter(|entity| {
+                self.believed_entity(*entity)
+                    .is_some_and(|belief| belief.alive)
+            })
+            .collect()
+    }
+
+    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        let mut hostiles = self
+            .hostile_targets_of(agent)
+            .into_iter()
+            .chain(self.world.hostile_towards(agent))
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.shares_local_context(agent, *entity))
+            .filter(|entity| {
+                self.believed_entity(*entity)
+                    .is_some_and(|belief| belief.alive)
+            })
+            .collect::<BTreeSet<_>>();
+        hostiles.extend(self.current_attackers_of(agent));
+        hostiles.into_iter().collect()
+    }
+
+    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+        let Some(runtime) = self.runtime else {
+            return Vec::new();
+        };
+
+        runtime
+            .active_actions
+            .values()
+            .filter(|action| action.actor != agent)
+            .filter(|action| action.targets.contains(&agent))
+            .filter(|action| self.shares_local_context(agent, action.actor))
+            .filter_map(|action| {
+                let def = runtime.action_defs.get(action.def_id)?;
+                (def.domain.counts_as_combat_engagement() && def.name == "attack")
+                    .then_some(action.actor)
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_patrol_profile(agent).cloned())
+            .flatten()
+    }
+
+    fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_pursuit_profile(agent).cloned())
+            .flatten()
+    }
+
+    fn has_wounds(&self, entity: EntityId) -> bool {
+        if entity == self.agent {
+            return self
+                .world
+                .get_component_wound_list(entity)
+                .is_some_and(|wounds| !wounds.wounds.is_empty());
+        }
+
+        self.believed_entity(entity)
+            .is_some_and(|state| !state.wounds.is_empty())
+    }
+}
+
+impl EconomicBeliefView for PerAgentBeliefView<'_> {
+    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_trade_disposition_profile(agent)
+                    .cloned()
+            })
+            .flatten()
+    }
+
+    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_commodity_valuation_profile(agent)
+                    .copied()
+            })
+            .flatten()
+    }
+
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity {
+        if agent != self.agent {
+            return Quantity(0);
+        }
+
+        self.authoritative_local_controlled_lots_for(agent, place, commodity)
+            .into_iter()
+            .filter_map(|entity| self.world.get_component_item_lot(entity))
+            .fold(Quantity(0), |total, lot| {
+                Quantity(
+                    total
+                        .0
+                        .checked_add(lot.quantity.0)
+                        .expect("local controlled commodity quantity overflowed"),
+                )
+            })
+    }
+
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.authoritative_local_controlled_lots_for(agent, place, commodity)
+    }
+
+    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::ItemLot))
+            .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+            .filter(|entity| self.world.has_component_sale_listing(*entity))
+            .filter(|entity| {
+                self.world
+                    .get_component_stock_assignment(*entity)
+                    .is_some_and(|assignment| {
+                        assignment.kind == worldwake_core::StockAssignmentKind::Displayed
+                            && self
+                                .facility_controller_at(assignment.facility, place)
+                                .is_some()
+                    })
+            })
+            .collect()
+    }
+
+    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+        if !self.world.has_component_sale_listing(lot) {
+            return None;
+        }
+        let assignment = self.world.get_component_stock_assignment(lot)?;
+        if assignment.kind != worldwake_core::StockAssignmentKind::Displayed {
+            return None;
+        }
+        let place = self.effective_place(lot)?;
+        self.facility_controller_at(assignment.facility, place)
+    }
+
+    fn has_sale_listing(&self, lot: EntityId) -> bool {
+        self.world.has_component_sale_listing(lot)
+    }
+
+    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .get_component_demand_memory(agent)
+            .map(|memory| memory.observations.clone())
+            .unwrap_or_default()
+    }
+
+    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+        if agent == self.agent || self.believed_entity(agent).is_some() {
+            return self.world.get_component_merchandise_profile(agent).cloned();
+        }
+
+        None
+    }
+}
+
 impl FacilityBeliefView for PerAgentBeliefView<'_> {
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
         if entity == self.agent {
@@ -1489,10 +1493,10 @@ mod tests {
     use super::{PerAgentBeliefRuntime, PerAgentBeliefView};
     use crate::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionStatus, Constraint, ControlBeliefView, DurationExpr,
-        EntityBeliefView, FacilityBeliefView, GoalBeliefView, Interruptibility,
-        InventoryBeliefView, Precondition, ProfileBeliefView, ReservationReq, RuntimeBeliefView,
-        SpatialBeliefView, TargetSpec, TemporalBeliefView,
+        ActionInstanceId, ActionPayload, ActionStatus, CombatBeliefView, Constraint,
+        ControlBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView, FacilityBeliefView,
+        GoalBeliefView, Interruptibility, InventoryBeliefView, Precondition, ProfileBeliefView,
+        ReservationReq, RuntimeBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -1775,10 +1779,7 @@ mod tests {
             InventoryBeliefView::commodity_quantity(&view, other, CommodityKind::Bread),
             Quantity(7)
         );
-        assert_eq!(
-            RuntimeBeliefView::wounds(&view, other),
-            vec![sample_wound()]
-        );
+        assert_eq!(CombatBeliefView::wounds(&view, other), vec![sample_wound()]);
     }
 
     #[test]
@@ -1875,16 +1876,16 @@ mod tests {
         // The believed merchant is alive and co-located, so their facility's displayed lot
         // passes the facility_controller_at check.
         assert_eq!(
-            RuntimeBeliefView::listed_sale_lots_at(&view, place, CommodityKind::Bread),
+            EconomicBeliefView::listed_sale_lots_at(&view, place, CommodityKind::Bread),
             vec![listed_lot]
         );
         assert_eq!(
-            RuntimeBeliefView::seller_for_sale_lot(&view, listed_lot),
+            EconomicBeliefView::seller_for_sale_lot(&view, listed_lot),
             Some(believed_merchant)
         );
         // Hidden lot's seller is not discoverable (agent doesn't know about hidden_lot)
         assert_eq!(
-            RuntimeBeliefView::seller_for_sale_lot(&view, hidden_lot),
+            EconomicBeliefView::seller_for_sale_lot(&view, hidden_lot),
             None
         );
     }
@@ -2204,7 +2205,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::commodity_valuation_profile(&view, agent),
+            EconomicBeliefView::commodity_valuation_profile(&view, agent),
             Some(profile)
         );
         assert_eq!(
@@ -2234,7 +2235,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::commodity_valuation_profile(&view, agent),
+            EconomicBeliefView::commodity_valuation_profile(&view, agent),
             None
         );
         assert_eq!(
@@ -2837,7 +2838,7 @@ mod tests {
         let view = PerAgentBeliefView::with_runtime(agent, &world, &beliefs, runtime);
 
         assert_eq!(
-            RuntimeBeliefView::current_attackers_of(&view, agent),
+            CombatBeliefView::current_attackers_of(&view, agent),
             vec![attacker]
         );
         assert_eq!(
@@ -2889,11 +2890,11 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert!(
-            RuntimeBeliefView::visible_hostiles_for(&view, agent).is_empty(),
+            CombatBeliefView::visible_hostiles_for(&view, agent).is_empty(),
             "dead believed hostiles should not continue to project danger"
         );
         assert!(
-            RuntimeBeliefView::hostile_targets_of(&view, agent).is_empty(),
+            CombatBeliefView::hostile_targets_of(&view, agent).is_empty(),
             "dead believed hostiles should not remain actionable hostile targets"
         );
     }
@@ -3542,12 +3543,12 @@ mod tests {
 
         // Self-authoritative: returns own courage
         assert_eq!(
-            RuntimeBeliefView::courage(&view, agent),
+            CombatBeliefView::courage(&view, agent),
             Some(Permille::new(750).unwrap())
         );
         // Other agent: returns believed courage
         assert_eq!(
-            RuntimeBeliefView::courage(&view, other),
+            CombatBeliefView::courage(&view, other),
             Some(Permille::new(200).unwrap())
         );
 
@@ -3581,7 +3582,7 @@ mod tests {
         beliefs.update_entity(other, entity_belief(place, true, 0, 3));
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::courage(&view, other), None);
+        assert_eq!(CombatBeliefView::courage(&view, other), None);
     }
 
     #[test]
@@ -3602,7 +3603,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::courage(&view, unknown), None);
+        assert_eq!(CombatBeliefView::courage(&view, unknown), None);
     }
 
     #[test]
@@ -3621,7 +3622,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::courage(&view, agent), None);
+        assert_eq!(CombatBeliefView::courage(&view, agent), None);
     }
 
     #[test]

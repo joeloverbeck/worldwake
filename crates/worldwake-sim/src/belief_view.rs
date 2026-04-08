@@ -497,6 +497,61 @@ pub trait InventoryBeliefView {
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
 }
 
+pub trait CombatBeliefView {
+    fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
+    fn courage(&self, agent: EntityId) -> Option<Permille> {
+        let _ = agent;
+        None
+    }
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+        let _ = agent;
+        None
+    }
+    fn wounds(&self, agent: EntityId) -> Vec<Wound>;
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+        self.visible_hostiles_for(agent)
+    }
+    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;
+    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId>;
+    fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+        let _ = agent;
+        None
+    }
+    fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
+        let _ = agent;
+        None
+    }
+    fn has_wounds(&self, entity: EntityId) -> bool;
+}
+
+pub trait EconomicBeliefView {
+    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
+    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        let _ = agent;
+        None
+    }
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity;
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId>;
+    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
+    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId>;
+    fn has_sale_listing(&self, lot: EntityId) -> bool {
+        let _ = lot;
+        false
+    }
+    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
+    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
+}
+
 pub trait FacilityBeliefView {
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag>;
     fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
@@ -522,6 +577,8 @@ pub trait RuntimeBeliefView:
     + SpatialBeliefView
     + TemporalBeliefView
     + InventoryBeliefView
+    + CombatBeliefView
+    + EconomicBeliefView
     + FacilityBeliefView
 {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
@@ -569,28 +626,10 @@ pub trait RuntimeBeliefView:
         let _ = (place, domain, target);
         Vec::new()
     }
-    fn controlled_commodity_quantity_at_place(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Quantity;
-    fn local_controlled_lots_for(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Vec<EntityId>;
-    fn has_wounds(&self, entity: EntityId) -> bool;
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
     fn observation_fidelity(&self, agent: EntityId) -> Permille {
         let _ = agent;
         Permille::new_unchecked(1000)
-    }
-    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
-    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
-        let _ = agent;
-        None
     }
     fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
         let _ = agent;
@@ -601,10 +640,6 @@ pub trait RuntimeBeliefView:
         None
     }
     fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
-        let _ = agent;
-        None
-    }
-    fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
         let _ = agent;
         None
     }
@@ -623,10 +658,6 @@ pub trait RuntimeBeliefView:
         None
     }
     fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
-        let _ = agent;
-        None
-    }
-    fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
         let _ = agent;
         None
     }
@@ -666,15 +697,6 @@ pub trait RuntimeBeliefView:
         let _ = (actor, key);
         None
     }
-    fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile>;
-    fn courage(&self, agent: EntityId) -> Option<Permille> {
-        let _ = agent;
-        None
-    }
-    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
-        let _ = agent;
-        None
-    }
     fn violation_disposition_profile(
         &self,
         agent: EntityId,
@@ -686,20 +708,6 @@ pub trait RuntimeBeliefView:
         let _ = agent;
         Vec::new()
     }
-    fn wounds(&self, agent: EntityId) -> Vec<Wound>;
-    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
-        self.visible_hostiles_for(agent)
-    }
-    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;
-    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId>;
-    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
-    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId>;
-    fn has_sale_listing(&self, lot: EntityId) -> bool {
-        let _ = lot;
-        false
-    }
-    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation>;
-    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn record_data(&self, record: EntityId) -> Option<RecordData> {
         let _ = record;
         None
@@ -963,7 +971,7 @@ macro_rules! impl_goal_belief_view {
                 place: worldwake_core::EntityId,
                 commodity: worldwake_core::CommodityKind,
             ) -> worldwake_core::Quantity {
-                $crate::RuntimeBeliefView::controlled_commodity_quantity_at_place(
+                $crate::EconomicBeliefView::controlled_commodity_quantity_at_place(
                     self, agent, place, commodity,
                 )
             }
@@ -974,7 +982,7 @@ macro_rules! impl_goal_belief_view {
                 place: worldwake_core::EntityId,
                 commodity: worldwake_core::CommodityKind,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::local_controlled_lots_for(self, agent, place, commodity)
+                $crate::EconomicBeliefView::local_controlled_lots_for(self, agent, place, commodity)
             }
 
             fn bandit_flee_wound_threshold(
@@ -1095,7 +1103,7 @@ macro_rules! impl_goal_belief_view {
             }
 
             fn has_wounds(&self, entity: worldwake_core::EntityId) -> bool {
-                $crate::RuntimeBeliefView::has_wounds(self, entity)
+                $crate::CombatBeliefView::has_wounds(self, entity)
             }
 
             fn homeostatic_needs(
@@ -1130,7 +1138,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::PatrolProfile> {
-                $crate::RuntimeBeliefView::patrol_profile(self, agent)
+                $crate::CombatBeliefView::patrol_profile(self, agent)
             }
 
             fn patrol_route(
@@ -1144,7 +1152,7 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::PursuitProfile> {
-                $crate::RuntimeBeliefView::pursuit_profile(self, agent)
+                $crate::CombatBeliefView::pursuit_profile(self, agent)
             }
 
             fn epistemic_disposition_profile(
@@ -1217,7 +1225,7 @@ macro_rules! impl_goal_belief_view {
             }
 
             fn courage(&self, agent: worldwake_core::EntityId) -> Option<worldwake_core::Permille> {
-                $crate::RuntimeBeliefView::courage(self, agent)
+                $crate::CombatBeliefView::courage(self, agent)
             }
 
             fn violation_disposition_profile(
@@ -1238,14 +1246,14 @@ macro_rules! impl_goal_belief_view {
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::MerchandiseProfile> {
-                $crate::RuntimeBeliefView::merchandise_profile(self, agent)
+                $crate::EconomicBeliefView::merchandise_profile(self, agent)
             }
 
             fn commodity_valuation_profile(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Option<worldwake_core::CommodityValuationProfile> {
-                $crate::RuntimeBeliefView::commodity_valuation_profile(self, agent)
+                $crate::EconomicBeliefView::commodity_valuation_profile(self, agent)
             }
 
             fn route_experience(
@@ -1291,28 +1299,28 @@ macro_rules! impl_goal_belief_view {
             }
 
             fn wounds(&self, agent: worldwake_core::EntityId) -> Vec<worldwake_core::Wound> {
-                $crate::RuntimeBeliefView::wounds(self, agent)
+                $crate::CombatBeliefView::wounds(self, agent)
             }
 
             fn hostile_targets_of(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::hostile_targets_of(self, agent)
+                $crate::CombatBeliefView::hostile_targets_of(self, agent)
             }
 
             fn visible_hostiles_for(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::visible_hostiles_for(self, agent)
+                $crate::CombatBeliefView::visible_hostiles_for(self, agent)
             }
 
             fn current_attackers_of(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::current_attackers_of(self, agent)
+                $crate::CombatBeliefView::current_attackers_of(self, agent)
             }
 
             fn listed_sale_lots_at(
@@ -1320,25 +1328,25 @@ macro_rules! impl_goal_belief_view {
                 place: worldwake_core::EntityId,
                 commodity: worldwake_core::CommodityKind,
             ) -> Vec<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::listed_sale_lots_at(self, place, commodity)
+                $crate::EconomicBeliefView::listed_sale_lots_at(self, place, commodity)
             }
 
             fn seller_for_sale_lot(
                 &self,
                 lot: worldwake_core::EntityId,
             ) -> Option<worldwake_core::EntityId> {
-                $crate::RuntimeBeliefView::seller_for_sale_lot(self, lot)
+                $crate::EconomicBeliefView::seller_for_sale_lot(self, lot)
             }
 
             fn has_sale_listing(&self, lot: worldwake_core::EntityId) -> bool {
-                $crate::RuntimeBeliefView::has_sale_listing(self, lot)
+                $crate::EconomicBeliefView::has_sale_listing(self, lot)
             }
 
             fn demand_memory(
                 &self,
                 agent: worldwake_core::EntityId,
             ) -> Vec<worldwake_core::DemandObservation> {
-                $crate::RuntimeBeliefView::demand_memory(self, agent)
+                $crate::EconomicBeliefView::demand_memory(self, agent)
             }
 
             fn corpse_entities_at(

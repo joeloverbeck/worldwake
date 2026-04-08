@@ -370,27 +370,6 @@ mod tests {
     }
 
     impl RuntimeBeliefView for TestBeliefView {
-        fn controlled_commodity_quantity_at_place(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Quantity {
-            Quantity(0)
-        }
-
-        fn local_controlled_lots_for(
-            &self,
-            _actor: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-        fn has_wounds(&self, _entity: EntityId) -> bool {
-            false
-        }
-
         fn belief_confidence_policy(
             &self,
             _agent: EntityId,
@@ -402,21 +381,15 @@ mod tests {
             self.entity_beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
-        fn pursuit_profile(&self, agent: EntityId) -> Option<PursuitProfile> {
-            self.pursuit_profiles.get(&agent).cloned()
-        }
-
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
-        }
-
         fn intention_disposition_profile(
             &self,
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
         }
+    }
 
+    impl worldwake_sim::CombatBeliefView for TestBeliefView {
         fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
             Some(CombatProfile::new(
                 pm(1000),
@@ -432,19 +405,43 @@ mod tests {
                 NonZeroU32::new(10).unwrap(),
             ))
         }
-
         fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
             Vec::new()
         }
-
         fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
-
         fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
+        fn pursuit_profile(&self, agent: EntityId) -> Option<PursuitProfile> {
+            self.pursuit_profiles.get(&agent).cloned()
+        }
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
 
+    impl worldwake_sim::EconomicBeliefView for TestBeliefView {
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
+        }
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+        fn local_controlled_lots_for(
+            &self,
+            _actor: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
         fn listed_sale_lots_at(
             &self,
             _place: EntityId,
@@ -452,15 +449,12 @@ mod tests {
         ) -> Vec<EntityId> {
             Vec::new()
         }
-
         fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
             None
         }
-
         fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
             Vec::new()
         }
-
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
         }
