@@ -23,6 +23,10 @@ Verify the ticket against the current codebase, not stale architectural memory. 
 
 For trivial single-file additive tickets, scale the reassessment down deliberately: read the ticket, cited references, and owned symbol/file; confirm the dependency path is present; and run a narrow existence/fallout sweep for prior implementation or obvious constructor/usage fallout. Do not skip reassessment, but do not force the full matrix when the owned surface is genuinely small and local.
 
+When the ticket was authored by `/spec-to-tickets` in the current session from a freshly reassessed spec, scale reassessment to a targeted sweep: confirm the ticket's owned types still exist at stated paths, check for exhaustive matchers on modified enums, verify trait bounds on any types used in new test code, check for manual struct literals of modified types (constructors, test helpers, `from_*_for_test` patterns) that would need updating for new fields, and before adding new test-only accessors or helpers, check whether existing test infrastructure (e.g., `ActualWorldState::from_world`, test harness methods) already provides the needed capability. Do not repeat the full reference validation already performed during spec reassessment.
+
+When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), treat the audit as reassessment. Record findings in the reassessment section. If a gap is confirmed, auto-correct `Engine Changes`, `What to Change`, and `Files to Touch` before coding. If no gap exists, close with a reassessment-only Outcome documenting the audit trail.
+
 #### Reference and baseline validation
 
 - Referenced files, types, functions, modules, commands, and tests exist.
@@ -33,6 +37,7 @@ For trivial single-file additive tickets, scale the reassessment down deliberate
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
 - Described architecture still matches live code.
 - Stated coverage gaps are real and correctly classified.
+- When replacing inline code with a delegation to data populated by a prior ticket, verify line-by-line that the prior ticket's data captures every branch of the original code. Staged migrations risk silent behavior loss if the data ticket was incomplete.
 
 #### Golden-specific reassessment
 
@@ -42,6 +47,9 @@ For trivial single-file additive tickets, scale the reassessment down deliberate
 - If a claimed divergence is proved at lower layers but not stably isolatable as a golden without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative.
 - For golden communication or information-path tickets, verify separately what actually degrades: provenance, confidence, communication class, eligibility, ranking, or another distinct mechanism.
 - When a ticket proposes extending an existing trace/debug carrier, verify the exact live coverage of that carrier before coding. If the current trace only covers one subpath, correct the ticket to either stay within that subpath or explicitly widen the trace surface as owned scope.
+- When the ticket adds candidate generation or goal model integration for a domain that already has golden coverage (e.g., Care, Combat, Expectation), run the existing golden suites for that domain as part of reassessment, before implementation begins. This catches cross-goal interference early — a new candidate emitter can cause goal-switching collisions with existing goal families for the same target entity.
+- When a golden ticket proposes specific GoalKind pairs to exercise a contention, planning, or action-lifecycle invariant, verify that each goal's declared ops (in `goal_dispatch_decl.rs`) include the required PlannerOpKind. If the goal family lacks the required op, correct the ticket's domain before coding.
+- When the ticket claims a specific scenario ID is free, verify by scanning all `golden_*.rs` files for that ID before accepting it. Update the ticket if the ID is already taken.
 
 #### Shared type, serialization, and persisted-shape sweep
 
@@ -98,6 +106,7 @@ Specific persisted-shape checks:
 - When a new world artifact becomes perceivable and the spec says discovery affects behavior, verify at least one lawful downstream consumer exists. Do not land decorative but causally inert snapshot fields.
 - When the ticket says information should be "internalized," search for an existing belief lane or consumer before inventing a new belief substrate.
 - When the ticket changes historical event content or view semantics, inspect renderers and detail views for reconstruction from live runtime state instead of stored event records.
+- When making a new action handler's affordance enumeration live through the planner's search pipeline, verify that every `RuntimeBeliefView` method the handler calls is implemented on `PlanningState` (via `PlanningSnapshot`), not just on `PerAgentBeliefView`. The planning state's view defaults most trait methods to `None`; affordance enumeration that depends on actor-local carriers (`expectation_store`, `ask_witness_memory`, `last_seen_memory`) silently produces zero payloads if the snapshot doesn't include the carrier.
 
 #### Registry and schema checks
 
@@ -114,12 +123,20 @@ Specific persisted-shape checks:
 - If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself rather than assuming the downstream consumer crate named in the ticket is the only edit surface.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
 
+#### Performance and allocation sweep
+
+- When a ticket eliminates allocation on a hot path (e.g., replacing `format!` with a structured enum variant), verify all consumers of the changed return type: `.is_ok()`, `.unwrap_err()`, `.map_err()`, pattern matches, `Display`/`to_string()` formatting. Confirm no caller depends on the old allocation shape (e.g., string content matching).
+- When adding a new enum variant to replace an allocating variant, include the exhaustive-match and downstream-mapping sweep from the "new enum variant" guidance in Section 5.9.
+- When a performance ticket adds a boolean fast-path alongside an existing `Result`-returning function, verify both paths agree on the same inputs.
+- When refactoring a function to accept pre-computed results by reference instead of re-computing internally, enumerate all call sites and verify each passes the correct pre-computed data. Confirm no call site depended on the function internally re-computing fresh state mid-sequence.
+- When changing a trait method's return type from owned to borrowed (`T` → `&T`), identify test mocks that construct the return value on-the-fly — they cannot return references to temporaries. Refactor those mocks to pre-populate owned storage and return references into it, rather than reverting to an owned return type or using `Cow`.
+
 #### Repo rules
 
 - Ticket fidelity from [AGENTS.md](../../../AGENTS.md)
 - Foundational compliance from [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md)
 - Ticket structure from [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md)
-- When a documentation ticket edits repo policy surfaces, check sibling guidance files with overlapping authority (`AGENTS.md`, `CLAUDE.md`, ticket-authoring docs).
+- When a documentation ticket edits repo policy surfaces, check sibling guidance files with overlapping authority (`AGENTS.md`, ticket-authoring docs).
 
 ### 3. Handle mismatches explicitly
 
@@ -161,6 +178,8 @@ Treat a stale acceptance criterion, scenario assertion surface, or proof target 
 | Adjacent blocker — broad or would expand ticket materially | Stop; use 1-3-1 |
 | Deeper shared-layer contradiction outside ticket scope | Do not pull into ticket; use 1-3-1 |
 
+When using 1-3-1, evaluate each option against the relevant FOUNDATIONS principles. Name the principle numbers and state whether each option aligns or violates. A FOUNDATIONS violation disqualifies an option regardless of implementation simplicity.
+
 Do not silently skip deliverables. Do not weaken the ticket without user confirmation.
 
 When the user confirms a direction that changes architecture boundary, affected files, or proof surface, update `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` before coding.
@@ -192,7 +211,7 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 #### Type-change scope
 
 When shared types change, include the sweep surfaces from Section 2 ("Shared type, serialization, and migration sweep") in the task list. Additional scope guidance:
-- Before editing, run a concrete constructor/shape sweep for the changed type across workspace crates (for example `rg -n 'BlockedIntent \\{' crates`), then rerun the same sweep before final verification to confirm no live literal or helper was missed.
+- Before editing, run a concrete constructor/shape sweep for the changed type across workspace crates (for example `rg -n 'BlockedIntent \{' crates`), then rerun the same sweep before final verification to confirm no live literal or helper was missed.
 - For broad shared-struct shape changes, it is acceptable to land the shared type first and then use sequential `cargo build` / `cargo test` compile failures to enumerate the remaining fallout. Prefer this over guessing when the compiler can authoritatively surface every missing literal or helper site.
 - When behavior moves between carriers, rewrite setup paths onto the new authoritative carrier rather than only deleting the stale field.
 - When a constructor begins seeding defaults it previously omitted, reassess tests proving "missing component" behavior — prefer rewriting to the new constructor contract.
@@ -228,19 +247,22 @@ Do not assume every schema macro reference needs a new import — verify actual 
 6. Preserve critical invariants from [AGENTS.md](../../../AGENTS.md): belief-only planning, information locality, append-only event log, determinism, conservation, unique location.
 7. When authoritative validation or affordance-surface behavior changes, verify the full AI pipeline per `Authoritative-To-AI Impact Rule` in [AGENTS.md](../../../AGENTS.md). If the change removes candidates earlier, update stale downstream expectations.
 8. When widening an action into a new custody or state regime, audit related stored state carriers for stale markers.
-9. When adding a new enum variant, search for exhaustive matches and state validators in dependent crates before broad verification.
+9. When adding a new enum variant, search for exhaustive matches and state validators in dependent crates before broad verification. Also search for hardcoded array/vec inventories (`const ALL`, test-only `ALL_KEYS` arrays) and count assertions (`assert_eq!(keys.len(), N)`) that mirror the enum's variant set. These are not pattern matches and won't produce compiler errors — they silently become incomplete or fail at runtime. Also check runtime-reachable wildcard catch-all matches that panic on unexpected variants, such as the `(strategy, goal_kind) => unreachable!(...)` arm in `feasibility.rs`. When adding a new variant to a shared error enum, also sweep: `Display` impl, cross-crate error-mapping functions (e.g., `map_reservation_error` in `start_gate.rs`), variant-inventory tests (e.g., `each_variant_displays_non_empty`), and crate-root re-exports.
 10. When a new variant is not supposed to be live yet, land explicit inert dispatch/policy/ranking branches. Do not prematurely wire real runtime behavior.
 11. When adding, removing, or replacing an `EntityKind`, include kind-classification and lifecycle-routing helpers in the sweep.
-12. When adding a field to a shared model, search for hand-written constructors and test literals across sibling modules, including same-crate test modules.
+12. When adding a field to a shared model, search for hand-written constructors and test literals across sibling modules, including same-crate test modules. When adding a field whose value differs per dispatch variant but the current code shares a single constant across multiple variants (or-patterned match arms), split the shared constant into per-variant constants. Update the match arms and any test inventories that reference the old shared constant name.
 13. When turning a single-shot action into a staged lifecycle, prove each phase separately: start admission, intermediate evolution, commit conditions, abort aftermath.
 14. When an action uses a profile-driven or expression-driven duration, make test helpers derive or tolerate the real completion window. Do not copy a nearby fixed-duration helper and assume the same tick cadence.
 15. When splitting uniform behavior into variant-specific rules, rewrite existing compressed tests into per-case proofs.
-16. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, heuristic/guidance surfaces (`goal_relevant_places`, evidence-place fallback, travel-pruning inputs when relevant), search tests.
+16. When making a new planner-visible operator lawful, sweep the full planner contract: goal dispatch, relevant-op declarations, progress barriers, goal-model expectations, heuristic/guidance surfaces (`goal_relevant_places`, evidence-place fallback, travel-pruning inputs when relevant), search tests. Verify the `may_appear_mid_plan` / `is_progress_barrier` combination: with `may_appear_mid_plan=false`, the operator can ONLY appear as a terminal step (requires `terminal_kind` to return `Some` — typically via `is_progress_barrier` or goal satisfaction). With `may_appear_mid_plan=true`, it can appear anywhere in the plan. If a ticket says "mid-plan step" but the operator has `may_appear_mid_plan=false`, the ticket needs architectural correction.
 17. When a planner goal must synthesize a runtime payload, verify the activation chain end to end: the goal carries enough identity to build the payload, root/current-place guidance makes the operator reachable, and terminal-step semantics treat the action as goal-satisfying rather than leaf-only.
 18. When the first planner fix only makes an operator partially live, immediately re-check the rest of the same operator chain before declaring success: candidate shape, root synthesis, payload construction, terminal semantics, and the focused planner proof.
 19. When one goal family spans multiple target subtypes, verify operator availability per subtype. Check for stale operators leaking across subtypes.
 20. When a goal family ends in a place-sensitive terminal action, add focused coverage for both target satisfaction and return-to-terminal-place legality.
 21. When a colocated leaf action becomes live, verify the colocated terminal case separately from travel-plus-leaf planning.
+22. When adding a new candidate emitter for a domain that already has active goal families (e.g., Care domain has both TreatWounds and EscortToSafety), verify that the new goal does not cause goal-switching collisions with existing goals for the same target entity. Run the existing golden suites for that domain before writing the new golden test. A new candidate can silently win ranking and trigger a goal switch that starts a second action while the first is still running, producing `DuplicateActor` or similar runtime errors.
+23. When a goal generates as a candidate with nonzero motive but is never selected, diagnose in this order: (a) verify `compute_motive` returns > 0, (b) verify `synthesized_root_candidate_targets` provides a root candidate for the terminal op, (c) verify `is_progress_barrier` identifies the terminal op, (d) verify `build_payload_override` succeeds for the goal's ops, (e) verify `estimate_duration` returns `Some` for the action's `DurationExpr`. Each of these is a silent skip in the search pipeline.
+24. When adding a new `GoalKind` variant, use the compiler to surface exhaustive-match sites, but also sweep these runtime-reachable surfaces that use wildcards or arrays: `GoalDispatchKey` enum + `ALL` array + `from_goal_kind`, `goal_kind_discriminant` in ranking.rs, `feasibility.rs` strategy-goal match, `format_goal_kind` in display.rs, and any shared signal/motive helpers in ranking.rs. Consider using `cargo build --workspace` first to catch compiler errors, then grep for the closest existing sibling (e.g., `ReportMissing` for `ReportFound`) to find runtime-only sites.
 
 ### 6. Verify at the right boundary
 
@@ -257,8 +279,8 @@ Typical order:
 - If a canonical interface is realized through a forwarding layer, prove both the consumer-facing call and the forwarding path.
 - Check that focused selectors actually match new/changed test names — thematic filters can miss sibling tests with different prefixes.
 - Prefer separate `cargo test` invocations per selector over combining exact test names in one command.
-- Run multiple `cargo test` or `cargo clippy` commands sequentially, not in parallel — lock contention makes parallel runs unreliable.
-- Treat focused selectors the same way: even narrow `cargo test` invocations should run one at a time, never through parallel tool wrappers.
+- Run multiple `cargo test` or `cargo clippy` commands sequentially when they share the same build profile — lock contention makes parallel same-profile runs unreliable. Commands with different profiles (e.g., `cargo test` vs `cargo clippy`) can safely run in parallel.
+- Treat focused selectors the same way: even narrow same-profile `cargo test` invocations should run one at a time, never through parallel tool wrappers.
 - When a broad verification run dies by `SIGKILL` or another likely environment/resource kill after focused suites are already green, rerun the named interrupted/failing suite in isolation before deciding whether to repeat the full broad run. Record that distinction in the ticket outcome instead of treating the killed broad run as a semantic failure by default.
 - After changing code post-verification, rerun narrowest affected tests and any stale broader commands.
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
@@ -266,7 +288,9 @@ Typical order:
 - When a migration reshapes a common API surface, expect lint fallout as well as compile fallout. Satisfy trait expectations like `Default` instead of suppressing lints.
 - When long-running verification commands are in flight, reuse those sessions rather than spawning duplicates.
 - When new registered actions or systems cause broad failures, triage for catalog-order drift, completeness assertions, and registry-expansion fallout before assuming the feature's runtime logic is broken.
-- If a focused failing proof exposes a real production contradiction in a ticket currently marked test-only or `Engine Changes: None`, update the ticket sections that define scope (`Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Out of Scope`) before continuing. Do not leave the ticket describing “tests only” work once live code changes are required.
+- If a focused failing proof exposes a real production contradiction in a ticket currently marked test-only or `Engine Changes: None`, update the ticket sections that define scope (`Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Out of Scope`) before continuing. Do not leave the ticket describing "tests only" work once live code changes are required.
+- When a ticket fixes a repeated pattern across multiple call sites, run a post-implementation pattern sweep (e.g., grep for the unfixed pattern) to confirm no sites were missed. Record the sweep result in the ticket Outcome.
+- When a workspace-wide verification command fails on files outside the ticket's owned surface (e.g., untracked binaries, pre-existing lint failures), verify the failure is unrelated by running the same command scoped to the ticket's owned crates. Record the pre-existing failure and the scoped-pass result in the ticket Outcome. Do not fix unrelated failures as part of the ticket.
 
 Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md):
 
@@ -293,6 +317,18 @@ cargo clippy --workspace --all-targets -- -D warnings
 - When adding `// Scenario ...` metadata, keep `Setup`, `Proves`, and `Cross-system chain` entries in the generator-friendly live format used by current golden files. After regenerating docs, inspect the generated scenario-map prose for truncation or malformed wrapped fields before closing the ticket.
 - When adding or renumbering `// Scenario N:` blocks, treat identifiers as repo-global. Pre-scan nearby or highest live IDs and resolve collisions.
 - After scenario metadata changes, refresh the generated golden inventory/docs as part of the verification surface.
+- When a golden test must isolate one goal from a competing goal family that shares the same observable input (e.g., EscortToSafety vs TreatWounds for wounded entities), use belief-source manipulation: seed beliefs via `PerceptionSource::Report` instead of `DirectObservation` to prevent candidate emission paths that gate on direct observation. This is a scenario isolation technique, not a production constraint.
+- When a golden scenario depends on motive arithmetic driven by metabolism rates or profile values, estimate the crossover tick (when the competing need overtakes the initial driver) from the rate differential. Start with conservative values that produce the crossover well within the tick budget. If the first run misses the milestone, adjust rates rather than expanding the tick budget.
+- When a golden scenario requires an action to target a specific entity kind from `EntityAtActorPlaceAnyOf`, and multiple co-located entities match different kinds, the affordance enumeration returns them in EntityId order. Create the preferred target entity BEFORE competing entities in the test setup to ensure the lower EntityId is tried first. Document this ordering dependency in the scenario rationale.
+
+#### Migration verification checklist
+
+For migrations moving config/profile state from driver-global to per-entity components:
+1. Remove the driver/global field and constructor arguments
+2. Move test/golden setup onto authoritative component writes for relevant entities
+3. Update runtime/save-load mirrors and serialization helpers
+4. Add harness helpers for per-entity profile injection when repeated setup would sprawl
+5. Rerun both tests and CI-matching clippy after the API reshape
 
 ### 7. Close out the ticket honestly
 
@@ -316,19 +352,11 @@ After the owned implementation is fully verified:
 - When a ticket claims cross-layer valuation agreement, check whether the shared scorer computes marginal value over the actor's current accessible stock.
 - When a ticket changes action availability, include at least one proof through real affordance enumeration, not just direct action construction.
 - For exact-bound planner-root candidates, do not treat target binding as the whole contract when operator legality depends on intermediate goal state.
+- When making a goal family live, verify its ranking entry in `compute_motive` returns a nonzero motive for the expected scenario inputs. A stub `=> 0` ranking silently prevents goal selection even when candidate generation and planner search are fully wired. When the new goal shares a signal or motive helper with existing goals (e.g., `expectation_response_signal`, `score_product`), verify the shared helper's filtering criteria match the new goal's expected state — a helper that checks `Overdue` will silently yield zero for a goal that fires on `Resolved`.
 
 #### Staged scaffolding
 
 When a ticket lands pure scaffolding ahead of downstream integration, wire immediate call sites or mark the temporary unused surface deliberately. Do not let staged work fail later CI clippy passes by accident.
-
-#### Migration verification checklist
-
-For migrations moving config/profile state from driver-global to per-entity components:
-1. Remove the driver/global field and constructor arguments
-2. Move test/golden setup onto authoritative component writes for relevant entities
-3. Update runtime/save-load mirrors and serialization helpers
-4. Add harness helpers for per-entity profile injection when repeated setup would sprawl
-5. Rerun both tests and CI-matching clippy after the API reshape
 
 ### 8. Close the loop on the ticket
 
@@ -376,3 +404,11 @@ Completed on YYYY-MM-DD.
 - Name exact files, symbols, layers, and invariants for non-trivial claims.
 - Treat tests, traces, event logs, and authoritative state as different proof surfaces.
 - Architectural contradictions: solve or escalate with 1-3-1 (see Section 3 decision tree). Do not patch around them.
+
+## Example Usage
+
+```
+/implement-ticket tickets/LEGACTTOO-009*
+/implement-ticket tickets/FITLSEC7RULGAP-001*
+/implement-ticket .claude/worktrees/my-feature/tickets/FOO-003*
+```
