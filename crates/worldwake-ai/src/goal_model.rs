@@ -2293,11 +2293,14 @@ mod tests {
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
             switch_margin: reasoning.switch_margin,
+            planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
             transient_block_ticks: reasoning.transient_block_ticks,
             unknown_block_ticks: reasoning.unknown_block_ticks,
             structural_block_ticks: reasoning.structural_block_ticks,
             initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
+            max_snapshot_entities_per_place: CognitiveProfile::default()
+                .max_snapshot_entities_per_place,
         }
     }
 

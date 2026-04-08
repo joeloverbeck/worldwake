@@ -6,6 +6,10 @@ use std::time::Instant;
 mod golden_harness;
 
 use golden_harness::soak_world::build_t30_world;
+use worldwake_ai::perf_telemetry::{
+    PlanningTelemetrySession, PlanningTelemetrySummary, PlanningWindowSummary,
+    SOAK_SEED_PERF_TELEMETRY_CONFIG,
+};
 use worldwake_core::{
     CauseRef, CommodityKind, EventId, EventView, Permille, Seed, hash_event_log, hash_world,
     total_authoritative_commodity_quantity, verify_authoritative_conservation,
@@ -13,12 +17,41 @@ use worldwake_core::{
 
 struct SoakRunResult {
     duration_ms: u128,
+    planning_summary: PlanningTelemetrySummary,
     world_hash: String,
     event_log_hash: String,
     event_count: usize,
 }
 
 const TOTAL_TICKS: u64 = 10080;
+
+fn nanos_to_micros(nanos: u128) -> u128 {
+    nanos / 1_000
+}
+
+fn format_ratio_millis(ratio_millis: Option<u128>) -> String {
+    match ratio_millis {
+        Some(value) => format!("{}.{:03}", value / 1000, value % 1000),
+        None => "NA".to_string(),
+    }
+}
+
+fn emit_window(label: &str, summary: PlanningWindowSummary) {
+    println!("{label}_tick_start={}", summary.window.start_tick);
+    println!(
+        "{label}_tick_end_exclusive={}",
+        summary.window.end_tick_exclusive
+    );
+    println!("{label}_planning_sample_count={}", summary.sample_count);
+    println!(
+        "{label}_planning_total_us={}",
+        nanos_to_micros(summary.total_duration_nanos)
+    );
+    println!(
+        "{label}_planning_avg_us={}",
+        summary.average_duration_nanos().map_or(0, nanos_to_micros)
+    );
+}
 
 fn parse_seed_arg() -> Result<u8, String> {
     let mut args = std::env::args().skip(1);
@@ -44,6 +77,7 @@ fn seed_from_id(seed_id: u8) -> Seed {
 
 fn run_one_seed(seed: Seed) -> SoakRunResult {
     let start = Instant::now();
+    let planning_session = PlanningTelemetrySession::start(SOAK_SEED_PERF_TELEMETRY_CONFIG);
     let (mut h, all_agents, _ruling_faction, _bandit_faction, _office) = build_t30_world(seed);
     let commodities_to_check = [
         CommodityKind::Apple,
@@ -149,9 +183,11 @@ fn run_one_seed(seed: Seed) -> SoakRunResult {
         "world state did not change after {TOTAL_TICKS} ticks (seed: {seed:?})"
     );
     let event_log_hash = hash_event_log(&h.event_log).expect("post-soak event log should hash");
+    let planning_summary = planning_session.finish();
 
     SoakRunResult {
         duration_ms: start.elapsed().as_millis(),
+        planning_summary,
         world_hash: format!("{final_world_hash:?}"),
         event_log_hash: format!("{event_log_hash:?}"),
         event_count: h.event_log.len(),
@@ -168,6 +204,13 @@ fn main() {
     println!("seed_id={seed_id}");
     println!("duration_ms={}", result.duration_ms);
     println!("event_count={}", result.event_count);
+    println!("planning_metric=plan_and_validate_next_step");
+    emit_window("early", result.planning_summary.early);
+    emit_window("late", result.planning_summary.late);
+    println!(
+        "late_to_early_planning_avg_ratio={}",
+        format_ratio_millis(result.planning_summary.late_to_early_average_ratio_millis())
+    );
     println!("world_hash={}", result.world_hash);
     println!("event_log_hash={}", result.event_log_hash);
 }

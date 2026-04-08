@@ -141,6 +141,10 @@ pub struct AgentDecisionRuntime {
     #[serde(skip)]
     pub last_frame_clear_reason: Option<FrameClearReason>,
     pub step_in_flight: bool,
+    /// Set after dead-agent cleanup has run, so subsequent ticks can skip
+    /// the full `process_agent` path for dead agents.
+    #[serde(skip)]
+    pub dead_cleanup_done: bool,
     #[serde(skip)]
     pub dirty: DirtySet,
     #[serde(skip)]
@@ -346,11 +350,14 @@ mod tests {
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
             switch_margin: reasoning.switch_margin,
+            planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
             transient_block_ticks: reasoning.transient_block_ticks,
             unknown_block_ticks: reasoning.unknown_block_ticks,
             structural_block_ticks: reasoning.structural_block_ticks,
             initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
+            max_snapshot_entities_per_place: CognitiveProfile::default()
+                .max_snapshot_entities_per_place,
         }
     }
 
@@ -469,6 +476,7 @@ mod tests {
                     (HypotheticalEntityId(6), entity(7)),
                 ]),
             },
+            dead_cleanup_done: false,
             exhaustion_cache: BTreeMap::from([(
                 OpportunityKey {
                     goal_key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {

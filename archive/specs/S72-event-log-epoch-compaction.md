@@ -12,7 +12,7 @@ Phase 7: Consequence Carriers
 
 ## Status
 
-DRAFT
+COMPLETED
 
 ## Motivation
 

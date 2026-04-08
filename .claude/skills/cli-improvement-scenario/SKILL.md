@@ -34,6 +34,8 @@ Follow these steps in order.
 
 First, validate the scenario loads: `cargo run -p worldwake-cli --bin worldwake-cli -- scenarios/cli-evaluation.ron --exec quit 2>&1`. If it fails with a parse error (missing field, type mismatch), fix the schema drift before proceeding with feature analysis. This is the most common maintenance trigger.
 
+To determine correct values for missing fields: read the struct's `Default` impl in the source. Use defaults unless the agent's existing profile values suggest a deliberate personality divergence — in that case, choose a value consistent with the agent's characterization.
+
 **Silent schema drift warning**: RON deserialization silently ignores unknown field names (no `deny_unknown_fields`). A renamed field will not cause a parse error — the old field is silently dropped and the agent gets no value for the new field. Step 3.1 (AgentDef-vs-RON comparison) is the primary defense against this. When Step 3 identifies recent renames (e.g., from commit messages or `types.rs` diffs), manually verify the RON uses the current field names.
 
 Then read `scenarios/cli-evaluation.ron` to understand what's currently exercised.
@@ -57,16 +59,18 @@ If `reports/cli-evaluation.md` does not exist, skip this step — there are no p
 
 ### Step 3: Identify New Features
 
-Check what's changed recently. Substeps 1-2 are the highest-value checks (primary defense against silent schema drift) — run them first.
+Check what's changed recently. Substeps 1-3 are the highest-value checks (primary defense against silent schema drift) — run them first.
 
 1. Compare the full set of `AgentDef` fields against what the current scenario RON actually uses. Fields present in `AgentDef` but absent from all agents in the RON are coverage gaps — these are the primary candidates for scenario updates. To perform this comparison: read the `AgentDef` struct definition in `types.rs`, list all `pub` fields (excluding `name`, `location`, `control`), then grep or scan the RON for each field name. Fields that appear in `AgentDef` but not in any agent's RON block are coverage gaps. Also check for fields in the RON that do NOT appear in `AgentDef` — these indicate stale renamed fields (silent schema drift).
 2. Check git diff of `types.rs` against the version used when the RON was last updated. Field renames or removals in `AgentDef` that aren't reflected in the RON indicate silent schema drift.
-3. Read recent git commits: `git log --oneline -20`
-4. Check active specs in `specs/` for newly implemented features
-5. Check `crates/worldwake-core/src/` for new component types or profile types
-6. Check `crates/worldwake-systems/src/` for new action registrations
-7. Check `crates/worldwake-cli/src/scenario/types.rs` for any new scenario def fields beyond what substep 1 already found
-8. For each new component or feature, check whether it appears in `AgentDef` or other scenario def types. Components that are runtime-generated (e.g., experience records, belief state, active goals) don't need scenario entries — they emerge naturally from agent behavior during ticking. Only features with scenario-definable fields need scenario updates.
+3. For each profile type that IS present in the RON, check whether its internal fields changed. New or renamed fields inside a profile struct (e.g., `CognitiveProfile` gaining a field) won't show up as an AgentDef-level gap — the AgentDef field exists, but the RON block is incomplete. The quickest approach: if Step 1 produced a parse error naming a specific struct, `git diff` that struct's source file against the last RON update commit to see exactly what changed. Otherwise, spot-check profile structs that appear in recent commits.
+4. If substeps 1-3 fully account for the schema drift found in Step 1 and no AgentDef-level fields were added, substeps 5-10 can be scanned quickly (git log + skim) rather than performed exhaustively.
+5. Read recent git commits: `git log --oneline -20`
+6. Check active specs in `specs/` for newly implemented features
+7. Check `crates/worldwake-core/src/` for new component types or profile types
+8. Check `crates/worldwake-systems/src/` for new action registrations
+9. Check `crates/worldwake-cli/src/scenario/types.rs` for any new scenario def fields beyond what substep 1 already found
+10. For each new component or feature, check whether it appears in `AgentDef` or other scenario def types. Components that are runtime-generated (e.g., experience records, belief state, active goals) don't need scenario entries — they emerge naturally from agent behavior during ticking. Only features with scenario-definable fields need scenario updates.
 
 ### Step 4: Update the Scenario
 

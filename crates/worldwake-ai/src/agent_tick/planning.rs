@@ -3,8 +3,11 @@ use crate::decision_trace::{
     PlannedStepSummary, RankedGoalSummary, SameGoalPlanningStopReason, SameGoalPlanningTrace,
     SelectedPlanReplacementKind, SelectedPlanReplacementTrace, SelectedPlanSearchProvenance,
     SelectedPlanSource, SelectedPlanTrace, SelectionTrace, SideBenefitTrace,
+    SnapshotContinuationOutcome, SnapshotContinuationTrace,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
+use crate::GoalKindPlannerExt;
+use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::search::PlanSearchResult;
 use crate::{
@@ -14,6 +17,7 @@ use crate::{
     select_best_plan,
 };
 use std::collections::BTreeMap;
+use std::time::Instant;
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockedIntentMemory, CognitiveProfile, ExecutionBudget,
     IntentionFrame, Permille, Tick,
@@ -213,6 +217,7 @@ pub(super) fn build_candidate_plans(
     scheduler: &Scheduler,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
+    committed_opportunity: Option<OpportunityKey>,
     blocked_memory: &BlockedIntentMemory,
     current_tick: Tick,
     cognitive: &CognitiveProfile,
@@ -239,6 +244,8 @@ pub(super) fn build_candidate_plans(
             )
         })
         .collect();
+    let admitted_candidates =
+        prioritize_same_goal_replan_candidates(admitted_candidates, committed_opportunity);
     let candidates_to_plan: Vec<_> = admitted_candidates
         .into_iter()
         .take(usize::from(cognitive.max_candidates_to_plan))
@@ -267,10 +274,27 @@ pub(super) fn build_candidate_plans(
             cognitive.snapshot_travel_horizon,
             blocked_memory,
             current_tick,
+            ranked.grounded.key.kind.relevant_op_kinds(),
+            cognitive.max_snapshot_entities_per_place,
         );
         let opportunity = OpportunityKey {
             goal_key: ranked.grounded.key,
             anchor: ranked.grounded.anchor,
+        };
+        // Apply search budget backoff for goals with 3+ consecutive exhaustion
+        // failures. Each failure beyond the 2nd halves the budget (floor 16).
+        // The first two retries use full budget to give goals a fair chance
+        // after conditions may have changed; subsequent retries reduce budget
+        // for chronically unsolvable goals.
+        let effective_cognitive = match exhaustion_cache.get(&opportunity) {
+            Some(entry) if entry.consecutive_failures >= 3 => {
+                let shift = u32::from(entry.consecutive_failures.saturating_sub(2).min(4));
+                let reduced = cognitive.max_node_expansions >> shift;
+                let mut c = *cognitive;
+                c.max_node_expansions = reduced.max(16);
+                c
+            }
+            _ => *cognitive,
         };
         let result = search_plan(
             &snapshot,
@@ -278,7 +302,7 @@ pub(super) fn build_candidate_plans(
             semantics_table,
             action_defs,
             action_handlers,
-            cognitive,
+            &effective_cognitive,
             execution_budget,
             recipe_registry,
             blocked_memory,
@@ -306,6 +330,41 @@ pub(super) fn build_candidate_plans(
         }
     }
     results
+}
+
+fn prioritize_same_goal_replan_candidates(
+    candidates: Vec<&RankedGoal>,
+    committed_opportunity: Option<OpportunityKey>,
+) -> Vec<&RankedGoal> {
+    let Some(committed_opportunity) = committed_opportunity else {
+        return candidates;
+    };
+    if !candidates.iter().any(|candidate| {
+        candidate.grounded.key == committed_opportunity.goal_key
+            && candidate.grounded.anchor == committed_opportunity.anchor
+    }) {
+        return candidates;
+    }
+
+    let mut preferred = Vec::new();
+    let mut same_goal = Vec::new();
+    let mut rest = Vec::new();
+
+    for candidate in candidates {
+        let opportunity = OpportunityKey {
+            goal_key: candidate.grounded.key,
+            anchor: candidate.grounded.anchor,
+        };
+        if opportunity == committed_opportunity {
+            preferred.push(candidate);
+        } else if candidate.grounded.key == committed_opportunity.goal_key {
+            same_goal.push(candidate);
+        } else {
+            rest.push(candidate);
+        }
+    }
+
+    preferred.into_iter().chain(same_goal).chain(rest).collect()
 }
 
 fn opportunity_admitted_by_exhaustion(
@@ -385,11 +444,69 @@ pub(super) fn selection_candidates(plans: &[CandidatePlanSearch]) -> Vec<Selecti
         .collect()
 }
 
+fn ranked_goal_for_opportunity(
+    ranked_candidates: &[RankedGoal],
+    opportunity: OpportunityKey,
+) -> Option<&RankedGoal> {
+    ranked_candidates.iter().find(|candidate| {
+        candidate.grounded.key == opportunity.goal_key && candidate.grounded.anchor == opportunity.anchor
+    })
+}
+
+fn summarize_snapshot_continuation(
+    current_opportunity: OpportunityKey,
+    ranked_candidates: &[RankedGoal],
+    planning_switch_margin: Permille,
+) -> SnapshotContinuationTrace {
+    let top = ranked_candidates.first();
+    let current = ranked_goal_for_opportunity(ranked_candidates, current_opportunity);
+    let top_opportunity = top.map(|ranked| OpportunityKey {
+        goal_key: ranked.grounded.key,
+        anchor: ranked.grounded.anchor,
+    });
+    let motive_delta = top.zip(current).map(|(top, current)| {
+        top.motive_score.saturating_sub(current.motive_score)
+    });
+
+    let outcome = match (top, current) {
+        (_, None) | (None, Some(_)) => {
+            SnapshotContinuationOutcome::ReplannedCurrentOpportunityMissing
+        }
+        (Some(top), Some(_))
+            if top_opportunity == Some(current_opportunity) =>
+        {
+            SnapshotContinuationOutcome::ContinuedAsTopRanked
+        }
+        (Some(top), Some(current)) if top.priority_class > current.priority_class => {
+            SnapshotContinuationOutcome::ReplannedHigherPriorityClass
+        }
+        (Some(top), Some(current))
+            if top.motive_score
+                >= current.motive_score + u32::from(planning_switch_margin.value()) =>
+        {
+            SnapshotContinuationOutcome::ReplannedMarginExceeded
+        }
+        (Some(_), Some(_)) => SnapshotContinuationOutcome::ContinuedWithinMargin,
+    };
+
+    SnapshotContinuationTrace {
+        current_opportunity,
+        current_priority_class: current.map(|ranked| ranked.priority_class),
+        current_motive_score: current.map(|ranked| ranked.motive_score),
+        top_opportunity,
+        top_priority_class: top.map(|ranked| ranked.priority_class),
+        top_motive_score: top.map(|ranked| ranked.motive_score),
+        planning_switch_margin,
+        motive_delta,
+        outcome,
+    }
+}
+
 fn try_continue_snapshot_plan(
     view: &impl RuntimeBeliefView,
     runtime: &mut AgentDecisionRuntime,
     ranked_candidates: &[RankedGoal],
-    active_goal_key: Option<worldwake_core::GoalKey>,
+    planning_switch_margin: Permille,
     agent: worldwake_core::EntityId,
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
@@ -398,17 +515,13 @@ fn try_continue_snapshot_plan(
         return None;
     }
 
-    let current_goal_still_top = ranked_candidates.first().is_some_and(|top| {
-        Some(top.grounded.key) == active_goal_key
-            && runtime.current_plan.as_ref().is_some_and(|plan| {
-                plan.opportunity
-                    == crate::OpportunityKey {
-                        goal_key: top.grounded.key,
-                        anchor: top.grounded.anchor,
-                    }
-            })
-    });
-    if !current_goal_still_top {
+    let plan = runtime.current_plan.as_ref()?;
+    let continuation = summarize_snapshot_continuation(
+        plan.opportunity,
+        ranked_candidates,
+        planning_switch_margin,
+    );
+    if !continuation.continues_plan() {
         return None;
     }
 
@@ -563,106 +676,117 @@ pub(super) fn plan_and_validate_next_step(
     action_handlers: &ActionHandlerRegistry,
     recipe_registry: &RecipeRegistry,
 ) -> (Option<PlannedStep>, Option<bool>) {
-    // A second read view covers plan selection and step validation after the active-action fork.
-    let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
-    let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
-    let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
-    if should_plan {
-        if let Some(step) = try_continue_snapshot_plan(
-            &view,
-            runtime,
-            ranked_candidates,
-            active_goal_key,
-            agent,
-            action_defs,
-            action_handlers,
-        ) {
-            return (Some(step), Some(true));
-        }
-
-        invalidate_exhausted_goals(
-            &mut runtime.exhaustion_cache,
-            &view,
-            agent,
-            view.in_transit_state(agent).is_some(),
-            runtime.dirty.contains(DirtySet::FACILITIES),
-            runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
-        );
-
-        let plans = build_candidate_plans(
-            world,
-            scheduler,
-            agent,
-            ranked_candidates,
-            blocked_memory,
-            tick,
-            cognitive,
-            execution_budget,
-            semantics_table,
-            action_defs,
-            action_handlers,
-            recipe_registry,
-            false,
-            false,
-            &runtime.exhaustion_cache,
-        );
-
-        // Record newly exhausted goals for next tick.
-        record_exhausted_goals(
-            runtime,
-            &view,
-            agent,
-            recipe_registry,
-            &plans,
-            tick,
-            cognitive,
-        );
-        for plan in &plans {
-            if plan.result.is_found() {
-                runtime.exhaustion_cache.remove(&plan.opportunity);
-            }
-        }
-        let selection_plans = selection_candidates(&plans);
-
-        if let Some(selected_plan) = select_best_plan(
-            ranked_candidates,
-            &selection_plans,
-            active_goal_key,
-            runtime,
-            jc.as_ref(),
-            crate::SelectionPolicy {
-                side_benefit_weight,
-                default_switch_margin,
-                frame_switch_margin,
-            },
-        ) {
-            adopt_selected_plan(
+    let planning_start = Instant::now();
+    let result = (|| {
+        // A second read view covers plan selection and step validation after the active-action fork.
+        let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
+        let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
+        let committed_opportunity = runtime
+            .current_plan
+            .as_ref()
+            .map(|plan| plan.opportunity)
+            .filter(|opportunity| Some(opportunity.goal_key) == active_goal_key);
+        let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
+        if should_plan {
+            if let Some(step) = try_continue_snapshot_plan(
+                &view,
                 runtime,
-                active_goal,
-                jc,
-                facility_intents,
                 ranked_candidates,
-                selected_plan,
-                tick,
-            );
-        } else {
-            clear_current_plan(runtime, active_goal, jc, facility_intents, ranked_candidates);
-        }
-        runtime.dirty = DirtySet::default();
-    }
+                cognitive.planning_switch_margin,
+                agent,
+                action_defs,
+                action_handlers,
+            ) {
+                return (Some(step), Some(true));
+            }
 
-    let next_step = current_step(runtime).cloned();
-    let next_step_valid = next_step.as_ref().map(|step| {
-        revalidate_next_step(
-            &view,
-            agent,
-            step,
-            &runtime.materialization_bindings,
-            action_defs,
-            action_handlers,
-        )
-    });
-    (next_step, next_step_valid)
+            invalidate_exhausted_goals(
+                &mut runtime.exhaustion_cache,
+                &view,
+                agent,
+                view.in_transit_state(agent).is_some(),
+                runtime.dirty.contains(DirtySet::FACILITIES),
+                runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
+            );
+
+            let plans = build_candidate_plans(
+                world,
+                scheduler,
+                agent,
+                ranked_candidates,
+                committed_opportunity,
+                blocked_memory,
+                tick,
+                cognitive,
+                execution_budget,
+                semantics_table,
+                action_defs,
+                action_handlers,
+                recipe_registry,
+                false,
+                false,
+                &runtime.exhaustion_cache,
+            );
+
+            // Record newly exhausted goals for next tick.
+            record_exhausted_goals(
+                runtime,
+                &view,
+                agent,
+                recipe_registry,
+                &plans,
+                tick,
+                cognitive,
+            );
+            for plan in &plans {
+                if plan.result.is_found() {
+                    runtime.exhaustion_cache.remove(&plan.opportunity);
+                }
+            }
+            let selection_plans = selection_candidates(&plans);
+
+            if let Some(selected_plan) = select_best_plan(
+                ranked_candidates,
+                &selection_plans,
+                active_goal_key,
+                runtime,
+                jc.as_ref(),
+                crate::SelectionPolicy {
+                    side_benefit_weight,
+                    default_switch_margin,
+                    frame_switch_margin,
+                },
+            ) {
+                adopt_selected_plan(
+                    runtime,
+                    active_goal,
+                    jc,
+                    facility_intents,
+                    ranked_candidates,
+                    selected_plan,
+                    tick,
+                );
+            } else {
+                clear_current_plan(runtime, active_goal, jc, facility_intents, ranked_candidates);
+            }
+            runtime.dirty = DirtySet::default();
+        }
+
+        let next_step = current_step(runtime).cloned();
+        let next_step_valid = next_step.as_ref().map(|step| {
+            revalidate_next_step(
+                &view,
+                agent,
+                step,
+                &runtime.materialization_bindings,
+                action_defs,
+                action_handlers,
+            )
+        });
+        (next_step, next_step_valid)
+    })();
+    record_planning_phase_duration(tick, planning_start.elapsed());
+    result
 }
 
 /// Wrapper around `plan_and_validate_next_step` that also captures trace data.
@@ -729,7 +853,6 @@ pub(super) fn plan_and_validate_next_step_traced(
 
     // Traced path: inline the logic to capture intermediate results.
     let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
-    let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     let mut plan_search_trace = PlanSearchTrace {
         attempts: Vec::new(),
         same_goal_trace: None,
@@ -741,16 +864,20 @@ pub(super) fn plan_and_validate_next_step_traced(
         goal_switch: None,
         previous_goal,
         plan_replacement: None,
+        snapshot_continuation: None,
     };
     let mut plan_continued = false;
 
     let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
     if should_plan {
-        if runtime.dirty.is_snapshot_only() && runtime.current_plan.is_some() {
-            let current_goal_still_top = ranked_candidates
-                .first()
-                .is_some_and(|top| Some(top.grounded.key) == active_goal_key);
-            if current_goal_still_top && let Some(step) = current_step(runtime).cloned() {
+        if runtime.dirty.is_snapshot_only() && let Some(plan_for_trace) = runtime.current_plan.as_ref() {
+            let continuation = summarize_snapshot_continuation(
+                plan_for_trace.opportunity,
+                ranked_candidates,
+                cognitive.planning_switch_margin,
+            );
+            selection_trace.snapshot_continuation = Some(continuation.clone());
+            if continuation.continues_plan() && let Some(step) = current_step(runtime).cloned() {
                 let valid = revalidate_next_step(
                     &view,
                     agent,
@@ -805,6 +932,14 @@ pub(super) fn plan_and_validate_next_step_traced(
             scheduler,
             agent,
             ranked_candidates,
+            runtime
+                .current_plan
+                .as_ref()
+                .map(|plan| plan.opportunity)
+                .filter(|opportunity| {
+                    Some(opportunity.goal_key)
+                        == active_goal.as_ref().map(|active_goal| active_goal.goal_key)
+                }),
             blocked_memory,
             tick,
             cognitive,
@@ -1014,15 +1149,18 @@ pub(super) fn plan_search_result_to_trace(
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidatePlanSearch, has_pending_budget_retry, record_exhausted_goals, selected_plan_value,
-        summarize_ranked_goal, summarize_selected_plan,
+        CandidatePlanSearch, has_pending_budget_retry, record_exhausted_goals,
+        selected_plan_value, summarize_ranked_goal, summarize_selected_plan,
+        summarize_snapshot_continuation,
     };
     use crate::{
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
         OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
         PlannedStep, ProfileFixture, RankedGoal, build_semantics_table,
-        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
+        decision_trace::{
+            CompetitionDiscount, SnapshotContinuationOutcome, SourceReliabilityDiscount,
+        },
         feasibility::FeasibilityHint,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -1079,11 +1217,14 @@ mod tests {
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
             switch_margin: reasoning.switch_margin,
+            planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
             transient_block_ticks: reasoning.transient_block_ticks,
             unknown_block_ticks: reasoning.unknown_block_ticks,
             structural_block_ticks: reasoning.structural_block_ticks,
             initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
+            max_snapshot_entities_per_place: CognitiveProfile::default()
+                .max_snapshot_entities_per_place,
         }
     }
 
@@ -1247,6 +1388,27 @@ mod tests {
         }
     }
 
+    fn ranked_goal_with_score(
+        opportunity: OpportunityKey,
+        priority_class: GoalPriorityClass,
+        motive_score: u32,
+    ) -> RankedGoal {
+        RankedGoal {
+            grounded: GroundedGoal {
+                key: opportunity.goal_key,
+                anchor: opportunity.anchor,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+            },
+            priority_class,
+            motive_score,
+            provenance: None,
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: FeasibilityHint::Likely,
+        }
+    }
+
     #[test]
     fn summarize_ranked_goal_preserves_competition_discount() {
         let goal = acquire_goal(
@@ -1376,6 +1538,141 @@ mod tests {
         assert_eq!(summary.side_benefits[0].estimated_value, 30);
     }
 
+    #[test]
+    fn snapshot_continuation_continues_when_same_class_delta_is_below_margin() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(41)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(42)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[
+                ranked_goal_with_score(top, GoalPriorityClass::High, 900),
+                ranked_goal_with_score(current, GoalPriorityClass::High, 800),
+            ],
+            Permille::new(150).unwrap(),
+        );
+
+        assert_eq!(trace.outcome, SnapshotContinuationOutcome::ContinuedWithinMargin);
+        assert_eq!(trace.motive_delta, Some(100));
+        assert!(trace.continues_plan());
+    }
+
+    #[test]
+    fn snapshot_continuation_replans_when_same_class_delta_meets_margin() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(43)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(44)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[
+                ranked_goal_with_score(top, GoalPriorityClass::High, 950),
+                ranked_goal_with_score(current, GoalPriorityClass::High, 800),
+            ],
+            Permille::new(150).unwrap(),
+        );
+
+        assert_eq!(trace.outcome, SnapshotContinuationOutcome::ReplannedMarginExceeded);
+        assert_eq!(trace.motive_delta, Some(150));
+        assert!(!trace.continues_plan());
+    }
+
+    #[test]
+    fn snapshot_continuation_replans_when_top_goal_has_higher_priority_class() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(45)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(46)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[
+                ranked_goal_with_score(top, GoalPriorityClass::Critical, 820),
+                ranked_goal_with_score(current, GoalPriorityClass::High, 1000),
+            ],
+            Permille::new(300).unwrap(),
+        );
+
+        assert_eq!(
+            trace.outcome,
+            SnapshotContinuationOutcome::ReplannedHigherPriorityClass
+        );
+        assert_eq!(trace.motive_delta, Some(0));
+        assert!(!trace.continues_plan());
+    }
+
+    #[test]
+    fn snapshot_continuation_replans_when_current_opportunity_is_missing() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(47)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(48)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[ranked_goal_with_score(top, GoalPriorityClass::High, 900)],
+            Permille::new(150).unwrap(),
+        );
+
+        assert_eq!(
+            trace.outcome,
+            SnapshotContinuationOutcome::ReplannedCurrentOpportunityMissing
+        );
+        assert_eq!(trace.current_priority_class, None);
+        assert_eq!(trace.current_motive_score, None);
+        assert_eq!(trace.motive_delta, None);
+        assert!(!trace.continues_plan());
+    }
+
+    #[test]
+    fn snapshot_continuation_margin_zero_replans_on_any_same_class_shift() {
+        let current = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::Place(entity(49)),
+        };
+        let top = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }),
+            anchor: OpportunityAnchor::Place(entity(50)),
+        };
+        let trace = summarize_snapshot_continuation(
+            current,
+            &[
+                ranked_goal_with_score(top, GoalPriorityClass::High, 801),
+                ranked_goal_with_score(current, GoalPriorityClass::High, 800),
+            ],
+            Permille::ZERO,
+        );
+
+        assert_eq!(trace.outcome, SnapshotContinuationOutcome::ReplannedMarginExceeded);
+        assert_eq!(trace.motive_delta, Some(1));
+        assert!(!trace.continues_plan());
+    }
+
     fn setup_agent_world() -> (World, worldwake_core::EntityId, worldwake_core::EntityId) {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -1461,6 +1758,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
             &cognitive(&budget),
@@ -1545,6 +1843,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
             &cognitive(&budget),
@@ -1578,6 +1877,83 @@ mod tests {
         assert!(
             !matches!(plans[1].result, PlanSearchResult::Unsupported),
             "the later sibling opportunity should still be searched rather than suppressed before search"
+        );
+    }
+
+    #[test]
+    fn committed_opportunity_clusters_same_goal_siblings_ahead_of_interleaved_goals() {
+        let market = entity(23);
+        let origin = entity(24);
+        let inn = entity(25);
+        let bread_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let ranked_candidates = [
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(inn),
+                BTreeSet::new(),
+                BTreeSet::from([inn]),
+            )),
+            ranked_goal(GroundedGoal {
+                key: GoalKey::from(GoalKind::SellCommodity {
+                    commodity: CommodityKind::Firewood,
+                }),
+                anchor: OpportunityAnchor::Place(market),
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::from([market]),
+            }),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(market),
+                BTreeSet::new(),
+                BTreeSet::from([market]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(origin),
+                BTreeSet::new(),
+                BTreeSet::from([origin]),
+            )),
+        ];
+
+        let prioritized = super::prioritize_same_goal_replan_candidates(
+            ranked_candidates.iter().collect(),
+            Some(OpportunityKey {
+                goal_key: bread_goal,
+                anchor: OpportunityAnchor::Place(market),
+            }),
+        );
+
+        assert_eq!(
+            prioritized
+                .iter()
+                .map(|candidate| OpportunityKey {
+                    goal_key: candidate.grounded.key,
+                    anchor: candidate.grounded.anchor,
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                OpportunityKey {
+                    goal_key: bread_goal,
+                    anchor: OpportunityAnchor::Place(market),
+                },
+                OpportunityKey {
+                    goal_key: bread_goal,
+                    anchor: OpportunityAnchor::Place(inn),
+                },
+                OpportunityKey {
+                    goal_key: bread_goal,
+                    anchor: OpportunityAnchor::Place(origin),
+                },
+                OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::SellCommodity {
+                        commodity: CommodityKind::Firewood,
+                    }),
+                    anchor: OpportunityAnchor::Place(market),
+                },
+            ]
         );
     }
 
@@ -1644,6 +2020,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
             &cognitive(&budget),
@@ -2001,6 +2378,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(1),
             &cognitive(&ProfileFixture {
@@ -2160,6 +2538,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
             &cognitive(&budget),
@@ -2513,7 +2892,7 @@ mod tests {
     }
 
     #[test]
-    fn build_candidate_plans_uses_full_budget_for_retry_eligible_exhaustion_entry() {
+    fn build_candidate_plans_applies_budget_backoff_for_retry_eligible_exhaustion_entry() {
         let origin = entity(81);
         let market = entity(82);
         let mut world = World::new(cargo_topology(origin, market)).unwrap();
@@ -2548,6 +2927,8 @@ mod tests {
             goal_key: ranked_candidates[0].grounded.key,
             anchor: ranked_candidates[0].grounded.anchor,
         };
+        // 4 consecutive failures → backoff kicks in at 3+: shift = 4-2 = 2,
+        // effective budget = 128 >> 2 = 32
         let exhaustion_cache = BTreeMap::from([(
             opportunity,
             ExhaustionEntry {
@@ -2555,7 +2936,7 @@ mod tests {
                 invalidation_conditions: Vec::new(),
                 baseline: crate::ExhaustionBaseline::default(),
                 next_retry_tick: Some(Tick(10)),
-                consecutive_failures: 2,
+                consecutive_failures: 4,
             },
         )]);
 
@@ -2564,20 +2945,19 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
-                // Zero makes any hidden retry-budget override observable.
-                max_node_expansions: 0,
+                max_node_expansions: 128,
                 ..ProfileFixture::default()
             }),
             &execution_budget(&ProfileFixture {
                 snapshot_travel_horizon: 4,
                 max_candidates_to_plan: 1,
-                // Zero makes any hidden retry-budget override observable.
-                max_node_expansions: 0,
+                max_node_expansions: 128,
                 ..ProfileFixture::default()
             }),
             &semantics,
@@ -2591,12 +2971,22 @@ mod tests {
 
         assert_eq!(plans.len(), 1);
         assert_eq!(plans[0].opportunity, opportunity);
+        // With 2 consecutive failures and base budget 128, effective budget is
+        // 128 >> 2 = 32. The search should exhaust at 32 expansions, not 128.
+        // With 4 consecutive failures and threshold 3, shift = 4-2 = 2,
+        // effective budget = 128 >> 2 = 32. The search may exhaust the frontier
+        // or budget at ≤32 expansions.
+        let expansions_used = match &plans[0].result {
+            PlanSearchResult::BudgetExhausted { expansions_used }
+            | PlanSearchResult::FrontierExhausted { expansions_used } => *expansions_used,
+            PlanSearchResult::Found(_) => 0,
+            PlanSearchResult::Unsupported => {
+                panic!("expected BudgetExhausted, FrontierExhausted, or Found, got Unsupported")
+            }
+        };
         assert!(
-            matches!(
-                plans[0].result,
-                PlanSearchResult::BudgetExhausted { expansions_used: 0 }
-            ),
-            "retry-eligible entries should receive the caller's exact max_node_expansions budget"
+            expansions_used <= 32,
+            "budget backoff should limit expansions to ≤32, got {expansions_used}"
         );
     }
 
@@ -2663,6 +3053,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
             &cognitive(&ProfileFixture {
@@ -2743,6 +3134,7 @@ mod tests {
             &scheduler,
             agent,
             &ranked_candidates,
+            None,
             &worldwake_core::BlockedIntentMemory::default(),
             Tick(10),
             &cognitive(&ProfileFixture {

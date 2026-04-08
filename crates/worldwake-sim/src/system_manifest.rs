@@ -32,6 +32,8 @@ macro_rules! define_system_ids {
             ///   perceive fresh scene evidence before cleanup runs.
             /// - `EvidenceDecay` runs before `Patrol` so authoritative route adaptation only sees
             ///   scene evidence that remains live after the tick's decay boundary.
+            /// - `Compaction` runs last so all game systems have finished emitting events
+            ///   before the checkpoint serializes World state and strips old `state_deltas`.
             ///
             /// Do not reorder this list casually. Any change here changes the simulation's causal sequencing.
             pub const ALL: [Self; define_system_ids!(@count $($variant),+)] = [$(Self::$variant),+];
@@ -68,6 +70,7 @@ define_system_ids! {
     (Patrol, "patrol"),
     (EvidenceDecay, "evidence_decay"),
     (ExpectationCheck, "expectation_check"),
+    (Compaction, "compaction"),
 }
 
 impl fmt::Display for SystemId {
@@ -115,6 +118,7 @@ impl SystemManifest {
             SystemId::ExpectationCheck,
             SystemId::EvidenceDecay,
             SystemId::Patrol,
+            SystemId::Compaction,
         ])
         .expect("canonical system order must not contain duplicates")
     }
@@ -189,6 +193,7 @@ mod tests {
         assert_eq!(SystemId::ExpectationCheck.to_string(), "expectation_check");
         assert_eq!(SystemId::Politics.to_string(), "politics");
         assert_eq!(SystemId::Patrol.to_string(), "patrol");
+        assert_eq!(SystemId::Compaction.to_string(), "compaction");
     }
 
     #[test]
@@ -208,6 +213,7 @@ mod tests {
                 SystemId::Patrol,
                 SystemId::EvidenceDecay,
                 SystemId::ExpectationCheck,
+                SystemId::Compaction,
             ]
         );
     }
@@ -275,6 +281,7 @@ mod tests {
                 SystemId::ExpectationCheck,
                 SystemId::EvidenceDecay,
                 SystemId::Patrol,
+                SystemId::Compaction,
             ]
         );
     }

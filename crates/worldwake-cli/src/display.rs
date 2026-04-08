@@ -720,6 +720,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         }
     }
 
@@ -855,6 +856,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
         let spawned = spawn_scenario(&def).unwrap();
 

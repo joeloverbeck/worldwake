@@ -279,6 +279,16 @@ impl AutonomousController for AgentTickDriver {
         replan_signals: &[&ReplanNeeded],
         committed_actions: &[CommittedAction],
     ) -> Result<(), TickInputError> {
+        // Fast path: skip dead agents whose cleanup has already been performed.
+        // After the first death tick processes frame/goal/plan clearing and
+        // component persistence, subsequent ticks have no work to do.
+        if let Some(runtime) = self.runtime_by_agent.get(&agent)
+            && runtime.dead_cleanup_done
+            && ctx.world.get_component_dead_at(agent).is_some()
+        {
+            return Ok(());
+        }
+
         // Ensure semantics cache is populated, then split-borrow fields to
         // avoid cloning the entire BTreeMap on every agent tick.
         let _ = self.semantics_table(ctx.action_defs);
@@ -400,6 +410,7 @@ fn process_agent(
             runtime.step_in_flight = false;
             runtime.dirty = crate::DirtySet::default();
             runtime.materialization_bindings.clear();
+            runtime.dead_cleanup_done = true;
             update_runtime_observation_snapshot(&view, agent, runtime);
             persist_intention_frame(
                 ctx.world,
@@ -809,6 +820,7 @@ fn process_agent(
                 goal_switch: None,
                 previous_goal: None,
                 plan_replacement: None,
+                snapshot_continuation: None,
             });
             let selected_patrol_anchor = selection.selected_opportunity.and_then(|opportunity| {
                 matches!(

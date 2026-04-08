@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
@@ -14,11 +15,95 @@ use worldwake_core::{
 };
 use worldwake_sim::RuntimeBeliefView;
 
+use crate::PlannerOpKind;
 use crate::route_threat::perceived_direct_travel_cost_from_memory;
 
 type SupportBeliefRead = InstitutionalBeliefRead<Option<EntityId>>;
 type ForceControllerBeliefRead = InstitutionalBeliefRead<(Option<EntityId>, bool)>;
 type OfficeSupportBeliefReads = Vec<(EntityId, SupportBeliefRead)>;
+
+const ITEM_INTERACTING_OPS: [PlannerOpKind; 8] = [
+    PlannerOpKind::Consume,
+    PlannerOpKind::Trade,
+    PlannerOpKind::Craft,
+    PlannerOpKind::Loot,
+    PlannerOpKind::Harvest,
+    PlannerOpKind::MoveCargo,
+    PlannerOpKind::StockManagement,
+    PlannerOpKind::Heal,
+];
+
+const INSTITUTIONAL_OPS: [PlannerOpKind; 14] = [
+    PlannerOpKind::ConsultRecord,
+    PlannerOpKind::ReportFound,
+    PlannerOpKind::PostBounty,
+    PlannerOpKind::ClaimBounty,
+    PlannerOpKind::PostNotice,
+    PlannerOpKind::Accuse,
+    PlannerOpKind::Fine,
+    PlannerOpKind::Investigate,
+    PlannerOpKind::Bribe,
+    PlannerOpKind::Threaten,
+    PlannerOpKind::Exile,
+    PlannerOpKind::DeclareSupport,
+    PlannerOpKind::PressForceClaim,
+    PlannerOpKind::YieldForceClaim,
+];
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotEntityFilter {
+    needs_items: bool,
+    needs_institutional: bool,
+    needs_dead_agents: bool,
+}
+
+impl SnapshotEntityFilter {
+    #[must_use]
+    pub(crate) fn from_relevant_ops(ops: &[PlannerOpKind]) -> Self {
+        if ops.is_empty() {
+            return Self::unfiltered();
+        }
+        Self {
+            needs_items: ops.iter().any(|op| ITEM_INTERACTING_OPS.contains(op)),
+            needs_institutional: ops.iter().any(|op| INSTITUTIONAL_OPS.contains(op)),
+            needs_dead_agents: ops.contains(&PlannerOpKind::Loot),
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn unfiltered() -> Self {
+        Self {
+            needs_items: true,
+            needs_institutional: true,
+            needs_dead_agents: true,
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn needs_items(self) -> bool {
+        self.needs_items
+    }
+
+    #[must_use]
+    pub(crate) const fn needs_institutional(self) -> bool {
+        self.needs_institutional
+    }
+
+    #[must_use]
+    pub(crate) const fn includes(self, kind: EntityKind, alive: bool) -> bool {
+        match kind {
+            EntityKind::Agent => alive || self.needs_dead_agents,
+            EntityKind::Facility
+            | EntityKind::Container
+            | EntityKind::Office
+            | EntityKind::Place => true,
+            EntityKind::ItemLot | EntityKind::UniqueItem => self.needs_items(),
+            EntityKind::Faction | EntityKind::Record | EntityKind::SocialArtifact => {
+                self.needs_institutional()
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SnapshotFacilityQueue {
@@ -279,17 +364,22 @@ impl PlanningSnapshot {
             evidence_places,
             travel_horizon,
             &BTreeSet::new(),
+            SnapshotEntityFilter::unfiltered(),
+            u16::MAX,
         )
     }
 
     #[must_use]
-    pub fn build_with_blocked_facility_uses(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build_with_blocked_facility_uses(
         view: &dyn RuntimeBeliefView,
         actor: EntityId,
         evidence_entities: &BTreeSet<EntityId>,
         evidence_places: &BTreeSet<EntityId>,
         travel_horizon: u8,
         blocked_facility_uses: &BTreeSet<(EntityId, ActionDefId)>,
+        filter: SnapshotEntityFilter,
+        max_per_place: u16,
     ) -> Self {
         let included_places = collect_places(
             view,
@@ -298,9 +388,18 @@ impl PlanningSnapshot {
             evidence_places,
             travel_horizon,
         );
-        let included_entities = collect_entities(view, actor, evidence_entities, &included_places);
+        let actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState> =
+            view.known_entity_beliefs(actor).into_iter().collect();
+        let included_entities = collect_entities(
+            view,
+            actor,
+            evidence_entities,
+            &included_places,
+            filter,
+            max_per_place,
+            &actor_known_entity_beliefs,
+        );
         let places = build_snapshot_places(view, actor, &included_places, &included_entities);
-        let actor_known_entity_beliefs = view.known_entity_beliefs(actor).into_iter().collect();
         let actor_known_social_observations = view.known_social_observations(actor);
         let actor_confidence_policy = view.belief_confidence_policy(actor);
         let mut entities: BTreeMap<EntityId, SnapshotEntity> = included_entities
@@ -794,6 +893,7 @@ pub fn build_planning_snapshot(
 }
 
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn build_planning_snapshot_with_blocked_facility_uses(
     view: &dyn RuntimeBeliefView,
     actor: EntityId,
@@ -802,6 +902,8 @@ pub fn build_planning_snapshot_with_blocked_facility_uses(
     travel_horizon: u8,
     blocked_memory: &BlockedIntentMemory,
     current_tick: Tick,
+    relevant_ops: &[PlannerOpKind],
+    max_per_place: u16,
 ) -> PlanningSnapshot {
     PlanningSnapshot::build_with_blocked_facility_uses(
         view,
@@ -810,6 +912,8 @@ pub fn build_planning_snapshot_with_blocked_facility_uses(
         evidence_places,
         travel_horizon,
         &blocked_facility_uses(blocked_memory, current_tick),
+        SnapshotEntityFilter::from_relevant_ops(relevant_ops),
+        max_per_place,
     )
 }
 
@@ -869,13 +973,33 @@ fn collect_entities(
     actor: EntityId,
     evidence_entities: &BTreeSet<EntityId>,
     included_places: &BTreeSet<EntityId>,
+    filter: SnapshotEntityFilter,
+    max_per_place: u16,
+    known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
 ) -> BTreeSet<EntityId> {
     let mut included = BTreeSet::from([actor]);
     included.extend(evidence_entities.iter().copied());
     included.extend(included_places.iter().copied());
 
     for place in included_places {
-        included.extend(view.entities_at(*place));
+        let mut filtered = view
+            .entities_at(*place)
+            .into_iter()
+            .filter(|entity| {
+                let Some(kind) = view.entity_kind(*entity) else {
+                    return false;
+                };
+                filter.includes(kind, believed_alive(view, *entity, known_entity_beliefs))
+            })
+            .collect::<Vec<_>>();
+        filtered.sort_by_key(|entity| {
+            (
+                Reverse(observed_tick_for(*entity, known_entity_beliefs)),
+                Reverse(*entity),
+            )
+        });
+        filtered.truncate(usize::from(max_per_place));
+        included.extend(filtered);
     }
 
     let mut frontier: VecDeque<_> = included.iter().copied().collect();
@@ -899,6 +1023,25 @@ fn collect_entities(
     included
 }
 
+fn believed_alive(
+    view: &dyn RuntimeBeliefView,
+    entity: EntityId,
+    known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
+) -> bool {
+    known_entity_beliefs
+        .get(&entity)
+        .map_or_else(|| view.is_alive(entity), |belief| belief.alive)
+}
+
+fn observed_tick_for(
+    entity: EntityId,
+    known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
+) -> Tick {
+    known_entity_beliefs
+        .get(&entity)
+        .map_or(Tick(0), |belief| belief.observed_tick)
+}
+
 fn included_entities_contains(
     view: &dyn RuntimeBeliefView,
     entity: EntityId,
@@ -917,12 +1060,15 @@ fn included_entities_contains(
 
 #[cfg(test)]
 mod tests {
-    use super::{SnapshotFacilityQueue, build_planning_snapshot};
+    use super::{
+        SnapshotEntityFilter, SnapshotFacilityQueue, build_planning_snapshot,
+        build_planning_snapshot_with_blocked_facility_uses,
+    };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
+        BlockedIntentMemory, CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
         DriveThresholds, EligibilityRule, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
         InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
         PatrolProfile, PatrolRoute, Quantity, RecipeId, ResourceSource, SuccessionLaw,
@@ -930,6 +1076,8 @@ mod tests {
         UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView};
+
+    use crate::PlannerOpKind;
 
     type SupportDeclarationBeliefs =
         BTreeMap<EntityId, Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)>>;
@@ -941,6 +1089,10 @@ mod tests {
         effective_places: BTreeMap<EntityId, EntityId>,
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
         adjacent: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
+        known_entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
+        direct_containers: BTreeMap<EntityId, EntityId>,
+        direct_possessors: BTreeMap<EntityId, EntityId>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
@@ -966,6 +1118,10 @@ mod tests {
                 effective_places: BTreeMap::new(),
                 entities_at: BTreeMap::new(),
                 adjacent: BTreeMap::new(),
+                known_entity_beliefs: BTreeMap::new(),
+                direct_possessions: BTreeMap::new(),
+                direct_containers: BTreeMap::new(),
+                direct_possessors: BTreeMap::new(),
                 commodity_quantities: BTreeMap::new(),
                 item_lot_commodities: BTreeMap::new(),
                 carry_capacities: BTreeMap::new(),
@@ -1009,8 +1165,11 @@ mod tests {
             self.entities_at.get(&place).cloned().unwrap_or_default()
         }
 
-        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
@@ -1062,12 +1221,12 @@ mod tests {
             None
         }
 
-        fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_containers.get(&entity).copied()
         }
 
-        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_possessors.get(&entity).copied()
         }
 
         fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
@@ -1237,6 +1396,13 @@ mod tests {
             Vec::new()
         }
 
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.known_entity_beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
+
         fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
             None
         }
@@ -1296,6 +1462,449 @@ mod tests {
             slot,
             generation: 1,
         }
+    }
+
+    fn sample_belief(alive: bool, observed_tick: u64) -> BelievedEntityState {
+        BelievedEntityState {
+            last_known_place: None,
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(observed_tick),
+            source: worldwake_core::PerceptionSource::DirectObservation,
+        }
+    }
+
+    #[test]
+    fn snapshot_entity_filter_derives_item_and_institutional_flags() {
+        let unfiltered = SnapshotEntityFilter::from_relevant_ops(&[]);
+        assert!(unfiltered.needs_items());
+        assert!(unfiltered.needs_institutional());
+
+        let travel_only = SnapshotEntityFilter::from_relevant_ops(&[PlannerOpKind::Travel]);
+        assert!(!travel_only.needs_items());
+        assert!(!travel_only.needs_institutional());
+
+        let trade = SnapshotEntityFilter::from_relevant_ops(&[PlannerOpKind::Trade]);
+        assert!(trade.needs_items());
+        assert!(!trade.needs_institutional());
+
+        let institutional =
+            SnapshotEntityFilter::from_relevant_ops(&[PlannerOpKind::ConsultRecord]);
+        assert!(!institutional.needs_items());
+        assert!(institutional.needs_institutional());
+    }
+
+    #[test]
+    fn snapshot_filter_excludes_items_for_travel_only_goal() {
+        let actor = entity(1);
+        let place = entity(10);
+        let item = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(item, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(item, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(item, place);
+        view.entities_at.insert(place, vec![actor, item]);
+        view.known_entity_beliefs
+            .insert(actor, vec![(item, sample_belief(true, 3))]);
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::Travel],
+            u16::MAX,
+        );
+
+        assert!(!snapshot.entities.contains_key(&item));
+    }
+
+    #[test]
+    fn snapshot_filter_includes_items_for_trade_goal() {
+        let actor = entity(1);
+        let place = entity(10);
+        let item = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(item, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(item, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(item, place);
+        view.entities_at.insert(place, vec![actor, item]);
+        view.known_entity_beliefs
+            .insert(actor, vec![(item, sample_belief(true, 3))]);
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::Trade],
+            u16::MAX,
+        );
+
+        assert!(snapshot.entities.contains_key(&item));
+    }
+
+    #[test]
+    fn snapshot_filter_excludes_dead_agents_without_loot() {
+        let actor = entity(1);
+        let place = entity(10);
+        let corpse = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(corpse, false);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(corpse, place);
+        view.entities_at.insert(place, vec![actor, corpse]);
+        view.known_entity_beliefs
+            .insert(actor, vec![(corpse, sample_belief(false, 3))]);
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::Travel],
+            u16::MAX,
+        );
+
+        assert!(!snapshot.entities.contains_key(&corpse));
+    }
+
+    #[test]
+    fn snapshot_filter_includes_dead_agents_with_loot() {
+        let actor = entity(1);
+        let place = entity(10);
+        let corpse = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(corpse, false);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(corpse, place);
+        view.entities_at.insert(place, vec![actor, corpse]);
+        view.known_entity_beliefs
+            .insert(actor, vec![(corpse, sample_belief(false, 3))]);
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::Loot],
+            u16::MAX,
+        );
+
+        assert!(snapshot.entities.contains_key(&corpse));
+    }
+
+    #[test]
+    fn snapshot_filter_excludes_records_without_institutional_ops() {
+        let actor = entity(1);
+        let place = entity(10);
+        let record = entity(20);
+        let artifact = entity(21);
+        let faction = entity(22);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        for entity in [record, artifact, faction] {
+            view.alive.insert(entity, true);
+            view.effective_places.insert(entity, place);
+        }
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(record, EntityKind::Record);
+        view.kinds.insert(artifact, EntityKind::SocialArtifact);
+        view.kinds.insert(faction, EntityKind::Faction);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor, record, artifact, faction]);
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![
+                (record, sample_belief(true, 1)),
+                (artifact, sample_belief(true, 2)),
+                (faction, sample_belief(true, 3)),
+            ],
+        );
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::Travel],
+            u16::MAX,
+        );
+
+        assert!(!snapshot.entities.contains_key(&record));
+        assert!(!snapshot.entities.contains_key(&artifact));
+        assert!(!snapshot.entities.contains_key(&faction));
+    }
+
+    #[test]
+    fn snapshot_filter_includes_records_with_institutional_ops() {
+        let actor = entity(1);
+        let place = entity(10);
+        let record = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(record, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(record, place);
+        view.entities_at.insert(place, vec![actor, record]);
+        view.known_entity_beliefs
+            .insert(actor, vec![(record, sample_belief(true, 4))]);
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::ConsultRecord],
+            u16::MAX,
+        );
+
+        assert!(snapshot.entities.contains_key(&record));
+    }
+
+    #[test]
+    fn snapshot_filter_includes_records_for_report_found() {
+        let actor = entity(1);
+        let place = entity(10);
+        let record = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(record, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(record, EntityKind::Record);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(record, place);
+        view.entities_at.insert(place, vec![actor, record]);
+        view.known_entity_beliefs
+            .insert(actor, vec![(record, sample_belief(true, 4))]);
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::ReportFound],
+            u16::MAX,
+        );
+
+        assert!(snapshot.entities.contains_key(&record));
+    }
+
+    #[test]
+    fn snapshot_per_place_cap_limits_entities() {
+        let actor = entity(1);
+        let place = entity(10);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+
+        let mut entities = vec![actor];
+        let mut beliefs = Vec::new();
+        for slot in 20..80 {
+            let item = entity(slot);
+            view.alive.insert(item, true);
+            view.kinds.insert(item, EntityKind::ItemLot);
+            view.effective_places.insert(item, place);
+            entities.push(item);
+            beliefs.push((item, sample_belief(true, u64::from(slot))));
+        }
+        view.entities_at.insert(place, entities);
+        view.known_entity_beliefs.insert(actor, beliefs);
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::Trade],
+            50,
+        );
+
+        let item_count = snapshot
+            .entities
+            .keys()
+            .filter(|entity| view.kinds.get(entity) == Some(&EntityKind::ItemLot))
+            .count();
+        assert_eq!(item_count, 50);
+    }
+
+    #[test]
+    fn snapshot_per_place_cap_prefers_recent_and_tiebreaks_by_entity_id() {
+        let actor = entity(1);
+        let place = entity(10);
+        let older = entity(20);
+        let newer = entity(21);
+        let tied_lower = entity(22);
+        let tied_higher = entity(23);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        for entity in [older, newer, tied_lower, tied_higher] {
+            view.alive.insert(entity, true);
+            view.kinds.insert(entity, EntityKind::ItemLot);
+            view.effective_places.insert(entity, place);
+        }
+        view.entities_at
+            .insert(place, vec![actor, older, newer, tied_lower, tied_higher]);
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![
+                (older, sample_belief(true, 1)),
+                (newer, sample_belief(true, 9)),
+                (tied_lower, sample_belief(true, 5)),
+                (tied_higher, sample_belief(true, 5)),
+            ],
+        );
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::Trade],
+            2,
+        );
+
+        assert!(snapshot.entities.contains_key(&newer));
+        assert!(snapshot.entities.contains_key(&tied_higher));
+        assert!(!snapshot.entities.contains_key(&tied_lower));
+        assert!(!snapshot.entities.contains_key(&older));
+    }
+
+    #[test]
+    fn snapshot_filter_always_includes_evidence_entities() {
+        let actor = entity(1);
+        let place = entity(10);
+        let evidence_item = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(evidence_item, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(evidence_item, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(evidence_item, place);
+        view.entities_at.insert(place, vec![actor, evidence_item]);
+        view.known_entity_beliefs
+            .insert(actor, vec![(evidence_item, sample_belief(true, 4))]);
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::from([evidence_item]),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::Travel],
+            u16::MAX,
+        );
+
+        assert!(snapshot.entities.contains_key(&evidence_item));
+    }
+
+    #[test]
+    fn snapshot_filter_containment_walk_includes_inventory() {
+        let actor = entity(1);
+        let place = entity(10);
+        let other_agent = entity(20);
+        let carried_item = entity(21);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(other_agent, true);
+        view.alive.insert(carried_item, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(other_agent, EntityKind::Agent);
+        view.kinds.insert(carried_item, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(other_agent, place);
+        view.entities_at.insert(place, vec![actor, other_agent]);
+        view.direct_possessions
+            .insert(other_agent, vec![carried_item]);
+        view.direct_possessors.insert(carried_item, other_agent);
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![
+                (other_agent, sample_belief(true, 4)),
+                (carried_item, sample_belief(true, 5)),
+            ],
+        );
+
+        let snapshot = build_planning_snapshot_with_blocked_facility_uses(
+            &view,
+            actor,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            0,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &[PlannerOpKind::Travel],
+            u16::MAX,
+        );
+
+        assert!(snapshot.entities.contains_key(&other_agent));
+        assert!(snapshot.entities.contains_key(&carried_item));
     }
 
     #[test]

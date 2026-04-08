@@ -550,11 +550,13 @@ mod tests {
                 snapshot_travel_horizon: 5,
                 max_node_expansions: 320,
                 switch_margin: Permille::new(175).unwrap(),
+                planning_switch_margin: Permille::new(225).unwrap(),
                 transient_block_ticks: 12,
                 unknown_block_ticks: 6,
                 structural_block_ticks: 250,
                 initial_cooldown_ticks: 7,
                 max_cooldown_ticks: 90,
+                max_snapshot_entities_per_place: 60,
             }),
             ComponentValue::ExecutionBudget(ExecutionBudget {
                 beam_width: 11,

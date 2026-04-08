@@ -81,7 +81,7 @@ pub use trade_actions::{register_staff_market_action, register_trade_action};
 pub use transport_actions::register_transport_actions;
 pub use travel_actions::register_travel_actions;
 
-use worldwake_sim::SystemDispatchTable;
+use worldwake_sim::{SystemDispatchTable, compact_event_log};
 
 pub fn dispatch_table() -> SystemDispatchTable {
     SystemDispatchTable::from_handlers([
@@ -97,5 +97,6 @@ pub fn dispatch_table() -> SystemDispatchTable {
         patrol_route_adaptation_system,
         evidence_decay_system,
         check_overdue_expectations,
+        compact_event_log,
     ])
 }

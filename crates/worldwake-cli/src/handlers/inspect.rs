@@ -751,6 +751,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
         let spawned = spawn_scenario(&def).unwrap();
         let human_id = spawned

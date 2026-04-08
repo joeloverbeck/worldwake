@@ -114,6 +114,12 @@ impl DirtySet {
         !self.is_empty() && (self.0 & !Self::SNAPSHOT_MASK.0) == 0
     }
 
+    /// Returns `true` if the only set bit is `NEEDS`.
+    #[inline]
+    pub fn is_needs_only(self) -> bool {
+        self.0 == Self::NEEDS.0
+    }
+
     /// Returns a human-readable list of set domain names, pipe-separated.
     /// Returns `"CLEAN"` when the set is empty.
     pub fn display_names(self) -> String {

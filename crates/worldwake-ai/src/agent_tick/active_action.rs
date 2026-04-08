@@ -72,6 +72,7 @@ pub(super) fn handle_active_action_phase(
             ctx.scheduler,
             agent,
             ranked_candidates,
+            None,
             blocked_memory,
             tick,
             ctx.cognitive,

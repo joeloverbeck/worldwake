@@ -4,6 +4,8 @@
 // 4 agents (1 human, 3 AI) with diverse profiles, items, facilities,
 // and resource sources.  Designed to exercise all CLI commands.
 //
+// Updated 2026-04-08: S73/S74 schema drift — Added planning_switch_margin and
+//   max_snapshot_entities_per_place to Merchant Vara's cognitive_profile.
 // Updated 2026-04-06: Post-phase-6 — Added visibility_profile on Eldergrove Forest
 //   (S56 PlaceVisibilityProfile coverage). Added remaining PlaceTag variants (Gate,
 //   Crossroads, Camp, Barracks). Added remaining WorkstationTag variants (WashBasin,
@@ -161,11 +163,13 @@
                 snapshot_travel_horizon: 6,
                 max_node_expansions: 300,
                 switch_margin: 100,
+                planning_switch_margin: 150,
                 transient_block_ticks: 20,
                 unknown_block_ticks: 5,
                 structural_block_ticks: 200,
                 initial_cooldown_ticks: 4,
                 max_cooldown_ticks: 64,
+                max_snapshot_entities_per_place: 50,
             ),
             execution_budget: (
                 max_prerequisite_locations: 3,

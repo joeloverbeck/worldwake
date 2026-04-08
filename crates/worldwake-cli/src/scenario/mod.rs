@@ -427,9 +427,10 @@ fn assemble_state(
     def: &ScenarioDef,
     names: &BTreeMap<String, EntityId>,
     world: World,
-    event_log: EventLog,
+    mut event_log: EventLog,
     recipe_registry: RecipeRegistry,
 ) -> Result<SimulationState, ScenarioError> {
+    event_log.set_compaction_interval(def.compaction_interval);
     let controller_state = def
         .agents
         .iter()
@@ -547,6 +548,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         }
     }
 
@@ -597,6 +599,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -637,6 +640,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -668,6 +672,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -716,6 +721,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -762,6 +768,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -807,6 +814,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -858,6 +866,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -911,6 +920,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let result = spawn_scenario(&def);
@@ -957,6 +967,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(5),
                 capacity: Quantity(20),
             }],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1026,6 +1037,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1061,6 +1073,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1147,6 +1160,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1246,6 +1260,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1340,6 +1355,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1445,6 +1461,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            compaction_interval: 0,
         };
 
         let Err(error) = spawn_scenario(&def) else {

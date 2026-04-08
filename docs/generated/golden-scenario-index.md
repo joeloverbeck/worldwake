@@ -633,18 +633,18 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 125: ReportFound After Search Resolution
 
-- Source: `golden_expectation.rs:1300`
+- Source: `golden_expectation.rs:1301`
 - Systems: ExpectationCheck, AI, Travel, SearchPlace, ReportFound, OfficeRegister
 - GoalKinds: SearchForMissing, ReportFound
 - ActionDomains: Travel, Epistemic, Social
 - Places: VillageSquare, OrchardFarm
 - Principles: 1, 3, 7, 10, 17, 20
 
-**Setup**: A searcher at VillageSquare holds one active RoutineReturn expectation for a passive subject expected at OrchardFarm, with deadline_tick=0 and grace_ticks=0. The searcher has LastSeenMemory pointing to OrchardFarm. An OfficeRegister exists at VillageSquare. The subject is at OrchardFarm with ControlSource::None.
+**Setup**: A searcher at VillageSquare holds one active RoutineReturn expectation for a passive subject expected at OrchardFarm, with deadline_tick=0 and grace_ticks=0. The searcher has LastSeenMemory pointing to OrchardFarm. An OfficeRegister exists at OrchardFarm. The subject is at OrchardFarm with ControlSource::None.
 
-**Proves**: After SearchForMissing resolves the expectation via search_place at OrchardFarm (FoundSafe), the resolved state drives a new GoalKind::ReportFound candidate (P10: aftermath creates future hooks). The planner selects ReportFound as a progress-barrier terminal, travels back to VillageSquare, and commits report_found, writing MissingPersonStatus::FoundSafe to the OfficeRegister (P17: violated expectation drives institutional response). The full chain demonstrates emergent multi-goal sequencing through state transitions (P1), not scripted chains.
+**Proves**: After SearchForMissing resolves the expectation via search_place at OrchardFarm (FoundSafe), the resolved state drives a new GoalKind::ReportFound candidate (P10: aftermath creates future hooks). The planner selects ReportFound as a progress-barrier terminal at OrchardFarm and commits report_found, writing MissingPersonStatus::FoundSafe to the local OfficeRegister (P17: violated expectation drives institutional response). The full chain demonstrates emergent multi-goal sequencing through state transitions (P1), not scripted chains.
 
-**Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue -> SearchForMissing candidate -> travel to OrchardFarm -> search_place commit -> ExpectationStore Resolved(FoundSafe) -> ReportFound candidate -> travel to VillageSquare -> report_found commit -> OfficeRegister MissingPersonStatus::FoundSafe.
+**Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue -> SearchForMissing candidate -> travel to OrchardFarm -> search_place commit -> ExpectationStore Resolved(FoundSafe) -> ReportFound candidate -> report_found commit -> OfficeRegister MissingPersonStatus::FoundSafe.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 

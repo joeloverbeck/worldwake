@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind, EntityId,
     Quantity, Tick, UniqueItemKind,
@@ -10,6 +10,7 @@ use worldwake_sim::{
 
 use crate::candidate_generation::generate_candidates_with_travel_horizon;
 use crate::failure_handling::ExecutionFailure;
+use crate::knowledge_path::KnowledgePath;
 use crate::{
     AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
     authoritative_target, clear_resolved_blockers, rank_candidates,
@@ -136,7 +137,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
     }
 
-    let candidates = generate_candidates_with_travel_horizon(
+    let mut candidates = generate_candidates_with_travel_horizon(
         &view,
         agent,
         blocked_memory,
@@ -146,6 +147,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         phase.travel_horizon,
         tracing,
     );
+    reinstate_current_plan_candidate(&mut candidates, runtime, active_goal);
 
     // Apply deferred violation records from candidate generation.
     for pending in &candidates.pending_violations {
@@ -187,6 +189,69 @@ pub(super) fn refresh_runtime_for_read_phase(
         decision_context: dc,
         pursuit_invalidation,
     }
+}
+
+fn reinstate_current_plan_candidate(
+    candidates: &mut crate::candidate_generation::CandidateGenerationResult,
+    runtime: &AgentDecisionRuntime,
+    active_goal: Option<worldwake_core::GoalKey>,
+) {
+    let Some(plan) = runtime.current_plan.as_ref() else {
+        return;
+    };
+    let opportunity = plan.opportunity;
+    if Some(opportunity.goal_key) != active_goal {
+        return;
+    }
+
+    if candidates.candidates.iter().any(|candidate| {
+        candidate.key == opportunity.goal_key && candidate.anchor == opportunity.anchor
+    }) {
+        return;
+    }
+    if !candidates
+        .candidates
+        .iter()
+        .any(|candidate| candidate.key == opportunity.goal_key)
+    {
+        return;
+    }
+
+    let mut evidence_entities = BTreeSet::new();
+    let mut evidence_places = BTreeSet::new();
+    match opportunity.anchor {
+        worldwake_core::OpportunityAnchor::Place(place) => {
+            evidence_places.insert(place);
+        }
+        worldwake_core::OpportunityAnchor::Entity(entity) => {
+            evidence_entities.insert(entity);
+        }
+        worldwake_core::OpportunityAnchor::None => {
+            if let Some(place) = opportunity.goal_key.place {
+                evidence_places.insert(place);
+            }
+            if let Some(entity) = opportunity.goal_key.entity {
+                evidence_entities.insert(entity);
+            }
+        }
+    }
+
+    candidates.candidates.push(crate::GroundedGoal {
+        key: opportunity.goal_key,
+        anchor: opportunity.anchor,
+        evidence_entities,
+        evidence_places,
+    });
+    candidates.diagnostics.evidence.entry(opportunity).or_insert(
+        crate::CandidateEvidenceTrace {
+            opportunity,
+            contributors: Vec::new(),
+            exclusions: Vec::new(),
+            knowledge_path: KnowledgePath::default(),
+            legality: None,
+            pursuit: None,
+        },
+    );
 }
 
 pub(super) fn handle_facility_queue_transitions(
@@ -604,4 +669,149 @@ pub(super) fn unique_item_signature(
             (count > 0).then_some((kind, count))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reinstate_current_plan_candidate;
+    use crate::{
+        AgentDecisionRuntime, CommodityPurpose, GroundedGoal,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        candidate_generation::{CandidateGenerationDiagnostics, CandidateGenerationResult},
+    };
+    use std::collections::BTreeSet;
+    use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind, OpportunityAnchor};
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 1,
+        }
+    }
+
+    #[test]
+    fn reinstate_current_plan_candidate_restores_missing_committed_opportunity() {
+        let market = entity(10);
+        let inn = entity(11);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let committed_plan = PlannedPlan::new(
+            worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(market),
+            },
+            goal,
+            vec![PlannedStep {
+                def_id: ActionDefId(1),
+                targets: vec![PlanningEntityRef::Authoritative(market)],
+                payload_override: None,
+                op_kind: PlannerOpKind::Travel,
+                estimated_ticks: 3,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+            }],
+            PlanTerminalKind::ProgressBarrier,
+        );
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(committed_plan),
+            ..AgentDecisionRuntime::default()
+        };
+
+        let mut candidates = CandidateGenerationResult {
+            candidates: vec![GroundedGoal {
+                key: goal,
+                anchor: OpportunityAnchor::Place(inn),
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::from([inn]),
+            }],
+            diagnostics: CandidateGenerationDiagnostics::default(),
+            pending_violations: Vec::new(),
+        };
+
+        reinstate_current_plan_candidate(&mut candidates, &runtime, Some(goal));
+
+        assert!(candidates.candidates.iter().any(|candidate| {
+            candidate.key == goal && candidate.anchor == OpportunityAnchor::Place(market)
+        }));
+        assert!(candidates
+            .diagnostics
+            .evidence
+            .contains_key(&worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(market),
+            }));
+    }
+
+    #[test]
+    fn reinstate_current_plan_candidate_skips_when_active_goal_differs() {
+        let market = entity(10);
+        let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let other_goal = GoalKey::from(GoalKind::Sleep);
+        let committed_plan = PlannedPlan::new(
+            worldwake_core::OpportunityKey {
+                goal_key: committed_goal,
+                anchor: OpportunityAnchor::Place(market),
+            },
+            committed_goal,
+            Vec::new(),
+            PlanTerminalKind::ProgressBarrier,
+        );
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(committed_plan),
+            ..AgentDecisionRuntime::default()
+        };
+        let mut candidates = CandidateGenerationResult {
+            candidates: Vec::new(),
+            diagnostics: CandidateGenerationDiagnostics::default(),
+            pending_violations: Vec::new(),
+        };
+
+        reinstate_current_plan_candidate(&mut candidates, &runtime, Some(other_goal));
+
+        assert!(candidates.candidates.is_empty());
+        assert!(candidates.diagnostics.evidence.is_empty());
+    }
+
+    #[test]
+    fn reinstate_current_plan_candidate_skips_when_goal_has_no_live_siblings() {
+        let market = entity(10);
+        let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let committed_plan = PlannedPlan::new(
+            worldwake_core::OpportunityKey {
+                goal_key: committed_goal,
+                anchor: OpportunityAnchor::Place(market),
+            },
+            committed_goal,
+            Vec::new(),
+            PlanTerminalKind::ProgressBarrier,
+        );
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(committed_plan),
+            ..AgentDecisionRuntime::default()
+        };
+        let mut candidates = CandidateGenerationResult {
+            candidates: vec![GroundedGoal {
+                key: GoalKey::from(GoalKind::Sleep),
+                anchor: OpportunityAnchor::None,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+            }],
+            diagnostics: CandidateGenerationDiagnostics::default(),
+            pending_violations: Vec::new(),
+        };
+
+        reinstate_current_plan_candidate(&mut candidates, &runtime, Some(committed_goal));
+
+        assert_eq!(candidates.candidates.len(), 1);
+        assert_eq!(candidates.candidates[0].key, GoalKey::from(GoalKind::Sleep));
+        assert!(candidates.diagnostics.evidence.is_empty());
+    }
 }
