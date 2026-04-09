@@ -1607,6 +1607,7 @@ mod tests {
 
     fn sample_belief(alive: bool, observed_tick: u64) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: None,
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -2163,6 +2164,7 @@ mod tests {
                 ToldBeliefMemory {
                     shared_state: worldwake_core::SharedTellState::EntityBelief(
                         worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
+                            believed_kind: None,
                             last_known_place: Some(place),
                             last_known_inventory: BTreeMap::from([(
                                 CommodityKind::Bread,

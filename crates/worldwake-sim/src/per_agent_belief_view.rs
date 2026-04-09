@@ -1534,6 +1534,7 @@ mod tests {
         let mut inventory = BTreeMap::new();
         inventory.insert(CommodityKind::Bread, Quantity(bread));
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(place),
             last_known_inventory: inventory,
             workstation_tag: None,

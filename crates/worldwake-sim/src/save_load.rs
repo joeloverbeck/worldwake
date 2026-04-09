@@ -273,6 +273,7 @@ mod tests {
         observed_tick: Tick,
     ) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(place),
             last_known_inventory: std::collections::BTreeMap::from([(
                 CommodityKind::Apple,

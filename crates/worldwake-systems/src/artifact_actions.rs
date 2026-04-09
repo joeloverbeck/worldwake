@@ -2057,6 +2057,7 @@ mod tests {
             beliefs.update_entity(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(posting_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,

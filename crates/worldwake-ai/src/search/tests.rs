@@ -633,6 +633,7 @@ fn believed_entity_state_at(
     resource_source: Option<ResourceSource>,
 ) -> BelievedEntityState {
     BelievedEntityState {
+        believed_kind: None,
         last_known_place: Some(place),
         last_known_inventory: BTreeMap::new(),
         workstation_tag: None,
@@ -6267,6 +6268,7 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
         vec![(
             bounty,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(claim_place),
                 last_known_inventory: BTreeMap::new(),
                 workstation_tag: None,
@@ -6401,6 +6403,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
             (
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(destination),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -6436,6 +6439,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
             (
                 bread,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(origin),
                     last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
                     workstation_tag: None,
@@ -6545,6 +6549,7 @@ fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_dea
         vec![(
             bounty,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(claim_place),
                 last_known_inventory: BTreeMap::new(),
                 workstation_tag: None,
@@ -6654,6 +6659,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
             (
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(destination),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -6689,6 +6695,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
             (
                 bread,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(origin),
                     last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
                     workstation_tag: None,
@@ -6787,6 +6794,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
             (
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -6822,6 +6830,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
             (
                 bread,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(destination),
                     last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
                     workstation_tag: None,
@@ -9102,6 +9111,7 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
         vec![(
             target,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(remote_place),
                 last_known_inventory: BTreeMap::new(),
                 workstation_tag: None,
@@ -9203,6 +9213,7 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
         vec![(
             target,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(remote_place),
                 last_known_inventory: BTreeMap::new(),
                 workstation_tag: None,

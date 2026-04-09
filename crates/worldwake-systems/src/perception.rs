@@ -1239,6 +1239,7 @@ mod tests {
             inventory.insert(CommodityKind::Bread, Quantity(bread));
         }
         ObservedEntitySnapshot {
+            believed_kind: None,
             last_known_place: place,
             last_known_inventory: inventory,
             workstation_tag: None,
@@ -2967,6 +2968,7 @@ mod tests {
             store.update_entity(
                 older_target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -3230,6 +3232,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -3306,6 +3309,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(place),
                     last_known_inventory: inventory,
                     workstation_tag: None,
@@ -3382,6 +3386,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: Some(WorkstationTag::OrchardRow),
@@ -4048,6 +4053,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(place),
                     last_known_inventory: inventory,
                     workstation_tag: None,
@@ -4116,6 +4122,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -4217,6 +4224,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -4276,6 +4284,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(origin),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -4363,6 +4372,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(origin),
                     last_known_inventory: prior_inventory,
                     workstation_tag: None,
@@ -4461,6 +4471,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(origin),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -4556,6 +4567,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(origin),
                     last_known_inventory: prior_inventory,
                     workstation_tag: None,
@@ -4686,6 +4698,7 @@ mod tests {
             beliefs.update_entity(
                 target,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(origin),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,

@@ -5000,6 +5000,7 @@ fn run_s58_autonomous_notice_reroute(seed: Seed) -> (StateHash, StateHash) {
         issuer,
         hostile,
         worldwake_core::BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(PLACE_S45_WARNED_ROAD),
             last_known_inventory: std::collections::BTreeMap::new(),
             workstation_tag: None,
@@ -5508,6 +5509,7 @@ fn run_s52_theft_evidence_discovery(seed: Seed) -> (StateHash, StateHash) {
         guard,
         stolen_lot,
         worldwake_core::BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(theft_scene),
             last_known_inventory: std::collections::BTreeMap::new(),
             workstation_tag: None,

@@ -681,6 +681,7 @@ mod tests {
             observed_entities: BTreeMap::from([(
                 entity(2),
                 ObservedEntitySnapshot {
+                    believed_kind: None,
                     last_known_place: Some(entity(3)),
                     last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(2))]),
                     workstation_tag: None,

@@ -1042,6 +1042,7 @@ mod tests {
             beliefs: vec![(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -1087,6 +1088,7 @@ mod tests {
             beliefs: vec![(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -1139,6 +1141,7 @@ mod tests {
             beliefs: vec![(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -1188,6 +1191,7 @@ mod tests {
             beliefs: vec![(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,

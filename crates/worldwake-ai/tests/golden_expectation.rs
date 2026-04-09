@@ -750,6 +750,7 @@ fn run_escort_to_safety(seed: Seed) -> EscortScenarioOutcome {
         escorter,
         wounded,
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(VILLAGE_SQUARE),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -1181,6 +1182,7 @@ fn run_report_found_after_search(seed: Seed) -> ReportFoundScenarioOutcome {
         searcher,
         office_register,
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(ORCHARD_FARM),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,

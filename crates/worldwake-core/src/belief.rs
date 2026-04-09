@@ -2,9 +2,10 @@
 
 use crate::{
     ActionDomain, BelievedInstitutionalClaim, ClaimId, ClaimValue, CommodityKind, Component,
-    EntityBeliefAspect, EntityBeliefClaim, EntityId, EvidenceKind, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity,
-    ResourceSource, TheftFacts, Tick, WorkstationTag, World, Wound,
+    EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
+    WorkstationTag, World, Wound,
     institutional::MissingPersonReportStatus,
     social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
@@ -108,12 +109,14 @@ impl AgentBeliefStore {
         current_tick: Tick,
         policy: &BeliefConfidencePolicy,
     ) {
+        let prior = self.known_entities.get(&subject);
         match self
             .entity_claims
             .get(&subject)
             .and_then(|claims| derive_entity_summary(claims, current_tick, policy))
         {
-            Some(summary) => {
+            Some(mut summary) => {
+                preserve_believed_kind(prior, &mut summary);
                 self.known_entities.insert(subject, summary);
             }
             None => {
@@ -256,10 +259,12 @@ impl AgentBeliefStore {
         self.entity_claims.retain(|_, claims| !claims.is_empty());
 
         for entity in affected_entities {
+            let prior = self.known_entities.get(&entity);
             match self.entity_claims.get(&entity).and_then(|claims| {
                 derive_entity_summary(claims, current_tick, &profile.confidence_policy)
             }) {
-                Some(summary) => {
+                Some(mut summary) => {
+                    preserve_believed_kind(prior, &mut summary);
                     self.known_entities.insert(entity, summary);
                 }
                 None => {
@@ -1208,6 +1213,8 @@ fn institutional_claim_effective_tick(claim: InstitutionalClaim) -> Tick {
 /// Snapshot of what an agent believes about a specific entity.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ObservedEntitySnapshot {
+    #[serde(default)]
+    pub believed_kind: Option<EntityKind>,
     pub last_known_place: Option<EntityId>,
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
     pub workstation_tag: Option<WorkstationTag>,
@@ -1231,6 +1238,7 @@ impl ObservedEntitySnapshot {
         source: PerceptionSource,
     ) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: self.believed_kind,
             last_known_place: self.last_known_place,
             last_known_inventory: self.last_known_inventory.clone(),
             workstation_tag: self.workstation_tag,
@@ -1295,6 +1303,8 @@ pub struct BelievedEvidenceState {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BelievedEntityState {
+    #[serde(default)]
+    pub believed_kind: Option<EntityKind>,
     pub last_known_place: Option<EntityId>,
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
     pub workstation_tag: Option<WorkstationTag>,
@@ -1709,7 +1719,7 @@ pub fn build_observed_entity_snapshot(
     world: &World,
     entity: EntityId,
 ) -> Option<ObservedEntitySnapshot> {
-    world.entity_kind(entity)?;
+    let believed_kind = Some(world.entity_kind(entity)?);
 
     let mut inventory = BTreeMap::new();
     for commodity in CommodityKind::ALL {
@@ -1728,6 +1738,7 @@ pub fn build_observed_entity_snapshot(
     }
 
     Some(ObservedEntitySnapshot {
+        believed_kind,
         last_known_place: world.effective_place(entity),
         last_known_inventory: inventory,
         workstation_tag: world
@@ -1863,6 +1874,7 @@ pub fn derive_entity_summary(
         .max_by_key(|claim| claim_rank(claim, current_tick, policy))?;
 
     let mut summary = BelievedEntityState {
+        believed_kind: None,
         last_known_place: None,
         last_known_inventory: BTreeMap::new(),
         workstation_tag: None,
@@ -1924,6 +1936,12 @@ pub fn derive_entity_summary(
     }
 
     Some(summary)
+}
+
+fn preserve_believed_kind(prior: Option<&BelievedEntityState>, summary: &mut BelievedEntityState) {
+    if summary.believed_kind.is_none() {
+        summary.believed_kind = prior.and_then(|state| state.believed_kind);
+    }
 }
 
 fn claim_rank(
@@ -2285,6 +2303,7 @@ mod tests {
         let mut inventory = BTreeMap::new();
         inventory.insert(CommodityKind::Apple, Quantity(commodity_qty));
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(entity(10)),
             last_known_inventory: inventory,
             workstation_tag: None,
@@ -2784,6 +2803,7 @@ mod tests {
         prior_inventory.insert(CommodityKind::Apple, Quantity(4));
         prior_inventory.insert(CommodityKind::Bread, Quantity(2));
         let prior = BelievedEntityState {
+            believed_kind: Some(EntityKind::Place),
             last_known_place: Some(entity(10)),
             last_known_inventory: prior_inventory,
             workstation_tag: None,
@@ -2803,6 +2823,7 @@ mod tests {
         let mut snapshot_inventory = BTreeMap::new();
         snapshot_inventory.insert(CommodityKind::Bread, Quantity(5));
         let snapshot = BelievedEntityState {
+            believed_kind: Some(EntityKind::Place),
             last_known_place: Some(entity(11)),
             last_known_inventory: snapshot_inventory,
             workstation_tag: None,
@@ -2850,6 +2871,7 @@ mod tests {
         let subject = entity(43);
         let mut store = AgentBeliefStore::new();
         let prior = BelievedEntityState {
+            believed_kind: Some(EntityKind::Facility),
             last_known_place: Some(entity(10)),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -2873,6 +2895,7 @@ mod tests {
         store.update_entity(subject, prior.clone());
 
         let snapshot = BelievedEntityState {
+            believed_kind: Some(EntityKind::Facility),
             last_known_place: Some(entity(10)),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -2910,6 +2933,7 @@ mod tests {
         let subject = entity(44);
         let mut store = AgentBeliefStore::new();
         let snapshot = BelievedEntityState {
+            believed_kind: Some(EntityKind::ItemLot),
             last_known_place: Some(entity(10)),
             last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(2))]),
             workstation_tag: None,
@@ -2954,6 +2978,7 @@ mod tests {
         let subject = entity(45);
         let mut store = AgentBeliefStore::new();
         let prior = BelievedEntityState {
+            believed_kind: Some(EntityKind::Agent),
             last_known_place: Some(entity(10)),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -3875,6 +3900,7 @@ mod tests {
     #[test]
     fn observed_entity_snapshot_roundtrips_through_bincode() {
         let snapshot = ObservedEntitySnapshot {
+            believed_kind: Some(EntityKind::Agent),
             last_known_place: Some(entity(10)),
             last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
             workstation_tag: None,
@@ -4703,6 +4729,7 @@ mod tests {
 
         let snapshot = build_observed_entity_snapshot(&world, holder).unwrap();
 
+        assert_eq!(snapshot.believed_kind, Some(EntityKind::Agent));
         assert_eq!(snapshot.last_known_place, Some(place));
         assert_eq!(
             snapshot.last_known_inventory,
@@ -5063,12 +5090,92 @@ mod tests {
             .unwrap();
 
         let snapshot = build_observed_entity_snapshot(&world, agent).unwrap();
+        assert_eq!(snapshot.believed_kind, Some(EntityKind::Agent));
         assert_eq!(snapshot.courage, Some(courage));
 
         // Verify it propagates through to_believed_entity_state
         let believed =
             snapshot.to_believed_entity_state(Tick(2), PerceptionSource::DirectObservation);
+        assert_eq!(believed.believed_kind, Some(EntityKind::Agent));
         assert_eq!(believed.last_known_courage, Some(courage));
+    }
+
+    #[test]
+    fn build_observed_entity_snapshot_captures_believed_kind_for_places_agents_and_item_lots() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = world
+            .create_agent("Observer", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let bread = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(1))
+            .unwrap();
+
+        world.set_ground_location(agent, place).unwrap();
+        world.set_ground_location(bread, place).unwrap();
+
+        assert_eq!(
+            build_observed_entity_snapshot(&world, place)
+                .unwrap()
+                .believed_kind,
+            Some(EntityKind::Place)
+        );
+        assert_eq!(
+            build_observed_entity_snapshot(&world, agent)
+                .unwrap()
+                .believed_kind,
+            Some(EntityKind::Agent)
+        );
+        assert_eq!(
+            build_observed_entity_snapshot(&world, bread)
+                .unwrap()
+                .believed_kind,
+            Some(EntityKind::ItemLot)
+        );
+    }
+
+    #[test]
+    fn refresh_entity_summary_from_claims_preserves_prior_believed_kind() {
+        let subject = entity(66);
+        let mut store = AgentBeliefStore::new();
+        store.known_entities.insert(
+            subject,
+            BelievedEntityState {
+                believed_kind: Some(EntityKind::Facility),
+                last_known_place: Some(entity(10)),
+                last_known_inventory: BTreeMap::new(),
+                workstation_tag: None,
+                resource_source: None,
+                alive: true,
+                wounds: Vec::new(),
+                last_known_courage: None,
+                believed_activity: None,
+                believed_artifact: None,
+                believed_contention: None,
+                believed_evidence: None,
+                observed_tick: Tick(1),
+                source: PerceptionSource::DirectObservation,
+            },
+        );
+        store.entity_claims.insert(
+            subject,
+            vec![sample_claim(
+                0,
+                66,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(entity(11))),
+                PerceptionSource::DirectObservation,
+                4,
+                900,
+            )],
+        );
+
+        store.refresh_entity_summary_from_claims(subject, Tick(4), &policy());
+
+        assert_eq!(
+            store.get_entity(&subject).unwrap().believed_kind,
+            Some(EntityKind::Facility)
+        );
     }
 
     #[test]
@@ -5208,6 +5315,7 @@ mod tests {
 
     fn make_believed_entity(tick: Tick) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(entity(100)),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,

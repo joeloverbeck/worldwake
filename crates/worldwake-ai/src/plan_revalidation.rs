@@ -1199,6 +1199,7 @@ mod tests {
 
     fn alive_belief(place: Option<EntityId>, observed: Tick) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: place,
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,

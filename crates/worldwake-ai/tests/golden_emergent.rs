@@ -4964,6 +4964,7 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(seed: Seed) -> (Stat
         owner,
         stolen_lot,
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(VILLAGE_SQUARE),
             last_known_inventory: std::collections::BTreeMap::new(),
             workstation_tag: None,
@@ -7666,6 +7667,7 @@ fn run_dual_discovery_converges_without_double_accusation(seed: Seed) -> (StateH
         victim,
         stolen_lot,
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(VILLAGE_SQUARE),
             last_known_inventory: std::collections::BTreeMap::new(),
             workstation_tag: None,

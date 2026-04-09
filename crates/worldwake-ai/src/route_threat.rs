@@ -233,6 +233,7 @@ mod tests {
 
     fn sample_belief(place: EntityId, observed_tick: Tick) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(place),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -278,6 +279,7 @@ mod tests {
 
     fn sample_threat_warning(place: EntityId, observed_tick: Tick) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(entity(40)),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,

@@ -1273,6 +1273,7 @@ mod tests {
         store.update_entity(
             entity,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(place),
                 last_known_inventory: BTreeMap::new(),
                 workstation_tag: None,

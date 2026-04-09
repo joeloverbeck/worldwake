@@ -451,6 +451,7 @@ mod tests {
                 known_entities: BTreeMap::from([(
                     entity(18),
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(entity(19)),
                         last_known_inventory: BTreeMap::from([
                             (CommodityKind::Apple, Quantity(2)),

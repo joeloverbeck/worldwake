@@ -13,7 +13,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 1. Read the target ticket file.
 2. Read every directly relevant reference (specs, docs, code symbols, test files).
-3. When the user supplies a glob or shorthand, confirm the exact live file path before reading or relying on it.
+3. When the user supplies a glob, shorthand, or obvious near-match typo, confirm the exact live file path before reading or relying on it.
 4. Check whether the active ticket file is tracked or untracked in the current worktree before planning reassessment notes or close-out edits. Untracked ticket drafts are valid active state, but remember they will not appear in ordinary `git diff` output.
 5. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
 
@@ -241,6 +241,7 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 When shared types change, include the sweep surfaces from Section 2 ("Shared type, serialization, and migration sweep") in the task list. Additional scope guidance:
 - Before editing, run a concrete constructor/shape sweep for the changed type across workspace crates (for example `rg -n 'BlockedIntent \{' crates`), then rerun the same sweep before final verification to confirm no live literal or helper was missed.
 - For broad shared-struct shape changes, it is acceptable to land the shared type first and then use sequential `cargo build` / `cargo test` compile failures to enumerate the remaining fallout. Prefer this over guessing when the compiler can authoritatively surface every missing literal or helper site.
+- After the first compile wave identifies pure missing-field fallout for a shared struct, a bounded mechanical patch across the remaining literals is acceptable before rerunning compile verification. Prefer this over hand-editing each callsite one-by-one when the change is plainly structural.
 - Do not treat `cargo build --workspace` alone as exhaustive fallout enumeration for shared-shape changes. Test-only constructors, helper factories, and same-crate test modules can stay hidden until `--all-targets` compilation (for example CI-matching `cargo clippy --workspace --all-targets -- -D warnings`). If the shape change touches a widely reused struct or enum, include an all-targets verification pass in the fallout sweep before closing the ticket.
 - When behavior moves between carriers, rewrite setup paths onto the new authoritative carrier rather than only deleting the stale field.
 - When a constructor begins seeding defaults it previously omitted, reassess tests proving "missing component" behavior — prefer rewriting to the new constructor contract.
@@ -318,6 +319,7 @@ Typical order:
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
 - When CI/compile fallout follows a shared context-field change, sweep manual struct literals as well as direct function call sites before the next verification pass.
 - When a migration reshapes a common API surface, expect lint fallout as well as compile fallout. Satisfy trait expectations like `Default` instead of suppressing lints.
+- Prefer formatting only the owned files when feasible. If you must run a broader formatter in a dirty worktree, inspect formatter spillover immediately and restore unrelated files before final close-out.
 - When long-running verification commands are in flight, reuse those sessions rather than spawning duplicates.
 - When new registered actions or systems cause broad failures, triage for catalog-order drift, completeness assertions, and registry-expansion fallout before assuming the feature's runtime logic is broken.
 - If a focused failing proof exposes a real production contradiction in a ticket currently marked test-only or `Engine Changes: None`, update the ticket sections that define scope (`Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Out of Scope`) before continuing. Do not leave the ticket describing "tests only" work once live code changes are required.
@@ -414,7 +416,18 @@ Before finishing:
 - Re-check inline code snippets, example signatures, or API sketches against the final landed shape.
 - Re-check the ticket's close-out fields directly: `Status`, `## Outcome`, and verification/command notes should reflect the commands that actually passed, not the pre-reassessment plan.
 - If formatting was required in a dirty worktree, check immediately for formatter spillover into already-modified files outside the ticket's owned surface and call that out explicitly in close-out repo-state notes.
+- If the active ticket remains untracked, say so explicitly in the final user-facing close-out because it will not appear in ordinary `git diff` output until it is added.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
+
+### Fast path for small additive/shared-shape tickets
+
+When the owned surface is genuinely small, keep the loop compact:
+1. Resolve the exact live ticket/spec path, including typos or shorthand.
+2. Confirm the dependency path and the exact owned symbol/file boundary.
+3. Run a constructor/usage sweep for the changed shape.
+4. Implement the owned change with focused proof first.
+5. Use all-target compile fallout to catch remaining shared-shape literals/helpers.
+6. Close out the ticket with the actual verification set and tracked-vs-untracked note.
 
 Minimal active-ticket close-out shape:
 

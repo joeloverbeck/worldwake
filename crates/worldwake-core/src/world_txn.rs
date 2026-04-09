@@ -4599,6 +4599,7 @@ mod tests {
         after.known_entities.insert(
             entity(22),
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(entity(2)),
                 last_known_inventory: BTreeMap::new(),
                 workstation_tag: None,

@@ -1567,6 +1567,7 @@ mod tests {
         beliefs.update_entity(
             entity,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(place),
                 last_known_inventory: std::collections::BTreeMap::default(),
                 workstation_tag: None,
@@ -1701,6 +1702,7 @@ mod tests {
             beliefs.update_entity(
                 fx.office,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: None,
                     last_known_inventory: std::collections::BTreeMap::default(),
                     workstation_tag: None,

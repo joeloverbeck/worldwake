@@ -930,6 +930,7 @@ pub fn seed_known_office_at_place(
         agent,
         office,
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(place),
             last_known_inventory: BTreeMap::default(),
             workstation_tag: None,

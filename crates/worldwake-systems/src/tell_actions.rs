@@ -1485,6 +1485,7 @@ mod tests {
         source: PerceptionSource,
     ) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(last_known_place),
             last_known_inventory: std::collections::BTreeMap::default(),
             workstation_tag: None,
@@ -3072,6 +3073,7 @@ mod tests {
                 (
                     subject_a,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(entity(30)),
                         last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
@@ -3090,6 +3092,7 @@ mod tests {
                 (
                     subject_b,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(entity(31)),
                         last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
@@ -3111,6 +3114,7 @@ mod tests {
                 (
                     subject_c,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(entity(32)),
                         last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
@@ -3368,6 +3372,7 @@ mod tests {
                 (
                     subject_a,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(entity(30)),
                         last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
@@ -3386,6 +3391,7 @@ mod tests {
                 (
                     subject_b,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(entity(31)),
                         last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
@@ -3407,6 +3413,7 @@ mod tests {
                 (
                     subject_c,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(entity(32)),
                         last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
@@ -3425,6 +3432,7 @@ mod tests {
                 (
                     subject_d,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(entity(33)),
                         last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
@@ -3443,6 +3451,7 @@ mod tests {
                 (
                     subject_e,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(entity(34)),
                         last_known_inventory: std::collections::BTreeMap::default(),
                         workstation_tag: None,
@@ -3495,6 +3504,7 @@ mod tests {
             vec![(
                 subject,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(entity(30)),
                     last_known_inventory: std::collections::BTreeMap::default(),
                     workstation_tag: None,
@@ -3581,6 +3591,7 @@ mod tests {
             vec![(
                 office,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(place),
                     last_known_inventory: std::collections::BTreeMap::new(),
                     workstation_tag: None,

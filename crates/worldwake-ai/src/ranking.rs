@@ -2065,6 +2065,7 @@ mod tests {
 
     fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(entity(99)),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -2133,6 +2134,7 @@ mod tests {
         target: Option<EntityId>,
     ) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(place),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -2160,6 +2162,7 @@ mod tests {
         reward_quantity: u32,
     ) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(claim_place),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -5309,6 +5312,7 @@ mod tests {
             vec![(
                 subject,
                 worldwake_core::BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(entity(10)),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,

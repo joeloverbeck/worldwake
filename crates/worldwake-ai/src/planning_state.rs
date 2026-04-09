@@ -2736,6 +2736,7 @@ mod tests {
         observed_tick: u64,
     ) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(place),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -3216,6 +3217,7 @@ mod tests {
             vec![(
                 bread,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(town),
                     last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
                     workstation_tag: None,
@@ -3360,6 +3362,7 @@ mod tests {
             vec![(
                 bread,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(town),
                     last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(2))]),
                     workstation_tag: None,
@@ -3387,6 +3390,7 @@ mod tests {
                 ToldBeliefMemory {
                     shared_state: SharedTellState::EntityBelief(
                         worldwake_core::to_shared_belief_snapshot(&BelievedEntityState {
+                            believed_kind: None,
                             last_known_place: Some(town),
                             last_known_inventory: BTreeMap::from([(
                                 CommodityKind::Bread,
@@ -3458,6 +3462,7 @@ mod tests {
             vec![(
                 office,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(town),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,

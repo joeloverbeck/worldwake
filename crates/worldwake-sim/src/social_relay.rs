@@ -286,6 +286,7 @@ mod tests {
 
     fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: None,
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,

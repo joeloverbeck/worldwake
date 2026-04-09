@@ -7941,6 +7941,7 @@ mod tests {
         resource_source: Option<ResourceSource>,
     ) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(place),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -8908,6 +8909,7 @@ mod tests {
             vec![(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -8974,6 +8976,7 @@ mod tests {
             vec![(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -9075,6 +9078,7 @@ mod tests {
             vec![(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -9151,6 +9155,7 @@ mod tests {
             vec![(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,
@@ -9233,6 +9238,7 @@ mod tests {
             vec![(
                 bounty,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(claim_place),
                     last_known_inventory: BTreeMap::new(),
                     workstation_tag: None,

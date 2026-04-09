@@ -5570,6 +5570,7 @@ mod tests {
         reward_quantity: u32,
     ) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(claim_place),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -5629,6 +5630,7 @@ mod tests {
                 (
                     target,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(den),
                         last_known_inventory: BTreeMap::new(),
                         workstation_tag: None,
@@ -5751,6 +5753,7 @@ mod tests {
                 (
                     bread_lot,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(source_place),
                         last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
                         workstation_tag: None,
@@ -5827,6 +5830,7 @@ mod tests {
                 (
                     bread_lot,
                     BelievedEntityState {
+                        believed_kind: None,
                         last_known_place: Some(source_place),
                         last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(1))]),
                         workstation_tag: None,
@@ -6035,6 +6039,7 @@ mod tests {
 
     fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: None,
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -6055,6 +6060,7 @@ mod tests {
         (
             subject,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(place),
                 ..believed_state(5, PerceptionSource::DirectObservation)
             },
@@ -6425,6 +6431,7 @@ mod tests {
             vec![(
                 workstation,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(orchard),
                     resource_source: Some(source),
                     ..believed_state(0, PerceptionSource::DirectObservation)
@@ -10321,6 +10328,7 @@ mod tests {
             vec![(
                 hostile,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(warned_place),
                     believed_activity: Some(worldwake_core::BelievedActivity {
                         action_domain: worldwake_core::ActionDomain::Combat,
@@ -12788,6 +12796,7 @@ mod tests {
             vec![(
                 subject,
                 BelievedEntityState {
+                    believed_kind: None,
                     last_known_place: Some(place),
                     ..believed_state(
                         7,
@@ -13287,6 +13296,7 @@ mod tests {
 
     fn belief_at_place(place: EntityId, tick: Tick) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(place),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
@@ -13310,6 +13320,7 @@ mod tests {
         tick: Tick,
     ) -> BelievedEntityState {
         BelievedEntityState {
+            believed_kind: None,
             last_known_place: Some(place),
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,

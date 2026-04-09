@@ -146,6 +146,7 @@ mod tests {
         beliefs.update_entity(
             subject,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(entity(8)),
                 last_known_inventory: BTreeMap::from([(crate::CommodityKind::Bread, Quantity(1))]),
                 workstation_tag: None,
@@ -175,6 +176,7 @@ mod tests {
         beliefs.update_entity(
             subject,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(entity(12)),
                 last_known_inventory: BTreeMap::new(),
                 workstation_tag: None,
@@ -204,6 +206,7 @@ mod tests {
         beliefs.update_entity(
             subject,
             BelievedEntityState {
+                believed_kind: None,
                 last_known_place: Some(entity(15)),
                 last_known_inventory: BTreeMap::new(),
                 workstation_tag: None,
