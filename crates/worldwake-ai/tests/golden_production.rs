@@ -3360,8 +3360,9 @@ fn golden_materialization_barrier_chain() {
             break;
         }
     }
-    let initial_planning_tick = initial_planning_tick
-        .expect("materialization barrier scenario should reach a fresh-search harvest planning tick");
+    let initial_planning_tick = initial_planning_tick.expect(
+        "materialization barrier scenario should reach a fresh-search harvest planning tick",
+    );
     let initial_planning = match &h
         .driver
         .trace_sink()
@@ -3373,11 +3374,9 @@ fn golden_materialization_barrier_chain() {
         DecisionOutcome::Planning(planning) => planning,
         other => panic!("expected planning trace at {initial_planning_tick:?}, got {other:?}"),
     };
-    let initial_selected_plan = initial_planning
-        .selection
-        .selected_plan
-        .as_ref()
-        .expect("hungry orchard agent should select an initial harvest plan once the orchard is perceived");
+    let initial_selected_plan = initial_planning.selection.selected_plan.as_ref().expect(
+        "hungry orchard agent should select an initial harvest plan once the orchard is perceived",
+    );
     let initial_search_provenance = initial_selected_plan
         .search_provenance
         .as_ref()

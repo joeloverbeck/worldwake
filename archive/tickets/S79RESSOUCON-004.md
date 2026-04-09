@@ -1,6 +1,6 @@
 # S79RESSOUCON-004: Define lawful water-source harvest contract for S79
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — production recipe bootstrap, scenario authoring contract, possibly workstation schema
@@ -12,11 +12,11 @@ S79 and S79RESSOUCON-003 both assume an agent can lawfully execute `harvest wate
 
 ## Assumption Reassessment (2026-04-09)
 
-1. The canonical production recipe bootstrap added in `crates/worldwake-systems/src/action_registry.rs` currently contains only `Harvest Apples`, `Harvest Grain`, and `Bake Bread`. There is no live `Harvest Water` recipe.
-2. `specs/S79-resource-source-consumption-affordances.md` and `tickets/S79RESSOUCON-003.md` both explicitly reference a `Harvest Water` scenario and expect a water-source facility to support harvest-to-drink behavior.
-3. Shared boundary under audit: canonical production recipe registry -> harvest action registration -> scenario authoring of facility-backed resource sources.
+1. The canonical production recipe bootstrap added in `crates/worldwake-systems/src/action_registry.rs` contained only `Harvest Apples`, `Harvest Grain`, and `Bake Bread`. There was no live `Harvest Water` recipe.
+2. `specs/S79-resource-source-consumption-affordances.md` and `archive/tickets/S79RESSOUCON-003.md` both explicitly referenced a `Harvest Water` scenario and expected a water-source facility to support harvest-to-drink behavior.
+3. Shared boundary under audit: canonical production recipe registry -> harvest action registration -> scenario authoring of facility-backed resource sources -> golden setup parity.
 4. The live harvest action contract in `crates/worldwake-systems/src/production_actions.rs` requires one facility target carrying both `WorkstationMarker` and `ResourceSource`, and the recipe must declare the required workstation tag.
-5. Newly exposed adjacent contradiction: water-source consumption is not blocked by `KnownRecipes` wiring anymore; it is blocked by the absence of a lawful production recipe/workstation contract for water. This is a separate bug/follow-up, not part of ticket 001's now-completed scenario bootstrap slice.
+5. Reassessment result: there was no existing workstation tag that lawfully meant “harvestable water source.” Reusing `WashBasin` or `FieldPlot` would collapse unrelated facilities into one tag, so the canonical fix required an explicit `Well` contract.
 
 ## Architecture Check
 
@@ -33,11 +33,11 @@ S79 and S79RESSOUCON-003 both assume an agent can lawfully execute `harvest wate
 
 ### 1. Reassess and choose the canonical water-source workstation contract
 
-Determine whether water harvest should use an existing workstation tag (if one already lawfully represents the source) or whether S79 needs an explicit new facility/workstation shape for water sources.
+Choose the canonical workstation contract for water harvest. If no existing tag lawfully represents a harvestable water source, add the explicit facility/workstation shape required by the live harvest action contract.
 
 ### 2. Wire the chosen water harvest contract through the runtime
 
-Add the canonical `Harvest Water` recipe and any required scenario/bootstrap support so the production registry, action registration, and authored world shape all agree.
+Add the canonical `Harvest Water` recipe and the required runtime/scenario/bootstrap support so the production registry, action registration, authored world shape, and golden harness setup all agree on the same water-source substrate.
 
 ### 3. Reconcile S79 / archived S79RESSOUCON-003 proof surfaces
 
@@ -46,9 +46,12 @@ Update the active S79 spec and any new golden follow-up assumptions if the lawfu
 ## Files to Touch
 
 - `specs/S79-resource-source-consumption-affordances.md` (modify — if reassessment changes the lawful water-source contract)
-- `archive/tickets/S79RESSOUCON-003.md` (modify — only if the archived apple-proof handoff needs factual amendment after the water contract lands)
+- `crates/worldwake-core/src/production.rs` (modify — add explicit water-source workstation tag)
 - `crates/worldwake-systems/src/action_registry.rs` (modify — add canonical water recipe if lawful)
-- Additional production/scenario files as required by the chosen workstation contract
+- `crates/worldwake-cli/src/scenario/mod.rs` (modify — focused scenario proof for `Well`-backed water harvest bootstrap)
+- `crates/worldwake-ai/tests/golden_harness/mod.rs` (modify — keep golden recipe setup aligned with canonical runtime recipes)
+- `crates/worldwake-ai/tests/golden_perception_exposure.rs` (modify — remove stale ad-hoc `FieldPlot` water-source setup)
+- `scenarios/cli-evaluation.ron` (modify — attach authored water source to a named `Well` facility)
 
 ## Out of Scope
 
@@ -60,8 +63,8 @@ Update the active S79 spec and any new golden follow-up assumptions if the lawfu
 
 ### Tests That Must Pass
 
-1. Focused proof that the canonical runtime recipe registry includes the lawful water harvest recipe
-2. Focused proof that the authored water-source facility shape can satisfy harvest action registration/preconditions
+1. Focused proof that the canonical runtime recipe registry includes `Harvest Water` on `WorkstationTag::Well`
+2. Focused proof that the authored water-source facility shape can attach `ResourceSource { commodity: Water, ... }` to a `Well` and register `harvest:Harvest Water`
 3. Existing suite: `cargo test -p worldwake-cli` or narrower affected-crate commands determined by reassessment
 
 ### Invariants
@@ -81,3 +84,18 @@ Update the active S79 spec and any new golden follow-up assumptions if the lawfu
 1. `cargo test -p worldwake-cli`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Added the canonical `Well` workstation contract and `Harvest Water` recipe to the live production substrate.
+- Updated the shipped CLI evaluation scenario to attach Thornwall Village water to a named well facility.
+- Aligned focused golden/test setup so the repository now has one lawful authored path for facility-backed water harvest.
+- The end-to-end water/drink golden remains deferred to the post-004 follow-up path already described in the S79/S81 planning material.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

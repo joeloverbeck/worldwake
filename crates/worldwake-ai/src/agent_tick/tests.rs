@@ -527,10 +527,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
         }),
         OpportunityAnchor::Place(dead_place),
     )));
-    assert_eq!(
-        runtime.last_priority_class,
-        Some(GoalPriorityClass::High)
-    );
+    assert_eq!(runtime.last_priority_class, Some(GoalPriorityClass::High));
     assert_eq!(
         runtime.last_frame_clear_reason,
         Some(worldwake_core::FrameClearReason::PlanFailed)
@@ -582,10 +579,7 @@ fn post_load_validate_clears_semantics_cache_and_preserves_runtime_state() {
         runtime.last_frame_clear_reason,
         Some(worldwake_core::FrameClearReason::PlanFailed)
     );
-    assert_eq!(
-        runtime.dirty,
-        DirtySet::NO_PLAN | DirtySet::NEEDS
-    );
+    assert_eq!(runtime.dirty, DirtySet::NO_PLAN | DirtySet::NEEDS);
 }
 
 fn cargo_topology(origin: EntityId, destination: EntityId) -> Topology {

@@ -11,13 +11,13 @@ use crate::{
     register_staff_market_action, register_stock_actions, register_tell_action,
     register_trade_action, register_transport_actions, register_travel_actions,
 };
+use std::num::NonZeroU32;
 use worldwake_core::ActionDefId;
+use worldwake_core::{BodyCostPerTick, CommodityKind, Permille, Quantity, WorkstationTag};
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, RecipeDefinition, RecipeRegistry,
     action_handler_registry::verify_completeness,
 };
-use worldwake_core::{BodyCostPerTick, CommodityKind, Permille, Quantity, WorkstationTag};
-use std::num::NonZeroU32;
 
 pub struct ActionRegistries {
     pub defs: ActionDefRegistry,
@@ -49,6 +49,15 @@ pub fn build_canonical_production_recipe_registry() -> RecipeRegistry {
         outputs: vec![(CommodityKind::Grain, Quantity(2))],
         work_ticks: nz(3),
         required_workstation_tag: Some(WorkstationTag::FieldPlot),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
+    });
+    recipes.register(RecipeDefinition {
+        name: "Harvest Water".to_string(),
+        inputs: vec![],
+        outputs: vec![(CommodityKind::Water, Quantity(2))],
+        work_ticks: nz(3),
+        required_workstation_tag: Some(WorkstationTag::Well),
         required_tool_kinds: vec![],
         body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
     });
@@ -188,6 +197,7 @@ mod tests {
 
         assert!(recipes.recipe_by_name("Harvest Apples").is_some());
         assert!(recipes.recipe_by_name("Harvest Grain").is_some());
+        assert!(recipes.recipe_by_name("Harvest Water").is_some());
         assert!(recipes.recipe_by_name("Bake Bread").is_some());
     }
 }

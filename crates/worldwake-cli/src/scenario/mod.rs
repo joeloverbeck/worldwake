@@ -267,12 +267,16 @@ fn spawn_entities(
                 facility_name,
                 &format!("resource source {:?} facility", source_def.commodity),
             )?;
-            let facility_place = facility_locations.get(&facility_id).copied().ok_or_else(|| {
-                ScenarioError::Validation(format!(
-                    "resource source {:?} facility '{}' is not a spawned facility",
-                    source_def.commodity, facility_name
-                ))
-            })?;
+            let facility_place =
+                facility_locations
+                    .get(&facility_id)
+                    .copied()
+                    .ok_or_else(|| {
+                        ScenarioError::Validation(format!(
+                            "resource source {:?} facility '{}' is not a spawned facility",
+                            source_def.commodity, facility_name
+                        ))
+                    })?;
             if facility_place != place_id {
                 return Err(ScenarioError::Validation(format!(
                     "resource source {:?} facility '{}' is not at '{}'",
@@ -1159,6 +1163,89 @@ mod tests {
         assert_eq!(
             world.get_component_workstation_marker(facility).unwrap().0,
             WorkstationTag::OrchardRow
+        );
+    }
+
+    #[test]
+    fn test_spawn_water_source_attaches_to_well_and_registers_harvest_water() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Village".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                name: "Water Bearer".into(),
+                location: "Village".into(),
+                control: ControlSource::Ai,
+                known_recipes: Some(vec!["Harvest Water".into()]),
+                ..minimal_agent("Water Bearer", "Village", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![FacilityDef {
+                name: Some("Village Well".into()),
+                workstation: WorkstationTag::Well,
+                location: "Village".into(),
+            }],
+            resource_sources: vec![ResourceSourceDef {
+                commodity: CommodityKind::Water,
+                location: "Village".into(),
+                facility: Some("Village Well".into()),
+                regeneration_ticks_per_unit: NonZeroU32::new(3),
+                capacity: Quantity(15),
+            }],
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let harvest_water = spawned
+            .state
+            .recipe_registry()
+            .recipe_by_name("Harvest Water")
+            .map(|(id, _)| id)
+            .expect("canonical scenario recipe registry should include Harvest Water");
+
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("scenario should spawn one agent");
+        let known = world
+            .get_component_known_recipes(agent)
+            .expect("agent should receive harvest water recipe from scenario");
+        assert!(known.recipes.contains(&harvest_water));
+
+        let village = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+        let facilities_at_village = world
+            .entities_effectively_at(village)
+            .into_iter()
+            .filter(|entity| world.get_component_workstation_marker(*entity).is_some())
+            .collect::<Vec<_>>();
+        assert_eq!(facilities_at_village.len(), 1);
+        let well = facilities_at_village[0];
+        assert_eq!(
+            world.get_component_workstation_marker(well).unwrap().0,
+            WorkstationTag::Well
+        );
+        assert_eq!(
+            world
+                .get_component_resource_source(well)
+                .expect("well should carry attached resource source")
+                .commodity,
+            CommodityKind::Water
+        );
+        assert!(
+            spawned
+                .action_registries
+                .defs
+                .iter()
+                .any(|def| def.name == "harvest:Harvest Water"),
+            "scenario action registries should include recipe-backed water harvest actions"
         );
     }
 

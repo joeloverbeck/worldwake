@@ -2,7 +2,7 @@
 
 ## Summary
 
-Close the gap between resource sources at a location and agent consumption. Currently, agents at places with resource sources (e.g., Water at a Well, Apples at an OrchardRow) cannot plan or execute the harvest-then-consume chain reliably. The eat/drink actions correctly require possession (`TargetSpec::EntityDirectlyPossessedByActor`), and harvest actions correctly target co-located facilities with resource sources, but the connection fails in practice due to three confirmed root causes: (1) agents spawned from scenarios lack `KnownRecipes` entries for harvest recipes because the component is not wired into `AgentDef` or `spawn_agent()`, (2) the planner's `apply_planner_step()` treats `PlannerOpKind::Harvest` as a no-op, so it cannot predict commodity gain from harvest and therefore cannot chain harvest → consume, and (3) planner search admits direct harvest candidates at contention-managed facilities unless the queue/grant contract is enforced for the same goal family. This spec fixes those root causes so that an agent at a location with a resource source can plan and execute the full harvest-to-consume chain lawfully.
+Close the gap between facility-backed resource sources and agent consumption. The apple/grain planner and scenario-bootstrap root causes were fixed by `archive/tickets/S79RESSOUCON-001.md`, `archive/tickets/S79RESSOUCON-002.md`, and `archive/tickets/S79RESSOUCON-003.md`, and the water-source runtime contract landed via `archive/tickets/S79RESSOUCON-004.md`. S79 therefore now describes the completed harvest-to-consume substrate: an agent at a place with a lawful source can plan and execute the full harvest-to-consume chain lawfully.
 
 ## Phase
 
@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers (Adjunct — Simulation Remediation)
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -18,7 +18,7 @@ Draft
 - `worldwake-sim` (affordance query, action semantics)
 - `worldwake-ai` (candidate generation, goal model, search)
 - `worldwake-core` (recipe registry, production types)
-- `worldwake-cli` (scenario spawning — `AgentDef`, `spawn_agent()`)
+- `worldwake-cli` (scenario spawning — `AgentDef`, `spawn_agent()`, facility-attached resource sources)
 
 ## Dependencies
 
@@ -31,6 +31,7 @@ Draft
 - An agent at a place with a harvestable resource source, who knows the harvest recipe, can plan and execute: `AcquireCommodity(SelfConsume)` (harvest) followed by `ConsumeOwnedCommodity` (eat/drink), with the planner correctly predicting that harvest yields the commodity needed for consumption
 - The planner's hypothetical state tracks commodity gain from harvest, enabling the `AcquireCommodity` goal's satisfaction check (`commodity_quantity(actor, commodity) > 0`) to succeed after a Harvest step
 - Agents spawned from scenarios can receive recipe knowledge via `AgentDef`, enabling harvest actions whose precondition `Constraint::ActorKnowsRecipe(RecipeId)` checks the agent's `KnownRecipes` component
+- Water harvest uses one explicit facility contract: `WorkstationTag::Well`
 - No changes to eat/drink action semantics — possession requirement stays (FND-04)
 - No changes to harvest action semantics — recipe knowledge and co-location stay (FND-08)
 
@@ -39,7 +40,7 @@ Draft
 - Making eat/drink work without possession (violates FND-04 explicit transfer)
 - Removing recipe knowledge requirements from harvest (violates FND-08 preconditions)
 - General plan search budget restructuring — that is a separate concern (CognitiveProfile already supports per-agent tuning)
-- Adding new commodity types or resource source variants
+- Adding new commodity types
 - Exploration or geographic knowledge acquisition (deferred to S80)
 
 ## FOUNDATIONS Alignment
@@ -99,12 +100,21 @@ ResourceSource depletion: `available_quantity` decreases with each harvest. Rege
 - This follows the same pattern used for `PlannerOpKind::Loot` and `PlannerOpKind::Bribe` which already mutate hypothetical commodity quantities.
 - In planner search, reject direct `Harvest` / `Craft` affordances at contention-managed facilities unless the affordance is already `Granted`. This preserves the explicit queue/grant contract for exclusive facilities while still allowing direct harvest when the actor lawfully holds the grant.
 
-### 3. Verification
+### 3. Define the canonical water-source contract
+
+**Confirmed remaining root cause**: the runtime recipe bootstrap and workstation schema previously had no canonical water-source substrate. Harvest actions require one target facility carrying both `WorkstationMarker` and `ResourceSource`, and the recipe must name the required workstation tag. Reusing `WashBasin` or `FieldPlot` would collapse unrelated facilities into one tag and violate the concrete-state contract.
+
+**Fix**:
+- Add `WorkstationTag::Well` in `crates/worldwake-core/src/production.rs` as the explicit facility/workstation shape for harvestable water sources.
+- Add canonical `Harvest Water` recipe bootstrap in `crates/worldwake-systems/src/action_registry.rs` requiring `WorkstationTag::Well`.
+- Update authored scenario surfaces and focused golden/test setup to attach water `ResourceSource` state to `Well` facilities rather than ad-hoc placeholder tags.
+
+### 4. Verification
 
 After the fix, the following must hold:
 
-- An agent at a place with a Water resource source (on a Facility the agent can access) and the corresponding harvest recipe in their `KnownRecipes` can plan and execute: harvest water → drink, with the planner predicting commodity gain from the harvest step
-- An agent at a place with an Apple resource source (on an OrchardRow) can plan and execute: harvest apples → eat
+- An agent at a place with a Water resource source on a `Well` they can access, and the corresponding harvest recipe in their `KnownRecipes`, can plan and execute: harvest water -> drink, with the planner predicting commodity gain from the harvest step
+- An agent at a place with an Apple resource source on an `OrchardRow` can plan and execute: harvest apples -> eat
 - The plan search completes within the default CognitiveProfile budget (224 expansions, `max_node_expansions` field)
 - Existing golden tests continue to pass
 
@@ -128,3 +138,18 @@ Classification: **role-specific** (conditional application per spec-drafting-rul
 - **Production system → Needs system**: Harvest writes commodity to agent possession graph (state-mediated). Eat/drink reads from possession graph (state-mediated). No direct coupling.
 - **Perception system → Planning**: Agent must perceive the resource source to form beliefs about it. Planning reads beliefs. Existing flow, no changes.
 - **Candidate generation → Search**: Candidates are generated with `ACQUIRE_OPS` (including Harvest). Search uses `apply_planner_step()` to predict effects. Fix changes Harvest's hypothetical state mutation.
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Wired scenario-spawned `KnownRecipes` into `AgentDef` / `spawn_agent()` and aligned the CLI scenario bootstrap with the canonical production recipe registry.
+- Added planner-side harvest hypothetical effects and contention-aware harvest/craft admission so `AcquireCommodity(SelfConsume)` can lawfully chain through harvest.
+- Strengthened the owning apple/eat golden proof surface in `golden_production.rs` rather than adding duplicate coverage.
+- Added the canonical `Well` workstation contract and `Harvest Water` runtime substrate so facility-backed water harvest now has one lawful path.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

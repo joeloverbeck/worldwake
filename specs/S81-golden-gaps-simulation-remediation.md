@@ -2,7 +2,7 @@
 
 ## Summary
 
-The simulation remediation report (`reports/simulation-remediation.md`) identified three golden test gaps and one missing component field. Since then, the S79 ticket slice archived at `archive/tickets/S79RESSOUCON-003.md` has already closed the live apple/eat harvest-to-consume proof gap in the owning `golden_production.rs` suite. This spec therefore retains: (1) a multi-agent convergence test verifying agents at barren locations with remote resource beliefs don't collapse into prolonged sleep+relieve loops, (2) an agent death traceability test verifying death from unmet needs is explicit, causally traceable, and halts post-death planning, and, only if still desired after `S79RESSOUCON-004`, (3) any remaining water/drink resource-source golden follow-up. As a prerequisite deliverable, this spec adds a `DeathCause` field to the `DeadAt` component so death events carry traceable cause information.
+The simulation remediation report (`reports/simulation-remediation.md`) identified three golden test gaps and one missing component field. Since then, the S79 ticket slices archived at `archive/tickets/S79RESSOUCON-003.md` and `archive/tickets/S79RESSOUCON-004.md` have closed the live apple/eat proof gap and the water-source runtime contract gap. This spec therefore retains: (1) a multi-agent convergence test verifying agents at barren locations with remote resource beliefs don't collapse into prolonged sleep+relieve loops, (2) an agent death traceability test verifying death from unmet needs is explicit, causally traceable, and halts post-death planning, and, if still desired, (3) the now-unblocked water/drink resource-source golden follow-up. As a prerequisite deliverable, this spec adds a `DeathCause` field to the `DeadAt` component so death events carry traceable cause information.
 
 ## Phase
 
@@ -20,7 +20,7 @@ Draft
 
 ## Dependencies
 
-- S79 (resource-source consumption affordances) — the apple/eat harvest-to-consume proof landed via `archive/tickets/S79RESSOUCON-003.md`; any remaining water/drink follow-up depends on `tickets/S79RESSOUCON-004.md`
+- S79 (resource-source consumption affordances) — the apple/eat harvest-to-consume proof landed via `archive/tickets/S79RESSOUCON-003.md`, and the water-source runtime contract landed via `archive/tickets/S79RESSOUCON-004.md`; any remaining water/drink golden follow-up is now unblocked rather than runtime-blocked
 - S76 (golden gaps — simulation observer) — completed; S81 extends coverage beyond S76's single-agent scenarios
 
 ## Design Goals
@@ -29,7 +29,7 @@ Draft
 - Tests should fail for the specific observed pathology
 - GT-1 extends S76-B (single agent, 300 ticks) to multi-agent scale (3+ agents, 600+ ticks)
 - GT-2 verifies a previously untested path: death from unmet needs
-- GT-3, if still retained after water-contract reassessment, verifies the remaining water/drink branch of the S79 resource-source affordance fix rather than recreating the completed apple/eat proof
+- GT-3, if still retained, verifies the remaining water/drink branch of the S79 resource-source affordance fix rather than recreating the completed apple/eat proof
 
 ## Non-Goals
 

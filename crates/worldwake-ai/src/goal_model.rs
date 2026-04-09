@@ -2284,8 +2284,8 @@ mod tests {
     use worldwake_sim::{
         AccuseActionPayload, ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId,
         ActionPayload, AskWitnessPayload, BribeActionPayload, ConsultRecordActionPayload,
-        ControlBeliefView, DurationExpr, EntityBeliefView, Interruptibility, InventoryBeliefView,
-        HarvestActionPayload, InvestigateActionPayload, ProfileBeliefView, PunishActionPayload,
+        ControlBeliefView, DurationExpr, EntityBeliefView, HarvestActionPayload, Interruptibility,
+        InventoryBeliefView, InvestigateActionPayload, ProfileBeliefView, PunishActionPayload,
         QueueForFacilityUsePayload, RecipeRegistry, ReportMissingActionPayload, RuntimeBeliefView,
         SearchPlaceActionPayload, SpatialBeliefView, TellActionPayload, TemporalBeliefView,
         ThreatenActionPayload, TradeActionPayload, TransportActionPayload,

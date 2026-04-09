@@ -58,6 +58,7 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
 - Described architecture still matches live code.
 - Stated coverage gaps are real and correctly classified.
+- When a canonical registry or catalog gains entries (for example recipe, action, component, or manifest registries), sweep for hardcoded `RecipeId`, `ActionDefId`, ordinal, or registration-order assumptions in tests and helpers. Prefer resolving by name unless the stable ordinal is itself the owned contract.
 - For scenario/world-authoring tickets, state whether the same runtime fact is currently authored through more than one lawful path, which path is canonical after the change, and whether any duplicate authoring path remains intentionally supported or is deferred to a named follow-up ticket.
 - When reassessment changes the live root cause or owned surface, apply the section-update rule (see Section 3, "Affected section updates").
 - When a ticket names campaign, harness, or telemetry metrics as proof obligations, verify the live output contract. Confirm the actual emitted keys, counters, and summary carrier instead of assuming the ticket's metric names are still current.
@@ -79,6 +80,7 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 - When a golden ticket proposes specific GoalKind pairs, verify that each goal's declared ops (in `goal_dispatch_decl.rs`) include the required PlannerOpKind. Correct the ticket's domain if not.
 - When the ticket claims a specific scenario ID is free, verify by scanning all `golden_*.rs` files for that ID. Update the ticket if taken.
 - For planner continuity or same-goal branch-stability bugs, triage in this order: is the committed branch absent from candidate generation, removed by a snapshot/read filter, reordered behind interleaved goals, or rejected later by search/start validation? Fix the earliest concrete layer.
+- When canonical runtime registries change, sweep golden/conformance helper builders that mirror those registries. Keep helper registries aligned with runtime unless the divergence is explicitly owned and documented.
 
 #### Shared type, serialization, and persisted-shape sweep
 

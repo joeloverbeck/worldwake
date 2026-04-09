@@ -92,8 +92,8 @@ S78 ✅ archived ──┘
 ### Adjunct Wave: Simulation Remediation Fixes
 
 Derived from simulation remediation report (`reports/simulation-remediation.md`) validated against
-the actual codebase and `docs/FOUNDATIONS.md`. S79 fixes the root cause (harvest-to-consume affordance
-chain gap), S81 adds golden coverage for the remediation pathologies plus DeathCause traceability,
+the actual codebase and `docs/FOUNDATIONS.md`. The archived S79 spec now fixes the harvest-to-consume affordance
+chain gap, S81 adds golden coverage for the remediation pathologies plus DeathCause traceability,
 and S80 adds an exploration drive for agents trapped by geographic ignorance.
 
 ```text
@@ -102,8 +102,8 @@ S79 (independent) ──┐
                     └── S80 (exploration drive, depends on S79)
 ```
 
-- **S79**: Resource-Source Consumption Affordances — diagnose and fix why agents at locations with resource sources cannot plan harvest → eat/drink chains
-- **S81**: Golden Gaps — Simulation Remediation — GT-1 (multi-agent convergence), GT-2 (death traceability + DeathCause), and only any remaining post-S79 water/drink golden follow-up after `tickets/S79RESSOUCON-004.md`
+- **S79**: Resource-Source Consumption Affordances — completed and archived at `archive/specs/S79-resource-source-consumption-affordances.md`
+- **S81**: Golden Gaps — Simulation Remediation — GT-1 (multi-agent convergence), GT-2 (death traceability + DeathCause), and any remaining post-S79 water/drink golden follow-up now that `archive/tickets/S79RESSOUCON-004.md` landed the runtime contract
   - depends on S79
 - **S80**: Exploration Drive — exploration pressure from unmet needs + limited geographic beliefs, per-agent curiosity profiles
   - depends on S79

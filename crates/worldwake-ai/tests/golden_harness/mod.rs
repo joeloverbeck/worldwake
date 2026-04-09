@@ -511,6 +511,18 @@ pub fn build_harvest_grain_recipe() -> RecipeDefinition {
     }
 }
 
+pub fn build_harvest_water_recipe() -> RecipeDefinition {
+    RecipeDefinition {
+        name: "Harvest Water".to_string(),
+        inputs: vec![],
+        outputs: vec![(CommodityKind::Water, Quantity(2))],
+        work_ticks: nz(3),
+        required_workstation_tag: Some(WorkstationTag::Well),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
+    }
+}
+
 pub fn build_bake_bread_recipe() -> RecipeDefinition {
     RecipeDefinition {
         name: "Bake Bread".to_string(),
@@ -533,6 +545,7 @@ pub fn build_multi_recipe_registry() -> RecipeRegistry {
     let mut recipes = RecipeRegistry::new();
     recipes.register(build_harvest_apple_recipe());
     recipes.register(build_harvest_grain_recipe());
+    recipes.register(build_harvest_water_recipe());
     recipes.register(build_bake_bread_recipe());
     recipes
 }
