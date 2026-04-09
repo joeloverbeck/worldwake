@@ -303,6 +303,20 @@ fn run_trade_rejection_source_reroute_scenario(seed: Seed) -> SourceReliabilityT
     }
     txn.set_component_trade_disposition_profile(buyer, instant_trade_disposition_profile())
         .unwrap();
+    txn.set_component_perception_profile(
+        buyer,
+        PerceptionProfile {
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
+            memory_retention_ticks: 240,
+            observation_fidelity: pm(875),
+            confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
+        },
+    )
+    .unwrap();
     commit_txn(txn, &mut h.event_log);
 
     seed_actor_world_beliefs(
@@ -447,7 +461,6 @@ fn run_trade_rejection_source_reroute_scenario(seed: Seed) -> SourceReliabilityT
         Quantity(1),
         "the local seller should still hold the bread after rejecting the trade",
     );
-
     let mut reroute_tick = None;
     for _ in 0..20 {
         let tick_before = h.scheduler.current_tick();
@@ -475,9 +488,8 @@ fn run_trade_rejection_source_reroute_scenario(seed: Seed) -> SourceReliabilityT
             break;
         }
     }
-    let reroute_tick = reroute_tick.expect(
-        "after learning the local seller's rejection, the buyer should reroute to the remote seller",
-    );
+    let reroute_tick = reroute_tick
+        .expect("after learning the local seller's rejection, the buyer should reroute to the remote seller");
     let reroute_trace = h
         .driver
         .trace_sink()
