@@ -60,6 +60,12 @@ The per-agent action timeline in Section 4 shows action counts binned by 100-tic
 
 Section 7 contains per-agent decision summaries from the GOAP planner. For each agent it shows: planning/active/dead tick breakdown, plan search outcomes (found/frontier-exhausted/budget-exhausted), goals selected, a decision timeline in 100-tick bins using `DecisionOutcome::summary()` one-liners, failed plan attempts with the goal that couldn't be planned and why, fully blocked desires (goals generated but all opportunities blocked), and affordances available at the agent's location. This section directly answers "why didn't the agent do X?" — cross-reference failed plan attempts and blocked desires with the sustained/unaddressed need anomalies.
 
+Section 7's decision timeline bins contain dense inline summaries that may exceed per-read token limits even in small line ranges. Use Grep for targeted extraction (e.g., `Failed plan attempts`, `Blocked desires`, `Affordances available`) rather than sequential offset reads for this section.
+
+The blocked desires subsection may be absent if no desires were fully blocked. If absent, note this in the analysis rather than treating it as an error — check failed plan attempts and affordances instead as alternative evidence.
+
+Affordances shown are a snapshot from the agent's starting location at tick 0. Agents that traveled will have different affordances at their current location. Qualify affordance-based conclusions accordingly — a "missing" affordance may reflect the tick-0 snapshot, not the agent's situation at the time of the unmet need.
+
 The binary's mechanical anomaly detection has thresholds — it may miss borderline cases. If you see evidence of a mechanical smell in the action summaries or traces that wasn't flagged in Section 3, analyze it anyway.
 
 ### Step 4: Behavioral Smell Analysis
@@ -70,25 +76,25 @@ Analyze the dump for all 10 smell categories. For each, state whether the smell 
 
 1. **Redundant perception** -- Agent observes the same unchanged entity repeatedly. Why might this be happening? Is the perception system firing too broadly? Is the entity genuinely changing state each time?
 
-2. **Action loops** -- Agent repeats the same action sequence (not patrol) without progress. Is this a planning failure? A missing affordance? A belief that never updates? Cross-reference with Section 7's decision timeline to see what the planner was selecting during the loop period.
+2. **Action loops** -- Agent repeats the same action sequence (not patrol) without progress. Is this a planning failure? A missing affordance? A belief that never updates? Cross-reference with Section 7's decision timeline to see what the planner was selecting during the loop period. Also look for behavioral collapse — agents settling into a minimal-action pattern (e.g., only sleep+relieve) for extended periods. Check the action timeline bins: if an agent's action repertoire narrows to 1-2 action types after an identifiable transition point, flag it even if the mechanical detector didn't. Cross-reference with smell 10 to determine whether resource starvation is causing the collapse.
 
 3. **Stuck agents** -- Agent has no actions for many consecutive ticks. Explainable idle (human-controlled agent with no input, all needs satisfied, no affordances) vs. pathological idle (needs rising but agent does nothing)? Cross-reference with Section 7 to determine if the planner was producing decisions at all during the idle period, and if so, what outcomes it found.
 
 4. **Failed action spirals** -- Agent keeps attempting actions that fail validation. What precondition is failing? Is the agent's belief stale about the precondition?
 
-5. **Sustained critical needs** -- A need stays above 750 permille for 100+ consecutive ticks. The anomaly includes the tick range. Cross-reference with the agent's actions during that range to determine whether the need was truly ignored or simply unsatisfiable (no resource available). Cross-reference with Section 7's failed plan attempts — were plans for the corresponding relief action attempted and failed? Or was the goal never even generated (check blocked desires)?
+5. **Sustained critical needs** -- A need stays above 750 permille for 100+ consecutive ticks. The anomaly includes the tick range. Cross-reference with the agent's actions during that range to determine whether the need was truly ignored or simply unsatisfiable (no resource available). Cross-reference with Section 7's failed plan attempts — were plans for the corresponding relief action attempted and failed? Or was the goal never even generated (check blocked desires)? When cross-referencing failed plan attempts, distinguish between `frontier-exhausted` (plan definitively not found — likely a missing affordance or precondition) and `budget-exhausted` (search space too large — the plan may exist but can't be found within the expansion budget). Budget-exhaustion patterns suggest either the action chain is too deep, the search space branches too widely, or the planner budget needs tuning. Note the candidate counts and max depth to characterize the problem.
 
-6. **Unaddressed needs** -- Need average exceeds 750 permille but no corresponding relief action (eat/drink/sleep/toilet/wash) was ever attempted. This strongly suggests a missing affordance or planner gap -- the agent never even tried to address the need. Cross-reference with Section 7's blocked desires and affordances. If the relief action doesn't appear in affordances, it's a missing affordance. If it appears but the goal is in blocked desires, something is blocking the opportunity. If neither, the goal ranking may never select it.
+6. **Unaddressed needs** -- Need average exceeds 750 permille but no corresponding relief action (eat/drink/sleep/toilet/wash) was ever attempted. This strongly suggests a missing affordance or planner gap -- the agent never even tried to address the need. Cross-reference with Section 7's blocked desires and affordances. If the relief action doesn't appear in affordances, it's a missing affordance — but note that affordances are shown at tick 0 only, so an agent that traveled may have different affordances at their current location. If the action appears in affordances but the goal is in blocked desires, something is blocking the opportunity. If neither, the goal ranking may never select it.
 
 **LLM-only smells** (cross-reference dump sections to detect):
 
 7. **Impossible knowledge** -- Cross-reference action traces with perception traces. Did an agent act on information about an entity they never observed and never heard about through Tell/AskWitness? Check: agent's action targets vs. entities in their perception trace.
 
-8. **Belief staleness** -- Cross-reference the agent's belief summary (Section 5) with their action traces, perception traces, and the end-state inventory (Section 6). Check: does the agent believe resources exist at locations they haven't visited recently? Do their believed entity locations match current placement? Are they failing to act on resource knowledge (e.g., believing food exists at a place but never traveling there)? Compare the agent's known entities with entities they could have observed -- are there gaps suggesting failed or missed perceptions? If the belief summary is sparse (few known entities), note the limitation rather than speculating. Section 7's affordances list shows what actions the planner could see at the agent's current location — if travel isn't in affordances, agents can't plan multi-location journeys.
+8. **Belief staleness** -- Cross-reference the agent's belief summary (Section 5) with their action traces, perception traces, and the end-state inventory (Section 6). Check: does the agent believe resources exist at locations they haven't visited recently? Do their believed entity locations match current placement? Are they failing to act on resource knowledge (e.g., believing food exists at a place but never traveling there)? Compare the agent's known entities with entities they could have observed -- are there gaps suggesting failed or missed perceptions? If the belief summary is sparse (few known entities), note the limitation rather than speculating. Section 7's affordances list shows what actions the planner could see at the agent's current location — if travel isn't in affordances, agents can't plan multi-location journeys. Note: affordances are a tick-0 snapshot at the starting location; agents that traveled may have different affordances later.
 
 9. **Social isolation** -- Check location tracking: if agents are co-located for extended periods (20+ ticks) with no Tell, AskWitness, or Trade actions between them, flag it.
 
-10. **Economic stagnation** -- Check for agents with unmet needs (hunger/thirst > 500 permille) in locations with resource sources or commodity stocks (use Section 6 to verify what resources actually exist at each place), but no harvest/craft/trade actions attempted. Cross-reference agent beliefs (Section 5) with actual place contents (Section 6) to determine whether the agent knows about available resources. Section 7's failed plan attempts and blocked desires directly reveal whether agents tried to plan economic actions (harvest, craft, trade) and failed, or never generated those goals at all.
+10. **Economic stagnation** -- Check for agents with unmet needs (hunger/thirst > 500 permille) in locations with resource sources or commodity stocks (use Section 6 to verify what resources actually exist at each place), but no harvest/craft/trade actions attempted. Cross-reference agent beliefs (Section 5) with actual place contents (Section 6) to determine whether the agent knows about available resources. Section 7's failed plan attempts and blocked desires directly reveal whether agents tried to plan economic actions (harvest, craft, trade) and failed, or never generated those goals at all. When failed plan attempts show `budget-exhausted` for acquisition goals, this indicates the plan may exist but the search space is too large — note candidate counts and max depth to characterize the bottleneck.
 
 The per-agent summary also includes a "Ticks above 750‰" line for each need, providing concrete data for smells 5-6 and supporting LLM analysis of smells 8-10.
 
@@ -116,8 +122,8 @@ Write `reports/simulation-observer-report.md` with this structure:
 [Patterns that span multiple smells or agents -- e.g., "Agent X has both stuck behavior AND ignored needs, suggesting a planning failure"]
 
 ## Summary Statistics
-- Total findings: N
-- By severity: N CRITICAL, N HIGH, N MEDIUM, N LOW
+- Total findings: N (count of categories with severity other than NONE)
+- By severity: N CRITICAL, N HIGH, N MEDIUM, N LOW (NONE categories excluded)
 - Agents with issues: [list]
 - Clean agents: [list]
 
@@ -135,3 +141,4 @@ Delete `reports/simulation-observer-dump.md` -- the dump is an intermediate arti
 - Human-controlled agents (ControlSource::Human) with no input will always appear as "stuck" -- note this as expected behavior, not a bug.
 - Patrol agents are excluded from action loop detection in the binary, but verify patrol behavior looks reasonable in the raw traces.
 - 1440 ticks = 1 simulated day. For deeper analysis, try 2880 (2 days) or 4320 (3 days).
+- If Section 7 shows `dead` ticks > 0 for an agent, note this prominently in the Run Summary and adjust smell analysis accordingly. A dead agent's "stuck" status is expected, not pathological. Focus analysis on what led to death: trace the unaddressed needs, missing affordances, and failed plans in the ticks before death. Report the approximate death tick and contributing factors in the Cross-Cutting Patterns section.

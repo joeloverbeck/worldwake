@@ -108,7 +108,7 @@ Output this structure to the conversation (do not write to a file):
 
   **Post-edit verification**: After all edits are applied, re-read the full skill file and verify as a single pass:
   1. **No overlap or contradiction** — edits don't conflict with each other
-  2. **Cross-references valid** — phase numbers, step numbers, and file paths still point to correct targets. Use pattern search (e.g., grep for `Step [0-9]`, `Phase [0-9]`, `Section [0-9]`, or `### [0-9]`) to confirm numbering continuity. Verify that cross-references introduced by new text point to content that actually exists.
+  2. **Cross-references valid** — phase numbers, step numbers, and file paths still point to correct targets. For files with many numbered references, use pattern search (e.g., grep for `Step [0-9]`, `Phase [0-9]`, `Section [0-9]`, or `### [0-9]`) to confirm numbering continuity. For smaller files, a full re-read with visual confirmation is sufficient. Verify that cross-references introduced by new text point to content that actually exists.
   3. **Sequential flow coherent** — the skill reads coherently end-to-end after all edits
   4. **Contextual consistency** — numbering, terminology, and cross-references are consistent with adjacent unchanged text
   5. **Frontmatter integrity** — if any edit touched the YAML frontmatter, verify `---` delimiters are intact and the YAML parses correctly (name, description, and arguments are present and properly quoted)
