@@ -208,10 +208,10 @@ impl AgentBeliefStore {
         let mut eviction_order = self
             .known_entities
             .iter()
-            .map(|(entity, state)| (state.observed_tick, *entity))
+            .map(|(entity, state)| (entity_eviction_tier(state), state.observed_tick, *entity))
             .collect::<Vec<_>>();
         eviction_order.sort_unstable();
-        for (_, entity) in eviction_order.into_iter().take(excess) {
+        for (_, _, entity) in eviction_order.into_iter().take(excess) {
             self.known_entities.remove(&entity);
             self.entity_claims.remove(&entity);
         }
@@ -1956,6 +1956,18 @@ fn claim_eviction_tier(aspect: EntityBeliefAspect, believed_kind: Option<EntityK
     }
 }
 
+fn entity_eviction_tier(state: &BelievedEntityState) -> u8 {
+    if state.resource_source.is_some() {
+        return 1;
+    }
+
+    match state.believed_kind {
+        Some(EntityKind::Place | EntityKind::Facility) => 1,
+        Some(EntityKind::Agent) if state.alive => 1,
+        _ => 0,
+    }
+}
+
 fn preserve_believed_kind(prior: Option<&BelievedEntityState>, summary: &mut BelievedEntityState) {
     if summary.believed_kind.is_none() {
         summary.believed_kind = prior.and_then(|state| state.believed_kind);
@@ -3254,6 +3266,98 @@ mod tests {
         assert!(store.known_entities.contains_key(&entity(1)));
         assert!(!store.known_entities.contains_key(&entity(80)));
         assert!(!store.entity_claims.contains_key(&entity(80)));
+    }
+
+    #[test]
+    fn enforce_capacity_preserves_infrastructure_entities() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut place_a = sample_state(3, 0);
+        place_a.believed_kind = Some(EntityKind::Place);
+        let mut place_b = sample_state(4, 0);
+        place_b.believed_kind = Some(EntityKind::Place);
+        let mut item_a = sample_state(1, 1);
+        item_a.believed_kind = Some(EntityKind::ItemLot);
+        let mut item_b = sample_state(2, 2);
+        item_b.believed_kind = Some(EntityKind::ItemLot);
+        let mut item_c = sample_state(5, 3);
+        item_c.believed_kind = Some(EntityKind::ItemLot);
+
+        store.update_entity(entity(101), place_a);
+        store.update_entity(entity(102), place_b);
+        store.update_entity(entity(201), item_a);
+        store.update_entity(entity(202), item_b);
+        store.update_entity(entity(203), item_c);
+
+        store.enforce_capacity(&profile(3, 8, 100), Tick(20));
+
+        assert!(store.known_entities.contains_key(&entity(101)));
+        assert!(store.known_entities.contains_key(&entity(102)));
+        assert!(!store.known_entities.contains_key(&entity(201)));
+        assert!(!store.known_entities.contains_key(&entity(202)));
+        assert!(store.known_entities.contains_key(&entity(203)));
+    }
+
+    #[test]
+    fn enforce_capacity_resource_source_override_promotes_to_infrastructure() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut resource_item = sample_state(1, 1);
+        resource_item.believed_kind = Some(EntityKind::ItemLot);
+        resource_item.resource_source = Some(ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(2),
+            max_quantity: Quantity(5),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        });
+        let mut transient_item = sample_state(2, 1);
+        transient_item.believed_kind = Some(EntityKind::ItemLot);
+
+        store.update_entity(entity(301), resource_item);
+        store.update_entity(entity(302), transient_item);
+
+        store.enforce_capacity(&profile(1, 8, 100), Tick(20));
+
+        assert!(store.known_entities.contains_key(&entity(301)));
+        assert!(!store.known_entities.contains_key(&entity(302)));
+    }
+
+    #[test]
+    fn enforce_capacity_dead_agents_are_transient() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut dead_agent = sample_state(1, 1);
+        dead_agent.believed_kind = Some(EntityKind::Agent);
+        dead_agent.alive = false;
+        let mut live_agent = sample_state(2, 1);
+        live_agent.believed_kind = Some(EntityKind::Agent);
+
+        store.update_entity(entity(401), dead_agent);
+        store.update_entity(entity(402), live_agent);
+
+        store.enforce_capacity(&profile(1, 8, 100), Tick(20));
+
+        assert!(!store.known_entities.contains_key(&entity(401)));
+        assert!(store.known_entities.contains_key(&entity(402)));
+    }
+
+    #[test]
+    fn enforce_capacity_unknown_kind_is_transient() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut unknown = sample_state(1, 1);
+        unknown.believed_kind = None;
+        let mut facility = sample_state(2, 1);
+        facility.believed_kind = Some(EntityKind::Facility);
+
+        store.update_entity(entity(501), unknown);
+        store.update_entity(entity(502), facility);
+
+        store.enforce_capacity(&profile(1, 8, 100), Tick(20));
+
+        assert!(!store.known_entities.contains_key(&entity(501)));
+        assert!(store.known_entities.contains_key(&entity(502)));
     }
 
     #[test]

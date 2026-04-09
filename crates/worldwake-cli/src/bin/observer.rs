@@ -11,8 +11,8 @@ use clap::Parser;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
-use worldwake_ai::decision_trace::{DecisionOutcome, PlanSearchOutcome};
 use worldwake_ai::AgentTickDriver;
+use worldwake_ai::decision_trace::{DecisionOutcome, PlanSearchOutcome};
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{EntityId, EntityKind, EventId, EventView};
@@ -1077,10 +1077,12 @@ fn format_report(
                 .collect();
 
             if !failed_attempts.is_empty() {
-                let total_failures: usize =
-                    failed_attempts.iter().map(|(_, f)| f.len()).sum();
-                writeln!(out, "**Failed plan attempts** (showing first 20 of {total_failures})\n")
-                    .unwrap();
+                let total_failures: usize = failed_attempts.iter().map(|(_, f)| f.len()).sum();
+                writeln!(
+                    out,
+                    "**Failed plan attempts** (showing first 20 of {total_failures})\n"
+                )
+                .unwrap();
                 writeln!(out, "| Tick | Goal | Outcome | Expansions |").unwrap();
                 writeln!(out, "|------|------|---------|------------|").unwrap();
                 let mut shown = 0u32;
@@ -1142,10 +1144,9 @@ fn format_report(
             }
 
             // Affordances available (from first planning tick that has them)
-            if let Some(trace) = traces.iter().find(|t| {
-                matches!(&t.outcome, DecisionOutcome::Planning(p) if p.affordances.is_some())
-            })
-                && let DecisionOutcome::Planning(planning) = &trace.outcome
+            if let Some(trace) = traces.iter().find(
+                |t| matches!(&t.outcome, DecisionOutcome::Planning(p) if p.affordances.is_some()),
+            ) && let DecisionOutcome::Planning(planning) = &trace.outcome
                 && let Some(affordances) = &planning.affordances
             {
                 writeln!(
@@ -1158,8 +1159,7 @@ fn format_report(
                 )
                 .unwrap();
                 for aff in &affordances.available {
-                    writeln!(out, "- {} ({} targets)", aff.action_name, aff.target_count)
-                        .unwrap();
+                    writeln!(out, "- {} ({} targets)", aff.action_name, aff.target_count).unwrap();
                 }
                 writeln!(out).unwrap();
             }

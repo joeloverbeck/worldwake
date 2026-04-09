@@ -1,6 +1,6 @@
 # S77BELCAPPRI-003: Tiered entity eviction in `enforce_capacity()`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — entity eviction sort key changes in belief store
@@ -15,6 +15,7 @@ When `known_entities` exceeds `entity_memory_capacity`, entities are evicted old
 1. Entity eviction in `enforce_capacity()` at `belief.rs:197-214`. Current sort: `(state.observed_tick, *entity)` ascending — oldest evicted first. Eviction removes from both `known_entities` and `entity_claims` (lines 212-213).
 2. `BelievedEntityState` will have `believed_kind: Option<EntityKind>` after S77BELCAPPRI-001. Also has `resource_source: Option<ResourceSource>` and `alive: bool`.
 3. Existing tests: `enforce_capacity_evicts_oldest_entities_deterministically` (line 3149), `enforce_capacity_removes_stale_entities_and_social_observations` (line 3164), `enforce_capacity_clears_entities_when_capacity_is_zero` (line 3182), `enforce_capacity_applies_global_entity_cap_after_claim_pruning` (line 3193), `enforce_capacity_uses_entity_memory_capacity_not_claim_depth` (line 3324).
+4. Ticket says the helper should return `0` for infrastructure and `1` for transient entities. Live eviction removes from the start of an ascending sort, so that numeric direction would evict infrastructure first. Correction applied: `entity_eviction_tier()` returns `1` for infrastructure and `0` for transient entities so transient entities sort to the eviction front. Safe because it preserves the ticket's stated behavior and only fixes the contradictory example.
 
 ## Architecture Check
 
@@ -37,12 +38,12 @@ Add to `crates/worldwake-core/src/belief.rs`:
 ```rust
 fn entity_eviction_tier(state: &BelievedEntityState) -> u8 {
     if state.resource_source.is_some() {
-        return 0; // Override: any entity with resource_source is infrastructure
+        return 1; // Override: any entity with resource_source is infrastructure
     }
     match state.believed_kind {
-        Some(EntityKind::Place) | Some(EntityKind::Facility) => 0,
-        Some(EntityKind::Agent) if state.alive => 0,
-        _ => 1, // Transient tier (includes believed_kind: None fallback)
+        Some(EntityKind::Place | EntityKind::Facility) => 1,
+        Some(EntityKind::Agent) if state.alive => 1,
+        _ => 0, // Transient tier (includes believed_kind: None fallback)
     }
 }
 ```
@@ -99,6 +100,20 @@ Eviction proceeds from the start of this sorted list (transient tier first, then
 4. `crates/worldwake-core/src/belief.rs` — `enforce_capacity_unknown_kind_is_transient` — believed_kind: None fallback
 
 ### Commands
+
+1. `cargo test -p worldwake-core -- enforce_capacity`
+2. `cargo test -p worldwake-core`
+3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed: 2026-04-09
+
+Implemented tiered entity eviction in `enforce_capacity()` so transient entities are evicted before infrastructure-tier entities. The final helper classifies resource-source entities, Places, Facilities, and live Agents as infrastructure; dead Agents and `believed_kind: None` fall back to transient. Added focused proofs covering mixed-kind retention, resource-source override, dead-Agent demotion, and unknown-kind fallback.
+
+Deviation from original plan: the ticket's sample helper inverted the tier values relative to the live ascending eviction order. The implementation corrected the helper so transient entities sort to the eviction front while preserving the ticket's intended behavior.
+
+## Verification Result
 
 1. `cargo test -p worldwake-core -- enforce_capacity`
 2. `cargo test -p worldwake-core`
