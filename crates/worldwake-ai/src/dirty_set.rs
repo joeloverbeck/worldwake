@@ -4,6 +4,7 @@
 //! which domains triggered a replan. It is the single authoritative
 //! representation for invalidation domains in both runtime logic and traces.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{BitOr, BitOrAssign};
 
@@ -13,7 +14,7 @@ use std::ops::{BitOr, BitOrAssign};
 /// - **Structural** (bits 0–5): plan lifecycle events (no plan, plan finished, etc.)
 /// - **Snapshot** (bits 6–12): observation dimensions (position, needs, wounds, etc.)
 /// - **Frame** (bits 13–15): frame lifecycle events introduced by S22
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DirtySet(u16);
 
 // ---------------------------------------------------------------------------

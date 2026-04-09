@@ -1382,7 +1382,7 @@ mod tests {
     }
 
     #[test]
-    fn save_load_roundtrip_prunes_stale_runtime_state_via_post_load_validation() {
+    fn save_load_roundtrip_preserves_runtime_state_losslessly() {
         let mut h = GoldenHarness::new(Seed([40; 32]));
         let actor = seed_agent(
             &mut h.world,
@@ -1490,27 +1490,34 @@ mod tests {
         let restored_state: DriverStateMirror =
             bincode::deserialize(&restored_runtime_bytes).unwrap();
 
-        assert!(!restored_state.runtime_by_agent.contains_key(&dead_agent));
+        // Dead agent runtime and all stale references are preserved
+        // for lossless save/load (no asymmetric pruning).
+        assert!(restored_state.runtime_by_agent.contains_key(&dead_agent));
 
         let runtime = restored_state.runtime_by_agent.get(&actor).unwrap();
-        assert_eq!(runtime.last_effective_place, None);
+        assert_eq!(runtime.last_effective_place, Some(dead_entity));
         assert_eq!(
             runtime.last_facility_access_signature,
-            vec![(live_place, false, Some(ActionDefId(2)))]
+            vec![
+                (dead_entity, true, None),
+                (live_place, false, Some(ActionDefId(2))),
+            ]
         );
         assert_eq!(
             runtime
                 .materialization_bindings
                 .resolve(HypotheticalEntityId(7)),
-            None
+            Some(dead_entity)
         );
-        assert!(!runtime.exhaustion_cache.contains_key(&OpportunityKey {
+        // All exhaustion cache entries preserved, including those
+        // referencing dead entities.
+        assert!(runtime.exhaustion_cache.contains_key(&OpportunityKey {
             goal_key: GoalKey::from(GoalKind::LootCorpse {
                 corpse: dead_entity
             }),
             anchor: OpportunityAnchor::Entity(dead_entity),
         }));
-        assert!(!runtime.exhaustion_cache.contains_key(&OpportunityKey {
+        assert!(runtime.exhaustion_cache.contains_key(&OpportunityKey {
             goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
