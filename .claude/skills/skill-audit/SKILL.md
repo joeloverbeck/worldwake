@@ -102,7 +102,7 @@ Output this structure to the conversation (do not write to a file):
 
   **Re-evaluation**: If the codebase changed between the audit report and the follow-up request, re-evaluate each finding against the current state. Discard obsolete findings, adapt shifted ones, and renumber survivors before applying edits.
 
-  **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding.
+  **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding. If the user requests all findings be implemented (e.g., "implement all", "implement recommended suggestions"), skip dependency checking and apply all edits in document order.
 
   **Edit ordering**: Apply edits in document order (top to bottom) to minimize line-number shifts invalidating later edits.
 
@@ -115,4 +115,4 @@ Output this structure to the conversation (do not write to a file):
 
   If any check fails, fix the offending edit(s), then re-run the full 5-check pass. Do not selectively re-check — a fix in one area can introduce issues in another.
 - **Cross-skill consistency** — If the target skill is part of a multi-skill workflow AND any finding affects interfaces shared with sibling skills (e.g., output format consumed by the next skill, shared terminology, file paths referenced across skills), scan sibling skills for inconsistencies. Report cross-skill inconsistencies as Issues. Skip when all findings are internal to the target skill.
-- **Repeated audit shortcut** — If the same skill has been audited *as the target* 2+ times in the current session and the most recent audit found 0 findings, note "Skill stable — no new session evidence since last audit" and skip the full checklist unless the skill was modified between audits.
+- **Repeated audit shortcut** — If the same skill has been audited *as the target* 2+ times in the current session and the most recent audit found 0 findings, note "Skill stable — no new session evidence since last audit" and skip the full checklist unless the skill was modified between audits. If the skill was modified since the last audit (including by follow-up implementation from a prior audit), treat the next audit as fresh — do not use the shortcut.

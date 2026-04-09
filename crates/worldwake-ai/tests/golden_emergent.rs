@@ -5341,6 +5341,12 @@ fn run_witnessed_theft_accusation_chain(seed: Seed) -> (StateHash, StateHash) {
         witness,
         broad_accepting_tell_profile(),
     );
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_communication_profile(authority, accepting_communication_profile())
+            .expect("witnessed-theft golden should keep communication profiles writable");
+        commit_txn(txn, &mut h.event_log);
+    }
     set_violation_profile(
         &mut h,
         authority,

@@ -1,5 +1,6 @@
 # Architectural Abstraction Recovery: golden_ai_decisions
 
+**Status**: EXPLOITED — both proposals rejected after codebase validation
 **Date**: 2026-04-09
 **Input**: `crates/worldwake-ai/tests/golden_ai_decisions.rs`
 **Source modules analyzed**: 203 (short-circuit: all modules in referenced crates)
@@ -158,3 +159,13 @@ The `ExhaustionEntry` → `ExhaustionInvalidationCondition` → baseline compari
 - **Worth consolidating**: Need Band Oracle — not spec-worthy on its own (it's internal to worldwake-ai), but worth a focused cleanup when next touching ranking or exhaustion code
 - **Acceptable**: Belief view protocol, PlanningState, action execution flow, interrupt separation, goal lifecycle pipeline, exhaustion cache
 - **Needs investigation**: GoalPriorityClass boundary placement, goal_model.rs complexity, tell_actions temporal coupling
+
+## Outcome
+
+**Completion date**: 2026-04-09
+**Triage result**: Both proposals rejected; no specs written.
+
+- **PR-1 (Need Band Oracle)**: Rejected — YAGNI. Assessment itself said not spec-worthy. One of three implementations (`exhaustion.rs::classify_need_band`) is dead code (`#[allow(dead_code)]`). Implementations use intentionally different return types and boundary semantics. Incidental cleanup, not a spec.
+- **PR-2 (Failure Diagnosis Protocol)**: Rejected — wrong diagnosis. `failure_handling.rs` reads agent belief state to derive `BlockingFact`, making it correct belief-formation (Principle 14), not an authority leak. Moving derivation to sim would violate P14. The single `NoBuyer` variant in `trade_actions.rs` is already correctly placed.
+- **6 acceptable architecture areas** confirmed as well-designed (no intervention).
+- **3 investigation flags** noted for future analysis runs against other test suites.
