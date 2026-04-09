@@ -86,9 +86,7 @@ Golden production tests require `PerceptionProfile` on agents that need to obser
 
 ## Debugging
 
-For debugging AI decisions or action execution, see `docs/debugging-traces.md` (decision traces, action traces, tick alignment, observation strategy).
-
-System tick ordering and force-control lifecycle documented in `docs/system-execution-reference.md`.
+For debugging AI decisions or action execution, see `docs/debugging-traces.md` (decision traces, action traces, tick alignment, observation strategy, system tick ordering, force-control lifecycle).
 
 ## Spec Drafting Rules
 
