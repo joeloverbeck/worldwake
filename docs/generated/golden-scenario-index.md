@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 149
+- Scenario blocks: 150
 - Contributing golden test files: 24
-- Associated tests: 319
+- Associated tests: 321
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -1612,7 +1612,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 126: Remote Travel To Resource Under Local Scarcity
 
-- Source: `golden_simulation_gaps.rs:345`
+- Source: `golden_simulation_gaps.rs:356`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -1627,7 +1627,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 127: Idle Cap Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:381`
+- Source: `golden_simulation_gaps.rs:392`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Sleep, Relieve, AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -1642,7 +1642,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 130: Multi-Agent Convergence Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:636`
+- Source: `golden_simulation_gaps.rs:647`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Travel, Production, Needs
@@ -1654,6 +1654,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: multi-agent scarcity pressure still produces bounded behavioral progress instead of collapsing into prolonged no-op stretches; at least one agent starts travel toward the remote resources and reaches OrchardFarm.
 
 **Cross-system chain**: shared scarcity pressure -> remote resource candidate generation across multiple agents -> lawful travel start -> OrchardFarm arrival.
+
+### Scenario 131: Death Traceability Under Unmet Needs
+
+- Source: `golden_simulation_gaps.rs:806`
+- Systems: Needs, Wounds, AI
+- GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
+- ActionDomains: Needs
+- Places: VillageSquare
+- Principles: 4, 10, 20
+
+**Setup**: One agent begins at VillageSquare with critical hunger, no local food or water, no remote resource beliefs, and no recipe knowledge. A shortened starvation tolerance makes deprivation wounds accumulate to a fatal wound load within the scenario budget.
+
+**Proves**: deprivation death becomes an explicit durable world-state transition with a traceable cause and death-tagged event, and the AI enters the dead decision path instead of starting new actions after death.
+
+**Cross-system chain**: sustained unmet hunger -> deprivation wound creation -> fatal wound load -> DeadAt with cause plus EventTag::Death -> DecisionOutcome::Dead.
 
 ### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
 

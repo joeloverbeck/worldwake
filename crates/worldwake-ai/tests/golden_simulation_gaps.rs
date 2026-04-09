@@ -5,8 +5,10 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
+use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
-    BeliefConfidencePolicy, CognitiveProfile, CommodityKind, EntityId, HomeostaticNeeds,
+    BeliefConfidencePolicy, CognitiveProfile, CommodityKind, ComponentKind, ComponentValue,
+    DeathCause, EntityId, EventTag, EventView, HomeostaticNeedId, HomeostaticNeeds, KnownRecipes,
     MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
     UtilityProfile, WorkstationTag, hash_event_log, hash_world, verify_authoritative_conservation,
     verify_live_lot_conservation,
@@ -213,6 +215,15 @@ struct AgentConvergenceObservation {
 struct MultiAgentConvergenceObservation {
     agents: Vec<AgentConvergenceObservation>,
     earliest_travel_start_tick: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DeathTraceabilityObservation {
+    death_tick: Tick,
+    death_cause: DeathCause,
+    saw_death_event: bool,
+    saw_post_death_dead_decision: bool,
+    post_death_started_actions: Vec<String>,
 }
 
 fn run_max_idle_under_remote_resource_scarcity(
@@ -666,5 +677,164 @@ fn golden_multi_agent_convergence_replays_deterministically() {
     assert_eq!(
         first, second,
         "multi-agent convergence under remote resource scarcity should replay deterministically"
+    );
+}
+
+fn starvation_traceability_metabolism() -> MetabolismProfile {
+    let mut metabolism = MetabolismProfile::default();
+    metabolism.starvation_tolerance_ticks = nz(2);
+    metabolism
+}
+
+fn run_death_traceability(
+    seed: Seed,
+) -> (DeathTraceabilityObservation, StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "DeprivationVictim",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+        starvation_traceability_metabolism(),
+        UtilityProfile {
+            hunger_weight: pm(950),
+            thirst_weight: pm(200),
+            ..UtilityProfile::default()
+        },
+        KnownRecipes::default(),
+    );
+    configure_remote_resource_agent(&mut h, agent);
+
+    let death_tick = loop {
+        h.step_once();
+        if let Some(dead_at) = h.world.get_component_dead_at(agent) {
+            break dead_at.tick;
+        }
+        assert!(
+            h.scheduler.current_tick().0 < 600,
+            "Agent should die from starvation before tick 600; hunger={}, wound_load={}",
+            h.agent_hunger(agent).value(),
+            h.agent_wound_load(agent),
+        );
+    };
+
+    for _ in 0..5 {
+        h.step_once();
+    }
+
+    let dead_at = *h
+        .world
+        .get_component_dead_at(agent)
+        .expect("DeadAt should remain set after death");
+    let death_event_id = first_tagged_event_id_matching(&h.event_log, EventTag::Death, |_, record| {
+        record.target_ids().contains(&agent)
+            && event_sets_component(record, agent, ComponentKind::DeadAt, |value| {
+                matches!(
+                    value,
+                    ComponentValue::DeadAt(dead_at)
+                        if dead_at.tick == death_tick
+                            && matches!(
+                                dead_at.cause,
+                                DeathCause::NeedDeprivation {
+                                    need: HomeostaticNeedId::Hunger
+                                }
+                            )
+                )
+            })
+    });
+
+    let saw_post_death_dead_decision = h.driver.trace_sink().is_some_and(|sink| {
+        ((death_tick.0 + 1)..=h.scheduler.current_tick().0).any(|tick| {
+            sink.trace_at(agent, Tick(tick))
+                .is_some_and(|trace| matches!(trace.outcome, DecisionOutcome::Dead))
+        })
+    });
+    let post_death_started_actions = h
+        .action_trace_sink()
+        .map(|sink| {
+            sink.events_for(agent)
+                .iter()
+                .filter(|event| {
+                    event.tick.0 > death_tick.0
+                        && matches!(event.kind, ActionTraceKind::Started { .. })
+                })
+                .map(|event| event.action_name.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let observation = DeathTraceabilityObservation {
+        death_tick,
+        death_cause: dead_at.cause,
+        saw_death_event: death_event_id.is_some(),
+        saw_post_death_dead_decision,
+        post_death_started_actions,
+    };
+
+    assert_eq!(
+        dead_at.cause,
+        DeathCause::NeedDeprivation {
+            need: HomeostaticNeedId::Hunger
+        },
+        "Scenario setup should make starvation the deterministic death cause; observation={observation:?}"
+    );
+    assert!(
+        observation.saw_death_event,
+        "Death event tagged EventTag::Death should target the dead agent and persist DeadAt; observation={observation:?}"
+    );
+    assert!(
+        observation.saw_post_death_dead_decision,
+        "At least one post-death AI tick should record DecisionOutcome::Dead; observation={observation:?}"
+    );
+    assert!(
+        observation.post_death_started_actions.is_empty(),
+        "Dead agent should not start actions after death; observation={observation:?}"
+    );
+
+    (
+        observation,
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 131: Death Traceability Under Unmet Needs
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, Wounds, AI
+// GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
+// ActionDomains: Needs
+// Places: VillageSquare
+// Principles: 4, 10, 20
+//
+// Setup: One agent begins at VillageSquare with critical hunger, no local food
+//   or water, no remote resource beliefs, and no recipe knowledge. A shortened
+//   starvation tolerance makes deprivation wounds accumulate to a fatal wound
+//   load within the scenario budget.
+//
+// Proves: deprivation death becomes an explicit durable world-state transition
+//   with a traceable cause and death-tagged event, and the AI enters the dead
+//   decision path instead of starting new actions after death.
+//
+// Chain: sustained unmet hunger -> deprivation wound creation -> fatal wound
+//   load -> DeadAt with cause plus EventTag::Death -> DecisionOutcome::Dead.
+
+#[test]
+fn golden_death_traceability() {
+    let _ = run_death_traceability(Seed([179; 32]));
+}
+
+#[test]
+fn golden_death_traceability_replays_deterministically() {
+    let first = run_death_traceability(Seed([179; 32]));
+    let second = run_death_traceability(Seed([179; 32]));
+    assert_eq!(
+        first, second,
+        "death traceability under unmet needs should replay deterministically"
     );
 }
