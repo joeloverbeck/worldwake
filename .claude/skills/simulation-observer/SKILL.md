@@ -98,6 +98,8 @@ Analyze the dump for all 10 smell categories. For each, state whether the smell 
 
 The per-agent summary also includes a "Ticks above 750‰" line for each need, providing concrete data for smells 5-6 and supporting LLM analysis of smells 8-10.
 
+After analyzing all 10 smells, note any cases where trace data was insufficient to reach a confident assessment. Record which specific data gaps affected which smells -- this feeds the Trace Quality Assessment in Step 5.
+
 ### Step 5: Write Report
 
 Write `reports/simulation-observer-report.md` with this structure:
@@ -128,7 +130,31 @@ Write `reports/simulation-observer-report.md` with this structure:
 - Clean agents: [list]
 
 ## Trace Quality Assessment
-[Does the dump provide enough information to confidently assess all 10 smells? What additional trace data would help? Are there blind spots?]
+
+### Trace Sufficiency
+[1-2 sentences: Does the dump provide enough information to confidently assess all 10 smells?]
+
+### Limitations and Recommended Additions
+
+For each limitation identified during analysis, classify it:
+
+| ID | Limitation | Classification | Rationale |
+|----|-----------|----------------|-----------|
+| TQ-1 | [description] | Actionable / Acceptable trade-off | [why -- what analysis would improve, or why the current state is adequate] |
+
+**Actionable** items are limitations where:
+- The missing data prevented confident assessment of one or more smells (forced INCONCLUSIVE), OR
+- The missing data would materially improve root-cause diagnosis for a MEDIUM+ finding, OR
+- The limitation misaligns with a FOUNDATIONS principle (cite which one)
+
+**Acceptable trade-off** items are limitations where:
+- The data would be nice but didn't prevent any smell assessment
+- The cost of capturing the data outweighs the diagnostic benefit
+- The limitation is inherent to the dump format and not worth engineering around
+
+For each **Actionable** item, also include:
+- **Recommended addition**: What concrete change would address this limitation
+- **Scope**: Observer-binary enhancement (change to the observer dump output) vs. Engine instrumentation (new component, event, or system in the simulation crates)
 ```
 
 ### Step 6: Clean Up

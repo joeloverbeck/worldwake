@@ -25,7 +25,7 @@ The argument is the skill directory path. The framework automatically resolves `
 
 1. **Read the target skill** — Read the SKILL.md file at the provided path. Parse its name, description, and full content. If the exact path does not resolve, glob for near-matches (e.g., `<path>*`). If exactly one match is found, use it and note the correction. If zero or multiple matches, stop and report the error.
 2. **Read alignment documents** — Read `docs/FOUNDATIONS.md` — skip only if explicitly read earlier in this session (not from memory or training knowledge). `CLAUDE.md` is always available via system context injection and does not need explicit reading.
-3. **Session reflection** — Review the current conversation context to identify the items below. If the target skill is skill-audit itself (self-audit), use session evidence from any prior audit invocation(s) in this session. The self-audit invocation provides no independent session evidence beyond confirming the skill's flow works.
+3. **Session reflection** — Review the current conversation context to identify the items below. If the target skill is skill-audit itself (self-audit), use session evidence from any prior audit invocation(s) in this session. The self-audit invocation provides no independent session evidence beyond confirming the skill's flow works. If no prior audit invocation exists in this session, report "No session evidence available — self-audit with no prior invocations produces no findings beyond confirming the skill's flow parses correctly." and skip steps 3-6.
    - Moments where the skill's instructions were unclear or ambiguous
    - Steps that were skipped, reordered, or worked around
    - Behaviors the skill didn't anticipate (edge cases, unexpected inputs)

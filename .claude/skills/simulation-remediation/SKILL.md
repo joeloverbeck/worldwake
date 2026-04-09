@@ -34,6 +34,7 @@ Read `reports/simulation-observer-report.md`.
 4. Glob `crates/worldwake-ai/tests/golden_*.rs` to identify existing test files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern.
 5. Read `docs/spec-drafting-rules.md` -- only if any spec changes will be proposed. Skip if all findings map to golden tests or tickets.
 6. If `reports/simulation-remediation.md` already exists (from a prior run), read it and note which prior proposals recurred in the current observer report. Flag recurring issues with a `RECURRING` marker in the proposal severity.
+7. Note the Trace Quality Assessment section of the observer report for processing in Step 3b.
 
 ### Step 3: Classify Each Finding
 
@@ -60,9 +61,25 @@ For each finding in the observer report (each smell with severity above NONE), d
 - Which crate(s) are affected
 - Priority (P0-P3)
 
+### Step 3b: Classify Trace Quality Items
+
+Read the "Trace Quality Assessment" section of the observer report. For each item classified as **Actionable** (or, if the observer report uses the older free-text format without a structured table, identify limitations and recommended additions that would materially improve future analysis):
+
+Apply the same classification logic as Step 3:
+
+**Ticket** -- Use when the item is a concrete engineering task (e.g., "add DeathCause component", "emit affordance snapshot events every N ticks"). Propose with the same format as behavioral tickets (title, description, priority, crate(s), acceptance criteria). Trace-quality tickets default to P2 unless the limitation forced an INCONCLUSIVE assessment on a MEDIUM+ finding or reduced confidence below HIGH on a CRITICAL finding, in which case P1.
+
+**Spec Change** -- Use when the item reveals a design gap requiring spec-level work (e.g., a new observability subsystem, a new profile parameter for perception granularity). Apply the same FOUNDATIONS alignment check -- FND-29 (Debuggability) is the primary principle, but also check FND-10 (Outcomes Leave Aftermath), FND-04 (Persistent Identity), and others as relevant.
+
+**Not warranted** -- If a trace-quality item does not align with any FOUNDATIONS principle or the improvement is purely cosmetic, note it in the "Findings Deferred or Not Requiring Independent Remediation" table with reason "trace-quality item, no FOUNDATIONS alignment."
+
+Items classified as **Acceptable trade-off** in the observer report are skipped -- note them in the deferred table with the observer's rationale.
+
+Tickets and spec changes from trace-quality items use the same format as behavioral proposals. The **Source finding** field references the Trace Quality Assessment item ID (e.g., "TQ-3: Belief acquisition timeline") instead of a behavioral finding number.
+
 ### Step 4: Write Proposals
 
-If invoked in plan mode, write the report content to the plan file. After plan mode exits, write the final report to `reports/simulation-remediation.md`.
+If invoked in plan mode, write the report content to the plan file. After plan mode exits, write the final report to `reports/simulation-remediation.md` using the same content as the plan file.
 
 Write `reports/simulation-remediation.md` with this structure:
 
@@ -81,6 +98,7 @@ Generated: [date]
 **Setup**: [agents, scenario, profiles needed]
 **Assertion**: [what to check]
 **Rationale**: [why this test is needed -- what invariant does it protect?]
+**Existing coverage**: [reference to similar existing tests and why this is not a duplicate]
 
 [Repeat for each proposed test]
 
@@ -103,7 +121,10 @@ Generated: [date]
 **Crate(s)**: [affected crates]
 **Description**: [what needs to be done]
 **Dependencies**: [other proposals this is blocked by, e.g., "blocked by TK-2", or "none"]
+**FOUNDATIONS alignment**: [which principle(s) this serves]
 **Acceptance criteria**: [how to verify it's fixed]
+
+[Trace-quality tickets from Step 3b use the same format. Source finding references TQ-N IDs from the Trace Quality Assessment.]
 
 [Repeat for each proposed ticket]
 
