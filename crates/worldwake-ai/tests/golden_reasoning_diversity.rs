@@ -3,12 +3,13 @@
 mod golden_harness;
 
 use golden_harness::*;
-use worldwake_ai::{DecisionOutcome, PlannerOpKind, SelectedPlanSource};
+use worldwake_ai::{DecisionOutcome, GoalKind, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
     BeliefConfidencePolicy, CognitiveProfile, CommodityKind, EntityId, ExecutionBudget,
     HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity, Seed,
     StateHash, Tick, UtilityProfile, WorkstationTag, hash_event_log, hash_world,
 };
+use worldwake_sim::ActionTraceKind;
 
 fn planning_trace_at(
     h: &GoldenHarness,
@@ -127,6 +128,133 @@ fn run_search_depth_hashes(seed: Seed) -> (StateHash, StateHash, StateHash, Stat
     )
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct UtilityProfileDiversityObservation {
+    selected_goals: Vec<String>,
+    first_started_actions: Vec<String>,
+}
+
+fn utility_diversity_profile(hunger_weight: u16, thirst_weight: u16) -> UtilityProfile {
+    UtilityProfile {
+        hunger_weight: pm(hunger_weight),
+        thirst_weight: pm(thirst_weight),
+        ..UtilityProfile::default()
+    }
+}
+
+fn selected_goal_label(goal: GoalKind) -> String {
+    match goal {
+        GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        } => "eat".to_string(),
+        GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Water,
+        } => "drink".to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn first_started_action_name(h: &GoldenHarness, agent: EntityId) -> Option<String> {
+    h.action_trace_sink()?
+        .events_for(agent)
+        .iter()
+        .find(|event| matches!(event.kind, ActionTraceKind::Started { .. }))
+        .map(|event| event.action_name.clone())
+}
+
+fn run_utility_profile_diversity(seed: Seed) -> UtilityProfileDiversityObservation {
+    let mut h = GoldenHarness::new(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agents = [
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "HungerDriven",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::new(pm(900), pm(900), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            utility_diversity_profile(900, 100),
+        ),
+        seed_agent(
+            &mut h.world,
+            &mut h.event_log,
+            "ThirstDriven",
+            VILLAGE_SQUARE,
+            HomeostaticNeeds::new(pm(900), pm(900), pm(0), pm(0), pm(0)),
+            MetabolismProfile::default(),
+            utility_diversity_profile(100, 900),
+        ),
+    ];
+
+    for agent in agents {
+        configure_perception(&mut h, agent);
+        give_commodity(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            VILLAGE_SQUARE,
+            CommodityKind::Bread,
+            Quantity(1),
+        );
+        give_commodity(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            VILLAGE_SQUARE,
+            CommodityKind::Water,
+            Quantity(1),
+        );
+        seed_actor_local_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            Tick(0),
+            worldwake_core::PerceptionSource::DirectObservation,
+        );
+    }
+
+    h.step_once();
+
+    let selected_goals = agents
+        .iter()
+        .map(|agent| {
+            let planning = planning_trace_at(&h, *agent, Tick(0));
+            selected_goal_label(
+                planning
+                    .selection
+                    .selected_goal()
+                    .expect("each agent should select a self-care goal at tick 0")
+                    .kind,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut first_started_actions = agents
+        .iter()
+        .map(|agent| first_started_action_name(&h, *agent))
+        .collect::<Vec<_>>();
+    for _ in 0..4 {
+        if first_started_actions.iter().all(Option::is_some) {
+            break;
+        }
+        h.step_once();
+        first_started_actions = agents
+            .iter()
+            .map(|agent| first_started_action_name(&h, *agent))
+            .collect::<Vec<_>>();
+    }
+
+    UtilityProfileDiversityObservation {
+        selected_goals,
+        first_started_actions: first_started_actions
+            .into_iter()
+            .map(|action| action.expect("each agent should start its selected self-care action"))
+            .collect(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 97: Search Depth Drives Multi-Step Plan Divergence
 // ---------------------------------------------------------------------------
@@ -225,4 +353,49 @@ fn search_depth_divergence_replays_deterministically() {
         first, second,
         "search-depth divergence scenario should replay deterministically"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 129: Utility Profiles Diverge Under Identical Self-Care Pressure
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI
+// GoalKinds: ConsumeOwnedCommodity
+// ActionDomains: Needs
+// Places: VillageSquare
+// Principles: 20, 22
+//
+// Setup: Two AI agents share the same place, the same critical hunger/thirst
+//   state, and the same owned local bread+water substrate. Only their
+//   `UtilityProfile` weights differ: hunger-driven versus thirst-driven.
+//
+// Proves: UtilityProfile divergence alone changes both the tick-0 selected
+//   self-care goal and the first started self-care action: `eat` versus
+//   `drink`.
+//
+// Cross-system chain: identical local need state + identical local substrate ->
+//   utility-weighted candidate ranking -> divergent selected goals ->
+//   divergent self-care action starts.
+
+#[test]
+fn golden_utility_profile_diversity() {
+    let observation = run_utility_profile_diversity(Seed([179; 32]));
+
+    assert_eq!(
+        observation.selected_goals,
+        vec!["eat", "drink"],
+        "utility divergence should change tick-0 selected goals under identical self-care pressure; observation={observation:?}"
+    );
+    assert_eq!(
+        observation.first_started_actions,
+        vec!["eat", "drink"],
+        "utility divergence should produce distinct first self-care actions under identical local substrate; observation={observation:?}"
+    );
+}
+
+#[test]
+fn golden_utility_profile_diversity_replays_deterministically() {
+    let first = run_utility_profile_diversity(Seed([179; 32]));
+    let second = run_utility_profile_diversity(Seed([179; 32]));
+    assert_eq!(first, second);
 }

@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 147
+- Scenario blocks: 148
 - Contributing golden test files: 24
-- Associated tests: 315
+- Associated tests: 317
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -1554,7 +1554,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 97: Search Depth Drives Multi-Step Plan Divergence
 
-- Source: `golden_reasoning_diversity.rs:131`
+- Source: `golden_reasoning_diversity.rs:259`
 - Systems: Production, AI, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Needs
@@ -1566,6 +1566,19 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: Per-agent reasoning style changes which multi-step plan search can actually select. The default budget finds the remote input -> return -> craft chain, while the tight budget fails to select that plan from the same tick-0 planning boundary.
 
 **Cross-system chain**: Shared initial state -> same candidates generated -> search budget caps expansion depth -> default run finds remote craft plan -> tight run fails to select the same plan.
+
+### Scenario 129: Utility Profiles Diverge Under Identical Self-Care Pressure
+
+- Source: `golden_reasoning_diversity.rs:359`
+- Systems: Needs, AI
+- GoalKinds: ConsumeOwnedCommodity
+- ActionDomains: Needs
+- Places: VillageSquare
+- Principles: 20, 22
+
+**Setup**: Two AI agents share the same place, the same critical hunger/thirst state, and the same owned local bread+water substrate. Only their `UtilityProfile` weights differ: hunger-driven versus thirst-driven.
+
+**Proves**: UtilityProfile divergence alone changes both the tick-0 selected self-care goal and the first started self-care action: `eat` versus `drink`.
 
 ### Scenario 31: Stress with Frequent Disruptions
 

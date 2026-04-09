@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 25
 - Files contributing `golden_*` tests: 25
-- Total `golden_*` tests: 330
+- Total `golden_*` tests: 332
 
 ## Per-File Inventory
 
@@ -29,7 +29,7 @@ Do not hand-edit it.
 | `golden_perception_exposure.rs` | 6 |
 | `golden_production.rs` | 30 |
 | `golden_pursuit.rs` | 6 |
-| `golden_reasoning_diversity.rs` | 2 |
+| `golden_reasoning_diversity.rs` | 4 |
 | `golden_resilience.rs` | 2 |
 | `golden_simulation_gaps.rs` | 4 |
 | `golden_soak.rs` | 1 |
@@ -361,6 +361,8 @@ Do not hand-edit it.
 
 - `search_depth_divergence`
 - `search_depth_divergence_replays_deterministically`
+- `golden_utility_profile_diversity`
+- `golden_utility_profile_diversity_replays_deterministically`
 
 ### `golden_resilience.rs`
 
