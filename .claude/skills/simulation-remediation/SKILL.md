@@ -6,7 +6,7 @@ user-invocable: true
 
 # Simulation Remediation
 
-Read the simulation observer report and propose concrete remediations for each finding: golden test cases, spec changes, or tickets. Output is proposals only -- nothing is created or modified.
+Read the simulation observer report and propose concrete remediations for each finding: golden test cases, spec changes, or tickets. Output is proposals only -- no tickets, specs, or code are created or modified. The only file written is the proposal report itself.
 
 ## Invocation
 
@@ -28,11 +28,12 @@ Read `reports/simulation-observer-report.md`.
 
 ### Step 2: Read Context
 
-1. Read `docs/FOUNDATIONS.md` -- needed to evaluate whether findings violate foundational principles.
+1. Read `docs/FOUNDATIONS.md` -- needed to evaluate whether findings violate foundational principles. If the file exceeds read limits, prioritize sections III (Knowledge, Belief, and Evidence) and IV (Agents, Institutions, and Social Order) as these are most commonly implicated by behavioral smells.
 2. List the `specs/` directory to know which specs exist.
 3. List the `tickets/` directory to check for existing related tickets.
-4. List and grep `crates/worldwake-ai/tests/golden_*.rs` for existing tests related to the findings -- needed to avoid proposing duplicate golden tests and to reference the `GoldenHarness` setup pattern.
+4. Glob `crates/worldwake-ai/tests/golden_*.rs` to identify existing test files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern.
 5. Read `docs/spec-drafting-rules.md` -- only if any spec changes will be proposed. Skip if all findings map to golden tests or tickets.
+6. If `reports/simulation-remediation.md` already exists (from a prior run), read it and note which prior proposals recurred in the current observer report. Flag recurring issues with a `RECURRING` marker in the proposal severity.
 
 ### Step 3: Classify Each Finding
 
@@ -45,11 +46,11 @@ For each finding in the observer report (each smell with severity above NONE), d
 - The specific assertion (what to check and at what tick range)
 - Reference to similar existing tests in `crates/worldwake-ai/tests/`
 
-**Spec Change** -- Use when the finding points to a design gap (e.g., perception system fires too broadly by design, or a profile parameter has no effect). Propose:
-- Which spec file needs updating (path in `specs/`)
+**Spec Change** -- Use when the finding points to a design gap (e.g., perception system fires too broadly by design, or a profile parameter has no effect). Propose a new spec when the finding reveals a system-level design gap not covered by any existing spec. Propose modifying an existing spec when the finding points to a missing parameter, uncovered edge case, or incomplete section within an already-specified system. Include:
+- Which spec file needs updating (path in `specs/`), or justification for a new spec
 - Which section needs the change
 - What the change should accomplish
-- Whether this needs a new spec instead of modifying an existing one
+- FOUNDATIONS alignment (which principle(s) the change serves)
 
 **Symptom of another finding** -- If a finding is a downstream symptom of a higher-severity finding (e.g., sleep loops caused by dehydration), note it as "deferred to [root finding]" rather than proposing independent remediation. Include these in a "Findings Not Requiring Remediation" table at the end of the report with the reason for deferral. Revisit after the root cause is fixed.
 
@@ -60,6 +61,8 @@ For each finding in the observer report (each smell with severity above NONE), d
 - Priority (P0-P3)
 
 ### Step 4: Write Proposals
+
+If invoked in plan mode, write the report content to the plan file. After plan mode exits, write the final report to `reports/simulation-remediation.md`.
 
 Write `reports/simulation-remediation.md` with this structure:
 
@@ -99,9 +102,18 @@ Generated: [date]
 **Priority**: P[0-3]
 **Crate(s)**: [affected crates]
 **Description**: [what needs to be done]
+**Dependencies**: [other proposals this is blocked by, e.g., "blocked by TK-2", or "none"]
 **Acceptance criteria**: [how to verify it's fixed]
 
 [Repeat for each proposed ticket]
+
+## Findings Deferred or Not Requiring Independent Remediation
+
+| Finding | Severity | Reason for Deferral |
+|---------|----------|---------------------|
+| [Finding name] | [severity] | [why this finding is deferred -- e.g., "downstream symptom of Finding 8, deferred to TK-2 + TK-3"] |
+
+[Include all findings classified as "Symptom of another finding" in Step 3]
 
 ## Summary
 
@@ -110,6 +122,15 @@ Generated: [date]
 | Golden Tests | N | N CRITICAL, N HIGH, ... |
 | Spec Changes | N | ... |
 | Tickets | N | ... |
+| Deferred | N | ... |
+
+### Root Cause Chain
+
+[Map the dependency graph between findings and proposed remediations. Show which findings are root causes and which are downstream symptoms. Suggest implementation order — what to fix first, what can proceed in parallel.]
+
+### FOUNDATIONS Alignment
+
+[For each FOUNDATIONS principle relevant to the findings, state whether the simulation correctly enforces it or violates it. Reference by principle number and name. This validates that proposed remediations don't introduce new FOUNDATIONS violations.]
 ```
 
 ### Step 5: Guardrails
