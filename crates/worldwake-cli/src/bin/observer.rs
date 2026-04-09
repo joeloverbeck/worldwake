@@ -13,7 +13,7 @@ use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
 use worldwake_ai::AgentTickDriver;
 use worldwake_ai::decision_trace::{
-    AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace, PlanSearchOutcome,
+    AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace, PlanSearchOutcome, TargetBeliefPresence,
 };
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
@@ -405,12 +405,21 @@ fn failed_plan_location(place: Option<EntityId>) -> String {
     place.map_or_else(|| "?".to_string(), |place| place.to_string())
 }
 
+fn failed_plan_target_beliefs(attempt: &PlanAttemptTrace) -> &'static str {
+    match attempt.target_belief_presence {
+        TargetBeliefPresence::Present => "true",
+        TargetBeliefPresence::Absent => "false",
+        TargetBeliefPresence::NotApplicable => "n/a",
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct FailedPlanBreakdown {
     total: u32,
     frontier_exhausted: u32,
     budget_exhausted: u32,
     max_depth_zero: u32,
+    target_beliefs_false: u32,
 }
 
 fn failed_plan_breakdown(attempts: &[&PlanAttemptTrace]) -> FailedPlanBreakdown {
@@ -419,6 +428,7 @@ fn failed_plan_breakdown(attempts: &[&PlanAttemptTrace]) -> FailedPlanBreakdown 
         frontier_exhausted: 0,
         budget_exhausted: 0,
         max_depth_zero: 0,
+        target_beliefs_false: 0,
     };
 
     for attempt in attempts {
@@ -429,6 +439,9 @@ fn failed_plan_breakdown(attempts: &[&PlanAttemptTrace]) -> FailedPlanBreakdown 
         }
         if failed_plan_max_depth(attempt) == 0 {
             breakdown.max_depth_zero += 1;
+        }
+        if matches!(attempt.target_belief_presence, TargetBeliefPresence::Absent) {
+            breakdown.target_beliefs_false += 1;
         }
     }
 
@@ -1143,12 +1156,12 @@ fn format_report(
                 .unwrap();
                 writeln!(
                     out,
-                    "| Tick | Goal | Outcome | Expansions | Max Depth | Candidates | Location |"
+                    "| Tick | Goal | Outcome | Expansions | Max Depth | Candidates | Location | Had Target Beliefs |"
                 )
                 .unwrap();
                 writeln!(
                     out,
-                    "|------|------|---------|------------|-----------|------------|----------|"
+                    "|------|------|---------|------------|-----------|------------|----------|--------------------|"
                 )
                 .unwrap();
                 let mut shown = 0u32;
@@ -1168,14 +1181,15 @@ fn format_report(
                     };
                     writeln!(
                         out,
-                        "| {} | {:?} | {} | {} | {} | {} | {} |",
+                        "| {} | {:?} | {} | {} | {} | {} | {} | {} |",
                         tick,
                         attempt.goal.kind,
                         outcome_label,
                         expansions,
                         failed_plan_max_depth(attempt),
                         failed_plan_candidates(attempt),
-                        failed_plan_location(*place)
+                        failed_plan_location(*place),
+                        failed_plan_target_beliefs(attempt)
                     )
                     .unwrap();
                     shown += 1;
@@ -1184,7 +1198,6 @@ fn format_report(
                 writeln!(out).unwrap();
 
                 let breakdown = failed_plan_breakdown(&shown_attempts);
-                writeln!(out, "> `Had Target Beliefs` deferred: current planning traces do not carry a planning-time belief snapshot or `known_entities` inventory for failed attempts.\n").unwrap();
                 writeln!(out, "### Failed Plan Frequency Breakdown").unwrap();
                 writeln!(
                     out,
@@ -1202,6 +1215,12 @@ fn format_report(
                     out,
                     "- Max Depth = 0 (no operators available): {} / {}",
                     breakdown.max_depth_zero, breakdown.total
+                )
+                .unwrap();
+                writeln!(
+                    out,
+                    "- Had Target Beliefs = false: {} / {}",
+                    breakdown.target_beliefs_false, breakdown.total
                 )
                 .unwrap();
                 writeln!(out).unwrap();
@@ -1497,9 +1516,9 @@ fn main() {
 mod tests {
     use super::{
         PlanAttemptTrace, PlanSearchOutcome, failed_plan_breakdown, failed_plan_candidates,
-        failed_plan_location, failed_plan_max_depth,
+        failed_plan_location, failed_plan_max_depth, failed_plan_target_beliefs,
     };
-    use worldwake_ai::decision_trace::SearchExpansionSummary;
+    use worldwake_ai::decision_trace::{SearchExpansionSummary, TargetBeliefPresence};
     use worldwake_core::{EntityId, GoalKey, GoalKind, OpportunityAnchor};
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
@@ -1526,6 +1545,7 @@ mod tests {
             goal: GoalKey::from(GoalKind::Sleep),
             opportunity_anchor: OpportunityAnchor::None,
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 3 },
+            target_belief_presence: TargetBeliefPresence::NotApplicable,
             binding_rejections: Vec::new(),
             expansion_summaries,
         }
@@ -1564,7 +1584,10 @@ mod tests {
 
     #[test]
     fn failed_plan_breakdown_counts_outcomes_and_zero_depth_rows() {
-        let frontier_zero = sample_attempt(vec![sample_summary(0, 2)]);
+        let frontier_zero = PlanAttemptTrace {
+            target_belief_presence: TargetBeliefPresence::Absent,
+            ..sample_attempt(vec![sample_summary(0, 2)])
+        };
         let budget_nonzero = PlanAttemptTrace {
             outcome: PlanSearchOutcome::BudgetExhausted { expansions_used: 5 },
             ..sample_attempt(vec![sample_summary(2, 3)])
@@ -1578,5 +1601,25 @@ mod tests {
         assert_eq!(breakdown.frontier_exhausted, 2);
         assert_eq!(breakdown.budget_exhausted, 1);
         assert_eq!(breakdown.max_depth_zero, 1);
+        assert_eq!(breakdown.target_beliefs_false, 1);
+    }
+
+    #[test]
+    fn failed_plan_target_belief_labels_render_expected_strings() {
+        let absent = PlanAttemptTrace {
+            target_belief_presence: TargetBeliefPresence::Absent,
+            ..sample_attempt(Vec::new())
+        };
+        let present = PlanAttemptTrace {
+            target_belief_presence: TargetBeliefPresence::Present,
+            ..sample_attempt(Vec::new())
+        };
+
+        assert_eq!(failed_plan_target_beliefs(&absent), "false");
+        assert_eq!(failed_plan_target_beliefs(&present), "true");
+        assert_eq!(
+            failed_plan_target_beliefs(&sample_attempt(Vec::new())),
+            "n/a"
+        );
     }
 }

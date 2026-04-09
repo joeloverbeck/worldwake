@@ -4,7 +4,7 @@ use crate::decision_trace::{
     PlannedStepSummary, RankedGoalSummary, SameGoalPlanningStopReason, SameGoalPlanningTrace,
     SelectedPlanReplacementKind, SelectedPlanReplacementTrace, SelectedPlanSearchProvenance,
     SelectedPlanSource, SelectedPlanTrace, SelectionTrace, SideBenefitTrace,
-    SnapshotContinuationOutcome, SnapshotContinuationTrace,
+    SnapshotContinuationOutcome, SnapshotContinuationTrace, TargetBeliefPresence,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::perf_telemetry::record_planning_phase_duration;
@@ -16,11 +16,11 @@ use crate::{
     build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step, search_plan,
     select_best_plan,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockedIntentMemory, CognitiveProfile, ExecutionBudget,
-    IntentionFrame, Permille, Tick,
+    ActionDefId, ActiveGoal, BlockedIntentMemory, CognitiveProfile, EntityId, ExecutionBudget,
+    GoalKind, IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, GoalBeliefView, RecipeRegistry, RuntimeBeliefView, Scheduler,
@@ -978,12 +978,21 @@ pub(super) fn plan_and_validate_next_step_traced(
             }
         }
 
+        let known_entities: BTreeSet<EntityId> = view
+            .known_entity_beliefs(agent)
+            .into_iter()
+            .map(|(entity, _)| entity)
+            .collect();
         for plan in &plans {
             plan_search_trace.attempts.push(plan_search_result_to_trace(
                 plan.opportunity.goal_key,
                 plan.opportunity.anchor,
                 &plan.result,
                 action_defs,
+                planning_time_target_belief_presence(
+                    plan.opportunity.goal_key.kind,
+                    &known_entities,
+                ),
                 plan.binding_rejections.clone(),
                 plan.expansion_summaries.clone(),
             ));
@@ -1123,6 +1132,7 @@ pub(super) fn plan_search_result_to_trace(
     opportunity_anchor: worldwake_core::OpportunityAnchor,
     result: &PlanSearchResult,
     action_defs: &worldwake_sim::ActionDefRegistry,
+    target_belief_presence: TargetBeliefPresence,
     binding_rejections: Vec<BindingRejection>,
     expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
 ) -> PlanAttemptTrace {
@@ -1151,15 +1161,35 @@ pub(super) fn plan_search_result_to_trace(
         goal,
         opportunity_anchor,
         outcome,
+        target_belief_presence,
         binding_rejections,
         expansion_summaries,
+    }
+}
+
+fn planning_time_target_belief_presence(
+    goal: GoalKind,
+    known_entities: &BTreeSet<EntityId>,
+) -> TargetBeliefPresence {
+    match goal_target_entity(goal) {
+        Some(target) if known_entities.contains(&target) => TargetBeliefPresence::Present,
+        Some(_) => TargetBeliefPresence::Absent,
+        None => TargetBeliefPresence::NotApplicable,
+    }
+}
+
+fn goal_target_entity(goal: GoalKind) -> Option<EntityId> {
+    match goal {
+        GoalKind::SupportCandidateForOffice { candidate, .. } => Some(candidate),
+        _ => worldwake_core::GoalKey::from(goal).entity,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidatePlanSearch, has_pending_budget_retry, record_exhausted_goals, selected_plan_value,
+        CandidatePlanSearch, has_pending_budget_retry, plan_search_result_to_trace,
+        planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
         summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
     };
     use crate::{
@@ -1169,6 +1199,7 @@ mod tests {
         PlannedStep, ProfileFixture, RankedGoal, build_semantics_table,
         decision_trace::{
             CompetitionDiscount, SnapshotContinuationOutcome, SourceReliabilityDiscount,
+            TargetBeliefPresence,
         },
         feasibility::FeasibilityHint,
     };
@@ -1395,6 +1426,66 @@ mod tests {
             competition_discount: None,
             feasibility: FeasibilityHint::Likely,
         }
+    }
+
+    #[test]
+    fn planning_time_target_belief_presence_marks_present_absent_and_na() {
+        let patient = entity(8);
+        let mut known_entities = BTreeSet::new();
+        known_entities.insert(patient);
+
+        assert_eq!(
+            planning_time_target_belief_presence(
+                GoalKind::TreatWounds { patient },
+                &known_entities,
+            ),
+            TargetBeliefPresence::Present
+        );
+        assert_eq!(
+            planning_time_target_belief_presence(
+                GoalKind::RaidTarget { target: entity(11) },
+                &known_entities,
+            ),
+            TargetBeliefPresence::Absent
+        );
+        assert_eq!(
+            planning_time_target_belief_presence(GoalKind::Sleep, &known_entities),
+            TargetBeliefPresence::NotApplicable
+        );
+    }
+
+    #[test]
+    fn support_candidate_uses_candidate_for_target_belief_presence() {
+        let office = entity(4);
+        let candidate = entity(9);
+        let mut known_entities = BTreeSet::new();
+        known_entities.insert(candidate);
+
+        assert_eq!(
+            planning_time_target_belief_presence(
+                GoalKind::SupportCandidateForOffice { office, candidate },
+                &known_entities,
+            ),
+            TargetBeliefPresence::Present
+        );
+    }
+
+    #[test]
+    fn plan_search_trace_persists_target_belief_presence() {
+        let (action_defs, _handlers, _recipes) = build_full_registries();
+        let trace = plan_search_result_to_trace(
+            GoalKey::from(GoalKind::TreatWounds {
+                patient: entity(12),
+            }),
+            OpportunityAnchor::None,
+            &PlanSearchResult::FrontierExhausted { expansions_used: 2 },
+            &action_defs,
+            TargetBeliefPresence::Absent,
+            Vec::new(),
+            Vec::new(),
+        );
+
+        assert_eq!(trace.target_belief_presence, TargetBeliefPresence::Absent);
     }
 
     fn ranked_goal_with_score(

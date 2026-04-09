@@ -1,6 +1,6 @@
 # S78: Observer Failed-Plan Diagnostics
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -151,3 +151,24 @@ No new components.
 2. The frequency breakdown should correctly count failure modes from the table.
 3. `cargo test -p worldwake-ai` — existing tests pass (no AI crate changes).
 4. `cargo clippy --workspace --all-targets -- -D warnings` clean.
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Enhanced the observer failed-plan table with `Max Depth`, `Candidates`, `Location`, and `Had Target Beliefs`.
+- Added a mechanical failed-plan frequency breakdown including `Had Target Beliefs = false: N / T`.
+- Landed a bounded `TargetBeliefPresence` carrier on `PlanAttemptTrace` so the observer can render planning-time target-belief presence truthfully.
+
+## Deviations
+
+- The final implementation did require a narrow `worldwake-ai` trace-surface change. The original draft assumed all diagnostics could be derived in `worldwake-cli`, but `Had Target Beliefs` needed a bounded planning-time trace carrier to preserve the correct time boundary.
+- The completed proof surface used crate-scoped checks: focused `worldwake-ai` trace tests, focused and crate-level `worldwake-cli` tests, `cargo clippy -p worldwake-cli --all-targets -- -D warnings`, and a runtime observer report on `scenarios/cli-evaluation.ron`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai agent_tick::planning::tests::planning_time_target_belief_presence_marks_present_absent_and_na`
+- Passed `cargo test -p worldwake-cli --bin observer`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
+- Passed `cargo run -p worldwake-cli --bin observer -- scenarios/cli-evaluation.ron --output /tmp/s78-observer-report-003.md`

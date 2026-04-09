@@ -1,6 +1,6 @@
 # S78OBSFAIPLADIA-003: Trace planning-time target-belief presence for failed-plan diagnostics
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — worldwake-ai decision-trace surface plus observer formatting
@@ -89,3 +89,39 @@ Update the observer output and any nearby ticket/proof prose so the report no lo
 1. `cargo test -p worldwake-cli --bin observer`
 2. `cargo test -p worldwake-cli`
 3. `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
+4. `cargo test -p worldwake-ai agent_tick::planning::tests::planning_time_target_belief_presence_marks_present_absent_and_na`
+5. `cargo run -p worldwake-cli --bin observer -- scenarios/cli-evaluation.ron --output /tmp/s78-observer-report-003.md`
+
+## Implementation Notes (2026-04-09)
+
+1. The landed carrier is a bounded `TargetBeliefPresence` enum stored on each `PlanAttemptTrace`, not a serialized planning snapshot. It records only `Present` / `Absent` / `NotApplicable` for the goal's target entity at plan-construction time.
+2. The planning-time fact is derived in `crates/worldwake-ai/src/agent_tick/planning.rs` from `RuntimeBeliefView::known_entity_beliefs(agent)` before the attempt trace is persisted. `SupportCandidateForOffice` uses the candidate as the target entity; targetless goals remain `NotApplicable`.
+3. The observer now renders the real `Had Target Beliefs` column and adds a mechanical `Had Target Beliefs = false: N / T` line to the failed-plan frequency breakdown. The temporary deferral wording was removed.
+
+## Verification Notes (2026-04-09)
+
+1. Focused AI trace proof: `cargo test -p worldwake-ai agent_tick::planning::tests::planning_time_target_belief_presence_marks_present_absent_and_na`
+2. Focused observer proof: `cargo test -p worldwake-cli --bin observer`
+3. Crate regression proof: `cargo test -p worldwake-cli`
+4. Lint proof: `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
+5. Runtime report proof: `cargo run -p worldwake-cli --bin observer -- scenarios/cli-evaluation.ron --output /tmp/s78-observer-report-003.md` produced live failed-plan tables with the restored `Had Target Beliefs` column and matching `Had Target Beliefs = false` breakdown lines in `/tmp/s78-observer-report-003.md`
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Added a bounded `TargetBeliefPresence` carrier to `PlanAttemptTrace` so failed-plan diagnostics can report planning-time target-belief presence without serializing a full belief snapshot.
+- Derived that carrier during traced planning from `RuntimeBeliefView::known_entity_beliefs(agent)` and restored the observer's `Had Target Beliefs` column plus `Had Target Beliefs = false` frequency breakdown line.
+- Kept the change within the decision-trace and observer tooling boundary; no planner search behavior or end-of-run belief reconstruction was introduced.
+
+## Deviations
+
+- The landed trace carrier is narrower than a general planning snapshot export. The ticket's intended diagnostic was satisfied with a per-attempt enum recording `Present` / `Absent` / `NotApplicable`, which preserved the planning-time boundary with less surface area.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai agent_tick::planning::tests::planning_time_target_belief_presence_marks_present_absent_and_na`
+- Passed `cargo test -p worldwake-cli --bin observer`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
+- Passed `cargo run -p worldwake-cli --bin observer -- scenarios/cli-evaluation.ron --output /tmp/s78-observer-report-003.md`

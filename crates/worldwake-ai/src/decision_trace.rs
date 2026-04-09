@@ -838,12 +838,24 @@ pub struct TravelPruningTrace {
     pub pruned: Vec<TravelSuccessorTrace>,
 }
 
+/// Whether a failed-plan goal target was present in the actor's planning-time
+/// known-entity inventory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TargetBeliefPresence {
+    Present,
+    Absent,
+    NotApplicable,
+}
+
 /// Trace of a single plan search attempt for one goal.
 #[derive(Clone, Debug)]
 pub struct PlanAttemptTrace {
     pub goal: GoalKey,
     pub opportunity_anchor: OpportunityAnchor,
     pub outcome: PlanSearchOutcome,
+    /// Whether the actor had a planning-time belief entry for the goal's
+    /// target entity. `NotApplicable` is used for targetless goals.
+    pub target_belief_presence: TargetBeliefPresence,
     pub binding_rejections: Vec<BindingRejection>,
     /// Per-expansion summaries. Empty when tracing is disabled.
     pub expansion_summaries: Vec<SearchExpansionSummary>,
@@ -3348,6 +3360,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::Sleep),
                     opportunity_anchor: OpportunityAnchor::Place(entity(42)),
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 2 },
+                    target_belief_presence: TargetBeliefPresence::NotApplicable,
                     binding_rejections: vec![],
                     expansion_summaries: vec![],
                 }],
@@ -3734,6 +3747,7 @@ mod tests {
                     goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
                     opportunity_anchor: OpportunityAnchor::None,
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+                    target_belief_presence: TargetBeliefPresence::Present,
                     binding_rejections: vec![],
                     expansion_summaries: vec![SearchExpansionSummary {
                         depth: 0,
@@ -3873,6 +3887,7 @@ mod tests {
             goal: GoalKey::new(GoalKind::Sleep),
             opportunity_anchor: OpportunityAnchor::Place(entity(9)),
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
+            target_belief_presence: TargetBeliefPresence::NotApplicable,
             binding_rejections: rejections,
             expansion_summaries: vec![],
         };

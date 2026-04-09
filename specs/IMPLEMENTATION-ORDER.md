@@ -19,6 +19,7 @@ Completed adjunct specs:
 - `S68: Goal-Switch Contention Cleanup` archived at [archive/specs/S68-goal-switch-contention-cleanup.md](/home/joeloverbeck/projects/worldwake/archive/specs/S68-goal-switch-contention-cleanup.md). Golden E2E proof: Scenario 123 in `golden_production.rs`.
 - `S73: Planning Snapshot Entity Relevance` archived at [archive/specs/S73-planning-snapshot-entity-relevance.md](/home/joeloverbeck/projects/worldwake/archive/specs/S73-planning-snapshot-entity-relevance.md). Added goal-aware snapshot filtering, per-place entity caps, and truthful soak telemetry/validation alignment for the planning-cost surface.
 - `S74: Intention Commitment Under Needs Fluctuation` archived at [archive/specs/S74-intention-commitment-under-needs-fluctuation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S74-intention-commitment-under-needs-fluctuation.md). Replaced the planning-path top-2 continuation heuristic with per-agent margin-based commitment, fixed the exposed same-goal merchant continuity regression, and corrected the soak baseline/spec validation handoff.
+- `S78: Observer Failed-Plan Diagnostics` archived at [archive/specs/S78-observer-failed-plan-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S78-observer-failed-plan-diagnostics.md). Added failed-plan depth/candidate/location diagnostics, a bounded planning-time `TargetBeliefPresence` trace carrier, and live observer breakdown counts for missing target beliefs.
 
 ---
 
@@ -29,7 +30,7 @@ Derived from external gameplay assessment (`brainstorming/prioritary-gameplay-sy
 ### Dependency Graph
 
 ```text
-S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 ✅     S75 ✅     S77 ✅ archived       S78 (independent)
+S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 ✅     S75 ✅     S77 ✅ archived       S78 ✅ archived
                                                                                                                        │
                                                                                                                        └── S76-C (needs S77)
      │                     │
@@ -79,14 +80,14 @@ the actual codebase. S77 fixed the root cause (belief capacity eviction and curr
 for the observed pathologies, and S78 enhances observer diagnostics.
 
 ```text
-S77 ✅ archived            S78 (independent)
+S77 ✅ archived            S78 ✅ archived
   │
   └── S76-C (S76 Scenario C depends on S77 belief fix)
 ```
 
 **Wave A** (parallel, no deps):
 - **S77**: ✅ COMPLETED — Belief Capacity Prioritization — archived at [archive/specs/S77-belief-capacity-prioritization.md](/home/joeloverbeck/projects/worldwake/archive/specs/S77-belief-capacity-prioritization.md). Added `believed_kind` capture/preservation, tiered claim/entity eviction, removed the `SceneEvidence` gate on place observation, and corrected the downstream `e15` proof to the live contract.
-- **S78**: Observer Failed-Plan Diagnostics — enrich `PlanSearchOutcome` with diagnostic context; enhance observer failed-plan table output
+- **S78**: ✅ COMPLETED — Observer Failed-Plan Diagnostics — archived at [archive/specs/S78-observer-failed-plan-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S78-observer-failed-plan-diagnostics.md). Added failed-plan depth/candidate/location diagnostics, bounded planning-time target-belief tracing, and observer frequency breakdowns.
 - **S76** (partial): Golden Gaps — Simulation Observer Report — Scenarios S76-A, S76-B, S76-D can be implemented independently (they use seeded beliefs, not perception-derived beliefs)
 
 **Wave B** (after S77):
