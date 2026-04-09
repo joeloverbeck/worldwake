@@ -3306,6 +3306,7 @@ fn golden_materialized_output_ownership_prevents_theft() {
 #[test]
 fn golden_materialization_barrier_chain() {
     let mut h = GoldenHarness::new(Seed([4; 32]));
+    h.driver.enable_tracing();
 
     // Agent at Orchard Farm, critically hungry, no food.
     let agent = seed_agent(
@@ -3333,12 +3334,94 @@ fn golden_materialization_barrier_chain() {
         },
         ProductionOutputOwner::Actor,
     );
-
     let initial_hunger = h.agent_hunger(agent);
+    let acquire_apple_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let mut initial_planning_tick = None;
+    for tick in 0..=8 {
+        h.step_once();
+        let maybe_trace = h
+            .driver
+            .trace_sink()
+            .expect("decision tracing should be enabled for the materialization barrier chain")
+            .trace_at(agent, Tick(tick));
+        let Some(trace) = maybe_trace else {
+            continue;
+        };
+        let DecisionOutcome::Planning(planning) = &trace.outcome else {
+            continue;
+        };
+        if planning.selection.selected_goal() == Some(acquire_apple_goal)
+            && planning.selection.selected_plan_source == Some(SelectedPlanSource::SearchSelection)
+        {
+            initial_planning_tick = Some(Tick(tick));
+            break;
+        }
+    }
+    let initial_planning_tick = initial_planning_tick
+        .expect("materialization barrier scenario should reach a fresh-search harvest planning tick");
+    let initial_planning = match &h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should remain enabled for the materialization barrier chain")
+        .trace_at(agent, initial_planning_tick)
+        .expect("harvest planning tick should still be available in the decision trace sink")
+        .outcome
+    {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected planning trace at {initial_planning_tick:?}, got {other:?}"),
+    };
+    let initial_selected_plan = initial_planning
+        .selection
+        .selected_plan
+        .as_ref()
+        .expect("hungry orchard agent should select an initial harvest plan once the orchard is perceived");
+    let initial_search_provenance = initial_selected_plan
+        .search_provenance
+        .as_ref()
+        .expect("fresh harvest search selection should expose compact planner provenance");
+    let initial_next_step = initial_selected_plan
+        .next_step
+        .as_ref()
+        .expect("selected harvest plan should expose its next step");
+
+    assert_eq!(
+        initial_planning.selection.selected_goal(),
+        Some(acquire_apple_goal),
+        "the earliest fresh-search harvest trace should select AcquireCommodity(SelfConsume)[Apple] before the later consume branch"
+    );
+    assert_eq!(
+        initial_planning.selection.selected_plan_source,
+        Some(SelectedPlanSource::SearchSelection),
+        "materialization barrier scenario should use a fresh search result once the orchard branch is planned"
+    );
+    assert_eq!(
+        initial_next_step.op_kind,
+        PlannerOpKind::Harvest,
+        "the earliest fresh-search plan should begin with Harvest"
+    );
+    assert!(
+        initial_selected_plan
+            .steps
+            .iter()
+            .any(|step| step.op_kind == PlannerOpKind::Harvest),
+        "the initial selected plan should include a harvest step for the local orchard"
+    );
+    assert!(
+        initial_search_provenance.expansions_used > 0,
+        "the winning harvest search should report a positive search-budget cost"
+    );
+    assert!(
+        initial_search_provenance.expansions_used <= 224,
+        "the default cognitive budget should find the harvest branch within 224 expansions"
+    );
+
     let mut hunger_decreased = false;
     let mut acquired_apples = false;
 
-    for _tick in 0..120 {
+    for _tick in (initial_planning_tick.0 + 1)..120 {
         h.step_once();
 
         // Harvest drops items on the ground; check both possessed and ground lots.
@@ -3373,16 +3456,31 @@ fn golden_materialization_barrier_chain() {
         apple_auth <= 20,
         "Apple authoritative total should not exceed initial: got {apple_auth}"
     );
+    let orchard = h
+        .world
+        .entities_effectively_at(ORCHARD_FARM)
+        .into_iter()
+        .find(|entity| h.world.get_component_resource_source(*entity).is_some())
+        .expect("materialization barrier scenario should retain the orchard resource source");
+    let final_source_quantity = h
+        .world
+        .get_component_resource_source(orchard)
+        .expect("orchard should still expose its resource source")
+        .available_quantity;
+    assert!(
+        final_source_quantity < Quantity(20),
+        "resource source quantity should decrease after the harvest branch commits"
+    );
 
     // Hunger decrease confirms the full barrier chain completed: harvest → pick-up → eat.
-    // If the agent only harvested but never ate, the chain is partial. We allow partial
-    // success because pick-up + eat requires additional replanning cycles.
-    if hunger_decreased {
-        assert!(
-            h.agent_hunger(agent) < initial_hunger,
-            "Hunger should have decreased after eating harvested apples"
-        );
-    }
+    assert!(
+        hunger_decreased,
+        "hunger should decrease after the full harvest -> materialize -> pick-up -> eat chain completes"
+    );
+    assert!(
+        h.agent_hunger(agent) < initial_hunger,
+        "Hunger should have decreased after eating harvested apples"
+    );
 }
 
 // ---------------------------------------------------------------------------

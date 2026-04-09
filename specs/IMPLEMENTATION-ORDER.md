@@ -103,7 +103,7 @@ S79 (independent) ──┐
 ```
 
 - **S79**: Resource-Source Consumption Affordances — diagnose and fix why agents at locations with resource sources cannot plan harvest → eat/drink chains
-- **S81**: Golden Gaps — Simulation Remediation — GT-1 (multi-agent convergence), GT-2 (death traceability + DeathCause), GT-3 (harvest-to-consume chain)
+- **S81**: Golden Gaps — Simulation Remediation — GT-1 (multi-agent convergence), GT-2 (death traceability + DeathCause), and only any remaining post-S79 water/drink golden follow-up after `tickets/S79RESSOUCON-004.md`
   - depends on S79
 - **S80**: Exploration Drive — exploration pressure from unmet needs + limited geographic beliefs, per-agent curiosity profiles
   - depends on S79

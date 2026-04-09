@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — production recipe bootstrap, scenario authoring contract, possibly workstation schema
-**Deps**: specs/S79-resource-source-consumption-affordances.md, tickets/S79RESSOUCON-001.md, tickets/S79RESSOUCON-002.md, tickets/S79RESSOUCON-003.md
+**Deps**: specs/S79-resource-source-consumption-affordances.md, tickets/S79RESSOUCON-001.md, tickets/S79RESSOUCON-002.md, archive/tickets/S79RESSOUCON-003.md
 
 ## Problem
 
@@ -27,7 +27,7 @@ S79 and S79RESSOUCON-003 both assume an agent can lawfully execute `harvest wate
 
 1. Canonical water harvest recipe exists -> focused unit/runtime proof on the canonical recipe registry
 2. Water-source facility is authorable through the lawful scenario/world shape -> authoritative world-state proof
-3. `harvest water -> drink` becomes planner-visible and executable -> golden E2E proof in the eventual S79RESSOUCON-003 scenario
+3. `harvest water -> drink` becomes planner-visible and executable -> follow-up golden E2E proof that extends the completed apple proof surface from `archive/tickets/S79RESSOUCON-003.md`
 
 ## What to Change
 
@@ -39,14 +39,14 @@ Determine whether water harvest should use an existing workstation tag (if one a
 
 Add the canonical `Harvest Water` recipe and any required scenario/bootstrap support so the production registry, action registration, and authored world shape all agree.
 
-### 3. Reconcile S79/S79RESSOUCON-003 proof surfaces
+### 3. Reconcile S79 / archived S79RESSOUCON-003 proof surfaces
 
-Update the active S79 spec and golden ticket assumptions if the lawful water-source contract differs from the current draft narrative.
+Update the active S79 spec and any new golden follow-up assumptions if the lawful water-source contract differs from the current draft narrative.
 
 ## Files to Touch
 
 - `specs/S79-resource-source-consumption-affordances.md` (modify — if reassessment changes the lawful water-source contract)
-- `tickets/S79RESSOUCON-003.md` (modify — if the golden setup contract changes)
+- `archive/tickets/S79RESSOUCON-003.md` (modify — only if the archived apple-proof handoff needs factual amendment after the water contract lands)
 - `crates/worldwake-systems/src/action_registry.rs` (modify — add canonical water recipe if lawful)
 - Additional production/scenario files as required by the chosen workstation contract
 
@@ -74,7 +74,7 @@ Update the active S79 spec and golden ticket assumptions if the lawful water-sou
 ### New/Modified Tests
 
 1. Modify focused recipe/bootstrap tests in the owning crate once the water contract is chosen
-2. Modify or unblock the S79 golden harvest-to-consume scenario after the runtime contract is lawful
+2. Create or modify the water-variant golden follow-up after the runtime contract is lawful; the completed apple proof in `archive/tickets/S79RESSOUCON-003.md` remains the existing owner for the apple branch
 
 ### Commands
 
