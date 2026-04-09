@@ -101,6 +101,12 @@ impl AgentBeliefStore {
             });
         }
         self.refresh_entity_summary_from_claims(subject, current_tick, policy);
+        if snapshot.believed_kind.is_some()
+            && let Some(summary) = self.known_entities.get_mut(&subject)
+            && summary.believed_kind.is_none()
+        {
+            summary.believed_kind = snapshot.believed_kind;
+        }
     }
 
     pub fn refresh_entity_summary_from_claims(
@@ -5496,6 +5502,42 @@ mod tests {
         assert_eq!(
             store.get_entity(&subject).unwrap().believed_kind,
             Some(EntityKind::Facility)
+        );
+    }
+
+    #[test]
+    fn record_entity_snapshot_claims_preserves_snapshot_believed_kind_without_prior_summary() {
+        let subject = entity(67);
+        let mut store = AgentBeliefStore::new();
+        let snapshot = BelievedEntityState {
+            believed_kind: Some(EntityKind::Agent),
+            last_known_place: Some(entity(10)),
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(4),
+            source: PerceptionSource::DirectObservation,
+        };
+
+        store.record_entity_snapshot_claims(
+            subject,
+            &snapshot,
+            None,
+            Tick(4),
+            Some(Tick(4)),
+            &policy(),
+        );
+
+        assert_eq!(
+            store.get_entity(&subject).unwrap().believed_kind,
+            Some(EntityKind::Agent)
         );
     }
 

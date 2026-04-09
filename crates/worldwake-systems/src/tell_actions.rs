@@ -2582,6 +2582,10 @@ mod tests {
         commit_tell_and_finalize_event(&defs, &handlers, tell_id, &mut world, &instance, 1, 8);
 
         let listener_store = world.get_component_agent_belief_store(listener).unwrap();
+        assert_eq!(
+            listener_store.get_entity(&subject).unwrap().believed_kind,
+            Some(EntityKind::Agent)
+        );
         assert!(listener_store.get_entity(&older_subject).is_none());
         assert!(listener_store.get_entity(&subject).is_some());
         assert_eq!(listener_store.known_entities.len(), 1);
