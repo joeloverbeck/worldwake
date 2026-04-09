@@ -1,6 +1,6 @@
 # S77: Belief Capacity Prioritization
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -176,3 +176,23 @@ No new components. `BelievedEntityState` and `ObservedEntitySnapshot` are not EC
 4. `cargo test -p worldwake-core` -- existing belief store tests pass.
 5. `cargo clippy --workspace --all-targets -- -D warnings` clean.
 6. Note: S76-C (perception belief coverage golden test) depends on this spec but is not yet implemented. When S76-C is implemented, it should pass with these changes in place.
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Landed the spec as seven archived implementation tickets: [S77BELCAPPRI-001](/home/joeloverbeck/projects/worldwake/archive/tickets/S77BELCAPPRI-001.md) through [S77BELCAPPRI-007](/home/joeloverbeck/projects/worldwake/archive/tickets/S77BELCAPPRI-007.md).
+- Added `believed_kind` capture/preservation in `worldwake-core`, tiered claim eviction, tiered entity eviction, and removed the `SceneEvidence` gate from current-place observation in `worldwake-systems`.
+- Corrected the downstream `e15` isolation proof to the live contract after the perception change: remote observers may lawfully know their occupied place, but still do not learn hidden remote events.
+- Deviation from original plan: the implementation decomposed into multiple small tickets, and the final slice closed as a proof correction rather than a production fix because reassessment showed no information leak remained.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core -- believed_kind`
+- Passed `cargo test -p worldwake-core -- enforce_entity_claim_capacity`
+- Passed `cargo test -p worldwake-core -- enforce_capacity`
+- Passed `cargo test -p worldwake-systems -- agent_observes_place_without_scene_evidence`
+- Passed `cargo test -p worldwake-systems --test e15_information_integration hidden_event_at_empty_location_remains_isolated_from_remote_agents`
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

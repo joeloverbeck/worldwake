@@ -1,9 +1,9 @@
 # S77BELCAPPRI-007: Reconcile hidden-event isolation proof with mandatory current-place observation
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: LOW
 **Effort**: Small
-**Engine Changes**: Yes — `e15` hidden-event isolation proof or its owning read surface must be corrected
+**Engine Changes**: Yes — `e15` hidden-event isolation proof corrected to the live current-place observation contract
 **Deps**: S77BELCAPPRI-004, S77BELCAPPRI-006
 
 ## Problem
@@ -16,18 +16,18 @@ After `S77BELCAPPRI-006` restored self-local carried-item knowledge and the bloc
 2. The failing assertion is about the remote observer's `AgentBeliefStore` being entirely empty after one tick, not about the hidden event's origin place or event payload specifically.
 3. `S77BELCAPPRI-004` intentionally made agents always observe the place they currently occupy, so a fully empty `known_entities` assertion may now be stale even when hidden remote events remain isolated.
 4. This is a mixed-boundary ticket. The exact contract under audit is hidden-event isolation in `e15_information_integration` versus the live perception/current-place observation boundary in `worldwake-systems::perception`.
-5. Root cause has not yet been proved. The remote agent may now lawfully know only their own current place, or an actual remote information leak may exist. That distinction must be established before any test or production change.
+5. Focused reproduction proved the failure is a stale proof, not a production leak. After one tick the remote observer's `known_entities` contains only `destination`, with a direct-observation place belief; `origin` remains absent and `social_observations` remain empty.
+6. Auto-correction applied: ticket said either the `e15` proof or `worldwake-systems::perception` might need changes; live code has no unexpected remote information transfer, only a stale `is_empty()` assertion in `crates/worldwake-systems/tests/e15_information_integration.rs`. Correction applied: narrow owned scope to the integration proof. Safe because focused reproduction directly established the post-tick belief contents and they align with the live current-place observation contract from `S77BELCAPPRI-004`.
 
 ## Architecture Check
 
 1. Correcting the proof to the strongest honest isolation invariant is cleaner than preserving an `is_empty()` assertion that may have been invalidated by later lawful perception changes.
-2. No backward-compatibility shims. The ticket should either tighten the test to the true hidden-event contract or fix a real production leak at the owning information boundary.
+2. No backward-compatibility shims. The ticket should tighten the test to the true hidden-event contract rather than preserving an outdated global-ignorance assertion.
 
 ## Verification Layers
 
 1. The remote observer does not learn about the hidden remote event or its origin place -> focused `e15` integration proof
-2. If reassessment finds a production leak, the strongest lower-layer proof must identify the exact perception or event-projection boundary that leaks
-3. Existing suite: `cargo test -p worldwake-systems --test e15_information_integration`
+2. Existing suite: `cargo test -p worldwake-systems --test e15_information_integration`
 
 ## What to Change
 
@@ -37,12 +37,11 @@ Inspect which entities or claims are present in the remote observer's `AgentBeli
 
 ### 2. Correct the owning boundary
 
-If the hidden-event isolation contract still holds and only the blanket-empty assertion is stale, update the `e15` proof to assert the real invariant. If unexpected remote knowledge leaked in, fix production code at the owning perception/event boundary instead.
+Update the `e15` proof to assert the real invariant: the remote observer may lawfully know only its occupied destination place through direct observation, but must not learn the hidden event's origin place or payload.
 
 ## Files to Touch
 
-- `crates/worldwake-systems/tests/e15_information_integration.rs` (modify if the proof is stale)
-- `crates/worldwake-systems/src/perception.rs` (modify only if reassessment proves a production leak)
+- `crates/worldwake-systems/tests/e15_information_integration.rs` (modify)
 
 ## Out of Scope
 
@@ -66,10 +65,25 @@ If the hidden-event isolation contract still holds and only the blanket-empty as
 
 ### New/Modified Tests
 
-1. `crates/worldwake-systems/tests/e15_information_integration.rs` — tighten the hidden-event isolation assertion to the real contract after reassessment
+1. `crates/worldwake-systems/tests/e15_information_integration.rs` — `hidden_event_at_empty_location_remains_isolated_from_remote_agents` now asserts that only the remote agent's occupied destination place is known, while the hidden origin remains absent
 
 ### Commands
 
 1. `cargo test -p worldwake-systems --test e15_information_integration hidden_event_at_empty_location_remains_isolated_from_remote_agents`
 2. `cargo test -p worldwake-systems --test e15_information_integration`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Reassessed the `e15` failure against the live current-place observation contract from `S77BELCAPPRI-004`.
+- Confirmed there is no hidden-event leak: after one tick the remote observer lawfully knows only `destination` via direct place observation, while `origin` remains unknown and no social observations are created.
+- Updated `hidden_event_at_empty_location_remains_isolated_from_remote_agents` to assert that exact contract instead of requiring `store.known_entities` to be globally empty.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --test e15_information_integration hidden_event_at_empty_location_remains_isolated_from_remote_agents`
+- Passed `cargo test -p worldwake-systems --test e15_information_integration`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

@@ -10,6 +10,7 @@ Completed Phase 7 specs:
 - `S69: Goal Dispatch Consolidation` — completed in-place (adjunct infrastructure spec).
 - `S70: Belief Store Query Encapsulation` — added 7 accessor/mutation methods to `AgentBeliefStore`, migrated ~24 direct field accesses in `perception.rs` to use the new API.
 - `S75: Belief View Domain Decomposition` — archived at [archive/specs/S75-belief-view-domain-decomposition.md](/home/joeloverbeck/projects/worldwake/archive/specs/S75-belief-view-domain-decomposition.md). Decomposed `RuntimeBeliefView` into domain sub-traits, restructured `SnapshotEntity` into domain sub-structs, and replaced the old `GoalBeliefView` macro delegation path with bridge traits plus blanket impls while preserving the facade boundary.
+- `S77: Belief Capacity Prioritization` — archived at [archive/specs/S77-belief-capacity-prioritization.md](/home/joeloverbeck/projects/worldwake/archive/specs/S77-belief-capacity-prioritization.md). Added `believed_kind` capture/preservation, tiered claim/entity eviction, removed the `SceneEvidence` gate on current-place observation, and corrected the downstream `e15` proof to the live contract.
 - `S71: Event Log Delta Compaction` — replaced full `ComponentValue` snapshots in `ComponentDelta::Set` with compact `BeliefStoreDiff` via new `CompactSet` variant for `AgentBeliefStore` updates. Reduces per-event memory from ~300 KB to ~1-5 KB. Archived at [archive/specs/S71-event-log-delta-compaction.md](/home/joeloverbeck/projects/worldwake/archive/specs/S71-event-log-delta-compaction.md).
 - `S72: Event Log Epoch Compaction` — periodic World checkpoints on `EventLog` with `state_deltas` stripping for bounded RAM. `CheckpointData`, `compaction_interval` on `EventLog`, `compact_event_log` SystemFn, `ScenarioDef.compaction_interval` (default: 50). Verification adapted for checkpoint-based reconstruction. Archived at [archive/specs/S72-event-log-epoch-compaction.md](/home/joeloverbeck/projects/worldwake/archive/specs/S72-event-log-epoch-compaction.md).
 
@@ -28,7 +29,7 @@ Derived from external gameplay assessment (`brainstorming/prioritary-gameplay-sy
 ### Dependency Graph
 
 ```text
-S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 ✅     S75 ✅     S77 (independent)     S78 (independent)
+S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 ✅     S75 ✅     S77 ✅ archived       S78 (independent)
                                                                                                                        │
                                                                                                                        └── S76-C (needs S77)
      │                     │
@@ -74,17 +75,17 @@ S65 ─┘
 ### Adjunct Wave: Simulation Observer Remediations
 
 Derived from simulation observer report (`reports/simulation-remediation.md`) validated against
-the actual codebase. S77 fixes the root cause (belief capacity eviction); S76 adds golden coverage
-for the observed pathologies; S78 enhances observer diagnostics.
+the actual codebase. S77 fixed the root cause (belief capacity eviction and current-place observation retention), S76 adds golden coverage
+for the observed pathologies, and S78 enhances observer diagnostics.
 
 ```text
-S77 (independent)          S78 (independent)
+S77 ✅ archived            S78 (independent)
   │
   └── S76-C (S76 Scenario C depends on S77 belief fix)
 ```
 
 **Wave A** (parallel, no deps):
-- **S77**: Belief Capacity Prioritization — fix `enforce_capacity()` eviction ordering so resource source and place beliefs survive; remove `SceneEvidence` gate on place observation
+- **S77**: ✅ COMPLETED — Belief Capacity Prioritization — archived at [archive/specs/S77-belief-capacity-prioritization.md](/home/joeloverbeck/projects/worldwake/archive/specs/S77-belief-capacity-prioritization.md). Added `believed_kind` capture/preservation, tiered claim/entity eviction, removed the `SceneEvidence` gate on place observation, and corrected the downstream `e15` proof to the live contract.
 - **S78**: Observer Failed-Plan Diagnostics — enrich `PlanSearchOutcome` with diagnostic context; enhance observer failed-plan table output
 - **S76** (partial): Golden Gaps — Simulation Observer Report — Scenarios S76-A, S76-B, S76-D can be implemented independently (they use seeded beliefs, not perception-derived beliefs)
 
