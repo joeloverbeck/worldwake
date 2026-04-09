@@ -1,6 +1,6 @@
 # S77BELCAPPRI-004: Remove SceneEvidence gate on place observation
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — perception place observation gate removed
@@ -91,3 +91,19 @@ The single call site at `perception.rs:447` is inside `observe_passive_local_ent
 1. `cargo test -p worldwake-systems -- perception`
 2. `cargo test -p worldwake-systems`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Removed the `SceneEvidence`-based gate from passive current-place observation in `crates/worldwake-systems/src/perception.rs`, so current-place observation now depends only on observation fidelity and snapshot construction.
+- Added `agent_observes_place_without_scene_evidence` to prove that an agent now forms a belief about its current place even when the place has no `SceneEvidence`.
+- Existing current-place evidence projection coverage still passed unchanged, confirming that `SceneEvidence` continues to affect evidence content rather than whether the place is observed at all.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems -- agent_observes_place_without_scene_evidence`
+- Passed `cargo test -p worldwake-systems -- passive_perception_projects_scene_evidence_for_current_place`
+- Passed `cargo test -p worldwake-systems -- perception`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test -p worldwake-systems` failed outside the ticket's owned surface in `tell_actions::tests::tell_commit_enforces_listener_memory_capacity`; bounded triage showed `commit_tell_and_finalize_event()` does not call `perception_system` or `observe_passive_local_entities`, so the owned perception surface was verified with the passing `-- perception` selector instead of broadening this ticket into unrelated tell-memory fallout.

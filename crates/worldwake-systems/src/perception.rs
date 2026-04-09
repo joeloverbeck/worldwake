@@ -444,8 +444,7 @@ fn collect_direct_local_observation_batch(
         }
     }
 
-    if should_observe_current_place_entity(world, place, store)
-        && passes_observation_check(observation_fidelity, rng)
+    if passes_observation_check(observation_fidelity, rng)
         && let Some(snapshot) =
             build_believed_entity_state(world, place, tick, PerceptionSource::DirectObservation)
     {
@@ -479,18 +478,6 @@ fn collect_direct_local_observation_batch(
         observed_snapshots,
         noticed_missing_subjects,
     })
-}
-
-fn should_observe_current_place_entity(
-    world: &World,
-    place: EntityId,
-    store: &AgentBeliefStore,
-) -> bool {
-    world.get_component_scene_evidence(place).is_some()
-        || store
-            .get_entity(&place)
-            .and_then(|belief| belief.believed_evidence.as_ref())
-            .is_some()
 }
 
 fn apply_direct_local_observation_batch(
@@ -1560,6 +1547,49 @@ mod tests {
             beliefs.get_entity(&actor).is_none(),
             "fidelity zero should prevent direct observation and activity projection"
         );
+    }
+
+    #[test]
+    fn agent_observes_place_without_scene_evidence() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let observer = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            observer
+        };
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([0x20; 32]));
+
+        perception_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut event_log,
+            rng: &mut rng,
+            active_actions: &BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(3),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+
+        let belief = world
+            .get_component_agent_belief_store(observer)
+            .unwrap()
+            .get_entity(&place)
+            .expect("observer should believe current place without scene evidence");
+        assert_eq!(belief.last_known_place, None);
+        assert_eq!(belief.believed_evidence, None);
+        assert_eq!(belief.observed_tick, Tick(3));
+        assert_eq!(belief.source, PerceptionSource::DirectObservation);
     }
 
     #[test]
