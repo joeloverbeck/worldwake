@@ -48,7 +48,9 @@ Parse into logical blocks:
 
 Count:
 - Total lines (including blank lines)
-- Unique instructions (distinct semantic directives, regardless of where they appear)
+- Total characters
+
+The "before" baseline for Step 9 metrics is the file content as read in this step, regardless of git state.
 
 ---
 
@@ -153,7 +155,8 @@ After writing, present a structured summary in the conversation:
 ```
 ## Consolidation Summary: <skill-name>
 
-**Lines**: <before> → <after> (<reduction>%)
+**Size**: <before chars> → <after chars> (<change>%)
+**Lines**: <before> → <after> (may increase when dense paragraphs are broken into structured lists)
 
 ### Redundancies Merged (<count>)
 - "<instruction summary>" — was in <N> locations, canonical: <section name>
@@ -170,6 +173,9 @@ After writing, present a structured summary in the conversation:
 ### Wording Tightened
 - <N> instructions shortened for conciseness (no semantic changes)
 - Examples: "<before>" → "<after>" (include 2-3 representative samples)
+
+### Observations (if any)
+[Gaps noticed during consolidation that were not filled (per No Scope Expansion guardrail).]
 ```
 
 Do NOT commit. Leave the file for user review via `git diff`.

@@ -9,6 +9,30 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 ## Workflow
 
+### 0. Pick the right path first
+
+Before running the full workflow, classify the ticket shape.
+
+- If the owned surface is genuinely small and local, prefer the fast path immediately:
+  - single-file additive CLI/tooling/reporting change
+  - narrow helper extraction or formatting update
+  - no shared type, planner, golden, persistence, or cross-crate fallout expected
+- Otherwise, use the full workflow below.
+
+For small local tickets, do not skip reassessment, but do not force the full matrix before you have confirmed that broader sweeps are actually needed.
+
+### Fast path for small additive/shared-shape tickets
+
+When the owned surface is genuinely small, keep the loop compact:
+1. Resolve the exact live ticket/spec path, including typos or shorthand.
+2. Confirm the dependency path and the exact owned symbol/file boundary.
+3. Run a constructor/usage sweep for the changed shape.
+4. Implement the owned change with focused proof first.
+5. Use all-target compile fallout to catch remaining shared-shape literals/helpers.
+6. Close out the ticket with the actual verification set and tracked-vs-untracked note.
+
+For CLI/tooling-only tickets, if the owned logic can be factored into local helpers, prefer bin-local `#[cfg(test)]` coverage over command-only validation.
+
 ### 1. Load the ticket context
 
 1. Read the target ticket file.
@@ -418,16 +442,6 @@ Before finishing:
 - If formatting was required in a dirty worktree, check immediately for formatter spillover into already-modified files outside the ticket's owned surface and call that out explicitly in close-out repo-state notes.
 - If the active ticket remains untracked, say so explicitly in the final user-facing close-out because it will not appear in ordinary `git diff` output until it is added.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
-
-### Fast path for small additive/shared-shape tickets
-
-When the owned surface is genuinely small, keep the loop compact:
-1. Resolve the exact live ticket/spec path, including typos or shorthand.
-2. Confirm the dependency path and the exact owned symbol/file boundary.
-3. Run a constructor/usage sweep for the changed shape.
-4. Implement the owned change with focused proof first.
-5. Use all-target compile fallout to catch remaining shared-shape literals/helpers.
-6. Close out the ticket with the actual verification set and tracked-vs-untracked note.
 
 Minimal active-ticket close-out shape:
 

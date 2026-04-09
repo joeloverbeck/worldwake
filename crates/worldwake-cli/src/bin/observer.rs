@@ -12,7 +12,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
 use worldwake_ai::AgentTickDriver;
-use worldwake_ai::decision_trace::{DecisionOutcome, PlanSearchOutcome};
+use worldwake_ai::decision_trace::{
+    AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace, PlanSearchOutcome,
+};
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{EntityId, EntityKind, EventId, EventView};
@@ -381,6 +383,57 @@ fn refine_redundant_perception(
 // ---------------------------------------------------------------------------
 // Output formatting
 // ---------------------------------------------------------------------------
+
+fn failed_plan_max_depth(attempt: &PlanAttemptTrace) -> u8 {
+    attempt
+        .expansion_summaries
+        .iter()
+        .map(|summary| summary.depth)
+        .max()
+        .unwrap_or(0)
+}
+
+fn failed_plan_candidates(attempt: &PlanAttemptTrace) -> u32 {
+    attempt
+        .expansion_summaries
+        .iter()
+        .map(|summary| u32::from(summary.candidates_generated))
+        .sum()
+}
+
+fn failed_plan_location(place: Option<EntityId>) -> String {
+    place.map_or_else(|| "?".to_string(), |place| place.to_string())
+}
+
+fn collect_failed_plan_attempts<'a>(
+    traces: &'a [&'a AgentDecisionTrace],
+) -> Vec<(u64, Option<EntityId>, &'a PlanAttemptTrace)> {
+    traces
+        .iter()
+        .flat_map(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => planning
+                .planning
+                .attempts
+                .iter()
+                .filter(|attempt| {
+                    matches!(
+                        attempt.outcome,
+                        PlanSearchOutcome::FrontierExhausted { .. }
+                            | PlanSearchOutcome::BudgetExhausted { .. }
+                    )
+                })
+                .map(|attempt| {
+                    (
+                        trace.tick.0,
+                        planning.affordances.as_ref().and_then(|a| a.place),
+                        attempt,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
 
 #[allow(clippy::too_many_arguments)]
 fn format_report(
@@ -1049,65 +1102,52 @@ fn format_report(
             writeln!(out).unwrap();
 
             // Failed plan attempts detail
-            let failed_attempts: Vec<_> = traces
-                .iter()
-                .filter_map(|t| {
-                    if let DecisionOutcome::Planning(planning) = &t.outcome {
-                        let failures: Vec<_> = planning
-                            .planning
-                            .attempts
-                            .iter()
-                            .filter(|a| {
-                                matches!(
-                                    a.outcome,
-                                    PlanSearchOutcome::FrontierExhausted { .. }
-                                        | PlanSearchOutcome::BudgetExhausted { .. }
-                                )
-                            })
-                            .collect();
-                        if failures.is_empty() {
-                            None
-                        } else {
-                            Some((t.tick, failures))
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let failed_attempts = collect_failed_plan_attempts(&traces);
 
             if !failed_attempts.is_empty() {
-                let total_failures: usize = failed_attempts.iter().map(|(_, f)| f.len()).sum();
+                let total_failures = failed_attempts.len();
                 writeln!(
                     out,
                     "**Failed plan attempts** (showing first 20 of {total_failures})\n"
                 )
                 .unwrap();
-                writeln!(out, "| Tick | Goal | Outcome | Expansions |").unwrap();
-                writeln!(out, "|------|------|---------|------------|").unwrap();
+                writeln!(
+                    out,
+                    "| Tick | Goal | Outcome | Expansions | Max Depth | Candidates | Location |"
+                )
+                .unwrap();
+                writeln!(
+                    out,
+                    "|------|------|---------|------------|-----------|------------|----------|"
+                )
+                .unwrap();
                 let mut shown = 0u32;
-                'outer: for (tick, failures) in &failed_attempts {
-                    for attempt in failures {
-                        if shown >= 20 {
-                            break 'outer;
-                        }
-                        let (outcome_label, expansions) = match &attempt.outcome {
-                            PlanSearchOutcome::FrontierExhausted { expansions_used } => {
-                                ("frontier-exhausted", *expansions_used)
-                            }
-                            PlanSearchOutcome::BudgetExhausted { expansions_used } => {
-                                ("budget-exhausted", *expansions_used)
-                            }
-                            _ => continue,
-                        };
-                        writeln!(
-                            out,
-                            "| {} | {:?} | {} | {} |",
-                            tick.0, attempt.goal.kind, outcome_label, expansions
-                        )
-                        .unwrap();
-                        shown += 1;
+                for (tick, place, attempt) in &failed_attempts {
+                    if shown >= 20 {
+                        break;
                     }
+                    let (outcome_label, expansions) = match &attempt.outcome {
+                        PlanSearchOutcome::FrontierExhausted { expansions_used } => {
+                            ("frontier-exhausted", expansions_used)
+                        }
+                        PlanSearchOutcome::BudgetExhausted { expansions_used } => {
+                            ("budget-exhausted", expansions_used)
+                        }
+                        _ => continue,
+                    };
+                    writeln!(
+                        out,
+                        "| {} | {:?} | {} | {} | {} | {} | {} |",
+                        tick,
+                        attempt.goal.kind,
+                        outcome_label,
+                        expansions,
+                        failed_plan_max_depth(attempt),
+                        failed_plan_candidates(attempt),
+                        failed_plan_location(*place)
+                    )
+                    .unwrap();
+                    shown += 1;
                 }
                 writeln!(out).unwrap();
             }
@@ -1396,4 +1436,74 @@ fn main() {
         cli.output.display(),
         report.len()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        PlanAttemptTrace, PlanSearchOutcome, failed_plan_candidates, failed_plan_location,
+        failed_plan_max_depth,
+    };
+    use worldwake_ai::decision_trace::SearchExpansionSummary;
+    use worldwake_core::{EntityId, GoalKey, GoalKind, OpportunityAnchor};
+
+    fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
+        SearchExpansionSummary {
+            depth,
+            remaining_travel_ticks: 0,
+            combined_places_count: 0,
+            prerequisite_places_count: 0,
+            candidates_generated,
+            candidates_skipped: 0,
+            terminal_successors: 0,
+            non_terminal_before_beam: 0,
+            non_terminal_after_beam: 0,
+            found_goal_satisfied: false,
+            travel_pruning: None,
+            prerequisite_guidance: None,
+            root_candidates: Vec::new(),
+            root_omissions: Vec::new(),
+        }
+    }
+
+    fn sample_attempt(expansion_summaries: Vec<SearchExpansionSummary>) -> PlanAttemptTrace {
+        PlanAttemptTrace {
+            goal: GoalKey::from(GoalKind::Sleep),
+            opportunity_anchor: OpportunityAnchor::None,
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 3 },
+            binding_rejections: Vec::new(),
+            expansion_summaries,
+        }
+    }
+
+    #[test]
+    fn failed_plan_metrics_derive_from_expansion_summaries() {
+        let attempt = sample_attempt(vec![
+            sample_summary(0, 2),
+            sample_summary(2, 5),
+            sample_summary(1, 3),
+        ]);
+
+        assert_eq!(failed_plan_max_depth(&attempt), 2);
+        assert_eq!(failed_plan_candidates(&attempt), 10);
+    }
+
+    #[test]
+    fn failed_plan_metrics_default_when_no_expansions_recorded() {
+        let attempt = sample_attempt(Vec::new());
+
+        assert_eq!(failed_plan_max_depth(&attempt), 0);
+        assert_eq!(failed_plan_candidates(&attempt), 0);
+    }
+
+    #[test]
+    fn failed_plan_location_uses_entity_id_or_fallback() {
+        let place = EntityId {
+            slot: 7,
+            generation: 2,
+        };
+
+        assert_eq!(failed_plan_location(Some(place)), "e7g2");
+        assert_eq!(failed_plan_location(None), "?");
+    }
 }

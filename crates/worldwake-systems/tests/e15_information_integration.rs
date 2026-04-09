@@ -5,8 +5,8 @@ use worldwake_core::{
     ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, CauseRef,
     ControlSource, EntityId, EntityKind, EventLog, EventPayload, EventTag, PendingEvent,
     PerceptionProfile, PerceptionSource, Permille, Place, Seed, SocialObservationKind, StateHash,
-    TellProfile, TellTopic, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-    WitnessData, World, WorldTxn, build_believed_entity_state,
+    TellProfile, TellTopic, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
+    World, WorldTxn, build_believed_entity_state,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, DeterministicRng, InputKind, PerAgentBeliefView,
@@ -756,7 +756,10 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
         .expect("remote observer should directly observe its occupied place");
     assert_eq!(destination_belief.believed_kind, Some(EntityKind::Place));
     assert_eq!(destination_belief.last_known_place, None);
-    assert_eq!(destination_belief.source, PerceptionSource::DirectObservation);
+    assert_eq!(
+        destination_belief.source,
+        PerceptionSource::DirectObservation
+    );
     assert!(
         store.get_entity(&origin).is_none(),
         "hidden event origin should remain unknown to remote agents"

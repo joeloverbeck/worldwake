@@ -4,7 +4,7 @@
 
 ## Summary
 
-The simulation observer binary already traces affordances and failed-plan outcomes (budget-exhausted, frontier-exhausted), but the failed-plan output includes only outcome labels without diagnostic context. This spec enhances the failed-plan trace output with candidate quality summaries, blocker descriptions, and operator filtering reasons, enabling root-cause diagnosis of agent behavioral failures directly from observer output.
+The simulation observer binary already traces affordances and failed-plan outcomes (budget-exhausted, frontier-exhausted), but the failed-plan output includes only outcome labels without diagnostic context. This spec enhances the observer binary's failed-plan output with derived diagnostic columns — best partial depth, operators considered, agent location, and target-belief presence — computed from existing trace data, enabling root-cause diagnosis of agent behavioral failures directly from observer output.
 
 ## Phase
 
@@ -12,16 +12,17 @@ Phase 7: Consequence Carriers (adjunct)
 
 ## Crates
 
-- `worldwake-ai` (decision trace structs, plan search outcome enrichment)
-- `worldwake-cli` (observer binary output formatting)
+- `worldwake-cli` (observer binary output formatting — primary)
+- `worldwake-ai` (read-only dependency on existing trace types)
 
 ## Dependencies
 
-- No spec dependencies. Builds on existing `PlanSearchOutcome` and `DecisionTrace` infrastructure.
+- No spec dependencies. Builds on existing `PlanSearchOutcome`, `PlanAttemptTrace`, `SearchExpansionSummary`, and `AffordanceTrace` infrastructure in `worldwake-ai`.
 
 ## Design Goals
 
 - Failed-plan traces include enough context to diagnose why the planner could not find a plan.
+- No changes to AI crate types — all diagnostics are derived in the observer from existing trace data.
 - No runtime cost when traces are not enabled (trace sinks are opt-in).
 - Observer output remains human-readable and scannable.
 
@@ -31,14 +32,16 @@ Phase 7: Consequence Carriers (adjunct)
 - Adding new trace sink types (existing `DecisionTraceSink` is sufficient).
 - Real-time trace streaming (observer is a batch post-hoc analysis tool).
 - Affordance tracing (already fully implemented).
+- Modifying `PlanSearchOutcome`, `PlanAttemptTrace`, or any other AI crate types.
 
 ## FOUNDATIONS Alignment
 
 | Principle | Alignment |
 |-----------|-----------|
-| P29 (Debuggability Is a Product Feature) | Directly serves this principle -- failed-plan diagnostics answer "why didn't the agent do X?" |
+| P29 (Debuggability Is a Product Feature) | Directly serves this principle — failed-plan diagnostics answer "why didn't the agent do X?" |
 | P20 (Resource-Bounded Practical Reasoning) | Diagnostics explain how bounded reasoning constraints (budget, frontier) affected planning |
 | P26 (Systems Interact Through State) | Trace data flows through state (trace sinks), not cross-system calls |
+| P27 (Derived Summaries Are Caches) | Observer-computed diagnostics are derived views over authoritative trace data, never stored as truth |
 
 ## Section H: Causal Hooks
 
@@ -56,89 +59,74 @@ N/A.
 
 ### Stored State vs. Derived
 
-- **Stored state**: Enriched `PlanSearchOutcome` variants carry additional diagnostic fields. These are transient trace data, not authoritative world state.
-- **Derived**: Observer output formatting is derived from trace data.
+- **Stored state**: No new stored state. Existing `PlanAttemptTrace` and `SearchExpansionSummary` are transient trace data, not authoritative world state.
+- **Derived**: All new observer output columns are derived from existing trace data at formatting time.
 
 ---
 
 ## Deliverables
 
-### D1: Enrich `PlanSearchOutcome` with Diagnostic Context
-
-**File**: `crates/worldwake-ai/src/search/mod.rs`
-
-**Current `PlanSearchOutcome`**:
-- `BudgetExhausted { expansions_used: u32 }`
-- `FrontierExhausted { expansions_used: u32 }`
-- `Unsupported`
-- `Found { ... }`
-
-**New fields** on failure variants:
-
-```rust
-pub enum PlanSearchOutcome {
-    BudgetExhausted {
-        expansions_used: u32,
-        best_partial_depth: u16,          // deepest node reached before budget ran out
-        goal_kind: GoalKind,              // which goal was being planned for
-    },
-    FrontierExhausted {
-        expansions_used: u32,
-        operators_considered: u16,        // how many operator candidates were evaluated
-        goal_kind: GoalKind,
-    },
-    Unsupported {
-        goal_kind: GoalKind,
-    },
-    Found { /* unchanged */ },
-}
-```
-
-These fields are populated during search at negligible cost (already tracked internally).
-
-### D2: Enrich `DecisionTraceEvent` Failed-Plan Entry
-
-**File**: `crates/worldwake-ai/src/decision_trace.rs`
-
-Add a `FailedPlanDiagnostic` struct stored alongside existing failed-plan trace events:
-
-```rust
-pub struct FailedPlanDiagnostic {
-    pub goal_kind: GoalKind,
-    pub outcome: PlanSearchOutcome,
-    pub available_operators: u16,
-    pub agent_place: EntityId,
-    pub beliefs_about_goal_target: bool,  // did the agent have beliefs about the target entity?
-}
-```
-
-Record this diagnostic in the existing `DecisionTraceEvent::PlanSearchCompleted` (or equivalent) path when the outcome is not `Found`.
-
-### D3: Observer Binary Output Enhancement
+### D1: Observer Enhanced Failed-Plan Table
 
 **File**: `crates/worldwake-cli/src/bin/observer.rs`
 
-Enhance the "Failed plan attempts" table (currently at lines ~1082-1110) to include the new diagnostic fields:
+Enhance the "Failed plan attempts" table (currently at lines ~1081-1113) to include diagnostic columns derived from existing trace data.
+
+**Current table columns**: `| Tick | Goal | Outcome | Expansions |`
+
+**Enhanced table columns**: `| Tick | Goal | Outcome | Expansions | Max Depth | Candidates | Location | Had Target Beliefs |`
+
+**Column derivation from existing trace types**:
+
+| Column | Source | Derivation |
+|--------|--------|------------|
+| Tick | `AgentDecisionTrace.tick` | Direct (already used) |
+| Goal | `PlanAttemptTrace.goal.kind` | Direct via `{:?}` (already used) |
+| Outcome | `PlanAttemptTrace.outcome` | Match on variant (already used) |
+| Expansions | `PlanSearchOutcome::{BudgetExhausted,FrontierExhausted}.expansions_used` | Direct (already used, type `u16`) |
+| Max Depth | `PlanAttemptTrace.expansion_summaries` | `expansion_summaries.iter().map(\|s\| s.depth).max().unwrap_or(0)` |
+| Candidates | `PlanAttemptTrace.expansion_summaries` | `expansion_summaries.iter().map(\|s\| s.candidates_generated).sum::<u16>()` |
+| Location | `PlanningPipelineTrace.affordances` | `affordances.as_ref().and_then(\|a\| a.place)`, rendered as entity debug name or "?" |
+| Had Target Beliefs | See D2 | `true` / `false` / `n/a` |
+
+The observer must navigate the trace hierarchy to reach `PlanAttemptTrace`:
+```
+AgentDecisionTrace
+  .outcome: DecisionOutcome::Planning(PlanningPipelineTrace)
+    .planning: PlanSearchTrace
+      .attempts: Vec<PlanAttemptTrace>
+```
+
+`Location` comes from the parent `PlanningPipelineTrace.affordances.place`, not from the individual attempt — all attempts in one planning pass share the same agent location.
+
+### D2: Target-Belief Presence Check
+
+**File**: `crates/worldwake-cli/src/bin/observer.rs`
+
+For the "Had Target Beliefs" column, the observer checks whether the agent's belief snapshot (available via the trace) contains an `EntitySummary` for the goal's target entity.
+
+**Concrete definition**:
+- Extract the target `EntityId` from the `GoalKind` variant, if it has one (e.g., `EngageHostile { target }`, `TreatWounds { patient }`, `SearchForMissing { subject }`, `LootCorpse { corpse }`, etc.).
+- For `GoalKind` variants without an entity target (e.g., `Sleep`, `Relieve`, `Wash`, `ConsumeOwnedCommodity`, `AcquireCommodity`, `ProduceCommodity`, `SellCommodity`, `RestockCommodity`, `ReduceDanger`), the column shows `n/a`.
+- For variants with a target, check whether the planning pipeline's belief snapshot contains knowledge of that entity. The exact check depends on what belief data the trace exposes. If the trace does not expose belief content, this column is deferred to a follow-up spec.
+
+**Implementation note**: If the existing trace types do not carry enough belief snapshot data to determine target-belief presence at observer read time, this column should be omitted from the initial implementation and noted as a future enhancement. The remaining columns (Max Depth, Candidates, Location) are all derivable from current trace data with certainty.
+
+### D3: Failure Frequency Breakdown
+
+**File**: `crates/worldwake-cli/src/bin/observer.rs`
+
+Add a summary section after the failed-plan table with objective frequency counts:
 
 ```
-## Failed Plan Attempts
-
-| Tick | Goal | Outcome | Expansions | Depth | Operators | Location | Had Target Beliefs |
-|------|------|---------|------------|-------|-----------|----------|--------------------|
-| 42   | Eat  | frontier-exhausted | 12 | 0 | 3 | BarrenCamp | false |
-| 85   | Drink | budget-exhausted | 64 | 2 | 5 | BarrenCamp | true |
+### Failed Plan Frequency Breakdown
+- frontier-exhausted: 15 / 20
+- budget-exhausted: 5 / 20
+- Max Depth = 0 (no operators available): 3 / 20
+- Had Target Beliefs = false: 12 / 20
 ```
 
-Add a summary section after the table:
-
-```
-### Diagnosis Summary
-- 15/20 failed plans had `Had Target Beliefs = false` → likely perception/belief issue (see S77)
-- 3/20 failed plans had `Depth = 0` → no operators available at agent's location
-- 2/20 failed plans had `budget-exhausted` with `Depth >= 2` → search budget too small for plan complexity
-```
-
-The summary is computed by the observer binary from the trace data, not stored.
+This is a purely mechanical count of column values — no interpretive heuristics or causal claims. Computed from the same data used to populate the table.
 
 ### D4: Profile-Driven Parameters
 
@@ -146,7 +134,7 @@ No new per-agent profile. Diagnostic enrichment is controlled by trace sink opt-
 
 ## SystemFn Integration
 
-No new SystemFn. Changes are to trace data structures (populated during plan search) and observer binary output (post-hoc formatting).
+No new SystemFn. Changes are entirely to the observer binary's output formatting, operating on existing trace data.
 
 ## Component Registration
 
@@ -154,12 +142,12 @@ No new components.
 
 ## Cross-System Interactions
 
-- **Plan search -> Trace sink**: Search populates `PlanSearchOutcome` with diagnostic fields (already writes to trace sink; this adds fields to existing writes).
-- **Trace sink -> Observer binary**: Observer reads trace data and formats enhanced output (existing data flow; this adds columns to existing table).
+- **Plan search → Trace sink**: Existing data flow. Search populates `PlanAttemptTrace` with `expansion_summaries` (already happens; no changes).
+- **Trace sink → Observer binary**: Observer reads existing trace data and formats enhanced output (adds columns derived from existing fields).
 
 ## Verification
 
-1. Run observer binary on `scenarios/cli-evaluation.ron`. Failed-plan table should show diagnostic columns.
-2. The diagnosis summary should identify the dominant failure mode (e.g., "no target beliefs").
-3. `cargo test -p worldwake-ai` -- existing tests pass (diagnostic fields have defaults for non-trace paths).
+1. Run observer binary on `scenarios/cli-evaluation.ron`. Failed-plan table should show the enhanced columns (Max Depth, Candidates, Location, and optionally Had Target Beliefs).
+2. The frequency breakdown should correctly count failure modes from the table.
+3. `cargo test -p worldwake-ai` — existing tests pass (no AI crate changes).
 4. `cargo clippy --workspace --all-targets -- -D warnings` clean.
