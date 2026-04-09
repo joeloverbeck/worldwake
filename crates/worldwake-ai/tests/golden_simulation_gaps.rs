@@ -5,7 +5,9 @@ mod golden_harness;
 use std::collections::BTreeSet;
 
 use golden_harness::*;
-use worldwake_ai::DecisionOutcome;
+use worldwake_ai::{
+    CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, PlannerOpKind, SelectedPlanSource,
+};
 use worldwake_core::{
     BeliefConfidencePolicy, CognitiveProfile, CommodityKind, ComponentKind, ComponentValue,
     DeathCause, EntityId, EventTag, EventView, HomeostaticNeedId, HomeostaticNeeds, KnownRecipes,
@@ -224,6 +226,18 @@ struct DeathTraceabilityObservation {
     saw_death_event: bool,
     saw_post_death_dead_decision: bool,
     post_death_started_actions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct HarvestToConsumeObservation {
+    water_selected_harvest_plan: bool,
+    water_committed_actions: BTreeSet<String>,
+    water_thirst_before: u16,
+    water_thirst_after: u16,
+    apple_selected_harvest_plan: bool,
+    apple_committed_actions: BTreeSet<String>,
+    apple_hunger_before: u16,
+    apple_hunger_after: u16,
 }
 
 fn run_max_idle_under_remote_resource_scarcity(
@@ -802,6 +816,207 @@ fn run_death_traceability(
     )
 }
 
+fn selected_harvest_plan_within_ticks(
+    h: &GoldenHarness,
+    agent: EntityId,
+    commodity: CommodityKind,
+    max_tick: u32,
+) -> bool {
+    let expected_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+
+    (0..=max_tick).any(|tick| {
+        h.driver
+            .trace_sink()
+            .and_then(|sink| sink.trace_at(agent, Tick(tick.into())))
+            .is_some_and(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => {
+                    planning.selection.selected_goal_is(expected_goal)
+                        && planning.selection.selected_plan_source
+                            == Some(SelectedPlanSource::SearchSelection)
+                        && planning
+                            .selection
+                            .selected_plan
+                            .as_ref()
+                            .and_then(|plan| plan.next_step.as_ref())
+                            .is_some_and(|step| step.op_kind == PlannerOpKind::Harvest)
+                }
+                _ => false,
+            })
+    })
+}
+
+fn committed_action_names(h: &GoldenHarness, agent: EntityId) -> BTreeSet<String> {
+    h.action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for(agent)
+        .iter()
+        .filter(|event| matches!(event.kind, ActionTraceKind::Committed { .. }))
+        .map(|event| event.action_name.clone())
+        .collect()
+}
+
+fn run_harvest_to_consume(seed: Seed) -> (HarvestToConsumeObservation, StateHash, StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let apple_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Apples")
+        .map(|(id, _)| id)
+        .expect("multi-recipe registry should include Harvest Apples");
+    let water_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Water")
+        .map(|(id, _)| id)
+        .expect("multi-recipe registry should include Harvest Water");
+
+    let water_agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Wellwatch",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(0), pm(900), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            hunger_weight: pm(200),
+            thirst_weight: pm(950),
+            ..UtilityProfile::default()
+        },
+        KnownRecipes::with([water_recipe]),
+    );
+    let apple_agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Rowkeeper",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            hunger_weight: pm(950),
+            thirst_weight: pm(200),
+            ..UtilityProfile::default()
+        },
+        KnownRecipes::with([apple_recipe]),
+    );
+    for agent in [water_agent, apple_agent] {
+        configure_remote_resource_agent(&mut h, agent);
+    }
+
+    let _orchard_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let _well_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::Well,
+        ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    for agent in [water_agent, apple_agent] {
+        seed_actor_local_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            Tick(0),
+            worldwake_core::PerceptionSource::DirectObservation,
+        );
+    }
+
+    let water_thirst_before = h.agent_thirst(water_agent).value();
+    let apple_hunger_before = h.agent_hunger(apple_agent).value();
+
+    for _ in 0..100u32 {
+        h.step_once();
+    }
+
+    let observation = HarvestToConsumeObservation {
+        water_selected_harvest_plan: selected_harvest_plan_within_ticks(
+            &h,
+            water_agent,
+            CommodityKind::Water,
+            8,
+        ),
+        water_committed_actions: committed_action_names(&h, water_agent),
+        water_thirst_before,
+        water_thirst_after: h.agent_thirst(water_agent).value(),
+        apple_selected_harvest_plan: selected_harvest_plan_within_ticks(
+            &h,
+            apple_agent,
+            CommodityKind::Apple,
+            8,
+        ),
+        apple_committed_actions: committed_action_names(&h, apple_agent),
+        apple_hunger_before,
+        apple_hunger_after: h.agent_hunger(apple_agent).value(),
+    };
+
+    assert!(
+        observation.water_selected_harvest_plan,
+        "water agent should select an opening self-consume harvest plan with Harvest as the next op; observation={observation:?}"
+    );
+    assert!(
+        observation
+            .water_committed_actions
+            .contains("harvest:Harvest Water"),
+        "water agent should commit Harvest Water; observation={observation:?}"
+    );
+    assert!(
+        observation.water_committed_actions.contains("drink"),
+        "water agent should commit drink after harvesting water; observation={observation:?}"
+    );
+    assert!(
+        observation.water_thirst_after < observation.water_thirst_before,
+        "water agent thirst should decrease after the harvest-to-drink chain; observation={observation:?}"
+    );
+    assert!(
+        observation.apple_selected_harvest_plan,
+        "apple agent should select an opening self-consume harvest plan with Harvest as the next op; observation={observation:?}"
+    );
+    assert!(
+        observation
+            .apple_committed_actions
+            .contains("harvest:Harvest Apples"),
+        "apple agent should commit Harvest Apples; observation={observation:?}"
+    );
+    assert!(
+        observation.apple_committed_actions.contains("eat"),
+        "apple agent should commit eat after harvesting apples; observation={observation:?}"
+    );
+    assert!(
+        observation.apple_hunger_after < observation.apple_hunger_before,
+        "apple agent hunger should decrease after the harvest-to-eat chain; observation={observation:?}"
+    );
+
+    (
+        observation,
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 131: Death Traceability Under Unmet Needs
 // ---------------------------------------------------------------------------
@@ -836,5 +1051,43 @@ fn golden_death_traceability_replays_deterministically() {
     assert_eq!(
         first, second,
         "death traceability under unmet needs should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
+// ---------------------------------------------------------------------------
+//
+// Systems: Production, Needs, AI
+// GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
+// ActionDomains: Production, Needs
+// Places: OrchardFarm
+// Principles: 3, 8, 26
+//
+// Setup: Two agents begin co-located with an orchard row and a well at
+//   OrchardFarm. One knows only Harvest Water and starts critically thirsty;
+//   the other knows only Harvest Apples and starts critically hungry. Direct
+//   local beliefs are seeded so the scenario isolates harvest-to-consume
+//   execution rather than perception/discovery lag.
+//
+// Proves: The opening AI plan selects the self-consume harvest branch for each
+//   agent, then the full colocated chain completes: harvest -> possession/
+//   materialization -> drink/eat -> corresponding need decreases.
+//
+// Chain: local resource-source beliefs + recipe knowledge -> harvest plan ->
+//   committed harvest action -> committed consume action -> lower thirst/hunger.
+
+#[test]
+fn golden_harvest_to_consume() {
+    let _ = run_harvest_to_consume(Seed([180; 32]));
+}
+
+#[test]
+fn golden_harvest_to_consume_replays_deterministically() {
+    let first = run_harvest_to_consume(Seed([180; 32]));
+    let second = run_harvest_to_consume(Seed([180; 32]));
+    assert_eq!(
+        first, second,
+        "harvest-to-consume at resource source locations should replay deterministically"
     );
 }

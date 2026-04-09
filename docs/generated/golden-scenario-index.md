@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 150
+- Scenario blocks: 151
 - Contributing golden test files: 24
-- Associated tests: 321
+- Associated tests: 323
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -1612,7 +1612,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 126: Remote Travel To Resource Under Local Scarcity
 
-- Source: `golden_simulation_gaps.rs:356`
+- Source: `golden_simulation_gaps.rs:370`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -1627,7 +1627,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 127: Idle Cap Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:392`
+- Source: `golden_simulation_gaps.rs:406`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Sleep, Relieve, AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -1642,7 +1642,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 130: Multi-Agent Convergence Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:647`
+- Source: `golden_simulation_gaps.rs:661`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Travel, Production, Needs
@@ -1657,7 +1657,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 131: Death Traceability Under Unmet Needs
 
-- Source: `golden_simulation_gaps.rs:806`
+- Source: `golden_simulation_gaps.rs:1021`
 - Systems: Needs, Wounds, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Needs
@@ -1669,6 +1669,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: deprivation death becomes an explicit durable world-state transition with a traceable cause and death-tagged event, and the AI enters the dead decision path instead of starting new actions after death.
 
 **Cross-system chain**: sustained unmet hunger -> deprivation wound creation -> fatal wound load -> DeadAt with cause plus EventTag::Death -> DecisionOutcome::Dead.
+
+### Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
+
+- Source: `golden_simulation_gaps.rs:1058`
+- Systems: Production, Needs, AI
+- GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
+- ActionDomains: Production, Needs
+- Places: OrchardFarm
+- Principles: 3, 8, 26
+
+**Setup**: Two agents begin co-located with an orchard row and a well at OrchardFarm. One knows only Harvest Water and starts critically thirsty; the other knows only Harvest Apples and starts critically hungry. Direct local beliefs are seeded so the scenario isolates harvest-to-consume execution rather than perception/discovery lag.
+
+**Proves**: The opening AI plan selects the self-consume harvest branch for each agent, then the full colocated chain completes: harvest -> possession/ materialization -> drink/eat -> corresponding need decreases.
+
+**Cross-system chain**: local resource-source beliefs + recipe knowledge -> harvest plan -> committed harvest action -> committed consume action -> lower thirst/hunger.
 
 ### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
 

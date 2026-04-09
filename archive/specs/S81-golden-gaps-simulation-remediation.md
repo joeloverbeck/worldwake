@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers (Adjunct -- Simulation Remediation)
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -272,3 +272,27 @@ No new component registration in `component_schema.rs` -- `DeadAt` is already re
 - **Combat system -> DeadAt**: Combat sets `DeadAt { tick, cause: CombatWounds }` (existing interaction, extended with cause)
 - **Planning system -> DeadAt**: Planning checks `DeadAt` to skip dead agents (existing, no change)
 - **Needs system -> WoundList / CombatProfile**: Needs system reads wound list and combat profile to evaluate `is_wound_load_fatal` (NEW read dependency, consistent with P26 -- interaction through state)
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Landed the shared death traceability substrate in `worldwake-core`: `DeathCause`, `DeadAt { tick, cause }`, `HomeostaticNeedId: Hash`, and `EventTag::Death`.
+- Landed authoritative need-based mortality and death-event tagging in `worldwake-systems`, including `DeathCause::NeedDeprivation` on needs fatalities and `EventTag::Death` on both needs and combat deaths.
+- Added the three owning golden scenarios in `crates/worldwake-ai/tests/golden_simulation_gaps.rs`: Scenario 130 (`golden_multi_agent_convergence`), Scenario 131 (`golden_death_traceability`), and Scenario 132 (`golden_harvest_to_consume`), with deterministic replay pairs.
+- Refreshed the generated golden inventory/index/detail docs so all three S81 scenarios are represented in the canonical generated surfaces under `docs/generated/`.
+
+Deviations from original plan:
+- The original spec framed GT-3 as an optional remaining post-S79 water/drink follow-up. The delivered ticket chain reassessed that slice into a completed colocated harvest-to-consume golden that explicitly proves water/drink and also keeps an apple/eat control branch in the same scenario.
+- The death-traceability work was decomposed into ticket slices that landed the shared substrate first (`S81GLDGAP-001`), then runtime mortality/tagging (`S81GLDGAP-003`), then the golden proof (`S81GLDGAP-005`), rather than as one indivisible implementation pass.
+
+Verification results:
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo test -p worldwake-ai --test golden_simulation_gaps golden_multi_agent_convergence`
+- Passed `cargo test -p worldwake-ai --test golden_simulation_gaps golden_death_traceability`
+- Passed `cargo test -p worldwake-ai --test golden_simulation_gaps golden_harvest_to_consume`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

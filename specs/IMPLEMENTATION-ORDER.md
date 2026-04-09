@@ -21,6 +21,7 @@ Completed adjunct specs:
 - `S74: Intention Commitment Under Needs Fluctuation` archived at [archive/specs/S74-intention-commitment-under-needs-fluctuation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S74-intention-commitment-under-needs-fluctuation.md). Replaced the planning-path top-2 continuation heuristic with per-agent margin-based commitment, fixed the exposed same-goal merchant continuity regression, and corrected the soak baseline/spec validation handoff.
 - `S76: Golden E2E Gaps — Simulation Observer Report` archived at [archive/specs/S76-golden-gaps-simulation-observer.md](/home/joeloverbeck/projects/worldwake/archive/specs/S76-golden-gaps-simulation-observer.md). Landed Scenarios 126–129 across `golden_simulation_gaps.rs`, `golden_perception_exposure.rs`, and `golden_reasoning_diversity.rs`, with the S76-D contract narrowed to the strongest live same-state `eat`/`drink` utility-divergence proof.
 - `S78: Observer Failed-Plan Diagnostics` archived at [archive/specs/S78-observer-failed-plan-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S78-observer-failed-plan-diagnostics.md). Added failed-plan depth/candidate/location diagnostics, a bounded planning-time `TargetBeliefPresence` trace carrier, and live observer breakdown counts for missing target beliefs.
+- `S81: Golden E2E Gaps — Simulation Remediation` archived at [archive/specs/S81-golden-gaps-simulation-remediation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S81-golden-gaps-simulation-remediation.md). Landed the death traceability substrate (`DeathCause`, `DeadAt.cause`, `EventTag::Death`), authoritative need-based mortality and death-event tagging, and Scenarios 130–132 in `golden_simulation_gaps.rs`.
 
 ---
 
@@ -92,21 +93,18 @@ S78 ✅ archived ──┘
 ### Adjunct Wave: Simulation Remediation Fixes
 
 Derived from simulation remediation report (`reports/simulation-remediation.md`) validated against
-the actual codebase and `docs/FOUNDATIONS.md`. The archived S79 spec now fixes the harvest-to-consume affordance
-chain gap, S81 adds golden coverage for the remediation pathologies plus DeathCause traceability,
-and S80 adds an exploration drive for agents trapped by geographic ignorance.
+the actual codebase and `docs/FOUNDATIONS.md`. The archived S79 spec fixed the harvest-to-consume affordance
+chain gap, the archived S81 spec landed the remediation golden coverage plus death traceability substrate/runtime,
+and S80 remains the exploration-drive follow-up for agents trapped by geographic ignorance.
 
 ```text
-S79 (independent) ──┐
-                    ├── S81 (golden tests, depends on S79)
-                    └── S80 (exploration drive, depends on S79)
+S79 ✅ archived ──┐
+S81 ✅ archived ──┴── S80 (exploration drive follow-up)
 ```
 
 - **S79**: Resource-Source Consumption Affordances — completed and archived at `archive/specs/S79-resource-source-consumption-affordances.md`
-- **S81**: Golden Gaps — Simulation Remediation — GT-1 (multi-agent convergence), GT-2 (death traceability + DeathCause), and any remaining post-S79 water/drink golden follow-up now that `archive/tickets/S79RESSOUCON-004.md` landed the runtime contract
-  - depends on S79
+- **S81**: ✅ COMPLETED — Golden Gaps — Simulation Remediation — archived at [archive/specs/S81-golden-gaps-simulation-remediation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S81-golden-gaps-simulation-remediation.md). Landed GT-1 multi-agent convergence, GT-2 death traceability, and GT-3 colocated harvest-to-consume proof, plus the supporting death traceability substrate/runtime slices.
 - **S80**: Exploration Drive — exploration pressure from unmet needs + limited geographic beliefs, per-agent curiosity profiles
-  - depends on S79
 
 ### Phase 7 Gate
 

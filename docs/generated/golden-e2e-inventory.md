@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 25
 - Files contributing `golden_*` tests: 25
-- Total `golden_*` tests: 336
+- Total `golden_*` tests: 338
 
 ## Per-File Inventory
 
@@ -31,7 +31,7 @@ Do not hand-edit it.
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 4 |
 | `golden_resilience.rs` | 2 |
-| `golden_simulation_gaps.rs` | 8 |
+| `golden_simulation_gaps.rs` | 10 |
 | `golden_soak.rs` | 1 |
 | `golden_social.rs` | 18 |
 | `golden_supply_chain.rs` | 2 |
@@ -379,6 +379,8 @@ Do not hand-edit it.
 - `golden_multi_agent_convergence_replays_deterministically`
 - `golden_death_traceability`
 - `golden_death_traceability_replays_deterministically`
+- `golden_harvest_to_consume`
+- `golden_harvest_to_consume_replays_deterministically`
 
 ### `golden_soak.rs`
 
