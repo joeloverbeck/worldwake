@@ -1,6 +1,6 @@
 # S81GLDGAP-003: Need-based mortality and death event tagging
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes -- needs system mortality check, combat death event tagging
@@ -18,6 +18,9 @@ Agents cannot die from unmet needs. The needs system creates deprivation wounds 
 4. Combat fatality at `crates/worldwake-systems/src/combat.rs:176-189` shows the death transaction pattern: create WorldTxn, add tags, extend evidence, clear contention state, set DeadAt, set contention queue/policy, commit. This pattern must be replicated for need-based death.
 5. `EventTag::Death` will exist after S81GLDGAP-001. Combat fatality currently tags with `System + WorldMutation + Combat` (combat.rs:176-178). This ticket adds `Death` tag there and uses `Death + System + WorldMutation` for need-based death.
 6. The needs system fn has access to `world` (for component queries), `tick`, and `event_log`. It needs to open a `WorldTxn` for the death transaction. The existing function signature at the call site must be checked for `&mut` access patterns.
+7. Live boundary correction: `needs_system` currently batches all metabolism/exposure/wound/waste mutations into one hidden `WorldTxn` tagged `System + WorldMutation` in `crates/worldwake-systems/src/needs.rs:22-58`. A death-tagged aftermath event therefore cannot be added honestly by only inserting logic "between wound-list update and waste handling" inside the current commit loop; the death-causing agent needs a dedicated tagged transaction, while non-death updates can remain batched.
+8. Cause-selection correction: only starvation and dehydration currently create deprivation wounds in `apply_deprivation_consequences` (`crates/worldwake-systems/src/needs.rs:225-244`). Fatigue and bladder do not participate in lethal wound-load accumulation, so the lawful `DeathCause::NeedDeprivation { need }` choice must be based on hunger vs thirst pressure, not the highest value across all `HomeostaticNeeds`.
+9. Combat cleanup helper `clear_entity_contention_state` already exists at `crates/worldwake-systems/src/combat.rs:843`, but is private to that module. Reusing the same teardown semantics from needs-based death likely requires widening that helper to crate visibility rather than duplicating the contention-clear logic.
 
 ## Architecture Check
 
@@ -32,26 +35,27 @@ Agents cannot die from unmet needs. The needs system creates deprivation wounds 
 3. Death event tagged `EventTag::Death` -> event-log delta assertion in unit test
 4. Combat death event also tagged `EventTag::Death` -> modify existing combat test or add focused test
 5. Contention state cleared on need-based death -> authoritative world state assertion
-6. Post-death planning halt -> verified in S81GLDGAP-005 (golden E2E)
+6. Non-death agents still use the existing batched `System + WorldMutation` needs update path -> focused unit test / existing needs tests remain green
+7. Post-death planning halt -> verified in S81GLDGAP-005 (golden E2E)
 
 ## What to Change
 
 ### 1. Add mortality check to needs system fn
 
-In `crates/worldwake-systems/src/needs.rs`, after `apply_deprivation_consequences` returns and the wound list is updated, add:
+In `crates/worldwake-systems/src/needs.rs`, extend the pending-update path so death-causing agents are emitted through a dedicated tagged transaction rather than folded only into the existing hidden batch event:
 
 1. Query `CombatProfile` for the agent.
 2. If present and `is_wound_load_fatal(&updated_wounds, &combat_profile)`:
-   - Determine the most critical need: the `HomeostaticNeedId` with the highest current `Permille` value in `HomeostaticNeeds`.
-   - Open a `WorldTxn` with `CauseRef::SystemTick(tick)`.
+   - Determine the lethal deprivation cause from the higher of hunger vs thirst pressure in the post-update `HomeostaticNeeds` snapshot (ties resolved deterministically).
+   - Open a dedicated `WorldTxn` with `CauseRef::SystemTick(tick)`, the dying agent as actor/target, and the agent's effective place.
    - Add tags: `EventTag::Death`, `EventTag::System`, `EventTag::WorldMutation`.
-   - Add the agent as target.
+   - Apply the same tick's needs/exposure/wound/waste mutations for that agent inside this death transaction.
    - Set `DeadAt { tick, cause: DeathCause::NeedDeprivation { need } }`.
-   - Clear contention state (set default `ContentionQueue`, set `corpse_contention_policy()`).
+   - Reuse the combat contention teardown + corpse-policy pattern for the dying agent.
    - Commit the transaction.
-   - Skip remaining processing for this agent (continue to next agent in the iteration).
+   - Exclude that agent from the general hidden batch txn for non-death updates.
 
-Import `DeathCause`, `DeadAt`, `EventTag`, `is_wound_load_fatal`, and contention-related types as needed.
+Import `DeathCause`, `DeadAt`, `EventTag`, `HomeostaticNeedId`, `is_wound_load_fatal`, and the reused contention helper/types as needed.
 
 ### 2. Add EventTag::Death to combat fatality path
 
@@ -72,7 +76,7 @@ In `crates/worldwake-systems/src/needs.rs` test module, add:
 - Test that an agent with deprivation wounds exceeding wound_capacity gets `DeadAt` set with `DeathCause::NeedDeprivation`.
 - Test that the event log contains an event tagged `EventTag::Death`.
 - Test that an agent without a `CombatProfile` does not die from deprivation wounds.
-- Test that the most critical need (highest Permille) is recorded in the cause.
+- Test that the selected cause is the higher of hunger vs thirst pressure and remains deterministic on ties.
 
 ## Files to Touch
 
@@ -117,3 +121,27 @@ In `crates/worldwake-systems/src/needs.rs` test module, add:
 2. `cargo test -p worldwake-systems -- combat`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
 4. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Added a neutral internal contention helper so combat, escort handoff, and need-based death reuse the same care/corpse queue teardown and setup semantics without making `needs.rs` depend directly on `combat.rs`.
+- Extended `needs_system` so deprivation-fatal agents leave the hidden batch path, emit a dedicated visible `EventTag::Death` transaction, persist same-tick needs/exposure/wound/waste mutations in that death transaction, and set `DeadAt.cause` to `DeathCause::NeedDeprivation { need }`.
+- Added `EventTag::Death` to the combat fatality path and covered both needs and combat death tagging with focused tests.
+
+## Deviations
+
+- Reassessment showed the combat contention cleanup could not be lawfully reused by calling into `combat.rs` from `needs.rs`. The shared logic was extracted into `crates/worldwake-systems/src/contention_support.rs` instead of widening a cross-system module dependency.
+- The need-cause selection was constrained to hunger vs thirst because those are the only deprivation channels that currently create lethal wound load in the live needs system.
+
+## Verification Result
+
+- Passed focused tests:
+  - `cargo test -p worldwake-systems needs_system_kills_agent_from_deprivation_and_emits_death_event`
+  - `cargo test -p worldwake-systems needs_system_does_not_kill_agents_without_combat_profile`
+  - `cargo test -p worldwake-systems determine_need_death_cause_prefers_higher_pressure_and_breaks_ties_toward_hunger`
+  - `cargo test -p worldwake-systems combat_system_attaches_dead_at_and_emits_combat_event_for_fatal_wounds`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

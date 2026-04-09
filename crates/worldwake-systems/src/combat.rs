@@ -1,3 +1,6 @@
+use crate::contention_support::{
+    clear_entity_contention_state, ensure_care_contention_state, install_corpse_contention_state,
+};
 use crate::evidence_support::emit_evidence;
 use crate::facility_queue_actions::{enqueue_for_contention, validate_contention_queue_admission};
 use crate::inventory::{
@@ -10,9 +13,9 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, ActionDomain, BodyCostPerTick, BodyPart, CauseRef, CombatStance,
     CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, Container,
-    ContentionPolicy, ContentionQueue, DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind, EventLog,
-    EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta,
-    VisibilitySpec, WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause, WoundList,
+    DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView,
+    EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta,
+    VisibilitySpec, WitnessData, WorldTxn, WorkstationTag, Wound, WoundCause, WoundList,
     is_wound_load_fatal, load_per_unit,
 };
 use worldwake_sim::{
@@ -32,22 +35,6 @@ const BODY_PARTS: [BodyPart; 6] = [
     BodyPart::LeftLeg,
     BodyPart::RightLeg,
 ];
-
-fn corpse_contention_policy() -> ContentionPolicy {
-    ContentionPolicy {
-        grant_hold_ticks: NonZeroU32::new(5).unwrap(),
-        auto_promote: true,
-        max_waiters: None,
-    }
-}
-
-fn care_contention_policy() -> ContentionPolicy {
-    ContentionPolicy {
-        grant_hold_ticks: NonZeroU32::new(5).unwrap(),
-        auto_promote: true,
-        max_waiters: None,
-    }
-}
 
 pub fn register_attack_action(
     defs: &mut ActionDefRegistry,
@@ -176,10 +163,9 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
         txn.add_tag(EventTag::System)
             .add_tag(EventTag::WorldMutation)
             .add_tag(EventTag::Combat)
+            .add_tag(EventTag::Death)
             .add_target(fatality.entity);
         txn.extend_evidence(fatality.evidence);
-        clear_entity_contention_state(&mut txn, fatality.entity)
-            .map_err(|error| SystemError::new(format!("{error:?}")))?;
         txn.set_component_dead_at(
             fatality.entity,
             DeadAt {
@@ -187,11 +173,9 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
                 cause: DeathCause::CombatWounds,
             },
         )
-            .map_err(|error| SystemError::new(error.to_string()))?;
-        txn.set_component_contention_queue(fatality.entity, ContentionQueue::default())
-            .map_err(|error| SystemError::new(error.to_string()))?;
-        txn.set_component_contention_policy(fatality.entity, corpse_contention_policy())
-            .map_err(|error| SystemError::new(error.to_string()))?;
+            .map_err(|error| SystemError::new(format!("{error}")))?;
+        install_corpse_contention_state(&mut txn, fatality.entity)
+            .map_err(SystemError::new)?;
         let _ = txn.commit(event_log);
     }
 
@@ -816,68 +800,6 @@ fn clear_contention_membership(
         }
     }
 
-    Ok(())
-}
-
-fn clear_contention_intent_for_entity(
-    txn: &mut WorldTxn<'_>,
-    actor: EntityId,
-    entity: EntityId,
-) -> Result<(), ActionError> {
-    let Some(mut intents) = txn.get_component_contention_intents(actor).cloned() else {
-        return Ok(());
-    };
-    if intents.intents.remove(&entity).is_none() {
-        return Ok(());
-    }
-    if intents.intents.is_empty() {
-        txn.clear_component_contention_intents(actor)
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    } else {
-        txn.set_component_contention_intents(actor, intents)
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    }
-    Ok(())
-}
-
-fn clear_entity_contention_state(
-    txn: &mut WorldTxn<'_>,
-    entity: EntityId,
-) -> Result<(), ActionError> {
-    if let Some(queue) = txn.get_component_contention_queue(entity).cloned() {
-        let mut actors = BTreeSet::new();
-        if let Some(grant) = queue.granted {
-            actors.insert(grant.actor);
-        }
-        actors.extend(queue.waiting.values().map(|waiter| waiter.actor));
-        for actor in actors {
-            clear_contention_intent_for_entity(txn, actor, entity)?;
-        }
-        txn.clear_component_contention_queue(entity)
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    }
-    if txn.get_component_contention_policy(entity).is_some() {
-        txn.clear_component_contention_policy(entity)
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    }
-    Ok(())
-}
-
-pub(crate) fn ensure_care_contention_state(
-    txn: &mut WorldTxn<'_>,
-    entity: EntityId,
-) -> Result<(), ActionError> {
-    if txn.get_component_dead_at(entity).is_some() {
-        return Ok(());
-    }
-    if txn.get_component_contention_queue(entity).is_none() {
-        txn.set_component_contention_queue(entity, ContentionQueue::default())
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    }
-    if txn.get_component_contention_policy(entity).is_none() {
-        txn.set_component_contention_policy(entity, care_contention_policy())
-            .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    }
     Ok(())
 }
 
@@ -1820,7 +1742,8 @@ fn commit_attack(
     let fatal_after_wound = is_wound_load_fatal(&next_wounds, &target_profile);
     txn.set_component_wound_list(target, next_wounds)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    ensure_care_contention_state(txn, target)?;
+    ensure_care_contention_state(txn, target)
+        .map_err(ActionError::InternalError)?;
     emit_evidence(
         txn,
         place,
@@ -1908,7 +1831,8 @@ fn commit_heal(
             .get_component_wound_list(patient)
             .is_some_and(|wounds| wounds.wounds.is_empty())
         {
-            clear_entity_contention_state(txn, patient)?;
+            clear_entity_contention_state(txn, patient)
+                .map_err(ActionError::InternalError)?;
         }
     }
     Ok(CommitOutcome::empty())
@@ -3789,7 +3713,7 @@ mod tests {
         assert_eq!(wounds.wounds.len(), 1);
         assert_eq!(
             world.get_component_contention_policy(target),
-            Some(&super::care_contention_policy())
+            Some(&crate::contention_support::care_contention_policy())
         );
         assert_eq!(
             world.get_component_contention_queue(target),
@@ -4628,7 +4552,7 @@ mod tests {
         );
         assert_eq!(
             world.get_component_contention_policy(guard),
-            Some(&super::corpse_contention_policy())
+            Some(&crate::contention_support::corpse_contention_policy())
         );
         assert_eq!(
             world.get_component_contention_queue(guard),
@@ -4641,6 +4565,7 @@ mod tests {
         );
         assert!(!world.is_archived(guard));
         assert_eq!(log.events_by_tag(EventTag::Combat).len(), 1);
+        assert_eq!(log.events_by_tag(EventTag::Death).len(), 1);
         let record = log.get(log.events_by_tag(EventTag::Combat)[0]).unwrap();
         assert_eq!(record.actor_id(), Some(guard));
         assert!(matches!(record.cause(), CauseRef::Event(_)));
@@ -4662,6 +4587,7 @@ mod tests {
         );
         assert!(record.tags().contains(&EventTag::System));
         assert!(record.tags().contains(&EventTag::WorldMutation));
+        assert!(record.tags().contains(&EventTag::Death));
     }
 
     #[test]
@@ -5253,7 +5179,10 @@ mod tests {
                 },
             )
             .unwrap();
-            txn.set_component_contention_policy(patient, super::care_contention_policy())
+            txn.set_component_contention_policy(
+                patient,
+                crate::contention_support::care_contention_policy(),
+            )
                 .unwrap();
             txn.set_component_contention_queue(
                 patient,
@@ -5352,7 +5281,10 @@ mod tests {
                 },
             )
             .unwrap();
-            txn.set_component_contention_policy(patient, super::care_contention_policy())
+            txn.set_component_contention_policy(
+                patient,
+                crate::contention_support::care_contention_policy(),
+            )
                 .unwrap();
             txn.set_component_contention_queue(
                 patient,
@@ -5431,7 +5363,7 @@ mod tests {
         );
         assert_eq!(
             world.get_component_contention_policy(patient),
-            Some(&super::corpse_contention_policy())
+            Some(&crate::contention_support::corpse_contention_policy())
         );
         let queue = world.get_component_contention_queue(patient).unwrap();
         assert!(queue.waiting.is_empty());

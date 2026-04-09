@@ -1,8 +1,10 @@
+use crate::contention_support::install_corpse_contention_state;
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BodyCostPerTick, BodyPart, CauseRef, CommodityKind, DeprivationExposure, DeprivationKind,
-    EventTag, HomeostaticNeeds, Quantity, Tick, VisibilitySpec, WitnessData, WorldTxn, Wound,
-    WoundCause, WoundList,
+    BodyCostPerTick, BodyPart, CauseRef, CommodityKind, DeadAt, DeathCause,
+    DeprivationExposure, DeprivationKind, EventTag, HomeostaticNeedId, HomeostaticNeeds,
+    Quantity, Tick, VisibilitySpec, WitnessData, WorldTxn, Wound, WoundCause, WoundList,
+    is_wound_load_fatal,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionInstance, ActionInstanceId, SystemError, SystemExecutionContext,
@@ -25,37 +27,47 @@ pub fn needs_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> 
         return Ok(());
     }
 
-    let mut txn = WorldTxn::new(
-        world,
-        tick,
-        CauseRef::SystemTick(tick),
-        None,
-        None,
-        VisibilitySpec::Hidden,
-        WitnessData::default(),
-    );
-    txn.add_tag(EventTag::System)
-        .add_tag(EventTag::WorldMutation);
+    let (death_updates, batched_updates): (Vec<_>, Vec<_>) =
+        updates.into_iter().partition(|update| update.death.is_some());
 
-    for update in updates {
-        txn.set_component_homeostatic_needs(update.entity, update.needs)
-            .map_err(|error| SystemError::new(error.to_string()))?;
-        txn.set_component_deprivation_exposure(update.entity, update.exposure)
-            .map_err(|error| SystemError::new(error.to_string()))?;
-        if let Some(wound_list) = update.wound_list {
-            txn.set_component_wound_list(update.entity, wound_list)
-                .map_err(|error| SystemError::new(error.to_string()))?;
+    if !batched_updates.is_empty() {
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::SystemTick(tick),
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::System)
+            .add_tag(EventTag::WorldMutation);
+
+        for update in batched_updates {
+            apply_pending_update(&mut txn, update)?;
         }
-        if let Some(place) = update.waste_place {
-            let waste = txn
-                .create_item_lot(CommodityKind::Waste, Quantity(1))
-                .map_err(|error| SystemError::new(error.to_string()))?;
-            txn.set_ground_location(waste, place)
-                .map_err(|error| SystemError::new(error.to_string()))?;
-        }
+
+        let _ = txn.commit(event_log);
     }
 
-    let _ = txn.commit(event_log);
+    for update in death_updates {
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::SystemTick(tick),
+            Some(update.entity),
+            world.effective_place(update.entity),
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::Death)
+            .add_tag(EventTag::System)
+            .add_tag(EventTag::WorldMutation)
+            .add_target(update.entity);
+        apply_pending_update(&mut txn, update)?;
+        let _ = txn.commit(event_log);
+    }
+
     Ok(())
 }
 
@@ -65,6 +77,7 @@ struct PendingUpdate {
     exposure: DeprivationExposure,
     wound_list: Option<WoundList>,
     waste_place: Option<worldwake_core::EntityId>,
+    death: Option<DeathCause>,
 }
 
 fn collect_updates(
@@ -107,6 +120,14 @@ fn collect_updates(
             &mut next_needs,
             &mut next_exposure,
         );
+        let death = world
+            .get_component_combat_profile(entity)
+            .copied()
+            .zip(wound_list.as_ref())
+            .and_then(|(profile, wounds)| {
+                is_wound_load_fatal(wounds, &profile)
+                    .then(|| determine_need_death_cause(next_needs))
+            });
 
         if next_needs != *needs
             || next_exposure != exposure
@@ -119,11 +140,52 @@ fn collect_updates(
                 exposure: next_exposure,
                 wound_list,
                 waste_place,
+                death,
             });
         }
     }
 
     Ok(updates)
+}
+
+fn apply_pending_update(txn: &mut WorldTxn<'_>, update: PendingUpdate) -> Result<(), SystemError> {
+    txn.set_component_homeostatic_needs(update.entity, update.needs)
+        .map_err(|error| SystemError::new(error.to_string()))?;
+    txn.set_component_deprivation_exposure(update.entity, update.exposure)
+        .map_err(|error| SystemError::new(error.to_string()))?;
+    if let Some(wound_list) = update.wound_list {
+        txn.set_component_wound_list(update.entity, wound_list)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+    }
+    if let Some(place) = update.waste_place {
+        let waste = txn
+            .create_item_lot(CommodityKind::Waste, Quantity(1))
+            .map_err(|error| SystemError::new(error.to_string()))?;
+        txn.set_ground_location(waste, place)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+    }
+    if let Some(cause) = update.death {
+        txn.set_component_dead_at(
+            update.entity,
+            DeadAt {
+                tick: txn.tick(),
+                cause,
+            },
+        )
+        .map_err(|error| SystemError::new(error.to_string()))?;
+        install_corpse_contention_state(txn, update.entity)
+            .map_err(SystemError::new)?;
+    }
+    Ok(())
+}
+
+fn determine_need_death_cause(needs: HomeostaticNeeds) -> DeathCause {
+    let need = if needs.hunger >= needs.thirst {
+        HomeostaticNeedId::Hunger
+    } else {
+        HomeostaticNeedId::Thirst
+    };
+    DeathCause::NeedDeprivation { need }
 }
 
 fn aggregate_body_costs(
@@ -310,7 +372,7 @@ fn critical_ticks(
 #[cfg(test)]
 mod tests {
     use super::{
-        aggregate_body_costs, apply_action_body_cost, needs_system,
+        aggregate_body_costs, apply_action_body_cost, determine_need_death_cause, needs_system,
         worsen_or_create_deprivation_wound,
     };
     use crate::dispatch_table;
@@ -319,11 +381,13 @@ mod tests {
     use worldwake_core::ActionDefId;
     use worldwake_core::ActionDomain;
     use worldwake_core::{
-        BodyCostPerTick, BodyPart, CauseRef, CommodityKind, ControlSource, DeadAt, DemandMemory,
-        DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
-        DriveThresholds, EntityId, EventLog, EventTag, EventView, HomeostaticNeeds,
-        MetabolismProfile, Permille, Quantity, Seed, Tick, TradeDispositionProfile, VisibilitySpec,
-        WitnessData, World, WorldTxn, Wound, WoundCause, WoundId, WoundList, build_prototype_world,
+        BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind, ContentionGrant,
+        ContentionIntents, ContentionQueue, ContentionWaiter, ControlSource, DeadAt, DeathCause,
+        DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure,
+        DeprivationKind, DriveThresholds, EntityId, EventLog, EventTag, EventView, GoalKey,
+        GoalKind, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile, Permille, Quantity,
+        QueuedContentionIntent, Seed, Tick, TradeDispositionProfile, VisibilitySpec, WitnessData,
+        World, WorldTxn, Wound, WoundCause, WoundId, WoundList, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -390,6 +454,29 @@ mod tests {
             .unwrap();
         txn.set_component_drive_thresholds(agent, thresholds)
             .unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+    }
+
+    fn seed_combat_profile(world: &mut World, agent: worldwake_core::EntityId, capacity: u16) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_combat_profile(
+            agent,
+            CombatProfile::new(
+                pm(capacity),
+                pm(700),
+                pm(600),
+                pm(550),
+                pm(75),
+                pm(20),
+                pm(15),
+                pm(120),
+                pm(30),
+                nz(6),
+                nz(10),
+            ),
+        )
+        .unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
     }
@@ -955,6 +1042,181 @@ mod tests {
                 .unwrap()
                 .thirst_critical_ticks,
             0
+        );
+    }
+
+    #[test]
+    fn needs_system_kills_agent_from_deprivation_and_emits_death_event() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let patient = spawn_agent(&mut world, 1, "Patient");
+        let contender = spawn_agent(&mut world, 2, "Contender");
+        let place = first_place(&world);
+        let thresholds = DriveThresholds::default();
+        place_agent(&mut world, patient, place);
+        place_agent(&mut world, contender, place);
+        seed_agent(
+            &mut world,
+            patient,
+            HomeostaticNeeds::new(
+                thresholds.hunger.critical(),
+                pm(300),
+                pm(0),
+                pm(0),
+                pm(0),
+            ),
+            DeprivationExposure {
+                hunger_critical_ticks: 99,
+                ..DeprivationExposure::default()
+            },
+            metabolism(0, 0, 0, 0, 0),
+            thresholds,
+        );
+        seed_combat_profile(&mut world, patient, 500);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_contention_policy(
+                patient,
+                crate::contention_support::care_contention_policy(),
+            )
+            .unwrap();
+            txn.set_component_contention_queue(
+                patient,
+                ContentionQueue {
+                    next_ordinal: 1,
+                    waiting: BTreeMap::from([(
+                        0,
+                        ContentionWaiter {
+                            actor: contender,
+                            intended_action: ActionDefId(77),
+                            queued_at: Tick(3),
+                        },
+                    )]),
+                    granted: Some(ContentionGrant {
+                        actor: contender,
+                        intended_action: ActionDefId(77),
+                        granted_at: Tick(3),
+                        expires_at: Tick(8),
+                    }),
+                },
+            )
+            .unwrap();
+            txn.set_component_contention_intents(
+                contender,
+                ContentionIntents {
+                    intents: BTreeMap::from([(
+                        patient,
+                        QueuedContentionIntent {
+                            goal_key: GoalKey::from(GoalKind::TreatWounds { patient }),
+                            intended_action: ActionDefId(77),
+                        },
+                    )]),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([12; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world.get_component_dead_at(patient),
+            Some(&DeadAt {
+                tick: Tick(7),
+                cause: DeathCause::NeedDeprivation {
+                    need: HomeostaticNeedId::Hunger,
+                },
+            })
+        );
+        assert_eq!(
+            world.get_component_contention_policy(patient),
+            Some(&crate::contention_support::corpse_contention_policy())
+        );
+        assert_eq!(
+            world.get_component_contention_queue(patient),
+            Some(&ContentionQueue::default())
+        );
+        assert_eq!(world.get_component_contention_intents(contender), None);
+        assert_eq!(event_log.events_by_tag(EventTag::Death).len(), 1);
+        let record = event_log.get(event_log.events_by_tag(EventTag::Death)[0]).unwrap();
+        assert_eq!(record.actor_id(), Some(patient));
+        assert!(record.tags().contains(&EventTag::System));
+        assert!(record.tags().contains(&EventTag::WorldMutation));
+        assert!(record.observed_entities().contains_key(&patient));
+        assert_eq!(event_log.len(), 1);
+    }
+
+    #[test]
+    fn needs_system_does_not_kill_agents_without_combat_profile() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        let place = first_place(&world);
+        let thresholds = DriveThresholds::default();
+        place_agent(&mut world, agent, place);
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(
+                thresholds.hunger.critical(),
+                pm(300),
+                pm(0),
+                pm(0),
+                pm(0),
+            ),
+            DeprivationExposure {
+                hunger_critical_ticks: 99,
+                ..DeprivationExposure::default()
+            },
+            metabolism(0, 0, 0, 0, 0),
+            thresholds,
+        );
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([13; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        assert_eq!(world.get_component_dead_at(agent), None);
+        assert!(event_log.events_by_tag(EventTag::Death).is_empty());
+        assert_eq!(event_log.len(), 1);
+        assert_eq!(
+            world.get_component_wound_list(agent).unwrap().wounds[0].cause,
+            WoundCause::Deprivation(DeprivationKind::Starvation)
+        );
+    }
+
+    #[test]
+    fn determine_need_death_cause_prefers_higher_pressure_and_breaks_ties_toward_hunger() {
+        assert_eq!(
+            determine_need_death_cause(HomeostaticNeeds::new(pm(400), pm(700), pm(0), pm(0), pm(0))),
+            DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Thirst,
+            }
+        );
+        assert_eq!(
+            determine_need_death_cause(HomeostaticNeeds::new(pm(500), pm(500), pm(0), pm(0), pm(0))),
+            DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Hunger,
+            }
         );
     }
 

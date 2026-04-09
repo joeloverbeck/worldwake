@@ -13,7 +13,8 @@ Refactor a skill by extracting large, logically grouped content blocks into `ref
 
 ### 1. Read Inputs
 
-- Read `<skill-dir>/SKILL.md` in full.
+- Resolve the argument to an absolute path. Confirm `<skill-dir>/SKILL.md` exists before proceeding. If the skill directory contains no SKILL.md, stop and report the error.
+- Read `<skill-dir>/SKILL.md` in full. If the file exceeds Read tool limits, read in chunks using offset/limit. Ensure complete coverage before proceeding to Step 3.
 - List `<skill-dir>/references/` if it exists. Read every existing reference doc to understand what is already extracted.
 
 ### 2. Early Exit Check
@@ -39,10 +40,11 @@ For each block, determine one of three categories:
 
 - **Always-loaded reference** — a self-contained block that applies to every invocation but is large enough (roughly 20+ lines) to warrant extraction. Examples: verification checklists, guardrails sections, outcome definitions.
 
-- **Conditional reference** — a block gated by conditional language in the original text. Look for these markers:
-  - "if", "when", "only when", "for tickets that touch", "when the change involves"
-  - Blocks nested under a conditional header or prefaced by conditional language.
+- **Conditional reference** — a block gated by a **section-level loading condition** in the original text. Look for headers or introductory sentences that gate an entire section's applicability:
+  - "If the change touches X, ...", "Only when Y applies, ...", "For tickets that involve Z, ..."
+  - Blocks nested under a conditional header or prefaced by a section-level conditional sentence.
   - The condition from the original text becomes the loading instruction in the thin SKILL.md.
+  - Note: Individual bullets that start with "When..." inside an always-applicable checklist are domain-specific conditional logic, not loading-condition gates. Do not classify an entire section as conditional just because its bullets use "when" language.
 
 **When ambiguous**: default to always-loaded. It is safer to load too much than to miss instructions that should have applied.
 
@@ -59,6 +61,7 @@ For each block, determine one of three categories:
   - An H1 title describing its purpose.
   - The extracted content, preserving its original structure (headers, lists, code blocks).
 - Do not add frontmatter to reference docs — they are plain markdown loaded by the thin SKILL.md.
+- When extracted content contains relative paths (links, image references), adjust them to account for the extra directory depth of `references/`.
 
 ### 7. Rewrite Thin SKILL.md
 
@@ -72,7 +75,11 @@ For each block, determine one of three categories:
 - **Preserve** universal hard rules as a short section at the bottom.
 - The thin SKILL.md should read as a clear, scannable orchestration sequence — not a wall of checklists.
 
-### 8. Output Summary
+### 8. Verify Content Preservation
+
+After rewriting, verify that every H2/H3 section from the original SKILL.md appears either in the thin SKILL.md or in a reference doc. A quick scan of original section headers against the new files is sufficient.
+
+### 9. Output Summary
 
 Print a brief summary:
 ```

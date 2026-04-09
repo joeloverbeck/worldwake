@@ -35,6 +35,7 @@ The argument is the skill directory path. The framework automatically resolves `
 4. **Cross-check alignment** — For each finding from step 3, check whether the skill contradicts or fails to implement:
    - Principles from `docs/FOUNDATIONS.md` (reference by foundation number)
    - Conventions from `CLAUDE.md` (reference by section name)
+   - For meta/tooling skills that do not touch simulation design (e.g., skill-audit, skill-extract-references, skill-consolidate), note "N/A — meta-tooling skill, FOUNDATIONS principles do not apply" and move on. Reserve detailed alignment analysis for skills that govern simulation code, specs, or tickets.
 5. **Classify findings** — Categorize each finding into one of three buckets:
    - **Issue**: Something broken, misleading, or contradictory in the skill
    - **Improvement**: A refinement to existing behavior that would make the skill more effective

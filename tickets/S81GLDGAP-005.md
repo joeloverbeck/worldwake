@@ -12,10 +12,10 @@ No golden test verifies the death-from-unmet-needs path. Existing golden tests (
 
 ## Assumption Reassessment (2026-04-09)
 
-1. After S81GLDGAP-003, the needs system will set `DeadAt { tick, cause: DeathCause::NeedDeprivation { need } }` when deprivation wounds exceed `CombatProfile.wound_capacity`. Focused unit tests in that ticket verify the mechanism. This golden test exercises the full multi-system chain: needs escalation -> wound creation -> wound load check -> death -> planning halt.
+1. After S81GLDGAP-003, the needs system now sets `DeadAt { tick, cause: DeathCause::NeedDeprivation { need } }` when deprivation wounds exceed `CombatProfile.wound_capacity`. Focused unit tests in that ticket verify the mechanism. This golden test exercises the full multi-system chain: needs escalation -> wound creation -> wound load check -> death -> planning halt.
 2. `golden_simulation_gaps.rs` exists at `crates/worldwake-ai/tests/golden_simulation_gaps.rs`. S81-B test will be added to this file alongside S81-A.
 3. The planning system's dead-agent skip is at `crates/worldwake-ai/src/agent_tick/mod.rs:248`: checks `get_component_dead_at(agent).is_some()` and `runtime.dead_cleanup_done`. This is the mechanism that halts post-death planning.
-4. `EventTag::Death` will exist after S81GLDGAP-001. The needs mortality path (S81GLDGAP-003) emits events with this tag.
+4. `EventTag::Death` exists after S81GLDGAP-001. The needs mortality path in S81GLDGAP-003 emits events with this tag.
 5. `HomeostaticNeedId::Hunger` and `Thirst` are the expected death causes. Default metabolism rates at `crates/worldwake-core/src/needs.rs` determine which need escalates fastest. The test should assert either Hunger or Thirst rather than pinning to one.
 15. Survivability math: default metabolism escalates needs over time. With starvation/dehydration tolerance ticks determining wound creation frequency, and wound severity accumulating via `worsen_or_create_deprivation_wound`, the wound load must reach `wound_capacity` within 600 ticks. The test must set `CombatProfile.wound_capacity` low enough (or metabolism rates high enough) to ensure death is reachable. If default values make 600 ticks insufficient, adjust metabolism or wound_capacity in the test setup.
 
@@ -67,7 +67,7 @@ The scenario intentionally removes all survival options (no food, no water, no b
 - Fixing the mortality mechanism itself (S81GLDGAP-003)
 - Multi-agent convergence testing (S81GLDGAP-004)
 - Harvest-to-consume chain testing (S81GLDGAP-006)
-- Combat death traceability (existing combat tests cover `DeathCause::CombatWounds` after S81GLDGAP-002)
+- Combat death traceability (existing combat tests cover `DeathCause::CombatWounds` and `EventTag::Death` after S81GLDGAP-003)
 
 ## Acceptance Criteria
 

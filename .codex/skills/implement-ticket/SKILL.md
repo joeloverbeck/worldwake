@@ -55,6 +55,8 @@ Load `references/scope-extraction.md`.
 
 Load `references/implementation-discipline.md`.
 
+When the clean fix requires extracting a helper out of an existing module into a neutral shared location, explicitly sweep sibling and transitive import sites for the old module path before relying on compile fallout alone. Shared-helper extraction often leaves behind stale `use crate::old_module::helper` assumptions even when the owned behavioral change is otherwise correct.
+
 ### 6. Verify at the right boundary
 
 Run the narrowest correct verification first, then broaden.

@@ -11,6 +11,7 @@ pub mod bandit_camp;
 pub mod bandit_camp_actions;
 pub mod combat;
 pub mod consult_record_actions;
+mod contention_support;
 pub mod epistemic_actions;
 pub mod escort_actions;
 pub mod evidence_decay;
