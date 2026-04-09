@@ -1,6 +1,6 @@
 # S76GOLGAPSIOBS-004: Align active S76 spec with landed S76-A/S76-B contract
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -71,3 +71,14 @@
 ### Commands
 
 1. `python3 scripts/golden_inventory.py --write --check-docs`
+
+## Outcome
+
+Completed on 2026-04-09.
+
+Updated `specs/S76-golden-gaps-simulation-observer.md` to match the landed S76-A/S76-B contract from `crates/worldwake-ai/tests/golden_simulation_gaps.rs`. The active spec now describes the live `VillageSquare` / `OrchardFarm` scenario shape, states S76-B as bounded idle under remote food/water scarcity with lawful local self-care fallback, and aligns the S76-001 breakdown with the implemented Scenario 126 / 127 coverage and deterministic replay companions. The replay/conservation note was also corrected to the deterministic end-state proven by the landed S76-A scenario.
+
+## Verification Result
+
+- `python3 scripts/golden_inventory.py --write --check-docs` (pass)
+- `git status --short tickets/S76GOLGAPSIOBS-004.md specs/S76-golden-gaps-simulation-observer.md docs/generated/golden-e2e-inventory.md docs/generated/golden-scenario-details/simulation-gaps.md` showed only `specs/S76-golden-gaps-simulation-observer.md` modified within this ticket's owned surface; no production code or test files changed

@@ -74,15 +74,15 @@ No new stored state or derived views. Tests only.
 
 **Source finding**: Simulation observer Finding 2 (Action Loops), Finding 5 (Sustained Critical Needs)
 
-**Description**: An agent at a resource-poor location with seeded beliefs about a remote resource location plans and executes a travel + consume sequence when hunger is critical and no food exists locally.
+**Description**: An agent at a locally barren indoor start with seeded beliefs about a remote resource location plans and executes a travel + consume sequence when hunger is critical and no food exists locally.
 
 **Setup**:
-- 2 places: BarrenCamp (no food/water sources), ResourceVillage (apple source + water source), connected by road with short travel time
-- 1 AI agent at BarrenCamp with moderate hunger (pm(500)) and thirst (pm(500))
-- Agent has PerceptionProfile
-- Agent has seeded beliefs about ResourceVillage and its apple source (via `seed_actor_local_beliefs` or manual belief injection)
+- Use the live prototype world: `VillageSquare` as the locally barren indoor origin and `OrchardFarm` as the remote food destination
+- 1 AI agent at `VillageSquare` with critical hunger and seeded remote beliefs
+- Agent has explicit `PerceptionProfile` / `CognitiveProfile`
+- Agent has seeded beliefs about `OrchardFarm` and its apple source
 
-**Assertion**: Within 300 ticks, the agent travels to ResourceVillage and performs eat or drink. If the agent remains at BarrenCamp for 200+ ticks doing only sleep/relieve, the test fails.
+**Assertion**: Within 300 ticks, the agent reaches `OrchardFarm` and commits `eat` or `drink`. If the agent remains at `VillageSquare` for 200+ ticks without leaving, the test fails.
 
 **GoalKinds exercised**: `AcquireCommodity` (remote acquire), `ConsumeOwnedCommodity` (eat/drink), Travel (as enabling step)
 
@@ -98,7 +98,7 @@ No new stored state or derived views. Tests only.
 - P14 (World State Is Not Belief State): Test seeds beliefs, not world-state access
 - P20 (Resource-Bounded Practical Reasoning): Multi-step plan generation
 
-**Why it is not a duplicate**: `golden_multi_hop_travel_plan()` (golden_ai_decisions.rs:1561) tests travel-to-orchard when the agent starts with hunger, but the agent starts at a location with road access to the orchard and the test focuses on multi-hop path selection. This scenario tests the specific pathology observed in simulation: agent at a barren location with remote resource beliefs failing to leave.
+**Why it is not a duplicate**: `golden_multi_hop_travel_plan()` in `golden_ai_decisions.rs` tests travel-to-orchard path selection. This scenario instead guards the observer-reported “fails to leave a barren local start” pathology with an explicit 200-tick no-stall bound.
 
 **Note**: This test requires agents to have beliefs about the remote resource location. If the test passes with seeded beliefs but the simulation fails without them, the root cause is belief formation (S77), not planning.
 
@@ -108,15 +108,15 @@ No new stored state or derived views. Tests only.
 
 **Source finding**: Simulation observer Finding 3 (Guard Theron 1019 idle ticks)
 
-**Description**: An agent at a location where no needs except relieve_wilderness are locally satisfiable must still attempt actions (travel, sleep, relieve) rather than entering a prolonged idle state.
+**Description**: An agent under remote food/water scarcity with multiple active needs must still attempt lawful actions (travel or local self-care) rather than entering a prolonged idle state.
 
 **Setup**:
-- 2 places: BarrenOutpost (no food, no water, no bed -- only relieve_wilderness available), ResourceTown (all resources), connected by road
-- 1 AI agent at BarrenOutpost with moderate hunger (pm(500)), thirst (pm(500)), fatigue (pm(500)), bladder (pm(500))
-- Agent has PerceptionProfile
-- Agent has seeded beliefs about ResourceTown and its resources
+- Use the live prototype world: `VillageSquare` as the start and `OrchardFarm` as the remote resource place
+- 1 AI agent at `VillageSquare` with moderate hunger (pm(500)), thirst (pm(500)), fatigue (pm(500)), bladder (pm(500))
+- Agent has explicit `PerceptionProfile` / `CognitiveProfile`
+- Agent has seeded beliefs about the remote apple source and a remote water lot at `OrchardFarm`
 
-**Assertion**: Over 300 ticks, `max_consecutive_idle < 100`. Even when multiple needs are locally unsatisfiable, the agent should attempt relieve, sleep, or travel to ResourceTown. A 1019-tick idle streak is never acceptable.
+**Assertion**: Over 300 ticks, `max_consecutive_idle < 100`. Even when remote food/water are required, the agent should still attempt lawful local self-care or travel to `OrchardFarm`. A 1019-tick idle streak is never acceptable.
 
 **GoalKinds exercised**: `Relieve`, `Sleep`, `AcquireCommodity`, Travel (as enabling step)
 
@@ -130,7 +130,7 @@ No new stored state or derived views. Tests only.
 - P20 (Resource-Bounded Practical Reasoning): Planner generates fallback plans under constraint
 - P22 (Agent Diversity): Agent responds to adversity through concrete parameters, not shutdown
 
-**Why it is not a duplicate**: The existing `golden_fallback_to_addressable_need_when_top_need_unsatisfiable()` (golden_ai_decisions.rs:2263) tests partial unsatisfiability: thirst is unsatisfiable but food is available locally. This scenario tests total local unsatisfiability where the only local option is relieve_wilderness and all other needs require travel.
+**Why it is not a duplicate**: The existing `golden_fallback_to_addressable_need_when_top_need_unsatisfiable()` in `golden_ai_decisions.rs` tests partial unsatisfiability: thirst is unsatisfiable but food is available locally. This scenario tests the narrower live contract proved by the landed golden: remote food/water scarcity with lawful local self-care still available.
 
 ---
 
@@ -203,14 +203,14 @@ No new stored state or derived views. Tests only.
 
 ### S76-001: Implement Scenarios S76-A and S76-B (planner fallback coverage)
 
-**File**: `crates/worldwake-ai/tests/golden_ai_decisions.rs` (or new `golden_simulation_gaps.rs` if file is too large)
+**File**: `crates/worldwake-ai/tests/golden_simulation_gaps.rs`
 
 **Tasks**:
-1. Build S76-A scenario: 2 places, 1 agent with seeded remote beliefs, moderate hunger/thirst
-2. Assert agent travels to ResourceVillage and eats/drinks within 300 ticks
-3. Build S76-B scenario: 2 places, 1 agent with all local needs unsatisfiable except relieve
+1. Build S76-A on the prototype world: `VillageSquare` origin, `OrchardFarm` remote destination, seeded remote beliefs
+2. Assert the agent reaches `OrchardFarm` and commits `eat`/`drink` within 300 ticks
+3. Build S76-B on the prototype world: remote food/water scarcity plus lawful local self-care fallback
 4. Assert `max_consecutive_idle < 100` over 300 ticks
-5. Add `// Scenario S76-A` and `// Scenario S76-B` metadata headers
+5. Add Scenario 126 / 127 metadata headers in generator format
 6. Add deterministic replay companions (`*_replays_deterministically`)
 
 ### S76-002: Implement Scenario S76-C (perception belief coverage)
@@ -239,5 +239,5 @@ No new stored state or derived views. Tests only.
 ## Replay and Conservation Requirements
 
 - Each primary golden scenario MUST have a `*_replays_deterministically` companion
-- Conservation verification: S76-A involves apple consumption and should call `verify_authoritative_conservation()` / `verify_live_lot_conservation()` for apple commodity lots. S76-B, S76-C, and S76-D do not introduce or track commodity quantities, so conservation checks are not applicable.
+- Conservation verification: S76-A's landed deterministic end-state is one live apple lot and nine authoritative apples total after one remote harvest plus one eat (`verify_live_lot_conservation(..., 1)` and `verify_authoritative_conservation(..., 9)`). S76-B, S76-C, and S76-D do not introduce ticket-owned commodity arithmetic.
 - All scenarios must use `Seed([u8; 32])` passed to `GoldenHarness::new()` for deterministic replay
