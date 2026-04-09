@@ -89,6 +89,25 @@ S78 ✅ archived ──┘
 - **S78**: ✅ COMPLETED — Observer Failed-Plan Diagnostics — archived at [archive/specs/S78-observer-failed-plan-diagnostics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S78-observer-failed-plan-diagnostics.md). Added failed-plan depth/candidate/location diagnostics, bounded planning-time target-belief tracing, and observer frequency breakdowns.
 - **S76**: ✅ COMPLETED — Golden Gaps — Simulation Observer Report — archived at [archive/specs/S76-golden-gaps-simulation-observer.md](/home/joeloverbeck/projects/worldwake/archive/specs/S76-golden-gaps-simulation-observer.md). Added the observer-gap golden suite for remote travel fallback, bounded idle under remote scarcity, perception retention for resource sources, and same-state utility-profile divergence.
 
+### Adjunct Wave: Simulation Remediation Fixes
+
+Derived from simulation remediation report (`reports/simulation-remediation.md`) validated against
+the actual codebase and `docs/FOUNDATIONS.md`. S79 fixes the root cause (harvest-to-consume affordance
+chain gap), S81 adds golden coverage for the remediation pathologies plus DeathCause traceability,
+and S80 adds an exploration drive for agents trapped by geographic ignorance.
+
+```text
+S79 (independent) ──┐
+                    ├── S81 (golden tests, depends on S79)
+                    └── S80 (exploration drive, depends on S79)
+```
+
+- **S79**: Resource-Source Consumption Affordances — diagnose and fix why agents at locations with resource sources cannot plan harvest → eat/drink chains
+- **S81**: Golden Gaps — Simulation Remediation — GT-1 (multi-agent convergence), GT-2 (death traceability + DeathCause), GT-3 (harvest-to-consume chain)
+  - depends on S79
+- **S80**: Exploration Drive — exploration pressure from unmet needs + limited geographic beliefs, per-agent curiosity profiles
+  - depends on S79
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed

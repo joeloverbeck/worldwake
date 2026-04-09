@@ -102,7 +102,7 @@ Output this structure to the conversation (do not write to a file):
 
   **Re-evaluation**: If the codebase changed between the audit report and the follow-up request, re-evaluate each finding against the current state. Discard obsolete findings, adapt shifted ones, and renumber survivors before applying edits.
 
-  **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding. If the user requests all findings be implemented (e.g., "implement all", "implement recommended suggestions"), skip dependency checking and apply all edits in document order.
+  **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding. If the user requests all findings be implemented (e.g., "implement all", "implement recommended suggestions", "implement everything"), skip dependency checking and apply all edits in document order. Treat "recommended" as "all" unless the audit report explicitly distinguished recommended from optional findings.
 
   **Edit ordering**: Apply edits in document order (top to bottom) to minimize line-number shifts invalidating later edits.
 

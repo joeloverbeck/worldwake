@@ -49,7 +49,7 @@ Next-steps menu (user chooses)
 
 2. **Topic classification**: Determine whether this brainstorm is **implementation-related** (code changes, architecture, engine modifications, new features, bug fixes) or **non-implementation** (process, tooling config, workflow, strategy, skill design).
 
-3. **If implementation-related**: Read `docs/FOUNDATIONS.md`. You will need it in Steps 3 and 4 to validate proposed approaches against architectural principles.
+3. **If implementation-related OR if the topic directly concerns FOUNDATIONS.md principles**: Read `docs/FOUNDATIONS.md`. You will need it in Steps 3 and 4 to validate proposed approaches against architectural principles.
 
 4. **Project context**: Briefly check relevant project state (recent files, existing specs/tickets in the area) only if the topic clearly relates to a specific part of the codebase. Do not do a broad exploration — keep it targeted.
 
@@ -71,7 +71,7 @@ Keep asking questions until confidence reaches 95%. Then announce: "I'm at 95% c
 ### Interview Rules
 
 1. **One question per message.** Never ask multiple questions at once.
-2. **Prefer multiple-choice questions** when the answer space is bounded. Open-ended is fine when it isn't.
+2. **Prefer multiple-choice questions** when the answer space is bounded. Open-ended is fine when it isn't. Use `AskUserQuestion` with labeled options for multiple-choice interview questions, approach selection, and section approval prompts.
 3. **Probe motivations before solutions.** Ask "What problem does this solve?" and "What happens if we don't do this?" before "What do you want built?" The user's first request often describes a solution, not the problem. Your job is to find the problem.
 4. **Challenge premature specificity.** If the user jumps to implementation details early, ask why that specific approach matters. Often the constraint is softer than stated.
 5. **Detect "should want" vs "actually want".** Watch for:
@@ -123,9 +123,13 @@ Sections to cover (skip irrelevant ones):
 6. **Testing strategy**: How to verify this works (if implementation-related)
 7. **FOUNDATIONS.md alignment**: Table of relevant principles and how the design respects them (if implementation-related)
 
+Section names are suggestions. Rename or combine sections to match the topic's natural structure. The key requirement is per-section approval, not specific section names.
+
 **After each section**, ask: "Does this section look right?" Wait for confirmation before presenting the next section. If the user pushes back, revise that section before continuing.
 
 ## Step 5: Write Design Doc
+
+After design approval, do NOT apply changes or implement the design until the user selects an implementation option from the Step 6 menu. The design doc is the deliverable of this skill — implementation is a separate act that requires the user's explicit choice.
 
 Once all sections are approved, write the complete design to:
 
