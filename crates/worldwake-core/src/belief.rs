@@ -232,7 +232,15 @@ impl AgentBeliefStore {
             return;
         }
 
-        for claims in self.entity_claims.values_mut() {
+        for entity in &affected_entities {
+            let believed_kind = self
+                .known_entities
+                .get(entity)
+                .and_then(|state| state.believed_kind);
+            let Some(claims) = self.entity_claims.get_mut(entity) else {
+                continue;
+            };
+
             claims.retain(|claim| {
                 within_retention_window(
                     claim.acquired_tick,
@@ -243,6 +251,7 @@ impl AgentBeliefStore {
 
             claims.sort_by_key(|claim| {
                 (
+                    claim_eviction_tier(claim.aspect, believed_kind),
                     std::cmp::Reverse(effective_claim_confidence(
                         claim,
                         current_tick,
@@ -1938,6 +1947,15 @@ pub fn derive_entity_summary(
     Some(summary)
 }
 
+fn claim_eviction_tier(aspect: EntityBeliefAspect, believed_kind: Option<EntityKind>) -> u8 {
+    match aspect {
+        EntityBeliefAspect::ResourceAvailable(_) | EntityBeliefAspect::WorkstationPresent => 0,
+        EntityBeliefAspect::Location if believed_kind == Some(EntityKind::Place) => 0,
+        EntityBeliefAspect::Alive if believed_kind == Some(EntityKind::Agent) => 0,
+        _ => 1,
+    }
+}
+
 fn preserve_believed_kind(prior: Option<&BelievedEntityState>, summary: &mut BelievedEntityState) {
     if summary.believed_kind.is_none() {
         summary.believed_kind = prior.and_then(|state| state.believed_kind);
@@ -3321,6 +3339,205 @@ mod tests {
                 .unwrap()
                 .last_known_place,
             Some(entity(11))
+        );
+    }
+
+    #[test]
+    fn enforce_entity_claim_capacity_preserves_infrastructure_claims() {
+        let mut store = claim_backed_store(
+            81,
+            vec![
+                sample_claim(
+                    1,
+                    81,
+                    EntityBeliefAspect::ResourceAvailable(CommodityKind::Apple),
+                    ClaimValue::ResourceSource(Some(ResourceSource {
+                        commodity: CommodityKind::Apple,
+                        available_quantity: Quantity(2),
+                        max_quantity: Quantity(5),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    })),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+                sample_claim(
+                    2,
+                    81,
+                    EntityBeliefAspect::ResourceAvailable(CommodityKind::Bread),
+                    ClaimValue::ResourceSource(Some(ResourceSource {
+                        commodity: CommodityKind::Bread,
+                        available_quantity: Quantity(3),
+                        max_quantity: Quantity(6),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    })),
+                    PerceptionSource::DirectObservation,
+                    8,
+                    920,
+                ),
+                sample_claim(
+                    3,
+                    81,
+                    EntityBeliefAspect::Inventory(CommodityKind::Waste),
+                    ClaimValue::Quantity(Quantity(4)),
+                    PerceptionSource::DirectObservation,
+                    10,
+                    990,
+                ),
+                sample_claim(
+                    4,
+                    81,
+                    EntityBeliefAspect::Inventory(CommodityKind::Water),
+                    ClaimValue::Quantity(Quantity(2)),
+                    PerceptionSource::DirectObservation,
+                    7,
+                    970,
+                ),
+                sample_claim(
+                    5,
+                    81,
+                    EntityBeliefAspect::Inventory(CommodityKind::Apple),
+                    ClaimValue::Quantity(Quantity(1)),
+                    PerceptionSource::DirectObservation,
+                    6,
+                    930,
+                ),
+            ],
+        );
+
+        store.enforce_entity_claim_capacity(&profile(8, 3, 100), Tick(10));
+
+        let claims = store.entity_claims.get(&entity(81)).unwrap();
+        assert_eq!(claims.len(), 3);
+        assert!(claims.iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::ResourceAvailable(CommodityKind::Apple)
+        }));
+        assert!(claims.iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::ResourceAvailable(CommodityKind::Bread)
+        }));
+        assert_eq!(
+            claims
+                .iter()
+                .filter(|claim| matches!(claim.aspect, EntityBeliefAspect::Inventory(_)))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn enforce_entity_claim_capacity_respects_within_tier_ordering() {
+        let mut store = claim_backed_store(
+            82,
+            vec![
+                sample_claim(
+                    1,
+                    82,
+                    EntityBeliefAspect::ResourceAvailable(CommodityKind::Apple),
+                    ClaimValue::ResourceSource(Some(ResourceSource {
+                        commodity: CommodityKind::Apple,
+                        available_quantity: Quantity(1),
+                        max_quantity: Quantity(3),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    })),
+                    PerceptionSource::DirectObservation,
+                    8,
+                    910,
+                ),
+                sample_claim(
+                    2,
+                    82,
+                    EntityBeliefAspect::ResourceAvailable(CommodityKind::Bread),
+                    ClaimValue::ResourceSource(Some(ResourceSource {
+                        commodity: CommodityKind::Bread,
+                        available_quantity: Quantity(2),
+                        max_quantity: Quantity(4),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    })),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    980,
+                ),
+                sample_claim(
+                    3,
+                    82,
+                    EntityBeliefAspect::ResourceAvailable(CommodityKind::Water),
+                    ClaimValue::ResourceSource(Some(ResourceSource {
+                        commodity: CommodityKind::Water,
+                        available_quantity: Quantity(2),
+                        max_quantity: Quantity(4),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    })),
+                    PerceptionSource::DirectObservation,
+                    10,
+                    940,
+                ),
+            ],
+        );
+
+        store.enforce_entity_claim_capacity(&profile(8, 2, 100), Tick(10));
+
+        let claims = store.entity_claims.get(&entity(82)).unwrap();
+        assert_eq!(claims.len(), 2);
+        assert!(claims.iter().any(|claim| claim.claim_id == ClaimId(2)));
+        assert!(claims.iter().any(|claim| claim.claim_id == ClaimId(3)));
+        assert!(!claims.iter().any(|claim| claim.claim_id == ClaimId(1)));
+    }
+
+    #[test]
+    fn enforce_entity_claim_capacity_protects_workstation_present() {
+        let mut store = claim_backed_store(
+            83,
+            vec![
+                sample_claim(
+                    1,
+                    83,
+                    EntityBeliefAspect::WorkstationPresent,
+                    ClaimValue::WorkstationTag(Some(WorkstationTag::Forge)),
+                    PerceptionSource::DirectObservation,
+                    8,
+                    900,
+                ),
+                sample_claim(
+                    2,
+                    83,
+                    EntityBeliefAspect::Inventory(CommodityKind::Waste),
+                    ClaimValue::Quantity(Quantity(4)),
+                    PerceptionSource::DirectObservation,
+                    10,
+                    990,
+                ),
+                sample_claim(
+                    3,
+                    83,
+                    EntityBeliefAspect::Inventory(CommodityKind::Water),
+                    ClaimValue::Quantity(Quantity(2)),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+            ],
+        );
+
+        store.enforce_entity_claim_capacity(&profile(8, 2, 100), Tick(10));
+
+        let claims = store.entity_claims.get(&entity(83)).unwrap();
+        assert_eq!(claims.len(), 2);
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::WorkstationPresent)
+        );
+        assert_eq!(
+            claims
+                .iter()
+                .filter(|claim| matches!(claim.aspect, EntityBeliefAspect::Inventory(_)))
+                .count(),
+            1
         );
     }
 

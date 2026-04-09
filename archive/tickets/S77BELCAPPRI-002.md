@@ -1,6 +1,6 @@
 # S77BELCAPPRI-002: Tiered claim eviction in `enforce_entity_claim_capacity()`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — claim eviction sort key changes in belief store
@@ -15,6 +15,7 @@
 1. `enforce_entity_claim_capacity()` at `belief.rs:217`. Current sort key: `(Reverse(confidence), Reverse(acquired_tick), Reverse(claim_id))` at lines 241-251. Truncation at line 252. Existing tests at lines 3217, 3253, 3303, 3356.
 2. `EntityBeliefAspect` at `entity_belief_claim.rs:17` has 11 variants: `Location`, `Inventory(CommodityKind)`, `Alive`, `Wounded`, `Activity`, `WorkstationPresent`, `ResourceAvailable(CommodityKind)`, `ContentionState`, `ArtifactState`, `Courage`, `Evidence`.
 3. Shared boundary: the sort key in `enforce_entity_claim_capacity()` — this ticket adds a tier dimension as the primary sort key.
+4. Auto-correction: the ticket's suggested example used `WorkstationTag::Bench`, but the live enum at `production.rs:10` does not define that variant. Correction applied in focused test coverage: use a live workstation variant (`WorkstationTag::Forge`). Safe because the ticket only needs any lawful `WorkstationPresent` claim to prove tier protection.
 
 ## Architecture Check
 
@@ -34,10 +35,9 @@
 Add to `crates/worldwake-core/src/belief.rs`:
 
 ```rust
-fn claim_eviction_tier(aspect: &EntityBeliefAspect, believed_kind: Option<EntityKind>) -> u8 {
+fn claim_eviction_tier(aspect: EntityBeliefAspect, believed_kind: Option<EntityKind>) -> u8 {
     match aspect {
-        EntityBeliefAspect::ResourceAvailable(_) => 0,
-        EntityBeliefAspect::WorkstationPresent => 0,
+        EntityBeliefAspect::ResourceAvailable(_) | EntityBeliefAspect::WorkstationPresent => 0,
         EntityBeliefAspect::Location if believed_kind == Some(EntityKind::Place) => 0,
         EntityBeliefAspect::Alive if believed_kind == Some(EntityKind::Agent) => 0,
         _ => 1,
@@ -52,7 +52,7 @@ In the sort closure at line 241, look up `believed_kind` from `self.known_entiti
 ```rust
 claims.sort_by_key(|claim| {
     (
-        claim_eviction_tier(&claim.aspect, believed_kind),
+        claim_eviction_tier(claim.aspect, believed_kind),
         std::cmp::Reverse(effective_claim_confidence(...)),
         std::cmp::Reverse(claim.acquired_tick),
         std::cmp::Reverse(claim.claim_id),
@@ -101,3 +101,17 @@ The `believed_kind` lookup happens once per entity at the start of the per-entit
 1. `cargo test -p worldwake-core -- enforce_entity_claim_capacity`
 2. `cargo test -p worldwake-core`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-09.
+
+- Added `claim_eviction_tier()` in `crates/worldwake-core/src/belief.rs` and made `enforce_entity_claim_capacity()` sort claims by tier before confidence/tick/id ordering.
+- Preserved the existing within-tier ordering while ensuring infrastructure claims survive item-tier claims when capacity truncation occurs.
+- Added focused unit coverage for mixed-tier eviction, within-tier ordering, and workstation-claim protection.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core -- enforce_entity_claim_capacity`
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
