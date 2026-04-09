@@ -1,6 +1,6 @@
 ---
 name: assessment-to-specs
-description: "Triages an external LLM assessment against the codebase and FOUNDATIONS.md, writes draft specs for accepted proposals, and creates a fresh IMPLEMENTATION-ORDER.md."
+description: "Triages an external LLM assessment against the codebase and FOUNDATIONS.md, writes draft specs for accepted proposals, and updates IMPLEMENTATION-ORDER.md."
 user-invocable: true
 arguments:
   - name: assessment_path
@@ -52,13 +52,15 @@ Read ALL of these files before any analysis:
 
 From the assessment document, extract every distinct proposal. For each proposal, record:
 
-- **Proposal ID**: Sequential number (P1, P2, P3, ...)
+- **Proposal ID**: Sequential number (PR-1, PR-2, PR-3, ...)
 - **Title**: Short descriptive name
 - **Priority**: As stated in the assessment (Priority 0, 1, 2, etc.), or "Unranked" if not prioritized
 - **Claim**: What the assessment says is wrong, missing, or improvable
 - **FOUNDATIONS references**: Which principles the assessment cites
 - **Proposed change**: What the assessment recommends
 - **Scope estimate**: Small (single component/module), Medium (cross-cutting but bounded), Large (architectural overhaul)
+
+If the assessment contains heterogeneous proposal types (golden tests, tickets, tooling enhancements), group related proposals that naturally belong in a single spec. A golden-gaps spec may bundle multiple test proposals. Record the grouping in the extraction and carry it forward to classification.
 
 #### Step 3: Codebase Validation
 
@@ -69,6 +71,7 @@ For each proposal, validate the assessment's assumptions against the actual code
 3. **Verify FOUNDATIONS alignment**: Confirm the proposal's cited FOUNDATIONS principles are correct (right number, right name). Check whether the proposal itself would violate any principles it doesn't cite.
 4. **Assess benefit**: Would this change create meaningful downstream consequences (Principle 5)? Or is it "nice to have" without real emergent payoff?
 5. **Check for overlap with active specs**: Glob `specs/S*.md` and check whether any existing active spec already covers the proposal's scope. If so, classify as Reject with reason "already covered by S{N}."
+6. **Check root-cause accuracy**: If the assessment correctly identifies a problem but misdiagnoses the root cause, note the corrected diagnosis. This typically leads to Scope-Down classification where the spec addresses the real root cause, not the assessment's proposed fix.
 
 When the proposal count is large (>5), use up to 3 Explore agents in parallel to validate different proposal groups simultaneously. Provide each agent with the proposals it should validate and the checklist above. Group proposals by codebase area (e.g., AI/planner proposals together, perception proposals together, ECS/core proposals together) so each agent can efficiently share grep context. If proposals span many areas, group by estimated validation complexity instead.
 
@@ -77,6 +80,8 @@ When the proposal count is large (>5), use up to 3 Explore agents in parallel to
 Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. Increment by 1 for the first new spec. This is needed before presenting the triage report so that spec number assignments are concrete.
 
 #### Step 5: Classify Each Proposal
+
+Before classifying, identify causal dependencies between proposals. If proposal A's problem is a downstream symptom of proposal B's root cause, note this relationship. Root-cause proposals should be classified first; downstream proposals can be rejected with "downstream of PR-{N}" if the root-cause fix is expected to resolve them.
 
 For each proposal, assign one of three classifications:
 
@@ -92,18 +97,18 @@ Present the triage to the user in a structured format:
 ## Triage Report: <assessment title>
 
 ### Accepted (N proposals)
-1. **P1: <title>** — <1-sentence rationale>. FOUNDATIONS: <aligned / P{N} misnumbered / P{N} violated>. Scope: <Small/Medium/Large>. Spec: S{next}-<name>.
+1. **PR-1: <title>** — <1-sentence rationale>. FOUNDATIONS: <aligned / Principle N misnumbered / Principle N violated>. Scope: <Small/Medium/Large>. Spec: S{next}-<name>.
 2. ...
 
 ### Scoped Down (N proposals)  
-1. **P3: <title>** — <1-sentence rationale for scope reduction>. FOUNDATIONS: <aligned / P{N} misnumbered>.
+1. **PR-3: <title>** — <1-sentence rationale for scope reduction>. FOUNDATIONS: <aligned / Principle N misnumbered>.
    - **Included**: <what the spec will cover>
    - **Deferred**: <what is left for later>
    - Spec: S{next}-<name>.
 2. ...
 
 ### Rejected (N proposals)
-1. **P5: <title>** — <specific reason for rejection>. FOUNDATIONS: <aligned / P{N} violated / N/A>.
+1. **PR-5: <title>** — <specific reason for rejection>. FOUNDATIONS: <aligned / Principle N violated / N/A>.
 2. ...
 
 ### Questions
@@ -142,13 +147,15 @@ Each spec MUST follow project conventions from `docs/spec-drafting-rules.md`:
 12. **Cross-System Interactions**: How the spec interacts with existing systems through state (Principle 26 — never direct calls)
 13. **Profile-Driven Parameters**: Per-agent profile structs instead of hardcoded constants
 
+For golden-gaps specs (bundled test scenarios), use the project's golden-gaps convention: per-scenario blocks with Setup, Assertion, GoalKinds/ActionDomains exercised, emergence justification, and "Why it is not a duplicate." See existing archived golden-gaps specs (e.g., `archive/specs/S67-*.md`) for the format.
+
 These are **draft specs**. They contain the architectural shape and key deliverables but expect a `/reassess-spec` pass before ticket decomposition. Do not attempt exhaustive codebase validation of every reference — that is reassess-spec's job.
 
 When writing multiple specs (>3) and the existing context from Phase 1 is insufficient to write them confidently, use Explore agents in parallel to trace additional codebase references for different specs simultaneously.
 
 #### Step 8: Verify and Present Written Specs
 
-After writing all specs, spot-check that each contains: FOUNDATIONS Alignment table, Section H (where applicable), Deliverables with concrete types, and Component Registration section. Report any missing mandatory sections before presenting the summary.
+After writing all specs, spot-check that each contains: FOUNDATIONS Alignment table (verify principle numbers match `docs/FOUNDATIONS.md` headings), Section H (where applicable), Deliverables with concrete types, and Component Registration section. Report any missing mandatory sections or misnumbered principles before presenting the summary.
 
 ```
 ## Specs Written
@@ -177,7 +184,7 @@ A spec depends on another if it: (a) references types or components the other sp
 
 Determine the next phase number from the completed phases in the old `specs/IMPLEMENTATION-ORDER.md` (read in Step 1). Increment the highest completed phase number by 1.
 
-**Append vs. fresh**: If only 1-2 independent specs were accepted and they have no dependencies on unreleased specs in the current active phase, offer the user a choice: (a) append to the existing phase as parallel Wave 1 items (recommended for small additions), or (b) create a new phase. For single-spec results, appending is the default recommendation. If appending, edit the existing `specs/IMPLEMENTATION-ORDER.md` to add the new spec(s) to the dependency graph and Wave 1 list — do not overwrite. If creating a new phase or if no active IMPLEMENTATION-ORDER.md exists, warn the user that a fresh file will be written and suggest archiving the old one (see `docs/archival-workflow.md`).
+**Append vs. fresh**: If the accepted specs are adjunct to the current phase (small scope, no dependencies on unreleased Phase N specs, and they integrate naturally into the existing dependency graph), offer the user a choice: (a) append to the existing phase as an adjunct wave (recommended for small additions), or (b) create a new phase. Appending is the default recommendation when the specs don't interact with the existing wave structure. If appending, edit the existing `specs/IMPLEMENTATION-ORDER.md` to add the new spec(s) to the dependency graph and wave list — do not overwrite. If creating a new phase or if no active IMPLEMENTATION-ORDER.md exists, warn the user that a fresh file will be written and suggest archiving the old one (see `docs/archival-workflow.md`).
 
 **When writing a fresh file**, use the following structure:
 

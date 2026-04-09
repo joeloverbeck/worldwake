@@ -28,7 +28,9 @@ Derived from external gameplay assessment (`brainstorming/prioritary-gameplay-sy
 ### Dependency Graph
 
 ```text
-S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 ✅     S75 ✅
+S59 ✅                    S60 (independent)     S62 (independent)     S69 ✅     S70 ✅     S75 ✅     S77 (independent)     S78 (independent)
+                                                                                                                       │
+                                                                                                                       └── S76-C (needs S77)
      │                     │
      │                     ├── S61 (needs S60 for dens)
      ├── S63 (needs S59 ✅)│
@@ -68,6 +70,26 @@ S65 ─┘
 **Wave 4** (after Wave 3):
 - **S66**: Settlement Decline and Reoccupation — household departure, facility closure, building vacancy, squatter reoccupation, institutional degradation
   - depends on S60 (vacant buildings as occupyable sites), S64 (scarcity pressure drives departure), S65 (social bonds anchor or repel)
+
+### Adjunct Wave: Simulation Observer Remediations
+
+Derived from simulation observer report (`reports/simulation-remediation.md`) validated against
+the actual codebase. S77 fixes the root cause (belief capacity eviction); S76 adds golden coverage
+for the observed pathologies; S78 enhances observer diagnostics.
+
+```text
+S77 (independent)          S78 (independent)
+  │
+  └── S76-C (S76 Scenario C depends on S77 belief fix)
+```
+
+**Wave A** (parallel, no deps):
+- **S77**: Belief Capacity Prioritization — fix `enforce_capacity()` eviction ordering so resource source and place beliefs survive; remove `SceneEvidence` gate on place observation
+- **S78**: Observer Failed-Plan Diagnostics — enrich `PlanSearchOutcome` with diagnostic context; enhance observer failed-plan table output
+- **S76** (partial): Golden Gaps — Simulation Observer Report — Scenarios S76-A, S76-B, S76-D can be implemented independently (they use seeded beliefs, not perception-derived beliefs)
+
+**Wave B** (after S77):
+- **S76-C**: Scenario S76-C (perception forms beliefs about resource sources) — depends on S77 belief fix to ensure resource source beliefs survive capacity enforcement
 
 ### Phase 7 Gate
 
