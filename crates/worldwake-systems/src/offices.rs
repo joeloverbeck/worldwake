@@ -1239,7 +1239,13 @@ mod tests {
 
         fn kill_holder(&mut self, tick: u64) {
             let mut txn = new_txn(&mut self.world, tick);
-            txn.set_component_dead_at(self.holder, worldwake_core::DeadAt(Tick(tick)))
+            txn.set_component_dead_at(
+                self.holder,
+                worldwake_core::DeadAt {
+                    tick: Tick(tick),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
                 .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
@@ -1300,7 +1306,13 @@ mod tests {
 
         fn kill_agent(&mut self, agent: EntityId, tick: u64) {
             let mut txn = new_txn(&mut self.world, tick);
-            txn.set_component_dead_at(agent, worldwake_core::DeadAt(Tick(tick)))
+            txn.set_component_dead_at(
+                agent,
+                worldwake_core::DeadAt {
+                    tick: Tick(tick),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
                 .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);

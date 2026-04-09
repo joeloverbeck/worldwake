@@ -571,7 +571,13 @@ mod tests {
 
     fn kill_entity(world: &mut World, entity: EntityId, tick: u64) {
         let mut txn = new_txn(world, tick);
-        txn.set_component_dead_at(entity, DeadAt(Tick(tick)))
+        txn.set_component_dead_at(
+            entity,
+            DeadAt {
+                tick: Tick(tick),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
             .unwrap();
         commit_txn(txn);
     }

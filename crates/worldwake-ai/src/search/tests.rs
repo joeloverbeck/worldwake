@@ -3582,7 +3582,14 @@ fn build_contention_corpse_fixture() -> ContentionCorpseFixture {
         txn.set_ground_location(grave_plot, town).unwrap();
         txn.set_ground_location(coins, town).unwrap();
         txn.set_possessor(coins, corpse).unwrap();
-        txn.set_component_dead_at(corpse, DeadAt(Tick(1))).unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            DeadAt {
+                tick: Tick(1),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         txn.set_component_workstation_marker(
             grave_plot,
             WorkstationMarker(WorkstationTag::GravePlot),

@@ -106,7 +106,13 @@ fn run_t31_stress(seed: Seed) {
                         let idx = disruption_rng.next_range(0, living.len() as u32) as usize;
                         let victim = living[idx];
                         let mut txn = new_txn(&mut h.world, current_tick_val);
-                        txn.set_component_dead_at(victim, DeadAt(Tick(current_tick_val)))
+                        txn.set_component_dead_at(
+                            victim,
+                            DeadAt {
+                                tick: Tick(current_tick_val),
+                                cause: worldwake_core::DeathCause::CombatWounds,
+                            },
+                        )
                             .unwrap();
                         commit_txn(txn, &mut h.event_log);
                     }
@@ -210,7 +216,7 @@ fn run_t31_stress(seed: Seed) {
                 assert!(
                     !h.agent_has_active_action(agent),
                     "dead agent {agent:?} (died at {:?}) has active action at tick {current_tick:?}",
-                    dead_at.0
+                    dead_at.tick
                 );
             }
         }

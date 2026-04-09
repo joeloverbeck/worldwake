@@ -224,7 +224,14 @@ fn build_loot_suppressed_under_self_care_scenario(
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
         seed_actor_local_beliefs(
             &mut h.world,
@@ -794,7 +801,14 @@ fn golden_bury_corpse() {
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
         seed_actor_local_beliefs(
             &mut h.world,
@@ -820,7 +834,10 @@ fn golden_bury_corpse() {
     assert_eq!(h.world.effective_place(corpse), Some(VILLAGE_SQUARE));
     assert_eq!(
         h.world.get_component_dead_at(corpse),
-        Some(&DeadAt(Tick(0)))
+        Some(&DeadAt {
+            tick: Tick(0),
+            cause: worldwake_core::DeathCause::CombatWounds,
+        })
     );
     assert!(
         h.world.is_alive(corpse),
@@ -1322,7 +1339,7 @@ fn run_defend_changed_conditions_scenario(seed: Seed) -> (StateHash, StateHash) 
         .world
         .get_component_dead_at(attacker)
         .expect("doomed attacker should die during the scenario")
-        .0;
+        .tick;
     let post_resolution_tick = Tick(
         defend_resolution_tick
             .expect("seeded defend should resolve during the scenario")
@@ -1991,9 +2008,21 @@ fn build_multi_corpse_loot_binding_scenario(
 
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(corpse_a, DeadAt(Tick(0)))
+        txn.set_component_dead_at(
+            corpse_a,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
             .unwrap();
-        txn.set_component_dead_at(corpse_b, DeadAt(Tick(0)))
+        txn.set_component_dead_at(
+            corpse_b,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
             .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
@@ -2170,7 +2199,14 @@ fn build_bury_suppressed_under_stress_scenario(
 
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -2365,9 +2401,21 @@ fn build_suppression_then_binding_scenario(
 
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(corpse_a, DeadAt(Tick(0)))
+        txn.set_component_dead_at(
+            corpse_a,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
             .unwrap();
-        txn.set_component_dead_at(corpse_b, DeadAt(Tick(0)))
+        txn.set_component_dead_at(
+            corpse_b,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
             .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
@@ -2652,7 +2700,14 @@ fn run_corpse_contention_visible_state_scenario(seed: Seed) -> CorpseContentionO
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         txn.set_component_contention_policy(
             corpse,
             ContentionPolicy {

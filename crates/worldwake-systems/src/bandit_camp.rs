@@ -360,7 +360,13 @@ mod tests {
         let mut harness = Harness::new(1);
         {
             let mut txn = new_txn(&mut harness.world, 2);
-            txn.set_component_dead_at(harness.member_a, worldwake_core::DeadAt(Tick(2)))
+            txn.set_component_dead_at(
+                harness.member_a,
+                worldwake_core::DeadAt {
+                    tick: Tick(2),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
                 .unwrap();
             txn.commit(&mut harness.log);
         }

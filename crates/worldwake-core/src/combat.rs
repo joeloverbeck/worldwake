@@ -1,6 +1,6 @@
 //! Combat-specific authoritative agent state.
 
-use crate::{Component, Permille, Tick};
+use crate::{Component, HomeostaticNeedId, Permille, Tick};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -55,8 +55,18 @@ impl CombatProfile {
 impl Component for CombatProfile {}
 
 /// Tick at which an agent died.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct DeadAt(pub Tick);
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum DeathCause {
+    NeedDeprivation { need: HomeostaticNeedId },
+    CombatWounds,
+}
+
+/// Tick at which an agent died, plus the authoritative cause.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct DeadAt {
+    pub tick: Tick,
+    pub cause: DeathCause,
+}
 
 impl Component for DeadAt {}
 
@@ -70,8 +80,8 @@ impl Component for CombatStance {}
 
 #[cfg(test)]
 mod tests {
-    use super::{CombatProfile, CombatStance, DeadAt};
-    use crate::{Permille, Tick, traits::Component};
+    use super::{CombatProfile, CombatStance, DeadAt, DeathCause};
+    use crate::{HomeostaticNeedId, Permille, Tick, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
@@ -115,7 +125,8 @@ mod tests {
         assert_component_bounds::<DeadAt>();
         assert_component_bounds::<CombatStance>();
         assert_value_bounds::<CombatProfile>();
-        assert_value_bounds::<DeadAt>();
+        assert_ordinal_value_bounds::<DeadAt>();
+        assert_ordinal_value_bounds::<DeathCause>();
         assert_ordinal_value_bounds::<CombatStance>();
     }
 
@@ -148,12 +159,29 @@ mod tests {
 
     #[test]
     fn dead_at_roundtrips_through_bincode() {
-        let dead_at = DeadAt(Tick(42));
+        let dead_at = DeadAt {
+            tick: Tick(42),
+            cause: DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Thirst,
+            },
+        };
 
         let bytes = bincode::serialize(&dead_at).unwrap();
         let roundtrip: DeadAt = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, dead_at);
+    }
+
+    #[test]
+    fn death_cause_roundtrips_through_bincode() {
+        let cause = DeathCause::NeedDeprivation {
+            need: HomeostaticNeedId::Hunger,
+        };
+
+        let bytes = bincode::serialize(&cause).unwrap();
+        let roundtrip: DeathCause = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, cause);
     }
 
     #[test]

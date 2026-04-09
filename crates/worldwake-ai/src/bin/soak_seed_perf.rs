@@ -136,7 +136,7 @@ fn run_one_seed(seed: Seed) -> SoakRunResult {
                 assert!(
                     !h.agent_has_active_action(agent),
                     "dead agent {agent:?} (died at {:?}) has active action at tick {current_tick:?}",
-                    dead_at.0
+                    dead_at.tick
                 );
             }
         }

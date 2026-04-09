@@ -427,7 +427,10 @@ fn scheduler_combat_death_and_loot_preserve_conservation() {
 
     assert_eq!(
         harness.world.get_component_dead_at(harness.target),
-        Some(&DeadAt(Tick(3)))
+        Some(&DeadAt {
+            tick: Tick(3),
+            cause: worldwake_core::DeathCause::CombatWounds,
+        })
     );
 
     harness.queue_corpse_use(harness.attacker, harness.target);

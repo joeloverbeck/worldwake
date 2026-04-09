@@ -818,7 +818,14 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
     // The politics system will detect the holder is dead and set vacancy_since.
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(ruler, DeadAt(Tick(0))).unwrap();
+        txn.set_component_dead_at(
+            ruler,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -941,7 +948,10 @@ fn run_t21_ruler_death_patrol_gap(seed: Seed) -> (StateHash, StateHash) {
     // --- Verification 1: Ruler death → authoritative DeadAt ---
     assert_eq!(
         h.world.get_component_dead_at(ruler),
-        Some(&DeadAt(Tick(0))),
+        Some(&DeadAt {
+            tick: Tick(0),
+            cause: worldwake_core::DeathCause::CombatWounds,
+        }),
         "Ruler must have DeadAt at tick 0",
     );
 
@@ -1591,7 +1601,14 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
     // --- Kill the ruler at tick 0 ---
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(ruler, DeadAt(Tick(0))).unwrap();
+        txn.set_component_dead_at(
+            ruler,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -1734,7 +1751,10 @@ fn run_t33_vacancy_crime_recovery(seed: Seed) -> (StateHash, StateHash) {
     // --- Verification 1: Ruler death → authoritative DeadAt ---
     assert_eq!(
         h.world.get_component_dead_at(ruler),
-        Some(&DeadAt(Tick(0))),
+        Some(&DeadAt {
+            tick: Tick(0),
+            cause: worldwake_core::DeathCause::CombatWounds,
+        }),
         "Ruler must have DeadAt at tick 0",
     );
 

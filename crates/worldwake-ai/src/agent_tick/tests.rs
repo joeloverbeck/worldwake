@@ -1122,7 +1122,14 @@ fn relocate_entity(world: &mut World, entity: EntityId, destination: EntityId, t
 
 fn kill_entity(world: &mut World, entity: EntityId, tick: Tick) {
     let mut txn = new_txn(world, tick.0);
-    txn.set_component_dead_at(entity, DeadAt(tick)).unwrap();
+    txn.set_component_dead_at(
+        entity,
+        DeadAt {
+            tick,
+            cause: worldwake_core::DeathCause::CombatWounds,
+        },
+    )
+    .unwrap();
     commit_txn(txn);
 }
 
@@ -2694,7 +2701,13 @@ fn dead_ai_agent_is_skipped_by_ai_driver() {
             },
         )
         .unwrap();
-        txn.set_component_dead_at(harness.actor, worldwake_core::DeadAt(Tick(2)))
+        txn.set_component_dead_at(
+            harness.actor,
+            worldwake_core::DeadAt {
+                tick: Tick(2),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
             .unwrap();
         let _ = txn.commit(&mut harness.event_log);
     }
@@ -5585,7 +5598,13 @@ fn trace_dead_agent() {
     // Kill the agent by setting DeadAt.
     {
         let mut txn = new_txn(&mut harness.world, 1);
-        txn.set_component_dead_at(harness.actor, DeadAt(Tick(0)))
+        txn.set_component_dead_at(
+            harness.actor,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
             .unwrap();
         commit_txn(txn);
     }

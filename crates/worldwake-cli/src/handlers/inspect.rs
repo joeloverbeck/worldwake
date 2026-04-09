@@ -185,7 +185,7 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         );
     }
     if let Some(dead) = world.get_component_dead_at(entity) {
-        println!("  DeadAt: tick {}", dead.0.0);
+        println!("  DeadAt: tick {}", dead.tick.0);
     }
     if let Some(up) = world.get_component_utility_profile(entity) {
         println!("  UtilityProfile:");

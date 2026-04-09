@@ -814,7 +814,14 @@ mod tests {
         );
         {
             let mut txn = new_txn(&mut world, 3);
-            txn.set_component_dead_at(agent, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(
+                agent,
+                DeadAt {
+                    tick: Tick(3),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             let _ = txn.commit(&mut EventLog::new());
         }
         let original_needs = *world.get_component_homeostatic_needs(agent).unwrap();

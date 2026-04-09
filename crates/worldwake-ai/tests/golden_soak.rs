@@ -137,7 +137,7 @@ fn run_t30_soak(seed: Seed) -> SoakResult {
                 assert!(
                     !h.agent_has_active_action(agent),
                     "dead agent {agent:?} (died at {:?}) has active action at tick {current_tick:?}",
-                    dead_at.0
+                    dead_at.tick
                 );
             }
         }

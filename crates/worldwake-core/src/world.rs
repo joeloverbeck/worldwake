@@ -821,7 +821,10 @@ mod tests {
     }
 
     fn sample_dead_at() -> DeadAt {
-        DeadAt(Tick(21))
+        DeadAt {
+            tick: Tick(21),
+            cause: crate::DeathCause::CombatWounds,
+        }
     }
 
     fn sample_homeostatic_needs() -> HomeostaticNeeds {

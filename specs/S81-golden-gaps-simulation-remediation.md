@@ -2,11 +2,11 @@
 
 ## Summary
 
-The simulation remediation report (`reports/simulation-remediation.md`) identified three golden test gaps and one missing component field. Since then, the S79 ticket slices archived at `archive/tickets/S79RESSOUCON-003.md` and `archive/tickets/S79RESSOUCON-004.md` have closed the live apple/eat proof gap and the water-source runtime contract gap. This spec therefore retains: (1) a multi-agent convergence test verifying agents at barren locations with remote resource beliefs don't collapse into prolonged sleep+relieve loops, (2) an agent death traceability test verifying death from unmet needs is explicit, causally traceable, and halts post-death planning, and, if still desired, (3) the now-unblocked water/drink resource-source golden follow-up. As a prerequisite deliverable, this spec adds a `DeathCause` field to the `DeadAt` component so death events carry traceable cause information.
+The simulation remediation report (`reports/simulation-remediation.md`) identified three golden test gaps and one missing component field. Since then, the S79 ticket slices archived at `archive/tickets/S79RESSOUCON-003.md` and `archive/tickets/S79RESSOUCON-004.md` have closed the live apple/eat proof gap and the water-source runtime contract gap. This spec therefore retains: (1) a multi-agent convergence test verifying agents at barren locations with remote resource beliefs don't collapse into prolonged sleep+relieve loops, (2) an agent death traceability test verifying death from unmet needs is explicit, causally traceable, and halts post-death planning, and, if still desired, (3) the now-unblocked water/drink resource-source golden follow-up. As prerequisite deliverables, this spec: adds a `DeathCause` field to the `DeadAt` component so death events carry traceable cause information; introduces need-based mortality logic using the existing wound-load lethality mechanism; and adds an `EventTag::Death` variant for queryable death events.
 
 ## Phase
 
-Phase 7: Consequence Carriers (Adjunct — Simulation Remediation)
+Phase 7: Consequence Carriers (Adjunct -- Simulation Remediation)
 
 ## Status
 
@@ -15,13 +15,13 @@ Draft
 ## Crates
 
 - `worldwake-ai` (golden tests in `tests/golden_simulation_gaps.rs`)
-- `worldwake-core` (DeadAt extension with DeathCause)
-- `worldwake-systems` (needs/mortality system — set DeathCause on death)
+- `worldwake-core` (DeadAt extension with DeathCause, HomeostaticNeedId Hash derive, EventTag::Death)
+- `worldwake-systems` (needs system -- add mortality check via wound-load lethality; combat system -- set DeathCause on fatality)
 
 ## Dependencies
 
-- S79 (resource-source consumption affordances) — the apple/eat harvest-to-consume proof landed via `archive/tickets/S79RESSOUCON-003.md`, and the water-source runtime contract landed via `archive/tickets/S79RESSOUCON-004.md`; any remaining water/drink golden follow-up is now unblocked rather than runtime-blocked
-- S76 (golden gaps — simulation observer) — completed; S81 extends coverage beyond S76's single-agent scenarios
+- S79 (resource-source consumption affordances) -- the apple/eat harvest-to-consume proof landed via `archive/tickets/S79RESSOUCON-003.md`, and the water-source runtime contract landed via `archive/tickets/S79RESSOUCON-004.md`; any remaining water/drink golden follow-up is now unblocked rather than runtime-blocked
+- S76 (golden gaps -- simulation observer) -- completed; S81 extends coverage beyond S76's single-agent scenarios
 
 ## Design Goals
 
@@ -42,24 +42,25 @@ Draft
 
 | Principle | Alignment |
 |-----------|-----------|
-| P1 (Maximal Emergence) | GT-1 verifies multi-agent emergent survival behavior, not scripted outcomes |
+| P1 (Maximal Emergence) | GT-1 verifies multi-agent emergent survival behavior, not scripted outcomes. Mortality via wound-load reuse composes with existing combat death -- agents with higher wound_capacity survive deprivation longer (emergent diversity). |
 | P4 (Persistent Identity / Explicit Transfer) | GT-2 verifies death is a persistent, traceable state transition with explicit cause |
 | P5 (Carriers of Consequence) | DeathCause makes death a richer carrier of downstream consequence (investigation, mourning, succession) |
-| P8 (Preconditions, Duration, Cost) | GT-3 verifies the full precondition chain: resource source → harvest → possession → consume |
-| P10 (Outcomes Leave Aftermath) | GT-2 verifies death leaves explicit aftermath (DeadAt with cause, event log entry) |
+| P8 (Preconditions, Duration, Cost) | GT-3 verifies the full precondition chain: resource source -> harvest -> possession -> consume. Need-based mortality has an explicit precondition chain: deprivation -> wounds -> wound load exceeds capacity -> death. |
+| P10 (Outcomes Leave Aftermath) | GT-2 verifies death leaves explicit aftermath (DeadAt with cause, EventTag::Death event log entry) |
 | P20 (Resource-Bounded Reasoning) | GT-1 verifies agents plan within budget at multi-agent scale |
+| P22 (Agent Diversity) | Wound-load mortality means agents with different CombatProfile.wound_capacity die at different deprivation thresholds -- no uniform magic number. |
 | P26 (Systems Interact Through State) | All scenarios chain 3+ systems through state, not direct calls |
-| P29 (Debuggability) | DeathCause improves death event debuggability — "why did this agent die?" has a concrete answer |
+| P29 (Debuggability) | DeathCause improves death event debuggability -- "why did this agent die?" has a concrete answer. EventTag::Death makes death events queryable from the event log. |
 
 ## Section H: Causal Hooks
 
-No new causal hooks for the golden tests. DeathCause is a component extension, not a new system.
+DeathCause is a component extension and need-based mortality reuses the existing wound-load lethality check. No new causal hooks beyond the EventTag::Death variant.
 
 ### Information-Path Analysis
 
-- GT-1: Unmet needs → candidate generation → planner search across 3+ agents → travel/harvest/consume chains. Beliefs about remote resources seeded.
-- GT-2: Unmet needs → need escalation → mortality threshold → DeadAt with DeathCause → post-death planning halt.
-- GT-3: Agent at resource source location → harvest affordance generated → planner chains harvest → eat/drink.
+- GT-1: Unmet needs -> candidate generation -> planner search across 3+ agents -> travel/harvest/consume chains. Beliefs about remote resources seeded.
+- GT-2: Unmet needs -> deprivation wound escalation -> wound load exceeds CombatProfile.wound_capacity -> DeadAt with DeathCause::NeedDeprivation -> EventTag::Death event -> post-death planning halt.
+- GT-3: Agent at resource source location -> harvest affordance generated -> planner chains harvest -> eat/drink.
 
 ### Positive-Feedback Analysis
 
@@ -72,11 +73,16 @@ N/A (no feedback loops).
 ### Stored State vs. Derived
 
 - **Stored (new)**: `DeathCause` variant on `DeadAt` component
+- **Stored (extended)**: `EventTag::Death` variant in event tag enum
 - **Derived**: None new
 
 ---
 
 ## Deliverable D1: DeathCause Component Extension
+
+### Prerequisites
+
+**HomeostaticNeedId Hash derive**: Add `Hash` to the derive list of `HomeostaticNeedId` at `crates/worldwake-core/src/needs.rs:18`. Current derives are `Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize` -- `Hash` is required because `HomeostaticNeedId` is embedded in `DeathCause` which derives `Hash`. This is a safe widening.
 
 ### DeathCause Enum
 
@@ -84,14 +90,14 @@ N/A (no feedback loops).
 /// Cause of an agent's death, set alongside DeadAt.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum DeathCause {
-    /// Died from an unmet need reaching lethal threshold.
+    /// Died from an unmet need reaching lethal wound load.
     NeedDeprivation { need: HomeostaticNeedId },
     /// Died from combat wounds.
     CombatWounds,
 }
 ```
 
-Located in `crates/worldwake-core/src/combat.rs` (alongside existing `DeadAt`).
+Located in `crates/worldwake-core/src/combat.rs` (alongside existing `DeadAt`). DeadAt and DeathCause are cross-domain concepts (read by needs, combat, planning, and office systems), but remain in `combat.rs` for minimal diff since DeadAt is already defined there.
 
 ### DeadAt Extension
 
@@ -107,17 +113,67 @@ pub struct DeadAt {
 impl Component for DeadAt {}
 ```
 
-All existing `DeadAt(tick)` construction sites must be updated to `DeadAt { tick, cause }`.
+**Derive widening note**: The current `DeadAt` derives only `Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize`. This change adds `Ord`, `PartialOrd`, and `Hash`. `Tick` already derives all three (`crates/worldwake-core/src/ids.rs:56`), and `DeathCause` is defined with them, so the widening compiles. This is intentional for consistency with other component types.
 
-### Mortality System Update
+Update the re-export in `crates/worldwake-core/src/lib.rs:118` to include `DeathCause`:
+```rust
+pub use combat::{CombatProfile, CombatStance, DeadAt, DeathCause};
+```
 
-In the needs/mortality system (wherever `DeadAt` is currently set for need-based death), set `cause: DeathCause::NeedDeprivation { need }` with the specific `HomeostaticNeedId` that triggered death.
+### Construction Site Updates
 
-In the combat system (wherever `DeadAt` is set for combat death), set `cause: DeathCause::CombatWounds`.
+**Production sites** (1 site):
+- `crates/worldwake-systems/src/combat.rs:183`: Change `DeadAt(tick)` to `DeadAt { tick, cause: DeathCause::CombatWounds }`.
 
-### Event Log
+**Test helper sites** (~20+ across crates): All `DeadAt(tick)` or `DeadAt(Tick(n))` construction calls in `#[cfg(test)]` modules must be updated to `DeadAt { tick, cause: DeathCause::CombatWounds }` (or another appropriate cause matching the test's intent). Affected files include test helpers in: `combat.rs`, `needs.rs`, `offices.rs`, `facility_queue.rs`, `bandit_camp.rs`, `perception.rs`, `tick_step.rs`, `action_validation.rs`, `search_actions.rs`, `epistemic_actions.rs`, `artifact_actions.rs`.
 
-Emit a death event to the event log when `DeadAt` is set, including the cause, tick, agent, and location. If a death event is already emitted, extend it with the cause field.
+---
+
+## Deliverable D2: Need-Based Mortality via Wound-Load Lethality
+
+### Mechanism
+
+The needs system currently calls `apply_deprivation_consequences` (`crates/worldwake-systems/src/needs.rs:213`) which creates and worsens deprivation wounds but does not kill agents. **This deliverable adds mortality logic**: after applying deprivation consequences, if the agent's wound load is fatal, the needs system sets `DeadAt` with `DeathCause::NeedDeprivation`.
+
+The lethality check reuses the existing `is_wound_load_fatal(wounds: &WoundList, profile: &CombatProfile) -> bool` function at `crates/worldwake-core/src/wounds.rs:128`, which returns true when `wounds.wound_load() >= profile.wound_capacity`. This is the same mechanism the combat system uses for combat fatalities, ensuring consistent death semantics across systems.
+
+### Implementation Site
+
+Within the existing needs system fn (the function that iterates agents and calls `apply_deprivation_consequences`), after the deprivation consequence application returns updated wounds:
+
+1. Query the agent's `CombatProfile` from the world.
+2. If `CombatProfile` is present and `is_wound_load_fatal(&updated_wounds, &combat_profile)` returns true:
+   - Determine the most critical need (the `HomeostaticNeedId` with the highest current value).
+   - Set `DeadAt { tick, cause: DeathCause::NeedDeprivation { need } }` on the agent.
+   - Emit a death event tagged `EventTag::Death + EventTag::System + EventTag::WorldMutation` with the agent, cause, tick, and location.
+   - Clear contention state (same pattern as combat fatality at `combat.rs:181-188`).
+3. If `CombatProfile` is absent, the agent cannot die from wound load (agents without a combat profile have no wound capacity to exceed). This is consistent with the combat system's requirement for CombatProfile.
+
+### Why This Is Not a New SystemFn
+
+The mortality check is new logic, but it is added within the existing needs system fn -- not registered as a separate system function. The needs system fn already has the agent iteration loop and access to world state needed for the check.
+
+---
+
+## Deliverable D3: EventTag::Death
+
+Add a `Death` variant to the `EventTag` enum at `crates/worldwake-core/src/event_tag.rs`:
+
+```rust
+pub enum EventTag {
+    // ... existing variants ...
+    Death,
+}
+```
+
+Update the `ALL_EVENT_TAGS` constant array in the test module (event_tag.rs:44) to include `EventTag::Death`, and update the count assertion (event_tag.rs:78) from 24 to 25.
+
+### Usage
+
+- **Combat fatality path** (`crates/worldwake-systems/src/combat.rs:176-178`): Add `EventTag::Death` tag to the existing combat fatality transaction (alongside `System`, `WorldMutation`, `Combat`).
+- **Need-based mortality path** (D2): Tag the death event with `EventTag::Death + EventTag::System + EventTag::WorldMutation`.
+
+This makes death events queryable from the event log regardless of cause, supporting GT-2 assertion 3 and P29 (Debuggability).
 
 ---
 
@@ -157,15 +213,16 @@ Emit a death event to the event log when `DeadAt` is set, including the cause, t
 - No seeded beliefs about remote resources
 - No recipe knowledge for harvests
 - Agent has default metabolism (needs escalate over time)
+- Agent has a CombatProfile with wound_capacity (required for wound-load mortality check)
 
 **Assertions**:
 1. The agent dies (DeadAt component is set) within 600 ticks
 2. `DeadAt.cause` is `DeathCause::NeedDeprivation { need }` where `need` is `HomeostaticNeedId::Hunger` or `HomeostaticNeedId::Thirst`
-3. The event log contains a death event with the cause, tick, and agent
+3. The event log contains an event tagged `EventTag::Death` with the agent as a target
 4. After death, no further planning or action attempts occur for the dead agent (assert no actions started after `DeadAt.tick`)
 
 **GoalKinds exercised**: `ConsumeOwnedCommodity` (attempted, fails), `Sleep`, `Relieve`
-**ActionDomains exercised**: Needs (sleep, relieve — only available actions)
+**ActionDomains exercised**: Needs (sleep, relieve -- only available actions)
 
 **Why it is not a duplicate**: No existing golden test verifies the death-from-unmet-needs path. `golden_supply_chain.rs` asserts agents stay alive; this test asserts agents die correctly when they cannot sustain themselves.
 
@@ -173,7 +230,7 @@ Emit a death event to the event log when `DeadAt` is set, including the cause, t
 
 **Source finding**: Remediation GT-3, observer Finding 6 (Unaddressed Needs)
 
-**Description**: Agents at locations with resource sources can plan and execute the harvest → eat/drink chain.
+**Description**: Agents at locations with resource sources can plan and execute the harvest -> eat/drink chain.
 
 **Setup**:
 - Agent A at a location with a Water resource source on a Facility (e.g., Well). Agent A has the harvest:Harvest Water recipe knowledge.
@@ -183,8 +240,8 @@ Emit a death event to the event log when `DeadAt` is set, including the cause, t
 **Assertions**:
 1. Agent A's affordance set includes a harvest action for Water within the first planning cycle
 2. Agent B's affordance set includes a harvest action for Apples within the first planning cycle
-3. Agent A successfully executes: harvest water → drink within 100 ticks
-4. Agent B successfully executes: harvest apples → eat within 100 ticks
+3. Agent A successfully executes: harvest water -> drink within 100 ticks
+4. Agent B successfully executes: harvest apples -> eat within 100 ticks
 5. After consumption, the corresponding need level has decreased
 
 **GoalKinds exercised**: `AcquireCommodity`, `ConsumeOwnedCommodity`
@@ -196,19 +253,22 @@ Emit a death event to the event log when `DeadAt` is set, including the cause, t
 
 ## SystemFn Integration
 
-No new SystemFn. DeathCause is set within the existing mortality check that sets DeadAt.
+No new SystemFn is registered. The mortality check (D2) is added within the existing needs system fn. The needs system fn already iterates agents and calls `apply_deprivation_consequences`; the new mortality check follows that call within the same iteration, using `is_wound_load_fatal` to determine if deprivation wounds have become lethal.
 
 ## Component Registration
 
 | Component | Change | Crate |
 |-----------|--------|-------|
-| `DeadAt` | Extended with `cause: DeathCause` field | `worldwake-core` |
+| `DeadAt` | Extended with `cause: DeathCause` field; derives widened with `Ord, PartialOrd, Hash` | `worldwake-core` |
 | `DeathCause` | New enum | `worldwake-core` |
+| `HomeostaticNeedId` | `Hash` derive added | `worldwake-core` |
+| `EventTag` | `Death` variant added | `worldwake-core` |
 
-No new component registration in `component_schema.rs` — `DeadAt` is already registered. The struct shape changes but the component identity stays the same.
+No new component registration in `component_schema.rs` -- `DeadAt` is already registered. The struct shape changes but the component identity stays the same.
 
 ## Cross-System Interactions
 
-- **Needs system → DeadAt**: Mortality check sets `DeadAt { tick, cause: NeedDeprivation }` (existing interaction, extended with cause)
-- **Combat system → DeadAt**: Combat sets `DeadAt { tick, cause: CombatWounds }` (existing interaction, extended with cause)
-- **Planning system → DeadAt**: Planning checks `DeadAt` to skip dead agents (existing, no change)
+- **Needs system -> DeadAt**: Mortality check sets `DeadAt { tick, cause: NeedDeprivation }` when deprivation wounds exceed wound_capacity (NEW interaction via wound-load lethality)
+- **Combat system -> DeadAt**: Combat sets `DeadAt { tick, cause: CombatWounds }` (existing interaction, extended with cause)
+- **Planning system -> DeadAt**: Planning checks `DeadAt` to skip dead agents (existing, no change)
+- **Needs system -> WoundList / CombatProfile**: Needs system reads wound list and combat profile to evaluate `is_wound_load_fatal` (NEW read dependency, consistent with P26 -- interaction through state)

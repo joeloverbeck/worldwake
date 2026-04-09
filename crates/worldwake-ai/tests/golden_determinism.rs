@@ -1112,7 +1112,14 @@ fn build_generalized_contention_roundtrip_scenario(
 
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         txn.set_component_contention_policy(
             corpse,
             ContentionPolicy {

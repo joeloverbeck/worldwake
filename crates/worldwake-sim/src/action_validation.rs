@@ -261,7 +261,13 @@ mod tests {
             let corpse = txn.create_agent("Corpse", ControlSource::Ai).unwrap();
             txn.set_ground_location(actor, place).unwrap();
             txn.set_ground_location(corpse, place).unwrap();
-            txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(1)))
+            txn.set_component_dead_at(
+                corpse,
+                worldwake_core::DeadAt {
+                    tick: Tick(1),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
                 .unwrap();
             commit_txn(txn);
             (actor, corpse)
@@ -388,7 +394,13 @@ mod tests {
             .unwrap();
             txn.set_component_wound_list(dead, worldwake_core::WoundList::default())
                 .unwrap();
-            txn.set_component_dead_at(dead, worldwake_core::DeadAt(Tick(2)))
+            txn.set_component_dead_at(
+                dead,
+                worldwake_core::DeadAt {
+                    tick: Tick(2),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
                 .unwrap();
             commit_txn(txn);
             (healthy, incapacitated, dead)
@@ -525,7 +537,13 @@ mod tests {
             for entity in [actor, living_agent, dead_agent, facility] {
                 txn.set_ground_location(entity, place).unwrap();
             }
-            txn.set_component_dead_at(dead_agent, worldwake_core::DeadAt(Tick(2)))
+            txn.set_component_dead_at(
+                dead_agent,
+                worldwake_core::DeadAt {
+                    tick: Tick(2),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
                 .unwrap();
             commit_txn(txn);
             (actor, living_agent, dead_agent, facility)

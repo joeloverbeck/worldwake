@@ -115,7 +115,7 @@ pub use canonical::{
 };
 pub use cause::CauseRef;
 pub use cognitive_profile::CognitiveProfile;
-pub use combat::{CombatProfile, CombatStance, DeadAt};
+pub use combat::{CombatProfile, CombatStance, DeadAt, DeathCause};
 pub use communication::{CommunicationClass, CommunicationProfile, classify_communication};
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};

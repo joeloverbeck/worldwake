@@ -66,6 +66,8 @@ Before beginning Steps 2-3, classify the spec:
 
 If uncertain, default to the more rigorous classification.
 
+**Hybrid specs**: A single spec may span multiple categories (e.g., test-only scenarios plus a production component extension). When a spec contains deliverables in different categories, apply the union of applicable steps — use the most rigorous classification's checklist for shared steps.
+
 **Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and not externally modified, Steps 2-3 may scope to only references affected by the triggering change. Step 1 still applies (re-read the spec).
 
 **Self-authored spec note**: Full validation (Steps 2-3) is required even for specs authored earlier in this session — authoring may introduce unchecked assumptions.
@@ -130,6 +132,8 @@ Skip sub-steps 5a-5g if the spec does not add fields to components, create new c
 
 - **5a. Shape validation**: Grep component structs in `worldwake-core`, verify fields/types. Check `component_schema.rs` for registration.
 - **5b. Trait bounds**: Check derive macros and trait bounds on types/enums the spec extends. Record constraints new additions must satisfy (`Copy`, `Serialize`, `Ord`).
+  - **Derive propagation**: For new types with derives (`Hash`, `Ord`, `Copy`, etc.), verify that all field types also derive those traits. A new struct deriving `Hash` that embeds a type without `Hash` will fail to compile. Flag missing derives on embedded types as CRITICAL Issues.
+  - **Derive widening**: If the spec shows a modified type with derive attributes, compare against the current derives. New derives (e.g., adding `Ord` or `Hash`) are safe widenings but should be explicitly noted in the spec so implementers don't treat them as copy-paste artifacts.
 - **5c. Default and constructors**: For field additions, check `Default` impl and builder/constructor functions.
 - **5d. Downstream consumers**: For field type changes or removals, perform full downstream consumer analysis (3.6).
 - **5e. Scalar-to-collection migrations**: Grep for equality comparisons (`== field_value`) that would need `.contains()`.
@@ -278,7 +282,8 @@ After all findings are resolved and approved:
 - Preserve existing structure and voice. Change only what was agreed upon.
 - When changes are numerous and spread throughout, a full Write is acceptable — the intent is to avoid gratuitous rewrites of sections with no findings.
 - If inserting a new deliverable, renumber subsequent deliverables. Header renumbering of unchanged sections is permitted.
-- If new deliverables introduce actions, components, or system functions, update Section H for P30 compliance.
+- **New deliverable vs. amendment**: When a finding introduces substantial new logic (new mechanism, new type, new event tag), consider whether it warrants a new numbered deliverable rather than expanding an existing one. Criteria: (a) the new logic has its own implementation site distinct from existing deliverables, (b) it could be implemented and tested independently, (c) it would make the existing deliverable unwieldy if inlined. If so, create a new deliverable and note the renumbering.
+- If new deliverables introduce actions, components, or system functions, update Section H for P30 compliance. Also update Section H's information-path and stored-state entries when reassessment changes the causal mechanism described in existing scenarios.
 - If the user requests corrections after reviewing, apply them and re-present affected sections.
 
 ### Step 8: Final Summary

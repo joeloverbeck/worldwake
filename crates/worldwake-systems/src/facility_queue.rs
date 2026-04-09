@@ -805,7 +805,13 @@ mod tests {
         enqueue(&mut world, facility, actor, harvest_id);
         {
             let mut txn = new_txn(&mut world, 3);
-            txn.set_component_dead_at(actor, worldwake_core::DeadAt(Tick(3)))
+            txn.set_component_dead_at(
+                actor,
+                worldwake_core::DeadAt {
+                    tick: Tick(3),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
                 .unwrap();
             commit_txn(txn);
         }
@@ -1105,7 +1111,14 @@ mod tests {
             txn.set_ground_location(actor, place).unwrap();
             let corpse = txn.create_agent("Corpse", ControlSource::Ai).unwrap();
             txn.set_ground_location(corpse, place).unwrap();
-            txn.set_component_dead_at(corpse, DeadAt(Tick(1))).unwrap();
+            txn.set_component_dead_at(
+                corpse,
+                DeadAt {
+                    tick: Tick(1),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             txn.set_component_contention_policy(
                 corpse,
                 ContentionPolicy {

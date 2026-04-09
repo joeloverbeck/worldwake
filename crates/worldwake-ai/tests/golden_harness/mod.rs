@@ -2064,7 +2064,10 @@ mod tests {
                 entity: incumbent,
                 component_kind: ComponentKind::DeadAt,
                 before: None,
-                after: ComponentValue::DeadAt(worldwake_core::DeadAt(death_tick)),
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt {
+                    tick: death_tick,
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                }),
             })],
         );
         let vacancy_relation = RelationValue::OfficeHolder {
@@ -2099,7 +2102,13 @@ mod tests {
                 record,
                 incumbent,
                 ComponentKind::DeadAt,
-                |after| matches!(after, ComponentValue::DeadAt(worldwake_core::DeadAt(tick)) if *tick == death_tick),
+                |after| matches!(
+                    after,
+                    ComponentValue::DeadAt(worldwake_core::DeadAt {
+                        tick,
+                        cause: worldwake_core::DeathCause::CombatWounds,
+                    }) if *tick == death_tick
+                ),
             )
         });
         let matched_vacancy =
@@ -2132,7 +2141,10 @@ mod tests {
                 entity,
                 component_kind: ComponentKind::DeadAt,
                 before: None,
-                after: ComponentValue::DeadAt(worldwake_core::DeadAt(Tick(1))),
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt {
+                    tick: Tick(1),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                }),
             })],
         );
         let later = emit_test_event(&mut log, 2, &[EventTag::Political], Vec::new());

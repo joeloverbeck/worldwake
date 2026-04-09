@@ -1445,7 +1445,13 @@ fn conformance_loot() {
     );
     {
         let mut txn = new_txn(&mut ch.h.world, 0);
-        txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(0)))
+        txn.set_component_dead_at(
+            corpse,
+            worldwake_core::DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
             .unwrap();
         txn.set_component_agent_data(
             corpse,
@@ -1713,7 +1719,13 @@ fn conformance_bury() {
     );
     {
         let mut txn = new_txn(&mut ch.h.world, 0);
-        txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(0)))
+        txn.set_component_dead_at(
+            corpse,
+            worldwake_core::DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
             .unwrap();
         txn.set_component_agent_data(
             corpse,

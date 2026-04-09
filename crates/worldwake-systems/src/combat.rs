@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, ActionDomain, BodyCostPerTick, BodyPart, CauseRef, CombatStance,
     CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, Container,
-    ContentionPolicy, ContentionQueue, DeadAt, DriveThresholds, EntityId, EntityKind, EventLog,
+    ContentionPolicy, ContentionQueue, DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind, EventLog,
     EventTag, EventView, EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta,
     VisibilitySpec, WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause, WoundList,
     is_wound_load_fatal, load_per_unit,
@@ -180,7 +180,13 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
         txn.extend_evidence(fatality.evidence);
         clear_entity_contention_state(&mut txn, fatality.entity)
             .map_err(|error| SystemError::new(format!("{error:?}")))?;
-        txn.set_component_dead_at(fatality.entity, DeadAt(tick))
+        txn.set_component_dead_at(
+            fatality.entity,
+            DeadAt {
+                tick,
+                cause: DeathCause::CombatWounds,
+            },
+        )
             .map_err(|error| SystemError::new(error.to_string()))?;
         txn.set_component_contention_queue(fatality.entity, ContentionQueue::default())
             .map_err(|error| SystemError::new(error.to_string()))?;
@@ -1940,9 +1946,9 @@ mod tests {
         ActionDefId, AgentBeliefStore, BodyPart, CarryCapacity, CauseRef, CombatProfile,
         CombatStance, CombatWeaponRef, CommodityKind, Container, ContentionGrant,
         ContentionIntents, ContentionPolicy, ContentionQueue, ContentionWaiter, ControlSource,
-        DeadAt, DeprivationKind, DisturbanceKind, DriveThresholds, EntityId, EntityKind, EventLog,
-        EventTag, EventView, EvidenceKind, EvidenceRef, GoalKey, GoalKind, HomeostaticNeeds,
-        LoadUnits, PerceptionSource, Permille, ProductionOutputOwner,
+        DeadAt, DeathCause, DeprivationKind, DisturbanceKind, DriveThresholds, EntityId,
+        EntityKind, EventLog, EventTag, EventView, EvidenceKind, EvidenceRef, GoalKey, GoalKind,
+        HomeostaticNeeds, LoadUnits, PerceptionSource, Permille, ProductionOutputOwner,
         ProductionOutputOwnershipPolicy, Quantity, QueuedContentionIntent, Seed, Tick,
         VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
         WoundCause, WoundId, WoundList, build_believed_entity_state, build_prototype_world,
@@ -2382,7 +2388,14 @@ mod tests {
         let corpse = spawn_guard(&mut world, 2, ControlSource::Ai);
         {
             let mut txn = new_txn(&mut world, 3);
-            txn.set_component_dead_at(corpse, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(
+                corpse,
+                DeadAt {
+                    tick: Tick(3),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             commit_txn(txn);
         }
         attach_contention(&mut world, corpse, 5, true, None);
@@ -2533,7 +2546,14 @@ mod tests {
             let coins = txn
                 .create_item_lot(CommodityKind::Coin, Quantity(3))
                 .unwrap();
-            txn.set_component_dead_at(corpse, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(
+                corpse,
+                DeadAt {
+                    tick: Tick(3),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             txn.set_ground_location(coins, place).unwrap();
             txn.set_possessor(coins, corpse).unwrap();
             commit_txn(txn);
@@ -2588,7 +2608,14 @@ mod tests {
             let coins = txn
                 .create_item_lot(CommodityKind::Coin, Quantity(3))
                 .unwrap();
-            txn.set_component_dead_at(corpse, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(
+                corpse,
+                DeadAt {
+                    tick: Tick(3),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             txn.set_ground_location(coins, place).unwrap();
             txn.set_possessor(coins, corpse).unwrap();
             commit_txn(txn);
@@ -2908,7 +2935,14 @@ mod tests {
         arm_actor(&mut world, healer, 4, CommodityKind::Medicine, 1);
         {
             let mut txn = new_txn(&mut world, 5);
-            txn.set_component_dead_at(patient, DeadAt(Tick(5))).unwrap();
+            txn.set_component_dead_at(
+                patient,
+                DeadAt {
+                    tick: Tick(5),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             commit_txn(txn);
         }
         let affordances = affordances_for(&world, healer, &defs, &handlers);
@@ -3137,7 +3171,14 @@ mod tests {
         let bread = add_carried_lot(&mut world, corpse, 4, CommodityKind::Bread, 3);
         {
             let mut txn = new_txn(&mut world, 5);
-            txn.set_component_dead_at(corpse, DeadAt(Tick(5))).unwrap();
+            txn.set_component_dead_at(
+                corpse,
+                DeadAt {
+                    tick: Tick(5),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             commit_txn(txn);
         }
 
@@ -3196,7 +3237,13 @@ mod tests {
             world.controlled_commodity_quantity(corpse, CommodityKind::Bread),
             Quantity(0)
         );
-        assert_eq!(world.get_component_dead_at(corpse), Some(&DeadAt(Tick(5))));
+        assert_eq!(
+            world.get_component_dead_at(corpse),
+            Some(&DeadAt {
+                tick: Tick(5),
+                cause: DeathCause::CombatWounds,
+            })
+        );
 
         let record = log
             .get(*log.events_by_tag(EventTag::ActionCommitted).last().unwrap())
@@ -3216,7 +3263,14 @@ mod tests {
         let bread = add_carried_lot(&mut world, corpse, 4, CommodityKind::Bread, 3);
         {
             let mut txn = new_txn(&mut world, 5);
-            txn.set_component_dead_at(corpse, DeadAt(Tick(5))).unwrap();
+            txn.set_component_dead_at(
+                corpse,
+                DeadAt {
+                    tick: Tick(5),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             commit_txn(txn);
         }
 
@@ -3305,7 +3359,14 @@ mod tests {
             add_carried_container_with_lot(&mut world, corpse, 4, CommodityKind::Bread, 2);
         {
             let mut txn = new_txn(&mut world, 5);
-            txn.set_component_dead_at(corpse, DeadAt(Tick(5))).unwrap();
+            txn.set_component_dead_at(
+                corpse,
+                DeadAt {
+                    tick: Tick(5),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             commit_txn(txn);
         }
 
@@ -3376,7 +3437,14 @@ mod tests {
         let bread = add_carried_lot(&mut world, corpse, 4, CommodityKind::Bread, 2);
         {
             let mut txn = new_txn(&mut world, 5);
-            txn.set_component_dead_at(corpse, DeadAt(Tick(5))).unwrap();
+            txn.set_component_dead_at(
+                corpse,
+                DeadAt {
+                    tick: Tick(5),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             commit_txn(txn);
         }
 
@@ -3480,7 +3548,13 @@ mod tests {
         set_carry_capacity(&mut world, incapacitated_looter, 6, 10);
         {
             let mut txn = new_txn(&mut world, 7);
-            txn.set_component_dead_at(dead_target, DeadAt(Tick(7)))
+            txn.set_component_dead_at(
+                dead_target,
+                DeadAt {
+                    tick: Tick(7),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
                 .unwrap();
             txn.set_ground_location(incapacitated_looter, place)
                 .unwrap();
@@ -3542,7 +3616,14 @@ mod tests {
         {
             let mut txn = new_txn(&mut world, 10);
             txn.set_ground_location(dead_target, place).unwrap();
-            txn.set_component_dead_at(looter, DeadAt(Tick(10))).unwrap();
+            txn.set_component_dead_at(
+                looter,
+                DeadAt {
+                    tick: Tick(10),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             commit_txn(txn);
         }
         let dead_actor_err = start_action(
@@ -4348,7 +4429,14 @@ mod tests {
         let incapacitated = spawn_guard(&mut world, 2, ControlSource::Ai);
         {
             let mut txn = new_txn(&mut world, 3);
-            txn.set_component_dead_at(dead, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(
+                dead,
+                DeadAt {
+                    tick: Tick(3),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             txn.set_component_wound_list(
                 incapacitated,
                 WoundList {
@@ -4394,7 +4482,14 @@ mod tests {
         let incapacitated = spawn_guard(&mut world, 2, ControlSource::Ai);
         {
             let mut txn = new_txn(&mut world, 3);
-            txn.set_component_dead_at(dead, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(
+                dead,
+                DeadAt {
+                    tick: Tick(3),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             txn.set_component_wound_list(
                 incapacitated,
                 WoundList {
@@ -4524,7 +4619,13 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(5))));
+        assert_eq!(
+            world.get_component_dead_at(guard),
+            Some(&DeadAt {
+                tick: Tick(5),
+                cause: DeathCause::CombatWounds,
+            })
+        );
         assert_eq!(
             world.get_component_contention_policy(guard),
             Some(&super::corpse_contention_policy())
@@ -4585,7 +4686,14 @@ mod tests {
                 },
             )
             .unwrap();
-            txn.set_component_dead_at(guard, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(
+                guard,
+                DeadAt {
+                    tick: Tick(3),
+                    cause: DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             commit_txn(txn);
         }
         let mut log = EventLog::new();
@@ -4606,7 +4714,13 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(3))));
+        assert_eq!(
+            world.get_component_dead_at(guard),
+            Some(&DeadAt {
+                tick: Tick(3),
+                cause: DeathCause::CombatWounds,
+            })
+        );
         assert!(log.is_empty());
     }
 
@@ -4653,7 +4767,13 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(7))));
+        assert_eq!(
+            world.get_component_dead_at(guard),
+            Some(&DeadAt {
+                tick: Tick(7),
+                cause: DeathCause::CombatWounds,
+            })
+        );
         assert_eq!(log.events_by_tag(EventTag::Combat).len(), 1);
     }
 
@@ -5302,7 +5422,13 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(world.get_component_dead_at(patient), Some(&DeadAt(Tick(5))));
+        assert_eq!(
+            world.get_component_dead_at(patient),
+            Some(&DeadAt {
+                tick: Tick(5),
+                cause: DeathCause::CombatWounds,
+            })
+        );
         assert_eq!(
             world.get_component_contention_policy(patient),
             Some(&super::corpse_contention_policy())
@@ -5351,7 +5477,13 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(world.get_component_dead_at(guard), Some(&DeadAt(Tick(3))));
+        assert_eq!(
+            world.get_component_dead_at(guard),
+            Some(&DeadAt {
+                tick: Tick(3),
+                cause: DeathCause::CombatWounds,
+            })
+        );
         let record = log.get(log.events_by_tag(EventTag::Combat)[0]).unwrap();
         assert!(matches!(record.cause(), CauseRef::Event(_)));
     }
