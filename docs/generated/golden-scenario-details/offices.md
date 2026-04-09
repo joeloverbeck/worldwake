@@ -7,7 +7,7 @@ Scenarios: 15
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 
-- Source: `golden_offices.rs:28`
+- Source: `golden_offices.rs:29`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -25,7 +25,7 @@ Scenarios: 15
 
 ### Scenario 11b: Deterministic Replay
 
-- Source: `golden_offices.rs:153`
+- Source: `golden_offices.rs:154`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - Places: VillageSquare
@@ -39,7 +39,7 @@ Scenarios: 15
 
 ### Scenario 12: Competing Claims with Loyal Supporter
 
-- Source: `golden_offices.rs:191`
+- Source: `golden_offices.rs:192`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -57,7 +57,7 @@ Scenarios: 15
 
 ### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 
-- Source: `golden_offices.rs:417`
+- Source: `golden_offices.rs:418`
 - Systems: Bribe, Succession, AI, Conservation
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -75,7 +75,7 @@ Scenarios: 15
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:663`
+- Source: `golden_offices.rs:664`
 - Systems: Threaten, Succession, AI
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -93,7 +93,7 @@ Scenarios: 15
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:963`
+- Source: `golden_offices.rs:964`
 - Systems: Travel, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -111,7 +111,7 @@ Scenarios: 15
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:1076`
+- Source: `golden_offices.rs:1077`
 - Systems: AI, Travel, Succession, Political actions, Perception
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -129,7 +129,7 @@ Scenarios: 15
 
 ### Scenario 73: Remote Record Travel + Consultation + Political Action
 
-- Source: `golden_offices.rs:1292`
+- Source: `golden_offices.rs:1293`
 - Systems: AI, Travel, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -147,7 +147,7 @@ Scenarios: 15
 
 ### Scenario 34: Knowledge Asymmetry Race
 
-- Source: `golden_offices.rs:1592`
+- Source: `golden_offices.rs:1593`
 - Systems: AI, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -165,7 +165,7 @@ Scenarios: 15
 
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1956`
+- Source: `golden_offices.rs:1957`
 - Systems: Needs, AI, Succession, Political actions
 - GoalKinds: ClaimOffice, ConsumeOwnedCommodity
 - ActionDomains: Needs, Generic
@@ -183,7 +183,7 @@ Scenarios: 15
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:2158`
+- Source: `golden_offices.rs:2159`
 - Systems: Factions, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -201,7 +201,7 @@ Scenarios: 15
 
 ### Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
 
-- Source: `golden_offices.rs:2319`
+- Source: `golden_offices.rs:2320`
 - Systems: AI, Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -219,7 +219,7 @@ Scenarios: 15
 
 ### Scenario 71: Contested Force Claim Resolves Only After Yield
 
-- Source: `golden_offices.rs:2704`
+- Source: `golden_offices.rs:2705`
 - Systems: Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -237,7 +237,7 @@ Scenarios: 15
 
 ### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
-- Source: `golden_offices.rs:2969`
+- Source: `golden_offices.rs:2970`
 - Systems: Force-control succession, Tell, Perception
 - GoalKinds: ClaimOffice, ShareBelief
 - ActionDomains: Generic, Social
@@ -255,7 +255,7 @@ Scenarios: 15
 
 ### Scenario 109: Vacancy notice unlocks political action without record consult
 
-- Source: `golden_offices.rs:3269`
+- Source: `golden_offices.rs:3270`
 - Systems: Social artifact actions, Perception, Institutional beliefs, AI, Political actions, Succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Social, Generic

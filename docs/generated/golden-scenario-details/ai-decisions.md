@@ -112,7 +112,7 @@ Scenarios: 7
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1945`
+- Source: `golden_ai_decisions.rs:1953`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # Simulation Observer Report
 
 ## Run Summary
@@ -130,3 +132,10 @@ The dump provides good coverage for mechanical smells (1-6) with precise tick ra
 - No affordance trace -- we can't see what the planner considered and rejected. This is the biggest blind spot: we can see agents don't eat/drink/travel, but can't see whether the planner generated those goals and failed to find plans, or never generated the goals at all.
 - No failed-plan trace -- when the planner attempts to find a plan and fails, there's no record of what it tried. This would directly explain smells 2, 3, 5, and 6.
 - Guard Theron's abrupt shutdown at tick ~420 needs investigation. The dump shows he stops acting but doesn't show why the planner stops producing any output at all (not even sleep).
+
+## Outcome
+
+- Completion date: 2026-04-09
+- What actually changed: Archived this observer report after its findings were exploited into follow-up remediation and planning material.
+- Deviations from original plan: None. The report remains as historical analysis rather than active work.
+- Verification results: Confirmed the report was marked completed before archival and moved into `archive/reports/`.

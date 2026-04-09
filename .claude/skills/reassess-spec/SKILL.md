@@ -39,6 +39,8 @@ If plan mode is active:
 
 If question resolution produces new findings or modifies existing ones, the plan file reflects the final resolved state, not the initial report. Sequence: present resolution conversationally, write the plan file incorporating all resolved findings, call ExitPlanMode.
 
+If there are no questions, proceed directly from the Step 6 findings report to writing the plan file and calling ExitPlanMode.
+
 If the ExitPlanMode result contains user comments, treat them as binding modifications.
 
 **Plan file structure**:
@@ -60,6 +62,7 @@ Before beginning Steps 2-3, classify the spec:
 - **(a) New system** — introduces new components, actions, goal kinds, or information paths. Full checklist applies.
 - **(b) System extension** — extends existing components, actions, or enums without new systems. Steps 3.1-3.8, 4.4 apply. Skip 3.9 if no behavioral claims about runtime readers/writers. Section H updates only for new deliverable sections. For tooling-only specs (observer, CLI, debug output), downstream consumer analysis (3.6) can be limited to the tooling binary.
 - **(c) Structural refactor** — trait/module restructuring with no behavioral changes. Skip Steps 3.5, 3.9, 4.4; Section H is N/A. Focus on symbol existence, count accuracy, and blast radius.
+- **(d) Test-only** — adds golden tests, benchmarks, or test infrastructure without modifying production code. Steps 3.1-3.4 apply (validate referenced paths, types, functions, dependencies). Skip 3.5-3.9 (no production code changes to trace). Step 4 applies but 4.4 is N/A. Section H updates are N/A unless the test reveals a missing causal hook.
 
 If uncertain, default to the more rigorous classification.
 
@@ -261,7 +264,11 @@ If answers raise new questions or invalidate findings, present a follow-up round
 
 ### Pre-Apply Verification
 
-Before writing in Step 7, verify each finding with targeted checks (e.g., count validation, grep confirming symbol presence/absence). If a finding is invalidated, re-present the corrected finding before applying. Do not silently substitute different changes.
+Before writing in Step 7, run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying. Do not silently substitute different changes.
+
+### Post-Apply Confirmation
+
+After all Step 7 edits are applied, grep the updated spec for: (1) eliminated stale references (should return zero matches), and (2) corrected references (should return the expected matches). Record the verification results for Step 8.
 
 ### Step 7: Write the Updated Spec
 
@@ -280,6 +287,7 @@ Present:
 
 - Number of issues fixed, improvements applied, additions incorporated
 - Change inventory: all changes grouped by finding type (mirroring Step 6 structure)
+- Post-Apply Confirmation results (e.g., "Verified: zero matches for eliminated references, N matches for corrected references")
 - Deferred items the user chose not to address
 - Items excluded by reassessment-driven scope changes (distinct from user-deferred) — note why. Omit if none.
 - 1-3 sections that changed most substantially, with a note to review before proceeding

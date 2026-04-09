@@ -16,7 +16,8 @@ Phase 7: Consequence Carriers (adjunct)
 
 ## Dependencies
 
-- No spec dependencies. All required infrastructure (travel, perception, belief store, utility profiles) is already implemented.
+- No blocking dependencies. All required infrastructure (travel, perception, belief store, utility profiles) is already implemented.
+- S77 (Belief Capacity Prioritization, COMPLETED) implemented the `enforce_capacity()` prioritization that S76-C guards against regression.
 
 ## Design Goals
 
@@ -49,9 +50,9 @@ No new causal hooks. All tested behaviors use existing systems.
 ### Information-Path Analysis
 
 - GT-A: Hunger/thirst need state -> candidate generation -> planner search -> travel + consume action chain. Beliefs about remote resources must exist (seeded or perceived).
-- GT-B: Multiple unsatisfiable needs -> candidate generation -> planner must still find SOME valid plan (sleep, relieve, travel). Fallback from top-priority unsatisfiable to lower-priority satisfiable.
+- GT-B: Multiple unsatisfiable needs -> `generate_candidates()` -> planner must still find SOME valid plan (sleep, relieve, travel). Fallback from top-priority unsatisfiable to lower-priority satisfiable.
 - GT-C: Colocated entity observation -> `build_observed_entity_snapshot()` -> `record_observed_snapshot()` -> `entity_claims_for_snapshot()` -> belief store. Resource source beliefs survive `enforce_capacity()`.
-- GT-D: Different `UtilityProfile` weights -> different goal rankings in `rank_goals()` -> different plan selections -> different action sequences.
+- GT-D: Different `UtilityProfile` weights -> `generate_candidates()` -> `rank_candidates()` with different utility scores -> different plan selections -> different action sequences.
 
 ### Positive-Feedback Analysis
 
@@ -83,9 +84,9 @@ No new stored state or derived views. Tests only.
 
 **Assertion**: Within 300 ticks, the agent travels to ResourceVillage and performs eat or drink. If the agent remains at BarrenCamp for 200+ ticks doing only sleep/relieve, the test fails.
 
-**GoalKinds exercised**: `SatisfyNeed` (Hunger or Thirst), Travel (as enabling step)
+**GoalKinds exercised**: `AcquireCommodity` (remote acquire), `ConsumeOwnedCommodity` (eat/drink), Travel (as enabling step)
 
-**ActionDomains exercised**: Travel, Metabolism (eat/drink)
+**ActionDomains exercised**: Travel, Needs (eat/drink)
 
 **Systems exercised**: AI (candidate generation with remote acquisition paths), planner search (multi-step travel + consume), Travel action, Eat/Drink action
 
@@ -117,9 +118,9 @@ No new stored state or derived views. Tests only.
 
 **Assertion**: Over 300 ticks, `max_consecutive_idle < 100`. Even when multiple needs are locally unsatisfiable, the agent should attempt relieve, sleep, or travel to ResourceTown. A 1019-tick idle streak is never acceptable.
 
-**GoalKinds exercised**: `SatisfyNeed` (multiple), Travel
+**GoalKinds exercised**: `Relieve`, `Sleep`, `AcquireCommodity`, Travel (as enabling step)
 
-**ActionDomains exercised**: Travel, Metabolism, Physiology (relieve)
+**ActionDomains exercised**: Travel, Needs (eat/drink/sleep/relieve)
 
 **Systems exercised**: AI (candidate generation fallback from unsatisfiable top-priority to satisfiable lower-priority), planner search, exhaustion cache budget backoff
 
@@ -181,11 +182,11 @@ No new stored state or derived views. Tests only.
 
 **Assertion**: Over 200 ticks, the 3 agents do NOT produce identical action sequences. At minimum, their first non-relieve action should differ, or their action distribution (eat vs. drink vs. sleep counts) should show measurable variance. Identical `sleep*10 + relieve*1` patterns across all 3 agents fail the test.
 
-**GoalKinds exercised**: `SatisfyNeed` (Hunger, Thirst, Fatigue)
+**GoalKinds exercised**: `ConsumeOwnedCommodity` (eat/drink), `Sleep`, `Relieve`
 
-**ActionDomains exercised**: Metabolism (eat, drink), Rest (sleep), Physiology (relieve)
+**ActionDomains exercised**: Needs (eat, drink, sleep, relieve)
 
-**Systems exercised**: AI (goal ranking via `rank_goals()` using UtilityProfile weights), candidate generation, planner search
+**Systems exercised**: AI (`generate_candidates()` produces goals, `rank_candidates()` scores them using UtilityProfile weights), planner search
 
 **What emergence it demonstrates**: Different utility weights cause different goal rankings, leading to different plan selections and action sequences. This is Principle 22 in action: diversity from concrete parameter variation, not from scripted role differences.
 
@@ -238,5 +239,5 @@ No new stored state or derived views. Tests only.
 ## Replay and Conservation Requirements
 
 - Each primary golden scenario MUST have a `*_replays_deterministically` companion
-- Conservation verification: No new physical goods introduced. `verify_conservation` should pass unchanged.
-- All scenarios must use `ChaCha8Rng` seeded determinism
+- Conservation verification: S76-A involves apple consumption and should call `verify_authoritative_conservation()` / `verify_live_lot_conservation()` for apple commodity lots. S76-B, S76-C, and S76-D do not introduce or track commodity quantities, so conservation checks are not applicable.
+- All scenarios must use `Seed([u8; 32])` passed to `GoldenHarness::new()` for deterministic replay

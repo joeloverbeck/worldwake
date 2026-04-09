@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 144
-- Contributing golden test files: 23
-- Associated tests: 309
+- Scenario blocks: 146
+- Contributing golden test files: 24
+- Associated tests: 313
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -102,7 +102,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1945`
+- Source: `golden_ai_decisions.rs:1953`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -503,7 +503,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 38: Witnessed Theft Enables Accusation Chain
 
-- Source: `golden_emergent.rs:5249`
+- Source: `golden_emergent.rs:5250`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -512,7 +512,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 39: Traceability Explains Stale Fine Branch
 
-- Source: `golden_emergent.rs:5677`
+- Source: `golden_emergent.rs:5678`
 - Systems: AI, Institutions, Justice, Action Trace
 - GoalKinds: PunishAccused
 - ActionDomains: Social
@@ -521,7 +521,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 40: Supply Depletion Enables ShareBelief
 
-- Source: `golden_emergent.rs:5981`
+- Source: `golden_emergent.rs:5982`
 - Systems: Perception, AI, Generic Actions, Social Tell
 - GoalKinds: ShareBelief, InvestigateViolation
 - ActionDomains: Generic, Social
@@ -530,7 +530,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 42: Witness Deterrence Suppresses Theft Candidate
 
-- Source: `golden_emergent.rs:6264`
+- Source: `golden_emergent.rs:6265`
 - Systems: AI, Perception, Needs
 - GoalKinds: ConsumeOwnedCommodity (NOT StealItem)
 - ActionDomains: Needs
@@ -539,7 +539,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
 
-- Source: `golden_emergent.rs:6520`
+- Source: `golden_emergent.rs:6521`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -548,7 +548,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 110: Jurisdiction-Gated Punishment
 
-- Source: `golden_emergent.rs:7386`
+- Source: `golden_emergent.rs:7387`
 - GoalKinds: PunishAccused
 - ActionDomains: Social
 - Places: RulersHall, GeneralStore
@@ -556,7 +556,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 111: Secondary-Jurisdiction Punishment Away From Office Seat
 
-- Source: `golden_emergent.rs:7437`
+- Source: `golden_emergent.rs:7438`
 - GoalKinds: PunishAccused
 - ActionDomains: Social
 - Places: RulersHall, GeneralStore
@@ -564,7 +564,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 43: Dual Discovery Converges Without Double Accusation
 
-- Source: `golden_emergent.rs:7477`
+- Source: `golden_emergent.rs:7478`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
 - ActionDomains: Transport, Social, Travel
@@ -573,7 +573,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 120: Overdue Expectation Drives Search
 
-- Source: `golden_expectation.rs:605`
+- Source: `golden_expectation.rs:609`
 - Systems: ExpectationCheck, AI, Travel, SearchPlace
 - GoalKinds: SearchForMissing
 - ActionDomains: Travel, Epistemic
@@ -588,7 +588,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 121: Report Missing Creates Institutional Record Then Searches
 
-- Source: `golden_expectation.rs:639`
+- Source: `golden_expectation.rs:643`
 - Systems: ExpectationCheck, AI, ReportMissing, ViolationMemory, OfficeRegister, Travel, SearchPlace
 - GoalKinds: ReportMissing, SearchForMissing
 - ActionDomains: Social, Travel, Epistemic
@@ -603,7 +603,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 122: Escort Wounded Entity to Safety
 
-- Source: `golden_expectation.rs:874`
+- Source: `golden_expectation.rs:879`
 - Systems: AI, Travel, EscortToSafety
 - GoalKinds: EscortToSafety
 - ActionDomains: Care, Travel
@@ -618,7 +618,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 124: AskAboutPerson as Progress Barrier Within SearchForMissing
 
-- Source: `golden_expectation.rs:1075`
+- Source: `golden_expectation.rs:1080`
 - Systems: ExpectationCheck, AI, AskAboutPerson, Travel, SearchPlace
 - GoalKinds: SearchForMissing
 - ActionDomains: Epistemic, Travel
@@ -633,7 +633,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 125: ReportFound After Search Resolution
 
-- Source: `golden_expectation.rs:1301`
+- Source: `golden_expectation.rs:1307`
 - Systems: ExpectationCheck, AI, Travel, SearchPlace, ReportFound, OfficeRegister
 - GoalKinds: SearchForMissing, ReportFound
 - ActionDomains: Travel, Epistemic, Social
@@ -684,7 +684,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 20: Apple Stockout → Carrier Reroute → Supply Chain Disruption
 
-- Source: `golden_integration.rs:83`
+- Source: `golden_integration.rs:82`
 - Systems: Needs, Trade, Travel, Combat, Production
 - GoalKinds: ConsumeOwnedCommodity, RestockCommodity, AcquireCommodity
 - ActionDomains: Needs, Trade, Travel, Combat (≥ 4 required)
@@ -699,7 +699,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 27: Controlled Agent Death
 
-- Source: `golden_integration.rs:1042`
+- Source: `golden_integration.rs:1041`
 - Systems: Combat, AI, Needs
 - GoalKinds: EngageHostile
 - ActionDomains: Combat
@@ -714,7 +714,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 28: Pursuit Across Information Boundary
 
-- Source: `golden_integration.rs:1302`
+- Source: `golden_integration.rs:1301`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social (≥ 2 required)
@@ -729,7 +729,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
 
-- Source: `golden_integration.rs:2871`
+- Source: `golden_integration.rs:2869`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
 - GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Generic, Travel, Social, Production
@@ -744,7 +744,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 105: Social artifact bounty lifecycle closes canonically
 
-- Source: `golden_integration.rs:5146`
+- Source: `golden_integration.rs:5145`
 - Systems: Social artifact actions, Perception, AI, Travel, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel, Combat
@@ -759,7 +759,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 106: Expired bounty stays visible but no longer generates pursuit
 
-- Source: `golden_integration.rs:5184`
+- Source: `golden_integration.rs:5183`
 - Systems: Social artifact actions, pre-action artifact lifecycle, Perception, AI
 - GoalKinds: FulfillBounty
 - ActionDomains: Social
@@ -774,7 +774,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 108: Delivery bounty closes through cargo movement and later claim
 
-- Source: `golden_integration.rs:5221`
+- Source: `golden_integration.rs:5220`
 - Systems: Social artifact actions, Perception, AI, Travel, Transport
 - GoalKinds: FulfillBounty, MoveCargo
 - ActionDomains: Social, Travel, Transport
@@ -789,7 +789,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 107: Threat-warning notice flips the next route choice
 
-- Source: `golden_integration.rs:5261`
+- Source: `golden_integration.rs:5260`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production
@@ -804,7 +804,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 112: Autonomous institutional bounty posts from consulted accusation
 
-- Source: `golden_integration.rs:5299`
+- Source: `golden_integration.rs:5298`
 - Systems: Social artifact actions, Beliefs, AI, Offices
 - GoalKinds: PostBounty
 - ActionDomains: Social
@@ -819,7 +819,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 113: Autonomous threat-warning notice reroutes later travel
 
-- Source: `golden_integration.rs:5338`
+- Source: `golden_integration.rs:5337`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production
@@ -834,7 +834,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 114: Theft evidence persists, is perceived locally, and decays
 
-- Source: `golden_integration.rs:5379`
+- Source: `golden_integration.rs:5378`
 - Systems: Transport, Perception, Evidence decay, AI
 - GoalKinds: InvestigateViolation
 - ActionDomains: Transport, Travel, Generic
@@ -862,7 +862,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 33: Office Vacancy → Patrol Gap → Crime Opportunity → Recovery
 
-- Source: `golden_long_scenarios.rs:1055`
+- Source: `golden_long_scenarios.rs:1053`
 - Systems: Succession, Combat, AI, Patrol, Transport, Perception, Travel
 - GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, StealItem
 - ActionDomains: Combat, Social, Travel, Transport, Epistemic (≥ 5 required)
@@ -1021,7 +1021,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 
-- Source: `golden_offices.rs:28`
+- Source: `golden_offices.rs:29`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1036,7 +1036,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 11b: Deterministic Replay
 
-- Source: `golden_offices.rs:153`
+- Source: `golden_offices.rs:154`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - Places: VillageSquare
@@ -1047,7 +1047,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 12: Competing Claims with Loyal Supporter
 
-- Source: `golden_offices.rs:191`
+- Source: `golden_offices.rs:192`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1062,7 +1062,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 
-- Source: `golden_offices.rs:417`
+- Source: `golden_offices.rs:418`
 - Systems: Bribe, Succession, AI, Conservation
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1077,7 +1077,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:663`
+- Source: `golden_offices.rs:664`
 - Systems: Threaten, Succession, AI
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1092,7 +1092,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:963`
+- Source: `golden_offices.rs:964`
 - Systems: Travel, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1107,7 +1107,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:1076`
+- Source: `golden_offices.rs:1077`
 - Systems: AI, Travel, Succession, Political actions, Perception
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1122,7 +1122,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 73: Remote Record Travel + Consultation + Political Action
 
-- Source: `golden_offices.rs:1292`
+- Source: `golden_offices.rs:1293`
 - Systems: AI, Travel, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1137,7 +1137,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 34: Knowledge Asymmetry Race
 
-- Source: `golden_offices.rs:1592`
+- Source: `golden_offices.rs:1593`
 - Systems: AI, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1152,7 +1152,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1956`
+- Source: `golden_offices.rs:1957`
 - Systems: Needs, AI, Succession, Political actions
 - GoalKinds: ClaimOffice, ConsumeOwnedCommodity
 - ActionDomains: Needs, Generic
@@ -1167,7 +1167,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:2158`
+- Source: `golden_offices.rs:2159`
 - Systems: Factions, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1182,7 +1182,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
 
-- Source: `golden_offices.rs:2319`
+- Source: `golden_offices.rs:2320`
 - Systems: AI, Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1197,7 +1197,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 71: Contested Force Claim Resolves Only After Yield
 
-- Source: `golden_offices.rs:2704`
+- Source: `golden_offices.rs:2705`
 - Systems: Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1212,7 +1212,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
-- Source: `golden_offices.rs:2969`
+- Source: `golden_offices.rs:2970`
 - Systems: Force-control succession, Tell, Perception
 - GoalKinds: ClaimOffice, ShareBelief
 - ActionDomains: Generic, Social
@@ -1227,7 +1227,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 109: Vacancy notice unlocks political action without record consult
 
-- Source: `golden_offices.rs:3269`
+- Source: `golden_offices.rs:3270`
 - Systems: Social artifact actions, Perception, Institutional beliefs, AI, Political actions, Succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Social, Generic
@@ -1582,6 +1582,36 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: Save/load mid-run preserves all world meaning (Principle 12). Deterministic execution: same seed + same inputs = identical StateHash at every checkpoint, whether run continuously or split across a serialization boundary. No state leakage through save/load.
 
 **Cross-system chain**: seed -> continuous 1440-tick run -> checkpoint hashes vs seed -> 720 ticks -> save_to_bytes -> load_from_bytes -> 720 ticks -> checkpoint hashes must match exactly at every 100-tick boundary.
+
+### Scenario 126: Remote Travel To Resource Under Local Scarcity
+
+- Source: `golden_simulation_gaps.rs:335`
+- Systems: Needs, AI, Travel, Production
+- GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
+- ActionDomains: Travel, Needs, Production
+- Places: VillageSquare, OrchardFarm
+- Principles: 7, 14, 20
+
+**Setup**: One agent at VillageSquare with critical hunger and no local food. OrchardFarm has an apple source, and the agent starts with seeded beliefs about both the place and the remote source.
+
+**Proves**: The agent leaves the barren local start, reaches OrchardFarm, and commits eat/drink within the tick budget instead of stalling in local sleep/relieve loops.
+
+**Cross-system chain**: hunger pressure -> remote resource candidate generation -> travel plan -> OrchardFarm arrival -> remote acquisition -> consumption.
+
+### Scenario 127: Idle Cap Under Remote Resource Scarcity
+
+- Source: `golden_simulation_gaps.rs:371`
+- Systems: Needs, AI, Travel, Production
+- GoalKinds: Sleep, Relieve, AcquireCommodity, ConsumeOwnedCommodity
+- ActionDomains: Travel, Needs, Production
+- Places: VillageSquare, OrchardFarm
+- Principles: 8, 20, 22
+
+**Setup**: One agent at VillageSquare with moderate hunger, thirst, fatigue, and bladder pressure. Local food and water are absent; OrchardFarm holds both apples and remote water, while local self-care affordances remain lawful. The agent starts with seeded beliefs about the remote resources.
+
+**Proves**: Under multi-need scarcity, the agent remains behaviorally active instead of entering a prolonged idle streak.
+
+**Cross-system chain**: multiple active needs -> candidate generation over remote resources plus local self-care -> planner fallback/execution -> bounded idle streak.
 
 ### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
 

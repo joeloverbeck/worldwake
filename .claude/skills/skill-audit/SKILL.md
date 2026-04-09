@@ -112,5 +112,7 @@ Output this structure to the conversation (do not write to a file):
   3. **Sequential flow coherent** — the skill reads coherently end-to-end after all edits
   4. **Contextual consistency** — numbering, terminology, and cross-references are consistent with adjacent unchanged text
   5. **Frontmatter integrity** — if any edit touched the YAML frontmatter, verify `---` delimiters are intact and the YAML parses correctly (name, description, and arguments are present and properly quoted)
-- **Cross-skill consistency** — If the target skill is part of a multi-skill workflow (e.g., plan/implement/evaluate cycle), scan sibling skills for inconsistent file references, terminology, or shared constants. Report cross-skill inconsistencies as Issues.
+
+  If any check fails, fix the offending edit(s), then re-run the full 5-check pass. Do not selectively re-check — a fix in one area can introduce issues in another.
+- **Cross-skill consistency** — If the target skill is part of a multi-skill workflow AND any finding affects interfaces shared with sibling skills (e.g., output format consumed by the next skill, shared terminology, file paths referenced across skills), scan sibling skills for inconsistencies. Report cross-skill inconsistencies as Issues. Skip when all findings are internal to the target skill.
 - **Repeated audit shortcut** — If the same skill has been audited *as the target* 2+ times in the current session and the most recent audit found 0 findings, note "Skill stable — no new session evidence since last audit" and skip the full checklist unless the skill was modified between audits.

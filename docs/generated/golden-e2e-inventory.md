@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 24
-- Files contributing `golden_*` tests: 24
-- Total `golden_*` tests: 324
+- Golden test files: 25
+- Files contributing `golden_*` tests: 25
+- Total `golden_*` tests: 328
 
 ## Per-File Inventory
 
@@ -31,6 +31,7 @@ Do not hand-edit it.
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 2 |
 | `golden_resilience.rs` | 2 |
+| `golden_simulation_gaps.rs` | 4 |
 | `golden_soak.rs` | 1 |
 | `golden_social.rs` | 18 |
 | `golden_supply_chain.rs` | 2 |
@@ -363,6 +364,13 @@ Do not hand-edit it.
 
 - `t31_stress_disruptions`
 - `t32_replay_consistency`
+
+### `golden_simulation_gaps.rs`
+
+- `golden_remote_travel_when_local_supply_exhausted`
+- `golden_remote_travel_when_local_supply_exhausted_replays_deterministically`
+- `golden_max_idle_under_remote_resource_scarcity`
+- `golden_max_idle_under_remote_resource_scarcity_replays_deterministically`
 
 ### `golden_soak.rs`
 

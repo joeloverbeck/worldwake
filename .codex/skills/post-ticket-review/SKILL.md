@@ -9,7 +9,7 @@ Post-implementation review and follow-up planning. Archives the completed ticket
 
 Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), [tickets/README.md](../../../tickets/README.md), and [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) before making changes.
 
-**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), archive it, create new tickets in `tickets/`, update existing active tickets.
+**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), archive it, create new tickets in `tickets/`, update existing active tickets, factually update active specs under `specs/` when the completed ticket's landed contract makes the drift unambiguous.
 
 **Forbidden**: modifying production code or tests.
 
@@ -21,8 +21,9 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 2. If the just-finished ticket was already archived this session, use that archived ticket.
 3. Otherwise, search active tickets for the most recently touched candidate.
 4. Confirm the implementation state is present locally (committed or not).
-5. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
-6. If the target ticket cannot be identified confidently, stop and ask.
+5. Record whether the completed ticket is tracked or untracked in the current worktree so the report can describe archival state accurately.
+6. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
+7. If the target ticket cannot be identified confidently, stop and ask.
 
 ### 2. Check archival readiness
 
@@ -31,6 +32,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 3. Fix factual, unambiguous handoff issues directly: missing/incomplete `Outcome`, inaccurate verification notes, archival mechanics per [docs/archival-workflow.md](../../../docs/archival-workflow.md).
 4. If unresolved in-scope deliverables remain, stop and report archival as blocked — implementation must resume first.
    - This includes stale source-golden headers, generated scenario docs, or owned proof-surface prose that no longer matches the implemented contract. Treat as incomplete handoff, not a separate follow-up ticket.
+   - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up.
 5. If already archived, validate the archived handoff content rather than reopening.
 6. Do not revise the ticket's problem statement, scope, or acceptance criteria except for factual completion notes required by archival mechanics.
 7. If archival readiness is ambiguous, apply the 1-3-1 rule.
@@ -98,6 +100,7 @@ Run these checks before archival to keep the active roadmap accurate:
 - **Scope narrowing**: When the completed ticket was corrected or narrowed during implementation, check whether nearby active tickets still assume the older broader boundary. If the remaining slice is real and no active ticket owns it, create a follow-up and update adjacent `Deps`.
 - **Active spec drift**: When the completed ticket falsifies or narrows a claim in an active spec under `specs/`, classify that as active spec drift. Update the spec factually if in scope for this handoff; otherwise create/update a follow-up ticket that owns bringing the spec into alignment.
 - **Dependency chain impact**: When a new follow-up ticket changes architectural ordering or prerequisites, also check adjacent active tickets in the same subsystem sequence and update their scope or `Deps` factually.
+- **Broader verification blockers**: When the completed ticket's broader verification surfaced a failure outside the ticket's owned surface, rerun the failing proof in isolation before deciding action. If the failure is real and still outside scope, record it in the archived handoff and create or update a bounded follow-up ticket instead of folding it silently into the completed ticket.
 
 ### 6. Author follow-up tickets
 
@@ -122,7 +125,7 @@ Create high-confidence tickets directly. Ask before creating only when scope or 
 
 **Ticket**: <path>
 **Review date**: YYYY-MM-DD
-**Implementation state reviewed**: <worktree/index/committed summary>
+**Implementation state reviewed**: <worktree/index/committed summary, including tracked vs untracked ticket state when relevant>
 
 ## Archival Status
 
