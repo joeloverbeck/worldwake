@@ -2,7 +2,7 @@
 
 ## Summary
 
-Close the gap between resource sources at a location and agent consumption. Currently, agents at places with resource sources (e.g., Water at a Well, Apples at an OrchardRow) cannot plan or execute the harvest-then-consume chain reliably. The eat/drink actions correctly require possession (`TargetSpec::EntityDirectlyPossessedByActor`), and harvest actions correctly target co-located facilities with resource sources, but the connection fails in practice due to two confirmed root causes: (1) agents spawned from scenarios lack `KnownRecipes` entries for harvest recipes because the component is not wired into `AgentDef` or `spawn_agent()`, and (2) the planner's `apply_planner_step()` treats `PlannerOpKind::Harvest` as a no-op, so it cannot predict commodity gain from harvest and therefore cannot chain harvest → consume. This spec fixes both root causes so that an agent at a location with a resource source can plan and execute the full harvest-to-consume chain.
+Close the gap between resource sources at a location and agent consumption. Currently, agents at places with resource sources (e.g., Water at a Well, Apples at an OrchardRow) cannot plan or execute the harvest-then-consume chain reliably. The eat/drink actions correctly require possession (`TargetSpec::EntityDirectlyPossessedByActor`), and harvest actions correctly target co-located facilities with resource sources, but the connection fails in practice due to three confirmed root causes: (1) agents spawned from scenarios lack `KnownRecipes` entries for harvest recipes because the component is not wired into `AgentDef` or `spawn_agent()`, (2) the planner's `apply_planner_step()` treats `PlannerOpKind::Harvest` as a no-op, so it cannot predict commodity gain from harvest and therefore cannot chain harvest → consume, and (3) planner search admits direct harvest candidates at contention-managed facilities unless the queue/grant contract is enforced for the same goal family. This spec fixes those root causes so that an agent at a location with a resource source can plan and execute the full harvest-to-consume chain lawfully.
 
 ## Phase
 
@@ -97,6 +97,7 @@ ResourceSource depletion: `available_quantity` decreases with each harvest. Rege
 **Fix**:
 - Add a match arm for `PlannerOpKind::Harvest` in `apply_planner_step()` that extracts `output_commodity` and `output_quantity` from the `HarvestActionPayload` (defined in `crates/worldwake-sim/src/action_payload.rs:321-327`) and calls `state.with_commodity_quantity(actor, output_commodity, current_qty + output_quantity)`.
 - This follows the same pattern used for `PlannerOpKind::Loot` and `PlannerOpKind::Bribe` which already mutate hypothetical commodity quantities.
+- In planner search, reject direct `Harvest` / `Craft` affordances at contention-managed facilities unless the affordance is already `Granted`. This preserves the explicit queue/grant contract for exclusive facilities while still allowing direct harvest when the actor lawfully holds the grant.
 
 ### 3. Verification
 

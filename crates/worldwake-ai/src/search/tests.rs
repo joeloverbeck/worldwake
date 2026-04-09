@@ -3756,6 +3756,61 @@ fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
 }
 
 #[test]
+fn search_acquire_self_consume_queues_before_harvest_at_exclusive_facility_without_grant() {
+    let fixture = build_exclusive_orchard_fixture(false);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([fixture.orchard_row]),
+        evidence_places: BTreeSet::from([fixture.orchard_farm]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("exclusive orchard self-consume should still queue before harvest");
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
+    assert_eq!(
+        plan.steps[0].payload_override,
+        Some(ActionPayload::QueueForFacilityUse(
+            QueueForFacilityUsePayload {
+                intended_action: fixture.harvest_action,
+            },
+        ))
+    );
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(fixture.orchard_row)]
+    );
+}
+
+#[test]
 fn search_skips_queue_when_matching_grant_is_already_active() {
     let fixture = build_exclusive_orchard_fixture(true);
 
@@ -3793,6 +3848,62 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
     .expect("matching grant should allow direct harvest plan");
 
     assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Harvest);
+    assert_eq!(
+        plan.steps[0]
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_harvest),
+        Some(&worldwake_sim::HarvestActionPayload {
+            recipe_id: RecipeId(0),
+            required_workstation_tag: WorkstationTag::OrchardRow,
+            output_commodity: CommodityKind::Apple,
+            output_quantity: Quantity(2),
+            required_tool_kinds: Vec::new(),
+        })
+    );
+    assert_ne!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
+}
+
+#[test]
+fn search_acquire_self_consume_skips_queue_when_matching_grant_is_already_active() {
+    let fixture = build_exclusive_orchard_fixture(true);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([fixture.orchard_row]),
+        evidence_places: BTreeSet::from([fixture.orchard_farm]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("matching grant should still allow direct self-consume harvest");
+
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Harvest);
     assert_eq!(

@@ -135,6 +135,7 @@ Specific persisted-shape checks:
 - When the ticket depends on UtilityProfile or disposition gating, verify the belief/read trait exposes that carrier. If the gate exists only on authoritative components, correct the ticket to include read-surface widening.
 - When the ticket claims a goal family should become behaviorally selectable, check the full AI admission path: candidate generation, goal-policy suppression, ranking, selection. A variant emitted only under conditions a suppression rule blocks requires ticket correction.
 - When a ticket audits threshold alignment between candidate emission and goal satisfaction, also inspect the matching hypothetical planner transition for that goal family. Record whether one step or repeated steps are supposed to clear the relevant band, and correct the ticket if `apply_planner_step` still models a different contract than runtime execution.
+- When an existing operator becomes newly goal-satisfying for an additional goal family, compare operator legality across every live goal family that consumes that operator. Do not assume sibling goal-family tests already cover the same operator contract just because they share a domain or commodity.
 - When making a payload-override action live through the AI pipeline, compare planner-step revalidation against runtime request resolution. Correct admission-path mismatches before treating failures as golden-only.
 - When adding a typed query alongside an existing boolean helper, verify boolean equivalence. If typed results can be present while the boolean stays false, correct invariants and proofs.
 - When the ticket gates behavior on a typed right from a specific provenance source, verify whether right existence alone is lawful or the producing carrier is part of the contract.
@@ -421,6 +422,7 @@ After the owned implementation is fully verified:
 - When a ticket changes action availability, include at least one proof through real affordance enumeration, not just direct action construction.
 - For exact-bound planner-root candidates, do not treat target binding as the whole contract when operator legality depends on intermediate goal state.
 - When making a goal family live, verify its ranking entry in `compute_motive` returns a nonzero motive for the expected scenario inputs. A stub `=> 0` ranking silently prevents goal selection even when candidate generation and planner search are fully wired. When the new goal shares a signal or motive helper with existing goals (e.g., `expectation_response_signal`, `score_product`), verify the shared helper's filtering criteria match the new goal's expected state — a helper that checks `Overdue` will silently yield zero for a goal that fires on `Resolved`.
+- When the operator can be contention-managed (`Harvest`, `Craft`, `Loot`, `Heal`, or similar), verify direct affordance admission and queue-action expansion for the owned goal family. Check the affordance-filter layer explicitly so a newly live direct operator path cannot bypass queue/grant contention that sibling goal families already respect.
 
 #### Staged scaffolding
 

@@ -1031,10 +1031,21 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => state,
             },
+            PlannerOpKind::Harvest => {
+                if let Some(harvest) = payload_override.and_then(ActionPayload::as_harvest) {
+                    let current = state.commodity_quantity(actor, harvest.output_commodity);
+                    state.with_commodity_quantity(
+                        actor,
+                        harvest.output_commodity,
+                        Quantity(current.0.saturating_add(harvest.output_quantity.0)),
+                    )
+                } else {
+                    state
+                }
+            }
             PlannerOpKind::Trade
             | PlannerOpKind::StaffMarket
             | PlannerOpKind::StockManagement
-            | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
             | PlannerOpKind::ClaimBounty
             | PlannerOpKind::PostBounty
@@ -2274,7 +2285,7 @@ mod tests {
         AccuseActionPayload, ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId,
         ActionPayload, AskWitnessPayload, BribeActionPayload, ConsultRecordActionPayload,
         ControlBeliefView, DurationExpr, EntityBeliefView, Interruptibility, InventoryBeliefView,
-        InvestigateActionPayload, ProfileBeliefView, PunishActionPayload,
+        HarvestActionPayload, InvestigateActionPayload, ProfileBeliefView, PunishActionPayload,
         QueueForFacilityUsePayload, RecipeRegistry, ReportMissingActionPayload, RuntimeBeliefView,
         SearchPlaceActionPayload, SpatialBeliefView, TellActionPayload, TemporalBeliefView,
         ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
@@ -5362,6 +5373,82 @@ mod tests {
             advanced.homeostatic_needs(actor).unwrap().hunger
                 < DriveThresholds::default().hunger.low()
         );
+    }
+
+    #[test]
+    fn harvest_step_updates_hypothetical_commodity_quantity() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+
+        let advanced = goal.apply_planner_step(
+            base_state,
+            PlannerOpKind::Harvest,
+            &[],
+            Some(&ActionPayload::Harvest(HarvestActionPayload {
+                recipe_id: RecipeId(4),
+                required_workstation_tag: WorkstationTag::OrchardRow,
+                output_commodity: CommodityKind::Apple,
+                output_quantity: Quantity(3),
+                required_tool_kinds: Vec::new(),
+            })),
+        );
+
+        assert_eq!(
+            advanced.commodity_quantity(actor, CommodityKind::Apple),
+            Quantity(3)
+        );
+    }
+
+    #[test]
+    fn harvest_step_without_payload_is_identity() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let before = base_state.commodity_quantity(actor, CommodityKind::Apple);
+
+        let advanced = goal.apply_planner_step(base_state, PlannerOpKind::Harvest, &[], None);
+
+        assert_eq!(
+            advanced.commodity_quantity(actor, CommodityKind::Apple),
+            before
+        );
+    }
+
+    #[test]
+    fn acquire_self_consume_goal_is_satisfied_after_hypothetical_harvest() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+
+        assert!(!goal.is_satisfied(&base_state));
+
+        let advanced = goal.apply_planner_step(
+            base_state,
+            PlannerOpKind::Harvest,
+            &[],
+            Some(&ActionPayload::Harvest(HarvestActionPayload {
+                recipe_id: RecipeId(4),
+                required_workstation_tag: WorkstationTag::OrchardRow,
+                output_commodity: CommodityKind::Apple,
+                output_quantity: Quantity(3),
+                required_tool_kinds: Vec::new(),
+            })),
+        );
+
+        assert!(goal.is_satisfied(&advanced));
     }
 
     #[test]
