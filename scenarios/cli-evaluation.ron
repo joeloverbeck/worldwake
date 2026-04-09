@@ -192,6 +192,7 @@
             name: "Forager Lina",
             location: "Eldergrove Forest",
             control: Ai,
+            known_recipes: ["Harvest Apples"],
             needs: (
                 hunger: 200,
                 thirst: 600,
@@ -386,10 +387,10 @@
         (workstation: ChoppingBlock, location: "Eldergrove Forest"),
         (workstation: FieldPlot, location: "Golden Fields"),
         (workstation: GravePlot, location: "Golden Fields"),
-        (workstation: OrchardRow, location: "Eldergrove Forest"),
+        (name: "Eldergrove Orchard", workstation: OrchardRow, location: "Eldergrove Forest"),
     ],
     resource_sources: [
-        (commodity: Apple, location: "Eldergrove Forest", regeneration_ticks_per_unit: 2, capacity: 20),
+        (commodity: Apple, location: "Eldergrove Forest", facility: "Eldergrove Orchard", regeneration_ticks_per_unit: 2, capacity: 20),
         (commodity: Water, location: "Thornwall Village", regeneration_ticks_per_unit: 3, capacity: 15),
     ],
 )

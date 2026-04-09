@@ -11,15 +11,18 @@ use std::path::Path;
 use types::ScenarioDef;
 use worldwake_core::{
     CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
-    LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource, Seed, Tick, Topology,
-    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn,
-    hash_world,
+    KnownRecipes, LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource, Seed, Tick,
+    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
+    WorldTxn, hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
     Scheduler, SimulationState, SystemDispatchTable, SystemManifest,
 };
-use worldwake_systems::{ActionRegistries, build_full_action_registries, dispatch_table};
+use worldwake_systems::{
+    ActionRegistries, build_canonical_production_recipe_registry, build_full_action_registries,
+    dispatch_table,
+};
 
 /// Bundled result of scenario spawning: persistent simulation state plus
 /// transient runtime artifacts (action registries, dispatch table).
@@ -101,14 +104,21 @@ pub fn load_scenario_file(path: &Path) -> Result<ScenarioDef, ScenarioError> {
 pub fn spawn_scenario(def: &ScenarioDef) -> Result<SpawnedSimulation, ScenarioError> {
     let mut names: BTreeMap<String, EntityId> = BTreeMap::new();
     let mut place_names: BTreeSet<String> = BTreeSet::new();
+    let recipe_registry = build_canonical_production_recipe_registry();
 
     let topology = build_topology(def, &mut names, &mut place_names)?;
     let mut world = World::new(topology)?;
     let mut event_log = EventLog::new();
 
-    spawn_entities(def, &mut world, &mut event_log, &mut names, &place_names)?;
+    spawn_entities(
+        def,
+        &recipe_registry,
+        &mut world,
+        &mut event_log,
+        &mut names,
+        &place_names,
+    )?;
 
-    let recipe_registry = RecipeRegistry::new();
     let action_registries = build_full_action_registries(&recipe_registry).map_err(|orphans| {
         ScenarioError::Validation(format!(
             "action registry incomplete: {} orphaned defs",
@@ -193,12 +203,14 @@ fn build_topology(
 /// Spawn all entities (agents, items, facilities, resource sources) via a single `WorldTxn`.
 fn spawn_entities(
     def: &ScenarioDef,
+    recipes: &RecipeRegistry,
     world: &mut World,
     event_log: &mut EventLog,
     names: &mut BTreeMap<String, EntityId>,
     place_names: &BTreeSet<String>,
 ) -> Result<(), ScenarioError> {
     let mut agent_locations: BTreeMap<EntityId, EntityId> = BTreeMap::new();
+    let mut facility_locations: BTreeMap<EntityId, EntityId> = BTreeMap::new();
 
     let mut txn = WorldTxn::new(
         world,
@@ -218,7 +230,7 @@ fn spawn_entities(
     }
 
     for agent_def in &def.agents {
-        spawn_agent(&mut txn, agent_def, names, &mut agent_locations)?;
+        spawn_agent(&mut txn, recipes, agent_def, names, &mut agent_locations)?;
     }
 
     for item_def in &def.items {
@@ -237,6 +249,10 @@ fn spawn_entities(
             WorkstationMarker(facility_def.workstation),
         )?;
         txn.set_ground_location(facility_id, place_id)?;
+        facility_locations.insert(facility_id, place_id);
+        if let Some(name) = &facility_def.name {
+            names.insert(name.clone(), facility_id);
+        }
     }
 
     for source_def in &def.resource_sources {
@@ -245,7 +261,31 @@ fn spawn_entities(
             &source_def.location,
             &format!("resource source {:?} location", source_def.commodity),
         )?;
-        let source_id = txn.create_entity(EntityKind::Facility);
+        let source_id = if let Some(facility_name) = &source_def.facility {
+            let facility_id = resolve_name(
+                names,
+                facility_name,
+                &format!("resource source {:?} facility", source_def.commodity),
+            )?;
+            let facility_place = facility_locations.get(&facility_id).copied().ok_or_else(|| {
+                ScenarioError::Validation(format!(
+                    "resource source {:?} facility '{}' is not a spawned facility",
+                    source_def.commodity, facility_name
+                ))
+            })?;
+            if facility_place != place_id {
+                return Err(ScenarioError::Validation(format!(
+                    "resource source {:?} facility '{}' is not at '{}'",
+                    source_def.commodity, facility_name, source_def.location
+                )));
+            }
+            facility_id
+        } else {
+            let source_id = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(source_id, place_id)?;
+            facility_locations.insert(source_id, place_id);
+            source_id
+        };
         txn.set_component_resource_source(
             source_id,
             ResourceSource {
@@ -256,7 +296,6 @@ fn spawn_entities(
                 last_regeneration_tick: None,
             },
         )?;
-        txn.set_ground_location(source_id, place_id)?;
     }
 
     txn.commit(event_log);
@@ -266,6 +305,7 @@ fn spawn_entities(
 /// Spawn a single agent with all optional component profiles.
 fn spawn_agent(
     txn: &mut WorldTxn<'_>,
+    recipes: &RecipeRegistry,
     agent_def: &types::AgentDef,
     names: &mut BTreeMap<String, EntityId>,
     agent_locations: &mut BTreeMap<EntityId, EntityId>,
@@ -382,6 +422,15 @@ fn spawn_agent(
     }
     if let Some(ref preferences) = agent_def.substitute_preferences {
         txn.set_component_substitute_preferences(agent_id, preferences.clone())?;
+    }
+    if let Some(recipe_names) = &agent_def.known_recipes {
+        let recipe_ids = recipe_names
+            .iter()
+            .filter_map(|name| recipes.recipe_by_name(name).map(|(id, _)| id))
+            .collect::<Vec<_>>();
+        if !recipe_ids.is_empty() {
+            txn.set_component_known_recipes(agent_id, KnownRecipes::with(recipe_ids))?;
+        }
     }
 
     txn.set_ground_location(agent_id, place_id)?;
@@ -531,6 +580,7 @@ mod tests {
             contention_disposition: None,
             commodity_valuation: None,
             substitute_preferences: None,
+            known_recipes: None,
         }
     }
 
@@ -958,12 +1008,14 @@ mod tests {
             agents: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
+                name: Some("Forge Bench".into()),
                 workstation: WorkstationTag::Forge,
                 location: "Smithy".into(),
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Apple,
                 location: "Orchard".into(),
+                facility: None,
                 regeneration_ticks_per_unit: NonZeroU32::new(5),
                 capacity: Quantity(20),
             }],
@@ -1006,6 +1058,108 @@ mod tests {
         assert_eq!(rs.max_quantity, Quantity(20));
         assert_eq!(rs.available_quantity, Quantity(20));
         assert_eq!(rs.regeneration_ticks_per_unit, NonZeroU32::new(5));
+    }
+
+    #[test]
+    fn test_spawn_agent_resolves_known_recipe_names() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Orchard".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                known_recipes: Some(vec!["Harvest Apples".into(), "Unknown Recipe".into()]),
+                ..minimal_agent("Forager", "Orchard", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let harvest_apples = spawned
+            .state
+            .recipe_registry()
+            .recipe_by_name("Harvest Apples")
+            .map(|(id, _)| id)
+            .expect("canonical scenario recipe registry should include Harvest Apples");
+
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("scenario should spawn one agent");
+        let known = world
+            .get_component_known_recipes(agent)
+            .expect("agent should receive known recipes from scenario");
+
+        assert!(known.recipes.contains(&harvest_apples));
+        assert_eq!(known.recipes.len(), 1);
+        assert!(
+            spawned
+                .action_registries
+                .defs
+                .iter()
+                .any(|def| def.name == "harvest:Harvest Apples"),
+            "scenario action registries should include recipe-backed harvest actions"
+        );
+    }
+
+    #[test]
+    fn test_spawn_named_resource_source_attaches_to_facility() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Orchard".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![],
+            items: vec![],
+            facilities: vec![FacilityDef {
+                name: Some("North Orchard".into()),
+                workstation: WorkstationTag::OrchardRow,
+                location: "Orchard".into(),
+            }],
+            resource_sources: vec![ResourceSourceDef {
+                commodity: CommodityKind::Apple,
+                location: "Orchard".into(),
+                facility: Some("North Orchard".into()),
+                regeneration_ticks_per_unit: NonZeroU32::new(2),
+                capacity: Quantity(20),
+            }],
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let orchard = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+
+        let facilities_at_orchard = world
+            .entities_effectively_at(orchard)
+            .into_iter()
+            .filter(|entity| world.get_component_workstation_marker(*entity).is_some())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            facilities_at_orchard.len(),
+            1,
+            "named source attachment should reuse the authored facility"
+        );
+        let facility = facilities_at_orchard[0];
+        assert!(world.get_component_resource_source(facility).is_some());
+        assert_eq!(
+            world.get_component_workstation_marker(facility).unwrap().0,
+            WorkstationTag::OrchardRow
+        );
     }
 
     #[test]

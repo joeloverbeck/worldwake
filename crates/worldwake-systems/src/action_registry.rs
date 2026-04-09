@@ -13,13 +13,55 @@ use crate::{
 };
 use worldwake_core::ActionDefId;
 use worldwake_sim::{
-    ActionDefRegistry, ActionHandlerRegistry, RecipeRegistry,
+    ActionDefRegistry, ActionHandlerRegistry, RecipeDefinition, RecipeRegistry,
     action_handler_registry::verify_completeness,
 };
+use worldwake_core::{BodyCostPerTick, CommodityKind, Permille, Quantity, WorkstationTag};
+use std::num::NonZeroU32;
 
 pub struct ActionRegistries {
     pub defs: ActionDefRegistry,
     pub handlers: ActionHandlerRegistry,
+}
+
+fn nz(value: u32) -> NonZeroU32 {
+    NonZeroU32::new(value).expect("canonical recipe ticks must be non-zero")
+}
+
+fn pm(value: u16) -> Permille {
+    Permille::new(value).expect("canonical recipe permille must be in range")
+}
+
+pub fn build_canonical_production_recipe_registry() -> RecipeRegistry {
+    let mut recipes = RecipeRegistry::new();
+    recipes.register(RecipeDefinition {
+        name: "Harvest Apples".to_string(),
+        inputs: vec![],
+        outputs: vec![(CommodityKind::Apple, Quantity(2))],
+        work_ticks: nz(3),
+        required_workstation_tag: Some(WorkstationTag::OrchardRow),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
+    });
+    recipes.register(RecipeDefinition {
+        name: "Harvest Grain".to_string(),
+        inputs: vec![],
+        outputs: vec![(CommodityKind::Grain, Quantity(2))],
+        work_ticks: nz(3),
+        required_workstation_tag: Some(WorkstationTag::FieldPlot),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
+    });
+    recipes.register(RecipeDefinition {
+        name: "Bake Bread".to_string(),
+        inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+        outputs: vec![(CommodityKind::Bread, Quantity(1))],
+        work_ticks: nz(3),
+        required_workstation_tag: Some(WorkstationTag::Mill),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
+    });
+    recipes
 }
 
 pub fn register_all_actions(
@@ -73,7 +115,7 @@ pub fn build_full_action_registries(
 
 #[cfg(test)]
 mod tests {
-    use super::build_full_action_registries;
+    use super::{build_canonical_production_recipe_registry, build_full_action_registries};
     use worldwake_sim::RecipeRegistry;
 
     #[test]
@@ -138,5 +180,14 @@ mod tests {
                 "full registry should include {required}"
             );
         }
+    }
+
+    #[test]
+    fn canonical_production_recipe_registry_contains_expected_recipes() {
+        let recipes = build_canonical_production_recipe_registry();
+
+        assert!(recipes.recipe_by_name("Harvest Apples").is_some());
+        assert!(recipes.recipe_by_name("Harvest Grain").is_some());
+        assert!(recipes.recipe_by_name("Bake Bread").is_some());
     }
 }

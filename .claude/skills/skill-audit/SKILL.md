@@ -100,11 +100,11 @@ Output this structure to the conversation (do not write to a file):
 - **Session evidence required** — Every Issue and Improvement must cite specific session evidence (what happened, what was expected). Findings based purely on hypothetical scenarios belong in Features, not Issues.
 - **Follow-up implementation** — After the report is presented, the user may request implementation of specific suggestions. At that point, edit the target skill file directly — the "report only" guardrail applies only to the audit phase, not to user-directed follow-up.
 
-  **Re-evaluation**: If the codebase changed between the audit report and the follow-up request, re-evaluate each finding against the current state. Discard obsolete findings, adapt shifted ones, and renumber survivors before applying edits.
+  **Re-evaluation**: If the codebase or the target skill file changed between the audit report and the follow-up request, re-evaluate each finding against the current state. Discard obsolete findings, adapt shifted ones, and renumber survivors before applying edits.
 
   **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding. If the user requests all findings be implemented (e.g., "implement all", "implement recommended suggestions", "implement everything"), skip dependency checking and apply all edits in document order. Treat "recommended" as "all" unless the audit report explicitly distinguished recommended from optional findings.
 
-  **Edit ordering**: Apply edits in document order (top to bottom) to minimize line-number shifts invalidating later edits.
+  **Edit ordering**: Apply edits in document order (top to bottom) to minimize line-number shifts invalidating later edits. If applying an earlier finding renders a later finding moot (e.g., the target text no longer exists), skip the moot finding and note it in the post-edit verification as "superseded by finding N."
 
   **Post-edit verification**: After all edits are applied, re-read the full skill file and verify as a single pass:
   1. **No overlap or contradiction** — edits don't conflict with each other

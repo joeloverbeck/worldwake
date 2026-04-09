@@ -40,7 +40,10 @@ pub mod trade_actions;
 pub mod transport_actions;
 pub mod travel_actions;
 
-pub use action_registry::{ActionRegistries, build_full_action_registries, register_all_actions};
+pub use action_registry::{
+    ActionRegistries, build_canonical_production_recipe_registry, build_full_action_registries,
+    register_all_actions,
+};
 pub use artifact_actions::register_artifact_actions;
 pub use artifact_lifecycle::artifact_lifecycle_system;
 pub use ask_about_person_actions::register_ask_about_person_action;

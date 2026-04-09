@@ -247,6 +247,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
                 AgentDef {
                     name: "Vara".into(),
@@ -279,6 +280,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
                 AgentDef {
                     name: "Theron".into(),
@@ -311,6 +313,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
             ],
             items: vec![

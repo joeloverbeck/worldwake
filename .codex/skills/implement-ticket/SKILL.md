@@ -60,12 +60,14 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 - Referenced files, types, functions, modules, commands, and tests exist.
 - When the ticket's owned surface is partially landed in the worktree, treat the live state as baseline; limit edits to the missing slice.
 - Keep tracked-vs-untracked state in mind when reading diffs and close-out evidence: untracked ticket drafts and newly created files will not appear in ordinary `git diff` output.
+- For CLI/scenario tickets, verify that authored bootstrap data populates the same live runtime registries, catalogs, and canonical bootstrap state the ticket expects to use. Do not treat per-entity wiring as sufficient until the scenario/bootstrap path and the runtime path agree on the same source of truth.
 - Cross-check `Deps` against `What to Change` for additive tickets that assume earlier slices landed.
 - For staged decomposition tickets, verify whether any temporary carrier or intermediate shape named in the ticket still exists on the current branch. If an earlier slice already removed it, narrow the ticket to the remaining live debt before planning edits.
 - When roadmap summary, active spec, and live ticket disagree, compare all three and record which is authoritative.
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
 - Described architecture still matches live code.
 - Stated coverage gaps are real and correctly classified.
+- For scenario/world-authoring tickets, state whether the same runtime fact is currently authored through more than one lawful path, which path is canonical after the change, and whether any duplicate authoring path remains intentionally supported or is deferred to a named follow-up ticket.
 - When reassessment changes the live root cause or owned surface, update all ticket sections that encode scope and proof, not just problem prose: `Engine Changes`, `Architecture Check`, `What to Change`, `Files to Touch`, `Acceptance Criteria`, and `Test Plan`.
 - When a ticket names campaign, harness, or telemetry metrics as proof obligations, verify the live output contract before accepting that prose. Confirm the actual emitted keys, counters, and summary carrier instead of assuming the ticket's metric names are still current.
 - When replacing inline code with a delegation to data populated by a prior ticket, verify line-by-line that the prior ticket's data captures every branch of the original code. Staged migrations risk silent behavior loss if the data ticket was incomplete.
@@ -74,6 +76,7 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 
 - Claimed missing scenarios are not already covered by current `golden_*` suites or generated golden inventory/docs.
 - Identify the strongest existing owning `golden_*` suite before accepting the ticket's proposed file list; reuse existing ownership surfaces instead of creating new golden files.
+- When existing goldens appear to cover the domain, verify whether they exercise the authored/runtime path under ticket ownership or bypass it through direct harness/world construction. If the goldens prove only the downstream runtime substrate, do not treat them as coverage of an upstream scenario/bootstrap or authoring-path ticket.
 - When a failing golden motivates the ticket, restate the owned invariant before editing and decide whether the contradiction is most honestly proved at the golden layer or at a lower production layer. Prefer the strongest lower-layer proof for root cause, then keep the motivating golden as behavioral confirmation rather than the sole architectural evidence.
 - When same-domain verification fails, first check the referenced spec and any active sibling tickets for an explicit owner of that fallout before touching tests or broadening scope. If the failure is already named as downstream-owned work, document it and keep the current ticket boundary honest unless the user expands scope.
 - When a shared concept has both upstream producers and downstream consumers, compare their semantics directly. If the consumer already supports a broader shape, correct the ticket to own that parity fix.
@@ -444,6 +447,7 @@ Before finishing:
 - Re-check the ticket's close-out fields directly: `Status`, `## Outcome`, and verification/command notes should reflect the commands that actually passed, not the pre-reassessment plan.
 - If formatting was required in a dirty worktree, check immediately for formatter spillover into already-modified files outside the ticket's owned surface and call that out explicitly in close-out repo-state notes.
 - If the active ticket remains untracked, say so explicitly in the final user-facing close-out because it will not appear in ordinary `git diff` output until it is added.
+- If you created follow-up tickets during the session, report whether each follow-up ticket is tracked or untracked, not just the active ticket.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
 - After golden scenario metadata changes and doc regeneration, inspect the generated diff footprint. Call out whether the broader generated-file churn is expected inventory/index fallout or whether any generated spillover appears unexpected and needs follow-up.
 

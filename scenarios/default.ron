@@ -40,6 +40,7 @@
             name: "Forager Lina",
             location: "Forest Clearing",
             control: Ai,
+            known_recipes: ["Harvest Apples"],
         ),
     ],
     items: [
@@ -49,8 +50,9 @@
     ],
     facilities: [
         (workstation: Mill, location: "Market Square"),
+        (name: "North Orchard", workstation: OrchardRow, location: "Forest Clearing"),
     ],
     resource_sources: [
-        (commodity: Apple, location: "Forest Clearing", regeneration_ticks_per_unit: 2, capacity: 20),
+        (commodity: Apple, location: "Forest Clearing", facility: "North Orchard", regeneration_ticks_per_unit: 2, capacity: 20),
     ],
 )

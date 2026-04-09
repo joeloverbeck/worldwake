@@ -35,7 +35,7 @@ If plan mode is active:
 - **Step 6** includes the initial findings report and any subsequent question-resolution rounds.
 - **After all questions are resolved**: Write a condensed summary to the plan file, then call ExitPlanMode. The plan file comes after all Q&A rounds, not after the initial report.
 - **After plan approval**: Steps 7-8 execute. The user's plan approval covers both question resolutions and the overall changes — no separate confirmation gate.
-- **Pre-Apply Verification** runs after ExitPlanMode approval and before Step 7, confirming findings still hold.
+- **Pre-Apply Verification** runs before Step 7 (see that section for details).
 
 If question resolution produces new findings or modifies existing ones, the plan file reflects the final resolved state, not the initial report. Sequence: present resolution conversationally, write the plan file incorporating all resolved findings, call ExitPlanMode.
 
@@ -49,7 +49,7 @@ If the ExitPlanMode result contains user comments, treat them as binding modific
 - **Critical Files**: Paths of files to be modified
 - **Verification**: How to confirm the updated spec is correct after writing
 
-The conversational report (Step 6) is the decision artifact. The plan file is a condensed reference for implementation (Steps 7-8).
+The conversational report (Step 6) is the decision artifact. Present it as a normal conversational message — do not write it to the plan file. The plan file is a separate condensed reference for implementation (Steps 7-8).
 
 ## Process
 
@@ -60,7 +60,7 @@ Follow these steps in order. Do not skip any step.
 Before beginning Steps 2-3, classify the spec:
 
 - **(a) New system** — introduces new components, actions, goal kinds, or information paths. Full checklist applies.
-- **(b) System extension** — extends existing components, actions, or enums without new systems. Steps 3.1-3.8, 4.4 apply. Skip 3.9 if no behavioral claims about runtime readers/writers. Section H updates only for new deliverable sections. For tooling-only specs (observer, CLI, debug output), downstream consumer analysis (3.6) can be limited to the tooling binary.
+- **(b) System extension** — extends existing components, actions, or enums without new systems. Steps 3.1-3.8, 4.4 apply. Skip 3.9 if no behavioral claims about runtime readers/writers (e.g., "system X reads type Y at runtime" or "planner predicts effect Z"). Section H updates only for new deliverable sections. For tooling-only specs (observer, CLI, debug output), downstream consumer analysis (3.6) can be limited to the tooling binary.
 - **(c) Structural refactor** — trait/module restructuring with no behavioral changes. Skip Steps 3.5, 3.9, 4.4; Section H is N/A. Focus on symbol existence, count accuracy, and blast radius.
 - **(d) Test-only** — adds golden tests, benchmarks, or test infrastructure without modifying production code. Steps 3.1-3.4 apply (validate referenced paths, types, functions, dependencies). Skip 3.5-3.9 (no production code changes to trace). Step 4 applies but 4.4 is N/A. Section H updates are N/A unless the test reveals a missing causal hook.
 
@@ -159,7 +159,7 @@ For each claim about who reads/writes a type at runtime, grep all call sites and
 
 #### Agent Delegation
 
-For specs with many references, launch parallel Explore agents organized by theme (e.g., action/type references, AI/test references, dependencies/infrastructure). Choose themes to minimize cross-agent dependencies.
+For specs with many references, launch parallel Explore agents organized by theme (e.g., action/type references, AI/test references, dependencies/infrastructure). Choose themes to minimize cross-agent dependencies. Typical: 1 agent for 10-15 references with a single domain, 2-3 agents for 15+ references spanning multiple domains. Max 3 agents.
 
 Guidelines:
 - After results arrive, cross-reference findings against the spec's type assumptions and formulas. Agents validate existence; you validate semantic compatibility.
@@ -264,7 +264,7 @@ If answers raise new questions or invalidate findings, present a follow-up round
 
 ### Pre-Apply Verification
 
-Before writing in Step 7, run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying. Do not silently substitute different changes.
+Before writing in Step 7, run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying. Do not silently substitute different changes. In plan mode, this step runs after ExitPlanMode approval and before Step 7.
 
 ### Post-Apply Confirmation
 

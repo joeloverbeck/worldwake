@@ -122,6 +122,8 @@ pub struct AgentDef {
     pub commodity_valuation: Option<CommodityValuationProfile>,
     #[serde(default)]
     pub substitute_preferences: Option<SubstitutePreferences>,
+    #[serde(default)]
+    pub known_recipes: Option<Vec<String>>,
 }
 
 /// Scenario-specific merchandise profile using string names instead of `EntityId`.
@@ -159,6 +161,8 @@ pub struct ItemDef {
 /// A workstation facility at a place.
 #[derive(Clone, Debug, Deserialize)]
 pub struct FacilityDef {
+    #[serde(default)]
+    pub name: Option<String>,
     pub workstation: WorkstationTag,
     pub location: String,
 }
@@ -168,6 +172,8 @@ pub struct FacilityDef {
 pub struct ResourceSourceDef {
     pub commodity: CommodityKind,
     pub location: String,
+    #[serde(default)]
+    pub facility: Option<String>,
     pub regeneration_ticks_per_unit: Option<NonZeroU32>,
     pub capacity: Quantity,
 }

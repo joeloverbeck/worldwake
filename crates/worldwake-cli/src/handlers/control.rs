@@ -192,6 +192,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
                 AgentDef {
                     name: "Briar".into(),
@@ -224,6 +225,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
             ],
             items: vec![],
@@ -447,6 +449,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
                 AgentDef {
                     name: "Merchant".into(),
@@ -482,6 +485,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
             ],
             items: vec![],
