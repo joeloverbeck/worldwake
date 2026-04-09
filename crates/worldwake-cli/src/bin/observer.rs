@@ -11,6 +11,7 @@ use clap::Parser;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
+use worldwake_ai::decision_trace::{DecisionOutcome, PlanSearchOutcome};
 use worldwake_ai::AgentTickDriver;
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
@@ -394,6 +395,7 @@ fn format_report(
     action_trace: &ActionTraceSink,
     perception_trace: &PerceptionTraceSink,
     world: &worldwake_core::World,
+    driver: &AgentTickDriver,
 ) -> String {
     let mut out = String::new();
 
@@ -695,15 +697,58 @@ fn format_report(
     }
     writeln!(out, "```\n").unwrap();
 
-    // Perception trace summary
+    // Perception trace — per-agent timeline (100-tick bins)
     writeln!(
         out,
         "### Perception Trace Summary\n\nTotal perception trace events: {}\n",
         perception_trace.events().len()
     )
     .unwrap();
+
+    for (agent_id, agent_name) in agents {
+        let agent_events = perception_trace.events_for(*agent_id);
+        if agent_events.is_empty() {
+            continue;
+        }
+        writeln!(
+            out,
+            "**{agent_name} ({agent_id})** \u{2014} {} observations\n",
+            agent_events.len()
+        )
+        .unwrap();
+        writeln!(out, "| Ticks | Passed | Failed | Entities Observed |").unwrap();
+        writeln!(out, "|-------|--------|--------|-------------------|").unwrap();
+
+        let mut bins: BTreeMap<u64, (u32, u32, BTreeSet<EntityId>)> = BTreeMap::new();
+        for event in &agent_events {
+            let bin = event.tick.0 / 100;
+            let entry = bins.entry(bin).or_insert((0, 0, BTreeSet::new()));
+            if event.observation_passed {
+                entry.0 += 1;
+            } else {
+                entry.1 += 1;
+            }
+            for entity in &event.entity_observations {
+                entry.2.insert(*entity);
+            }
+        }
+
+        for (bin, (passed, failed, entities)) in &bins {
+            let lo = bin * 100;
+            let hi = lo + 99;
+            writeln!(
+                out,
+                "| {lo}\u{2013}{hi} | {passed} | {failed} | {} |",
+                entities.len()
+            )
+            .unwrap();
+        }
+        writeln!(out).unwrap();
+    }
+
+    // Raw perception tail (last 50 events for detailed inspection)
+    writeln!(out, "#### Raw Perception Trace (last 50 events)\n").unwrap();
     writeln!(out, "```").unwrap();
-    // Show last 50 perception trace events
     let pt_events = perception_trace.events();
     let pt_start = pt_events.len().saturating_sub(50);
     for event in &pt_events[pt_start..] {
@@ -895,6 +940,234 @@ fn format_report(
         }
     }
 
+    // Section 7: Per-Agent Decision Summary
+    writeln!(out, "## Section 7 — Per-Agent Decision Summary\n").unwrap();
+    if let Some(sink) = driver.trace_sink() {
+        for (agent_id, agent_name) in agents {
+            let traces = sink.traces_for(*agent_id);
+            if traces.is_empty() {
+                writeln!(out, "### {agent_name}\n").unwrap();
+                writeln!(out, "No decision traces recorded.\n").unwrap();
+                continue;
+            }
+
+            writeln!(out, "### {agent_name} ({} decision ticks)\n", traces.len()).unwrap();
+
+            // Aggregate statistics
+            let mut plans_found: u32 = 0;
+            let mut plans_budget_exhausted: u32 = 0;
+            let mut plans_frontier_exhausted: u32 = 0;
+            let mut plans_unsupported: u32 = 0;
+            let mut dead_ticks: u32 = 0;
+            let mut active_ticks: u32 = 0;
+            let mut planning_ticks: u32 = 0;
+            let mut unique_goals_selected: BTreeSet<String> = BTreeSet::new();
+
+            for trace in &traces {
+                match &trace.outcome {
+                    DecisionOutcome::Dead => dead_ticks += 1,
+                    DecisionOutcome::ActiveAction { .. } => active_ticks += 1,
+                    DecisionOutcome::Planning(planning) => {
+                        planning_ticks += 1;
+                        if let Some(goal) = planning.selection.selected_goal() {
+                            unique_goals_selected.insert(format!("{:?}", goal.kind));
+                        }
+                        for attempt in &planning.planning.attempts {
+                            match &attempt.outcome {
+                                PlanSearchOutcome::Found { .. } => plans_found += 1,
+                                PlanSearchOutcome::BudgetExhausted { .. } => {
+                                    plans_budget_exhausted += 1;
+                                }
+                                PlanSearchOutcome::FrontierExhausted { .. } => {
+                                    plans_frontier_exhausted += 1;
+                                }
+                                PlanSearchOutcome::Unsupported => plans_unsupported += 1,
+                            }
+                        }
+                    }
+                }
+            }
+
+            writeln!(
+                out,
+                "**Tick breakdown**: {planning_ticks} planning, {active_ticks} active-action, {dead_ticks} dead"
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "**Plan search outcomes**: {plans_found} found, {plans_frontier_exhausted} frontier-exhausted, {plans_budget_exhausted} budget-exhausted, {plans_unsupported} unsupported"
+            )
+            .unwrap();
+            if !unique_goals_selected.is_empty() {
+                writeln!(
+                    out,
+                    "**Goals selected**: {}",
+                    unique_goals_selected
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+                .unwrap();
+            }
+            writeln!(out).unwrap();
+
+            // Per-tick decision timeline in 100-tick bins
+            writeln!(out, "**Decision timeline** (100-tick bins)\n").unwrap();
+            writeln!(out, "| Ticks | Decisions |").unwrap();
+            writeln!(out, "|-------|-----------|").unwrap();
+
+            let mut bins: BTreeMap<u64, Vec<String>> = BTreeMap::new();
+            for trace in &traces {
+                let bin = trace.tick.0 / 100;
+                bins.entry(bin).or_default().push(trace.outcome.summary());
+            }
+            for (bin, summaries) in &bins {
+                let lo = bin * 100;
+                let hi = lo + 99;
+                // Deduplicate repeated summaries within a bin
+                let mut counts: BTreeMap<&str, u32> = BTreeMap::new();
+                for s in summaries {
+                    *counts.entry(s.as_str()).or_insert(0) += 1;
+                }
+                let mut cells: Vec<String> = Vec::new();
+                for (summary, count) in &counts {
+                    if *count > 1 {
+                        cells.push(format!("{summary} (\u{00d7}{count})"));
+                    } else {
+                        cells.push(summary.to_string());
+                    }
+                }
+                // Truncate if too many unique entries in one bin
+                if cells.len() > 5 {
+                    let total = cells.len();
+                    cells.truncate(5);
+                    cells.push(format!("... and {} more", total - 5));
+                }
+                writeln!(out, "| {lo}\u{2013}{hi} | {} |", cells.join("; ")).unwrap();
+            }
+            writeln!(out).unwrap();
+
+            // Failed plan attempts detail
+            let failed_attempts: Vec<_> = traces
+                .iter()
+                .filter_map(|t| {
+                    if let DecisionOutcome::Planning(planning) = &t.outcome {
+                        let failures: Vec<_> = planning
+                            .planning
+                            .attempts
+                            .iter()
+                            .filter(|a| {
+                                matches!(
+                                    a.outcome,
+                                    PlanSearchOutcome::FrontierExhausted { .. }
+                                        | PlanSearchOutcome::BudgetExhausted { .. }
+                                )
+                            })
+                            .collect();
+                        if failures.is_empty() {
+                            None
+                        } else {
+                            Some((t.tick, failures))
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if !failed_attempts.is_empty() {
+                let total_failures: usize =
+                    failed_attempts.iter().map(|(_, f)| f.len()).sum();
+                writeln!(out, "**Failed plan attempts** (showing first 20 of {total_failures})\n")
+                    .unwrap();
+                writeln!(out, "| Tick | Goal | Outcome | Expansions |").unwrap();
+                writeln!(out, "|------|------|---------|------------|").unwrap();
+                let mut shown = 0u32;
+                'outer: for (tick, failures) in &failed_attempts {
+                    for attempt in failures {
+                        if shown >= 20 {
+                            break 'outer;
+                        }
+                        let (outcome_label, expansions) = match &attempt.outcome {
+                            PlanSearchOutcome::FrontierExhausted { expansions_used } => {
+                                ("frontier-exhausted", *expansions_used)
+                            }
+                            PlanSearchOutcome::BudgetExhausted { expansions_used } => {
+                                ("budget-exhausted", *expansions_used)
+                            }
+                            _ => continue,
+                        };
+                        writeln!(
+                            out,
+                            "| {} | {:?} | {} | {} |",
+                            tick.0, attempt.goal.kind, outcome_label, expansions
+                        )
+                        .unwrap();
+                        shown += 1;
+                    }
+                }
+                writeln!(out).unwrap();
+            }
+
+            // Blocked desires summary
+            let blocked_desires: BTreeMap<String, u32> = traces
+                .iter()
+                .filter_map(|t| {
+                    if let DecisionOutcome::Planning(planning) = &t.outcome {
+                        Some(&planning.candidates.fully_blocked_desires)
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+                .fold(BTreeMap::new(), |mut acc, blocked| {
+                    *acc.entry(format!("{:?}", blocked.goal_key.kind))
+                        .or_insert(0) += 1;
+                    acc
+                });
+
+            if !blocked_desires.is_empty() {
+                writeln!(
+                    out,
+                    "**Fully blocked desires** (goal generated but all opportunities blocked)\n"
+                )
+                .unwrap();
+                writeln!(out, "| Goal | Times Blocked |").unwrap();
+                writeln!(out, "|------|---------------|").unwrap();
+                for (goal, count) in &blocked_desires {
+                    writeln!(out, "| {goal} | {count} |").unwrap();
+                }
+                writeln!(out).unwrap();
+            }
+
+            // Affordances available (from first planning tick that has them)
+            if let Some(trace) = traces.iter().find(|t| {
+                matches!(&t.outcome, DecisionOutcome::Planning(p) if p.affordances.is_some())
+            })
+                && let DecisionOutcome::Planning(planning) = &trace.outcome
+                && let Some(affordances) = &planning.affordances
+            {
+                writeln!(
+                    out,
+                    "**Affordances available at tick {}** (at {})\n",
+                    trace.tick.0,
+                    affordances
+                        .place
+                        .map_or_else(|| "unknown".to_string(), |p| p.to_string())
+                )
+                .unwrap();
+                for aff in &affordances.available {
+                    writeln!(out, "- {} ({} targets)", aff.action_name, aff.target_count)
+                        .unwrap();
+                }
+                writeln!(out).unwrap();
+            }
+        }
+    } else {
+        writeln!(out, "Decision tracing was not enabled.\n").unwrap();
+    }
+
     out
 }
 
@@ -925,6 +1198,7 @@ fn main() {
 
     let mut sim = spawned.state;
     let mut driver = AgentTickDriver::new();
+    driver.enable_tracing();
 
     // Collect agent and place info
     let world = sim.world();
@@ -1101,6 +1375,7 @@ fn main() {
         &action_trace,
         &perception_trace,
         sim.world(),
+        &driver,
     );
 
     // Ensure parent directory exists
