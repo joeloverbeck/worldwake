@@ -265,6 +265,7 @@ impl<'w> PerAgentBeliefView<'w> {
 
     fn knows_entity(&self, entity: EntityId) -> bool {
         entity == self.agent
+            || self.world.possessor_of(entity) == Some(self.agent)
             || self.believed_entity(entity).is_some()
             || self
                 .belief_store
@@ -3422,6 +3423,36 @@ mod tests {
         assert_eq!(
             ControlBeliefView::believed_owner_of(&view, lot),
             Some(agent)
+        );
+    }
+
+    #[test]
+    fn entity_kind_returns_item_lot_for_self_possessed_unknown_item() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot(CommodityKind::Water, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(lot, place).unwrap();
+            txn.set_possessor(lot, agent).unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            EntityBeliefView::entity_kind(&view, lot),
+            Some(EntityKind::ItemLot)
+        );
+        assert_eq!(
+            InventoryBeliefView::item_lot_commodity(&view, lot),
+            Some(CommodityKind::Water)
         );
     }
 

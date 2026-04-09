@@ -9,7 +9,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ControllerState, DeterministicRng, InputKind,
-    RecipeRegistry, Scheduler, SystemManifest, TickStepError, TickStepServices, step_tick,
+    PerAgentBeliefView, RecipeRegistry, Scheduler, SystemManifest, TickStepError, TickStepServices,
+    get_affordances, step_tick,
 };
 use worldwake_systems::{dispatch_table, register_needs_actions};
 
@@ -187,6 +188,18 @@ fn action_def_id(defs: &ActionDefRegistry, name: &str) -> ActionDefId {
     defs.iter()
         .find(|def| def.name == name)
         .map_or_else(|| panic!("missing action def {name}"), |def| def.id)
+}
+
+fn current_affordances(harness: &Harness) -> Vec<(ActionDefId, Vec<worldwake_core::EntityId>)> {
+    let store = harness
+        .world
+        .get_component_agent_belief_store(harness.actor)
+        .expect("actor should have AgentBeliefStore");
+    let view = PerAgentBeliefView::new(harness.actor, &harness.world, store);
+    get_affordances(&view, harness.actor, &harness.defs, &harness.handlers)
+        .into_iter()
+        .map(|affordance| (affordance.def_id, affordance.bound_targets))
+        .collect()
 }
 
 fn add_controlled_lot(
@@ -382,6 +395,29 @@ fn scheduler_rejects_eat_request_for_uncontrolled_ground_item() {
             targets: vec![bread],
             payload_override: None,
         }
+    );
+}
+
+#[test]
+fn scheduler_sequential_eat_then_drink_requests_remain_available() {
+    let mut harness = Harness::new(
+        HomeostaticNeeds::new(pm(700), pm(650), pm(400), pm(200), pm(350)),
+        metabolism_profile([0, 0, 0, 0, 0, 40], [20, 20, 20, 20, 2, 3]),
+    );
+    let bread = add_controlled_lot(&mut harness, CommodityKind::Bread, 2);
+    let water = add_controlled_lot(&mut harness, CommodityKind::Water, 3);
+
+    harness.queue_action("eat", vec![bread]);
+    harness.run_queued_action_to_completion(10);
+
+    harness.queue_action("drink", vec![water]);
+
+    let result = harness.step_once();
+    assert!(
+        result.is_ok(),
+        "expected drink request to remain available after eat, got {result:?}; affordances: {:?}; possessions: {:?}",
+        current_affordances(&harness),
+        harness.world.possessions_of(harness.actor)
     );
 }
 
