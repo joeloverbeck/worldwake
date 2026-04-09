@@ -142,6 +142,7 @@ Specific persisted-shape checks:
 - After moving methods off an existing trait, sweep for stale UFCS calls on the old trait (for example `OldTrait::method(...)`) and for method-call sites that now require the new trait to be imported for resolution. Trait extraction fallout is often at the call-site/import layer, not only in impl blocks.
 - Search for the moved method names themselves across ordinary method-call sites as part of that sweep. Dot-call fallout like `view.moved_method(...)` can require new trait imports even when there is no old-trait UFCS and no remaining `impl OldTrait for` block in the file.
 - Include helper methods and test-local impl internals in that sweep. Calls like `self.moved_method(...)` inside mock helpers, adapter helpers, or test-only impl blocks can also require the new trait import or explicit `<Self as NewTrait>::method(...)` after the split.
+- When blanket impls introduce a second lawful provider for an existing method name, sweep helpers, assertions, and mock internals for ambiguity fallout. Calls that previously resolved uniquely may now require explicit trait qualification even if no methods moved between traits.
 - When a trait split touches large mock, adapter, or test-stub impl blocks, prefer replacing the whole impl partition in one pass instead of patching methods incrementally. Half-migrated impls can strand methods on the wrong trait and create noisy intermediate compile states that obscure the real remaining fallout.
 - Include shared golden harnesses and golden test infrastructure in trait-split fallout sweeps. Method moves can leave old trait imports or UFCS calls in `golden_*` helpers even after ordinary unit-test mocks are green.
 - Prioritize broken production implementors over broad mock cleanup when the first compile wave points there. If a real `PerAgentBeliefView`, `PlanningState`, or similar live boundary is still structurally wrong after the split, fix that production path first and then use an all-target compile sweep to enumerate the remaining test/mock/golden fallout.
@@ -258,6 +259,7 @@ Do not assume every schema macro reference needs a new import — verify actual 
 #### Trait surface scope
 
 - Verify whether the live architecture uses forwarding macros, blanket impls, or paired runtime traits. Correct the ticket if the implementation boundary is broader than the prose.
+- When the named trait is already a stable consumer-facing facade, reassess whether the lawful cleanup is to preserve that facade and decompose only the implementation path beneath it. Do not force all direct consumers onto new sub-traits if the live boundary should remain the facade.
 - When reassessment exposes multiple ownership shapes for a new API, decide the shape before broad implementation.
 - When a widely used helper or wrapper appears to need a signature change, verify whether it is actually the live production boundary or mainly a test/unfiltered convenience surface. If only a narrower production entry point needs the new behavior, prefer widening that path and preserving the broader helper unchanged rather than mechanically churning all callers.
 

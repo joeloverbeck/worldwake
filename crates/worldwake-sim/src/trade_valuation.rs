@@ -499,8 +499,6 @@ mod tests {
         }
     }
 
-    crate::impl_goal_belief_view!(StubBeliefView);
-
     fn assert_traits<T: Clone + Eq + std::fmt::Debug>() {}
 
     fn entity(slot: u32) -> EntityId {

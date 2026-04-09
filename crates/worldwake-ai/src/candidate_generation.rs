@@ -4778,8 +4778,6 @@ mod tests {
         }
     }
 
-    worldwake_sim::impl_goal_belief_view!(TestBeliefView);
-
     impl ControlBeliefView for TestBeliefView {
         fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
             self.believed_owners.get(&entity).copied()

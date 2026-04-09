@@ -481,8 +481,6 @@ mod tests {
         }
     }
 
-    worldwake_sim::impl_goal_belief_view!(MockBeliefView);
-
     impl ControlBeliefView for MockBeliefView {
         fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
             None

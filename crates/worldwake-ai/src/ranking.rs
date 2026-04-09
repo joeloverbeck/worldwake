@@ -1627,8 +1627,6 @@ mod tests {
         last_seen_memories: BTreeMap<EntityId, LastSeenMemory>,
     }
 
-    worldwake_sim::impl_goal_belief_view!(TestBeliefView);
-
     impl ControlBeliefView for TestBeliefView {
         fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
             None

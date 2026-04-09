@@ -2137,8 +2137,6 @@ impl FacilityBeliefView for PlanningState<'_> {
     }
 }
 
-worldwake_sim::impl_goal_belief_view!(PlanningState<'_>);
-
 #[cfg(test)]
 mod tests {
     use super::{HypotheticalEntityId, PlanningEntityRef, PlanningState};
@@ -2311,7 +2309,7 @@ mod tests {
         }
 
         fn is_dead(&self, entity: EntityId) -> bool {
-            !self.is_alive(entity)
+            !EntityBeliefView::is_alive(self, entity)
         }
 
         fn is_incapacitated(&self, _entity: EntityId) -> bool {
@@ -2319,9 +2317,9 @@ mod tests {
         }
 
         fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
-            self.entities_at(place)
+            SpatialBeliefView::entities_at(self, place)
                 .into_iter()
-                .filter(|entity| self.is_dead(*entity))
+                .filter(|entity| EntityBeliefView::is_dead(self, *entity))
                 .collect()
         }
     }
@@ -2354,7 +2352,7 @@ mod tests {
         }
 
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places_with_travel_ticks(place)
+            SpatialBeliefView::adjacent_places_with_travel_ticks(self, place)
                 .into_iter()
                 .map(|(adjacent, _)| adjacent)
                 .collect()
@@ -2576,7 +2574,7 @@ mod tests {
             place: EntityId,
             commodity: CommodityKind,
         ) -> Quantity {
-            self.local_controlled_lots_for(actor, place, commodity)
+            EconomicBeliefView::local_controlled_lots_for(self, actor, place, commodity)
                 .into_iter()
                 .fold(Quantity(0), |total, entity| {
                     let quantity = self
@@ -2594,14 +2592,13 @@ mod tests {
             place: EntityId,
             commodity: CommodityKind,
         ) -> Vec<EntityId> {
-            let mut entities = self
-                .entities_at(place)
+            let mut entities = SpatialBeliefView::entities_at(self, place)
                 .into_iter()
                 .filter(|entity| {
                     <Self as worldwake_sim::InventoryBeliefView>::item_lot_commodity(self, *entity)
                         == Some(commodity)
                 })
-                .filter(|entity| self.can_control(actor, *entity))
+                .filter(|entity| ControlBeliefView::can_control(self, actor, *entity))
                 .collect::<Vec<_>>();
             entities.sort();
             entities.dedup();
@@ -2710,7 +2707,7 @@ mod tests {
         }
 
         fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.entities_at(place)
+            SpatialBeliefView::entities_at(self, place)
                 .into_iter()
                 .filter(|entity| {
                     self.resource_sources

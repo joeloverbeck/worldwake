@@ -87,8 +87,6 @@ mod tests {
         drive_thresholds: BTreeMap<EntityId, DriveThresholds>,
     }
 
-    worldwake_sim::impl_goal_belief_view!(TestBeliefView);
-
     impl ControlBeliefView for TestBeliefView {
         fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
             None

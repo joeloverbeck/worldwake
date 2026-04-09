@@ -1491,8 +1491,6 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
     }
 }
 
-crate::impl_goal_belief_view!(PerAgentBeliefView<'_>);
-
 #[cfg(test)]
 mod tests {
     use super::{PerAgentBeliefRuntime, PerAgentBeliefView};

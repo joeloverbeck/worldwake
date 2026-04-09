@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers (infrastructure refactor — no dependency on or f
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -162,3 +162,16 @@ No change. Sub-traits are query interfaces over existing state. No new stored st
 | GOAP search performance — SnapshotEntity sub-struct field access adds indirection | Profile before and after. Sub-struct fields are still inline (not heap-allocated). Cache locality impact should be negligible for struct-of-structs. |
 | Method categorization disagreement | Finalize during ticket decomposition. Some methods may move between domains. The important constraint is: no method appears in two sub-traits. |
 | Macro complexity — `impl_goal_belief_view!` may need restructuring | The macro already generates mechanical delegation. Grouping by sub-trait is additive complexity, not multiplicative. |
+
+## Outcome
+
+Completed on 2026-04-09.
+
+Implemented the staged `RuntimeBeliefView` domain decomposition across tickets `S75BELVDECOM-001` through `S75BELVDECOM-008`, including domain sub-traits, supertrait composition, `SnapshotEntity` domain sub-structs, and the final `GoalBeliefView` cleanup.
+
+Deviation from the original draft: the finished implementation preserved `GoalBeliefView` as the stable AI-facing facade and removed `impl_goal_belief_view!` in favor of blanket impls plus goal-only bridge traits, instead of keeping the old macro delegation pattern.
+
+Verification passed with:
+- `cargo build --workspace`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
