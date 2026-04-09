@@ -7,7 +7,7 @@ Scenarios: 12
 
 ### Scenario 8b: Corpse Burial
 
-- Source: `golden_combat.rs:749`
+- Source: `golden_combat.rs:756`
 - Systems: AI, Corpse, Conservation
 - GoalKinds: BuryCorpse
 - ActionDomains: Corpse
@@ -25,7 +25,7 @@ Scenarios: 12
 
 ### Scenario 7f: ReduceDanger Defensive Mitigation
 
-- Source: `golden_combat.rs:1450`
+- Source: `golden_combat.rs:1467`
 - Systems: AI, Combat, Conservation
 - GoalKinds: ReduceDanger, EngageHostile
 - ActionDomains: Combat
@@ -43,7 +43,7 @@ Scenarios: 12
 
 ### Scenario 7g: Wound Bleed, Clotting, and Natural Recovery
 
-- Source: `golden_combat.rs:1669`
+- Source: `golden_combat.rs:1686`
 - Systems: Combat, Needs
 - GoalKinds: (none direct)
 - ActionDomains: Combat
@@ -61,7 +61,7 @@ Scenarios: 12
 
 ### Scenario 30: Recovery-Aware Priority Boost Eats Before Wash
 
-- Source: `golden_combat.rs:1705`
+- Source: `golden_combat.rs:1722`
 - Systems: AI, Needs, Combat
 - GoalKinds: ConsumeOwnedCommodity, Wash
 - ActionDomains: Needs
@@ -79,7 +79,7 @@ Scenarios: 12
 
 ### Scenario 8: Death Cascade and Opportunistic Loot
 
-- Source: `golden_combat.rs:1742`
+- Source: `golden_combat.rs:1759`
 - Systems: Needs, Combat, Corpse, Conservation
 - GoalKinds: LootCorpse
 - ActionDomains: Corpse
@@ -97,7 +97,7 @@ Scenarios: 12
 
 ### Scenario 8c: Loot Suppression Under Self-Care Pressure
 
-- Source: `golden_combat.rs:1795`
+- Source: `golden_combat.rs:1812`
 - Systems: Needs, AI, Corpse, Conservation
 - GoalKinds: LootCorpse, ConsumeOwnedCommodity
 - ActionDomains: Corpse, Needs
@@ -115,7 +115,7 @@ Scenarios: 12
 
 ### Scenario 8d: Death While Traveling
 
-- Source: `golden_combat.rs:1832`
+- Source: `golden_combat.rs:1849`
 - Systems: Needs, AI, Travel, Combat, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -133,7 +133,7 @@ Scenarios: 12
 
 ### Scenario 7c: Hostility-Driven Living Combat
 
-- Source: `golden_combat.rs:1868`
+- Source: `golden_combat.rs:1885`
 - Systems: AI, Combat, Conservation
 - GoalKinds: EngageHostile
 - ActionDomains: Combat
@@ -151,7 +151,7 @@ Scenarios: 12
 
 ### Scenario S03a: Multi-Corpse Loot Binding
 
-- Source: `golden_combat.rs:1926`
+- Source: `golden_combat.rs:1943`
 - Systems: AI, Corpse, Conservation
 - GoalKinds: LootCorpse
 - ActionDomains: Corpse
@@ -169,7 +169,7 @@ Scenarios: 12
 
 ### Scenario S03b: Bury Suppressed Under Stress
 
-- Source: `golden_combat.rs:2124`
+- Source: `golden_combat.rs:2153`
 - Systems: Needs, AI, Corpse, Production
 - GoalKinds: BuryCorpse, ConsumeOwnedCommodity
 - ActionDomains: Corpse, Needs
@@ -187,7 +187,7 @@ Scenarios: 12
 
 ### Scenario S03c: Suppression Then Binding Combined
 
-- Source: `golden_combat.rs:2299`
+- Source: `golden_combat.rs:2335`
 - Systems: Needs, AI, Corpse, Conservation
 - GoalKinds: LootCorpse, ConsumeOwnedCommodity
 - ActionDomains: Corpse, Needs
@@ -205,7 +205,7 @@ Scenarios: 12
 
 ### Scenario 101: Corpse Contention Projects Visible Queue And Grant State
 
-- Source: `golden_combat.rs:2552`
+- Source: `golden_combat.rs:2600`
 - Systems: Combat, Contention, Perception, AI
 - GoalKinds: LootCorpse
 - ActionDomains: Corpse

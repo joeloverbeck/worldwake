@@ -200,6 +200,21 @@ struct IdleScarcityObservation {
     reached_remote_resource_place: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AgentConvergenceObservation {
+    name: String,
+    max_consecutive_idle: u32,
+    committed_actions: BTreeSet<String>,
+    reached_remote_resource_place: bool,
+    left_origin_tick: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MultiAgentConvergenceObservation {
+    agents: Vec<AgentConvergenceObservation>,
+    earliest_travel_start_tick: Option<u32>,
+}
+
 fn run_max_idle_under_remote_resource_scarcity(
     seed: Seed,
 ) -> (IdleScarcityObservation, StateHash, StateHash) {
@@ -395,5 +410,261 @@ fn golden_max_idle_under_remote_resource_scarcity_replays_deterministically() {
     assert_eq!(
         first, second,
         "idle cap under remote resource scarcity should replay deterministically"
+    );
+}
+
+fn run_multi_agent_convergence(
+    seed: Seed,
+) -> (MultiAgentConvergenceObservation, StateHash, StateHash) {
+    let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
+    h.enable_action_tracing();
+
+    let apple_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Apples")
+        .map(|(id, _)| id)
+        .unwrap();
+    let water_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Water")
+        .map(|(id, _)| id)
+        .unwrap();
+    let known_recipes = worldwake_core::KnownRecipes::with([apple_recipe, water_recipe]);
+
+    let agents = vec![
+        (
+            "Scout Alder",
+            HomeostaticNeeds::new(pm(650), pm(600), pm(250), pm(150), pm(0)),
+            UtilityProfile {
+                hunger_weight: pm(900),
+                thirst_weight: pm(875),
+                fatigue_weight: pm(500),
+                bladder_weight: pm(400),
+                ..UtilityProfile::default()
+            },
+        ),
+        (
+            "Scout Brim",
+            HomeostaticNeeds::new(pm(600), pm(650), pm(200), pm(200), pm(0)),
+            UtilityProfile {
+                hunger_weight: pm(860),
+                thirst_weight: pm(920),
+                fatigue_weight: pm(450),
+                bladder_weight: pm(450),
+                ..UtilityProfile::default()
+            },
+        ),
+        (
+            "Scout Cinder",
+            HomeostaticNeeds::new(pm(625), pm(625), pm(225), pm(175), pm(0)),
+            UtilityProfile {
+                hunger_weight: pm(890),
+                thirst_weight: pm(890),
+                fatigue_weight: pm(475),
+                bladder_weight: pm(425),
+                ..UtilityProfile::default()
+            },
+        ),
+    ]
+    .into_iter()
+    .map(|(name, needs, utility)| {
+        let agent = seed_agent_with_recipes(
+            &mut h.world,
+            &mut h.event_log,
+            name,
+            VILLAGE_SQUARE,
+            needs,
+            MetabolismProfile::default(),
+            utility,
+            known_recipes.clone(),
+        );
+        configure_remote_resource_agent(&mut h, agent);
+        seed_actor_local_beliefs(
+            &mut h.world,
+            &mut h.event_log,
+            agent,
+            Tick(0),
+            worldwake_core::PerceptionSource::DirectObservation,
+        );
+        (name.to_string(), agent)
+    })
+    .collect::<Vec<_>>();
+
+    let orchard_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(12),
+            max_quantity: Quantity(12),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let well_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::Well,
+        ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(12),
+            max_quantity: Quantity(12),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    for (_, agent) in &agents {
+        for entity in [ORCHARD_FARM, orchard_source, well_source] {
+            seed_belief_from_world(
+                &mut h.world,
+                &mut h.event_log,
+                *agent,
+                entity,
+                Tick(0),
+                worldwake_core::PerceptionSource::Inference,
+            );
+        }
+    }
+
+    let mut observation = MultiAgentConvergenceObservation {
+        agents: agents
+            .iter()
+            .map(|(name, _)| AgentConvergenceObservation {
+                name: name.clone(),
+                max_consecutive_idle: 0,
+                committed_actions: BTreeSet::new(),
+                reached_remote_resource_place: false,
+                left_origin_tick: None,
+            })
+            .collect(),
+        earliest_travel_start_tick: None,
+    };
+    let mut consecutive_idle = vec![0u32; agents.len()];
+    let mut seen_events = vec![0usize; agents.len()];
+
+    for tick in 0..600u32 {
+        h.step_once();
+        let action_sink = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled");
+
+        for (index, (_, agent)) in agents.iter().enumerate() {
+            let agent_observation = &mut observation.agents[index];
+            if h.world.is_in_transit(*agent)
+                || h.world.effective_place(*agent) != Some(VILLAGE_SQUARE)
+            {
+                agent_observation.left_origin_tick.get_or_insert(tick);
+            }
+            if h.world.effective_place(*agent) == Some(ORCHARD_FARM) {
+                agent_observation.reached_remote_resource_place = true;
+            }
+
+            let events = action_sink.events_for(*agent);
+            let new_events = &events[seen_events[index]..];
+            let mut had_lifecycle_activity = false;
+            for event in new_events {
+                if matches!(
+                    event.kind,
+                    ActionTraceKind::Started { .. }
+                        | ActionTraceKind::Committed { .. }
+                        | ActionTraceKind::Aborted { .. }
+                        | ActionTraceKind::StartFailed { .. }
+                ) {
+                    had_lifecycle_activity = true;
+                }
+                if matches!(event.kind, ActionTraceKind::Started { .. })
+                    && event.action_name == "travel"
+                {
+                    observation
+                        .earliest_travel_start_tick
+                        .get_or_insert(tick);
+                }
+                if matches!(event.kind, ActionTraceKind::Committed { .. }) {
+                    agent_observation
+                        .committed_actions
+                        .insert(event.action_name.clone());
+                }
+            }
+            seen_events[index] = events.len();
+
+            if had_lifecycle_activity || h.agent_has_active_action(*agent) {
+                consecutive_idle[index] = 0;
+            } else {
+                consecutive_idle[index] += 1;
+                agent_observation.max_consecutive_idle = agent_observation
+                    .max_consecutive_idle
+                    .max(consecutive_idle[index]);
+            }
+        }
+    }
+
+    assert!(
+        observation
+            .agents
+            .iter()
+            .all(|agent| agent.max_consecutive_idle <= 200),
+        "No agent should exceed 200 consecutive ticks with no lifecycle activity; observation={observation:?}"
+    );
+    assert!(
+        observation
+            .earliest_travel_start_tick
+            .is_some_and(|tick| tick < 300),
+        "At least one agent should start travel within 300 ticks; observation={observation:?}"
+    );
+    assert!(
+        observation
+            .agents
+            .iter()
+            .any(|agent| agent.reached_remote_resource_place),
+        "At least one agent should reach Orchard Farm by tick 600; observation={observation:?}"
+    );
+
+    (
+        observation,
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 130: Multi-Agent Convergence Under Remote Resource Scarcity
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Travel, Production
+// GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve
+// ActionDomains: Travel, Production, Needs
+// Places: VillageSquare, OrchardFarm
+// Principles: 7, 8, 20
+//
+// Setup: Three agents begin at VillageSquare with elevated hunger and thirst,
+//   but no local food or water. OrchardFarm holds both apple and water harvest
+//   sources, and each agent starts with explicit beliefs about the remote place
+//   and both resource carriers plus the needed harvest recipes.
+//
+// Proves: multi-agent scarcity pressure still produces bounded behavioral
+//   progress instead of collapsing into prolonged no-op stretches; at least one
+//   agent starts travel toward the remote resources and reaches OrchardFarm.
+//
+// Chain: shared scarcity pressure -> remote resource candidate generation
+//   across multiple agents -> lawful travel start -> OrchardFarm arrival.
+
+#[test]
+fn golden_multi_agent_convergence() {
+    let _ = run_multi_agent_convergence(Seed([178; 32]));
+}
+
+#[test]
+fn golden_multi_agent_convergence_replays_deterministically() {
+    let first = run_multi_agent_convergence(Seed([178; 32]));
+    let second = run_multi_agent_convergence(Seed([178; 32]));
+    assert_eq!(
+        first, second,
+        "multi-agent convergence under remote resource scarcity should replay deterministically"
     );
 }
