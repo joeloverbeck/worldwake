@@ -74,6 +74,7 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 
 - Claimed missing scenarios are not already covered by current `golden_*` suites or generated golden inventory/docs.
 - Identify the strongest existing owning `golden_*` suite before accepting the ticket's proposed file list; reuse existing ownership surfaces instead of creating new golden files.
+- When a failing golden motivates the ticket, restate the owned invariant before editing and decide whether the contradiction is most honestly proved at the golden layer or at a lower production layer. Prefer the strongest lower-layer proof for root cause, then keep the motivating golden as behavioral confirmation rather than the sole architectural evidence.
 - When same-domain verification fails, first check the referenced spec and any active sibling tickets for an explicit owner of that fallout before touching tests or broadening scope. If the failure is already named as downstream-owned work, document it and keep the current ticket boundary honest unless the user expands scope.
 - When a shared concept has both upstream producers and downstream consumers, compare their semantics directly. If the consumer already supports a broader shape, correct the ticket to own that parity fix.
 - If a claimed divergence is proved at lower layers but not stably isolatable as a golden without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract and record which lower-layer proof remains authoritative.
@@ -339,6 +340,7 @@ Typical order:
 - Treat focused selectors the same way: even narrow same-profile `cargo test` invocations should run one at a time, never through parallel tool wrappers.
 - When a broad verification run dies by `SIGKILL` or another likely environment/resource kill after focused suites are already green, rerun the named interrupted/failing suite in isolation before deciding whether to repeat the full broad run. Record that distinction in the ticket outcome instead of treating the killed broad run as a semantic failure by default.
 - When a broader or longer-running verification command is intentionally waived after user direction, do not silently omit it or imply it passed. Record the exact completed command set plus the waived command in the ticket `Outcome` / `Verification Result`, and state that the narrower proof surface was accepted by user choice.
+- Remove temporary debug or trace scaffolding before final verification unless the ticket explicitly owns keeping that instrumentation. After cleanup, rerun the narrowest proof that depended on the investigation.
 - After changing code post-verification, rerun narrowest affected tests and any stale broader commands.
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
 - When CI/compile fallout follows a shared context-field change, sweep manual struct literals as well as direct function call sites before the next verification pass.
@@ -398,12 +400,13 @@ After the owned implementation is fully verified:
 
 1. Update the ticket's `Status` when repo policy and the current task imply the ticket is now complete. Do not mark it complete before the required verification surface has passed.
 2. If reassessment, implementation, or broad verification exposed an adjacent but out-of-scope contradiction, cleanup, or architectural compromise, create or update a follow-up ticket immediately instead of leaving the dependency implicit.
-3. Give each follow-up explicit `Deps` links to the implemented ticket and any still-pending sibling tickets or active specs it depends on.
-4. Distinguish clearly between:
+3. If the owned invariant is proved and a broader rerun then exposes a different unrelated blocker, close the current ticket honestly, record the broader blocker in the ticket outcome, and create the follow-up ticket immediately instead of keeping the current ticket open for unrelated fallout.
+4. Give each follow-up explicit `Deps` links to the implemented ticket and any still-pending sibling tickets or active specs it depends on.
+5. Distinguish clearly between:
    - bugs fixed inside the current ticket
    - compromises accepted to finish the current ticket safely
    - remaining work that needs its own ticket
-5. Do not silently broaden the current ticket during close-out just because the next fix is obvious. If the remaining work has its own architectural boundary, capture it as a follow-up ticket instead.
+6. Do not silently broaden the current ticket during close-out just because the next fix is obvious. If the remaining work has its own architectural boundary, capture it as a follow-up ticket instead.
 - Keep scenario prose aligned with updated assertions so the documented contract stays traceable.
 - When the implemented ticket intentionally changes a contract still described in an active spec, update that active spec text in the same pass unless a named follow-up ticket explicitly owns the spec drift.
 

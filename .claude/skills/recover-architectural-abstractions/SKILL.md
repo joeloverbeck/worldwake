@@ -45,7 +45,7 @@ Starting from the test file(s), build a dependency graph of source modules:
 5. Read `docs/FOUNDATIONS.md` — hold it for Phase 6 validation. Do NOT apply it yet.
 6. Read any `prior_reports` if provided via `--prior-reports`. Also scan the `reports/` directory for existing `missing-abstractions-*` and `architectural-abstractions-*` reports matching the same test context. Additionally, scan for reports from related test contexts — test files that share the same harness setup, the same crate under test, or the same short-circuit scope (all modules in the same crates). Two test files that both exercise the entire `worldwake-ai` crate via `step_once()` loops produce overlapping coverage, so their reports are mutually relevant. Treat all discovered reports the same as explicitly provided ones — note already-identified issues to avoid rediscovery. If the exercised module set overlaps >80% with a prior report's scope, auto-activate `--differential` mode.
 7. Check for existing coverage/trace artifacts in the repo. Use them if present.
-8. Run bounded git history: `git log --since="6 months ago" --name-only` on exercised files to identify temporal coupling. From the output, group files by commit. For each commit, enumerate all cross-crate file pairs that changed together. Count how many commits each pair co-appears in. Report the top 20 cross-crate pairs with 3+ co-changes, ordered by frequency. Also report the crate-to-crate coupling matrix (total co-changing commits per crate pair).
+8. Run bounded git history: `git log --since="6 months ago" --name-only` on exercised files to identify temporal coupling. Use recursive globs to capture files in subdirectories (e.g., `'crates/worldwake-*/src/**/*.rs'` not `'crates/worldwake-*/src/*.rs'`). From the output, group files by commit. For each commit, enumerate all cross-crate file pairs that changed together. Count how many commits each pair co-appears in. Report the top 20 cross-crate pairs with 3+ co-changes, ordered by frequency. Also report the crate-to-crate coupling matrix (total co-changing commits per crate pair).
 
 **Short-circuit for golden/integration tests**: If the test calls a top-level simulation step function (e.g., `step_once()`, `tick()`, or equivalent) in a loop, all source modules in the referenced crates are exercised. Skip per-symbol tracing (steps 2-3) and enumerate all `.rs` files in those crates' `src/` directories directly, excluding `lib.rs` barrel files and `mod.rs` files that only contain `mod` declarations.
 
@@ -83,6 +83,8 @@ Every later architectural inference must be tied back to scenario families. A fi
 
 **Resilience/chaos tests**: When the test injects external disruptions (kills, deletions, workstation removal, teleportation) and validates invariants hold despite them, derive scenario families from the disruption categories and the invariant categories they stress. The disruption injection protocol itself is a scenario family if it exercises a distinct code path (e.g., WorldTxn mutations distinct from normal system mutations). Similarly, serialization roundtrip tests (save/load mid-run with checkpoint hash comparison) form their own scenario family around the serialization boundary.
 
+**Determinism replay tests**: Tests that run the same scenario twice with the same seed and assert identical outcomes are determinism validators, not separate scenario families. Count them with their parent scenario but note determinism validation as a cross-cutting concern.
+
 **Sub-agent delegation**: For large test directories (>30 test files), delegate scenario extraction to 2-3 parallel Explore sub-agents, each handling a subset. Merge and deduplicate scenario families.
 
 ### Phase 3: TRACE
@@ -100,9 +102,13 @@ Each traceability link gets a confidence tag (high/medium/low) and a brief reaso
 
 The purpose of multi-strategy tracing is to catch hidden dependencies that `use` statements alone miss — trait dispatch, `SystemFn` registration, `register_action_handler` indirection, and temporal coupling are the most common sources of invisible links in this codebase.
 
-**After short-circuit**: When Phase 1's short-circuit determined all modules are exercised, skip the `use` statement and call graph strategies — they add no value when the answer is "everything is exercised." Focus Phase 3 on temporal coupling analysis (files that co-change across commits) and the confidence/reason-code tagging of module-to-scenario links. The traceability table should focus on modules that are uniquely relevant to specific scenario families — modules that handle the test's distinctive code paths (e.g., save/load, disruption handling, invariant checking) rather than listing all exercised modules. A focused table of 10-15 key modules is more useful than an exhaustive listing of 200.
+**After short-circuit**: When Phase 1's short-circuit determined all modules are exercised, skip the `use` statement and call graph strategies — they add no value when the answer is "everything is exercised." Focus Phase 3 on temporal coupling analysis (files that co-change across commits) and the confidence/reason-code tagging of module-to-scenario links. Naming/lexical similarity remains useful for mapping modules to scenario families even when all modules are exercised — use it to identify which modules are *uniquely relevant* to specific scenario families. The traceability table should focus on modules that are uniquely relevant to specific scenario families — modules that handle the test's distinctive code paths (e.g., save/load, disruption handling, invariant checking) rather than listing all exercised modules. A focused table of 10-15 key modules is more useful than an exhaustive listing of 200.
 
 ### Phase 4: DETECT FRACTURES
+
+Use the temporal coupling matrix from Phase 1 step 8 to prioritize which boundary files to read. Start with the top 5 cross-crate file pairs by co-change frequency — these are the most likely locations of cross-subsystem fractures.
+
+**Sub-agent delegation**: For large exercised sets (>100 modules), delegate fracture detection to 2-3 parallel Explore sub-agents, each analyzing a different crate boundary surface (e.g., ai↔sim, ai↔core, sim↔systems). Each agent should read boundary files, identify cross-crate imports, and report potential fractures with evidence signals.
 
 Scan the exercised code for these 8 fracture types:
 
@@ -221,8 +227,9 @@ Brief explanation of why they don't need intervention.>
 
 ## Needs Investigation
 
-<Single-signal fractures that didn't meet the two-signal minimum.
-List them with the one signal found and what second signal to look for.>
+| Signal | Fracture Type Suspected | One Signal Found | Second Signal to Look For |
+|--------|------------------------|-----------------|--------------------------|
+| <description> | <type> | <what was found> | <what to check next> |
 
 ## Recommendations
 
@@ -247,7 +254,7 @@ List them with the one signal found and what second signal to look for.>
 - This skill is READ-ONLY. Do not modify any source files.
 - Do not run `cargo test` or any other test command. Static analysis and git history only.
 - Do not write specs. Only write the report. Spec authoring is a separate step via `/assessment-to-specs`.
-- Focus on cross-subsystem fractures. Single-concept scatter (e.g., "this function is duplicated in 5 files") is the domain of `detect-missing-abstractions`, not this skill.
+- Focus on cross-subsystem fractures. Single-concept scatter (e.g., "this function is duplicated in 5 files") is the domain of `detect-missing-abstractions`, not this skill. Intra-crate fractures are reportable when they affect the cross-subsystem protocol (e.g., a projection drift within the AI crate that causes incorrect signals at the AI↔sim boundary). Report them with a note that they are intra-crate.
 - Always check against `docs/FOUNDATIONS.md` — but only in Phase 6, not earlier.
 - The report should be actionable: each finding either needs a spec or doesn't.
 - If a report already exists at the target path, overwrite it — each run produces a complete standalone report.

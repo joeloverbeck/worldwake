@@ -1956,7 +1956,11 @@ pub fn derive_entity_summary(
 fn claim_eviction_tier(aspect: EntityBeliefAspect, believed_kind: Option<EntityKind>) -> u8 {
     match aspect {
         EntityBeliefAspect::ResourceAvailable(_) | EntityBeliefAspect::WorkstationPresent => 0,
-        EntityBeliefAspect::Location if believed_kind == Some(EntityKind::Place) => 0,
+        EntityBeliefAspect::Location
+            if matches!(believed_kind, Some(EntityKind::Place | EntityKind::Facility)) =>
+        {
+            0
+        }
         EntityBeliefAspect::Alive if believed_kind == Some(EntityKind::Agent) => 0,
         _ => 1,
     }
@@ -3450,6 +3454,93 @@ mod tests {
                 .last_known_place,
             Some(entity(11))
         );
+    }
+
+    #[test]
+    fn enforce_entity_claim_capacity_preserves_facility_location_for_resource_sources() {
+        let mut store = claim_backed_store(
+            81,
+            vec![
+                sample_claim(
+                    1,
+                    81,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(10))),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+                sample_claim(
+                    2,
+                    81,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+                sample_claim(
+                    3,
+                    81,
+                    EntityBeliefAspect::WorkstationPresent,
+                    ClaimValue::WorkstationTag(Some(WorkstationTag::OrchardRow)),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+                sample_claim(
+                    4,
+                    81,
+                    EntityBeliefAspect::ResourceAvailable(CommodityKind::Apple),
+                    ClaimValue::ResourceSource(Some(ResourceSource {
+                        commodity: CommodityKind::Apple,
+                        available_quantity: Quantity(2),
+                        max_quantity: Quantity(5),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    })),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+            ],
+        );
+        store.update_entity(
+            entity(81),
+            BelievedEntityState {
+                believed_kind: Some(EntityKind::Facility),
+                last_known_place: Some(entity(10)),
+                last_known_inventory: BTreeMap::new(),
+                workstation_tag: Some(WorkstationTag::OrchardRow),
+                resource_source: Some(ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(2),
+                    max_quantity: Quantity(5),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                }),
+                alive: true,
+                wounds: Vec::new(),
+                last_known_courage: None,
+                believed_activity: None,
+                believed_artifact: None,
+                believed_contention: None,
+                believed_evidence: None,
+                observed_tick: Tick(9),
+                source: PerceptionSource::DirectObservation,
+            },
+        );
+
+        store.enforce_entity_claim_capacity(&profile(8, 3, 100), Tick(10));
+
+        let summary = store.known_entities.get(&entity(81)).unwrap();
+        assert_eq!(
+            summary.last_known_place,
+            Some(entity(10)),
+            "resource-source facilities must retain location so place-scoped opportunity discovery remains lawful"
+        );
+        assert_eq!(summary.workstation_tag, Some(WorkstationTag::OrchardRow));
+        assert!(summary.resource_source.is_some());
     }
 
     #[test]

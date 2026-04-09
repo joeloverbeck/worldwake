@@ -679,6 +679,8 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
 
     // Agent at Orchard Farm, critically hungry.
     // Resource source is DEPLETED (available_quantity 0) but regenerates.
+    // Seed local beliefs explicitly so the scenario stays about regeneration
+    // and blocker clearing rather than co-location discovery timing.
     let agent = seed_agent(
         &mut h.world,
         &mut h.event_log,
@@ -692,8 +694,23 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
             ..UtilityProfile::default()
         },
     );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PerceptionProfile {
+            entity_memory_capacity: 64,
+            entity_claim_capacity: 64,
+            memory_retention_ticks: 64,
+            observation_fidelity: pm(1000),
+            confidence_policy: BeliefConfidencePolicy::default(),
+            institutional_memory_capacity: 20,
+            consultation_speed_factor: pm(500),
+            contradiction_tolerance: pm(300),
+        },
+    );
 
-    place_workstation_with_source(
+    let orchard_source = place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,
         ORCHARD_FARM,
@@ -706,6 +723,13 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
             last_regeneration_tick: None,
         },
         ProductionOutputOwner::Actor,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
     );
 
     let mut saw_blocker = false;
@@ -729,18 +753,21 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
         }
     }
 
-    // Blocked intent recording depends on an action actually failing (handle_plan_failure),
-    // not on the planner failing to find a plan. With a depleted source, the planner may
-    // simply never produce a harvest plan, so blocked intent is observational, not required.
-    if saw_blocker {
-        eprintln!("Observed: Agent recorded a blocked intent for the depleted resource");
-    }
+    assert!(
+        saw_blocker,
+        "Agent should record a blocked intent when the depleted orchard source blocks harvest"
+    );
 
     // After resource regeneration (10+ ticks to reach Quantity(2)),
     // the agent should eventually harvest, creating apple lots.
     assert!(
         eventually_harvested,
-        "Agent should eventually harvest apples after resource regeneration"
+        "Agent should eventually harvest apples after resource regeneration; blocked={:?}; authoritative_source={:?}; believed_source={:?}",
+        h.world.get_component_blocked_intent_memory(agent),
+        h.world.get_component_resource_source(orchard_source),
+        h.world
+            .get_component_agent_belief_store(agent)
+            .and_then(|store| store.get_entity(&orchard_source))
     );
 }
 
