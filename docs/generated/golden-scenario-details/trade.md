@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 2b: Buyer-Driven Trade Acquisition
 
-- Source: `golden_trade.rs:1672`
+- Source: `golden_trade.rs:1684`
 - Systems: Needs, AI, Trade, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Needs
@@ -24,7 +24,7 @@ Scenarios: 5
 
 ### Scenario 2d: Merchant Restock and Return to Home Market
 
-- Source: `golden_trade.rs:1707`
+- Source: `golden_trade.rs:1719`
 - Systems: Enterprise, Travel, Production, Transport, Conservation
 - GoalKinds: RestockCommodity, MoveCargo
 - ActionDomains: Production, Travel, Transport
@@ -41,7 +41,7 @@ Scenarios: 5
 
 ### Scenario 2f: Carrier Delivers To Facility Without Becoming Seller
 
-- Source: `golden_trade.rs:1742`
+- Source: `golden_trade.rs:1754`
 - Systems: Travel, Transport, Trade, Conservation
 - ActionDomains: Travel, Transport, Trade
 - Places: VillageSquare, GeneralStore
@@ -55,7 +55,7 @@ Scenarios: 5
 
 ### Scenario 74: Local Trade Start Failure Recovers via Production Fallback
 
-- Source: `golden_trade.rs:1773`
+- Source: `golden_trade.rs:1785`
 - Systems: AI, Trade, Production, Travel, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Production, Travel, Needs
@@ -72,7 +72,7 @@ Scenarios: 5
 
 ### Scenario 94: Trade Rejection Reweights Seller Choice
 
-- Source: `golden_trade.rs:1816`
+- Source: `golden_trade.rs:1828`
 - Systems: AI, Trade, Needs
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Travel, Needs

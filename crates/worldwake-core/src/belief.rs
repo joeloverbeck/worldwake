@@ -1957,7 +1957,10 @@ fn claim_eviction_tier(aspect: EntityBeliefAspect, believed_kind: Option<EntityK
     match aspect {
         EntityBeliefAspect::ResourceAvailable(_) | EntityBeliefAspect::WorkstationPresent => 0,
         EntityBeliefAspect::Location
-            if matches!(believed_kind, Some(EntityKind::Place | EntityKind::Facility)) =>
+            if matches!(
+                believed_kind,
+                Some(EntityKind::Place | EntityKind::Facility)
+            ) =>
         {
             0
         }

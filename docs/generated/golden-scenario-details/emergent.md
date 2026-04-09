@@ -99,7 +99,7 @@ Scenarios: 14
 
 ### Scenario 39: Traceability Explains Stale Fine Branch
 
-- Source: `golden_emergent.rs:5678`
+- Source: `golden_emergent.rs:5684`
 - Systems: AI, Institutions, Justice, Action Trace
 - GoalKinds: PunishAccused
 - ActionDomains: Social
@@ -111,7 +111,7 @@ Scenarios: 14
 
 ### Scenario 40: Supply Depletion Enables ShareBelief
 
-- Source: `golden_emergent.rs:5982`
+- Source: `golden_emergent.rs:5988`
 - Systems: Perception, AI, Generic Actions, Social Tell
 - GoalKinds: ShareBelief, InvestigateViolation
 - ActionDomains: Generic, Social
@@ -123,7 +123,7 @@ Scenarios: 14
 
 ### Scenario 42: Witness Deterrence Suppresses Theft Candidate
 
-- Source: `golden_emergent.rs:6265`
+- Source: `golden_emergent.rs:6271`
 - Systems: AI, Perception, Needs
 - GoalKinds: ConsumeOwnedCommodity (NOT StealItem)
 - ActionDomains: Needs
@@ -135,7 +135,7 @@ Scenarios: 14
 
 ### Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
 
-- Source: `golden_emergent.rs:6521`
+- Source: `golden_emergent.rs:6527`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -147,7 +147,7 @@ Scenarios: 14
 
 ### Scenario 110: Jurisdiction-Gated Punishment
 
-- Source: `golden_emergent.rs:7387`
+- Source: `golden_emergent.rs:7393`
 - GoalKinds: PunishAccused
 - ActionDomains: Social
 - Places: RulersHall, GeneralStore
@@ -158,7 +158,7 @@ Scenarios: 14
 
 ### Scenario 111: Secondary-Jurisdiction Punishment Away From Office Seat
 
-- Source: `golden_emergent.rs:7438`
+- Source: `golden_emergent.rs:7444`
 - GoalKinds: PunishAccused
 - ActionDomains: Social
 - Places: RulersHall, GeneralStore
@@ -169,7 +169,7 @@ Scenarios: 14
 
 ### Scenario 43: Dual Discovery Converges Without Double Accusation
 
-- Source: `golden_emergent.rs:7478`
+- Source: `golden_emergent.rs:7484`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
 - ActionDomains: Transport, Social, Travel

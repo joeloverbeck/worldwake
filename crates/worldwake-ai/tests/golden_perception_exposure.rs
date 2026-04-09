@@ -9,8 +9,9 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_core::{
-    AgentData, ControlSource, EventTag, EventView, HomeostaticNeeds, MetabolismProfile,
-    PerceptionProfile, PlaceVisibilityProfile, PrototypePlace, Seed, prototype_place_entity,
+    AgentData, CommodityKind, ControlSource, EntityId, EventTag, EventView, HomeostaticNeeds,
+    MetabolismProfile, PerceptionProfile, PlaceVisibilityProfile, PrototypePlace, Quantity,
+    ResourceSource, Seed, WorkstationTag, prototype_place_entity,
 };
 use worldwake_sim::{
     ActionRequestMode, ActionTraceKind, InputKind, PerceptionTraceEvent, RequestProvenance,
@@ -103,6 +104,111 @@ fn stable_test_metabolism() -> MetabolismProfile {
         pm(0),
         pm(0),
     )
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ResourceSourceBeliefObservation {
+    known_entities: Vec<EntityId>,
+    retained_waste_entities: Vec<EntityId>,
+    apple_source_believed: bool,
+    water_source_believed: bool,
+}
+
+fn place_ground_lots(
+    h: &mut GoldenHarness,
+    place: EntityId,
+    commodity: CommodityKind,
+    quantity: Quantity,
+    count: usize,
+) -> Vec<EntityId> {
+    let mut txn = new_txn(&mut h.world, 0);
+    let mut lots = Vec::with_capacity(count);
+    for _ in 0..count {
+        let lot = txn.create_item_lot(commodity, quantity).unwrap();
+        txn.set_ground_location(lot, place).unwrap();
+        lots.push(lot);
+    }
+    commit_txn(txn, &mut h.event_log);
+    lots
+}
+
+fn run_perception_forms_resource_source_beliefs(seed: Seed) -> ResourceSourceBeliefObservation {
+    let mut h = GoldenHarness::new(seed);
+
+    let apple_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let water_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::FieldPlot,
+        ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let waste_lots = place_ground_lots(&mut h, ORCHARD_FARM, CommodityKind::Waste, Quantity(1), 6);
+
+    let observer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Observer",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new_sated(),
+        stable_test_metabolism(),
+        worldwake_core::UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        observer,
+        PerceptionProfile {
+            entity_memory_capacity: 4,
+            entity_claim_capacity: 12,
+            memory_retention_ticks: 64,
+            observation_fidelity: pm(1000),
+            ..PerceptionProfile::default()
+        },
+    );
+
+    for _ in 0..50 {
+        h.step_once();
+    }
+
+    let store = h
+        .world
+        .get_component_agent_belief_store(observer)
+        .cloned()
+        .unwrap_or_else(worldwake_core::AgentBeliefStore::new);
+    let known_entities = store.known_entities.keys().copied().collect::<Vec<_>>();
+    let retained_waste_entities = waste_lots
+        .iter()
+        .copied()
+        .filter(|entity| store.known_entities.contains_key(entity))
+        .collect::<Vec<_>>();
+
+    ResourceSourceBeliefObservation {
+        apple_source_believed: store.known_entities.contains_key(&apple_source),
+        water_source_believed: store.known_entities.contains_key(&water_source),
+        known_entities,
+        retained_waste_entities,
+    }
 }
 
 fn run_witnessed_relief_trace(
@@ -318,4 +424,47 @@ fn golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity() {
 
     let trace = witnessed_wilderness_relief_trace(&harness, observer).unwrap();
     assert_eq!(trace.effective_fidelity, 253);
+}
+
+// Scenario 128: Perception Forms Beliefs About Resource Sources
+//
+// Systems: Perception
+// ActionDomains: N/A
+// Places: OrchardFarm
+// Principles: 7, 14, 15, 16
+//
+// Setup: An AI observer with `entity_memory_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
+//
+// Proves: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed memory capacity.
+//
+// Chain: same-place observation -> belief recording -> `enforce_capacity()` eviction -> retained infrastructure beliefs.
+#[test]
+fn golden_perception_forms_resource_source_beliefs() {
+    let observation = run_perception_forms_resource_source_beliefs(Seed([178; 32]));
+
+    assert!(
+        observation.apple_source_believed,
+        "observer should retain the apple source belief under capacity pressure; observation={observation:?}"
+    );
+    assert!(
+        observation.water_source_believed,
+        "observer should retain the water source belief under capacity pressure; observation={observation:?}"
+    );
+    assert_eq!(
+        observation.known_entities.len(),
+        4,
+        "memory capacity should bind so the scenario proves eviction under competition; observation={observation:?}"
+    );
+    assert!(
+        observation.retained_waste_entities.len() < 6,
+        "not all waste lots should survive once capacity eviction runs; observation={observation:?}"
+    );
+}
+
+#[test]
+fn golden_perception_forms_resource_source_beliefs_replays_deterministically() {
+    let first = run_perception_forms_resource_source_beliefs(Seed([178; 32]));
+    let second = run_perception_forms_resource_source_beliefs(Seed([178; 32]));
+
+    assert_eq!(first, second);
 }

@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 25
 - Files contributing `golden_*` tests: 25
-- Total `golden_*` tests: 328
+- Total `golden_*` tests: 330
 
 ## Per-File Inventory
 
@@ -26,7 +26,7 @@ Do not hand-edit it.
 | `golden_merchant_selling.rs` | 20 |
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
-| `golden_perception_exposure.rs` | 4 |
+| `golden_perception_exposure.rs` | 6 |
 | `golden_production.rs` | 30 |
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 2 |
@@ -312,6 +312,8 @@ Do not hand-edit it.
 - `golden_fatigue_reduces_witnessed_event_fidelity`
 - `golden_attention_cost_reduces_witnessed_event_fidelity`
 - `golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity`
+- `golden_perception_forms_resource_source_beliefs`
+- `golden_perception_forms_resource_source_beliefs_replays_deterministically`
 
 ### `golden_production.rs`
 

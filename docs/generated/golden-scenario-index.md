@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 146
+- Scenario blocks: 147
 - Contributing golden test files: 24
-- Associated tests: 313
+- Associated tests: 315
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -88,7 +88,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:748`
+- Source: `golden_ai_decisions.rs:775`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -102,7 +102,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1953`
+- Source: `golden_ai_decisions.rs:1980`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -512,7 +512,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 39: Traceability Explains Stale Fine Branch
 
-- Source: `golden_emergent.rs:5678`
+- Source: `golden_emergent.rs:5684`
 - Systems: AI, Institutions, Justice, Action Trace
 - GoalKinds: PunishAccused
 - ActionDomains: Social
@@ -521,7 +521,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 40: Supply Depletion Enables ShareBelief
 
-- Source: `golden_emergent.rs:5982`
+- Source: `golden_emergent.rs:5988`
 - Systems: Perception, AI, Generic Actions, Social Tell
 - GoalKinds: ShareBelief, InvestigateViolation
 - ActionDomains: Generic, Social
@@ -530,7 +530,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 42: Witness Deterrence Suppresses Theft Candidate
 
-- Source: `golden_emergent.rs:6265`
+- Source: `golden_emergent.rs:6271`
 - Systems: AI, Perception, Needs
 - GoalKinds: ConsumeOwnedCommodity (NOT StealItem)
 - ActionDomains: Needs
@@ -539,7 +539,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
 
-- Source: `golden_emergent.rs:6521`
+- Source: `golden_emergent.rs:6527`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -548,7 +548,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 110: Jurisdiction-Gated Punishment
 
-- Source: `golden_emergent.rs:7387`
+- Source: `golden_emergent.rs:7393`
 - GoalKinds: PunishAccused
 - ActionDomains: Social
 - Places: RulersHall, GeneralStore
@@ -556,7 +556,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 111: Secondary-Jurisdiction Punishment Away From Office Seat
 
-- Source: `golden_emergent.rs:7438`
+- Source: `golden_emergent.rs:7444`
 - GoalKinds: PunishAccused
 - ActionDomains: Social
 - Places: RulersHall, GeneralStore
@@ -564,7 +564,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 43: Dual Discovery Converges Without Double Accusation
 
-- Source: `golden_emergent.rs:7478`
+- Source: `golden_emergent.rs:7484`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
 - ActionDomains: Transport, Social, Travel
@@ -1322,7 +1322,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 116: Concealment Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:189`
+- Source: `golden_perception_exposure.rs:295`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -1336,7 +1336,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 117: Fatigue Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:230`
+- Source: `golden_perception_exposure.rs:336`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -1350,7 +1350,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 118: Attention Cost Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:271`
+- Source: `golden_perception_exposure.rs:377`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -1364,7 +1364,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 119: Multiplicative Stacking
 
-- Source: `golden_perception_exposure.rs:297`
+- Source: `golden_perception_exposure.rs:403`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -1375,6 +1375,20 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: The full witnessed-event modulation chain composes multiplicatively to `effective_fidelity = 253`.
 
 **Cross-system chain**: defend start + fatigued observer + concealed place -> witnessed event -> perception witness resolution -> multiplicative modulation -> trace.
+
+### Scenario 128: Perception Forms Beliefs About Resource Sources
+
+- Source: `golden_perception_exposure.rs:429`
+- Systems: Perception
+- ActionDomains: N/A
+- Places: OrchardFarm
+- Principles: 7, 14, 15, 16
+
+**Setup**: An AI observer with `entity_memory_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
+
+**Proves**: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed memory capacity.
+
+**Cross-system chain**: same-place observation -> belief recording -> `enforce_capacity()` eviction -> retained infrastructure beliefs.
 
 ### Scenario 3: Resource Contention with Conservation
 
@@ -1585,7 +1599,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 126: Remote Travel To Resource Under Local Scarcity
 
-- Source: `golden_simulation_gaps.rs:335`
+- Source: `golden_simulation_gaps.rs:330`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -1600,7 +1614,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 127: Idle Cap Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:371`
+- Source: `golden_simulation_gaps.rs:366`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Sleep, Relieve, AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -1718,7 +1732,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2b: Buyer-Driven Trade Acquisition
 
-- Source: `golden_trade.rs:1672`
+- Source: `golden_trade.rs:1684`
 - Systems: Needs, AI, Trade, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Needs
@@ -1732,7 +1746,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2d: Merchant Restock and Return to Home Market
 
-- Source: `golden_trade.rs:1707`
+- Source: `golden_trade.rs:1719`
 - Systems: Enterprise, Travel, Production, Transport, Conservation
 - GoalKinds: RestockCommodity, MoveCargo
 - ActionDomains: Production, Travel, Transport
@@ -1746,7 +1760,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2f: Carrier Delivers To Facility Without Becoming Seller
 
-- Source: `golden_trade.rs:1742`
+- Source: `golden_trade.rs:1754`
 - Systems: Travel, Transport, Trade, Conservation
 - ActionDomains: Travel, Transport, Trade
 - Places: VillageSquare, GeneralStore
@@ -1757,7 +1771,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 74: Local Trade Start Failure Recovers via Production Fallback
 
-- Source: `golden_trade.rs:1773`
+- Source: `golden_trade.rs:1785`
 - Systems: AI, Trade, Production, Travel, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Production, Travel, Needs
@@ -1771,7 +1785,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 94: Trade Rejection Reweights Seller Choice
 
-- Source: `golden_trade.rs:1816`
+- Source: `golden_trade.rs:1828`
 - Systems: AI, Trade, Needs
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Trade, Travel, Needs

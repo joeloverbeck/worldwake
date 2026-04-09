@@ -432,7 +432,7 @@ If the user asked for full ticket completion, archive per [docs/archival-workflo
 
 If the user asked only for implementation or analysis, do not archive. Keep factual completion details current for a later archival pass.
 - For implementation-only completion, set `Status: COMPLETED` on the active ticket once the required verification surface has passed.
-- Append factual close-out notes to the active ticket using the same minimal structure expected later at archival: `## Outcome`, verification results, and any explicit deviations from the original ticket wording or scope that were accepted during reassessment.
+- Append factual close-out notes to the active ticket using the same minimal structure expected later at archival: `## Outcome`, `## Verification Result`, and any explicit deviations from the original ticket wording or scope that were accepted during reassessment.
 - If the active ticket is short-form or pre-template, add only the minimum missing sections needed to make reassessment and close-out traceable. The usual minimum is `## Assumption Reassessment`, `## Outcome`, optional `## Deviations`, and `## Verification Result`.
 
 Default assumption: unless the user explicitly asks to archive, says "full ticket completion," or otherwise requests the archival workflow, treat the task as implementation-only and do not archive in this turn.
@@ -445,6 +445,7 @@ Before finishing:
 - If formatting was required in a dirty worktree, check immediately for formatter spillover into already-modified files outside the ticket's owned surface and call that out explicitly in close-out repo-state notes.
 - If the active ticket remains untracked, say so explicitly in the final user-facing close-out because it will not appear in ordinary `git diff` output until it is added.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
+- After golden scenario metadata changes and doc regeneration, inspect the generated diff footprint. Call out whether the broader generated-file churn is expected inventory/index fallout or whether any generated spillover appears unexpected and needs follow-up.
 
 Minimal active-ticket close-out shape:
 

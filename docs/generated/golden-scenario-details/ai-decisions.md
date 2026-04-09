@@ -95,7 +95,7 @@ Scenarios: 7
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:748`
+- Source: `golden_ai_decisions.rs:775`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -112,7 +112,7 @@ Scenarios: 7
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1953`
+- Source: `golden_ai_decisions.rs:1980`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

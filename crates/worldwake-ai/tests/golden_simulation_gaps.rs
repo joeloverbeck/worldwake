@@ -172,8 +172,7 @@ fn run_remote_travel_when_local_supply_exhausted(
     assert!(
         observation.reached_orchard_farm,
         "Agent should reach Orchard Farm when no local food exists; left_origin_tick={:?}, committed_actions={:?}",
-        observation.left_origin_tick,
-        observation.committed_actions
+        observation.left_origin_tick, observation.committed_actions
     );
     assert!(
         observation.ate_or_drank,
@@ -238,12 +237,8 @@ fn run_max_idle_under_remote_resource_scarcity(
         },
         ProductionOutputOwner::Actor,
     );
-    let remote_water = place_ground_commodity(
-        &mut h,
-        ORCHARD_FARM,
-        CommodityKind::Water,
-        Quantity(2),
-    );
+    let remote_water =
+        place_ground_commodity(&mut h, ORCHARD_FARM, CommodityKind::Water, Quantity(2));
 
     seed_actor_local_beliefs(
         &mut h.world,
