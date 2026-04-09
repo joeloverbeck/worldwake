@@ -138,16 +138,16 @@ impl ExhaustionEntry {
 pub struct AgentDecisionRuntime {
     pub current_plan: Option<PlannedPlan>,
     pub current_step_index: usize,
-    #[serde(skip)]
+    #[serde(default)]
     pub last_frame_clear_reason: Option<FrameClearReason>,
     pub step_in_flight: bool,
     /// Set after dead-agent cleanup has run, so subsequent ticks can skip
     /// the full `process_agent` path for dead agents.
-    #[serde(skip)]
+    #[serde(default)]
     pub dead_cleanup_done: bool,
-    #[serde(skip)]
+    #[serde(default)]
     pub dirty: DirtySet,
-    #[serde(skip)]
+    #[serde(default)]
     pub last_priority_class: Option<GoalPriorityClass>,
     pub last_effective_place: Option<EntityId>,
     pub last_needs: Option<HomeostaticNeeds>,
@@ -431,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_decision_runtime_bincode_round_trip_skips_derived_fields() {
+    fn agent_decision_runtime_bincode_round_trip_preserves_all_fields() {
         let last_needs = HomeostaticNeeds::new(
             worldwake_core::Permille::new(500).unwrap(),
             worldwake_core::Permille::new(200).unwrap(),
@@ -537,9 +537,14 @@ mod tests {
         );
         assert_eq!(decoded.exhaustion_cache, runtime.exhaustion_cache);
 
-        assert_eq!(decoded.last_frame_clear_reason, None);
-        assert!(decoded.dirty.is_empty());
-        assert_eq!(decoded.last_priority_class, None);
+        // Previously-skipped fields are now serialized for lossless save/load.
+        assert_eq!(
+            decoded.last_frame_clear_reason,
+            runtime.last_frame_clear_reason
+        );
+        assert_eq!(decoded.dirty, runtime.dirty);
+        assert_eq!(decoded.last_priority_class, runtime.last_priority_class);
+        assert_eq!(decoded.dead_cleanup_done, runtime.dead_cleanup_done);
     }
 
     #[test]

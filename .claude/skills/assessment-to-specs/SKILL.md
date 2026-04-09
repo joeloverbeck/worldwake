@@ -89,6 +89,8 @@ For each proposal, assign one of three classifications:
 - **Reject**: The proposal's assumptions are wrong (already addressed, codebase differs from what assessment assumes), it violates FOUNDATIONS, or it fails YAGNI (no meaningful downstream consequences). Record: the specific reason for rejection.
 - **Scope-Down**: The core idea is valuable but the proposal is too ambitious or mixes concerns. Record: what the reduced spec would cover, what is deferred to later.
 
+**Tooling and debuggability proposals**: Proposals that improve diagnostic capability (observer enhancements, trace enrichment, dump format improvements) should not be rejected as YAGNI solely because they don't introduce new simulation components or systems. FND-29 (Debuggability Is a Product Feature) makes diagnostic capability a first-class architectural concern. If a tooling proposal concretely improves the ability to diagnose an identified architectural gap or behavioral pathology, it has meaningful downstream consequences and should be classified as Accept. The proposal must still cite a specific diagnostic gap it addresses — "generally useful" is not sufficient.
+
 #### Step 6: Present Triage Report
 
 Present the triage to the user in a structured format:
@@ -149,9 +151,9 @@ Each spec MUST follow project conventions from `docs/spec-drafting-rules.md`:
 
 For golden-gaps specs (bundled test scenarios), use the project's golden-gaps convention: per-scenario blocks with Setup, Assertion, GoalKinds/ActionDomains exercised, emergence justification, and "Why it is not a duplicate." See existing archived golden-gaps specs (e.g., `archive/specs/S67-*.md`) for the format.
 
-These are **draft specs**. They contain the architectural shape and key deliverables but expect a `/reassess-spec` pass before ticket decomposition. Do not attempt exhaustive codebase validation of every reference — that is reassess-spec's job.
+These are **draft specs**. They contain the architectural shape and key deliverables but expect a `/reassess-spec` pass before ticket decomposition. Do not attempt exhaustive codebase validation of every reference — that is reassess-spec's job. **Exception**: For type names, function names, and enum variants used in deliverable code blocks, grep the codebase to confirm the exact name. Draft quality exempts architectural shape, not concrete identifiers.
 
-When writing multiple specs (>3) and the existing context from Phase 1 is insufficient to write them confidently, use Explore agents in parallel to trace additional codebase references for different specs simultaneously.
+When writing multiple specs and the existing context from Phase 1 is insufficient to write them confidently, use Explore agents in parallel to trace additional codebase references for different specs simultaneously.
 
 #### Step 8: Verify and Present Written Specs
 
@@ -184,7 +186,7 @@ A spec depends on another if it: (a) references types or components the other sp
 
 Determine the next phase number from the completed phases in the old `specs/IMPLEMENTATION-ORDER.md` (read in Step 1). Increment the highest completed phase number by 1.
 
-**Append vs. fresh**: If the accepted specs are adjunct to the current phase (small scope, no dependencies on unreleased Phase N specs, and they integrate naturally into the existing dependency graph), offer the user a choice: (a) append to the existing phase as an adjunct wave (recommended for small additions), or (b) create a new phase. Appending is the default recommendation when the specs don't interact with the existing wave structure. If appending, edit the existing `specs/IMPLEMENTATION-ORDER.md` to add the new spec(s) to the dependency graph and wave list — do not overwrite. If creating a new phase or if no active IMPLEMENTATION-ORDER.md exists, warn the user that a fresh file will be written and suggest archiving the old one (see `docs/archival-workflow.md`).
+**Append vs. fresh**: If the accepted specs are adjunct to the current phase (small scope, no dependencies on unreleased Phase N specs, and they integrate naturally into the existing dependency graph), offer the user a choice: (a) append to the existing phase as an adjunct wave (recommended for small additions), or (b) create a new phase. Appending is the default recommendation when the specs don't interact with the existing wave structure. If the decision was already resolved during a planning phase (e.g., plan mode approval that specified append or fresh), the prior approval satisfies this requirement — do not re-ask. If appending, edit the existing `specs/IMPLEMENTATION-ORDER.md` to add the new spec(s) to the dependency graph and wave list — do not overwrite. If creating a new phase or if no active IMPLEMENTATION-ORDER.md exists, warn the user that a fresh file will be written and suggest archiving the old one (see `docs/archival-workflow.md`).
 
 **When writing a fresh file**, use the following structure:
 
@@ -257,7 +259,7 @@ Do NOT commit. Leave all files for user review.
 
 - **FOUNDATIONS alignment is mandatory**: Every accepted proposal must align with `docs/FOUNDATIONS.md`. Reject proposals that violate principles, even if the external LLM recommends them — flag the conflict instead.
 - **Codebase truth over external claims**: The external LLM does not have repo access. Always verify assumptions against the actual codebase before accepting a proposal.
-- **YAGNI**: Reject proposals that do not create meaningful downstream consequences (Principle 5). "It would be nice" or "it feels more complete" is not sufficient justification.
+- **YAGNI**: Reject proposals that do not create meaningful downstream consequences (Principle 5). "It would be nice" or "it feels more complete" is not sufficient justification. **Exception**: FND-29 (Debuggability) makes diagnostic capability a first-class concern. Tooling proposals that address a specific identified diagnostic gap (e.g., "the observer cannot answer 'why did this agent not eat?'") have meaningful downstream consequences and should not be rejected as YAGNI. The proposal must name the specific diagnostic question it enables — vague debuggability claims do not qualify.
 - **No backward compatibility layers**: New specs must not introduce shims, redirects, or compatibility wrappers (Principle 28). When a design changes, update or remove the old path.
 - **Draft quality**: Specs are drafts intended for `/reassess-spec` before ticket decomposition. Do not attempt exhaustive codebase validation — that is reassess-spec's job.
 - **Spec-drafting-rules compliance**: All specs use `Permille` for ranges, profile-driven parameters, FND-01 Section H where applicable, and follow `docs/spec-drafting-rules.md` format.

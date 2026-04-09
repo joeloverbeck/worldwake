@@ -143,49 +143,10 @@ impl AgentTickDriver {
         })
     }
 
-    fn post_load_validate(&mut self, world: &worldwake_core::World) {
-        self.runtime_by_agent
-            .retain(|agent, _| world.is_alive(*agent));
-
-        for runtime in self.runtime_by_agent.values_mut() {
-            runtime.exhaustion_cache.retain(|key, _| {
-                key.goal_key
-                    .entity
-                    .is_none_or(|entity| world.is_alive(entity))
-                    && key.goal_key.place.is_none_or(|place| world.is_alive(place))
-                    && match key.anchor {
-                        worldwake_core::OpportunityAnchor::Place(place) => world.is_alive(place),
-                        worldwake_core::OpportunityAnchor::Entity(entity) => world.is_alive(entity),
-                        worldwake_core::OpportunityAnchor::None => true,
-                    }
-            });
-            runtime
-                .materialization_bindings
-                .hypothetical_to_authoritative
-                .retain(|_, authoritative| world.is_alive(*authoritative));
-            if runtime
-                .last_effective_place
-                .is_some_and(|place| !world.is_alive(place))
-            {
-                runtime.last_effective_place = None;
-            }
-            runtime
-                .last_facility_access_signature
-                .retain(|(entity, _, _)| world.is_alive(*entity));
-            runtime.last_patrol_route = runtime.last_patrol_route.take().filter(|route| {
-                route.current_index < route.assigned_places.len()
-                    && route
-                        .assigned_places
-                        .iter()
-                        .all(|place| world.is_alive(*place))
-            });
-            runtime.dirty = crate::DirtySet::STRUCTURAL_MASK
-                | crate::DirtySet::SNAPSHOT_MASK
-                | crate::DirtySet::FRAME_MASK;
-            runtime.last_priority_class = None;
-            runtime.last_frame_clear_reason = None;
-        }
-
+    fn post_load_validate(&mut self, _world: &worldwake_core::World) {
+        // All runtime fields are now serialized, so save/load is lossless.
+        // No post-load fixups needed — the deserialized state is identical
+        // to the pre-save state, preserving replay determinism.
         self.semantics_cache = None;
     }
 
