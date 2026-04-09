@@ -102,7 +102,7 @@ S79 ✅ archived ──┐
 S81 ✅ archived ──┴── S80 (exploration drive follow-up)
 ```
 
-- **S79**: Resource-Source Consumption Affordances — completed and archived at `archive/specs/S79-resource-source-consumption-affordances.md`
+- **S79**: ✅ COMPLETED — Resource-Source Consumption Affordances — archived at `archive/specs/S79-resource-source-consumption-affordances.md`
 - **S81**: ✅ COMPLETED — Golden Gaps — Simulation Remediation — archived at [archive/specs/S81-golden-gaps-simulation-remediation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S81-golden-gaps-simulation-remediation.md). Landed GT-1 multi-agent convergence, GT-2 death traceability, and GT-3 colocated harvest-to-consume proof, plus the supporting death traceability substrate/runtime slices.
 - **S80**: Exploration Drive — exploration pressure from unmet needs + limited geographic beliefs, per-agent curiosity profiles
 

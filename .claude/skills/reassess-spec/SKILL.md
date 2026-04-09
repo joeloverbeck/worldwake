@@ -25,23 +25,19 @@ If the argument is missing, ask the user to provide it before proceeding.
 
 ## Worktree Awareness
 
-If working inside a worktree (e.g., `.claude/worktrees/<name>/`), **all file paths in this skill** — reads, writes, globs, greps — must be prefixed with the worktree root. The default working directory is the main repo root; paths without an explicit worktree prefix will silently operate on main.
+If working inside a worktree (e.g., `.claude/worktrees/<name>/`), ALL file paths — reads, writes, globs, greps — must use the worktree root as the base path.
 
 ## Plan Mode Awareness
 
 If plan mode is active:
 
 - **Steps 1-6** proceed normally (all read-only).
-- **Step 6** includes the initial findings report and any subsequent question-resolution rounds.
-- **After all questions are resolved**: Write a condensed summary to the plan file, then call ExitPlanMode. The plan file comes after all Q&A rounds, not after the initial report.
-- **After plan approval**: Steps 7-8 execute. The user's plan approval covers both question resolutions and the overall changes — no separate confirmation gate.
-- **Pre-Apply Verification** runs before Step 7 (see that section for details).
-
-If question resolution produces new findings or modifies existing ones, the plan file reflects the final resolved state, not the initial report. Sequence: present resolution conversationally, write the plan file incorporating all resolved findings, call ExitPlanMode.
-
-If there are no questions, proceed directly from the Step 6 findings report to writing the plan file and calling ExitPlanMode.
-
-If the ExitPlanMode result contains user comments, treat them as binding modifications.
+- **Step 6** includes the initial findings report and any question-resolution rounds.
+- **After all questions are resolved**: Write a condensed summary to the plan file, then call ExitPlanMode. If question resolution produces new findings, the plan file reflects the final resolved state, not the initial report.
+- **After plan approval**: Steps 7-8 execute. The user's approval covers both question resolutions and overall changes — no separate gate.
+- **Pre-Apply Verification** runs after ExitPlanMode approval, before Step 7.
+- If there are no questions, proceed from the Step 6 findings report directly to writing the plan file and calling ExitPlanMode.
+- If the ExitPlanMode result contains user comments, treat them as binding modifications.
 
 **Plan file structure**:
 - **Context**: Which spec, why it's being reassessed
@@ -49,7 +45,7 @@ If the ExitPlanMode result contains user comments, treat them as binding modific
 - **Critical Files**: Paths of files to be modified
 - **Verification**: How to confirm the updated spec is correct after writing
 
-The conversational report (Step 6) is the decision artifact. Present it as a normal conversational message — do not write it to the plan file. The plan file is a separate condensed reference for implementation (Steps 7-8).
+The conversational report (Step 6) is the decision artifact. Present it as a normal message — do not write it to the plan file. The plan file is a separate condensed reference for implementation (Steps 7-8).
 
 ## Process
 
@@ -60,17 +56,19 @@ Follow these steps in order. Do not skip any step.
 Before beginning Steps 2-3, classify the spec:
 
 - **(a) New system** — introduces new components, actions, goal kinds, or information paths. Full checklist applies.
-- **(b) System extension** — extends existing components, actions, or enums without new systems. Steps 3.1-3.8, 4.4 apply. Skip 3.9 if no behavioral claims about runtime readers/writers (e.g., "system X reads type Y at runtime" or "planner predicts effect Z"). Section H updates only for new deliverable sections. For tooling-only specs (observer, CLI, debug output), downstream consumer analysis (3.6) can be limited to the tooling binary.
+- **(b) System extension** — extends existing components, actions, or enums without new systems. Steps 3.1-3.8, 4.4 apply. Skip 3.9 if no behavioral claims about runtime readers/writers. Section H updates only for new deliverable sections. For tooling-only specs, downstream consumer analysis (3.6) can be limited to the tooling binary.
 - **(c) Structural refactor** — trait/module restructuring with no behavioral changes. Skip Steps 3.5, 3.9, 4.4; Section H is N/A. Focus on symbol existence, count accuracy, and blast radius.
-- **(d) Test-only** — adds golden tests, benchmarks, or test infrastructure without modifying production code. Steps 3.1-3.4 apply (validate referenced paths, types, functions, dependencies). Skip 3.5-3.9 (no production code changes to trace). Step 4 applies but 4.4 is N/A. Section H updates are N/A unless the test reveals a missing causal hook.
+- **(d) Test-only** — adds golden tests, benchmarks, or test infrastructure without modifying production code.
+  - Steps 3.1-3.4 apply (validate referenced paths, types, functions, dependencies).
+  - Skip 3.5-3.9 (no production code changes to trace).
+  - Step 4 applies but 4.4 is N/A.
+  - Section H updates are N/A unless the test reveals a missing causal hook.
 
-If uncertain, default to the more rigorous classification.
+**Hybrid specs**: Apply the union of applicable steps — use the most rigorous classification's checklist for shared steps.
 
-**Hybrid specs**: A single spec may span multiple categories (e.g., test-only scenarios plus a production component extension). When a spec contains deliverables in different categories, apply the union of applicable steps — use the most rigorous classification's checklist for shared steps.
+**Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and not externally modified, Steps 2-3 may scope to only references affected by the triggering change. Step 1 still applies.
 
-**Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and not externally modified, Steps 2-3 may scope to only references affected by the triggering change. Step 1 still applies (re-read the spec).
-
-**Self-authored spec note**: Full validation (Steps 2-3) is required even for specs authored earlier in this session — authoring may introduce unchecked assumptions.
+**Self-authored spec note**: Full validation is required even for specs authored earlier in this session — authoring may introduce unchecked assumptions.
 
 ### Step 1: Mandatory Reads
 
@@ -80,7 +78,7 @@ Read ALL of these before any analysis:
 2. **`docs/FOUNDATIONS.md`** — skip if read earlier in this session and unmodified
 3. **`docs/spec-drafting-rules.md`** (if the spec contains or should contain Section H) — skip if read earlier and unmodified
 
-Parse the spec's metadata: Phase, Status, Priority, Crates, Dependencies, Goals/Design Goals, Non-Goals, FOUNDATIONS Alignment, and all deliverable sections. Not all specs have every field.
+Parse the spec's metadata: Phase, Status, Priority, Crates, Dependencies, Goals/Design Goals, Non-Goals, FOUNDATIONS Alignment, and all deliverable sections.
 
 ### Step 2: Extract References
 
@@ -93,7 +91,7 @@ Extract every concrete codebase reference from the spec:
 - **Test file paths or test names**
 - **Other specs or tickets** in Dependencies
 
-Build a validation checklist (internal — not presented to user). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
+Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
 
 ### Step 3: Codebase Validation
 
@@ -108,7 +106,7 @@ Glob/Grep to confirm each path exists. If moved, renamed, or deleted, record the
 Grep for each type. Confirm existence and current shape (fields, members). Check for:
 
 - **Field existence and naming**: Flag fields the spec assumes but don't exist or have different names/types.
-- **Numeric type accuracy**: Verify assumed types match actual types (`u32` vs `Permille` vs `i32`). If a formula combines different numeric types, flag as LOW Improvement for implementation-time conversion.
+- **Numeric type accuracy**: Verify assumed types match actual types (`u32` vs `Permille` vs `i32`). If a formula combines different numeric types, flag as LOW Improvement.
 - **Serialization**: If the spec proposes serializing a type, verify `Serialize`/`Deserialize` derives.
 - **Hash functions**: If acceptance criteria reference hash functions, verify they exist and check input inclusion/exclusion.
 - **Field additions to non-ECS structs** (belief-layer, snapshot types): Check serde derives, `#[serde(default)]`, Default impl impact, and whether derivation/construction functions (e.g., `derive_entity_summary()`) can populate the new field from their inputs. If a derivation function reconstructs from a data source lacking the new field, flag the propagation gap as an Issue.
@@ -118,7 +116,7 @@ Grep for each type. Confirm existence and current shape (fields, members). Check
 Grep for each function. Confirm signature, module location, and export status. Check for:
 
 - **Signature differences** from what the spec assumes.
-- **New function parameter sufficiency**: Validate that proposed parameters provide sufficient data at every call site. Flag if a parameter type lacks needed context (e.g., needs belief context but receives a payload-only type).
+- **New function parameter sufficiency**: Validate that proposed parameters provide sufficient data at every call site. Flag if a parameter type lacks needed context.
 - **Proposed modifications to existing functions**: Verify the function's parameters and local scope include variables the proposed code references. Flag out-of-scope variable usage as an Issue.
 - **Symbol partitioning** (splitting traits/enums): Verify the partition is complete (all symbols accounted for) and disjoint (no symbol in two categories). Verify stated counts match listed names. Use automated scripts for large sets (>20 symbols).
 
@@ -132,15 +130,16 @@ Skip sub-steps 5a-5g if the spec does not add fields to components, create new c
 
 - **5a. Shape validation**: Grep component structs in `worldwake-core`, verify fields/types. Check `component_schema.rs` for registration.
 - **5b. Trait bounds**: Check derive macros and trait bounds on types/enums the spec extends. Record constraints new additions must satisfy (`Copy`, `Serialize`, `Ord`).
-  - **Derive propagation**: For new types with derives (`Hash`, `Ord`, `Copy`, etc.), verify that all field types also derive those traits. A new struct deriving `Hash` that embeds a type without `Hash` will fail to compile. Flag missing derives on embedded types as CRITICAL Issues.
-  - **Derive widening**: If the spec shows a modified type with derive attributes, compare against the current derives. New derives (e.g., adding `Ord` or `Hash`) are safe widenings but should be explicitly noted in the spec so implementers don't treat them as copy-paste artifacts.
+  - **Derive propagation**: For new types with derives (`Hash`, `Ord`, `Copy`, etc.), verify all field types also derive those traits. Flag missing derives on embedded types as CRITICAL Issues.
+  - **Derive widening**: If the spec shows a modified type with new derive attributes, compare against current derives. Note explicitly so implementers don't treat them as copy-paste artifacts.
 - **5c. Default and constructors**: For field additions, check `Default` impl and builder/constructor functions.
 - **5d. Downstream consumers**: For field type changes or removals, perform full downstream consumer analysis (3.6).
 - **5e. Scalar-to-collection migrations**: Grep for equality comparisons (`== field_value`) that would need `.contains()`.
 - **5f. Semantic overlap**: Two sub-checks:
-  - *Spec-acknowledged overlap*: If the spec documents the relationship between a new field and an existing field (distinct roles and interaction semantics), note "overlap acknowledged by spec" and skip the grep.
+  - *Spec-acknowledged overlap*: If the spec documents the relationship between a new field and an existing field, note "overlap acknowledged by spec" and skip the grep.
   - *Unacknowledged overlap*: Grep for semantically similar field names across all components. Also check functional overlap — fields serving the same purpose with different names. Flag as P28 migration candidates. For new components, apply the **novel-domain test**: a component is novel if no existing component serves the same downstream consequence (P5). Novel-domain components focus on functional overlap; domain-extension components also need field name similarity checks.
 - **5g. EntityKind variant overlap**: Check whether existing enum variants overlap semantically with proposed additions. Flag empty/unused variants that fragment the same domain as P28 candidates.
+- **5h. Trait accessor propagation**: For new components read by the AI crate during candidate generation, goal ranking, or planning, check whether `GoalBeliefView` (`worldwake-sim/src/belief_view.rs`) or `BeliefView` needs a new accessor method. If so, flag the spec's crate list as needing update and note the `RuntimeBeliefView` impl + `impl_goal_belief_view!` macro forwarding required. This is a common pattern: new behavioral components almost always need a belief-view accessor for the AI crate to read them.
 
 #### 3.6 Downstream Consumers
 
@@ -148,6 +147,19 @@ For types/interfaces the spec modifies, grep all import sites and usage points. 
 
 - **Trait bounds**: Check derives. Verify new variant fields satisfy existing bounds. Note `#[allow(clippy::large_enum_variant)]` size implications.
 - **Exhaustive match analysis**: Grep for pattern matches on existing variants to find all match sites needing a new arm. Especially important for enums matched across multiple crates.
+
+#### 3.6A Goal Infrastructure Validation
+
+For specs adding new `GoalKind` variants, verify the spec addresses all mandatory integration points:
+
+1. **GoalDispatchKey**: New variant in `GoalDispatchKey` enum, added to `ALL` constant, and `from_goal_kind` match arm (`goal_dispatch_key.rs`).
+2. **GoalDispatchDeclaration**: Entry in `goal_dispatch_decl.rs` with `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `progress_barrier_ops`, and `family_policy`.
+3. **GoalKindPlannerExt**: Implementation of all trait methods in `goal_model.rs` — `relevant_op_kinds`, `is_satisfied`, `apply_planner_step`, `goal_relevant_places`, `prerequisite_places`, `matches_binding`, `candidate_is_available`, `build_payload_override`, `ranked_goal_provenance_family`, `relevant_observed_commodities`, `is_progress_barrier`.
+4. **Ranking integration**: Priority class (`GoalPriorityClass`) and `motive_score` computation formula.
+
+Flag each missing item as a HIGH Issue. If the spec says "reuse existing travel planning" or similar, verify it still names the specific ops and dispatch types.
+
+See `references/worldwake-validation-patterns.md` for additional project-specific patterns.
 
 #### 3.7 Crate Boundary Validation
 
@@ -168,7 +180,7 @@ For specs with many references, launch parallel Explore agents organized by them
 Guidelines:
 - After results arrive, cross-reference findings against the spec's type assumptions and formulas. Agents validate existence; you validate semantic compatibility.
 - For static lookup tables indexed by discriminator enums, verify key granularity matches discrimination needs.
-- Spot-check agent claims with direct Grep/Read before including in findings — agent results are leads, not facts.
+- Spot-check agent claims with direct Grep/Read before including in findings — agent results are leads, not facts. Especially spot-check when an agent reports a referenced type as "does not exist" or "needs to be created" — verify whether the spec used a wrong name for an existing type before accepting the agent's conclusion.
 - In plan mode, Explore agents are inherently compatible (read-only).
 - For structural refactor specs (type c), direct agents toward discrepancy checking (counts, symbol existence, blast radius) rather than broad exploration.
 
@@ -208,7 +220,7 @@ Organize findings from Steps 3 and 4 into:
 
 - **Issues**: Factually wrong, stale, violates FOUNDATIONS, or proposes redundant deliverables when existing infrastructure suffices. Blocks ticket decomposition.
 - **Improvements**: Not wrong, but a refinement would make implementation cleaner, safer, or more aligned.
-- **Additions**: Beneficial features not in the spec that align with its goals. Apply YAGNI — only natural extensions of the spec's scope, not tangential features.
+- **Additions**: Beneficial features not in the spec that align with its goals. Apply YAGNI — only natural extensions of the spec's scope.
 
 For each finding, record:
 - What the spec says (or omits)
@@ -247,44 +259,38 @@ Present in this format:
 1. <question>
 ```
 
-#### Question Discipline
+#### Question Handling
 
-- At most 3 questions in the initial report. If more, prioritize blockers and defer rest to follow-up.
-- For interdependent questions, present as a single combined question with labeled option combinations.
-- For questions with 2-4 discrete options, use `AskUserQuestion` with a recommended default.
-- For open-ended questions, present as plain text in the report.
+- **Initial report**: At most 3 questions. If more, prioritize blockers and defer rest to follow-up.
+- **Interdependent questions**: Present as a single combined question with labeled option combinations.
+- **Discrete options (2-4)**: Use `AskUserQuestion` with a recommended default.
+- **Open-ended questions**: Present as plain text in the report.
+- **Follow-up rounds**: One question at a time. If answers raise new questions or invalidate findings, present a follow-up round (same format). Repeat until resolved.
+- **Delegated resolution**: If the user delegates (e.g., "you decide based on FOUNDATIONS"), resolve by reasoning against the referenced constraint. If resolution requires additional codebase investigation, perform a mini Step 3 scoped to the question. If none of the original options are ideal, propose a new option with justification — scope investigation to 1-3 targeted checks. If the new option affects the dependency graph or crate boundaries, present as a new finding first. In plan mode, the new option is included in the plan file and ExitPlanMode approval covers it.
 
-#### After Presenting
-
-Wait for user response. Do not proceed to Step 7 until all questions are answered. Findings are approved unless explicitly objected to.
-
-#### Delegated Resolution
-
-If the user delegates (e.g., "you decide based on FOUNDATIONS"), resolve by reasoning against the referenced constraint. If resolution requires additional codebase investigation, perform it first (a mini Step 3 scoped to the question). If none of the original options are ideal, propose a new option with justification — scope investigation to 1-3 targeted checks. If the new option affects the dependency graph or crate boundaries, present as a new finding first. In plan mode, the new option is included in the plan file and ExitPlanMode approval covers it.
-
-#### Follow-Up Rounds
-
-If answers raise new questions or invalidate findings, present a follow-up round (same format, one question at a time). Repeat until resolved.
-
-### Pre-Apply Verification
-
-Before writing in Step 7, run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying. Do not silently substitute different changes. In plan mode, this step runs after ExitPlanMode approval and before Step 7.
-
-### Post-Apply Confirmation
-
-After all Step 7 edits are applied, grep the updated spec for: (1) eliminated stale references (should return zero matches), and (2) corrected references (should return the expected matches). Record the verification results for Step 8.
+Wait for user response before proceeding to Step 7. Findings are approved unless explicitly objected to.
 
 ### Step 7: Write the Updated Spec
 
 After all findings are resolved and approved:
 
-- Incorporate any corrections from the user's plan approval or question responses.
+#### Pre-Apply Verification
+
+Run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying. Do not silently substitute different changes.
+
+#### Apply Changes
+
+- Incorporate corrections from the user's plan approval or question responses.
 - Preserve existing structure and voice. Change only what was agreed upon.
-- When changes are numerous and spread throughout, a full Write is acceptable — the intent is to avoid gratuitous rewrites of sections with no findings.
-- If inserting a new deliverable, renumber subsequent deliverables. Header renumbering of unchanged sections is permitted.
-- **New deliverable vs. amendment**: When a finding introduces substantial new logic (new mechanism, new type, new event tag), consider whether it warrants a new numbered deliverable rather than expanding an existing one. Criteria: (a) the new logic has its own implementation site distinct from existing deliverables, (b) it could be implemented and tested independently, (c) it would make the existing deliverable unwieldy if inlined. If so, create a new deliverable and note the renumbering.
-- If new deliverables introduce actions, components, or system functions, update Section H for P30 compliance. Also update Section H's information-path and stored-state entries when reassessment changes the causal mechanism described in existing scenarios.
+- When changes are numerous and spread throughout, a full Write is acceptable.
+- If inserting a new deliverable, renumber subsequent deliverables.
+- **New deliverable vs. amendment**: When a finding introduces substantial new logic (new mechanism, new type, new event tag), consider a new numbered deliverable rather than expanding an existing one. Criteria: (a) distinct implementation site, (b) independently implementable and testable, (c) would make existing deliverable unwieldy if inlined.
+- If new deliverables introduce actions, components, or system functions, update Section H for P30 compliance. Also update Section H's information-path and stored-state entries when reassessment changes the causal mechanism.
 - If the user requests corrections after reviewing, apply them and re-present affected sections.
+
+#### Post-Apply Confirmation
+
+Grep the updated spec for: (1) eliminated stale references (should return zero matches), and (2) corrected references (should return expected matches). Record results for Step 8.
 
 ### Step 8: Final Summary
 
@@ -304,7 +310,6 @@ Do NOT commit. Leave the file for user review.
 
 - **FOUNDATIONS alignment is mandatory**: Never approve a spec change that violates a Foundation principle, even if requested — flag the conflict instead.
 - **Codebase truth**: All references in the updated spec must be validated. Never propagate stale paths, renamed types, or removed functions.
-- **One question at a time in follow-ups**: After the initial report (up to 3), follow-up rounds ask one question at a time.
 - **No scope creep**: The deliverable is the updated spec file. Do not write design docs, create tickets, or start implementation.
-- **No approach proposals**: Validate and refine the existing design, not greenfield alternatives. Exception: when the approach violates a crate boundary, FOUNDATIONS principle, or critical invariant, propose the minimum viable alternatives as part of the Issue finding.
+- **No approach proposals**: Validate and refine the existing design, not greenfield alternatives. Exception: when the approach violates a crate boundary, FOUNDATIONS principle, or critical invariant, propose minimum viable alternatives as part of the Issue finding.
 - **Substantial redesign flag**: If reassessment changes >50% of deliverables' approach, flag in Step 6: "This reassessment proposes substantial redesign of N/M deliverables. Goals preserved but implementation path changes significantly."
