@@ -405,6 +405,36 @@ fn failed_plan_location(place: Option<EntityId>) -> String {
     place.map_or_else(|| "?".to_string(), |place| place.to_string())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FailedPlanBreakdown {
+    total: u32,
+    frontier_exhausted: u32,
+    budget_exhausted: u32,
+    max_depth_zero: u32,
+}
+
+fn failed_plan_breakdown(attempts: &[&PlanAttemptTrace]) -> FailedPlanBreakdown {
+    let mut breakdown = FailedPlanBreakdown {
+        total: attempts.len() as u32,
+        frontier_exhausted: 0,
+        budget_exhausted: 0,
+        max_depth_zero: 0,
+    };
+
+    for attempt in attempts {
+        match attempt.outcome {
+            PlanSearchOutcome::FrontierExhausted { .. } => breakdown.frontier_exhausted += 1,
+            PlanSearchOutcome::BudgetExhausted { .. } => breakdown.budget_exhausted += 1,
+            _ => {}
+        }
+        if failed_plan_max_depth(attempt) == 0 {
+            breakdown.max_depth_zero += 1;
+        }
+    }
+
+    breakdown
+}
+
 fn collect_failed_plan_attempts<'a>(
     traces: &'a [&'a AgentDecisionTrace],
 ) -> Vec<(u64, Option<EntityId>, &'a PlanAttemptTrace)> {
@@ -1122,6 +1152,7 @@ fn format_report(
                 )
                 .unwrap();
                 let mut shown = 0u32;
+                let mut shown_attempts: Vec<&PlanAttemptTrace> = Vec::new();
                 for (tick, place, attempt) in &failed_attempts {
                     if shown >= 20 {
                         break;
@@ -1148,7 +1179,31 @@ fn format_report(
                     )
                     .unwrap();
                     shown += 1;
+                    shown_attempts.push(*attempt);
                 }
+                writeln!(out).unwrap();
+
+                let breakdown = failed_plan_breakdown(&shown_attempts);
+                writeln!(out, "> `Had Target Beliefs` deferred: current planning traces do not carry a planning-time belief snapshot or `known_entities` inventory for failed attempts.\n").unwrap();
+                writeln!(out, "### Failed Plan Frequency Breakdown").unwrap();
+                writeln!(
+                    out,
+                    "- frontier-exhausted: {} / {}",
+                    breakdown.frontier_exhausted, breakdown.total
+                )
+                .unwrap();
+                writeln!(
+                    out,
+                    "- budget-exhausted: {} / {}",
+                    breakdown.budget_exhausted, breakdown.total
+                )
+                .unwrap();
+                writeln!(
+                    out,
+                    "- Max Depth = 0 (no operators available): {} / {}",
+                    breakdown.max_depth_zero, breakdown.total
+                )
+                .unwrap();
                 writeln!(out).unwrap();
             }
 
@@ -1441,8 +1496,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        PlanAttemptTrace, PlanSearchOutcome, failed_plan_candidates, failed_plan_location,
-        failed_plan_max_depth,
+        PlanAttemptTrace, PlanSearchOutcome, failed_plan_breakdown, failed_plan_candidates,
+        failed_plan_location, failed_plan_max_depth,
     };
     use worldwake_ai::decision_trace::SearchExpansionSummary;
     use worldwake_core::{EntityId, GoalKey, GoalKind, OpportunityAnchor};
@@ -1505,5 +1560,23 @@ mod tests {
 
         assert_eq!(failed_plan_location(Some(place)), "e7g2");
         assert_eq!(failed_plan_location(None), "?");
+    }
+
+    #[test]
+    fn failed_plan_breakdown_counts_outcomes_and_zero_depth_rows() {
+        let frontier_zero = sample_attempt(vec![sample_summary(0, 2)]);
+        let budget_nonzero = PlanAttemptTrace {
+            outcome: PlanSearchOutcome::BudgetExhausted { expansions_used: 5 },
+            ..sample_attempt(vec![sample_summary(2, 3)])
+        };
+        let frontier_nonzero = sample_attempt(vec![sample_summary(1, 4)]);
+
+        let breakdown =
+            failed_plan_breakdown(&[&frontier_zero, &budget_nonzero, &frontier_nonzero]);
+
+        assert_eq!(breakdown.total, 3);
+        assert_eq!(breakdown.frontier_exhausted, 2);
+        assert_eq!(breakdown.budget_exhausted, 1);
+        assert_eq!(breakdown.max_depth_zero, 1);
     }
 }

@@ -1,6 +1,10 @@
 ---
 name: skill-audit
 description: Session-aware skill quality audit. Analyzes a skill file against the current session's work to find issues, improvements, and missing features. Cross-checks against FOUNDATIONS.md and CLAUDE.md. Invoke at end of session with the skill path as argument.
+arguments:
+  - name: skill-path
+    description: "Path to skill directory (e.g., .claude/skills/improve-loop)"
+    required: true
 ---
 
 # Skill Audit
@@ -19,7 +23,7 @@ The argument is the skill directory path. The framework automatically resolves `
 
 ## Checklist
 
-1. **Read the target skill** — Read the SKILL.md file at the provided path. Parse its name, description, and full content. If the file does not exist or is not a skill file, stop and report the error.
+1. **Read the target skill** — Read the SKILL.md file at the provided path. Parse its name, description, and full content. If the exact path does not resolve, glob for near-matches (e.g., `<path>*`). If exactly one match is found, use it and note the correction. If zero or multiple matches, stop and report the error.
 2. **Read alignment documents** — Read `docs/FOUNDATIONS.md` — skip only if explicitly read earlier in this session (not from memory or training knowledge). `CLAUDE.md` is always available via system context injection and does not need explicit reading.
 3. **Session reflection** — Review the current conversation context to identify the items below. If the target skill is skill-audit itself (self-audit), use session evidence from any prior audit invocation(s) in this session. The self-audit invocation provides no independent session evidence beyond confirming the skill's flow works.
    - Moments where the skill's instructions were unclear or ambiguous
@@ -94,11 +98,19 @@ Output this structure to the conversation (do not write to a file):
 - **FOUNDATIONS alignment is mandatory** — Any suggestion that would violate a principle in `docs/FOUNDATIONS.md` must be flagged and rejected, even if it would otherwise be an improvement.
 - **Scope discipline** — Do not propose expanding the skill's scope beyond its stated intent. The audit evaluates the skill as written, not what it could become.
 - **Session evidence required** — Every Issue and Improvement must cite specific session evidence (what happened, what was expected). Findings based purely on hypothetical scenarios belong in Features, not Issues.
-- **Follow-up implementation** — After the report is presented, the user may request implementation of specific suggestions. At that point, edit the target skill file directly — the "report only" guardrail applies only to the audit phase, not to user-directed follow-up. If the codebase changed between the audit report and the follow-up request (e.g., the user implemented a fix that addresses or obsoletes some findings), re-evaluate each finding against the current state before editing. Discard findings that are now obsolete, and adapt findings whose context shifted. Renumber the surviving findings before applying edits to maintain document-order clarity. If the user requests partial implementation (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding. When implementing multiple suggestions, apply edits in document order (top to bottom) to minimize the chance of line-number shifts invalidating later edits. After all edits are applied, re-read the full skill file and verify the following checks as a single pass (not after each individual edit):
+- **Follow-up implementation** — After the report is presented, the user may request implementation of specific suggestions. At that point, edit the target skill file directly — the "report only" guardrail applies only to the audit phase, not to user-directed follow-up.
+
+  **Re-evaluation**: If the codebase changed between the audit report and the follow-up request, re-evaluate each finding against the current state. Discard obsolete findings, adapt shifted ones, and renumber survivors before applying edits.
+
+  **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding.
+
+  **Edit ordering**: Apply edits in document order (top to bottom) to minimize line-number shifts invalidating later edits.
+
+  **Post-edit verification**: After all edits are applied, re-read the full skill file and verify as a single pass:
   1. **No overlap or contradiction** — edits don't conflict with each other
-  2. **Cross-references valid** — phase numbers, step numbers, and file paths still point to the correct targets. Use pattern search (e.g., grep for `Step [0-9]`, `Phase [0-9]`, `Section [0-9]`, or `### [0-9]`) to confirm numbering continuity. Verify that any cross-references introduced by new text point to content that actually exists (e.g., if new text says "to mirror the Step 6 report structure," confirm Step 6 uses that terminology)
+  2. **Cross-references valid** — phase numbers, step numbers, and file paths still point to correct targets. Use pattern search (e.g., grep for `Step [0-9]`, `Phase [0-9]`, `Section [0-9]`, or `### [0-9]`) to confirm numbering continuity. Verify that cross-references introduced by new text point to content that actually exists.
   3. **Sequential flow coherent** — the skill reads coherently end-to-end after all edits
-  4. **Contextual consistency** — numbering, terminology, and cross-references introduced by each edit are consistent with adjacent unchanged text
-  5. **Frontmatter integrity** — if any edit touched the YAML frontmatter block, verify the `---` delimiters are intact and the YAML parses correctly (name, description, and arguments are present and properly quoted)
+  4. **Contextual consistency** — numbering, terminology, and cross-references are consistent with adjacent unchanged text
+  5. **Frontmatter integrity** — if any edit touched the YAML frontmatter, verify `---` delimiters are intact and the YAML parses correctly (name, description, and arguments are present and properly quoted)
 - **Cross-skill consistency** — If the target skill is part of a multi-skill workflow (e.g., plan/implement/evaluate cycle), scan sibling skills for inconsistent file references, terminology, or shared constants. Report cross-skill inconsistencies as Issues.
 - **Repeated audit shortcut** — If the same skill has been audited *as the target* 2+ times in the current session and the most recent audit found 0 findings, note "Skill stable — no new session evidence since last audit" and skip the full checklist unless the skill was modified between audits.
