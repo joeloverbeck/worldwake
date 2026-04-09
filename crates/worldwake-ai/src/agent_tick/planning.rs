@@ -1,3 +1,4 @@
+use crate::GoalKindPlannerExt;
 use crate::decision_trace::{
     BindingRejection, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
     PlannedStepSummary, RankedGoalSummary, SameGoalPlanningStopReason, SameGoalPlanningTrace,
@@ -6,7 +7,6 @@ use crate::decision_trace::{
     SnapshotContinuationOutcome, SnapshotContinuationTrace,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
-use crate::GoalKindPlannerExt;
 use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::search::PlanSearchResult;
@@ -24,6 +24,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionHandlerRegistry, GoalBeliefView, RecipeRegistry, RuntimeBeliefView, Scheduler,
+    SpatialBeliefView,
 };
 
 use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
@@ -449,7 +450,8 @@ fn ranked_goal_for_opportunity(
     opportunity: OpportunityKey,
 ) -> Option<&RankedGoal> {
     ranked_candidates.iter().find(|candidate| {
-        candidate.grounded.key == opportunity.goal_key && candidate.grounded.anchor == opportunity.anchor
+        candidate.grounded.key == opportunity.goal_key
+            && candidate.grounded.anchor == opportunity.anchor
     })
 }
 
@@ -464,17 +466,15 @@ fn summarize_snapshot_continuation(
         goal_key: ranked.grounded.key,
         anchor: ranked.grounded.anchor,
     });
-    let motive_delta = top.zip(current).map(|(top, current)| {
-        top.motive_score.saturating_sub(current.motive_score)
-    });
+    let motive_delta = top
+        .zip(current)
+        .map(|(top, current)| top.motive_score.saturating_sub(current.motive_score));
 
     let outcome = match (top, current) {
         (_, None) | (None, Some(_)) => {
             SnapshotContinuationOutcome::ReplannedCurrentOpportunityMissing
         }
-        (Some(top), Some(_))
-            if top_opportunity == Some(current_opportunity) =>
-        {
+        (Some(top), Some(_)) if top_opportunity == Some(current_opportunity) => {
             SnapshotContinuationOutcome::ContinuedAsTopRanked
         }
         (Some(top), Some(current)) if top.priority_class > current.priority_class => {
@@ -767,7 +767,13 @@ pub(super) fn plan_and_validate_next_step(
                     tick,
                 );
             } else {
-                clear_current_plan(runtime, active_goal, jc, facility_intents, ranked_candidates);
+                clear_current_plan(
+                    runtime,
+                    active_goal,
+                    jc,
+                    facility_intents,
+                    ranked_candidates,
+                );
             }
             runtime.dirty = DirtySet::default();
         }
@@ -870,14 +876,18 @@ pub(super) fn plan_and_validate_next_step_traced(
 
     let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
     if should_plan {
-        if runtime.dirty.is_snapshot_only() && let Some(plan_for_trace) = runtime.current_plan.as_ref() {
+        if runtime.dirty.is_snapshot_only()
+            && let Some(plan_for_trace) = runtime.current_plan.as_ref()
+        {
             let continuation = summarize_snapshot_continuation(
                 plan_for_trace.opportunity,
                 ranked_candidates,
                 cognitive.planning_switch_margin,
             );
             selection_trace.snapshot_continuation = Some(continuation.clone());
-            if continuation.continues_plan() && let Some(step) = current_step(runtime).cloned() {
+            if continuation.continues_plan()
+                && let Some(step) = current_step(runtime).cloned()
+            {
                 let valid = revalidate_next_step(
                     &view,
                     agent,
@@ -1149,9 +1159,8 @@ pub(super) fn plan_search_result_to_trace(
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidatePlanSearch, has_pending_budget_retry, record_exhausted_goals,
-        selected_plan_value, summarize_ranked_goal, summarize_selected_plan,
-        summarize_snapshot_continuation,
+        CandidatePlanSearch, has_pending_budget_retry, record_exhausted_goals, selected_plan_value,
+        summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
     };
     use crate::{
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
@@ -1559,7 +1568,10 @@ mod tests {
             Permille::new(150).unwrap(),
         );
 
-        assert_eq!(trace.outcome, SnapshotContinuationOutcome::ContinuedWithinMargin);
+        assert_eq!(
+            trace.outcome,
+            SnapshotContinuationOutcome::ContinuedWithinMargin
+        );
         assert_eq!(trace.motive_delta, Some(100));
         assert!(trace.continues_plan());
     }
@@ -1585,7 +1597,10 @@ mod tests {
             Permille::new(150).unwrap(),
         );
 
-        assert_eq!(trace.outcome, SnapshotContinuationOutcome::ReplannedMarginExceeded);
+        assert_eq!(
+            trace.outcome,
+            SnapshotContinuationOutcome::ReplannedMarginExceeded
+        );
         assert_eq!(trace.motive_delta, Some(150));
         assert!(!trace.continues_plan());
     }
@@ -1668,7 +1683,10 @@ mod tests {
             Permille::ZERO,
         );
 
-        assert_eq!(trace.outcome, SnapshotContinuationOutcome::ReplannedMarginExceeded);
+        assert_eq!(
+            trace.outcome,
+            SnapshotContinuationOutcome::ReplannedMarginExceeded
+        );
         assert_eq!(trace.motive_delta, Some(1));
         assert!(!trace.continues_plan());
     }

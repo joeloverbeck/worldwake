@@ -1349,7 +1349,7 @@ mod tests {
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
     };
     use worldwake_core::{ActionDefId, FrameClearReason};
-    use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView};
+    use worldwake_sim::{PerAgentBeliefView, SpatialBeliefView};
 
     #[derive(Serialize, Deserialize)]
     struct DriverStateMirror {

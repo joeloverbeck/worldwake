@@ -7,7 +7,6 @@ mod action_termination;
 mod action_validation;
 
 pub mod action_def;
-pub mod compaction;
 pub mod action_def_registry;
 pub mod action_duration;
 pub mod action_execution;
@@ -25,6 +24,7 @@ pub mod affordance_query;
 pub mod autonomous_controller;
 pub mod belief_view;
 pub mod commodity_opportunity;
+pub mod compaction;
 pub mod controller_state;
 pub mod deterministic_rng;
 pub mod input_event;
@@ -96,8 +96,14 @@ pub use affordance_query::{
 pub use autonomous_controller::{
     AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,
 };
-pub use belief_view::{GoalBeliefView, RuntimeBeliefView, estimate_duration_from_beliefs};
+pub use belief_view::{
+    CombatBeliefView, ControlBeliefView, EconomicBeliefView, EntityBeliefView, FacilityBeliefView,
+    GoalBeliefView, GoalControlBeliefView, GoalSpatialBeliefView, GoalTemporalBeliefView,
+    InventoryBeliefView, PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView,
+    SocialBeliefView, SpatialBeliefView, TemporalBeliefView, estimate_duration_from_beliefs,
+};
 pub use commodity_opportunity::{CommodityOpportunityBreakdown, commodity_opportunity_score};
+pub use compaction::compact_event_log;
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
 pub use input_event::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
@@ -143,7 +149,6 @@ pub use social_relay::{
     listener_aware_tell_topic_selection, relayable_social_subjects, relayable_tell_topics,
 };
 pub use start_gate::start_action;
-pub use compaction::compact_event_log;
 pub use system_dispatch::{SystemDispatchTable, SystemError, SystemExecutionContext, SystemFn};
 pub use system_manifest::{SystemId, SystemManifest, SystemManifestError};
 pub use tick_action::{TickOutcome, tick_action};

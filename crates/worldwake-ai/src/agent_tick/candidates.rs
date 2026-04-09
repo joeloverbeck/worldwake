@@ -2,7 +2,7 @@ use worldwake_core::{
     BlockedIntent, BlockerKey, BlockingFact, CauseRef, EntityId, Tick, VisibilitySpec, WitnessData,
     WorldTxn,
 };
-use worldwake_sim::{PerAgentBeliefView, RuntimeBeliefView, TickInputError};
+use worldwake_sim::{PerAgentBeliefView, SpatialBeliefView, TemporalBeliefView, TickInputError};
 
 pub(super) fn abandon_expired_facility_queues(
     world: &mut worldwake_core::World,

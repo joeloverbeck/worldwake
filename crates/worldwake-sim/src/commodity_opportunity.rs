@@ -427,7 +427,11 @@ fn saturating_u64_to_u32(value: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{CommodityOpportunityBreakdown, commodity_opportunity_score};
-    use crate::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
+    use crate::{
+        CombatBeliefView, EconomicBeliefView, EntityBeliefView, FacilityBeliefView,
+        GoalControlBeliefView, GoalSpatialBeliefView, GoalTemporalBeliefView, InventoryBeliefView,
+        ProfileBeliefView, RecipeDefinition, RecipeRegistry, SocialBeliefView,
+    };
     use std::collections::BTreeMap;
     use std::num::{NonZeroU8, NonZeroU32};
     use worldwake_core::{
@@ -450,28 +454,12 @@ mod tests {
         workstations_by_place: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
     }
 
-    impl GoalBeliefView for StubBeliefView {
-        fn is_alive(&self, _entity: EntityId) -> bool {
-            true
-        }
-
-        fn is_dead(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
-            Some(EntityKind::Agent)
-        }
-
+    impl GoalSpatialBeliefView for StubBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
 
         fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
 
@@ -484,13 +472,62 @@ mod tests {
                 .cloned()
                 .unwrap_or_default()
         }
+    }
+
+    impl GoalControlBeliefView for StubBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+    }
+
+    impl GoalTemporalBeliefView for StubBeliefView {}
+
+    impl EntityBeliefView for StubBeliefView {
+        fn is_alive(&self, _entity: EntityId) -> bool {
+            true
+        }
+
+        fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
+            Some(EntityKind::Agent)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
+    impl ProfileBeliefView for StubBeliefView {
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::MetabolismProfile> {
+            None
+        }
+    }
+
+    impl InventoryBeliefView for StubBeliefView {
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
 
         fn knows_recipe(&self, _actor: EntityId, recipe: RecipeId) -> bool {
             self.known_recipes.contains(&recipe)
-        }
-
-        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
-            self.known_recipes.clone()
         }
 
         fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
@@ -507,24 +544,6 @@ mod tests {
 
         fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
             Quantity(0)
-        }
-
-        fn controlled_commodity_quantity_at_place(
-            &self,
-            _agent: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Quantity {
-            Quantity(0)
-        }
-
-        fn local_controlled_lots_for(
-            &self,
-            _agent: EntityId,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
         }
 
         fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
@@ -546,41 +565,6 @@ mod tests {
             None
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
-            None
-        }
-
-        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
-            None
-        }
-
-        fn resource_sources_at(
-            &self,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
-            self.workstations_by_place
-                .get(&(place, tag))
-                .cloned()
-                .unwrap_or_default()
-        }
-
-        fn has_production_job(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-            false
-        }
-
         fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
             None
         }
@@ -589,43 +573,18 @@ mod tests {
             None
         }
 
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            self.known_recipes.clone()
         }
+    }
 
-        fn has_wounds(&self, _entity: EntityId) -> bool {
-            !self.wounds.is_empty()
-        }
-
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            self.needs
-        }
-
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+    impl CombatBeliefView for StubBeliefView {
+        fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
             None
-        }
-
-        fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {
-            BeliefConfidencePolicy::default()
-        }
-
-        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
-            None
-        }
-
-        fn commodity_valuation_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<CommodityValuationProfile> {
-            self.commodity_valuation_profile
         }
 
         fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
             self.wounds.clone()
-        }
-
-        fn hostile_targets_of(&self, _agent: EntityId) -> Vec<EntityId> {
-            Vec::new()
         }
 
         fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
@@ -633,6 +592,37 @@ mod tests {
         }
 
         fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
+            !self.wounds.is_empty()
+        }
+    }
+
+    impl EconomicBeliefView for StubBeliefView {
+        fn trade_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::TradeDispositionProfile> {
+            None
+        }
+
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Quantity {
+            Quantity(0)
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            _agent: EntityId,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
 
@@ -652,7 +642,58 @@ mod tests {
             self.demand_memory.clone()
         }
 
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+
+        fn commodity_valuation_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<CommodityValuationProfile> {
+            self.commodity_valuation_profile
+        }
+    }
+
+    impl SocialBeliefView for StubBeliefView {
+        fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {
+            BeliefConfidencePolicy::default()
+        }
+
+        fn intention_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::IntentionDispositionProfile> {
+            None
+        }
+    }
+
+    impl crate::PoliticalBeliefView for StubBeliefView {}
+
+    impl FacilityBeliefView for StubBeliefView {
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
+            None
+        }
+
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
+            self.workstations_by_place
+                .get(&(place, tag))
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn resource_sources_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
             Vec::new()
         }
     }

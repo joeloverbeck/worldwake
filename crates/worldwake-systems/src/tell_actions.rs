@@ -1152,7 +1152,21 @@ mod tests {
             std::collections::BTreeMap<(EntityId, EntityId, TellTopic), RecipientKnowledgeStatus>,
     }
 
-    impl RuntimeBeliefView for StubTellBeliefView {
+    impl worldwake_sim::ControlBeliefView for StubTellBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn has_control(&self, _entity: EntityId) -> bool {
+            false
+        }
+    }
+
+    impl worldwake_sim::EntityBeliefView for StubTellBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }
@@ -1161,6 +1175,34 @@ mod tests {
             self.kinds.get(&entity).copied()
         }
 
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !self.is_alive(entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+    }
+
+    impl worldwake_sim::ProfileBeliefView for StubTellBeliefView {
+        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+            None
+        }
+
+        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+            None
+        }
+    }
+
+    impl worldwake_sim::SpatialBeliefView for StubTellBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.places.get(&entity).copied()
         }
@@ -1179,6 +1221,49 @@ mod tests {
             entities
         }
 
+        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+            false
+        }
+
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
+            None
+        }
+
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            _place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            Vec::new()
+        }
+    }
+
+    impl worldwake_sim::TemporalBeliefView for StubTellBeliefView {
+        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
+            false
+        }
+
+        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
+            Vec::new()
+        }
+
+        fn estimate_duration(
+            &self,
+            _actor: EntityId,
+            _duration: &DurationExpr,
+            _targets: &[EntityId],
+            _payload: &ActionPayload,
+        ) -> Option<worldwake_sim::ActionDuration> {
+            None
+        }
+    }
+
+    impl RuntimeBeliefView for StubTellBeliefView {}
+
+    impl worldwake_sim::SocialBeliefView for StubTellBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
@@ -1193,31 +1278,70 @@ mod tests {
                 .unwrap_or_default()
         }
 
+        fn belief_confidence_policy(
+            &self,
+            _agent: EntityId,
+        ) -> worldwake_core::BeliefConfidencePolicy {
+            worldwake_core::BeliefConfidencePolicy::default()
+        }
+
+        fn intention_disposition_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<IntentionDispositionProfile> {
+            None
+        }
+
+        fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+            self.tell_profiles.get(&agent).copied()
+        }
+
+        fn recipient_knowledge_status(
+            &self,
+            actor: EntityId,
+            counterparty: EntityId,
+            topic: &TellTopic,
+        ) -> Option<RecipientKnowledgeStatus> {
+            self.recipient_statuses
+                .get(&(actor, counterparty, *topic))
+                .copied()
+        }
+    }
+
+    impl worldwake_sim::PoliticalBeliefView for StubTellBeliefView {
         fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
             self.institutional_claims
                 .get(&agent)
                 .cloned()
                 .unwrap_or_default()
         }
+    }
 
-        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+    impl worldwake_sim::CombatBeliefView for StubTellBeliefView {
+        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
+            None
+        }
+
+        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
             Vec::new()
         }
 
-        fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
+        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
             Vec::new()
         }
 
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn has_wounds(&self, _entity: EntityId) -> bool {
             false
         }
+    }
 
-        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
-            0
-        }
-
-        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
-            Quantity(0)
+    impl worldwake_sim::EconomicBeliefView for StubTellBeliefView {
+        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
+            None
         }
 
         fn controlled_commodity_quantity_at_place(
@@ -1236,6 +1360,44 @@ mod tests {
             _commodity: CommodityKind,
         ) -> Vec<EntityId> {
             Vec::new()
+        }
+
+        fn listed_sale_lots_at(
+            &self,
+            _place: EntityId,
+            _commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
+            None
+        }
+
+        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+            Vec::new()
+        }
+
+        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+            None
+        }
+    }
+
+    impl worldwake_sim::InventoryBeliefView for StubTellBeliefView {
+        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+            Vec::new()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
+
+        fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
+            Quantity(0)
         }
 
         fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
@@ -1257,10 +1419,20 @@ mod tests {
             None
         }
 
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
             None
         }
 
+        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+            None
+        }
+
+        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+            Vec::new()
+        }
+    }
+
+    impl worldwake_sim::FacilityBeliefView for StubTellBeliefView {
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
@@ -1271,123 +1443,6 @@ mod tests {
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
             false
-        }
-
-        fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn has_control(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
-        }
-
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
-        }
-
-        fn reservation_conflicts(&self, _entity: EntityId, _range: TickRange) -> bool {
-            false
-        }
-
-        fn reservation_ranges(&self, _entity: EntityId) -> Vec<TickRange> {
-            Vec::new()
-        }
-
-        fn is_dead(&self, entity: EntityId) -> bool {
-            !self.is_alive(entity)
-        }
-
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn has_wounds(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            None
-        }
-
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-            None
-        }
-
-        fn belief_confidence_policy(
-            &self,
-            _agent: EntityId,
-        ) -> worldwake_core::BeliefConfidencePolicy {
-            worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
-        }
-
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
-        }
-
-        fn intention_disposition_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<IntentionDispositionProfile> {
-            None
-        }
-
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
-        }
-
-        fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
-            self.tell_profiles.get(&agent).copied()
-        }
-
-        fn recipient_knowledge_status(
-            &self,
-            actor: EntityId,
-            counterparty: EntityId,
-            topic: &TellTopic,
-        ) -> Option<RecipientKnowledgeStatus> {
-            self.recipient_statuses
-                .get(&(actor, counterparty, *topic))
-                .copied()
-        }
-
-        fn combat_profile(&self, _agent: EntityId) -> Option<CombatProfile> {
-            None
-        }
-
-        fn wounds(&self, _agent: EntityId) -> Vec<Wound> {
-            Vec::new()
-        }
-
-        fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn listed_sale_lots_at(
-            &self,
-            _place: EntityId,
-            _commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
-            None
-        }
-
-        fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
-            Vec::new()
         }
 
         fn matching_workstations_at(
@@ -1404,39 +1459,6 @@ mod tests {
             _commodity: CommodityKind,
         ) -> Vec<EntityId> {
             Vec::new()
-        }
-
-        fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
-            Vec::new()
-        }
-
-        fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
-            None
-        }
-
-        fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
-        }
-
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            _place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            Vec::new()
-        }
-
-        fn estimate_duration(
-            &self,
-            _actor: EntityId,
-            _duration: &DurationExpr,
-            _targets: &[EntityId],
-            _payload: &ActionPayload,
-        ) -> Option<worldwake_sim::ActionDuration> {
-            None
         }
     }
 

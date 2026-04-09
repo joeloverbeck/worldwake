@@ -240,8 +240,10 @@ const FINE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Fine];
 const EXILE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Exile];
 const POST_BOUNTY_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::PostBounty];
 const POST_NOTICE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::PostNotice];
-const OFFICE_CLAIM_BARRIER: &[PlannerOpKind] =
-    &[PlannerOpKind::DeclareSupport, PlannerOpKind::PressForceClaim];
+const OFFICE_CLAIM_BARRIER: &[PlannerOpKind] = &[
+    PlannerOpKind::DeclareSupport,
+    PlannerOpKind::PressForceClaim,
+];
 const NO_BARRIER: &[PlannerOpKind] = &[];
 
 // ---------------------------------------------------------------------------
@@ -1158,10 +1160,8 @@ mod tests {
 
         for key in ALL_KEYS {
             let policy = key.declaration().family_policy;
-            suppression_variants
-                .insert(std::mem::discriminant(&policy.suppression));
-            free_interrupt_variants
-                .insert(std::mem::discriminant(&policy.free_interrupt));
+            suppression_variants.insert(std::mem::discriminant(&policy.suppression));
+            free_interrupt_variants.insert(std::mem::discriminant(&policy.free_interrupt));
         }
 
         // SuppressionRule has 2 variants: Never, WhenStressedAtOrAbove

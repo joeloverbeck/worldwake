@@ -22,11 +22,11 @@ mod goal_switching;
 mod institutional_queries;
 pub mod interrupts;
 pub mod knowledge_path;
+pub mod perf_telemetry;
 pub mod plan_revalidation;
 pub mod plan_selection;
 pub mod planner_duration_contract;
 pub mod planner_ops;
-pub mod perf_telemetry;
 pub mod planning_snapshot;
 pub mod planning_state;
 pub mod pressure;
@@ -62,9 +62,9 @@ pub use decision_trace::{
     RootOperatorOmissionDetail, RootOperatorOmissionReason, RootOperatorOmissionTrace,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace, SnapshotContinuationOutcome,
-    SnapshotContinuationTrace, SocialCandidateOmission, TravelPruningTrace,
-    TravelSuccessorTrace, ViolationDetectionOmission, ViolationDetectionOmissionReason,
+    SelectedPlanTrace, SelectionTrace, SnapshotContinuationOutcome, SnapshotContinuationTrace,
+    SocialCandidateOmission, TravelPruningTrace, TravelSuccessorTrace, ViolationDetectionOmission,
+    ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};

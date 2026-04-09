@@ -11,8 +11,8 @@ use worldwake_core::{
     ActionDefId, BlockedIntentMemory, ContentionStatus, EntityId, GoalKind, Tick,
 };
 use worldwake_sim::{
-    ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance,
-    QueueForFacilityUsePayload, RuntimeBeliefView, get_affordances_for_defs,
+    ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, FacilityBeliefView,
+    QueueForFacilityUsePayload, SpatialBeliefView, get_affordances_for_defs,
 };
 
 use super::SearchNode;
@@ -580,7 +580,7 @@ pub(super) fn search_candidates_from_affordance(
         .snapshot()
         .entities
         .get(&facility)
-        .and_then(|entity| entity.facility_queue.as_ref())
+        .and_then(|entity| entity.temporal.facility_queue.as_ref())
         .is_none()
     {
         return Vec::new();

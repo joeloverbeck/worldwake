@@ -3924,9 +3924,7 @@ struct GoalSwitchContentionCleanupOutcome {
 }
 
 #[allow(clippy::too_many_lines)]
-fn run_goal_switch_contention_cleanup_scenario(
-    seed: Seed,
-) -> GoalSwitchContentionCleanupOutcome {
+fn run_goal_switch_contention_cleanup_scenario(seed: Seed) -> GoalSwitchContentionCleanupOutcome {
     let mut h = GoldenHarness::new(seed);
 
     // Grant holder — sated, blocks the exclusive workstation indefinitely.

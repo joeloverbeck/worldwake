@@ -15,8 +15,7 @@ pub fn compact_event_log(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         return Ok(());
     }
 
-    let snapshot =
-        bincode::serialize(ctx.world).expect("World serialization must not fail");
+    let snapshot = bincode::serialize(ctx.world).expect("World serialization must not fail");
     ctx.event_log
         .add_checkpoint(ctx.tick, CheckpointData::new(snapshot));
 
@@ -70,11 +69,7 @@ mod tests {
         })
     }
 
-    fn run_compaction(
-        world: &mut World,
-        event_log: &mut EventLog,
-        tick: Tick,
-    ) {
+    fn run_compaction(world: &mut World, event_log: &mut EventLog, tick: Tick) {
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
         let active_actions = BTreeMap::new();

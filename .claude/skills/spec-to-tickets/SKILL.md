@@ -55,6 +55,7 @@ Analyze the spec and identify discrete work units:
 - Consider natural boundaries: type changes, new modules, test suites, integration points
 - Use the spec's "What This Does NOT Change" or equivalent non-goals section to populate tickets' Out of Scope fields — these are pre-validated non-goals from reassessment
 - Ensure **workspace builds after each ticket** — if removing types/functions from a shared crate, all consumers must be updated in the same ticket. Splitting a migration across tickets is only valid when intermediate states compile.
+- For **mechanical refactoring specs** (trait decomposition, enum splitting, interface migrations), recognize that multiple tickets may share an identical file set. In the summary table (Step 4), note the shared file set once and reference it from each ticket rather than forcing each ticket to independently discover the same list. Individual tickets should list only *additional* files beyond the shared set.
 
 ### Step 4: Present Summary for Approval
 
@@ -84,7 +85,7 @@ Every ticket MUST include:
 - **Engine Changes**: None or list of affected areas
 - **Deps**: Other tickets or specs this depends on
 - **Problem**: What user-facing or architecture problem this solves
-- **Assumption Reassessment**: Assumptions validated against current code (use today's date). Include items 1-3 from the template (always required) plus any domain-specific items from items 4-15 that match the ticket's scope. Omit inapplicable items silently — do not pad with "N/A" boilerplate
+- **Assumption Reassessment**: Assumptions validated against current code (use today's date). Include items 1-3 from the template (always required) plus any domain-specific items from items 4-15 that match the ticket's scope. Omit inapplicable items silently — do not pad with "N/A" boilerplate. For pure structural refactoring tickets (no behavioral changes, no new actions/components), items 1-3 may be satisfied concisely by confirming: (a) the symbols being moved exist at stated locations, (b) the impl block count matches the spec's claim, (c) the shared boundary is the trait/struct under edit. Items 4-15 are typically all inapplicable for structural refactors
 - **Architecture Check**: Why this approach is clean, how it preserves agnostic boundaries
 - **Verification Layers**: Map each invariant to its proof surface (for mixed-layer or cross-system tickets: decision trace, action trace, event-log delta, authoritative world state)
 - **What to Change**: Numbered sections with specific implementation details
@@ -96,6 +97,8 @@ Every ticket MUST include:
 - **Test Plan**:
   - **New/Modified Tests**: Paths with rationale
   - **Commands**: Targeted test commands and full suite verification
+
+For decompositions producing 5+ tickets, batch ticket file writes in parallel where tickets are independent. Group by similarity (e.g., all extraction tickets in one batch, infrastructure tickets in another).
 
 ### Step 6: Final Summary
 

@@ -1,7 +1,9 @@
 use crate::{
     ActionDefRegistry, ActionDuration, ActionInstance, ActionInstanceId, ActionPayload,
-    DurationExpr, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
-    estimate_duration_from_beliefs,
+    CombatBeliefView, ControlBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView,
+    FacilityBeliefView, InventoryBeliefView, PoliticalBeliefView, ProfileBeliefView,
+    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView,
+    TemporalBeliefView, estimate_duration_from_beliefs,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -348,11 +350,34 @@ fn adjusted_travel_ticks(
     NonZeroU32::new(effective_ticks).unwrap()
 }
 
-impl RuntimeBeliefView for PerAgentBeliefView<'_> {
-    fn current_tick(&self) -> Tick {
-        self.current_tick
+impl ControlBeliefView for PerAgentBeliefView<'_> {
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        let accessible =
+            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
+        accessible.then(|| self.world.owner_of(entity)).flatten()
     }
 
+    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
+        let accessible =
+            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
+        if !accessible {
+            return Vec::new();
+        }
+        self.world.effective_rights(actor, entity)
+    }
+
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        self.world.can_exercise_control(actor, entity).is_ok()
+    }
+
+    fn has_control(&self, entity: EntityId) -> bool {
+        self.world
+            .get_component_agent_data(entity)
+            .is_some_and(|agent_data| agent_data.control_source != ControlSource::None)
+    }
+}
+
+impl EntityBeliefView for PerAgentBeliefView<'_> {
     fn is_alive(&self, entity: EntityId) -> bool {
         if entity == self.agent {
             return self.world.is_alive(entity);
@@ -369,6 +394,97 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         }
     }
 
+    fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+        self.world
+            .get_component_bandit_faction_policy(faction)
+            .map(|policy| policy.flee_wound_threshold)
+    }
+
+    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
+        self.world
+            .get_component_bandit_faction_policy(faction)
+            .map(|policy| policy.establishment_duration_ticks)
+    }
+
+    fn is_dead(&self, entity: EntityId) -> bool {
+        if entity == self.agent {
+            return self.world.get_component_dead_at(entity).is_some();
+        }
+
+        self.believed_entity(entity)
+            .is_some_and(|state| !state.alive)
+    }
+
+    fn locally_observed_is_dead(&self, agent: EntityId, entity: EntityId) -> bool {
+        if agent != self.agent {
+            return self.is_dead(entity);
+        }
+
+        let Some(agent_place) = self.world.effective_place(agent) else {
+            return self.is_dead(entity);
+        };
+        if self.world.effective_place(entity) != Some(agent_place) {
+            return self.is_dead(entity);
+        }
+
+        self.world.get_component_dead_at(entity).is_some()
+    }
+
+    fn is_incapacitated(&self, entity: EntityId) -> bool {
+        if entity == self.agent {
+            let Some(wounds) = self.world.get_component_wound_list(entity) else {
+                return false;
+            };
+            let Some(profile) = self.world.get_component_combat_profile(entity) else {
+                return false;
+            };
+            return is_incapacitated(wounds, profile);
+        }
+
+        false
+    }
+
+    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| self.is_dead(*entity))
+            .collect()
+    }
+}
+
+impl ProfileBeliefView for PerAgentBeliefView<'_> {
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_homeostatic_needs(agent).copied())
+            .flatten()
+    }
+
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_drive_thresholds(agent).copied())
+            .flatten()
+    }
+
+    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_metabolism_profile(agent).copied())
+            .flatten()
+    }
+
+    fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_preference_profile(agent).copied())
+            .flatten()
+    }
+
+    fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_utility_profile(agent).cloned())
+            .flatten()
+    }
+}
+
+impl SpatialBeliefView for PerAgentBeliefView<'_> {
     fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
         if entity == self.agent {
             return self.world.effective_place(entity);
@@ -419,294 +535,66 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         entities
     }
 
-    fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.belief_store
-            .known_entities
-            .iter()
-            .map(|(entity, state)| (*entity, state.clone()))
-            .collect()
-    }
-
-    fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
-        (agent == self.agent).then_some(self.belief_store)
-    }
-
-    fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.belief_store.social_observations.clone()
-    }
-
-    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.belief_store
-            .institutional_beliefs
-            .values()
-            .flat_map(|beliefs| beliefs.iter().cloned())
-            .collect()
-    }
-
-    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
-        if entity == self.agent {
-            return self.world.factions_of(entity);
-        }
-
-        self.known_institutional_beliefs(self.agent)
-            .into_iter()
-            .filter_map(|belief| match belief.claim {
-                worldwake_core::InstitutionalClaim::FactionMembership {
-                    faction,
-                    member,
-                    active: true,
-                    ..
-                } if member == entity => Some(faction),
-                _ => None,
-            })
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    }
-
-    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
-        self.factions_of(entity)
-            .into_iter()
-            .filter(|faction| {
-                self.world
-                    .get_component_bandit_faction_policy(*faction)
-                    .is_some()
-            })
-            .collect()
-    }
-
-    fn locally_observed_bandit_camp_faction_at(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-    ) -> Option<EntityId> {
-        if agent != self.agent || self.world.effective_place(agent) != Some(place) {
-            return None;
-        }
-
-        self.world
-            .get_component_bandit_camp(place)
-            .map(|camp| camp.faction)
-    }
-
-    fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
-        self.believed_entity(entity)
-            .and_then(|state| state.believed_activity.as_ref())
-    }
-
-    fn agents_active_at(
-        &self,
-        place: EntityId,
-        domain: worldwake_core::ActionDomain,
-        target: Option<EntityId>,
-    ) -> Vec<EntityId> {
-        let mut entities = self
-            .belief_store
-            .known_entities
-            .iter()
-            .filter_map(|(entity, state)| {
-                (state.last_known_place == Some(place)
-                    && state.believed_activity.as_ref().is_some_and(|activity| {
-                        activity.action_domain == domain
-                            && (target.is_none() || activity.target == target)
-                    }))
-                .then_some(*entity)
-            })
-            .collect::<Vec<_>>();
-        entities.sort();
-        entities.dedup();
-        entities
-    }
-
-    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-        if holder == self.agent {
-            return self.world.possessions_of(holder);
-        }
-
-        Vec::new()
-    }
-
     fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
         self.world.topology().neighbors(place)
     }
 
-    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
-        (actor == self.agent)
-            && self
-                .world
-                .get_component_known_recipes(actor)
-                .is_some_and(|known| known.recipes.contains(&recipe))
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        self.world.place_has_tag(place, tag)
     }
 
-    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
-        self.recipe_registry
-            .and_then(|registry| registry.get(recipe))
-            .cloned()
+    fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_route_experience(agent).cloned())
+            .flatten()
     }
 
-    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
-        if holder == self.agent {
-            return self.world.controlled_unique_item_count(holder, kind);
-        }
-
-        0
+    fn patrol_route(&self, agent: EntityId) -> Option<worldwake_core::PatrolRoute> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_patrol_route(agent).cloned())
+            .flatten()
     }
 
-    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-        if holder == self.agent {
-            return self.world.controlled_commodity_quantity(holder, kind);
-        }
-
-        self.believed_entity(holder)
-            .and_then(|state| state.last_known_inventory.get(&kind).copied())
-            .unwrap_or(Quantity(0))
+    fn route_exists(&self, from: EntityId, to: EntityId) -> bool {
+        self.world.topology().shortest_path(from, to).is_some()
     }
 
-    fn locally_observed_commodity_quantity(
-        &self,
-        agent: EntityId,
-        holder: EntityId,
-        kind: CommodityKind,
-    ) -> Quantity {
-        if agent != self.agent {
-            return self.commodity_quantity(holder, kind);
+    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
+        if entity == self.agent {
+            return self.world.get_component_in_transit_on_edge(entity).cloned();
         }
 
-        let Some(agent_place) = self.world.effective_place(agent) else {
-            return self.commodity_quantity(holder, kind);
-        };
-        if self.world.effective_place(holder) != Some(agent_place) {
-            return self.commodity_quantity(holder, kind);
-        }
+        None
+    }
 
-        if let Some(source) = self.world.get_component_resource_source(holder)
-            && source.commodity == kind
-        {
-            return source.available_quantity;
-        }
+    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        let route_experience = self.route_experience(self.agent);
+        let preference_profile = self.preference_profile(self.agent);
 
         self.world
-            .controlled_commodity_quantity_at_place(holder, agent_place, kind)
-    }
-
-    fn controlled_commodity_quantity_at_place(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Quantity {
-        if agent != self.agent {
-            return Quantity(0);
-        }
-
-        self.authoritative_local_controlled_lots_for(agent, place, commodity)
-            .into_iter()
-            .filter_map(|entity| self.world.get_component_item_lot(entity))
-            .fold(Quantity(0), |total, lot| {
-                Quantity(
-                    total
-                        .0
-                        .checked_add(lot.quantity.0)
-                        .expect("local controlled commodity quantity overflowed"),
+            .topology()
+            .outgoing_edges(place)
+            .iter()
+            .filter_map(|edge_id| self.world.topology().edge(*edge_id))
+            .map(|edge| {
+                let base_ticks = NonZeroU32::new(edge.travel_time_ticks()).unwrap();
+                (
+                    edge.to(),
+                    adjusted_travel_ticks(
+                        base_ticks,
+                        edge.id(),
+                        route_experience.as_ref(),
+                        preference_profile,
+                    ),
                 )
             })
+            .collect()
     }
+}
 
-    fn local_controlled_lots_for(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Vec<EntityId> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.authoritative_local_controlled_lots_for(agent, place, commodity)
-    }
-
-    fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
-        self.world
-            .get_component_bandit_faction_policy(faction)
-            .map(|policy| policy.flee_wound_threshold)
-    }
-
-    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<std::num::NonZeroU32> {
-        self.world
-            .get_component_bandit_faction_policy(faction)
-            .map(|policy| policy.establishment_duration_ticks)
-    }
-
-    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
-        accessible
-            .then(|| {
-                self.world
-                    .get_component_item_lot(entity)
-                    .map(|lot| lot.commodity)
-            })
-            .flatten()
-    }
-
-    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
-        let commodity = self.item_lot_commodity(entity)?;
-        commodity.spec().consumable_profile
-    }
-
-    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
-        accessible
-            .then(|| self.world.direct_container(entity))
-            .flatten()
-    }
-
-    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
-        accessible
-            .then(|| self.world.possessor_of(entity))
-            .flatten()
-    }
-
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
-        accessible.then(|| self.world.owner_of(entity)).flatten()
-    }
-
-    fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
-        let accessible =
-            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
-        if !accessible {
-            return Vec::new();
-        }
-        self.world.effective_rights(actor, entity)
-    }
-
-    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
-        if entity == self.agent {
-            return self
-                .world
-                .get_component_workstation_marker(entity)
-                .map(|marker| marker.0);
-        }
-
-        self.believed_entity(entity)
-            .and_then(|state| state.workstation_tag)
+impl TemporalBeliefView for PerAgentBeliefView<'_> {
+    fn current_tick(&self) -> Tick {
+        self.current_tick
     }
 
     fn has_contention_policy(&self, entity: EntityId) -> bool {
@@ -755,53 +643,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .and_then(|profile| profile.queue_patience_ticks)
     }
 
-    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
-        self.world.place_has_tag(place, tag)
-    }
-
-    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-        if entity == self.agent {
-            return self.world.get_component_resource_source(entity).cloned();
-        }
-
-        self.believed_entity(entity)
-            .and_then(|state| state.resource_source.clone())
-    }
-
-    fn has_production_job(&self, entity: EntityId) -> bool {
-        self.world.has_component_production_job(entity)
-    }
-
-    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
-        self.knows_entity(facility)
-            .then(|| {
-                self.world
-                    .get_component_stock_storage_policy(facility)
-                    .cloned()
-            })
-            .flatten()
-    }
-
-    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-        self.world.can_exercise_control(actor, entity).is_ok()
-    }
-
-    fn has_control(&self, entity: EntityId) -> bool {
-        self.world
-            .get_component_agent_data(entity)
-            .is_some_and(|agent_data| agent_data.control_source != ControlSource::None)
-    }
-
-    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
-        self.world
-            .get_component_carry_capacity(entity)
-            .map(|CarryCapacity(capacity)| *capacity)
-    }
-
-    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
-        load_of_entity(self.world, entity).ok()
-    }
-
     fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
         self.world
             .reservations_for(entity)
@@ -817,66 +658,69 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .collect()
     }
 
-    fn is_dead(&self, entity: EntityId) -> bool {
-        if entity == self.agent {
-            return self.world.get_component_dead_at(entity).is_some();
-        }
-
-        self.believed_entity(entity)
-            .is_some_and(|state| !state.alive)
+    fn estimate_duration(
+        &self,
+        actor: EntityId,
+        duration: &DurationExpr,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Option<ActionDuration> {
+        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
     }
+}
 
-    fn locally_observed_is_dead(&self, agent: EntityId, entity: EntityId) -> bool {
+impl SocialBeliefView for PerAgentBeliefView<'_> {
+    fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         if agent != self.agent {
-            return self.is_dead(entity);
+            return Vec::new();
         }
 
-        let Some(agent_place) = self.world.effective_place(agent) else {
-            return self.is_dead(entity);
-        };
-        if self.world.effective_place(entity) != Some(agent_place) {
-            return self.is_dead(entity);
-        }
-
-        self.world.get_component_dead_at(entity).is_some()
+        self.belief_store
+            .known_entities
+            .iter()
+            .map(|(entity, state)| (*entity, state.clone()))
+            .collect()
     }
 
-    fn is_incapacitated(&self, entity: EntityId) -> bool {
-        if entity == self.agent {
-            let Some(wounds) = self.world.get_component_wound_list(entity) else {
-                return false;
-            };
-            let Some(profile) = self.world.get_component_combat_profile(entity) else {
-                return false;
-            };
-            return is_incapacitated(wounds, profile);
-        }
-
-        false
+    fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
+        (agent == self.agent).then_some(self.belief_store)
     }
 
-    fn has_wounds(&self, entity: EntityId) -> bool {
-        if entity == self.agent {
-            return self
-                .world
-                .get_component_wound_list(entity)
-                .is_some_and(|wounds| !wounds.wounds.is_empty());
+    fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
+        if agent != self.agent {
+            return Vec::new();
         }
 
+        self.belief_store.social_observations.clone()
+    }
+
+    fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
         self.believed_entity(entity)
-            .is_some_and(|state| !state.wounds.is_empty())
+            .and_then(|state| state.believed_activity.as_ref())
     }
 
-    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_homeostatic_needs(agent).copied())
-            .flatten()
-    }
-
-    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_drive_thresholds(agent).copied())
-            .flatten()
+    fn agents_active_at(
+        &self,
+        place: EntityId,
+        domain: worldwake_core::ActionDomain,
+        target: Option<EntityId>,
+    ) -> Vec<EntityId> {
+        let mut entities = self
+            .belief_store
+            .known_entities
+            .iter()
+            .filter_map(|(entity, state)| {
+                (state.last_known_place == Some(place)
+                    && state.believed_activity.as_ref().is_some_and(|activity| {
+                        activity.action_domain == domain
+                            && (target.is_none() || activity.target == target)
+                    }))
+                .then_some(*entity)
+            })
+            .collect::<Vec<_>>();
+        entities.sort();
+        entities.dedup();
+        entities
     }
 
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {
@@ -900,47 +744,9 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             })
     }
 
-    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_metabolism_profile(agent).copied())
-            .flatten()
-    }
-
-    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
-        (agent == self.agent)
-            .then(|| {
-                self.world
-                    .get_component_trade_disposition_profile(agent)
-                    .cloned()
-            })
-            .flatten()
-    }
-
-    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
-        (agent == self.agent)
-            .then(|| {
-                self.world
-                    .get_component_commodity_valuation_profile(agent)
-                    .copied()
-            })
-            .flatten()
-    }
-
-    fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_route_experience(agent).cloned())
-            .flatten()
-    }
-
     fn source_reliability(&self, agent: EntityId) -> Option<SourceReliability> {
         (agent == self.agent)
             .then(|| self.world.get_component_source_reliability(agent).cloned())
-            .flatten()
-    }
-
-    fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_preference_profile(agent).copied())
             .flatten()
     }
 
@@ -953,30 +759,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
     fn last_seen_memory(&self, agent: EntityId) -> Option<LastSeenMemory> {
         (agent == self.agent)
             .then(|| self.world.get_component_last_seen_memory(agent).cloned())
-            .flatten()
-    }
-
-    fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_utility_profile(agent).cloned())
-            .flatten()
-    }
-
-    fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_patrol_profile(agent).cloned())
-            .flatten()
-    }
-
-    fn patrol_route(&self, agent: EntityId) -> Option<worldwake_core::PatrolRoute> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_patrol_route(agent).cloned())
-            .flatten()
-    }
-
-    fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
-        (agent == self.agent)
-            .then(|| self.world.get_component_pursuit_profile(agent).cloned())
             .flatten()
     }
 
@@ -1006,16 +788,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
-    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
-        (agent == self.agent)
-            .then(|| {
-                self.world
-                    .get_component_justice_disposition_profile(agent)
-                    .cloned()
-            })
-            .flatten()
-    }
-
     fn intention_disposition_profile(
         &self,
         agent: EntityId,
@@ -1027,10 +799,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                     .cloned()
             })
             .flatten()
-    }
-
-    fn route_exists(&self, from: EntityId, to: EntityId) -> bool {
-        self.world.topology().shortest_path(from, to).is_some()
     }
 
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
@@ -1113,10 +881,74 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .ask_witness_memory(key, self.current_tick, profile.ask_memory_retention_ticks)
             .cloned()
     }
+}
 
-    fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
+impl PoliticalBeliefView for PerAgentBeliefView<'_> {
+    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.belief_store
+            .institutional_beliefs
+            .values()
+            .flat_map(|beliefs| beliefs.iter().cloned())
+            .collect()
+    }
+
+    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        if entity == self.agent {
+            return self.world.factions_of(entity);
+        }
+
+        self.known_institutional_beliefs(self.agent)
+            .into_iter()
+            .filter_map(|belief| match belief.claim {
+                worldwake_core::InstitutionalClaim::FactionMembership {
+                    faction,
+                    member,
+                    active: true,
+                    ..
+                } if member == entity => Some(faction),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        self.factions_of(entity)
+            .into_iter()
+            .filter(|faction| {
+                self.world
+                    .get_component_bandit_faction_policy(*faction)
+                    .is_some()
+            })
+            .collect()
+    }
+
+    fn locally_observed_bandit_camp_faction_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+    ) -> Option<EntityId> {
+        if agent != self.agent || self.world.effective_place(agent) != Some(place) {
+            return None;
+        }
+
+        self.world
+            .get_component_bandit_camp(place)
+            .map(|camp| camp.faction)
+    }
+
+    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
         (agent == self.agent)
-            .then(|| self.world.get_component_combat_profile(agent).copied())
+            .then(|| {
+                self.world
+                    .get_component_justice_disposition_profile(agent)
+                    .cloned()
+            })
             .flatten()
     }
 
@@ -1148,192 +980,6 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
                     .collect()
             })
             .unwrap_or_default()
-    }
-
-    fn courage(&self, agent: EntityId) -> Option<Permille> {
-        if agent == self.agent {
-            return self
-                .world
-                .get_component_utility_profile(agent)
-                .map(|p| p.courage);
-        }
-        self.believed_entity(agent)
-            .and_then(|state| state.last_known_courage)
-    }
-
-    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
-        (agent == self.agent)
-            .then(|| {
-                self.world
-                    .get_component_perception_profile(agent)
-                    .map(|profile| profile.consultation_speed_factor)
-            })
-            .flatten()
-    }
-
-    fn wounds(&self, agent: EntityId) -> Vec<Wound> {
-        if agent == self.agent {
-            return self
-                .world
-                .get_component_wound_list(agent)
-                .map(|wounds| wounds.wounds.clone())
-                .unwrap_or_default();
-        }
-
-        self.believed_entity(agent)
-            .map(|state| state.wounds.clone())
-            .unwrap_or_default()
-    }
-
-    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        let mut hostiles = self
-            .hostile_targets_of(agent)
-            .into_iter()
-            .chain(self.world.hostile_towards(agent))
-            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
-            .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| {
-                self.believed_entity(*entity)
-                    .is_some_and(|belief| belief.alive)
-            })
-            .collect::<BTreeSet<_>>();
-        hostiles.extend(self.current_attackers_of(agent));
-        hostiles.into_iter().collect()
-    }
-
-    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.world
-            .hostile_targets_of(agent)
-            .into_iter()
-            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
-            .filter(|entity| self.shares_local_context(agent, *entity))
-            .filter(|entity| {
-                self.believed_entity(*entity)
-                    .is_some_and(|belief| belief.alive)
-            })
-            .collect()
-    }
-
-    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
-        let Some(runtime) = self.runtime else {
-            return Vec::new();
-        };
-
-        runtime
-            .active_actions
-            .values()
-            .filter(|action| action.actor != agent)
-            .filter(|action| action.targets.contains(&agent))
-            .filter(|action| self.shares_local_context(agent, action.actor))
-            .filter_map(|action| {
-                let def = runtime.action_defs.get(action.def_id)?;
-                (def.domain.counts_as_combat_engagement() && def.name == "attack")
-                    .then_some(action.actor)
-            })
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    }
-
-    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::ItemLot))
-            .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
-            .filter(|entity| self.world.has_component_sale_listing(*entity))
-            .filter(|entity| {
-                // Facility-based visibility: lot must be displayed
-                // (StockAssignment::Displayed) and the facility controller
-                // must be alive and co-located at this place.
-                self.world
-                    .get_component_stock_assignment(*entity)
-                    .is_some_and(|assignment| {
-                        assignment.kind == worldwake_core::StockAssignmentKind::Displayed
-                            && self
-                                .facility_controller_at(assignment.facility, place)
-                                .is_some()
-                    })
-            })
-            .collect()
-    }
-
-    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
-        if !self.world.has_component_sale_listing(lot) {
-            return None;
-        }
-        // Derive seller from facility control rather than direct possession.
-        let assignment = self.world.get_component_stock_assignment(lot)?;
-        if assignment.kind != worldwake_core::StockAssignmentKind::Displayed {
-            return None;
-        }
-        let place = self.effective_place(lot)?;
-        self.facility_controller_at(assignment.facility, place)
-    }
-
-    fn has_sale_listing(&self, lot: EntityId) -> bool {
-        self.world.has_component_sale_listing(lot)
-    }
-
-    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.world
-            .get_component_known_recipes(agent)
-            .map(|known| known.recipes.iter().copied().collect())
-            .unwrap_or_default()
-    }
-
-    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| self.workstation_tag(*entity) == Some(tag))
-            .collect()
-    }
-
-    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| {
-                self.resource_source(*entity)
-                    .is_some_and(|source| source.commodity == commodity)
-            })
-            .collect()
-    }
-
-    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
-        if agent != self.agent {
-            return Vec::new();
-        }
-
-        self.world
-            .get_component_demand_memory(agent)
-            .map(|memory| memory.observations.clone())
-            .unwrap_or_default()
-    }
-
-    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
-        if agent == self.agent || self.believed_entity(agent).is_some() {
-            return self.world.get_component_merchandise_profile(agent).cloned();
-        }
-
-        None
-    }
-
-    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| self.is_dead(*entity))
-            .collect()
     }
 
     fn record_data(&self, record: EntityId) -> Option<worldwake_core::RecordData> {
@@ -1389,7 +1035,7 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
         if subject != self.agent {
             return None;
         }
-        if target != self.agent && self.believed_entity(target).is_none() {
+        if !self.knows_entity(target) {
             return None;
         }
 
@@ -1427,75 +1073,449 @@ impl RuntimeBeliefView for PerAgentBeliefView<'_> {
             .cloned()
             .unwrap_or_default()
     }
+}
 
-    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
-        if entity == self.agent {
-            return self.world.get_component_in_transit_on_edge(entity).cloned();
+impl RuntimeBeliefView for PerAgentBeliefView<'_> {}
+
+impl InventoryBeliefView for PerAgentBeliefView<'_> {
+    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+        if holder == self.agent {
+            return self.world.possessions_of(holder);
         }
 
-        None
+        Vec::new()
     }
 
-    fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
-        let route_experience = self.route_experience(self.agent);
-        let preference_profile = self.preference_profile(self.agent);
+    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
+        (actor == self.agent)
+            && self
+                .world
+                .get_component_known_recipes(actor)
+                .is_some_and(|known| known.recipes.contains(&recipe))
+    }
+
+    fn recipe_definition(&self, recipe: RecipeId) -> Option<RecipeDefinition> {
+        self.recipe_registry
+            .and_then(|registry| registry.get(recipe))
+            .cloned()
+    }
+
+    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+        if holder == self.agent {
+            return self.world.controlled_unique_item_count(holder, kind);
+        }
+
+        0
+    }
+
+    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+        if holder == self.agent {
+            return self.world.controlled_commodity_quantity(holder, kind);
+        }
+
+        self.believed_entity(holder)
+            .and_then(|state| state.last_known_inventory.get(&kind).copied())
+            .unwrap_or(Quantity(0))
+    }
+
+    fn locally_observed_commodity_quantity(
+        &self,
+        agent: EntityId,
+        holder: EntityId,
+        kind: CommodityKind,
+    ) -> Quantity {
+        if agent != self.agent {
+            return self.commodity_quantity(holder, kind);
+        }
+
+        let Some(agent_place) = self.world.effective_place(agent) else {
+            return self.commodity_quantity(holder, kind);
+        };
+        if self.world.effective_place(holder) != Some(agent_place) {
+            return self.commodity_quantity(holder, kind);
+        }
+
+        if let Some(source) = self.world.get_component_resource_source(holder)
+            && source.commodity == kind
+        {
+            return source.available_quantity;
+        }
 
         self.world
-            .topology()
-            .outgoing_edges(place)
-            .iter()
-            .filter_map(|edge_id| self.world.topology().edge(*edge_id))
-            .map(|edge| {
-                let base_ticks = NonZeroU32::new(edge.travel_time_ticks()).unwrap();
-                (
-                    edge.to(),
-                    adjusted_travel_ticks(
-                        base_ticks,
-                        edge.id(),
-                        route_experience.as_ref(),
-                        preference_profile,
-                    ),
-                )
+            .controlled_commodity_quantity_at_place(holder, agent_place, kind)
+    }
+
+    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+        let accessible =
+            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible
+            .then(|| {
+                self.world
+                    .get_component_item_lot(entity)
+                    .map(|lot| lot.commodity)
+            })
+            .flatten()
+    }
+
+    fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile> {
+        let commodity = self.item_lot_commodity(entity)?;
+        commodity.spec().consumable_profile
+    }
+
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+        let accessible =
+            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible
+            .then(|| self.world.direct_container(entity))
+            .flatten()
+    }
+
+    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+        let accessible =
+            self.knows_entity(entity) || self.world.possessor_of(entity) == Some(self.agent);
+        accessible
+            .then(|| self.world.possessor_of(entity))
+            .flatten()
+    }
+
+    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+        self.world
+            .get_component_carry_capacity(entity)
+            .map(|CarryCapacity(capacity)| *capacity)
+    }
+
+    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+        load_of_entity(self.world, entity).ok()
+    }
+
+    fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .get_component_known_recipes(agent)
+            .map(|known| known.recipes.iter().copied().collect())
+            .unwrap_or_default()
+    }
+}
+
+impl CombatBeliefView for PerAgentBeliefView<'_> {
+    fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_combat_profile(agent).copied())
+            .flatten()
+    }
+
+    fn courage(&self, agent: EntityId) -> Option<Permille> {
+        if agent == self.agent {
+            return self
+                .world
+                .get_component_utility_profile(agent)
+                .map(|p| p.courage);
+        }
+        self.believed_entity(agent)
+            .and_then(|state| state.last_known_courage)
+    }
+
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_perception_profile(agent)
+                    .map(|profile| profile.consultation_speed_factor)
+            })
+            .flatten()
+    }
+
+    fn wounds(&self, agent: EntityId) -> Vec<Wound> {
+        if agent == self.agent {
+            return self
+                .world
+                .get_component_wound_list(agent)
+                .map(|wounds| wounds.wounds.clone())
+                .unwrap_or_default();
+        }
+
+        self.believed_entity(agent)
+            .map(|state| state.wounds.clone())
+            .unwrap_or_default()
+    }
+
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .hostile_targets_of(agent)
+            .into_iter()
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.shares_local_context(agent, *entity))
+            .filter(|entity| {
+                self.believed_entity(*entity)
+                    .is_some_and(|belief| belief.alive)
             })
             .collect()
     }
 
-    fn estimate_duration(
-        &self,
-        actor: EntityId,
-        duration: &DurationExpr,
-        targets: &[EntityId],
-        payload: &ActionPayload,
-    ) -> Option<ActionDuration> {
-        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
+    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        let mut hostiles = self
+            .hostile_targets_of(agent)
+            .into_iter()
+            .chain(self.world.hostile_towards(agent))
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
+            .filter(|entity| self.shares_local_context(agent, *entity))
+            .filter(|entity| {
+                self.believed_entity(*entity)
+                    .is_some_and(|belief| belief.alive)
+            })
+            .collect::<BTreeSet<_>>();
+        hostiles.extend(self.current_attackers_of(agent));
+        hostiles.into_iter().collect()
+    }
+
+    fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
+        let Some(runtime) = self.runtime else {
+            return Vec::new();
+        };
+
+        runtime
+            .active_actions
+            .values()
+            .filter(|action| action.actor != agent)
+            .filter(|action| action.targets.contains(&agent))
+            .filter(|action| self.shares_local_context(agent, action.actor))
+            .filter_map(|action| {
+                let def = runtime.action_defs.get(action.def_id)?;
+                (def.domain.counts_as_combat_engagement() && def.name == "attack")
+                    .then_some(action.actor)
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn patrol_profile(&self, agent: EntityId) -> Option<worldwake_core::PatrolProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_patrol_profile(agent).cloned())
+            .flatten()
+    }
+
+    fn pursuit_profile(&self, agent: EntityId) -> Option<worldwake_core::PursuitProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_pursuit_profile(agent).cloned())
+            .flatten()
+    }
+
+    fn has_wounds(&self, entity: EntityId) -> bool {
+        if entity == self.agent {
+            return self
+                .world
+                .get_component_wound_list(entity)
+                .is_some_and(|wounds| !wounds.wounds.is_empty());
+        }
+
+        self.believed_entity(entity)
+            .is_some_and(|state| !state.wounds.is_empty())
     }
 }
 
-crate::impl_goal_belief_view!(PerAgentBeliefView<'_>);
+impl EconomicBeliefView for PerAgentBeliefView<'_> {
+    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_trade_disposition_profile(agent)
+                    .cloned()
+            })
+            .flatten()
+    }
+
+    fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_commodity_valuation_profile(agent)
+                    .copied()
+            })
+            .flatten()
+    }
+
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity {
+        if agent != self.agent {
+            return Quantity(0);
+        }
+
+        self.authoritative_local_controlled_lots_for(agent, place, commodity)
+            .into_iter()
+            .filter_map(|entity| self.world.get_component_item_lot(entity))
+            .fold(Quantity(0), |total, lot| {
+                Quantity(
+                    total
+                        .0
+                        .checked_add(lot.quantity.0)
+                        .expect("local controlled commodity quantity overflowed"),
+                )
+            })
+    }
+
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.authoritative_local_controlled_lots_for(agent, place, commodity)
+    }
+
+    fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::ItemLot))
+            .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
+            .filter(|entity| self.world.has_component_sale_listing(*entity))
+            .filter(|entity| {
+                self.world
+                    .get_component_stock_assignment(*entity)
+                    .is_some_and(|assignment| {
+                        assignment.kind == worldwake_core::StockAssignmentKind::Displayed
+                            && self
+                                .facility_controller_at(assignment.facility, place)
+                                .is_some()
+                    })
+            })
+            .collect()
+    }
+
+    fn seller_for_sale_lot(&self, lot: EntityId) -> Option<EntityId> {
+        if !self.world.has_component_sale_listing(lot) {
+            return None;
+        }
+        let assignment = self.world.get_component_stock_assignment(lot)?;
+        if assignment.kind != worldwake_core::StockAssignmentKind::Displayed {
+            return None;
+        }
+        let place = self.effective_place(lot)?;
+        self.facility_controller_at(assignment.facility, place)
+    }
+
+    fn has_sale_listing(&self, lot: EntityId) -> bool {
+        self.world.has_component_sale_listing(lot)
+    }
+
+    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        self.world
+            .get_component_demand_memory(agent)
+            .map(|memory| memory.observations.clone())
+            .unwrap_or_default()
+    }
+
+    fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+        if agent == self.agent || self.believed_entity(agent).is_some() {
+            return self.world.get_component_merchandise_profile(agent).cloned();
+        }
+
+        None
+    }
+}
+
+impl FacilityBeliefView for PerAgentBeliefView<'_> {
+    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
+        if entity == self.agent {
+            return self
+                .world
+                .get_component_workstation_marker(entity)
+                .map(|marker| marker.0);
+        }
+
+        self.believed_entity(entity)
+            .and_then(|state| state.workstation_tag)
+    }
+
+    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+        if entity == self.agent {
+            return self.world.get_component_resource_source(entity).cloned();
+        }
+
+        self.believed_entity(entity)
+            .and_then(|state| state.resource_source.clone())
+    }
+
+    fn has_production_job(&self, entity: EntityId) -> bool {
+        self.world.has_component_production_job(entity)
+    }
+
+    fn stock_storage_policy(&self, facility: EntityId) -> Option<StockStoragePolicy> {
+        self.knows_entity(facility)
+            .then(|| {
+                self.world
+                    .get_component_stock_storage_policy(facility)
+                    .cloned()
+            })
+            .flatten()
+    }
+
+    fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| self.workstation_tag(*entity) == Some(tag))
+            .collect()
+    }
+
+    fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| {
+                self.resource_source(*entity)
+                    .is_some_and(|source| source.commodity == commodity)
+            })
+            .collect()
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::{PerAgentBeliefRuntime, PerAgentBeliefView};
     use crate::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
-        ActionInstanceId, ActionPayload, ActionStatus, Constraint, DurationExpr, GoalBeliefView,
-        Interruptibility, Precondition, ReservationReq, RuntimeBeliefView, TargetSpec,
+        ActionInstanceId, ActionPayload, ActionStatus, CombatBeliefView, Constraint,
+        ControlBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView, FacilityBeliefView,
+        GoalBeliefView, Interruptibility, InventoryBeliefView, Precondition, ProfileBeliefView,
+        ReservationReq, RuntimeBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
-        BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind, ControlSource,
-        EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, ExpectationBasis,
-        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, FactionData,
-        FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-        OfficeData, PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
-        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
-        RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
-        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
-        build_prototype_world,
+        ActionDefId, ActionDomain, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
+        BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind,
+        ControlSource, EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog,
+        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
+        FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, OfficeData, PerceptionProfile, Permille, Place, PlaceTag,
+        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
+        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId, build_believed_entity_state, build_prototype_world,
         test_utils::{
             sample_commodity_valuation_profile, sample_preference_profile, sample_route_experience,
             sample_source_reliability,
@@ -1741,31 +1761,28 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::homeostatic_needs(&view, agent),
+            ProfileBeliefView::homeostatic_needs(&view, agent),
             world.get_component_homeostatic_needs(agent).copied()
         );
         assert_eq!(
-            RuntimeBeliefView::effective_place(&view, agent),
+            SpatialBeliefView::effective_place(&view, agent),
             Some(place)
         );
         assert_eq!(
-            RuntimeBeliefView::commodity_quantity(&view, agent, CommodityKind::Bread),
+            InventoryBeliefView::commodity_quantity(&view, agent, CommodityKind::Bread),
             world.controlled_commodity_quantity(agent, CommodityKind::Bread)
         );
         assert_eq!(
-            RuntimeBeliefView::effective_place(&view, other),
+            SpatialBeliefView::effective_place(&view, other),
             Some(believed_place)
         );
-        assert!(!RuntimeBeliefView::is_alive(&view, other));
-        assert!(RuntimeBeliefView::is_dead(&view, other));
+        assert!(!EntityBeliefView::is_alive(&view, other));
+        assert!(EntityBeliefView::is_dead(&view, other));
         assert_eq!(
-            RuntimeBeliefView::commodity_quantity(&view, other, CommodityKind::Bread),
+            InventoryBeliefView::commodity_quantity(&view, other, CommodityKind::Bread),
             Quantity(7)
         );
-        assert_eq!(
-            RuntimeBeliefView::wounds(&view, other),
-            vec![sample_wound()]
-        );
+        assert_eq!(CombatBeliefView::wounds(&view, other), vec![sample_wound()]);
     }
 
     #[test]
@@ -1862,16 +1879,16 @@ mod tests {
         // The believed merchant is alive and co-located, so their facility's displayed lot
         // passes the facility_controller_at check.
         assert_eq!(
-            RuntimeBeliefView::listed_sale_lots_at(&view, place, CommodityKind::Bread),
+            EconomicBeliefView::listed_sale_lots_at(&view, place, CommodityKind::Bread),
             vec![listed_lot]
         );
         assert_eq!(
-            RuntimeBeliefView::seller_for_sale_lot(&view, listed_lot),
+            EconomicBeliefView::seller_for_sale_lot(&view, listed_lot),
             Some(believed_merchant)
         );
         // Hidden lot's seller is not discoverable (agent doesn't know about hidden_lot)
         assert_eq!(
-            RuntimeBeliefView::seller_for_sale_lot(&view, hidden_lot),
+            EconomicBeliefView::seller_for_sale_lot(&view, hidden_lot),
             None
         );
     }
@@ -1898,7 +1915,7 @@ mod tests {
 
         assert_eq!(world.effective_place(other), Some(place_b));
         assert_eq!(
-            RuntimeBeliefView::effective_place(&view, other),
+            SpatialBeliefView::effective_place(&view, other),
             Some(place_a)
         );
     }
@@ -1922,11 +1939,11 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::known_entity_beliefs(&view, agent),
+            crate::SocialBeliefView::known_entity_beliefs(&view, agent),
             vec![(other, entity_belief(place, true, 2, 4))]
         );
         assert!(
-            RuntimeBeliefView::known_entity_beliefs(&view, other).is_empty(),
+            crate::SocialBeliefView::known_entity_beliefs(&view, other).is_empty(),
             "belief enumeration should not expose another agent's store through this view"
         );
     }
@@ -1955,16 +1972,19 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::believed_activity_of(&view, other),
+            crate::SocialBeliefView::believed_activity_of(&view, other),
             Some(&worldwake_core::BelievedActivity {
                 action_domain: ActionDomain::Production,
                 target: Some(entity(40)),
                 observed_tick: Tick(8),
             })
         );
-        assert_eq!(RuntimeBeliefView::believed_activity_of(&view, agent), None);
         assert_eq!(
-            RuntimeBeliefView::believed_activity_of(&view, unknown),
+            crate::SocialBeliefView::believed_activity_of(&view, agent),
+            None
+        );
+        assert_eq!(
+            crate::SocialBeliefView::believed_activity_of(&view, unknown),
             None
         );
     }
@@ -2012,11 +2032,11 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(&view, place, ActionDomain::Production, None),
+            crate::SocialBeliefView::agents_active_at(&view, place, ActionDomain::Production, None),
             vec![a, c]
         );
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(
+            crate::SocialBeliefView::agents_active_at(
                 &view,
                 place,
                 ActionDomain::Production,
@@ -2025,11 +2045,16 @@ mod tests {
             vec![a]
         );
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(&view, place, ActionDomain::Trade, Some(source)),
+            crate::SocialBeliefView::agents_active_at(
+                &view,
+                place,
+                ActionDomain::Trade,
+                Some(source)
+            ),
             vec![b]
         );
         assert!(
-            RuntimeBeliefView::agents_active_at(
+            crate::SocialBeliefView::agents_active_at(
                 &view,
                 other_place,
                 ActionDomain::Trade,
@@ -2080,22 +2105,27 @@ mod tests {
         let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&view, agent, listener, &topic)
+            crate::SocialBeliefView::told_belief_memory(&view, agent, listener, &topic)
                 .map(|m| m.told_tick),
             Some(Tick(4))
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&view, agent, listener, &topic),
+            crate::SocialBeliefView::recipient_knowledge_status(&view, agent, listener, &topic),
             Some(RecipientKnowledgeStatus::SpeakerHasOnlyToldStaleBelief)
         );
 
         let expired_view = PerAgentBeliefView::new_at_tick(agent, Tick(60), &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&expired_view, agent, listener, &topic),
+            crate::SocialBeliefView::told_belief_memory(&expired_view, agent, listener, &topic),
             None
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&expired_view, agent, listener, &topic,),
+            crate::SocialBeliefView::recipient_knowledge_status(
+                &expired_view,
+                agent,
+                listener,
+                &topic,
+            ),
             Some(RecipientKnowledgeStatus::SpeakerPreviouslyToldButMemoryExpired)
         );
     }
@@ -2136,19 +2166,19 @@ mod tests {
         let view = PerAgentBeliefView::new_at_tick(agent, Tick(6), &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::told_belief_memories(&view, agent).len(),
+            crate::SocialBeliefView::told_belief_memories(&view, agent).len(),
             1
         );
         assert!(
-            RuntimeBeliefView::told_belief_memories(&view, other).is_empty(),
+            crate::SocialBeliefView::told_belief_memories(&view, other).is_empty(),
             "conversation memory should remain actor-local"
         );
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(&view, other, listener, &topic),
+            crate::SocialBeliefView::told_belief_memory(&view, other, listener, &topic),
             None
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(&view, other, listener, &topic),
+            crate::SocialBeliefView::recipient_knowledge_status(&view, other, listener, &topic),
             None
         );
     }
@@ -2169,7 +2199,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::tell_profile(&view, agent), None);
+        assert_eq!(crate::SocialBeliefView::tell_profile(&view, agent), None);
     }
 
     #[test]
@@ -2191,7 +2221,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::commodity_valuation_profile(&view, agent),
+            EconomicBeliefView::commodity_valuation_profile(&view, agent),
             Some(profile)
         );
         assert_eq!(
@@ -2221,7 +2251,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::commodity_valuation_profile(&view, agent),
+            EconomicBeliefView::commodity_valuation_profile(&view, agent),
             None
         );
         assert_eq!(
@@ -2249,7 +2279,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::route_experience(&view, agent),
+            SpatialBeliefView::route_experience(&view, agent),
             Some(route_experience.clone())
         );
         assert_eq!(
@@ -2273,7 +2303,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::route_experience(&view, agent), None);
+        assert_eq!(SpatialBeliefView::route_experience(&view, agent), None);
         assert_eq!(GoalBeliefView::route_experience(&view, agent), None);
     }
 
@@ -2296,7 +2326,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::source_reliability(&view, agent),
+            crate::SocialBeliefView::source_reliability(&view, agent),
             Some(source_reliability.clone())
         );
         assert_eq!(
@@ -2320,7 +2350,10 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::source_reliability(&view, agent), None);
+        assert_eq!(
+            crate::SocialBeliefView::source_reliability(&view, agent),
+            None
+        );
         assert_eq!(GoalBeliefView::source_reliability(&view, agent), None);
     }
 
@@ -2343,7 +2376,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::preference_profile(&view, agent),
+            ProfileBeliefView::preference_profile(&view, agent),
             Some(profile)
         );
         assert_eq!(
@@ -2368,7 +2401,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::preference_profile(&view, agent),
+            ProfileBeliefView::preference_profile(&view, agent),
             Some(PreferenceProfile::default())
         );
         assert_eq!(
@@ -2409,7 +2442,7 @@ mod tests {
             .confidence_policy;
 
         assert_eq!(
-            RuntimeBeliefView::belief_confidence_policy(&view, agent),
+            crate::SocialBeliefView::belief_confidence_policy(&view, agent),
             expected
         );
         assert_eq!(
@@ -2436,7 +2469,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        let _ = RuntimeBeliefView::belief_confidence_policy(&view, other);
+        let _ = crate::SocialBeliefView::belief_confidence_policy(&view, other);
     }
 
     #[test]
@@ -2475,18 +2508,18 @@ mod tests {
         let empty_beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &empty_beliefs);
         assert!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, place)
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, place)
                 .iter()
                 .any(|(adjacent, _)| *adjacent == remote_place),
             "public route topology should remain available"
         );
         assert_eq!(
-            RuntimeBeliefView::entity_kind(&view, remote_place),
+            EntityBeliefView::entity_kind(&view, remote_place),
             Some(EntityKind::Place),
             "public route knowledge should include place identity"
         );
         assert!(
-            RuntimeBeliefView::matching_workstations_at(
+            FacilityBeliefView::matching_workstations_at(
                 &view,
                 remote_place,
                 WorkstationTag::OrchardRow
@@ -2495,12 +2528,18 @@ mod tests {
             "remote workstation discovery must not come from authoritative scans"
         );
         assert!(
-            RuntimeBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple)
+            FacilityBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple)
                 .is_empty(),
             "remote resource-source discovery must not come from authoritative scans"
         );
-        assert_eq!(RuntimeBeliefView::workstation_tag(&view, workstation), None);
-        assert_eq!(RuntimeBeliefView::resource_source(&view, workstation), None);
+        assert_eq!(
+            FacilityBeliefView::workstation_tag(&view, workstation),
+            None
+        );
+        assert_eq!(
+            FacilityBeliefView::resource_source(&view, workstation),
+            None
+        );
 
         let mut beliefs = AgentBeliefStore::new();
         beliefs.update_entity(
@@ -2532,7 +2571,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::matching_workstations_at(
+            FacilityBeliefView::matching_workstations_at(
                 &view,
                 remote_place,
                 WorkstationTag::OrchardRow
@@ -2540,15 +2579,15 @@ mod tests {
             vec![workstation]
         );
         assert_eq!(
-            RuntimeBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple),
+            FacilityBeliefView::resource_sources_at(&view, remote_place, CommodityKind::Apple),
             vec![workstation]
         );
         assert_eq!(
-            RuntimeBeliefView::workstation_tag(&view, workstation),
+            FacilityBeliefView::workstation_tag(&view, workstation),
             Some(WorkstationTag::OrchardRow)
         );
         assert_eq!(
-            RuntimeBeliefView::resource_source(&view, workstation),
+            FacilityBeliefView::resource_source(&view, workstation),
             Some(ResourceSource {
                 commodity: CommodityKind::Apple,
                 available_quantity: Quantity(9),
@@ -2612,7 +2651,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, base_ticks)]
         );
     }
@@ -2652,7 +2691,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, expected_ticks)]
         );
     }
@@ -2686,7 +2725,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, base_ticks)]
         );
     }
@@ -2727,7 +2766,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, expected_ticks)]
         );
     }
@@ -2771,7 +2810,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::adjacent_places_with_travel_ticks(&view, origin),
+            SpatialBeliefView::adjacent_places_with_travel_ticks(&view, origin),
             vec![(destination, expected_ticks)]
         );
     }
@@ -2818,11 +2857,12 @@ mod tests {
         let view = PerAgentBeliefView::with_runtime(agent, &world, &beliefs, runtime);
 
         assert_eq!(
-            RuntimeBeliefView::current_attackers_of(&view, agent),
+            CombatBeliefView::current_attackers_of(&view, agent),
             vec![attacker]
         );
         assert_eq!(
-            view.estimate_duration(
+            TemporalBeliefView::estimate_duration(
+                &view,
                 agent,
                 &DurationExpr::TravelToTarget { target_index: 0 },
                 &[destination],
@@ -2869,11 +2909,11 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert!(
-            RuntimeBeliefView::visible_hostiles_for(&view, agent).is_empty(),
+            CombatBeliefView::visible_hostiles_for(&view, agent).is_empty(),
             "dead believed hostiles should not continue to project danger"
         );
         assert!(
-            RuntimeBeliefView::hostile_targets_of(&view, agent).is_empty(),
+            CombatBeliefView::hostile_targets_of(&view, agent).is_empty(),
             "dead believed hostiles should not remain actionable hostile targets"
         );
     }
@@ -2911,7 +2951,8 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            view.estimate_duration(
+            TemporalBeliefView::estimate_duration(
+                &view,
                 agent,
                 &DurationExpr::ActorDefendStance,
                 &[],
@@ -2966,7 +3007,8 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            view.estimate_duration(
+            TemporalBeliefView::estimate_duration(
+                &view,
                 agent,
                 &DurationExpr::ConsultRecord { target_index: 0 },
                 &[record],
@@ -3073,29 +3115,31 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::office_data(&view, office)
+            crate::PoliticalBeliefView::office_data(&view, office)
                 .unwrap()
                 .jurisdiction,
             BTreeSet::from([place])
         );
         assert_eq!(
-            RuntimeBeliefView::office_data(&view, office).unwrap().seat,
+            crate::PoliticalBeliefView::office_data(&view, office)
+                .unwrap()
+                .seat,
             place
         );
         assert_eq!(
-            RuntimeBeliefView::believed_office_holder(&view, office),
+            crate::PoliticalBeliefView::believed_office_holder(&view, office),
             InstitutionalBeliefRead::Certain(Some(holder))
         );
         assert_eq!(
-            RuntimeBeliefView::believed_membership(&view, faction, agent),
+            crate::PoliticalBeliefView::believed_membership(&view, faction, agent),
             InstitutionalBeliefRead::Certain(true)
         );
         assert_eq!(
-            RuntimeBeliefView::loyalty_to(&view, agent, holder),
+            crate::PoliticalBeliefView::loyalty_to(&view, agent, holder),
             Some(Permille::new(620).unwrap())
         );
         assert_eq!(
-            RuntimeBeliefView::believed_support_declaration(&view, office, agent),
+            crate::PoliticalBeliefView::believed_support_declaration(&view, office, agent),
             InstitutionalBeliefRead::Certain(Some(holder))
         );
     }
@@ -3133,7 +3177,7 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::believed_office_holder(&view, office),
+            crate::PoliticalBeliefView::believed_office_holder(&view, office),
             InstitutionalBeliefRead::Certain(Some(holder))
         );
     }
@@ -3178,7 +3222,7 @@ mod tests {
         );
 
         assert_eq!(
-            RuntimeBeliefView::believed_force_controller(&view, office),
+            crate::PoliticalBeliefView::believed_force_controller(&view, office),
             InstitutionalBeliefRead::Certain((Some(entity(173)), false))
         );
         assert_eq!(
@@ -3226,11 +3270,11 @@ mod tests {
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
         assert_eq!(
-            RuntimeBeliefView::believed_support_declaration(&view, office, supporter),
+            crate::PoliticalBeliefView::believed_support_declaration(&view, office, supporter),
             InstitutionalBeliefRead::Certain(Some(candidate))
         );
         assert_eq!(
-            RuntimeBeliefView::believed_support_declarations_for_office(&view, office),
+            crate::PoliticalBeliefView::believed_support_declarations_for_office(&view, office),
             vec![(supporter, InstitutionalBeliefRead::Certain(Some(candidate)),)]
         );
     }
@@ -3255,7 +3299,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_owner_of(&view, lot),
+            ControlBeliefView::believed_owner_of(&view, lot),
             Some(agent)
         );
     }
@@ -3279,7 +3323,7 @@ mod tests {
         beliefs.update_entity(lot, entity_belief(place, true, 3, 10));
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        assert_eq!(RuntimeBeliefView::believed_owner_of(&view, lot), None);
+        assert_eq!(ControlBeliefView::believed_owner_of(&view, lot), None);
     }
 
     #[test]
@@ -3303,7 +3347,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
-        assert_eq!(RuntimeBeliefView::believed_owner_of(&view, lot), None);
+        assert_eq!(ControlBeliefView::believed_owner_of(&view, lot), None);
     }
 
     #[test]
@@ -3344,7 +3388,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(observer, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::locally_observed_commodity_quantity(
+            InventoryBeliefView::locally_observed_commodity_quantity(
                 &view,
                 observer,
                 holder,
@@ -3375,7 +3419,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_owner_of(&view, lot),
+            ControlBeliefView::believed_owner_of(&view, lot),
             Some(agent)
         );
     }
@@ -3400,7 +3444,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_rights(&view, agent, lot),
+            ControlBeliefView::believed_rights(&view, agent, lot),
             vec![EffectiveRight {
                 kind: RightKind::Ownership,
                 via: None,
@@ -3428,7 +3472,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert!(RuntimeBeliefView::believed_rights(&view, other, lot).is_empty());
+        assert!(ControlBeliefView::believed_rights(&view, other, lot).is_empty());
     }
 
     #[test]
@@ -3471,9 +3515,9 @@ mod tests {
         beliefs.update_entity(item, entity_belief(jurisdiction_place, true, 0, 2));
 
         let view = PerAgentBeliefView::new(observer, &world, &beliefs);
-        assert!(!RuntimeBeliefView::can_control(&view, holder, item));
+        assert!(!ControlBeliefView::can_control(&view, holder, item));
         assert_eq!(
-            RuntimeBeliefView::believed_rights(&view, holder, item),
+            ControlBeliefView::believed_rights(&view, holder, item),
             vec![EffectiveRight {
                 kind: RightKind::JurisdictionalAuthority,
                 via: Some(office),
@@ -3520,12 +3564,12 @@ mod tests {
 
         // Self-authoritative: returns own courage
         assert_eq!(
-            RuntimeBeliefView::courage(&view, agent),
+            CombatBeliefView::courage(&view, agent),
             Some(Permille::new(750).unwrap())
         );
         // Other agent: returns believed courage
         assert_eq!(
-            RuntimeBeliefView::courage(&view, other),
+            CombatBeliefView::courage(&view, other),
             Some(Permille::new(200).unwrap())
         );
 
@@ -3559,7 +3603,7 @@ mod tests {
         beliefs.update_entity(other, entity_belief(place, true, 0, 3));
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::courage(&view, other), None);
+        assert_eq!(CombatBeliefView::courage(&view, other), None);
     }
 
     #[test]
@@ -3580,7 +3624,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::courage(&view, unknown), None);
+        assert_eq!(CombatBeliefView::courage(&view, unknown), None);
     }
 
     #[test]
@@ -3599,7 +3643,7 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
 
-        assert_eq!(RuntimeBeliefView::courage(&view, agent), None);
+        assert_eq!(CombatBeliefView::courage(&view, agent), None);
     }
 
     #[test]
@@ -3633,7 +3677,7 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_membership(&view, faction, agent),
+            crate::PoliticalBeliefView::believed_membership(&view, faction, agent),
             InstitutionalBeliefRead::Certain(true)
         );
     }
@@ -3670,8 +3714,45 @@ mod tests {
 
         let view = PerAgentBeliefView::new(agent, &world, &beliefs);
         assert_eq!(
-            RuntimeBeliefView::believed_faction_rally_point(&view, faction),
+            crate::PoliticalBeliefView::believed_faction_rally_point(&view, faction),
             InstitutionalBeliefRead::Certain(Some(rally_place))
+        );
+    }
+
+    #[test]
+    fn bandit_policy_entity_methods_read_from_authoritative_faction_policy() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, faction) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let faction = txn.create_faction("River Pact").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_bandit_faction_policy(
+                faction,
+                BanditFactionPolicy {
+                    rally_place: Some(place),
+                    establishment_duration_ticks: NonZeroU32::new(8).unwrap(),
+                    min_regroup_count: 1,
+                    abandonment_grace_ticks: NonZeroU32::new(4).unwrap(),
+                    flee_wound_threshold: Permille::new(650).unwrap(),
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, faction)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            EntityBeliefView::bandit_flee_wound_threshold(&view, faction),
+            Some(Permille::new(650).unwrap())
+        );
+        assert_eq!(
+            EntityBeliefView::bandit_camp_establishment_ticks(&view, faction),
+            Some(NonZeroU32::new(8).unwrap())
         );
     }
 

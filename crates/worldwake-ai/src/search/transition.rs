@@ -11,7 +11,7 @@ use crate::{
 use heuristic::{combined_relevant_places, compute_heuristic};
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, ExecutionBudget};
-use worldwake_sim::{ActionDefRegistry, RecipeRegistry, RuntimeBeliefView};
+use worldwake_sim::{ActionDefRegistry, RecipeRegistry, TemporalBeliefView};
 
 use super::heuristic;
 

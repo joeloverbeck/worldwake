@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 # Missing Abstraction Analysis: golden-soak
 
 **Date**: 2026-04-07
@@ -150,3 +152,10 @@ Pressure recomputation in 2 locations is correct per P27 — derived summaries t
 ### Combat / Patrol / Trade / Needs / Offices
 
 Each follows the clean 3-crate pattern: types in core, handlers in systems, AI reasoning in ai. Crate boundaries match concern boundaries.
+
+## Outcome
+
+- Completion date: 2026-04-08
+- What actually changed: Archived this report after its actionable missing-abstraction analysis was exploited.
+- Deviations from original plan: None. The report remains as a historical record and is no longer active planning material.
+- Verification results: Confirmed the report was marked completed before archival and moved into `archive/reports/`.

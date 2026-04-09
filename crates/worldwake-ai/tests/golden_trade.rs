@@ -17,8 +17,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionAbortRequestReason, ActionPayload, ActionRequestMode, ActionStartFailureReason,
-    ActionTraceEvent, ActionTraceKind, InputKind, PerAgentBeliefView, RecipeRegistry,
-    RequestBindingKind, RequestProvenance, RequestResolutionOutcome, RuntimeBeliefView,
+    ActionTraceEvent, ActionTraceKind, EconomicBeliefView, InputKind, PerAgentBeliefView,
+    RecipeRegistry, RequestBindingKind, RequestProvenance, RequestResolutionOutcome,
     TradeActionPayload,
 };
 
@@ -991,12 +991,12 @@ fn run_carrier_delivery_to_facility_preserves_seller_identity(
     );
     let observer_view = PerAgentBeliefView::from_world(observer, &h.world);
     assert_eq!(
-        RuntimeBeliefView::seller_for_sale_lot(&observer_view, cargo_lot),
+        EconomicBeliefView::seller_for_sale_lot(&observer_view, cargo_lot),
         Some(merchant),
         "once delivered stock is staged, the merchant should be the seller rather than the carrier"
     );
     assert_ne!(
-        RuntimeBeliefView::seller_for_sale_lot(&observer_view, cargo_lot),
+        EconomicBeliefView::seller_for_sale_lot(&observer_view, cargo_lot),
         Some(carrier),
         "carrier delivery should not make the carrier the seller"
     );

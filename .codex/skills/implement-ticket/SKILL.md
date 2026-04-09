@@ -5,7 +5,7 @@ description: "Implement or reassess a Worldwake ticket. Use when asked to work f
 
 # Worldwake Ticket Implementation
 
-Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase.
+Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase. Do not stop at intermediate reassessment or partial fallout; continue until the ticket is completed, fully verified, or blocked by a user decision that requires 1-3-1.
 
 ## Workflow
 
@@ -37,6 +37,7 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 - When the ticket's owned surface is partially landed in the worktree, treat the live state as baseline; limit edits to the missing slice.
 - Keep tracked-vs-untracked state in mind when reading diffs and close-out evidence: untracked ticket drafts and newly created files will not appear in ordinary `git diff` output.
 - Cross-check `Deps` against `What to Change` for additive tickets that assume earlier slices landed.
+- For staged decomposition tickets, verify whether any temporary carrier or intermediate shape named in the ticket still exists on the current branch. If an earlier slice already removed it, narrow the ticket to the remaining live debt before planning edits.
 - When roadmap summary, active spec, and live ticket disagree, compare all three and record which is authoritative.
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
 - Described architecture still matches live code.
@@ -70,6 +71,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - Save/load version boundaries and `SAVE_FORMAT_VERSION` gates
 - Crate-root re-exports and downstream imports for new shared types
 - When a new shared type is defined under a submodule, verify the actual public import path before patching downstream crates. Do not assume a crate-root re-export exists or will be added unless the live code already provides it.
+- When a flat internal carrier becomes nested or is decomposed into sub-structs, sweep both the type name and the moved field names across the owning crate before editing. Direct field reads in secondary consumers often sit outside the obvious constructor or main access layer and will not be found by constructor-only sweeps.
 
 Specific persisted-shape checks:
 - Worldwake does not support legacy saves by default. When persisted shape changes, update the current save format and keep older versions rejected unless the user explicitly asks for compatibility work.
@@ -117,6 +119,7 @@ Specific persisted-shape checks:
 - When the ticket says information should be "internalized," search for an existing belief lane or consumer before inventing a new belief substrate.
 - When the ticket changes historical event content or view semantics, inspect renderers and detail views for reconstruction from live runtime state instead of stored event records.
 - When making a new action handler's affordance enumeration live through the planner's search pipeline, verify that every `RuntimeBeliefView` method the handler calls is implemented on `PlanningState` (via `PlanningSnapshot`), not just on `PerAgentBeliefView`. The planning state's view defaults most trait methods to `None`; affordance enumeration that depends on actor-local carriers (`expectation_store`, `ask_witness_memory`, `last_seen_memory`) silently produces zero payloads if the snapshot doesn't include the carrier.
+- For trait-extraction tickets that move `RuntimeBeliefView` methods onto new sub-traits, audit `PlanningState` / `PlanningSnapshot` parity before broad mock fallout. If a moved method is implemented on `PlanningState`, verify the snapshot already carries the lawful backing state for that method. When it does not, widen the snapshot boundary deliberately rather than defaulting the planning-side method to `None`, empty collections, or invented placeholder fields.
 
 #### Registry and schema checks
 
@@ -132,6 +135,17 @@ Specific persisted-shape checks:
 - When extending a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or generated surfaces. Distinguish the canonical consumer boundary from implementation-detail mirrors.
 - If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself rather than assuming the downstream consumer crate named in the ticket is the only edit surface.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
+- For trait extraction tickets, run a workspace-wide fallout sweep before editing: search for the old impl boundary (for example `impl RuntimeBeliefView for`) and any forwarding macros or trait-forwarding sites (for example `impl_goal_belief_view!`) across all crates, tests, and golden helpers. Do this before trusting the first compiler-reported file list so the full impl fallout surface is known up front.
+- For broad trait moves, prefer an all-target compile-only pass (for example `cargo test --workspace --no-run`) immediately after the first broad patch and before full test execution. Use it to enumerate the remaining fallout surface quickly before spending time on full runtime verification.
+- Before rewriting impl blocks or UFCS calls, write down the exact moved method set and the exact methods intentionally remaining on the old trait. Use that partition as the source of truth during edits so methods still owned by the old trait are not accidentally "migrated" in call-site fallout fixes.
+- When splitting methods onto a new trait that provides non-panicking defaults, verify each production implementor still overrides every behaviorally required method. Defaults like `None`, `false`, or empty collections can mask missing impls and survive compile/build verification until a golden or focused behavior test fails. Add at least one focused proof for any moved method whose default could silently preserve compilation while changing behavior.
+- After moving methods off an existing trait, sweep for stale UFCS calls on the old trait (for example `OldTrait::method(...)`) and for method-call sites that now require the new trait to be imported for resolution. Trait extraction fallout is often at the call-site/import layer, not only in impl blocks.
+- Search for the moved method names themselves across ordinary method-call sites as part of that sweep. Dot-call fallout like `view.moved_method(...)` can require new trait imports even when there is no old-trait UFCS and no remaining `impl OldTrait for` block in the file.
+- Include helper methods and test-local impl internals in that sweep. Calls like `self.moved_method(...)` inside mock helpers, adapter helpers, or test-only impl blocks can also require the new trait import or explicit `<Self as NewTrait>::method(...)` after the split.
+- When blanket impls introduce a second lawful provider for an existing method name, sweep helpers, assertions, and mock internals for ambiguity fallout. Calls that previously resolved uniquely may now require explicit trait qualification even if no methods moved between traits.
+- When a trait split touches large mock, adapter, or test-stub impl blocks, prefer replacing the whole impl partition in one pass instead of patching methods incrementally. Half-migrated impls can strand methods on the wrong trait and create noisy intermediate compile states that obscure the real remaining fallout.
+- Include shared golden harnesses and golden test infrastructure in trait-split fallout sweeps. Method moves can leave old trait imports or UFCS calls in `golden_*` helpers even after ordinary unit-test mocks are green.
+- Prioritize broken production implementors over broad mock cleanup when the first compile wave points there. If a real `PerAgentBeliefView`, `PlanningState`, or similar live boundary is still structurally wrong after the split, fix that production path first and then use an all-target compile sweep to enumerate the remaining test/mock/golden fallout.
 
 #### Performance and allocation sweep
 
@@ -245,6 +259,7 @@ Do not assume every schema macro reference needs a new import — verify actual 
 #### Trait surface scope
 
 - Verify whether the live architecture uses forwarding macros, blanket impls, or paired runtime traits. Correct the ticket if the implementation boundary is broader than the prose.
+- When the named trait is already a stable consumer-facing facade, reassess whether the lawful cleanup is to preserve that facade and decompose only the implementation path beneath it. Do not force all direct consumers onto new sub-traits if the live boundary should remain the facade.
 - When reassessment exposes multiple ownership shapes for a new API, decide the shape before broad implementation.
 - When a widely used helper or wrapper appears to need a signature change, verify whether it is actually the live production boundary or mainly a test/unfiltered convenience surface. If only a narrower production entry point needs the new behavior, prefer widening that path and preserving the broader helper unchanged rather than mechanically churning all callers.
 
@@ -310,9 +325,11 @@ Typical order:
 - When a workspace-wide verification command fails on files outside the ticket's owned surface (e.g., untracked binaries, pre-existing lint failures), verify the failure is unrelated by running the same command scoped to the ticket's owned crates. Record the pre-existing failure and the scoped-pass result in the ticket Outcome. Do not fix unrelated failures as part of the ticket.
 - When broader verification fails on a golden in the same domain, action family, or planner path as the ticket's owned behavior, do one contract-level triage pass before labeling it unrelated: check whether the failure is stale setup only, a lower-layer production contradiction, or a real AI-pipeline mismatch. Only treat it as unrelated after that bounded triage.
 
-Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md):
+Use the repo-approved commands from [AGENTS.md](../../../AGENTS.md) as examples, but keep the owning verification boundary honest: when the affected surface lives in another workspace crate, prefer the equivalent narrow crate-scoped command first (for example `cargo test -p <affected-crate> <selector>`) before broadening.
 
 ```bash
+cargo test -p <affected-crate> <test_name>
+cargo test -p <affected-crate>
 cargo test -p worldwake-core <test_name>
 cargo test -p worldwake-core
 cargo test -p worldwake-ai
@@ -395,6 +412,7 @@ Before finishing:
 - Re-check `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff. Remove reassessment-only fallout that did not become real edits.
 - If reassessment or verification changed the semantic contract the ticket describes, also re-check `Problem`, `Architecture Check`, and `Acceptance Criteria` so the ticket's narrative matches the landed behavior rather than an earlier draft.
 - Re-check inline code snippets, example signatures, or API sketches against the final landed shape.
+- Re-check the ticket's close-out fields directly: `Status`, `## Outcome`, and verification/command notes should reflect the commands that actually passed, not the pre-reassessment plan.
 - If formatting was required in a dirty worktree, check immediately for formatter spillover into already-modified files outside the ticket's owned surface and call that out explicitly in close-out repo-state notes.
 - After golden scenario metadata changes, refresh the generated golden inventory/docs.
 

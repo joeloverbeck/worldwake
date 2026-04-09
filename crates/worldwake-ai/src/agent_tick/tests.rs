@@ -45,11 +45,12 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
-    AutonomousControllerRuntime, CommitOutcome, CommittedAction, ControllerState, DeterministicRng,
-    DurationExpr, Materialization, MaterializationTag, PerAgentBeliefView, RecipeDefinition,
-    RecipeRegistry, RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler, SystemDispatchTable,
-    SystemExecutionContext, SystemId, SystemManifest, TickStepServices, TransportActionPayload,
-    step_tick,
+    AutonomousControllerRuntime, CombatBeliefView, CommitOutcome, CommittedAction,
+    ControlBeliefView, ControllerState, DeterministicRng, DurationExpr, EconomicBeliefView,
+    EntityBeliefView, Materialization, MaterializationTag, PerAgentBeliefView, ProfileBeliefView,
+    RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SaveError, SaveableRuntime, Scheduler,
+    SpatialBeliefView, SystemDispatchTable, SystemExecutionContext, SystemId, SystemManifest,
+    TemporalBeliefView, TickStepServices, TransportActionPayload, step_tick,
 };
 use worldwake_systems::{build_full_action_registries, perception_system, register_needs_actions};
 
@@ -100,7 +101,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         structural_block_ticks: reasoning.structural_block_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
-        max_snapshot_entities_per_place: CognitiveProfile::default().max_snapshot_entities_per_place,
+        max_snapshot_entities_per_place: CognitiveProfile::default()
+            .max_snapshot_entities_per_place,
     }
 }
 
@@ -1512,13 +1514,51 @@ struct QueuePatienceBeliefView {
     patience_ticks: Option<NonZeroU32>,
 }
 
-impl RuntimeBeliefView for QueuePatienceBeliefView {
+impl ControlBeliefView for QueuePatienceBeliefView {
+    fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+        None
+    }
+
+    fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
+        false
+    }
+
+    fn has_control(&self, _entity: EntityId) -> bool {
+        false
+    }
+}
+
+impl EntityBeliefView for QueuePatienceBeliefView {
     fn is_alive(&self, _entity: EntityId) -> bool {
         true
     }
     fn entity_kind(&self, _entity: EntityId) -> Option<EntityKind> {
         None
     }
+    fn is_dead(&self, _entity: EntityId) -> bool {
+        false
+    }
+    fn is_incapacitated(&self, _entity: EntityId) -> bool {
+        false
+    }
+    fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
+        Vec::new()
+    }
+}
+
+impl ProfileBeliefView for QueuePatienceBeliefView {
+    fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
+        None
+    }
+    fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+        None
+    }
+    fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
+        None
+    }
+}
+
+impl SpatialBeliefView for QueuePatienceBeliefView {
     fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {
         self.place
     }
@@ -1528,20 +1568,96 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
         self.facilities_at_place.clone()
     }
-    fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
-        Vec::new()
-    }
     fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
         Vec::new()
     }
-    fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+    fn place_has_tag(&self, _place: EntityId, _tag: worldwake_core::PlaceTag) -> bool {
         false
     }
-    fn unique_item_count(&self, _holder: EntityId, _kind: worldwake_core::UniqueItemKind) -> u32 {
-        0
+    fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+        false
     }
-    fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
-        Quantity(0)
+    fn in_transit_state(&self, _entity: EntityId) -> Option<worldwake_core::InTransitOnEdge> {
+        None
+    }
+    fn adjacent_places_with_travel_ticks(&self, _place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
+        Vec::new()
+    }
+}
+
+impl TemporalBeliefView for QueuePatienceBeliefView {
+    fn has_contention_policy(&self, entity: EntityId) -> bool {
+        self.facilities_at_place.contains(&entity)
+    }
+    fn facility_queue_position(&self, facility: EntityId, _actor: EntityId) -> Option<u32> {
+        self.queue_join_ticks.contains_key(&facility).then_some(0)
+    }
+    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
+        self.grants.get(&facility)
+    }
+    fn facility_queue_join_tick(&self, facility: EntityId, _actor: EntityId) -> Option<Tick> {
+        self.queue_join_ticks.get(&facility).copied()
+    }
+    fn facility_queue_patience_ticks(&self, _agent: EntityId) -> Option<NonZeroU32> {
+        self.patience_ticks
+    }
+    fn reservation_conflicts(&self, _entity: EntityId, _range: worldwake_core::TickRange) -> bool {
+        false
+    }
+    fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
+        Vec::new()
+    }
+    fn estimate_duration(
+        &self,
+        _actor: EntityId,
+        _duration: &DurationExpr,
+        _targets: &[EntityId],
+        _payload: &worldwake_sim::ActionPayload,
+    ) -> Option<ActionDuration> {
+        None
+    }
+}
+
+impl RuntimeBeliefView for QueuePatienceBeliefView {}
+
+impl worldwake_sim::SocialBeliefView for QueuePatienceBeliefView {
+    fn belief_confidence_policy(&self, _agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
+        worldwake_core::BeliefConfidencePolicy::default()
+    }
+    fn intention_disposition_profile(
+        &self,
+        _agent: EntityId,
+    ) -> Option<IntentionDispositionProfile> {
+        None
+    }
+}
+
+impl worldwake_sim::PoliticalBeliefView for QueuePatienceBeliefView {}
+
+impl CombatBeliefView for QueuePatienceBeliefView {
+    fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
+        None
+    }
+    fn wounds(&self, _agent: EntityId) -> Vec<worldwake_core::Wound> {
+        Vec::new()
+    }
+    fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
+        Vec::new()
+    }
+    fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
+        Vec::new()
+    }
+    fn has_wounds(&self, _entity: EntityId) -> bool {
+        false
+    }
+}
+
+impl EconomicBeliefView for QueuePatienceBeliefView {
+    fn trade_disposition_profile(
+        &self,
+        _agent: EntityId,
+    ) -> Option<worldwake_core::TradeDispositionProfile> {
+        None
     }
     fn controlled_commodity_quantity_at_place(
         &self,
@@ -1559,6 +1675,33 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     ) -> Vec<EntityId> {
         Vec::new()
     }
+    fn listed_sale_lots_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
+        Vec::new()
+    }
+    fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
+        None
+    }
+    fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
+        Vec::new()
+    }
+    fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
+        None
+    }
+}
+
+impl worldwake_sim::InventoryBeliefView for QueuePatienceBeliefView {
+    fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
+        Vec::new()
+    }
+    fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+        false
+    }
+    fn unique_item_count(&self, _holder: EntityId, _kind: worldwake_core::UniqueItemKind) -> u32 {
+        0
+    }
+    fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
+        Quantity(0)
+    }
     fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
         None
     }
@@ -1574,29 +1717,20 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
         None
     }
-    fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+    fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
         None
     }
+    fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
+        None
+    }
+    fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
+        Vec::new()
+    }
+}
+
+impl worldwake_sim::FacilityBeliefView for QueuePatienceBeliefView {
     fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
         None
-    }
-    fn has_contention_policy(&self, entity: EntityId) -> bool {
-        self.facilities_at_place.contains(&entity)
-    }
-    fn facility_queue_position(&self, facility: EntityId, _actor: EntityId) -> Option<u32> {
-        self.queue_join_ticks.contains_key(&facility).then_some(0)
-    }
-    fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
-        self.grants.get(&facility)
-    }
-    fn facility_queue_join_tick(&self, facility: EntityId, _actor: EntityId) -> Option<Tick> {
-        self.queue_join_ticks.get(&facility).copied()
-    }
-    fn facility_queue_patience_ticks(&self, _agent: EntityId) -> Option<NonZeroU32> {
-        self.patience_ticks
-    }
-    fn place_has_tag(&self, _place: EntityId, _tag: worldwake_core::PlaceTag) -> bool {
-        false
     }
     fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
         None
@@ -1604,110 +1738,11 @@ impl RuntimeBeliefView for QueuePatienceBeliefView {
     fn has_production_job(&self, _entity: EntityId) -> bool {
         false
     }
-    fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
-        false
-    }
-    fn has_control(&self, _entity: EntityId) -> bool {
-        false
-    }
-    fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-        None
-    }
-    fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-        None
-    }
-    fn reservation_conflicts(&self, _entity: EntityId, _range: worldwake_core::TickRange) -> bool {
-        false
-    }
-    fn reservation_ranges(&self, _entity: EntityId) -> Vec<worldwake_core::TickRange> {
-        Vec::new()
-    }
-    fn is_dead(&self, _entity: EntityId) -> bool {
-        false
-    }
-    fn is_incapacitated(&self, _entity: EntityId) -> bool {
-        false
-    }
-    fn has_wounds(&self, _entity: EntityId) -> bool {
-        false
-    }
-    fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-        None
-    }
-    fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-        None
-    }
-    fn belief_confidence_policy(&self, _agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
-        worldwake_core::BeliefConfidencePolicy::default()
-    }
-    fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-        None
-    }
-    fn trade_disposition_profile(
-        &self,
-        _agent: EntityId,
-    ) -> Option<worldwake_core::TradeDispositionProfile> {
-        None
-    }
-    fn intention_disposition_profile(
-        &self,
-        _agent: EntityId,
-    ) -> Option<IntentionDispositionProfile> {
-        None
-    }
-    fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-        false
-    }
-    fn combat_profile(&self, _agent: EntityId) -> Option<worldwake_core::CombatProfile> {
-        None
-    }
-    fn wounds(&self, _agent: EntityId) -> Vec<worldwake_core::Wound> {
-        Vec::new()
-    }
-    fn visible_hostiles_for(&self, _agent: EntityId) -> Vec<EntityId> {
-        Vec::new()
-    }
-    fn current_attackers_of(&self, _agent: EntityId) -> Vec<EntityId> {
-        Vec::new()
-    }
-    fn listed_sale_lots_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
-        Vec::new()
-    }
-    fn seller_for_sale_lot(&self, _lot: EntityId) -> Option<EntityId> {
-        None
-    }
-    fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
-        Vec::new()
-    }
     fn matching_workstations_at(&self, _place: EntityId, _tag: WorkstationTag) -> Vec<EntityId> {
         Vec::new()
     }
     fn resource_sources_at(&self, _place: EntityId, _commodity: CommodityKind) -> Vec<EntityId> {
         Vec::new()
-    }
-    fn demand_memory(&self, _agent: EntityId) -> Vec<DemandObservation> {
-        Vec::new()
-    }
-    fn merchandise_profile(&self, _agent: EntityId) -> Option<MerchandiseProfile> {
-        None
-    }
-    fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-        Vec::new()
-    }
-    fn in_transit_state(&self, _entity: EntityId) -> Option<worldwake_core::InTransitOnEdge> {
-        None
-    }
-    fn adjacent_places_with_travel_ticks(&self, _place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
-        Vec::new()
-    }
-    fn estimate_duration(
-        &self,
-        _actor: EntityId,
-        _duration: &DurationExpr,
-        _targets: &[EntityId],
-        _payload: &worldwake_sim::ActionPayload,
-    ) -> Option<ActionDuration> {
-        None
     }
 }
 

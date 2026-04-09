@@ -15,7 +15,10 @@ use worldwake_core::{
     ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit, to_shared_belief_snapshot,
 };
 use worldwake_sim::{
-    ActionDuration, ActionPayload, DurationExpr, RuntimeBeliefView, estimate_duration_from_beliefs,
+    ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
+    EconomicBeliefView, EntityBeliefView, FacilityBeliefView, InventoryBeliefView,
+    PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView,
+    TemporalBeliefView, estimate_duration_from_beliefs,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -307,7 +310,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         self.snapshot
             .entities
             .get(&record)
-            .and_then(|snapshot| snapshot.record_data.clone())
+            .and_then(|snapshot| snapshot.political.record_data.clone())
     }
 
     /// Count hypothetical support declarations for `candidate` at `office`,
@@ -468,7 +471,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .and_then(|snapshot| snapshot.kind),
+                .and_then(|snapshot| snapshot.entity.kind),
             PlanningEntityRef::Hypothetical(entity) => self
                 .hypothetical_registry
                 .get(&entity)
@@ -501,11 +504,11 @@ impl<'snapshot> PlanningState<'snapshot> {
             .get(&(holder, kind))
             .copied()
             .or_else(|| match holder {
-                PlanningEntityRef::Authoritative(holder) => self
-                    .snapshot
-                    .entities
-                    .get(&holder)
-                    .and_then(|snapshot| snapshot.commodity_quantities.get(&kind).copied()),
+                PlanningEntityRef::Authoritative(holder) => {
+                    self.snapshot.entities.get(&holder).and_then(|snapshot| {
+                        snapshot.inventory.commodity_quantities.get(&kind).copied()
+                    })
+                }
                 PlanningEntityRef::Hypothetical(_) => None,
             })
             .unwrap_or(Quantity(0))
@@ -523,7 +526,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                     .snapshot
                     .entities
                     .get(&entity)
-                    .and_then(|snapshot| snapshot.direct_container)
+                    .and_then(|snapshot| snapshot.inventory.direct_container)
                     .map(PlanningEntityRef::Authoritative),
                 PlanningEntityRef::Hypothetical(_) => None,
             },
@@ -542,7 +545,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                     .snapshot
                     .entities
                     .get(&entity)
-                    .and_then(|snapshot| snapshot.direct_possessor)
+                    .and_then(|snapshot| snapshot.inventory.direct_possessor)
                     .map(PlanningEntityRef::Authoritative),
                 PlanningEntityRef::Hypothetical(_) => None,
             },
@@ -557,7 +560,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         self.snapshot
             .entities
             .get(&entity)
-            .and_then(|snapshot| snapshot.stock_storage_policy.clone())
+            .and_then(|snapshot| snapshot.facility.stock_storage_policy.clone())
     }
 
     #[must_use]
@@ -647,7 +650,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .and_then(|snapshot| snapshot.item_lot_commodity),
+                .and_then(|snapshot| snapshot.inventory.item_lot_commodity),
             PlanningEntityRef::Hypothetical(entity) => self
                 .hypothetical_registry
                 .get(&entity)
@@ -665,7 +668,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .and_then(|snapshot| snapshot.carry_capacity),
+                .and_then(|snapshot| snapshot.inventory.carry_capacity),
             PlanningEntityRef::Hypothetical(_) => None,
         }
     }
@@ -688,7 +691,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .map(|snapshot| snapshot.intrinsic_load),
+                .map(|snapshot| snapshot.inventory.intrinsic_load),
             PlanningEntityRef::Hypothetical(_) => Some(LoadUnits(0)),
         }
     }
@@ -762,7 +765,7 @@ impl<'snapshot> PlanningState<'snapshot> {
             self.snapshot
                 .entities
                 .get(&agent)
-                .and_then(|snapshot| snapshot.homeostatic_needs)
+                .and_then(|snapshot| snapshot.profiles.homeostatic_needs)
         })
     }
 
@@ -790,7 +793,7 @@ impl<'snapshot> PlanningState<'snapshot> {
     pub fn pain_summary(&self, entity: EntityId) -> Option<Permille> {
         self.pain_overrides.get(&entity).copied().or_else(|| {
             self.snapshot.entities.get(&entity).map(|snapshot| {
-                let total = snapshot.wounds.iter().fold(0u16, |acc, wound| {
+                let total = snapshot.combat.wounds.iter().fold(0u16, |acc, wound| {
                     acc.saturating_add(wound.severity.value())
                 });
                 Permille::new(total.min(1000)).unwrap()
@@ -855,7 +858,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&facility)
-                .and_then(|snapshot| snapshot.facility_queue.as_ref())
+                .and_then(|snapshot| snapshot.temporal.facility_queue.as_ref())
                 .and_then(|queue| queue.actor_queue_position),
         }
     }
@@ -867,7 +870,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&facility)
-                .and_then(|snapshot| snapshot.facility_queue.as_ref())
+                .and_then(|snapshot| snapshot.temporal.facility_queue.as_ref())
                 .and_then(|queue| queue.active_grant.as_ref()),
         }
     }
@@ -917,7 +920,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                     .snapshot
                     .entities
                     .get(&entity)
-                    .and_then(|snapshot| snapshot.effective_place),
+                    .and_then(|snapshot| snapshot.spatial.effective_place),
                 PlanningEntityRef::Hypothetical(_) => None,
             }
         };
@@ -951,6 +954,7 @@ impl<'snapshot> PlanningState<'snapshot> {
         {
             candidates.extend(
                 snapshot
+                    .inventory
                     .direct_possessions
                     .iter()
                     .copied()
@@ -958,6 +962,7 @@ impl<'snapshot> PlanningState<'snapshot> {
             );
             candidates.extend(
                 snapshot
+                    .inventory
                     .direct_contents
                     .iter()
                     .copied()
@@ -1019,8 +1024,8 @@ impl<'snapshot> PlanningState<'snapshot> {
             .entities
             .iter()
             .filter_map(|(facility, snapshot)| {
-                let policy = snapshot.stock_storage_policy.as_ref()?;
-                (snapshot.effective_place == Some(place)
+                let policy = snapshot.facility.stock_storage_policy.as_ref()?;
+                (snapshot.spatial.effective_place == Some(place)
                     && self.can_control_ref(agent, PlanningEntityRef::Authoritative(*facility)))
                 .then_some(PlanningEntityRef::Authoritative(policy.stock_container))
             })
@@ -1069,7 +1074,7 @@ impl<'snapshot> PlanningState<'snapshot> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .is_some_and(|snapshot| snapshot.action_flags.controllable_by_actor),
+                .is_some_and(|snapshot| snapshot.control.controllable_by_actor),
             PlanningEntityRef::Hypothetical(_) => false,
         }
     }
@@ -1099,11 +1104,32 @@ impl PlanningState<'_> {
     }
 }
 
-impl RuntimeBeliefView for PlanningState<'_> {
-    fn current_tick(&self) -> worldwake_core::Tick {
-        self.snapshot.current_tick
+impl ControlBeliefView for PlanningState<'_> {
+    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.control.owner)
     }
 
+    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+        actor == self.snapshot.actor()
+            && self
+                .snapshot
+                .entities
+                .get(&entity)
+                .is_some_and(|snapshot| snapshot.control.controllable_by_actor)
+    }
+
+    fn has_control(&self, entity: EntityId) -> bool {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .is_some_and(|snapshot| snapshot.control.has_control)
+    }
+}
+
+impl EntityBeliefView for PlanningState<'_> {
     fn is_alive(&self, entity: EntityId) -> bool {
         !self
             .removed_entities
@@ -1112,13 +1138,72 @@ impl RuntimeBeliefView for PlanningState<'_> {
                 .snapshot
                 .entities
                 .get(&entity)
-                .is_some_and(|snapshot| snapshot.lifecycle.alive)
+                .is_some_and(|snapshot| snapshot.entity.alive)
     }
 
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind> {
         self.entity_kind_ref(PlanningEntityRef::Authoritative(entity))
     }
 
+    fn is_dead(&self, entity: EntityId) -> bool {
+        self.removed_entities
+            .contains(&PlanningEntityRef::Authoritative(entity))
+            || self
+                .snapshot
+                .entities
+                .get(&entity)
+                .is_some_and(|snapshot| snapshot.entity.dead)
+    }
+
+    fn is_incapacitated(&self, entity: EntityId) -> bool {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .is_some_and(|snapshot| snapshot.entity.incapacitated)
+    }
+
+    fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+        self.snapshot.bandit_flee_wound_threshold(faction)
+    }
+
+    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<std::num::NonZeroU32> {
+        self.snapshot.bandit_camp_establishment_ticks(faction)
+    }
+
+    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        self.entities_at(place)
+            .into_iter()
+            .filter(|entity| self.is_dead(*entity))
+            .collect()
+    }
+}
+
+impl ProfileBeliefView for PlanningState<'_> {
+    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+        self.needs_overrides.get(&agent).copied().or_else(|| {
+            self.snapshot
+                .entities
+                .get(&agent)
+                .and_then(|snapshot| snapshot.profiles.homeostatic_needs)
+        })
+    }
+
+    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.profiles.drive_thresholds)
+    }
+
+    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.profiles.metabolism_profile)
+    }
+}
+
+impl SpatialBeliefView for PlanningState<'_> {
     fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
         self.resolve_effective_place(entity, &mut BTreeSet::new())
     }
@@ -1174,6 +1259,111 @@ impl RuntimeBeliefView for PlanningState<'_> {
         entities
     }
 
+    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
+        self.adjacent_places_with_travel_ticks(place)
+            .into_iter()
+            .map(|(adjacent, _)| adjacent)
+            .collect()
+    }
+
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        self.snapshot
+            .places
+            .get(&place)
+            .is_some_and(|snapshot| snapshot.tags.contains(&tag))
+    }
+
+    fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.spatial.patrol_route.clone())
+    }
+
+    fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
+        false
+    }
+
+    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.spatial.in_transit_state.clone())
+    }
+
+    fn adjacent_places_with_travel_ticks(
+        &self,
+        place: EntityId,
+    ) -> Vec<(EntityId, std::num::NonZeroU32)> {
+        self.snapshot
+            .places
+            .get(&place)
+            .map(|snapshot| snapshot.adjacent_places_with_travel_ticks.clone())
+            .unwrap_or_default()
+    }
+}
+
+impl TemporalBeliefView for PlanningState<'_> {
+    fn current_tick(&self) -> worldwake_core::Tick {
+        self.snapshot.current_tick
+    }
+
+    fn has_contention_policy(&self, entity: EntityId) -> bool {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.temporal.facility_queue.as_ref())
+            .is_some()
+    }
+
+    fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
+        (actor == self.snapshot.actor()).then(|| self.actor_facility_queue_position(facility))?
+    }
+
+    fn facility_grant(&self, facility: EntityId) -> Option<&worldwake_core::ContentionGrant> {
+        self.actor_facility_grant(facility)
+    }
+
+    fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
+        self.reservation_shadows
+            .get(&entity)
+            .into_iter()
+            .flatten()
+            .any(|shadow| shadow.overlaps(&range))
+            || self
+                .snapshot
+                .entities
+                .get(&entity)
+                .into_iter()
+                .flat_map(|snapshot| snapshot.temporal.reservation_ranges.iter())
+                .any(|existing| existing.overlaps(&range))
+    }
+
+    fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
+        let mut ranges = self
+            .snapshot
+            .entities
+            .get(&entity)
+            .map(|snapshot| snapshot.temporal.reservation_ranges.clone())
+            .unwrap_or_default();
+        if let Some(shadows) = self.reservation_shadows.get(&entity) {
+            ranges.extend(shadows.iter().copied());
+        }
+        ranges
+    }
+
+    fn estimate_duration(
+        &self,
+        actor: EntityId,
+        duration: &DurationExpr,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Option<ActionDuration> {
+        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
+    }
+}
+
+impl SocialBeliefView for PlanningState<'_> {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         if agent != self.snapshot.actor() {
             return Vec::new();
@@ -1196,14 +1386,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
         }
 
         self.snapshot.actor_known_social_observations.clone()
-    }
-
-    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
-        if agent != self.snapshot.actor() {
-            return Vec::new();
-        }
-
-        self.snapshot.actor_known_institutional_beliefs.clone()
     }
 
     fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
@@ -1237,274 +1419,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
         entities
     }
 
-    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-        let mut entities = self
-            .snapshot
-            .entities
-            .keys()
-            .copied()
-            .filter(|entity| self.direct_possessor(*entity) == Some(holder))
-            .filter(|entity| {
-                !self
-                    .removed_entities
-                    .contains(&PlanningEntityRef::Authoritative(*entity))
-            })
-            .collect::<Vec<_>>();
-        entities.sort();
-        entities.dedup();
-        entities
-    }
-
-    fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-        self.adjacent_places_with_travel_ticks(place)
-            .into_iter()
-            .map(|(adjacent, _)| adjacent)
-            .collect()
-    }
-
-    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
-        self.known_recipes(actor).contains(&recipe)
-    }
-
-    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
-        self.snapshot
-            .entities
-            .get(&holder)
-            .and_then(|snapshot| snapshot.unique_item_counts.get(&kind).copied())
-            .unwrap_or(0)
-    }
-
-    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-        self.commodity_quantity_ref(PlanningEntityRef::Authoritative(holder), kind)
-    }
-
-    fn controlled_commodity_quantity_at_place(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Quantity {
-        self.local_controlled_lot_refs_for(
-            PlanningEntityRef::Authoritative(agent),
-            place,
-            commodity,
-        )
-        .into_iter()
-        .fold(Quantity(0), |total, entity| {
-            let quantity = self.commodity_quantity_ref(entity, commodity);
-            Quantity(
-                total
-                    .0
-                    .checked_add(quantity.0)
-                    .expect("local controlled commodity quantity overflowed"),
-            )
-        })
-    }
-
-    fn local_controlled_lots_for(
-        &self,
-        agent: EntityId,
-        place: EntityId,
-        commodity: CommodityKind,
-    ) -> Vec<EntityId> {
-        self.local_controlled_lot_refs_for(
-            PlanningEntityRef::Authoritative(agent),
-            place,
-            commodity,
-        )
-        .into_iter()
-        .filter_map(|entity| match entity {
-            PlanningEntityRef::Authoritative(entity) => Some(entity),
-            PlanningEntityRef::Hypothetical(_) => None,
-        })
-        .collect()
-    }
-
-    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-        self.item_lot_commodity_ref(PlanningEntityRef::Authoritative(entity))
-    }
-
-    fn item_lot_consumable_profile(
-        &self,
-        entity: EntityId,
-    ) -> Option<worldwake_core::CommodityConsumableProfile> {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .and_then(|snapshot| snapshot.item_lot_consumable_profile)
-    }
-
-    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-        self.direct_container_ref(PlanningEntityRef::Authoritative(entity))
-            .and_then(|entity| match entity {
-                PlanningEntityRef::Authoritative(entity) => Some(entity),
-                PlanningEntityRef::Hypothetical(_) => None,
-            })
-    }
-
-    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-        self.direct_possessor_ref(PlanningEntityRef::Authoritative(entity))
-            .and_then(|entity| match entity {
-                PlanningEntityRef::Authoritative(entity) => Some(entity),
-                PlanningEntityRef::Hypothetical(_) => None,
-            })
-    }
-
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .and_then(|snapshot| snapshot.owner)
-    }
-
-    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .and_then(|snapshot| snapshot.workstation_tag)
-    }
-
-    fn stock_storage_policy(
-        &self,
-        facility: EntityId,
-    ) -> Option<worldwake_core::StockStoragePolicy> {
-        self.stock_storage_policy_snapshot(facility)
-    }
-
-    fn has_contention_policy(&self, entity: EntityId) -> bool {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .and_then(|snapshot| snapshot.facility_queue.as_ref())
-            .is_some()
-    }
-
-    fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
-        (actor == self.snapshot.actor()).then(|| self.actor_facility_queue_position(facility))?
-    }
-
-    fn facility_grant(&self, facility: EntityId) -> Option<&worldwake_core::ContentionGrant> {
-        self.actor_facility_grant(facility)
-    }
-
-    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
-        self.snapshot
-            .places
-            .get(&place)
-            .is_some_and(|snapshot| snapshot.tags.contains(&tag))
-    }
-
-    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-        let mut source = self
-            .snapshot
-            .entities
-            .get(&entity)
-            .and_then(|snapshot| snapshot.resource_source.clone())?;
-        if let Some(quantity) = self.resource_quantity_overrides.get(&entity).copied() {
-            source.available_quantity = quantity;
-        }
-        Some(source)
-    }
-
-    fn has_production_job(&self, entity: EntityId) -> bool {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .is_some_and(|snapshot| snapshot.action_flags.has_production_job)
-    }
-
-    fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-        actor == self.snapshot.actor()
-            && self
-                .snapshot
-                .entities
-                .get(&entity)
-                .is_some_and(|snapshot| snapshot.action_flags.controllable_by_actor)
-    }
-
-    fn has_control(&self, entity: EntityId) -> bool {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .is_some_and(|snapshot| snapshot.action_flags.has_control)
-    }
-
-    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
-        self.carry_capacity_ref(PlanningEntityRef::Authoritative(entity))
-    }
-
-    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
-        self.load_of_entity_ref(PlanningEntityRef::Authoritative(entity))
-    }
-
-    fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
-        self.reservation_shadows
-            .get(&entity)
-            .into_iter()
-            .flatten()
-            .any(|shadow| shadow.overlaps(&range))
-            || self
-                .snapshot
-                .entities
-                .get(&entity)
-                .into_iter()
-                .flat_map(|snapshot| snapshot.reservation_ranges.iter())
-                .any(|existing| existing.overlaps(&range))
-    }
-
-    fn reservation_ranges(&self, entity: EntityId) -> Vec<TickRange> {
-        let mut ranges = self
-            .snapshot
-            .entities
-            .get(&entity)
-            .map(|snapshot| snapshot.reservation_ranges.clone())
-            .unwrap_or_default();
-        if let Some(shadows) = self.reservation_shadows.get(&entity) {
-            ranges.extend(shadows.iter().copied());
-        }
-        ranges
-    }
-
-    fn is_dead(&self, entity: EntityId) -> bool {
-        self.removed_entities
-            .contains(&PlanningEntityRef::Authoritative(entity))
-            || self
-                .snapshot
-                .entities
-                .get(&entity)
-                .is_some_and(|snapshot| snapshot.lifecycle.dead)
-    }
-
-    fn is_incapacitated(&self, entity: EntityId) -> bool {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .is_some_and(|snapshot| snapshot.lifecycle.incapacitated)
-    }
-
-    fn has_wounds(&self, entity: EntityId) -> bool {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .is_some_and(|snapshot| !snapshot.wounds.is_empty())
-    }
-
-    fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-        self.needs_overrides.get(&agent).copied().or_else(|| {
-            self.snapshot
-                .entities
-                .get(&agent)
-                .and_then(|snapshot| snapshot.homeostatic_needs)
-        })
-    }
-
-    fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.drive_thresholds)
-    }
-
     fn belief_confidence_policy(&self, agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
         assert_eq!(
             agent,
@@ -1514,47 +1428,13 @@ impl RuntimeBeliefView for PlanningState<'_> {
         self.snapshot.actor_confidence_policy
     }
 
-    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.metabolism_profile)
-    }
-
-    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.trade_disposition_profile.clone())
-    }
-
-    fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.patrol_profile.clone())
-    }
-
-    fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.patrol_route.clone())
-    }
-
-    fn expectation_store(
-        &self,
-        agent: EntityId,
-    ) -> Option<worldwake_core::ExpectationStore> {
+    fn expectation_store(&self, agent: EntityId) -> Option<worldwake_core::ExpectationStore> {
         (agent == self.snapshot.actor())
             .then_some(self.snapshot.actor_expectation_store.clone())
             .flatten()
     }
 
-    fn last_seen_memory(
-        &self,
-        agent: EntityId,
-    ) -> Option<worldwake_core::LastSeenMemory> {
+    fn last_seen_memory(&self, agent: EntityId) -> Option<worldwake_core::LastSeenMemory> {
         (agent == self.snapshot.actor())
             .then_some(self.snapshot.actor_last_seen_memory.clone())
             .flatten()
@@ -1573,24 +1453,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.theft_disposition_profile.clone())
-    }
-
-    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.justice_disposition_profile.clone())
-    }
-
-    fn violation_disposition_profile(
-        &self,
-        agent: EntityId,
-    ) -> Option<ViolationDispositionProfile> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.violation_disposition_profile.clone())
+            .and_then(|snapshot| snapshot.social.theft_disposition_profile.clone())
     }
 
     fn intention_disposition_profile(
@@ -1598,10 +1461,6 @@ impl RuntimeBeliefView for PlanningState<'_> {
         _agent: EntityId,
     ) -> Option<worldwake_core::IntentionDispositionProfile> {
         None
-    }
-
-    fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-        false
     }
 
     fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
@@ -1743,30 +1602,197 @@ impl RuntimeBeliefView for PlanningState<'_> {
             None => RecipientKnowledgeStatus::UnknownToSpeaker,
         })
     }
+}
 
+impl PoliticalBeliefView for PlanningState<'_> {
+    fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot.actor_known_institutional_beliefs.clone()
+    }
+
+    fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        self.snapshot
+            .actor_known_institutional_beliefs
+            .iter()
+            .filter_map(|belief| match belief.claim {
+                worldwake_core::InstitutionalClaim::FactionMembership {
+                    faction,
+                    member,
+                    active: true,
+                    ..
+                } if member == entity => Some(faction),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+        if entity == self.snapshot.actor() {
+            return self.snapshot.actor_bandit_factions.clone();
+        }
+
+        self.factions_of(entity)
+            .into_iter()
+            .filter(|faction| self.snapshot.actor_bandit_factions.contains(faction))
+            .collect()
+    }
+
+    fn locally_observed_bandit_camp_faction_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+    ) -> Option<EntityId> {
+        (agent == self.snapshot.actor() && self.effective_place(agent) == Some(place))
+            .then(|| self.bandit_camp_faction_at(place))
+            .flatten()
+    }
+
+    fn justice_disposition_profile(&self, agent: EntityId) -> Option<JusticeDispositionProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.political.justice_disposition_profile.clone())
+    }
+
+    fn violation_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<ViolationDispositionProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.political.violation_disposition_profile.clone())
+    }
+
+    fn active_violation_records(&self, agent: EntityId) -> Vec<worldwake_core::RecordedViolation> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot.actor_active_violation_records.clone()
+    }
+
+    fn record_data(&self, record: EntityId) -> Option<RecordData> {
+        PlanningState::record_data(self, record)
+    }
+
+    fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+        self.snapshot.office_data(office)
+    }
+
+    fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        PlanningState::believed_office_holder(self, office)
+    }
+
+    fn believed_force_controller(
+        &self,
+        office: EntityId,
+    ) -> InstitutionalBeliefRead<(Option<EntityId>, bool)> {
+        PlanningState::believed_force_controller(self, office)
+    }
+
+    fn believed_membership(
+        &self,
+        faction: EntityId,
+        member: EntityId,
+    ) -> InstitutionalBeliefRead<bool> {
+        self.snapshot
+            .actor_belief_store
+            .believed_membership(faction, member)
+    }
+
+    fn believed_faction_rally_point(
+        &self,
+        faction: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        PlanningState::believed_faction_rally_point(self, faction)
+    }
+
+    fn offices_contested_by(&self, claimant: EntityId) -> Vec<EntityId> {
+        if claimant != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot.actor_contested_offices.clone()
+    }
+
+    fn loyalty_to(&self, subject: EntityId, target: EntityId) -> Option<Permille> {
+        (subject == self.snapshot.actor())
+            .then(|| self.snapshot.actor_loyalties.get(&target).copied())
+            .flatten()
+    }
+
+    fn believed_support_declaration(
+        &self,
+        office: EntityId,
+        supporter: EntityId,
+    ) -> InstitutionalBeliefRead<Option<EntityId>> {
+        PlanningState::believed_support_declaration(self, office, supporter)
+    }
+
+    fn believed_support_declarations_for_office(
+        &self,
+        office: EntityId,
+    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
+        PlanningState::believed_support_declarations_for_office(self, office)
+    }
+
+    fn institutional_belief_claims(
+        &self,
+        agent: EntityId,
+        key: worldwake_core::InstitutionalBeliefKey,
+    ) -> Vec<BelievedInstitutionalClaim> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot
+            .actor_belief_store
+            .get_institutional_beliefs(&key)
+            .map_or_else(Vec::new, ToOwned::to_owned)
+    }
+}
+
+impl RuntimeBeliefView for PlanningState<'_> {}
+
+impl CombatBeliefView for PlanningState<'_> {
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.combat_profile)
+            .and_then(|snapshot| snapshot.combat.combat_profile)
     }
 
     fn courage(&self, agent: EntityId) -> Option<Permille> {
         self.snapshot
             .entities
             .get(&agent)
-            .and_then(|snapshot| snapshot.courage)
+            .and_then(|snapshot| snapshot.combat.courage)
+    }
+
+    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+        (agent == self.snapshot.actor())
+            .then_some(self.snapshot.actor_consultation_speed_factor)
+            .flatten()
     }
 
     fn wounds(&self, agent: EntityId) -> Vec<Wound> {
         self.snapshot
             .entities
             .get(&agent)
-            .map(|snapshot| snapshot.wounds.clone())
+            .map(|snapshot| snapshot.combat.wounds.clone())
             .unwrap_or_default()
     }
 
-    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
+    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
         let agent_place = self.effective_place(agent);
         let agent_transit = self.in_transit_state(agent);
         self.snapshot
@@ -1774,7 +1800,8 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .get(&agent)
             .map(|snapshot| {
                 snapshot
-                    .visible_hostiles
+                    .combat
+                    .hostile_targets
                     .iter()
                     .copied()
                     .filter(|entity| self.is_alive(*entity) && !self.is_dead(*entity))
@@ -1793,7 +1820,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .unwrap_or_default()
     }
 
-    fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+    fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
         let agent_place = self.effective_place(agent);
         let agent_transit = self.in_transit_state(agent);
         self.snapshot
@@ -1801,7 +1828,8 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .get(&agent)
             .map(|snapshot| {
                 snapshot
-                    .hostile_targets
+                    .combat
+                    .visible_hostiles
                     .iter()
                     .copied()
                     .filter(|entity| self.is_alive(*entity) && !self.is_dead(*entity))
@@ -1828,6 +1856,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
             .get(&agent)
             .map(|snapshot| {
                 snapshot
+                    .combat
                     .current_attackers
                     .iter()
                     .copied()
@@ -1845,6 +1874,71 @@ impl RuntimeBeliefView for PlanningState<'_> {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.combat.patrol_profile.clone())
+    }
+
+    fn has_wounds(&self, entity: EntityId) -> bool {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .is_some_and(|snapshot| !snapshot.combat.wounds.is_empty())
+    }
+}
+
+impl EconomicBeliefView for PlanningState<'_> {
+    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.economic.trade_disposition_profile.clone())
+    }
+
+    fn controlled_commodity_quantity_at_place(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Quantity {
+        self.local_controlled_lot_refs_for(
+            PlanningEntityRef::Authoritative(agent),
+            place,
+            commodity,
+        )
+        .into_iter()
+        .fold(Quantity(0), |total, entity| {
+            let quantity = self.commodity_quantity_ref(entity, commodity);
+            Quantity(
+                total
+                    .0
+                    .checked_add(quantity.0)
+                    .expect("local controlled commodity quantity overflowed"),
+            )
+        })
+    }
+
+    fn local_controlled_lots_for(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        commodity: CommodityKind,
+    ) -> Vec<EntityId> {
+        self.local_controlled_lot_refs_for(
+            PlanningEntityRef::Authoritative(agent),
+            place,
+            commodity,
+        )
+        .into_iter()
+        .filter_map(|entity| match entity {
+            PlanningEntityRef::Authoritative(entity) => Some(entity),
+            PlanningEntityRef::Hypothetical(_) => None,
+        })
+        .collect()
     }
 
     fn listed_sale_lots_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
@@ -1877,7 +1971,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
                 self.snapshot
                     .entities
                     .get(&lot)
-                    .and_then(|snapshot| snapshot.seller_for_sale_lot)
+                    .and_then(|snapshot| snapshot.economic.seller_for_sale_lot)
             })
     }
 
@@ -1889,16 +1983,140 @@ impl RuntimeBeliefView for PlanningState<'_> {
                 self.snapshot
                     .entities
                     .get(&lot)
-                    .is_some_and(|snapshot| snapshot.has_sale_listing)
+                    .is_some_and(|snapshot| snapshot.economic.has_sale_listing)
             })
+    }
+
+    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .map(|snapshot| snapshot.economic.demand_memory.clone())
+            .unwrap_or_default()
+    }
+
+    fn merchandise_profile(&self, agent: EntityId) -> Option<worldwake_core::MerchandiseProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.economic.merchandise_profile.clone())
+    }
+}
+
+impl InventoryBeliefView for PlanningState<'_> {
+    fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+        let mut entities = self
+            .snapshot
+            .entities
+            .keys()
+            .copied()
+            .filter(|entity| self.direct_possessor(*entity) == Some(holder))
+            .filter(|entity| {
+                !self
+                    .removed_entities
+                    .contains(&PlanningEntityRef::Authoritative(*entity))
+            })
+            .collect::<Vec<_>>();
+        entities.sort();
+        entities.dedup();
+        entities
+    }
+
+    fn knows_recipe(&self, actor: EntityId, recipe: RecipeId) -> bool {
+        self.known_recipes(actor).contains(&recipe)
+    }
+
+    fn unique_item_count(&self, holder: EntityId, kind: UniqueItemKind) -> u32 {
+        self.snapshot
+            .entities
+            .get(&holder)
+            .and_then(|snapshot| snapshot.inventory.unique_item_counts.get(&kind).copied())
+            .unwrap_or(0)
+    }
+
+    fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+        self.commodity_quantity_ref(PlanningEntityRef::Authoritative(holder), kind)
+    }
+
+    fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+        self.item_lot_commodity_ref(PlanningEntityRef::Authoritative(entity))
+    }
+
+    fn item_lot_consumable_profile(
+        &self,
+        entity: EntityId,
+    ) -> Option<worldwake_core::CommodityConsumableProfile> {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.inventory.item_lot_consumable_profile)
+    }
+
+    fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+        self.direct_container_ref(PlanningEntityRef::Authoritative(entity))
+            .and_then(|entity| match entity {
+                PlanningEntityRef::Authoritative(entity) => Some(entity),
+                PlanningEntityRef::Hypothetical(_) => None,
+            })
+    }
+
+    fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+        self.direct_possessor_ref(PlanningEntityRef::Authoritative(entity))
+            .and_then(|entity| match entity {
+                PlanningEntityRef::Authoritative(entity) => Some(entity),
+                PlanningEntityRef::Hypothetical(_) => None,
+            })
+    }
+
+    fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+        self.carry_capacity_ref(PlanningEntityRef::Authoritative(entity))
+    }
+
+    fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+        self.load_of_entity_ref(PlanningEntityRef::Authoritative(entity))
     }
 
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
         self.snapshot
             .entities
             .get(&agent)
-            .map(|snapshot| snapshot.known_recipes.clone())
+            .map(|snapshot| snapshot.inventory.known_recipes.clone())
             .unwrap_or_default()
+    }
+}
+
+impl FacilityBeliefView for PlanningState<'_> {
+    fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.facility.workstation_tag)
+    }
+
+    fn stock_storage_policy(
+        &self,
+        facility: EntityId,
+    ) -> Option<worldwake_core::StockStoragePolicy> {
+        self.stock_storage_policy_snapshot(facility)
+    }
+
+    fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+        let mut source = self
+            .snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.facility.resource_source.clone())?;
+        if let Some(quantity) = self.resource_quantity_overrides.get(&entity).copied() {
+            source.available_quantity = quantity;
+        }
+        Some(source)
+    }
+
+    fn has_production_job(&self, entity: EntityId) -> bool {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .is_some_and(|snapshot| snapshot.facility.has_production_job)
     }
 
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId> {
@@ -1917,106 +2135,7 @@ impl RuntimeBeliefView for PlanningState<'_> {
             })
             .collect()
     }
-
-    fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .map(|snapshot| snapshot.demand_memory.clone())
-            .unwrap_or_default()
-    }
-
-    fn record_data(&self, record: EntityId) -> Option<RecordData> {
-        PlanningState::record_data(self, record)
-    }
-
-    fn office_data(&self, office: EntityId) -> Option<OfficeData> {
-        self.snapshot.office_data(office)
-    }
-
-    fn believed_office_holder(
-        &self,
-        office: EntityId,
-    ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        PlanningState::believed_office_holder(self, office)
-    }
-
-    fn believed_faction_rally_point(
-        &self,
-        faction: EntityId,
-    ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        PlanningState::believed_faction_rally_point(self, faction)
-    }
-
-    fn believed_support_declaration(
-        &self,
-        office: EntityId,
-        supporter: EntityId,
-    ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        PlanningState::believed_support_declaration(self, office, supporter)
-    }
-
-    fn believed_support_declarations_for_office(
-        &self,
-        office: EntityId,
-    ) -> Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)> {
-        PlanningState::believed_support_declarations_for_office(self, office)
-    }
-
-    fn merchandise_profile(&self, agent: EntityId) -> Option<worldwake_core::MerchandiseProfile> {
-        self.snapshot
-            .entities
-            .get(&agent)
-            .and_then(|snapshot| snapshot.merchandise_profile.clone())
-    }
-
-    fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
-        (agent == self.snapshot.actor())
-            .then_some(self.snapshot.actor_consultation_speed_factor)
-            .flatten()
-    }
-
-    fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<std::num::NonZeroU32> {
-        self.snapshot.bandit_camp_establishment_ticks(faction)
-    }
-
-    fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
-        self.entities_at(place)
-            .into_iter()
-            .filter(|entity| self.is_dead(*entity))
-            .collect()
-    }
-
-    fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge> {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .and_then(|snapshot| snapshot.in_transit_state.clone())
-    }
-
-    fn adjacent_places_with_travel_ticks(
-        &self,
-        place: EntityId,
-    ) -> Vec<(EntityId, std::num::NonZeroU32)> {
-        self.snapshot
-            .places
-            .get(&place)
-            .map(|snapshot| snapshot.adjacent_places_with_travel_ticks.clone())
-            .unwrap_or_default()
-    }
-
-    fn estimate_duration(
-        &self,
-        actor: EntityId,
-        duration: &DurationExpr,
-        targets: &[EntityId],
-        payload: &ActionPayload,
-    ) -> Option<ActionDuration> {
-        estimate_duration_from_beliefs(self, actor, duration, targets, payload)
-    }
 }
-
-worldwake_sim::impl_goal_belief_view!(PlanningState<'_>);
 
 #[cfg(test)]
 mod tests {
@@ -2041,9 +2160,11 @@ mod tests {
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
-        Constraint, DeterministicRng, DurationExpr, GoalBeliefView, Interruptibility, Precondition,
-        ReservationReq, RuntimeBeliefView, TargetSpec, estimate_duration_from_beliefs,
-        get_affordances,
+        CombatBeliefView, Constraint, ControlBeliefView, DeterministicRng, DurationExpr,
+        EconomicBeliefView, EntityBeliefView, GoalBeliefView, Interruptibility,
+        PoliticalBeliefView, Precondition, ProfileBeliefView, ReservationReq, RuntimeBeliefView,
+        SocialBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
+        estimate_duration_from_beliefs, get_affordances,
     };
     use worldwake_systems::register_office_actions;
 
@@ -2083,9 +2204,12 @@ mod tests {
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
+        bandit_factions_by_member: BTreeMap<EntityId, Vec<EntityId>>,
         record_data: BTreeMap<EntityId, RecordData>,
         consultation_speed_factors: BTreeMap<EntityId, Permille>,
         combat_profiles: BTreeMap<EntityId, CombatProfile>,
+        bandit_flee_thresholds: BTreeMap<EntityId, Permille>,
+        bandit_establishment_ticks: BTreeMap<EntityId, NonZeroU32>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, ContentionGrant>,
         courages: BTreeMap<EntityId, Permille>,
@@ -2134,9 +2258,12 @@ mod tests {
                 wounds: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
                 attackers: BTreeMap::new(),
+                bandit_factions_by_member: BTreeMap::new(),
                 record_data: BTreeMap::new(),
                 consultation_speed_factors: BTreeMap::new(),
                 combat_profiles: BTreeMap::new(),
+                bandit_flee_thresholds: BTreeMap::new(),
+                bandit_establishment_ticks: BTreeMap::new(),
                 facility_queue_positions: BTreeMap::new(),
                 facility_grants: BTreeMap::new(),
                 courages: BTreeMap::new(),
@@ -2148,11 +2275,23 @@ mod tests {
         }
     }
 
-    impl RuntimeBeliefView for StubBeliefView {
-        fn current_tick(&self) -> Tick {
-            self.current_tick
+    impl ControlBeliefView for StubBeliefView {
+        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+            None
         }
 
+        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
+            actor == entity
+                || <Self as worldwake_sim::InventoryBeliefView>::direct_possessor(self, entity)
+                    == Some(actor)
+        }
+
+        fn has_control(&self, entity: EntityId) -> bool {
+            self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+    }
+
+    impl EntityBeliefView for StubBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             self.alive.get(&entity).copied().unwrap_or(false)
         }
@@ -2161,6 +2300,45 @@ mod tests {
             self.kinds.get(&entity).copied()
         }
 
+        fn bandit_flee_wound_threshold(&self, faction: EntityId) -> Option<Permille> {
+            self.bandit_flee_thresholds.get(&faction).copied()
+        }
+
+        fn bandit_camp_establishment_ticks(&self, faction: EntityId) -> Option<NonZeroU32> {
+            self.bandit_establishment_ticks.get(&faction).copied()
+        }
+
+        fn is_dead(&self, entity: EntityId) -> bool {
+            !EntityBeliefView::is_alive(self, entity)
+        }
+
+        fn is_incapacitated(&self, _entity: EntityId) -> bool {
+            false
+        }
+
+        fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            SpatialBeliefView::entities_at(self, place)
+                .into_iter()
+                .filter(|entity| EntityBeliefView::is_dead(self, *entity))
+                .collect()
+        }
+    }
+
+    impl ProfileBeliefView for StubBeliefView {
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.needs.get(&agent).copied()
+        }
+
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.thresholds.get(&agent).copied()
+        }
+
+        fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+            self.metabolism_profiles.get(&agent).copied()
+        }
+    }
+
+    impl SpatialBeliefView for StubBeliefView {
         fn effective_place(&self, entity: EntityId) -> Option<EntityId> {
             self.effective_places.get(&entity).copied()
         }
@@ -2173,99 +2351,36 @@ mod tests {
             self.entities_at.get(&place).cloned().unwrap_or_default()
         }
 
-        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
-            self.beliefs.get(&agent).cloned().unwrap_or_default()
-        }
-
-        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
-            self.direct_possessions
-                .get(&holder)
-                .cloned()
-                .unwrap_or_default()
-        }
-
         fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
-            self.adjacent_places_with_travel_ticks(place)
+            SpatialBeliefView::adjacent_places_with_travel_ticks(self, place)
                 .into_iter()
                 .map(|(adjacent, _)| adjacent)
                 .collect()
         }
 
-        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+        fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+            self.patrol_routes.get(&agent).cloned()
+        }
+
+        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
             false
         }
 
-        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
-            0
-        }
-
-        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
-            self.commodity_quantities
-                .get(&(holder, kind))
-                .copied()
-                .unwrap_or(Quantity(0))
-        }
-
-        fn controlled_commodity_quantity_at_place(
-            &self,
-            actor: EntityId,
-            place: EntityId,
-            commodity: CommodityKind,
-        ) -> Quantity {
-            self.local_controlled_lots_for(actor, place, commodity)
-                .into_iter()
-                .fold(Quantity(0), |total, entity| {
-                    let quantity = self
-                        .commodity_quantities
-                        .get(&(entity, commodity))
-                        .copied()
-                        .unwrap_or(Quantity(0));
-                    Quantity(total.0 + quantity.0)
-                })
-        }
-
-        fn local_controlled_lots_for(
-            &self,
-            actor: EntityId,
-            place: EntityId,
-            commodity: CommodityKind,
-        ) -> Vec<EntityId> {
-            let mut entities = self
-                .entities_at(place)
-                .into_iter()
-                .filter(|entity| self.item_lot_commodity(*entity) == Some(commodity))
-                .filter(|entity| self.can_control(actor, *entity))
-                .collect::<Vec<_>>();
-            entities.sort();
-            entities.dedup();
-            entities
-        }
-
-        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
-            self.item_lot_commodities.get(&entity).copied()
-        }
-
-        fn item_lot_consumable_profile(
-            &self,
-            entity: EntityId,
-        ) -> Option<CommodityConsumableProfile> {
-            self.consumable_profiles.get(&entity).copied()
-        }
-
-        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
-            self.direct_containers.get(&entity).copied()
-        }
-
-        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
-            self.direct_possessors.get(&entity).copied()
-        }
-
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
+        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
             None
         }
 
-        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
-            None
+        fn adjacent_places_with_travel_ticks(
+            &self,
+            place: EntityId,
+        ) -> Vec<(EntityId, NonZeroU32)> {
+            self.adjacent.get(&place).cloned().unwrap_or_default()
+        }
+    }
+
+    impl TemporalBeliefView for StubBeliefView {
+        fn current_tick(&self) -> Tick {
+            self.current_tick
         }
 
         fn facility_queue_position(&self, facility: EntityId, actor: EntityId) -> Option<u32> {
@@ -2276,30 +2391,6 @@ mod tests {
 
         fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
             self.facility_grants.get(&facility)
-        }
-
-        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-            self.resource_sources.get(&entity).cloned()
-        }
-
-        fn has_production_job(&self, _entity: EntityId) -> bool {
-            false
-        }
-
-        fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
-            actor == entity || self.direct_possessor(entity) == Some(actor)
-        }
-
-        fn has_control(&self, entity: EntityId) -> bool {
-            self.kinds.get(&entity) == Some(&EntityKind::Agent)
-        }
-
-        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
-            self.carry_capacities.get(&entity).copied()
-        }
-
-        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
-            self.entity_loads.get(&entity).copied()
         }
 
         fn reservation_conflicts(&self, entity: EntityId, range: TickRange) -> bool {
@@ -2314,26 +2405,23 @@ mod tests {
             self.reservations.get(&entity).cloned().unwrap_or_default()
         }
 
-        fn is_dead(&self, entity: EntityId) -> bool {
-            !self.is_alive(entity)
+        fn estimate_duration(
+            &self,
+            actor: EntityId,
+            _duration: &DurationExpr,
+            targets: &[EntityId],
+            _payload: &ActionPayload,
+        ) -> Option<ActionDuration> {
+            let def_id = ActionDefId(targets.first().map_or(0, |target| target.slot));
+            self.durations.get(&(actor, def_id)).copied()
         }
+    }
 
-        fn is_incapacitated(&self, _entity: EntityId) -> bool {
-            false
-        }
+    impl RuntimeBeliefView for StubBeliefView {}
 
-        fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds
-                .get(&entity)
-                .is_some_and(|wounds| !wounds.is_empty())
-        }
-
-        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
-            self.needs.get(&agent).copied()
-        }
-
-        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
-            self.thresholds.get(&agent).copied()
+    impl SocialBeliefView for StubBeliefView {
+        fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
+            self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
         fn belief_confidence_policy(
@@ -2341,22 +2429,6 @@ mod tests {
             _agent: EntityId,
         ) -> worldwake_core::BeliefConfidencePolicy {
             worldwake_core::BeliefConfidencePolicy::default()
-        }
-
-        fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
-            self.metabolism_profiles.get(&agent).copied()
-        }
-
-        fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
-            self.trade_profiles.get(&agent).cloned()
-        }
-
-        fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
-            self.patrol_profiles.get(&agent).cloned()
-        }
-
-        fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
-            self.patrol_routes.get(&agent).cloned()
         }
 
         fn epistemic_disposition_profile(
@@ -2370,23 +2442,12 @@ mod tests {
             self.theft_profiles.get(&agent).cloned()
         }
 
-        fn justice_disposition_profile(
-            &self,
-            agent: EntityId,
-        ) -> Option<JusticeDispositionProfile> {
-            self.justice_profiles.get(&agent).cloned()
-        }
-
         fn intention_disposition_profile(
             &self,
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
         }
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
-        }
-
         fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
             self.tell_profiles.get(&agent).copied()
         }
@@ -2394,17 +2455,14 @@ mod tests {
         fn told_belief_memories(&self, agent: EntityId) -> Vec<(TellMemoryKey, ToldBeliefMemory)> {
             self.told_beliefs.get(&agent).cloned().unwrap_or_default()
         }
+    }
 
-        fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
-            self.combat_profiles.get(&agent).copied()
-        }
-
-        fn courage(&self, agent: EntityId) -> Option<Permille> {
-            self.courages.get(&agent).copied()
-        }
-
-        fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
-            self.consultation_speed_factors.get(&agent).copied()
+    impl PoliticalBeliefView for StubBeliefView {
+        fn justice_disposition_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<JusticeDispositionProfile> {
+            self.justice_profiles.get(&agent).cloned()
         }
 
         fn violation_disposition_profile(
@@ -2457,6 +2515,45 @@ mod tests {
                 .collect()
         }
 
+        fn bandit_factions_of(&self, entity: EntityId) -> Vec<EntityId> {
+            self.bandit_factions_by_member
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn record_data(&self, record: EntityId) -> Option<RecordData> {
+            self.record_data.get(&record).cloned()
+        }
+
+        fn office_data(&self, office: EntityId) -> Option<OfficeData> {
+            self.office_data.get(&office).cloned()
+        }
+    }
+
+    impl CombatBeliefView for StubBeliefView {
+        fn has_wounds(&self, entity: EntityId) -> bool {
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
+        }
+
+        fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+            self.patrol_profiles.get(&agent).cloned()
+        }
+
+        fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
+            self.combat_profiles.get(&agent).copied()
+        }
+
+        fn courage(&self, agent: EntityId) -> Option<Permille> {
+            self.courages.get(&agent).copied()
+        }
+
+        fn consultation_speed_factor(&self, agent: EntityId) -> Option<Permille> {
+            self.consultation_speed_factors.get(&agent).copied()
+        }
+
         fn wounds(&self, agent: EntityId) -> Vec<Wound> {
             self.wounds.get(&agent).cloned().unwrap_or_default()
         }
@@ -2467,6 +2564,49 @@ mod tests {
 
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
+        }
+    }
+
+    impl EconomicBeliefView for StubBeliefView {
+        fn controlled_commodity_quantity_at_place(
+            &self,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Quantity {
+            EconomicBeliefView::local_controlled_lots_for(self, actor, place, commodity)
+                .into_iter()
+                .fold(Quantity(0), |total, entity| {
+                    let quantity = self
+                        .commodity_quantities
+                        .get(&(entity, commodity))
+                        .copied()
+                        .unwrap_or(Quantity(0));
+                    Quantity(total.0 + quantity.0)
+                })
+        }
+
+        fn local_controlled_lots_for(
+            &self,
+            actor: EntityId,
+            place: EntityId,
+            commodity: CommodityKind,
+        ) -> Vec<EntityId> {
+            let mut entities = SpatialBeliefView::entities_at(self, place)
+                .into_iter()
+                .filter(|entity| {
+                    <Self as worldwake_sim::InventoryBeliefView>::item_lot_commodity(self, *entity)
+                        == Some(commodity)
+                })
+                .filter(|entity| ControlBeliefView::can_control(self, actor, *entity))
+                .collect::<Vec<_>>();
+            entities.sort();
+            entities.dedup();
+            entities
+        }
+
+        fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+            self.trade_profiles.get(&agent).cloned()
         }
 
         fn listed_sale_lots_at(
@@ -2481,8 +2621,81 @@ mod tests {
             None
         }
 
+        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
+            self.demand_memory.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
+            self.merchandise_profiles.get(&agent).cloned()
+        }
+    }
+
+    impl worldwake_sim::InventoryBeliefView for StubBeliefView {
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
+            false
+        }
+
+        fn unique_item_count(&self, _holder: EntityId, _kind: UniqueItemKind) -> u32 {
+            0
+        }
+
+        fn commodity_quantity(&self, holder: EntityId, kind: CommodityKind) -> Quantity {
+            self.commodity_quantities
+                .get(&(holder, kind))
+                .copied()
+                .unwrap_or(Quantity(0))
+        }
+
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.item_lot_commodities.get(&entity).copied()
+        }
+
+        fn item_lot_consumable_profile(
+            &self,
+            entity: EntityId,
+        ) -> Option<CommodityConsumableProfile> {
+            self.consumable_profiles.get(&entity).copied()
+        }
+
+        fn direct_container(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_containers.get(&entity).copied()
+        }
+
+        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_possessors.get(&entity).copied()
+        }
+
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
+        }
+
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
+        }
+
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
             Vec::new()
+        }
+    }
+
+    impl worldwake_sim::FacilityBeliefView for StubBeliefView {
+        fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
+            None
+        }
+
+        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+            self.resource_sources.get(&entity).cloned()
+        }
+
+        fn has_production_job(&self, _entity: EntityId) -> bool {
+            false
         }
 
         fn matching_workstations_at(
@@ -2494,7 +2707,7 @@ mod tests {
         }
 
         fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId> {
-            self.entities_at(place)
+            SpatialBeliefView::entities_at(self, place)
                 .into_iter()
                 .filter(|entity| {
                     self.resource_sources
@@ -2502,51 +2715,6 @@ mod tests {
                         .is_some_and(|source| source.commodity == commodity)
                 })
                 .collect()
-        }
-
-        fn demand_memory(&self, agent: EntityId) -> Vec<DemandObservation> {
-            self.demand_memory.get(&agent).cloned().unwrap_or_default()
-        }
-
-        fn record_data(&self, record: EntityId) -> Option<RecordData> {
-            self.record_data.get(&record).cloned()
-        }
-
-        fn office_data(&self, office: EntityId) -> Option<OfficeData> {
-            self.office_data.get(&office).cloned()
-        }
-
-        fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
-            self.merchandise_profiles.get(&agent).cloned()
-        }
-
-        fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
-            self.entities_at(place)
-                .into_iter()
-                .filter(|entity| self.is_dead(*entity))
-                .collect()
-        }
-
-        fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
-            None
-        }
-
-        fn adjacent_places_with_travel_ticks(
-            &self,
-            place: EntityId,
-        ) -> Vec<(EntityId, NonZeroU32)> {
-            self.adjacent.get(&place).cloned().unwrap_or_default()
-        }
-
-        fn estimate_duration(
-            &self,
-            actor: EntityId,
-            _duration: &DurationExpr,
-            targets: &[EntityId],
-            _payload: &ActionPayload,
-        ) -> Option<ActionDuration> {
-            let def_id = ActionDefId(targets.first().map_or(0, |target| target.slot));
-            self.durations.get(&(actor, def_id)).copied()
         }
     }
 
@@ -2769,20 +2937,24 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::effective_place(&state, actor),
+            SpatialBeliefView::effective_place(&state, actor),
             Some(town)
         );
         assert_eq!(
-            RuntimeBeliefView::direct_possessions(&state, actor),
+            worldwake_sim::InventoryBeliefView::direct_possessions(&state, actor),
             vec![bread]
         );
         assert_eq!(
-            RuntimeBeliefView::commodity_quantity(&state, actor, CommodityKind::Bread),
+            worldwake_sim::InventoryBeliefView::commodity_quantity(
+                &state,
+                actor,
+                CommodityKind::Bread,
+            ),
             Quantity(1)
         );
         assert_eq!(
-            RuntimeBeliefView::demand_memory(&state, actor),
-            RuntimeBeliefView::demand_memory(&view, actor)
+            EconomicBeliefView::demand_memory(&state, actor),
+            EconomicBeliefView::demand_memory(&view, actor)
         );
     }
 
@@ -2800,12 +2972,12 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::entity_kind(&state, corpse),
+            EntityBeliefView::entity_kind(&state, corpse),
             Some(EntityKind::Agent)
         );
-        assert!(RuntimeBeliefView::is_dead(&state, corpse));
+        assert!(EntityBeliefView::is_dead(&state, corpse));
         assert_eq!(
-            RuntimeBeliefView::effective_place(&state, corpse),
+            SpatialBeliefView::effective_place(&state, corpse),
             Some(town)
         );
     }
@@ -2912,7 +3084,7 @@ mod tests {
             snapshot
                 .entities
                 .get(&field)
-                .and_then(|entity| entity.facility_queue.as_ref())
+                .and_then(|entity| entity.temporal.facility_queue.as_ref())
                 .and_then(|queue| queue.active_grant.as_ref()),
             Some(&ContentionGrant {
                 actor,
@@ -2932,19 +3104,19 @@ mod tests {
             .move_lot_to_holder(bread, actor, CommodityKind::Bread, Quantity(1));
 
         assert_eq!(
-            RuntimeBeliefView::effective_place(&state, actor),
+            SpatialBeliefView::effective_place(&state, actor),
             Some(field)
         );
         assert_eq!(
-            RuntimeBeliefView::effective_place(&state, bread),
+            SpatialBeliefView::effective_place(&state, bread),
             Some(field)
         );
         assert_eq!(
-            RuntimeBeliefView::entities_at(&state, field),
+            SpatialBeliefView::entities_at(&state, field),
             vec![actor, bread]
         );
         assert_eq!(
-            RuntimeBeliefView::direct_possessions(&state, actor),
+            worldwake_sim::InventoryBeliefView::direct_possessions(&state, actor),
             vec![bread]
         );
     }
@@ -2959,7 +3131,7 @@ mod tests {
             .reserve(bread, range);
 
         assert_eq!(
-            RuntimeBeliefView::resource_source(&state, bread)
+            worldwake_sim::FacilityBeliefView::resource_source(&state, bread)
                 .map(|source| source.available_quantity),
             Some(Quantity(1))
         );
@@ -2976,10 +3148,10 @@ mod tests {
         let removed = base.clone().mark_removed(bread);
 
         assert_eq!(get_affordances(&base, actor, &registry, &handlers).len(), 1);
-        assert!(RuntimeBeliefView::is_dead(&removed, bread));
-        assert!(!RuntimeBeliefView::is_alive(&removed, bread));
+        assert!(EntityBeliefView::is_dead(&removed, bread));
+        assert!(!EntityBeliefView::is_alive(&removed, bread));
         assert!(
-            RuntimeBeliefView::entities_at(&removed, entity(10))
+            SpatialBeliefView::entities_at(&removed, entity(10))
                 .iter()
                 .all(|entity| *entity != bread)
         );
@@ -2991,10 +3163,10 @@ mod tests {
         let (view, actor, _town, _field, _bread) = test_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot).consume_commodity(CommodityKind::Bread);
-        let thresholds = RuntimeBeliefView::drive_thresholds(&state, actor).unwrap();
+        let thresholds = ProfileBeliefView::drive_thresholds(&state, actor).unwrap();
 
         assert!(
-            RuntimeBeliefView::homeostatic_needs(&state, actor)
+            ProfileBeliefView::homeostatic_needs(&state, actor)
                 .unwrap()
                 .hunger
                 < thresholds.hunger.low()
@@ -3006,11 +3178,34 @@ mod tests {
         let (view, actor, _town, _field, _bread) = test_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot).consume_commodity(CommodityKind::Apple);
-        let thresholds = RuntimeBeliefView::drive_thresholds(&state, actor).unwrap();
-        let needs = RuntimeBeliefView::homeostatic_needs(&state, actor).unwrap();
+        let thresholds = ProfileBeliefView::drive_thresholds(&state, actor).unwrap();
+        let needs = ProfileBeliefView::homeostatic_needs(&state, actor).unwrap();
 
         assert!(needs.hunger < thresholds.hunger.low());
         assert!(needs.thirst < thresholds.thirst.low());
+    }
+
+    #[test]
+    fn planning_state_preserves_bandit_policy_queries_from_snapshot() {
+        let (mut view, actor, _town, _field, _bread) = test_view();
+        let faction = entity(77);
+        let flee_threshold = Permille::new(650).unwrap();
+        let establish_ticks = NonZeroU32::new(8).unwrap();
+        view.bandit_factions_by_member.insert(actor, vec![faction]);
+        view.bandit_flee_thresholds.insert(faction, flee_threshold);
+        view.bandit_establishment_ticks
+            .insert(faction, establish_ticks);
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            EntityBeliefView::bandit_flee_wound_threshold(&state, faction),
+            Some(flee_threshold)
+        );
+        assert_eq!(
+            EntityBeliefView::bandit_camp_establishment_ticks(&state, faction),
+            Some(establish_ticks)
+        );
     }
 
     #[test]
@@ -3050,11 +3245,11 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::known_entity_beliefs(&state, actor),
+            SocialBeliefView::known_entity_beliefs(&state, actor),
             view.beliefs.get(&actor).cloned().unwrap()
         );
         assert_eq!(
-            RuntimeBeliefView::tell_profile(&state, actor),
+            SocialBeliefView::tell_profile(&state, actor),
             view.tell_profiles.get(&actor).copied()
         );
     }
@@ -3075,14 +3270,14 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::believed_activity_of(&state, observed),
+            SocialBeliefView::believed_activity_of(&state, observed),
             Some(&BelievedActivity {
                 action_domain: ActionDomain::Production,
                 target: Some(entity(40)),
                 observed_tick: Tick(9),
             })
         );
-        assert_eq!(RuntimeBeliefView::believed_activity_of(&state, actor), None);
+        assert_eq!(SocialBeliefView::believed_activity_of(&state, actor), None);
     }
 
     #[test]
@@ -3120,11 +3315,11 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(&state, town, ActionDomain::Production, None),
+            SocialBeliefView::agents_active_at(&state, town, ActionDomain::Production, None),
             vec![producer, other_target]
         );
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(
+            SocialBeliefView::agents_active_at(
                 &state,
                 town,
                 ActionDomain::Production,
@@ -3133,11 +3328,11 @@ mod tests {
             vec![producer]
         );
         assert_eq!(
-            RuntimeBeliefView::agents_active_at(&state, town, ActionDomain::Trade, Some(source)),
+            SocialBeliefView::agents_active_at(&state, town, ActionDomain::Trade, Some(source)),
             vec![trader]
         );
         assert!(
-            RuntimeBeliefView::agents_active_at(&state, field, ActionDomain::Trade, Some(source))
+            SocialBeliefView::agents_active_at(&state, field, ActionDomain::Trade, Some(source))
                 .is_empty()
         );
     }
@@ -3149,7 +3344,7 @@ mod tests {
             build_planning_snapshot(&view, actor, &BTreeSet::from([bread]), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot);
 
-        assert_eq!(RuntimeBeliefView::tell_profile(&state, actor), None);
+        assert_eq!(SocialBeliefView::tell_profile(&state, actor), None);
     }
 
     #[test]
@@ -3218,9 +3413,9 @@ mod tests {
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
         let state = PlanningState::new(&snapshot);
 
-        assert_eq!(RuntimeBeliefView::current_tick(&state), Tick(8));
+        assert_eq!(TemporalBeliefView::current_tick(&state), Tick(8));
         assert_eq!(
-            RuntimeBeliefView::told_belief_memory(
+            SocialBeliefView::told_belief_memory(
                 &state,
                 actor,
                 listener,
@@ -3230,7 +3425,7 @@ mod tests {
             Some(Tick(6))
         );
         assert_eq!(
-            RuntimeBeliefView::recipient_knowledge_status(
+            SocialBeliefView::recipient_knowledge_status(
                 &state,
                 actor,
                 listener,
@@ -3299,8 +3494,8 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::office_data(&state, office),
-            RuntimeBeliefView::office_data(&view, office)
+            PoliticalBeliefView::office_data(&state, office),
+            PoliticalBeliefView::office_data(&view, office)
         );
 
         let mut defs = ActionDefRegistry::new();
@@ -3335,10 +3530,22 @@ mod tests {
         let base = PlanningState::new(&snapshot);
         let moved = base.clone().move_actor_to(field);
 
-        let base_wounds = &base.snapshot().entities.get(&actor).unwrap().wounds;
-        let moved_wounds = &moved.snapshot().entities.get(&actor).unwrap().wounds;
-        let base_demand = &base.snapshot().entities.get(&actor).unwrap().demand_memory;
-        let moved_demand = &moved.snapshot().entities.get(&actor).unwrap().demand_memory;
+        let base_wounds = &base.snapshot().entities.get(&actor).unwrap().combat.wounds;
+        let moved_wounds = &moved.snapshot().entities.get(&actor).unwrap().combat.wounds;
+        let base_demand = &base
+            .snapshot()
+            .entities
+            .get(&actor)
+            .unwrap()
+            .economic
+            .demand_memory;
+        let moved_demand = &moved
+            .snapshot()
+            .entities
+            .get(&actor)
+            .unwrap()
+            .economic
+            .demand_memory;
 
         assert!(std::ptr::eq(base_wounds.as_ptr(), moved_wounds.as_ptr()));
         assert!(std::ptr::eq(base_demand.as_ptr(), moved_demand.as_ptr()));
@@ -3357,15 +3564,15 @@ mod tests {
             .reserve(bread, range)
             .mark_removed(bread);
 
-        assert_eq!(RuntimeBeliefView::effective_place(&base, actor), Some(town));
+        assert_eq!(SpatialBeliefView::effective_place(&base, actor), Some(town));
         assert_eq!(
-            RuntimeBeliefView::effective_place(&branched, actor),
+            SpatialBeliefView::effective_place(&branched, actor),
             Some(field)
         );
         assert!(!base.reservation_conflicts(bread, range));
         assert!(branched.reservation_conflicts(bread, range));
-        assert!(RuntimeBeliefView::is_alive(&base, bread));
-        assert!(RuntimeBeliefView::is_dead(&branched, bread));
+        assert!(EntityBeliefView::is_alive(&base, bread));
+        assert!(EntityBeliefView::is_dead(&branched, bread));
     }
 
     #[test]
@@ -3403,8 +3610,8 @@ mod tests {
 
         let moved = PlanningState::new(&snapshot).move_actor_to(field);
 
-        assert!(RuntimeBeliefView::visible_hostiles_for(&moved, actor).is_empty());
-        assert!(RuntimeBeliefView::current_attackers_of(&moved, actor).is_empty());
+        assert!(CombatBeliefView::visible_hostiles_for(&moved, actor).is_empty());
+        assert!(CombatBeliefView::current_attackers_of(&moved, actor).is_empty());
     }
 
     #[test]
@@ -3434,9 +3641,9 @@ mod tests {
         );
         let state = PlanningState::new(&snapshot);
 
-        assert!(RuntimeBeliefView::visible_hostiles_for(&state, actor).is_empty());
-        assert!(RuntimeBeliefView::hostile_targets_of(&state, actor).is_empty());
-        assert!(RuntimeBeliefView::current_attackers_of(&state, actor).is_empty());
+        assert!(CombatBeliefView::visible_hostiles_for(&state, actor).is_empty());
+        assert!(CombatBeliefView::hostile_targets_of(&state, actor).is_empty());
+        assert!(CombatBeliefView::current_attackers_of(&state, actor).is_empty());
     }
 
     #[test]
@@ -3527,7 +3734,7 @@ mod tests {
         let moved = local.clone().move_actor_to(field);
 
         assert_eq!(
-            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+            EconomicBeliefView::controlled_commodity_quantity_at_place(
                 &local,
                 actor,
                 town,
@@ -3536,7 +3743,7 @@ mod tests {
             Quantity(3)
         );
         assert_eq!(
-            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+            EconomicBeliefView::controlled_commodity_quantity_at_place(
                 &local,
                 actor,
                 field,
@@ -3545,7 +3752,7 @@ mod tests {
             Quantity(0)
         );
         assert_eq!(
-            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+            EconomicBeliefView::controlled_commodity_quantity_at_place(
                 &moved,
                 actor,
                 town,
@@ -3554,7 +3761,7 @@ mod tests {
             Quantity(0)
         );
         assert_eq!(
-            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+            EconomicBeliefView::controlled_commodity_quantity_at_place(
                 &moved,
                 actor,
                 field,
@@ -3563,7 +3770,12 @@ mod tests {
             Quantity(3)
         );
         assert_eq!(
-            RuntimeBeliefView::local_controlled_lots_for(&local, actor, town, CommodityKind::Bread),
+            EconomicBeliefView::local_controlled_lots_for(
+                &local,
+                actor,
+                town,
+                CommodityKind::Bread
+            ),
             vec![bread]
         );
     }
@@ -3587,7 +3799,7 @@ mod tests {
 
         assert_eq!(moved.effective_place_ref(cargo_ref), Some(field));
         assert_eq!(
-            RuntimeBeliefView::controlled_commodity_quantity_at_place(
+            EconomicBeliefView::controlled_commodity_quantity_at_place(
                 &moved,
                 actor,
                 field,
@@ -3596,7 +3808,7 @@ mod tests {
             Quantity(3)
         );
         assert_eq!(
-            RuntimeBeliefView::local_controlled_lots_for(
+            EconomicBeliefView::local_controlled_lots_for(
                 &moved,
                 actor,
                 field,
@@ -3620,18 +3832,18 @@ mod tests {
             .set_quantity_ref(cargo_ref, CommodityKind::Bread, Quantity(2));
 
         assert_eq!(
-            RuntimeBeliefView::entities_at(&base, town),
+            SpatialBeliefView::entities_at(&base, town),
             vec![actor, bread]
         );
 
         let moved = base.clone().move_actor_to(field);
 
         assert_eq!(
-            RuntimeBeliefView::entities_at(&base, town),
+            SpatialBeliefView::entities_at(&base, town),
             vec![actor, bread]
         );
         assert_eq!(
-            RuntimeBeliefView::entities_at(&moved, field),
+            SpatialBeliefView::entities_at(&moved, field),
             vec![actor, bread]
         );
         assert_eq!(moved.effective_place_ref(cargo_ref), Some(field));
@@ -3710,7 +3922,7 @@ mod tests {
         assert_eq!(removed.direct_possessor_ref(hypothetical), None);
         assert_eq!(removed.effective_place_ref(hypothetical), None);
         assert_eq!(
-            RuntimeBeliefView::direct_possessions(&removed, actor),
+            worldwake_sim::InventoryBeliefView::direct_possessions(&removed, actor),
             vec![bread]
         );
     }
@@ -3730,11 +3942,11 @@ mod tests {
             Some(LoadUnits(1))
         );
         assert_eq!(
-            RuntimeBeliefView::carry_capacity(&state, actor),
+            worldwake_sim::InventoryBeliefView::carry_capacity(&state, actor),
             Some(LoadUnits(10))
         );
         assert_eq!(
-            RuntimeBeliefView::load_of_entity(&state, bread),
+            worldwake_sim::InventoryBeliefView::load_of_entity(&state, bread),
             Some(LoadUnits(1))
         );
     }
@@ -3878,16 +4090,16 @@ mod tests {
 
         // Agent with courage returns Some
         assert_eq!(
-            RuntimeBeliefView::courage(&state, actor),
+            CombatBeliefView::courage(&state, actor),
             Some(courage_value)
         );
 
         // Entity in snapshot without UtilityProfile (bread is an ItemLot) returns None
-        assert_eq!(RuntimeBeliefView::courage(&state, bread), None);
+        assert_eq!(CombatBeliefView::courage(&state, bread), None);
 
         // Entity not in snapshot returns None
         let unknown = entity(999);
-        assert_eq!(RuntimeBeliefView::courage(&state, unknown), None);
+        assert_eq!(CombatBeliefView::courage(&state, unknown), None);
     }
 
     // ── hypothetical_support_count / has_support_majority ──────────────
@@ -4078,7 +4290,7 @@ mod tests {
             view.record_data.get(&record).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::consultation_speed_factor(&state, actor),
+            CombatBeliefView::consultation_speed_factor(&state, actor),
             Some(Permille::new(500).unwrap())
         );
     }
@@ -4260,39 +4472,39 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert_eq!(
-            RuntimeBeliefView::trade_disposition_profile(&state, actor),
+            EconomicBeliefView::trade_disposition_profile(&state, actor),
             view.trade_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::patrol_profile(&state, actor),
+            CombatBeliefView::patrol_profile(&state, actor),
             view.patrol_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::patrol_route(&state, actor),
+            SpatialBeliefView::patrol_route(&state, actor),
             view.patrol_routes.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::epistemic_disposition_profile(&state, actor),
+            SocialBeliefView::epistemic_disposition_profile(&state, actor),
             view.epistemic_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::theft_disposition_profile(&state, actor),
+            SocialBeliefView::theft_disposition_profile(&state, actor),
             view.theft_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::justice_disposition_profile(&state, actor),
+            PoliticalBeliefView::justice_disposition_profile(&state, actor),
             view.justice_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::violation_disposition_profile(&state, actor),
+            PoliticalBeliefView::violation_disposition_profile(&state, actor),
             view.violation_profiles.get(&actor).cloned()
         );
         assert_eq!(
-            RuntimeBeliefView::combat_profile(&state, actor),
+            CombatBeliefView::combat_profile(&state, actor),
             view.combat_profiles.get(&actor).copied()
         );
         assert_eq!(
-            RuntimeBeliefView::metabolism_profile(&state, actor),
+            ProfileBeliefView::metabolism_profile(&state, actor),
             view.metabolism_profiles.get(&actor).copied()
         );
 

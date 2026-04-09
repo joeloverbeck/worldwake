@@ -399,16 +399,14 @@ fn observe_active_actions(
             // lawful co-location observation (Principles 7, 15) —
             // the observer was at the same place when the departure
             // happened and can see which direction the subject went.
-            if let Some(belief) = store.known_entities.get_mut(subject)
-                && let Some(instance) = active_by_actor.get(subject)
-            {
+            if let Some(instance) = active_by_actor.get(subject) {
                 let is_travel = action_defs
                     .get(instance.def_id)
                     .is_some_and(|def| def.domain == worldwake_core::ActionDomain::Travel);
-                if is_travel && let Some(destination) = instance.targets.first().copied() {
-                    belief.last_known_place = Some(destination);
-                    belief.observed_tick = tick;
-                    belief.source = PerceptionSource::DirectObservation;
+                if is_travel
+                    && let Some(destination) = instance.targets.first().copied()
+                    && store.update_departure_projection(subject, destination, tick)
+                {
                     changed = true;
                 }
             }

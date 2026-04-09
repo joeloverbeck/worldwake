@@ -156,7 +156,10 @@ mod tests {
         ];
         for kind in &self_care {
             assert_eq!(
-                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.suppression,
+                crate::GoalDispatchKey::from_goal_kind(kind)
+                    .declaration()
+                    .family_policy
+                    .suppression,
                 SuppressionRule::Never,
                 "Self-care goal {kind:?} should never be suppressed"
             );
@@ -189,7 +192,10 @@ mod tests {
         ];
         for kind in &goals {
             assert_eq!(
-                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.suppression,
+                crate::GoalDispatchKey::from_goal_kind(kind)
+                    .declaration()
+                    .family_policy
+                    .suppression,
                 SuppressionRule::Never,
                 "Goal {kind:?} should never be suppressed"
             );
@@ -247,7 +253,10 @@ mod tests {
         ];
         for kind in &goals {
             assert_eq!(
-                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.suppression,
+                crate::GoalDispatchKey::from_goal_kind(kind)
+                    .declaration()
+                    .family_policy
+                    .suppression,
                 SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::High),
                 "Goal {kind:?} should be suppressed when stressed at or above High"
             );
@@ -314,7 +323,10 @@ mod tests {
         ];
         for kind in &self_care {
             assert_eq!(
-                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.penalty_interrupt,
+                crate::GoalDispatchKey::from_goal_kind(kind)
+                    .declaration()
+                    .family_policy
+                    .penalty_interrupt,
                 PenaltyInterruptEligibility::WhenCritical {
                     trigger: InterruptTrigger::CriticalSurvival
                 },
@@ -326,7 +338,10 @@ mod tests {
     #[test]
     fn penalty_critical_danger_for_reduce_danger() {
         assert_eq!(
-            crate::GoalDispatchKey::from_goal_kind(&GoalKind::ReduceDanger).declaration().family_policy.penalty_interrupt,
+            crate::GoalDispatchKey::from_goal_kind(&GoalKind::ReduceDanger)
+                .declaration()
+                .family_policy
+                .penalty_interrupt,
             PenaltyInterruptEligibility::WhenCritical {
                 trigger: InterruptTrigger::CriticalDanger
             },
@@ -399,7 +414,10 @@ mod tests {
         ];
         for kind in &goals {
             assert_eq!(
-                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.penalty_interrupt,
+                crate::GoalDispatchKey::from_goal_kind(kind)
+                    .declaration()
+                    .family_policy
+                    .penalty_interrupt,
                 PenaltyInterruptEligibility::Never,
                 "Goal {kind:?} should have Never penalty interrupt"
             );
@@ -428,7 +446,10 @@ mod tests {
         ];
         for kind in &reactive {
             assert_eq!(
-                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.free_interrupt,
+                crate::GoalDispatchKey::from_goal_kind(kind)
+                    .declaration()
+                    .family_policy
+                    .free_interrupt,
                 FreeInterruptRole::Reactive,
                 "Goal {kind:?} should have Reactive free interrupt role"
             );
@@ -508,7 +529,10 @@ mod tests {
         ];
         for kind in &normal {
             assert_eq!(
-                crate::GoalDispatchKey::from_goal_kind(kind).declaration().family_policy.free_interrupt,
+                crate::GoalDispatchKey::from_goal_kind(kind)
+                    .declaration()
+                    .family_policy
+                    .free_interrupt,
                 FreeInterruptRole::Normal,
                 "Goal {kind:?} should have Normal free interrupt role"
             );

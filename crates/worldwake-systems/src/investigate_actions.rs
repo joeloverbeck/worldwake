@@ -7,7 +7,7 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility,
+    CommitOutcome, Constraint, ControlBeliefView, DeterministicRng, DurationExpr, Interruptibility,
     InvestigateActionPayload, PerAgentBeliefView, Precondition, RuntimeBeliefView, TargetSpec,
 };
 

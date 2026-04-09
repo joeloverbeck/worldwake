@@ -173,13 +173,11 @@ impl World {
 
         match self.collect_control_rights(actor, entity) {
             ControlOutcome::Allowed(_) => Ok(()),
-            ControlOutcome::BlockedByPossessor(holder) => {
-                Err(WorldError::ControlDenied {
-                    actor,
-                    entity,
-                    reason: ControlDeniedReason::BlockedByPossessor(holder),
-                })
-            }
+            ControlOutcome::BlockedByPossessor(holder) => Err(WorldError::ControlDenied {
+                actor,
+                entity,
+                reason: ControlDeniedReason::BlockedByPossessor(holder),
+            }),
             ControlOutcome::NoRights => Err(WorldError::ControlDenied {
                 actor,
                 entity,
