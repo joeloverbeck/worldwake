@@ -1,6 +1,6 @@
 # S88TWOPHALAN-004: Implement DualFrontier with preferred operator boosting
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — replaces internal planner data structure
@@ -99,3 +99,24 @@ Note: The existing `FrontierEntry` struct and its `Ord` impl are unchanged. `Dua
 
 1. `cargo test -p worldwake-ai -- frontier`
 2. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-11.
+
+- Added `DualFrontier` to [`crates/worldwake-ai/src/search/frontier.rs`] with
+  separate preferred and regular heaps, boost tracking, fallback behavior, and
+  a temporary `push()` compatibility helper for the later S88 integration
+  ticket.
+- Kept `FrontierEntry` ordering unchanged and derived `Clone` so preferred
+  entries can be inserted into both queues.
+- Added focused inline tests covering alternation, boost behavior, preferred
+  fallback, empty queues, preserved ordering, and zero-boost behavior using the
+  live `root_node` bootstrap path instead of brittle hand-built planner
+  internals.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai -- frontier`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`
