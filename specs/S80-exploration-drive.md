@@ -176,18 +176,16 @@ In `crates/worldwake-ai/src/candidate_generation.rs` (or a new exploration-speci
 
 ### 5. Goal Dispatch Declaration
 
-Register `GoalKind::ExploreLocation` in the goal dispatch infrastructure:
+Register `GoalKind::ExploreLocation` in the goal dispatch infrastructure. The additive dispatch-key and declaration substrate is already landed; remaining work in this spec should treat these as the live baseline rather than future-first additions.
 
 **GoalDispatchKey** (`crates/worldwake-ai/src/goal_dispatch_key.rs`):
-- Add variant `ExploreLocation` to the `GoalDispatchKey` enum
-- Add to `GoalDispatchKey::ALL` constant (update array length)
-- Add match arm in `from_goal_kind`: `GoalKind::ExploreLocation { .. } => GoalDispatchKey::ExploreLocation`
+- `ExploreLocation` is present in the `GoalDispatchKey` enum
+- `GoalDispatchKey::ALL` includes `ExploreLocation`
+- `from_goal_kind` maps `GoalKind::ExploreLocation { .. } => GoalDispatchKey::ExploreLocation`
 
 **GoalDispatchDeclaration** (`crates/worldwake-ai/src/goal_dispatch_decl.rs`):
 - `EXPLORE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel]` — exploration reuses the existing Travel op; no new `PlannerOpKind` variant needed
-- `EXPLORE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Travel]` — goal achieved when travel to target completes
-- Invalidation strategy: `InvalidationStrategy` appropriate for belief-gated goals (invalidate when motivating need drops below threshold OR agent gains resource-source belief for the motivating need)
-- Feasibility strategy: standard travel feasibility
+- Travel-only declaration substrate is present. Any follow-up changes here should be driven by evidence about invalidation/feasibility strategy quality, not by missing symbol registration.
 
 ### 6. GoalKindPlannerExt Implementation
 
@@ -198,7 +196,6 @@ Implement `GoalKindPlannerExt` (`crates/worldwake-ai/src/goal_model.rs:38`) for 
 - `relevant_observed_commodities()` → `None` (exploration doesn't target specific commodities)
 - `build_payload_override()` → `Ok(None)` (no payload override needed — uses standard travel payload)
 - `apply_planner_step()` → simulate travel to `target_place` in planning state
-- `is_progress_barrier()` → true when step's op is `PlannerOpKind::Travel` to `target_place`
 - `is_satisfied()` → true when agent's effective place in planning state == `target_place`
 - `goal_relevant_places()` → `vec![target_place]` (guides A* heuristic toward destination)
 - `prerequisite_places()` → empty or `{target_place}` depending on whether travel is prerequisite or terminal

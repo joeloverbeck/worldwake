@@ -47,6 +47,8 @@ Load `references/reassessment-checks.md`.
 
 Load `references/mismatch-handling.md`.
 
+When reassessment shows that part of the ticket's claimed substrate is already present in live code, update the ticket before coding so it describes only the remaining owned delta. Reflect that narrowed scope in the ticket's `Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria` sections instead of leaving stale "add X" language in place.
+
 ### 4. Extract the implementation scope
 
 Load `references/scope-extraction.md`.
@@ -62,6 +64,8 @@ When the clean fix requires extracting a helper out of an existing module into a
 Run the narrowest correct verification first, then broaden.
 
 Load `references/verification.md`.
+
+If reassessment revealed that additive substrate from an earlier ticket already landed, include repository-wide exhaustive inventory tests and count assertions in the broadened verification sweep. Typical fallout includes stale `ALL` lists, exhaustiveness fixtures, representative-goal inventories, and explicit length assertions that still reflect the pre-addition shape.
 
 ### 7. Close out the ticket honestly
 

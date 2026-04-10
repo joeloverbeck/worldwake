@@ -1231,6 +1231,9 @@ impl GoalKindPlannerExt for GoalKind {
                 subject,
                 destination,
             } => state.effective_place(*subject) == Some(*destination),
+            GoalKind::ExploreLocation { target_place, .. } => {
+                state.effective_place(actor) == Some(*target_place)
+            }
             GoalKind::ProduceCommodity { .. }
             | GoalKind::SearchForMissing { .. }
             | GoalKind::ReportMissing { .. }
@@ -1241,7 +1244,6 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::PostNotice { .. }
             | GoalKind::InvestigateViolation { .. }
             | GoalKind::Patrol { .. }
-            | GoalKind::ExploreLocation { .. }
             | GoalKind::Accuse { .. }
             | GoalKind::PunishAccused { .. } => false,
         }
@@ -2278,7 +2280,8 @@ mod tests {
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
         BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget, HomeostaticNeeds,
+        EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget, HomeostaticNeedId,
+        HomeostaticNeeds,
         InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille,
         ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
@@ -6904,6 +6907,10 @@ mod tests {
                 office: entity(99),
                 candidate: entity(98),
             },
+            GoalKind::ExploreLocation {
+                target_place: place_b,
+                motivating_need: HomeostaticNeedId::Hunger,
+            },
             GoalKind::StealItem {
                 target_item: entity(97),
             },
@@ -6923,7 +6930,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 26);
+        assert_eq!(goals.len(), 27);
         for goal in &goals {
             let _ = goal.goal_relevant_places(&state, &recipes);
         }
@@ -6994,6 +7001,10 @@ mod tests {
                 office: place_b,
                 candidate: actor,
             },
+            GoalKind::ExploreLocation {
+                target_place: place_b,
+                motivating_need: HomeostaticNeedId::Hunger,
+            },
             GoalKind::Patrol { place: place_b },
             GoalKind::StealItem {
                 target_item: place_b,
@@ -7017,6 +7028,42 @@ mod tests {
         for goal in goals {
             let _ = goal.prerequisite_places(&state, &recipes, &execution_budget(&budget));
         }
+    }
+
+    #[test]
+    fn explore_location_is_satisfied_when_actor_reaches_target_place() {
+        let (view, actor, place_a, _place_b, _place_c) = spatial_view();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ExploreLocation {
+            target_place: place_a,
+            motivating_need: HomeostaticNeedId::Hunger,
+        };
+
+        assert!(goal.is_satisfied(&state));
+    }
+
+    #[test]
+    fn explore_location_goal_relevant_places_and_binding_follow_target_place() {
+        let (view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let target_place = entity(99);
+        let goal = GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: HomeostaticNeedId::Hunger,
+        };
+
+        assert!(!goal.is_satisfied(&state));
+        assert_eq!(
+            goal.goal_relevant_places(&state, &RecipeRegistry::new()),
+            vec![target_place]
+        );
+        assert!(goal.matches_binding(&[target_place], PlannerOpKind::Travel));
+        assert!(
+            goal.matches_binding(&[place_b], PlannerOpKind::Travel),
+            "Travel remains an auxiliary op, so binding is intentionally permissive"
+        );
     }
 
     // ── matches_binding tests ──────────────────────────────────────────
