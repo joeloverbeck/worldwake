@@ -4776,7 +4776,7 @@ mod tests {
         AgentBeliefStore, ArtifactKind, ArtifactPostingContext, ArtifactState,
         BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
-        BodyPart, BountyTarget, BountyTerms, CombatProfile, CommodityConsumableProfile,
+        BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
         CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
         DemandObservationReason, DisposalProfile, DriveThresholds, EffectiveRight, EligibilityRule,
         EntityId, EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
@@ -4838,6 +4838,7 @@ mod tests {
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         utility_profiles: BTreeMap<EntityId, UtilityProfile>,
         exploration_profiles: BTreeMap<EntityId, ExplorationProfile>,
+        cognitive_profiles: BTreeMap<EntityId, CognitiveProfile>,
         disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
         belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
@@ -4919,6 +4920,7 @@ mod tests {
                 merchandise_profiles: BTreeMap::new(),
                 utility_profiles: BTreeMap::new(),
                 exploration_profiles: BTreeMap::new(),
+                cognitive_profiles: BTreeMap::new(),
                 disposal_profiles: BTreeMap::new(),
                 corpses_at: BTreeMap::new(),
                 belief_stores: BTreeMap::new(),
@@ -5076,6 +5078,10 @@ mod tests {
 
         fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
             self.exploration_profiles.get(&agent).copied()
+        }
+
+        fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
+            self.cognitive_profiles.get(&agent).copied()
         }
 
         fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {

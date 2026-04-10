@@ -7,10 +7,10 @@ use std::collections::{BTreeMap, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
-    BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant, DemandObservation,
-    DisposalProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore,
-    ExplorationProfile, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    BelievedInstitutionalClaim, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
+    CommodityKind, CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant,
+    DemandObservation, DisposalProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
+    ExpectationStore, ExplorationProfile, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
     LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
     PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
@@ -196,6 +196,10 @@ pub trait GoalBeliefView {
         None
     }
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
+        let _ = agent;
+        None
+    }
+    fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         let _ = agent;
         None
     }
@@ -435,6 +439,10 @@ pub trait ProfileBeliefView {
         None
     }
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
+        let _ = agent;
+        None
+    }
+    fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         let _ = agent;
         None
     }
@@ -1224,6 +1232,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::ExplorationProfile> {
         ProfileBeliefView::exploration_profile(self, agent)
+    }
+
+    fn cognitive_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::CognitiveProfile> {
+        ProfileBeliefView::cognitive_profile(self, agent)
     }
 
     fn belief_confidence_policy(

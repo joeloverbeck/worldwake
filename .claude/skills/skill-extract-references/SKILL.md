@@ -19,7 +19,7 @@ Refactor a skill by extracting large, logically grouped content blocks into `ref
 
 ### 2. Early Exit Check
 
-If the SKILL.md is under 60 lines, output "Nothing to extract — SKILL.md is already thin (N lines)." and stop.
+If the SKILL.md is under 60 lines, output "Nothing to extract — SKILL.md is already thin (N lines)." and stop. Also exit if the SKILL.md already contains 3+ load instructions pointing to `references/` — it is already in thin form.
 
 ### 3. Parse into Blocks
 
@@ -50,7 +50,7 @@ For each block, determine one of three categories:
 
 ### 5. Group and Name
 
-- Merge blocks that share a logical theme into a single reference doc. Do not create one reference per H3 — group by coherent topic.
+- Merge blocks that share a logical theme into a single reference doc. Do not create one reference per H3 — group by coherent topic. If two adjacent original steps share a reference doc and form a natural unit, they may be merged into a single thin step. Preserve the original step numbers in the heading (e.g., "Steps 5-6") for traceability.
 - Use kebab-case descriptive filenames: `verification-and-closeout.md`, `ai-pipeline-checks.md`, `golden-reassessment.md`.
 - If an existing reference doc in `references/` covers the same theme, merge the extracted content into it rather than creating a duplicate.
 
@@ -74,12 +74,17 @@ For each block, determine one of three categories:
     - Conditional: "If the change touches AI pipelines, load `references/ai-pipeline-checks.md`."
 - **Preserve** universal hard rules as a short section at the bottom.
 - The thin SKILL.md should read as a clear, scannable orchestration sequence — not a wall of checklists.
+- Each step may include a brief framing sentence (1-2 sentences) before or after the load instruction to preserve workflow context (e.g., what the step's purpose is, what to do with results). For steps where the load instruction is the primary content, integrate it naturally (e.g., "Load `references/codebase-validation.md`. Validate every reference from Step 2.") rather than making it a standalone directive.
 
 ### 8. Verify Content Preservation
 
 After rewriting, verify that every H2/H3 section from the original SKILL.md appears either in the thin SKILL.md or in a reference doc. A quick scan of original section headers against the new files is sufficient.
 
-### 9. Output Summary
+### 9. Cross-Skill Reference Check
+
+Grep other skill files (`.claude/skills/*/SKILL.md`, `.codex/skills/*/SKILL.md`) for references to the target skill's section headers or step numbers. If found, note them in the output summary as "references that may need updating" so the user can fix external pointers.
+
+### 10. Output Summary
 
 Print a brief summary:
 ```

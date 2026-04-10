@@ -1,0 +1,57 @@
+# Findings Classification and Presentation (Steps 5-6)
+
+## Step 5: Classify Findings
+
+Organize findings from Steps 3 and 4 into:
+
+- **Issues**: Factually wrong, stale, violates FOUNDATIONS, or proposes redundant deliverables when existing infrastructure suffices. Blocks ticket decomposition.
+- **Improvements**: Not wrong, but a refinement would make implementation cleaner, safer, or more aligned.
+- **Additions**: Beneficial features not in the spec that align with its goals. Apply YAGNI — only natural extensions of the spec's scope.
+
+For each finding, record:
+- What the spec says (or omits)
+- What the codebase actually has (with file paths and line references)
+- The recommended change
+
+Tag severity: CRITICAL (blocks tickets), HIGH (fix before tickets), MEDIUM (improves quality), LOW (nice to fix).
+
+## Step 6: Present Findings
+
+Present in this format:
+
+```
+## Reassessment: <spec-name>
+
+### Issues (must fix)
+[If none: "No issues found."]
+1. **[SEVERITY] <title>** — <spec says> vs. <codebase has>. Recommendation: <change>.
+
+### Improvements (should fix)
+[If none: "No improvements found."]
+1. **[SEVERITY] <title>** — <current text> could be improved because <reason>. Recommendation: <change>.
+
+### Additions (consider adding)
+[If none: "No additions proposed."]
+1. **[SEVERITY] <title>** — <what's missing> because <reason>. Recommendation: <new section>.
+
+### FOUNDATIONS.md Alignment
+- <Foundation N>: <aligned | see Issue #N [SEVERITY]>
+
+### Authoritative-to-AI Impact Rule
+[Only if Step 4.4 triggered: list 7 checklist points with pass / N-A / flag status. Otherwise omit.]
+
+### Questions
+[If none: "No questions."]
+1. <question>
+```
+
+## Question Handling
+
+- **Initial report**: At most 3 questions. If more, prioritize blockers and defer rest to follow-up.
+- **Interdependent questions**: Present as a single combined question with labeled option combinations.
+- **Discrete options (2-4)**: Use `AskUserQuestion` with a recommended default.
+- **Open-ended questions**: Present as plain text in the report.
+- **Follow-up rounds**: One question at a time. If answers raise new questions or invalidate findings, present a follow-up round (same format). Repeat until resolved.
+- **Delegated resolution**: If the user delegates (e.g., "you decide based on FOUNDATIONS"), resolve by reasoning against the referenced constraint. If resolution requires additional codebase investigation, perform a mini Step 3 scoped to the question. If none of the original options are ideal, propose a new option with justification — scope investigation to 1-3 targeted checks. If the new option affects the dependency graph or crate boundaries, present as a new finding first. In plan mode, the new option is included in the plan file and ExitPlanMode approval covers it.
+
+Wait for user response before proceeding to Step 7. (In plan mode, this wait is replaced by ExitPlanMode approval — see `references/plan-mode.md`.) Findings are approved unless explicitly objected to.

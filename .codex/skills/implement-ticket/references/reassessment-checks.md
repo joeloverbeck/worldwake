@@ -22,7 +22,7 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
 - Described architecture still matches live code.
 - Stated coverage gaps are real and correctly classified.
-- When adding a universal agent profile or other always-present bootstrap component, verify both the schema registration path and the canonical default-seeding path (for example `World::create_agent()` plus any transaction/bootstrap delta tests). Do not treat registration alone as satisfying the live universal-profile contract.
+- When adding, extending, or newly reading a universal agent profile or other always-present bootstrap component, verify both the schema registration/read surface and the canonical default-seeding path (for example `World::create_agent()` plus any transaction/bootstrap delta tests). Do not treat registration alone, or a plausible "component may be absent" assumption, as satisfying the live universal-profile contract.
 - When a canonical registry or catalog gains entries (for example recipe, action, component, or manifest registries), sweep for hardcoded `RecipeId`, `ActionDefId`, ordinal, or registration-order assumptions in tests and helpers. Prefer resolving by name unless the stable ordinal is itself the owned contract.
 - For scenario/world-authoring tickets, state whether the same runtime fact is currently authored through more than one lawful path, which path is canonical after the change, and whether any duplicate authoring path remains intentionally supported or is deferred to a named follow-up ticket.
 - When reassessment changes the live root cause or owned surface, apply the section-update rule (see Section 3, "Affected section updates").
@@ -120,7 +120,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 
 - For component-registration tickets, check hardcoded schema inventories, sample `ComponentValue` enumerations, and manifest-style tests.
 - When registering a new authoritative component, search for hand-maintained `ComponentKind` inventories and sample builders outside the registration macro.
-- When registering a new universal profile on `EntityKind::Agent`, verify the runtime bootstrap path that makes the profile universal, not just the schema entry. Sweep agent factory/default-seeding code and any delta/assertion tests that encode the bootstrap component set.
+- When registering a new universal profile on `EntityKind::Agent`, or widening reads/tests around an existing one, verify the runtime bootstrap path that makes the profile universal, not just the schema entry. Sweep agent factory/default-seeding code and any delta/assertion tests that encode the bootstrap component set, and reject negative proofs that rely on agents lawfully lacking the seeded component.
 - When a scenario ticket adds authoritative components to places, verify whether place entities are topology-owned and created before `World::new(topology)`. Land component assignment in the bootstrap `WorldTxn` phase if so.
 - When renaming or replacing an authoritative identifier, search display strings, manifest inventories, serialized name surfaces, and identity-assertion tests.
 - When adding or reordering a `SystemId`, verify separately whether runtime dispatch uses a dense ordinal (`SystemId::ALL`) vs. a distinct manifest (`SystemManifest::canonical()`). Update each independently.
