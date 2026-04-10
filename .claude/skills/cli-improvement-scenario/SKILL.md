@@ -32,9 +32,9 @@ Follow these steps in order.
 
 ### Step 1: Read Current Scenario
 
-First, validate the scenario loads: `cargo run -p worldwake-cli --bin worldwake-cli -- scenarios/cli-evaluation.ron --exec quit 2>&1`. If it fails with a parse error (missing field, type mismatch), fix the schema drift before proceeding with feature analysis. This is the most common maintenance trigger.
+First, validate the scenario loads: `cargo run -p worldwake-cli --bin worldwake-cli -- scenarios/cli-evaluation.ron --exec quit 2>&1`. If it fails with a parse error (missing field, type mismatch), **note** the error (struct name and missing/mismatched field) — you'll resolve it in Step 4 after Step 3 identifies all changes. This is the most common maintenance trigger. If the error blocks RON parsing, read the file as text for inventory purposes — it's still valid for human scanning even if RON deserialization rejects it.
 
-To determine correct values for missing fields: read the struct's `Default` impl in the source. Use defaults unless the agent's existing profile values suggest a deliberate personality divergence — in that case, choose a value consistent with the agent's characterization.
+To determine correct values for missing fields (applied in Step 4): read the struct's `Default` impl in the source. Use defaults unless the agent's existing profile values suggest a deliberate personality divergence — in that case, choose a value consistent with the agent's characterization.
 
 **Silent schema drift warning**: RON deserialization silently ignores unknown field names (no `deny_unknown_fields`). A renamed field will not cause a parse error — the old field is silently dropped and the agent gets no value for the new field. Step 3.1 (AgentDef-vs-RON comparison) is the primary defense against this. When Step 3 identifies recent renames (e.g., from commit messages or `types.rs` diffs), manually verify the RON uses the current field names.
 
@@ -48,6 +48,8 @@ Take inventory:
 - Which resource sources exist
 
 Compare each inventory against the full set of variants in the corresponding enum (`CommodityKind::ALL`, `WorkstationTag::ALL`, `PlaceTag::ALL`) to identify unexercised variants. Not all variants need scenario coverage — apply "exercise, don't overload."
+
+This full inventory is most valuable when the scenario hasn't been updated in several spec cycles. When the trigger is a specific parse error and Step 3 substeps 1-3 fully account for the drift, the inventory can be abbreviated to a scan of the RON structure rather than exhaustive variant comparison.
 
 ### Step 2: Read Latest Evaluation
 
