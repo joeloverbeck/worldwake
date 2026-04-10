@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers (Adjunct — Simulation Remediation)
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -241,3 +241,19 @@ Suggested golden test scenarios to verify exploration behavior:
 2. **No exploration when satisfaction path exists**: Agent with hunger above threshold BUT a believed food source exists at a known place → should NOT generate ExploreLocation (should generate AcquireCommodity instead)
 3. **Consecutive cap respected**: Agent that has pursued `max_consecutive_explorations` ExploreLocation goals in a row → should NOT generate another ExploreLocation until a non-exploration goal intervenes
 4. **Arrival yields new beliefs**: Agent completes ExploreLocation travel → perception fires → agent gains beliefs about entities at new location → if food source discovered, exploration pressure for hunger drops
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Landed the exploration-drive substrate across the staged `S80EXPDRI-*` ticket chain: `ExplorationProfile` is available on agents, `GoalKind::ExploreLocation` is live in candidate generation / ranking / planning, and the runtime tracks consecutive exploration adoption so the fallback is bounded.
+- Corrected the live dispatch contradiction by registering `ExploreLocation` under the self-care family policy rather than the social family policy, preserving availability under the same self-care stress that emits the goal.
+- Added dedicated golden coverage in `crates/worldwake-ai/tests/golden_exploration.rs` for the ignorance-triggered branch, known-path suppression, consecutive-cap gating, and post-arrival belief unlock to concrete relief.
+- Refreshed generated golden inventory and scenario docs so the exploration suite is now represented in `docs/generated/`.
+
+Verification results:
+- Passed `cargo test -p worldwake-ai --test golden_exploration`
+- Passed `cargo test -p worldwake-ai`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo build --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
