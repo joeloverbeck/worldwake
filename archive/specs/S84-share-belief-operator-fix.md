@@ -1,5 +1,7 @@
 # S84: ShareBelief Operator Fix
 
+**Status**: COMPLETED
+
 ## Summary
 
 Investigate and fix why `ShareBelief` goals consistently frontier-exhaust at depth 0 with 1 expansion despite agents being co-located. S69 (Goal Dispatch Consolidation) correctly registered all three ShareBelief variants with `PlannerOpKind::Tell` operators, yet the simulation shows 14 of 20 failed plans for agents are frontier-exhausted ShareBelief goals. This spec traces the confirmed root cause — a mismatch between the planning snapshot's entity indexing and the agent's belief state about co-located listeners — and delivers the fix plus golden test coverage.
@@ -7,10 +9,6 @@ Investigate and fix why `ShareBelief` goals consistently frontier-exhaust at dep
 ## Phase
 
 Phase 7: Consequence Carriers (Adjunct — Simulation Remediation)
-
-## Status
-
-Draft
 
 ## Crates
 
@@ -163,3 +161,26 @@ No new components.
 
 - **Perception → Tell** (via belief state): Agent perceives events and co-located entities → forms beliefs including effective_place for nearby agents → ShareBelief goal generated → Tell action shares the belief.
 - **Snapshot place indexing → Tell search** (potential root cause): The planning snapshot includes evidence entities unconditionally but only indexes them at a place if the belief view reports their `effective_place`. When the agent lacks this belief for the listener, the search's affordance query finds zero targets despite the listener being in the snapshot's entity set.
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Fixed the confirmed production root cause in `crates/worldwake-ai/src/planning_snapshot.rs` by teaching `build_snapshot_places` to fall back to the belief-view `entities_at(place)` index for evidence entities that are included in the snapshot but lack `effective_place`.
+- Added focused planner-boundary regressions proving the repaired snapshot place index and Tell affordance enumeration for co-located evidence listeners.
+- Confirmed the proposed S84 follow-up slices for early pruning and extra frontier-exhaustion counters were not needed in live code because ShareBelief already had exact Tell root synthesis and root-omission tracing at the planner boundary.
+- Confirmed the required golden coverage already existed in `crates/worldwake-ai/tests/golden_emergent.rs` through `golden_supply_depletion_enables_share_belief`, plus additional same-place ShareBelief Tell coverage in the same suite.
+
+## Deviations
+
+- Deliverable 3's proposed pre-search gate did not land. Reassessment closed that slice without production changes because the live ShareBelief root contract already binds Tell directly from goal identity and the proposed scan would have duplicated the existing planner boundary.
+- Deliverable 4's golden proof did not require a new scenario because the S84-specific golden already existed and passed in `golden_emergent.rs` rather than `golden_social.rs`.
+- Deliverable 5's proposed `PlanAttemptTrace` field expansion did not land. Reassessment confirmed the live `root_omissions` trace path already carried the intended diagnostic explanation.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai planning_snapshot`
+- Passed `cargo test -p worldwake-ai share_belief`
+- Passed `cargo test -p worldwake-ai golden_supply_depletion_enables_share_belief`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

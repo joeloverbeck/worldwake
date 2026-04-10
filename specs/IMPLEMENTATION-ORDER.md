@@ -14,6 +14,7 @@ Completed Phase 7 specs:
 - `S71: Event Log Delta Compaction` — replaced full `ComponentValue` snapshots in `ComponentDelta::Set` with compact `BeliefStoreDiff` via new `CompactSet` variant for `AgentBeliefStore` updates. Reduces per-event memory from ~300 KB to ~1-5 KB. Archived at [archive/specs/S71-event-log-delta-compaction.md](/home/joeloverbeck/projects/worldwake/archive/specs/S71-event-log-delta-compaction.md).
 - `S72: Event Log Epoch Compaction` — periodic World checkpoints on `EventLog` with `state_deltas` stripping for bounded RAM. `CheckpointData`, `compaction_interval` on `EventLog`, `compact_event_log` SystemFn, `ScenarioDef.compaction_interval` (default: 50). Verification adapted for checkpoint-based reconstruction. Archived at [archive/specs/S72-event-log-epoch-compaction.md](/home/joeloverbeck/projects/worldwake/archive/specs/S72-event-log-epoch-compaction.md).
 - `S80: Exploration Drive` — archived at [archive/specs/S80-exploration-drive.md](/home/joeloverbeck/projects/worldwake/archive/specs/S80-exploration-drive.md). Landed `ExplorationProfile`, live `ExploreLocation` goal generation/planning under self-care fallback rules, bounded consecutive exploration tracking, and dedicated golden coverage in `golden_exploration.rs` plus refreshed generated golden docs.
+- `S84: ShareBelief Operator Fix` — archived at [archive/specs/S84-share-belief-operator-fix.md](/home/joeloverbeck/projects/worldwake/archive/specs/S84-share-belief-operator-fix.md). Fixed planning-snapshot evidence-listener place indexing for ShareBelief/Tell affordance search, confirmed root-omission diagnostics already owned the planner traceability slice, and validated the existing ShareBelief golden coverage.
 
 Completed adjunct specs:
 - `S67: Golden E2E Gaps — S59` archived at [archive/specs/S67-golden-gaps-S59.md](/home/joeloverbeck/projects/worldwake/archive/specs/S67-golden-gaps-S59.md).
@@ -111,23 +112,22 @@ S80 ✅ archived
 ### Adjunct Wave: Simulation Remediation Phase 2
 
 Derived from re-run of simulation observer report (`reports/simulation-remediation.md`) validated against
-the actual codebase and `docs/FOUNDATIONS.md` post-S78/S79/S80/S81. Addresses remaining planner budget
-exhaustion root cause, waste accumulation dampener gap, ShareBelief frontier-exhaustion, and observer
-diagnostic enrichments.
+the actual codebase and `docs/FOUNDATIONS.md` post-S78/S79/S80/S81. Addresses the remaining waste
+accumulation dampener gap, ShareBelief frontier-exhaustion, and observer diagnostic enrichments.
 
 ```text
 S82 ✅ archived
 S83 ✅ archived
-S84 (independent)
+S84 ✅ archived
 S85 (independent)
-S84/S85 remain parallel — no inter-dependencies.
+S85 remains independent after S84 closeout.
 ```
 
 **Wave**:
 - **S82**: ✅ COMPLETED — Waste Disposal and Inventory Management — archived at [archive/specs/S82-waste-disposal-inventory-management.md](/home/joeloverbeck/projects/worldwake/archive/specs/S82-waste-disposal-inventory-management.md). Landed `drop_item`, `FreeCarryCapacity`, `DisposalProfile`, planner/candidate/ranking integration, CLI disposal-profile override support, and disposal-cycle golden coverage with deterministic replay.
 - **S83**: ✅ COMPLETED — Belief-Informed Candidate Pruning — archived at [archive/specs/S83-belief-informed-candidate-pruning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S83-belief-informed-candidate-pruning.md). Landed belief-gated acquisition-place filtering, `speculative_acquisition` profile support, and candidate-trace counters for reachable-vs-filtered places while preserving lawful acquisition coverage.
-- **Active parallel remainder**:
-  - **S84**: ShareBelief Operator Fix — investigate and fix frontier-exhaustion at depth 0 for ShareBelief goals despite co-location. Confirmed root cause: snapshot place indexing drops evidence listeners from Tell affordance search when they lack believed `effective_place`; remaining follow-up slices cover pruning, diagnostics, and golden proof.
+- **S84**: ✅ COMPLETED — ShareBelief Operator Fix — archived at [archive/specs/S84-share-belief-operator-fix.md](/home/joeloverbeck/projects/worldwake/archive/specs/S84-share-belief-operator-fix.md). Landed the snapshot place-indexing fix for evidence listeners, then closed the proposed pruning/diagnostic/golden follow-up slices against the stronger live planner and golden contracts.
+- **Active remainder**:
   - **S85**: Observer Behavioral Enrichment — death tick/cause display, frontier-exhaustion rejection reasons, need snapshots at behavioral transitions, post-travel affordance snapshots, "Unknown location" clarity.
 
 ### Phase 7 Gate
