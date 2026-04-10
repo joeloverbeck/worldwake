@@ -12,11 +12,10 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, ActionDomain, BodyCostPerTick, BodyPart, CauseRef, CombatStance,
-    CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, Container,
-    DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView,
-    EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta,
-    VisibilitySpec, WitnessData, WorldTxn, WorkstationTag, Wound, WoundCause, WoundList,
-    is_wound_load_fatal, load_per_unit,
+    CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, Container, DeadAt,
+    DeathCause, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView, EvidenceRef,
+    HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta, VisibilitySpec, WitnessData,
+    WorkstationTag, WorldTxn, Wound, WoundCause, WoundList, is_wound_load_fatal, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -173,9 +172,8 @@ pub fn combat_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>
                 cause: DeathCause::CombatWounds,
             },
         )
-            .map_err(|error| SystemError::new(format!("{error}")))?;
-        install_corpse_contention_state(&mut txn, fatality.entity)
-            .map_err(SystemError::new)?;
+        .map_err(|error| SystemError::new(format!("{error}")))?;
+        install_corpse_contention_state(&mut txn, fatality.entity).map_err(SystemError::new)?;
         let _ = txn.commit(event_log);
     }
 
@@ -1742,8 +1740,7 @@ fn commit_attack(
     let fatal_after_wound = is_wound_load_fatal(&next_wounds, &target_profile);
     txn.set_component_wound_list(target, next_wounds)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    ensure_care_contention_state(txn, target)
-        .map_err(ActionError::InternalError)?;
+    ensure_care_contention_state(txn, target).map_err(ActionError::InternalError)?;
     emit_evidence(
         txn,
         place,
@@ -1831,8 +1828,7 @@ fn commit_heal(
             .get_component_wound_list(patient)
             .is_some_and(|wounds| wounds.wounds.is_empty())
         {
-            clear_entity_contention_state(txn, patient)
-                .map_err(ActionError::InternalError)?;
+            clear_entity_contention_state(txn, patient).map_err(ActionError::InternalError)?;
         }
     }
     Ok(CommitOutcome::empty())
@@ -3479,7 +3475,7 @@ mod tests {
                     cause: DeathCause::CombatWounds,
                 },
             )
-                .unwrap();
+            .unwrap();
             txn.set_ground_location(incapacitated_looter, place)
                 .unwrap();
             txn.set_component_wound_list(
@@ -5183,7 +5179,7 @@ mod tests {
                 patient,
                 crate::contention_support::care_contention_policy(),
             )
-                .unwrap();
+            .unwrap();
             txn.set_component_contention_queue(
                 patient,
                 ContentionQueue {
@@ -5285,7 +5281,7 @@ mod tests {
                 patient,
                 crate::contention_support::care_contention_policy(),
             )
-                .unwrap();
+            .unwrap();
             txn.set_component_contention_queue(
                 patient,
                 ContentionQueue {

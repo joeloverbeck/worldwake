@@ -9,12 +9,12 @@ use serde::Deserialize;
 use worldwake_core::{
     CarryCapacity, CognitiveProfile, CombatProfile, CommodityValuationProfile,
     CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
-    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
-    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, MetabolismProfile,
-    PatrolProfile, PerceptionProfile, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
-    Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, items::CommodityKind,
-    topology::PlaceTag,
+    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, ExplorationProfile,
+    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory,
+    MetabolismProfile, PatrolProfile, PerceptionProfile, PlaceVisibilityProfile, PreferenceProfile,
+    PursuitProfile, Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -102,6 +102,8 @@ pub struct AgentDef {
     pub drive_thresholds: Option<DriveThresholds>,
     #[serde(default)]
     pub metabolism_profile: Option<MetabolismProfile>,
+    #[serde(default)]
+    pub exploration_profile: Option<ExplorationProfile>,
     #[serde(default)]
     pub carry_capacity: Option<CarryCapacity>,
     #[serde(default)]
@@ -315,6 +317,13 @@ mod tests {
                         pain: (low: 120, medium: 240, high: 520, critical: 800),
                         danger: (low: 80, medium: 220, high: 480, critical: 760),
                     ),
+                    exploration_profile: (
+                        curiosity_weight: 275,
+                        need_activation_threshold: 350,
+                        max_consecutive_explorations: 5,
+                        visit_lookback_ticks: 17,
+                        consecutive_exploration_count: 1,
+                    ),
                     theft_disposition: (
                         steal_duration_ticks: 6,
                         theft_motive_weight: 620,
@@ -391,6 +400,16 @@ mod tests {
         assert_eq!(perception.entity_claim_capacity, 9);
         assert!(bob.drive_thresholds.is_some());
         assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
+        assert_eq!(
+            bob.exploration_profile,
+            Some(ExplorationProfile {
+                curiosity_weight: Permille::new(275).unwrap(),
+                need_activation_threshold: Permille::new(350).unwrap(),
+                max_consecutive_explorations: 5,
+                visit_lookback_ticks: 17,
+                consecutive_exploration_count: 1,
+            })
+        );
         assert!(bob.theft_disposition.is_some());
         assert_eq!(
             bob.theft_disposition

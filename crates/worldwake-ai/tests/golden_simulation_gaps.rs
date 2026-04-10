@@ -606,9 +606,7 @@ fn run_multi_agent_convergence(
                 if matches!(event.kind, ActionTraceKind::Started { .. })
                     && event.action_name == "travel"
                 {
-                    observation
-                        .earliest_travel_start_tick
-                        .get_or_insert(tick);
+                    observation.earliest_travel_start_tick.get_or_insert(tick);
                 }
                 if matches!(event.kind, ActionTraceKind::Committed { .. }) {
                     agent_observation
@@ -701,9 +699,7 @@ fn starvation_traceability_metabolism() -> MetabolismProfile {
     }
 }
 
-fn run_death_traceability(
-    seed: Seed,
-) -> (DeathTraceabilityObservation, StateHash, StateHash) {
+fn run_death_traceability(seed: Seed) -> (DeathTraceabilityObservation, StateHash, StateHash) {
     let mut h = GoldenHarness::new(seed);
     h.driver.enable_tracing();
     h.enable_action_tracing();
@@ -745,22 +741,23 @@ fn run_death_traceability(
         .world
         .get_component_dead_at(agent)
         .expect("DeadAt should remain set after death");
-    let death_event_id = first_tagged_event_id_matching(&h.event_log, EventTag::Death, |_, record| {
-        record.target_ids().contains(&agent)
-            && event_sets_component(record, agent, ComponentKind::DeadAt, |value| {
-                matches!(
-                    value,
-                    ComponentValue::DeadAt(dead_at)
-                        if dead_at.tick == death_tick
-                            && matches!(
-                                dead_at.cause,
-                                DeathCause::NeedDeprivation {
-                                    need: HomeostaticNeedId::Hunger
-                                }
-                            )
-                )
-            })
-    });
+    let death_event_id =
+        first_tagged_event_id_matching(&h.event_log, EventTag::Death, |_, record| {
+            record.target_ids().contains(&agent)
+                && event_sets_component(record, agent, ComponentKind::DeadAt, |value| {
+                    matches!(
+                        value,
+                        ComponentValue::DeadAt(dead_at)
+                            if dead_at.tick == death_tick
+                                && matches!(
+                                    dead_at.cause,
+                                    DeathCause::NeedDeprivation {
+                                        need: HomeostaticNeedId::Hunger
+                                    }
+                                )
+                    )
+                })
+        });
 
     let saw_post_death_dead_decision = h.driver.trace_sink().is_some_and(|sink| {
         ((death_tick.0 + 1)..=h.scheduler.current_tick().0).any(|tick| {

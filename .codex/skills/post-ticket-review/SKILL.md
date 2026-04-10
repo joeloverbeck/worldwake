@@ -37,6 +37,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 6. Do not revise the ticket's problem statement, scope, or acceptance criteria except for factual completion notes required by archival mechanics.
 7. If archival readiness is ambiguous, apply the 1-3-1 rule.
 8. Archive if ready. If a prior review pass blocked archival, treat this pass as the authoritative handoff step only after remaining in-scope implementation has landed.
+9. After moving the ticket, inspect `git status` for both the archived path and the original active path. Record whether archival preserved tracked state or left the archive file untracked, and mention that explicitly in the report.
 
 ### 3. Establish the review surface
 

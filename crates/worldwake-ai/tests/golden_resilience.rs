@@ -113,7 +113,7 @@ fn run_t31_stress(seed: Seed) {
                                 cause: worldwake_core::DeathCause::CombatWounds,
                             },
                         )
-                            .unwrap();
+                        .unwrap();
                         commit_txn(txn, &mut h.event_log);
                     }
                 }

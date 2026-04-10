@@ -578,7 +578,7 @@ mod tests {
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .unwrap();
+        .unwrap();
         commit_txn(txn);
     }
 

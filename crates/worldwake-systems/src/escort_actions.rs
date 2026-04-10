@@ -476,8 +476,7 @@ fn commit_escort_to_safety(
         .ok_or_else(|| ActionError::InternalError("escort route missing final edge".to_string()))?;
     let hostile = had_combat_during_travel(event_log, instance.actor, departure_tick, txn.tick());
     record_route_experience(txn, instance.actor, edge_id, txn.tick(), hostile)?;
-    ensure_care_contention_state(txn, subject)
-        .map_err(ActionError::InternalError)?;
+    ensure_care_contention_state(txn, subject).map_err(ActionError::InternalError)?;
     enqueue_for_contention(txn, instance.actor, subject, payload.intended_heal_action)?;
     Ok(CommitOutcome::empty())
 }

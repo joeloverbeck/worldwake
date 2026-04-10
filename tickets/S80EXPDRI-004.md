@@ -19,6 +19,7 @@ Agents with unmet needs and no known satisfaction path currently enter indefinit
 6. `GoalBeliefView::resource_sources_at()` at `belief_view.rs:183` returns `Vec<EntityId>` — used to check whether the agent knows of any resource source for a need's commodity at reachable places.
 7. Counter management: `consecutive_exploration_count` on `ExplorationProfile` is incremented when ExploreLocation is selected, reset to 0 when any other goal is selected. This happens during goal selection in the agent tick, not in candidate generation itself.
 8. `S80EXPDRI-001` already added compile-safe inert ranking coverage for `ExploreLocation` in `crates/worldwake-ai/src/ranking.rs` (`GoalPriorityClass::Background`, motive `0`, discriminant branch). This ticket owns replacing that inert handling with the live `Low` priority / motive formula rather than introducing the symbol for the first time.
+9. Scenario authoring cleanup for the runtime-only `ExplorationProfile.consecutive_exploration_count` field is not owned here. That bootstrap/schema correction is tracked separately by `S80EXPDRI-006`; this ticket only owns runtime counter updates during goal selection.
 
 ## Architecture Check
 
@@ -93,6 +94,7 @@ Add a helper that maps `HomeostaticNeedId` to the commodity that satisfies it (e
 - Systematic cartography or map-building mechanics
 - Random wandering — targets are selected from known/adjacent-to-known places only
 - Exploration as permanent background activity — activates only when needs unmet + no known path
+- Scenario-schema cleanup for the runtime-only exploration counter (`S80EXPDRI-006`)
 
 ## Acceptance Criteria
 

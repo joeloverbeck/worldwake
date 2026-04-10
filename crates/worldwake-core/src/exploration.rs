@@ -75,7 +75,9 @@ mod tests {
     #[test]
     fn exploration_profile_registers_for_agents() {
         let mut world = World::new(Topology::new()).unwrap();
-        let agent = world.create_agent("Scout", ControlSource::Ai, Tick(1)).unwrap();
+        let agent = world
+            .create_agent("Scout", ControlSource::Ai, Tick(1))
+            .unwrap();
         let profile = ExplorationProfile {
             max_consecutive_explorations: 5,
             ..ExplorationProfile::default()
@@ -94,9 +96,14 @@ mod tests {
             .insert_component_exploration_profile(agent, profile)
             .unwrap();
 
-        assert_eq!(world.get_component_exploration_profile(agent), Some(&profile));
         assert_eq!(
-            world.entities_with_exploration_profile().collect::<Vec<_>>(),
+            world.get_component_exploration_profile(agent),
+            Some(&profile)
+        );
+        assert_eq!(
+            world
+                .entities_with_exploration_profile()
+                .collect::<Vec<_>>(),
             vec![agent]
         );
         assert_eq!(

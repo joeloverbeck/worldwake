@@ -329,6 +329,8 @@ fn spawn_agent(
     txn.set_component_drive_thresholds(agent_id, thresholds)?;
     let metabolism = agent_def.metabolism_profile.unwrap_or_default();
     txn.set_component_metabolism_profile(agent_id, metabolism)?;
+    let exploration = agent_def.exploration_profile.unwrap_or_default();
+    txn.set_component_exploration_profile(agent_id, exploration)?;
     let carry = agent_def
         .carry_capacity
         .unwrap_or(DEFAULT_AGENT_CARRY_CAPACITY);
@@ -545,11 +547,11 @@ mod tests {
         BeliefConfidencePolicy, CarryCapacity, CognitiveProfile, CommodityKind,
         CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
         ControlSource, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-        ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-        LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
-        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
-        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WorkstationTag,
+        ExpectationStore, ExplorationProfile, HomeostaticNeeds, IntentionDispositionProfile,
+        JusticeDispositionProfile, LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute,
+        PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
+        Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
+        TradeCategory, ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -574,6 +576,7 @@ mod tests {
             last_seen_memory: None,
             drive_thresholds: None,
             metabolism_profile: None,
+            exploration_profile: None,
             carry_capacity: None,
             theft_disposition: None,
             justice_disposition: None,
@@ -1373,6 +1376,10 @@ mod tests {
             Some(&ExpectationStore::default())
         );
         assert_eq!(
+            world.get_component_exploration_profile(agent),
+            Some(&ExplorationProfile::default())
+        );
+        assert_eq!(
             world.get_component_last_seen_memory(agent),
             Some(&LastSeenMemory::default())
         );
@@ -1432,6 +1439,13 @@ mod tests {
             institutional_memory_capacity: 9,
             consultation_speed_factor: Permille::new(650).unwrap(),
             contradiction_tolerance: Permille::new(125).unwrap(),
+        };
+        let custom_exploration = ExplorationProfile {
+            curiosity_weight: Permille::new(275).unwrap(),
+            need_activation_threshold: Permille::new(350).unwrap(),
+            max_consecutive_explorations: 5,
+            visit_lookback_ticks: 17,
+            consecutive_exploration_count: 1,
         };
         let custom_thresholds = DriveThresholds::new(
             ThresholdBand::new(
@@ -1496,6 +1510,7 @@ mod tests {
             agents: vec![AgentDef {
                 perception_profile: Some(custom_perception),
                 drive_thresholds: Some(custom_thresholds),
+                exploration_profile: Some(custom_exploration),
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
             items: vec![],
@@ -1518,6 +1533,10 @@ mod tests {
         assert_eq!(
             world.get_component_drive_thresholds(agent),
             Some(&custom_thresholds)
+        );
+        assert_eq!(
+            world.get_component_exploration_profile(agent),
+            Some(&custom_exploration)
         );
     }
 

@@ -1246,7 +1246,7 @@ mod tests {
                     cause: worldwake_core::DeathCause::CombatWounds,
                 },
             )
-                .unwrap();
+            .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }
@@ -1313,7 +1313,7 @@ mod tests {
                     cause: worldwake_core::DeathCause::CombatWounds,
                 },
             )
-                .unwrap();
+            .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
         }

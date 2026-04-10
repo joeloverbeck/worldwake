@@ -15,7 +15,7 @@ Draft
 ## Crates
 
 - `worldwake-core` (new goal kind, exploration profile component)
-- `worldwake-sim` (new `exploration_profile()` accessor on `GoalBeliefView` trait in `crates/worldwake-sim/src/belief_view.rs`, plus `RuntimeBeliefView` impl and `impl_goal_belief_view!` macro forwarding)
+- `worldwake-sim` (new `exploration_profile()` accessor on `GoalBeliefView` trait in `crates/worldwake-sim/src/belief_view.rs`, plus `RuntimeBeliefView` impl and blanket forwarding through the narrow belief-view traits)
 - `worldwake-ai` (candidate generation, goal dispatch, goal model `GoalKindPlannerExt` impl, ranking)
 - `worldwake-systems` (no changes expected — travel actions already exist)
 
@@ -154,7 +154,7 @@ fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
 }
 ```
 
-Forward through the `impl_goal_belief_view!` macro and implement in `RuntimeBeliefView` to read from the ECS store.
+Forward through the live `GoalBeliefView` blanket impl path and implement in `RuntimeBeliefView` to read from the ECS store.
 
 ### 4. Exploration Goal Generation
 

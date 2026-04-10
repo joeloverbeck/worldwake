@@ -1071,7 +1071,7 @@ mod tests {
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .map_err(|error| SystemError::new(error.to_string()))?;
+        .map_err(|error| SystemError::new(error.to_string()))?;
         let _ = txn.commit(context.event_log);
         Ok(())
     }
@@ -2812,7 +2812,7 @@ mod tests {
                     cause: worldwake_core::DeathCause::CombatWounds,
                 },
             )
-                .map_err(|error| SystemError::new(error.to_string()))?;
+            .map_err(|error| SystemError::new(error.to_string()))?;
             let _ = txn.commit(context.event_log);
             Ok(())
         }

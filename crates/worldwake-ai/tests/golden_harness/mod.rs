@@ -2098,18 +2098,15 @@ mod tests {
         );
 
         let matched_death = first_tagged_event_id_matching(&log, EventTag::Combat, |_, record| {
-            event_sets_component(
-                record,
-                incumbent,
-                ComponentKind::DeadAt,
-                |after| matches!(
+            event_sets_component(record, incumbent, ComponentKind::DeadAt, |after| {
+                matches!(
                     after,
                     ComponentValue::DeadAt(worldwake_core::DeadAt {
                         tick,
                         cause: worldwake_core::DeathCause::CombatWounds,
                     }) if *tick == death_tick
-                ),
-            )
+                )
+            })
         });
         let matched_vacancy =
             first_tagged_event_id_matching(&log, EventTag::Political, |_, record| {

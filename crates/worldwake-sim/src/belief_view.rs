@@ -9,14 +9,15 @@ use worldwake_core::{
     ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant, DemandObservation,
-    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
-    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
+    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
+    PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
+    RecordData, RecordedViolation, ResourceSource, RouteExperience, SocialObservation,
+    SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 pub trait GoalSpatialBeliefView {
@@ -190,6 +191,10 @@ pub trait GoalBeliefView {
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
+        let _ = agent;
+        None
+    }
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
     fn observation_fidelity(&self, agent: EntityId) -> Permille {
         let _ = agent;
@@ -421,6 +426,10 @@ pub trait ProfileBeliefView {
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
+    fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
+        let _ = agent;
+        None
+    }
     fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
         let _ = agent;
         None
@@ -1195,6 +1204,13 @@ where
         ProfileBeliefView::drive_thresholds(self, agent)
     }
 
+    fn exploration_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::ExplorationProfile> {
+        ProfileBeliefView::exploration_profile(self, agent)
+    }
+
     fn belief_confidence_policy(
         &self,
         agent: worldwake_core::EntityId,
@@ -1740,6 +1756,13 @@ mod tests {
             &self,
             _agent: EntityId,
         ) -> Option<worldwake_core::MetabolismProfile> {
+            None
+        }
+
+        fn exploration_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::ExplorationProfile> {
             None
         }
     }

@@ -2015,7 +2015,7 @@ fn build_multi_corpse_loot_binding_scenario(
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .unwrap();
+        .unwrap();
         txn.set_component_dead_at(
             corpse_b,
             DeadAt {
@@ -2023,7 +2023,7 @@ fn build_multi_corpse_loot_binding_scenario(
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .unwrap();
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 
@@ -2408,7 +2408,7 @@ fn build_suppression_then_binding_scenario(
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .unwrap();
+        .unwrap();
         txn.set_component_dead_at(
             corpse_b,
             DeadAt {
@@ -2416,7 +2416,7 @@ fn build_suppression_then_binding_scenario(
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .unwrap();
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
 

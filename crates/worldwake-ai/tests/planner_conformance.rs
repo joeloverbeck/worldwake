@@ -1452,7 +1452,7 @@ fn conformance_loot() {
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .unwrap();
+        .unwrap();
         txn.set_component_agent_data(
             corpse,
             AgentData {
@@ -1726,7 +1726,7 @@ fn conformance_bury() {
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .unwrap();
+        .unwrap();
         txn.set_component_agent_data(
             corpse,
             AgentData {

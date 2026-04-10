@@ -268,7 +268,7 @@ mod tests {
                     cause: worldwake_core::DeathCause::CombatWounds,
                 },
             )
-                .unwrap();
+            .unwrap();
             commit_txn(txn);
             (actor, corpse)
         };
@@ -401,7 +401,7 @@ mod tests {
                     cause: worldwake_core::DeathCause::CombatWounds,
                 },
             )
-                .unwrap();
+            .unwrap();
             commit_txn(txn);
             (healthy, incapacitated, dead)
         };
@@ -544,7 +544,7 @@ mod tests {
                     cause: worldwake_core::DeathCause::CombatWounds,
                 },
             )
-                .unwrap();
+            .unwrap();
             commit_txn(txn);
             (actor, living_agent, dead_agent, facility)
         };

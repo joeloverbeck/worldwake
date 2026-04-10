@@ -1,10 +1,9 @@
 use crate::contention_support::install_corpse_contention_state;
 use std::collections::BTreeMap;
 use worldwake_core::{
-    BodyCostPerTick, BodyPart, CauseRef, CommodityKind, DeadAt, DeathCause,
-    DeprivationExposure, DeprivationKind, EventTag, HomeostaticNeedId, HomeostaticNeeds,
-    Quantity, Tick, VisibilitySpec, WitnessData, WorldTxn, Wound, WoundCause, WoundList,
-    is_wound_load_fatal,
+    BodyCostPerTick, BodyPart, CauseRef, CommodityKind, DeadAt, DeathCause, DeprivationExposure,
+    DeprivationKind, EventTag, HomeostaticNeedId, HomeostaticNeeds, Quantity, Tick, VisibilitySpec,
+    WitnessData, WorldTxn, Wound, WoundCause, WoundList, is_wound_load_fatal,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionInstance, ActionInstanceId, SystemError, SystemExecutionContext,
@@ -27,8 +26,9 @@ pub fn needs_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> 
         return Ok(());
     }
 
-    let (death_updates, batched_updates): (Vec<_>, Vec<_>) =
-        updates.into_iter().partition(|update| update.death.is_some());
+    let (death_updates, batched_updates): (Vec<_>, Vec<_>) = updates
+        .into_iter()
+        .partition(|update| update.death.is_some());
 
     if !batched_updates.is_empty() {
         let mut txn = WorldTxn::new(
@@ -173,8 +173,7 @@ fn apply_pending_update(txn: &mut WorldTxn<'_>, update: PendingUpdate) -> Result
             },
         )
         .map_err(|error| SystemError::new(error.to_string()))?;
-        install_corpse_contention_state(txn, update.entity)
-            .map_err(SystemError::new)?;
+        install_corpse_contention_state(txn, update.entity).map_err(SystemError::new)?;
     }
     Ok(())
 }
@@ -1057,13 +1056,7 @@ mod tests {
         seed_agent(
             &mut world,
             patient,
-            HomeostaticNeeds::new(
-                thresholds.hunger.critical(),
-                pm(300),
-                pm(0),
-                pm(0),
-                pm(0),
-            ),
+            HomeostaticNeeds::new(thresholds.hunger.critical(), pm(300), pm(0), pm(0), pm(0)),
             DeprivationExposure {
                 hunger_critical_ticks: 99,
                 ..DeprivationExposure::default()
@@ -1149,7 +1142,9 @@ mod tests {
         );
         assert_eq!(world.get_component_contention_intents(contender), None);
         assert_eq!(event_log.events_by_tag(EventTag::Death).len(), 1);
-        let record = event_log.get(event_log.events_by_tag(EventTag::Death)[0]).unwrap();
+        let record = event_log
+            .get(event_log.events_by_tag(EventTag::Death)[0])
+            .unwrap();
         assert_eq!(record.actor_id(), Some(patient));
         assert!(record.tags().contains(&EventTag::System));
         assert!(record.tags().contains(&EventTag::WorldMutation));
@@ -1167,13 +1162,7 @@ mod tests {
         seed_agent(
             &mut world,
             agent,
-            HomeostaticNeeds::new(
-                thresholds.hunger.critical(),
-                pm(300),
-                pm(0),
-                pm(0),
-                pm(0),
-            ),
+            HomeostaticNeeds::new(thresholds.hunger.critical(), pm(300), pm(0), pm(0), pm(0)),
             DeprivationExposure {
                 hunger_critical_ticks: 99,
                 ..DeprivationExposure::default()
@@ -1207,13 +1196,25 @@ mod tests {
     #[test]
     fn determine_need_death_cause_prefers_higher_pressure_and_breaks_ties_toward_hunger() {
         assert_eq!(
-            determine_need_death_cause(HomeostaticNeeds::new(pm(400), pm(700), pm(0), pm(0), pm(0))),
+            determine_need_death_cause(HomeostaticNeeds::new(
+                pm(400),
+                pm(700),
+                pm(0),
+                pm(0),
+                pm(0)
+            )),
             DeathCause::NeedDeprivation {
                 need: HomeostaticNeedId::Thirst,
             }
         );
         assert_eq!(
-            determine_need_death_cause(HomeostaticNeeds::new(pm(500), pm(500), pm(0), pm(0), pm(0))),
+            determine_need_death_cause(HomeostaticNeeds::new(
+                pm(500),
+                pm(500),
+                pm(0),
+                pm(0),
+                pm(0)
+            )),
             DeathCause::NeedDeprivation {
                 need: HomeostaticNeedId::Hunger,
             }

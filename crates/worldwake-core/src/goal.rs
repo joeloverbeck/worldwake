@@ -249,8 +249,8 @@ mod tests {
     };
     use crate::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
-        ExpectationId, HomeostaticNeedId, NoticeTopic, ProofRequirement, PunishmentKind,
-        Quantity, RecipeId, RewardSource, test_utils::entity_id,
+        ExpectationId, HomeostaticNeedId, NoticeTopic, ProofRequirement, PunishmentKind, Quantity,
+        RecipeId, RewardSource, test_utils::entity_id,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;

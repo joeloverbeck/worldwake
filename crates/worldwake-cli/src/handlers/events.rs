@@ -286,6 +286,7 @@ mod tests {
                 last_seen_memory: None,
                 drive_thresholds: None,
                 metabolism_profile: None,
+                exploration_profile: None,
                 carry_capacity: None,
                 theft_disposition: None,
                 justice_disposition: None,

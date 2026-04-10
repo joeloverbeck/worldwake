@@ -1,6 +1,6 @@
 # S80EXPDRI-002: Belief view accessor and scenario wiring
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new GoalBeliefView method, AgentDef field, spawn_agent update
@@ -13,13 +13,13 @@ Candidate generation (ticket 004) needs to read `ExplorationProfile` through the
 ## Assumption Reassessment (2026-04-10)
 
 1. `GoalBeliefView` trait at `crates/worldwake-sim/src/belief_view.rs:67` currently has ~40 methods with default implementations returning `None`/empty. Pattern: `fn method(&self, agent: EntityId) -> Option<Type>` with `let _ = agent; None` default body.
-2. `impl_goal_belief_view!` macro forwards trait methods to `RuntimeBeliefView`. Located in `crates/worldwake-sim/src/belief_view.rs`. New methods need forwarding entries.
+2. Live forwarding does not use an `impl_goal_belief_view!` macro. `GoalBeliefView` is implemented via blanket forwarding over sub-traits in `crates/worldwake-sim/src/belief_view.rs`, so the owned boundary is `ProfileBeliefView` plus the `GoalBeliefView for T` forwarding block.
 3. Shared abstraction boundary: `GoalBeliefView` trait is the belief-mediated read surface for the AI crate (P26 — systems interact through state). Adding an accessor follows the established pattern for all other profile reads.
 4. `AgentDef` at `crates/worldwake-cli/src/scenario/types.rs:66` has ~30 `Option<ProfileType>` fields. `spawn_agent()` at `crates/worldwake-cli/src/scenario/mod.rs:310` uses `unwrap_or_default()` for universal profiles.
 
 ## Architecture Check
 
-1. Follows the exact established pattern: GoalBeliefView accessor → macro forwarding → RuntimeBeliefView reads from ECS store. AgentDef uses `Option<ExplorationProfile>` with `unwrap_or_default()` in spawn_agent for universal profiles. No novel architecture.
+1. Follows the exact established pattern: GoalBeliefView accessor → blanket forwarding through the narrow belief sub-traits → RuntimeBeliefView reads from ECS store. AgentDef uses `Option<ExplorationProfile>` with `unwrap_or_default()` in spawn_agent for universal profiles. No novel architecture.
 2. No backward-compatibility shims. New accessor with default `None` return — existing impls remain valid.
 
 ## Verification Layers
@@ -42,9 +42,9 @@ fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
 }
 ```
 
-### 2. Forward in impl_goal_belief_view! macro
+### 2. Forward through the live blanket impl
 
-Add `exploration_profile` to the macro forwarding list so `PerAgentBeliefView` and other runtime views satisfy the trait.
+Add `exploration_profile` to `ProfileBeliefView`, then forward it through the `GoalBeliefView for T` blanket implementation so `PerAgentBeliefView` and other runtime views satisfy the trait.
 
 ### 3. Implement in RuntimeBeliefView
 
@@ -71,9 +71,30 @@ txn.set_component_exploration_profile(
 
 ## Files to Touch
 
-- `crates/worldwake-sim/src/belief_view.rs` (modify — add trait method + macro forwarding + RuntimeBeliefView impl)
+- `crates/worldwake-sim/src/belief_view.rs` (modify — add trait method + blanket forwarding + RuntimeBeliefView-facing read surface)
 - `crates/worldwake-cli/src/scenario/types.rs` (modify — add ExplorationProfile field to AgentDef)
 - `crates/worldwake-cli/src/scenario/mod.rs` (modify — set component in spawn_agent)
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Added `exploration_profile()` to the AI-facing belief surface by extending `ProfileBeliefView`, forwarding it through the `GoalBeliefView` blanket impl, and implementing the runtime read in `PerAgentBeliefView` via `get_component_exploration_profile`.
+- Added `AgentDef.exploration_profile: Option<ExplorationProfile>` and wired `spawn_agent()` to seed the authoritative component with `unwrap_or_default()` so the universal-profile contract matches live world bootstrap behavior.
+- Added focused coverage for runtime belief reads, scenario RON deserialization, default scenario seeding, and explicit scenario overrides.
+- Updated CLI test scenario builders and direct `AgentDef` literals that needed the new optional field during all-target constructor fallout.
+
+## Deviations
+
+- The ticket referenced an `impl_goal_belief_view!` macro, but the live codebase uses blanket forwarding from `GoalBeliefView` into narrower sub-traits. The implementation followed the live boundary instead of introducing a new macro path.
+- The spec example field names for `ExplorationProfile` did not match the already-landed core component shape. Tests and scenario wiring now use the live fields from `crates/worldwake-core/src/exploration.rs`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-sim`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo build --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
 
 ## Out of Scope
 

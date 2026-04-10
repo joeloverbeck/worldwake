@@ -367,7 +367,7 @@ mod tests {
                     cause: worldwake_core::DeathCause::CombatWounds,
                 },
             )
-                .unwrap();
+            .unwrap();
             txn.commit(&mut harness.log);
         }
         harness.set_member_in_transit(harness.member_b, 2);

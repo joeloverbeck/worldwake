@@ -2708,7 +2708,7 @@ fn dead_ai_agent_is_skipped_by_ai_driver() {
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .unwrap();
+        .unwrap();
         let _ = txn.commit(&mut harness.event_log);
     }
 
@@ -5605,7 +5605,7 @@ fn trace_dead_agent() {
                 cause: worldwake_core::DeathCause::CombatWounds,
             },
         )
-            .unwrap();
+        .unwrap();
         commit_txn(txn);
     }
     harness.driver.enable_tracing();

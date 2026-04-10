@@ -16,12 +16,20 @@ For each mismatch, state:
 Update the ticket immediately (without stopping) when the correction is mechanical and directionally unambiguous:
 - Exact live spec path from a user-supplied glob
 - Stale file/symbol/test references
+- Stale inline code snippets, API sketches, or sample struct literals whose live symbols or field names have drifted
 - `Files to Touch`, `Verification Layers`, or command lists that need to match current codebase
 - Component-registration fallout from live macro expansion or schema discovery
 - Stale acceptance criteria, scenario assertion surfaces, or proof targets where the live symbols and behavior make the narrower honest contract directionally unambiguous
 
 Record each auto-correction: ticket says / live code has / correction applied / why safe.
 Place notes under the ticket's `Assumption Reassessment` section as numbered entries. If the section is missing, add one.
+
+During reassessment, validate inline examples against the live codebase before coding:
+- macro names or forwarding paths shown in the ticket/spec
+- sample method signatures and return shapes
+- sample struct literals and field names
+
+If the embedded example is stale but the intended direction is still unambiguous, auto-correct the ticket text in the same pass instead of carrying the stale snippet into implementation.
 
 ### Affected section updates
 
