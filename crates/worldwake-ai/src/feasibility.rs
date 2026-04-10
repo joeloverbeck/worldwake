@@ -216,7 +216,8 @@ fn goal_specific_feasibility(
             GoalKind::InvestigateViolation { place, .. }
             | GoalKind::Patrol { place }
             | GoalKind::ExploreLocation {
-                target_place: place, ..
+                target_place: place,
+                ..
             },
         ) => {
             let agent_place = view.effective_place(agent)?;

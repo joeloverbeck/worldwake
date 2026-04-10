@@ -4063,9 +4063,7 @@ fn select_exploration_target(
         .filter(|(candidate_place, observed_tick)| {
             *candidate_place != origin
                 && !observed_tick.is_some_and(|observed_tick| {
-                    current_tick
-                        .0
-                        .saturating_sub(observed_tick.0)
+                    current_tick.0.saturating_sub(observed_tick.0)
                         <= u64::from(profile.visit_lookback_ticks)
                 })
         })
@@ -4719,8 +4717,7 @@ mod tests {
         DemandObservationReason, DriveThresholds, EffectiveRight, EligibilityRule, EntityId,
         EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
         ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile, GoalKey,
-        GoalKind,
-        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+        GoalKind, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
         LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
         NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource,
@@ -14719,9 +14716,12 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.effective_places.insert(agent, current_place);
         view.entities_at.insert(current_place, vec![agent]);
-        view.adjacent_places.insert(current_place, vec![known_place]);
-        view.adjacent_places.insert(known_place, vec![current_place, frontier_place]);
-        view.adjacent_places.insert(frontier_place, vec![known_place]);
+        view.adjacent_places
+            .insert(current_place, vec![known_place]);
+        view.adjacent_places
+            .insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places
+            .insert(frontier_place, vec![known_place]);
         view.homeostatic_needs.insert(
             agent,
             HomeostaticNeeds::new(
@@ -14801,9 +14801,12 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.effective_places.insert(agent, current_place);
         view.entities_at.insert(current_place, vec![agent]);
-        view.adjacent_places.insert(current_place, vec![known_place]);
-        view.adjacent_places.insert(known_place, vec![current_place, frontier_place]);
-        view.adjacent_places.insert(frontier_place, vec![known_place]);
+        view.adjacent_places
+            .insert(current_place, vec![known_place]);
+        view.adjacent_places
+            .insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places
+            .insert(frontier_place, vec![known_place]);
         view.homeostatic_needs.insert(
             agent,
             HomeostaticNeeds::new(
@@ -14893,9 +14896,12 @@ mod tests {
         view.entity_kinds.insert(agent, EntityKind::Agent);
         view.effective_places.insert(agent, current_place);
         view.entities_at.insert(current_place, vec![agent]);
-        view.adjacent_places.insert(current_place, vec![known_place]);
-        view.adjacent_places.insert(known_place, vec![current_place, frontier_place]);
-        view.adjacent_places.insert(frontier_place, vec![known_place]);
+        view.adjacent_places
+            .insert(current_place, vec![known_place]);
+        view.adjacent_places
+            .insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places
+            .insert(frontier_place, vec![known_place]);
         view.homeostatic_needs.insert(
             agent,
             HomeostaticNeeds::new(

@@ -1975,8 +1975,7 @@ mod tests {
     use super::WorldTxn;
     use crate::{
         AgentBeliefStore, BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim,
-        BlockedIntentMemory, CognitiveProfile, CommunicationProfile, DemandMemory,
-        DisposalProfile,
+        BlockedIntentMemory, CognitiveProfile, CommunicationProfile, DemandMemory, DisposalProfile,
         EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
         InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
@@ -4731,7 +4730,10 @@ mod tests {
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before = world.get_component_disposal_profile(agent).copied().unwrap();
+        let before = world
+            .get_component_disposal_profile(agent)
+            .copied()
+            .unwrap();
         let after = DisposalProfile {
             capacity_strain_threshold: Permille::new(925).unwrap(),
         };
@@ -5059,7 +5061,10 @@ mod tests {
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before = world.get_component_disposal_profile(agent).copied().unwrap();
+        let before = world
+            .get_component_disposal_profile(agent)
+            .copied()
+            .unwrap();
 
         let mut txn = new_txn(&mut world);
         txn.clear_component_disposal_profile(agent).unwrap();

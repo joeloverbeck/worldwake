@@ -13,7 +13,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 Before running the full workflow, classify the ticket:
 
-**Small/local tickets** (fast path) — single-file additive CLI/tooling/reporting change, narrow helper extraction, formatting update, no shared type/planner/golden/persistence/cross-crate fallout expected:
+**Small/local tickets** (fast path) — single-file additive CLI/tooling/reporting/action-registry change, narrow helper extraction, formatting update, or other owned-module additive change with no shared type/planner/golden/persistence/cross-crate fallout expected. Typical examples include a single-file transport/action registration, local handler addition, narrow helper extraction, or bin-local coverage for factored logic:
 1. Resolve the exact live ticket/spec path, including typos or shorthand.
 2. Confirm the dependency path and the exact owned symbol/file boundary.
 3. Run a constructor/usage sweep for the changed shape (see Step 4, Type-change scope).

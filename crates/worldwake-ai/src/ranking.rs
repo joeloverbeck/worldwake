@@ -18,12 +18,11 @@ use std::{
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
     CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind,
-    HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey,
-    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
-    failure_ratio_permille,
+    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId,
+    HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+    NoticeTopic, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity,
+    RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
+    belief_confidence, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -679,19 +678,16 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
     }
 }
 
-fn exploration_motive(
-    context: &RankingContext<'_>,
-    motivating_need: HomeostaticNeedId,
-) -> u32 {
+fn exploration_motive(context: &RankingContext<'_>, motivating_need: HomeostaticNeedId) -> u32 {
     let Some(needs) = context.needs else {
         return 0;
     };
     let Some(profile) = context.exploration_profile else {
         return 0;
     };
-    u32::from(profile.curiosity_weight.value())
-        .saturating_mul(u32::from(need_pressure_for_id(needs, motivating_need).value()))
-        / 1000
+    u32::from(profile.curiosity_weight.value()).saturating_mul(u32::from(
+        need_pressure_for_id(needs, motivating_need).value(),
+    )) / 1000
 }
 
 fn need_pressure_for_id(needs: HomeostaticNeeds, need_id: HomeostaticNeedId) -> Permille {

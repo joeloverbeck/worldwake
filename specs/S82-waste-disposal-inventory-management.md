@@ -86,10 +86,10 @@ ActionDef {
         Precondition::TargetDirectlyPossessedByActor(0),
     ],
     reservation_requirements: Vec::new(),
-    duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
+    duration: DurationExpr::Fixed(NonZeroU32::MIN),
     body_cost_per_tick: BodyCostPerTick::zero(),
-    attention_cost: Permille::new_unchecked(50),
-    interruptibility: Interruptibility::FreelyInterruptible,
+    attention_cost: Permille::new_unchecked(100),
+    interruptibility: Interruptibility::InterruptibleWithPenalty,
     commit_conditions: vec![
         Precondition::TargetExists(0),
         Precondition::TargetAtActorPlace(0),
@@ -106,7 +106,7 @@ ActionDef {
 }
 ```
 
-Duration is 2 ticks (non-instant per FND-08) with low attention cost (`50‰`). Reuses existing `TargetSpec::EntityDirectlyPossessedByActorAnyOf` (fixed 2-element array `[EntityKind; 2]` per `action_semantics.rs:42`) and the same precondition pattern as `put_down`.
+The live `drop_item` contract mirrors the current `put_down` transport action: `DurationExpr::Fixed(NonZeroU32::MIN)`, `Permille::new_unchecked(100)`, and `Interruptibility::InterruptibleWithPenalty`. This keeps disposal aligned with the existing transport-domain timing/occupancy model while reusing `TargetSpec::EntityDirectlyPossessedByActorAnyOf` (fixed 2-element array `[EntityKind; 2]` per `action_semantics.rs:42`) and the same precondition pattern as `put_down`.
 
 A new `ActionHandler` struct must be registered via `handlers.register(drop_item_id, drop_item_handler)` even though tick and abort functions are shared with the existing transport handlers.
 
