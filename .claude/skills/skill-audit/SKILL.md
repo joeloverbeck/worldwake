@@ -90,7 +90,7 @@ Output this structure to the conversation (do not write to a file):
 
 ## Summary
 
-**Total**: N issues, N improvements, N features — N CRITICAL, N HIGH, N MEDIUM, N LOW
+**Total**: N issues, N improvements, N features (N findings total) — N CRITICAL, N HIGH, N MEDIUM, N LOW
 ```
 
 Double-check severity counts against findings before presenting. If a correction is needed after presenting, strike the incorrect line and restate.

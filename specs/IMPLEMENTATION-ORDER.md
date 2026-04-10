@@ -129,6 +129,23 @@ S85 ✅ archived
 - **S84**: ✅ COMPLETED — ShareBelief Operator Fix — archived at [archive/specs/S84-share-belief-operator-fix.md](/home/joeloverbeck/projects/worldwake/archive/specs/S84-share-belief-operator-fix.md). Landed the snapshot place-indexing fix for evidence listeners, then closed the proposed pruning/diagnostic/golden follow-up slices against the stronger live planner and golden contracts.
 - **S85**: ✅ COMPLETED — Observer Behavioral Enrichment — archived at [archive/specs/S85-observer-behavioral-enrichment.md](/home/joeloverbeck/projects/worldwake/archive/specs/S85-observer-behavioral-enrichment.md). Landed the observer-only enrichment wave: death tick/cause display, depth-0 frontier-exhaustion reason formatting, behavioral-transition need snapshots, post-travel/final affordance snapshots, and clearer unknown-location rendering for believed place entities.
 
+### Adjunct Wave: Simulation Remediation Phase 3
+
+Derived from 2026-04-10 post-S85 simulation observer re-run (`reports/simulation-remediation.md`) validated against
+the actual codebase and `docs/FOUNDATIONS.md`. S83's belief-gated acquisition filtering was insufficient —
+1400–2600 candidates still exhaust the planner budget at depth 0, blocking all multi-location plans.
+S85's observer enrichments did not deliver belief history, StartFailed reasons, or inventory timelines.
+
+```text
+S86 (independent)
+S87 (independent)
+S86, S87 (parallel)
+```
+
+**Wave** (parallel, no deps):
+- **S86**: Planner Pre-Expansion Candidate Heuristics — pre-expansion scoring and truncation of search candidates by goal relevance, depth-sensitive cap on `ExecutionBudget`, golden coverage proving multi-location travel+acquire plans succeed within budget
+- **S87**: Observer Diagnostic Gaps — belief formation/decay timeline (TK-6), StartFailed precondition name extraction (TK-7), inventory capacity timeline with saturation anomaly (TK-8)
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed

@@ -48,6 +48,8 @@ Read ALL of these files before any analysis:
 
 **Temporal context**: After reading the assessment, determine its generation date (look for timestamps, headers, or metadata). Cross-reference against completion dates of specs referenced in the assessment. If the assessment was generated *after* referenced completed specs, note this: "Assessment post-dates S{N} (completed YYYY-MM-DD) — observations reflect post-fix simulation state." Carry this forward to Step 3.2 — post-fix observations take precedence over "already addressed" claims.
 
+**Re-processed assessment**: If `specs/IMPLEMENTATION-ORDER.md` references this same assessment file as the source for completed adjunct waves, the file may have been regenerated from a new simulation run. The generation date in the assessment header takes precedence — if it post-dates all completed specs derived from this file, treat the assessment as a fresh post-fix document. Do not default to "already processed." When in doubt, ask the user whether the assessment reflects a new simulation run.
+
 **Pre-flight check**: If `specs/IMPLEMENTATION-ORDER.md` exists in `specs/`, note its presence for Step 10. Do not warn about overwriting yet — the write strategy (append vs. fresh) depends on the number and nature of accepted proposals, which is not known until after triage. If the file was already archived (read from `archive/`), note that no active file exists.
 
 #### Step 2: Extract Proposals
@@ -87,7 +89,7 @@ Before classifying, identify causal dependencies between proposals. If proposal 
 
 For each proposal, assign one of three classifications:
 
-- **Accept**: The proposal's assumptions are valid, it aligns with FOUNDATIONS, and the change would be beneficial. Record: which spec(s) it maps to, estimated scope. If a prior spec addressed the same scope but the assessment demonstrates the problem persists (post-fix observation per Temporal Context from Step 1), classify as Accept with note: "Prior fix (S{N}) was insufficient — investigation required." The new spec should reference the prior spec and focus on the gap.
+- **Accept**: The proposal's assumptions are valid, it aligns with FOUNDATIONS, and the change would be beneficial. Record: which spec(s) it maps to, estimated scope. If a prior spec addressed the same scope but the assessment demonstrates the problem persists (post-fix observation per Temporal Context from Step 1), classify as Accept with note: "Prior fix (S{N}) was insufficient — investigation required." The new spec should: (a) name the prior spec and what it attempted, (b) explain why it was insufficient based on the assessment's post-fix observations, and (c) describe how the new approach differs. This prevents the new spec from repeating the same narrow fix.
 - **Reject**: The proposal's assumptions are wrong (already addressed, codebase differs from what assessment assumes), it violates FOUNDATIONS, or it fails YAGNI (no meaningful downstream consequences). Record: the specific reason for rejection.
 - **Scope-Down**: The core idea is valuable but the proposal is too ambitious or mixes concerns. Record: what the reduced spec would cover, what is deferred to later.
 
@@ -119,11 +121,13 @@ Present the triage to the user in a structured format:
 [If any proposals are ambiguous, ask here. Max 3 questions.]
 ```
 
-Omit classification sections that have 0 entries (e.g., skip the "Rejected" header entirely if nothing was rejected). When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options. When open-ended, present in the report.
+Omit classification sections that have 0 entries (e.g., skip the "Rejected" header entirely if nothing was rejected). For rejection lists with 5+ proposals, a table format is acceptable as an alternative to the numbered list. When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options. When open-ended, present in the report.
 
 **Wait for user response.** Do not proceed to Phase 2 until the user has approved or adjusted the triage. Treat classifications as approved unless the user explicitly changes them. The triage approval question must not be bundled with other decisions (e.g., append vs. fresh from Step 10). Present the triage report and wait for classification approval only. Defer implementation-order decisions to Phase 3.
 
 If the user reclassifies proposals (e.g., "accept P5 too" or "reject P2"), update the triage accordingly and confirm the updated list.
+
+If the user corrects a foundational assumption (e.g., temporal context, assessment provenance, codebase state) that invalidates the overall triage — not just individual classifications — restart from Step 3 (Codebase Validation) with the corrected assumption. Present the corrected triage as a fresh report, not an incremental update. Note which assumption was corrected and how it changed the analysis.
 
 ---
 
