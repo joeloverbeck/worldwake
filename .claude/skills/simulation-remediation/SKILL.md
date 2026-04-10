@@ -40,14 +40,14 @@ Read `reports/simulation-observer-report.md`.
 1. Read `docs/FOUNDATIONS.md` -- needed to evaluate whether findings violate foundational principles. If the file exceeds read limits, prioritize sections III (Knowledge, Belief, and Evidence) and IV (Agents, Institutions, and Social Order) as these are most commonly implicated by behavioral smells.
 2. List the `specs/` directory to know which specs exist.
 3. List the `tickets/` directory to check for existing related tickets.
-4. Glob `crates/worldwake-ai/tests/golden_*.rs` to identify existing test files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern. Batch all keyword searches into a single operation (e.g., delegate to an Explore agent with all finding-related keywords) rather than grepping per-finding sequentially.
+4. Glob `crates/worldwake-ai/tests/golden_*.rs` to identify existing test files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern. Batch all keyword searches into a single operation (e.g., delegate to an Explore agent with all finding-related keywords) rather than grepping per-finding sequentially. The agent prompt should list all finding-related keywords grouped by observer report finding number, request test function names and key assertions for each match, and ask for a structured report grouped by keyword category.
 5. Read `docs/spec-drafting-rules.md` -- only if any spec changes will be proposed. Skip if all findings map to golden tests or tickets.
 6. If `reports/simulation-remediation.md` already exists (from a prior run), read it and note which prior proposals recurred in the current observer report. Flag recurring issues by appending `RECURRING` to the severity field in the output template (e.g., `**Severity**: CRITICAL RECURRING`).
 7. Note the Trace Quality Assessment section of the observer report for processing in Step 3b.
 
 ### Step 3: Classify Each Finding
 
-For each finding in the observer report (each smell with severity above NONE), determine the appropriate remediation type:
+For each finding in the observer report (each smell with severity above NONE), determine the appropriate remediation type. Also review the Cross-Cutting Patterns section of the observer report -- use these patterns to identify root-cause relationships between findings and to inform the "Symptom of another finding" classification below.
 
 **Golden Test** -- Use when the finding describes a specific behavioral invariant that should never recur. Propose:
 - Test name (following existing `golden_*.rs` naming patterns)
@@ -62,7 +62,7 @@ For each finding in the observer report (each smell with severity above NONE), d
 - What the change should accomplish
 - FOUNDATIONS alignment (which principle(s) the change serves)
 
-**Symptom of another finding** -- If a finding is a downstream symptom of a higher-severity finding (e.g., sleep loops caused by dehydration), note it as "deferred to [root finding]" rather than proposing independent remediation. Include these in a "Findings Not Requiring Remediation" table at the end of the report with the reason for deferral. Revisit after the root cause is fixed.
+**Symptom of another finding** -- If a finding is a downstream symptom of a higher-severity finding (e.g., sleep loops caused by dehydration), note it as "deferred to [root finding]" rather than proposing independent remediation. Include these in a "Findings Not Requiring Remediation" table at the end of the report with the reason for deferral. Revisit after the root cause is fixed. A deferred finding may still warrant a regression-guard golden test if the behavioral invariant it describes should be independently monitored. In this case, propose the golden test AND list the finding as deferred, noting that the test is a regression guard, not a root-cause fix.
 
 **Ticket** -- Use when the finding points to a concrete bug or missing feature that doesn't require spec-level design work. Propose:
 - A ticket title and description
@@ -70,6 +70,7 @@ For each finding in the observer report (each smell with severity above NONE), d
 - Which crate(s) are affected
 - Priority (P0-P3)
 - Dependencies (other proposals this is blocked by, or "none")
+- FOUNDATIONS alignment (which principle(s) the fix serves)
 
 ### Step 3b: Classify Trace Quality Items
 
@@ -77,7 +78,7 @@ Read the "Trace Quality Assessment" section of the observer report. For each ite
 
 Apply the same classification logic as Step 3:
 
-**Ticket** -- Use when the item is a concrete engineering task (e.g., "add DeathCause component", "emit affordance snapshot events every N ticks"). Propose with the same format as behavioral tickets (title, description, priority, crate(s), acceptance criteria). Trace-quality tickets default to P2 unless the limitation forced an INCONCLUSIVE assessment on a MEDIUM+ finding or reduced confidence below HIGH on a CRITICAL finding, in which case P1.
+**Ticket** -- Use when the item is a concrete engineering task (e.g., "add DeathCause component", "emit affordance snapshot events every N ticks"). Propose with the same format as behavioral tickets (title, description, priority, crate(s), acceptance criteria). Trace-quality tickets default to P2 unless the limitation forced an INCONCLUSIVE assessment on a MEDIUM+ finding or reduced confidence below HIGH on a CRITICAL finding, in which case P1. If a TQ item impacts multiple findings at different severity levels, use the highest-severity finding's confidence reduction for the escalation decision.
 
 **Spec Change** -- Use when the item reveals a design gap requiring spec-level work (e.g., a new observability subsystem, a new profile parameter for perception granularity). Apply the same FOUNDATIONS alignment check -- FND-29 (Debuggability) is the primary principle, but also check FND-10 (Outcomes Leave Aftermath), FND-04 (Persistent Identity), and others as relevant.
 
@@ -89,7 +90,7 @@ Tickets and spec changes from trace-quality items use the same format as behavio
 
 ### Step 4: Write Proposals
 
-If invoked in plan mode, draft the report content in the plan file. After plan mode exits, write the plan file content directly to `reports/simulation-remediation.md` -- do not re-analyze or duplicate work.
+If invoked in plan mode, draft the report content in the plan file. After plan mode exits, read the plan file and write its content verbatim to `reports/simulation-remediation.md` -- do not re-analyze or regenerate the proposals.
 
 Write `reports/simulation-remediation.md` with this structure:
 
