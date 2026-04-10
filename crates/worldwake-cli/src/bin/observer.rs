@@ -44,12 +44,21 @@ struct ObserverCli {
 // Per-agent statistics
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NeedsSample {
     hunger: u16,
     thirst: u16,
     fatigue: u16,
     bladder: u16,
     dirtiness: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BehavioralTransition {
+    tick: u64,
+    types_before: usize,
+    types_after: usize,
+    needs: NeedsSample,
 }
 
 struct AgentStats {
@@ -413,6 +422,70 @@ fn failed_plan_target_beliefs(attempt: &PlanAttemptTrace) -> &'static str {
     }
 }
 
+fn action_timeline_bins_for_agent<'a>(
+    action_trace: &'a ActionTraceSink,
+    agent_id: EntityId,
+) -> BTreeMap<u64, BTreeMap<&'a str, u32>> {
+    let mut bins: BTreeMap<u64, BTreeMap<&'a str, u32>> = BTreeMap::new();
+    for event in action_trace.events_for(agent_id).iter().filter(|event| {
+        matches!(
+            event.kind,
+            ActionTraceKind::Started { .. } | ActionTraceKind::StartFailed { .. }
+        )
+    }) {
+        let bin = event.tick.0 / 100;
+        *bins
+            .entry(bin)
+            .or_default()
+            .entry(&event.action_name)
+            .or_insert(0) += 1;
+    }
+    bins
+}
+
+fn behavioral_transitions(
+    bins: &BTreeMap<u64, BTreeMap<&str, u32>>,
+    needs_samples: &[NeedsSample],
+) -> Vec<BehavioralTransition> {
+    let mut transitions = Vec::new();
+    let mut previous: Option<(u64, usize)> = None;
+
+    for (bin, action_counts) in bins {
+        let current_types = action_counts.len();
+        if let Some((_, previous_types)) = previous
+            && previous_types > 0
+            && current_types * 2 <= previous_types
+            && !needs_samples.is_empty()
+        {
+            let tick = bin * 100;
+            let needs_index = usize::min(tick as usize, needs_samples.len() - 1);
+            transitions.push(BehavioralTransition {
+                tick,
+                types_before: previous_types,
+                types_after: current_types,
+                needs: needs_samples[needs_index],
+            });
+        }
+        previous = Some((*bin, current_types));
+    }
+
+    transitions
+}
+
+fn format_behavioral_transition(transition: &BehavioralTransition) -> String {
+    format!(
+        "**Behavioral transition** at tick {}: action repertoire narrowed ({} types -> {} types)\n  Needs: hunger={}, thirst={}, fatigue={}, bladder={}, dirtiness={}",
+        transition.tick,
+        transition.types_before,
+        transition.types_after,
+        transition.needs.hunger,
+        transition.needs.thirst,
+        transition.needs.fatigue,
+        transition.needs.bladder,
+        transition.needs.dirtiness
+    )
+}
+
 fn failed_plan_outcome_label(attempt: &PlanAttemptTrace) -> String {
     match &attempt.outcome {
         PlanSearchOutcome::FrontierExhausted { expansions_used } => {
@@ -693,6 +766,15 @@ fn format_report(
             .unwrap();
         }
 
+        let transitions = behavioral_transitions(
+            &action_timeline_bins_for_agent(action_trace, *agent_id),
+            &stats.needs_samples,
+        );
+        for transition in &transitions {
+            writeln!(out, "{}", format_behavioral_transition(transition)).unwrap();
+            writeln!(out).unwrap();
+        }
+
         // Location time
         if !stats.location_ticks.is_empty() {
             writeln!(out, "**Locations visited**\n").unwrap();
@@ -817,16 +899,7 @@ fn format_report(
         writeln!(out, "| Ticks | Actions |").unwrap();
         writeln!(out, "|-------|---------|").unwrap();
 
-        // Group by 100-tick bin
-        let mut bins: BTreeMap<u64, BTreeMap<&str, u32>> = BTreeMap::new();
-        for event in &decision_events {
-            let bin = event.tick.0 / 100;
-            *bins
-                .entry(bin)
-                .or_default()
-                .entry(&event.action_name)
-                .or_insert(0) += 1;
-        }
+        let bins = action_timeline_bins_for_agent(action_trace, *agent_id);
 
         for (bin, action_counts) in &bins {
             let lo = bin * 100;
@@ -1575,10 +1648,12 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        PlanAttemptTrace, PlanSearchOutcome, death_summary_line, failed_plan_breakdown,
-        failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
-        failed_plan_outcome_label, failed_plan_target_beliefs, format_death_cause,
+        BehavioralTransition, NeedsSample, PlanAttemptTrace, PlanSearchOutcome,
+        behavioral_transitions, death_summary_line, failed_plan_breakdown, failed_plan_candidates,
+        failed_plan_location, failed_plan_max_depth, failed_plan_outcome_label,
+        failed_plan_target_beliefs, format_behavioral_transition, format_death_cause,
     };
+    use std::collections::BTreeMap;
     use worldwake_ai::decision_trace::{SearchExpansionSummary, TargetBeliefPresence};
     use worldwake_core::{
         CauseRef, ControlSource, DeadAt, DeathCause, EntityId, EventLog, GoalKey, GoalKind,
@@ -1638,6 +1713,16 @@ mod tests {
             target_belief_presence: TargetBeliefPresence::NotApplicable,
             binding_rejections: Vec::new(),
             expansion_summaries,
+        }
+    }
+
+    fn need_sample(value: u16) -> NeedsSample {
+        NeedsSample {
+            hunger: value,
+            thirst: value + 1,
+            fatigue: value + 2,
+            bladder: value + 3,
+            dirtiness: value + 4,
         }
     }
 
@@ -1777,6 +1862,75 @@ mod tests {
         };
 
         assert_eq!(failed_plan_outcome_label(&attempt), "frontier-exhausted");
+    }
+
+    #[test]
+    fn behavioral_transition_detected_when_action_types_drop_by_half() {
+        let bins = BTreeMap::from([
+            (
+                0,
+                BTreeMap::from([
+                    ("eat", 1),
+                    ("drink", 1),
+                    ("sleep", 1),
+                    ("wash", 1),
+                    ("wander", 1),
+                ]),
+            ),
+            (5, BTreeMap::from([("eat", 2), ("drink", 1)])),
+        ]);
+        let needs_samples = (0..600).map(|_| need_sample(750)).collect::<Vec<_>>();
+
+        let transitions = behavioral_transitions(&bins, &needs_samples);
+
+        assert_eq!(
+            transitions,
+            vec![BehavioralTransition {
+                tick: 500,
+                types_before: 5,
+                types_after: 2,
+                needs: need_sample(750),
+            }]
+        );
+        assert_eq!(
+            format_behavioral_transition(&transitions[0]),
+            "**Behavioral transition** at tick 500: action repertoire narrowed (5 types -> 2 types)\n  Needs: hunger=750, thirst=751, fatigue=752, bladder=753, dirtiness=754"
+        );
+    }
+
+    #[test]
+    fn behavioral_transition_not_detected_when_action_types_are_stable() {
+        let bins = BTreeMap::from([
+            (0, BTreeMap::from([("eat", 1), ("drink", 1), ("sleep", 1)])),
+            (5, BTreeMap::from([("eat", 2), ("drink", 1), ("sleep", 1)])),
+        ]);
+        let needs_samples = (0..600).map(|_| need_sample(700)).collect::<Vec<_>>();
+
+        assert!(behavioral_transitions(&bins, &needs_samples).is_empty());
+    }
+
+    #[test]
+    fn behavioral_transition_only_fires_when_threshold_is_crossed() {
+        let bins = BTreeMap::from([
+            (
+                0,
+                BTreeMap::from([
+                    ("eat", 1),
+                    ("drink", 1),
+                    ("sleep", 1),
+                    ("wash", 1),
+                    ("wander", 1),
+                ]),
+            ),
+            (
+                1,
+                BTreeMap::from([("eat", 1), ("drink", 1), ("sleep", 1), ("wash", 1)]),
+            ),
+            (2, BTreeMap::from([("eat", 1), ("drink", 1), ("sleep", 1)])),
+        ]);
+        let needs_samples = (0..300).map(|_| need_sample(600)).collect::<Vec<_>>();
+
+        assert!(behavioral_transitions(&bins, &needs_samples).is_empty());
     }
 
     #[test]

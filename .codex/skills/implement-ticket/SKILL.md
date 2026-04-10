@@ -23,6 +23,8 @@ Before running the full workflow, classify the ticket:
 
 For CLI/tooling-only tickets, if the owned logic can be factored into local helpers, prefer bin-local `#[cfg(test)]` coverage over command-only validation.
 
+When a ticket stays local to one CLI/tooling module but the live computation surface and the final render/output surface are different sections of that same file, name both local boundaries during reassessment and prefer a shared local helper over duplicating logic between sections.
+
 Do not skip reassessment for small tickets, but scale it down: read the ticket, cited references, and owned symbol/file; confirm the dependency path is present; run a narrow existence/fallout sweep for prior implementation or obvious constructor/usage fallout. Do not force the full Step 2 matrix when the owned surface is genuinely small and local.
 
 For small/local tickets, load the reference docs only if reassessment exposes ambiguity, mismatch, or broader fallout. The normal fast path is the ticket, its cited references, the owned symbol/file boundary, focused proof, the affected crate's tests, and any explicitly required CI-matching lint surface.

@@ -1,6 +1,6 @@
 # S85OBSBEHENR-003: Need snapshots at behavioral transitions
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -12,7 +12,7 @@ The observer samples needs every tick and reports min/max/average in the per-age
 
 ## Assumption Reassessment (2026-04-10)
 
-1. `NeedsSample` struct at `observer.rs:47-52` with fields `hunger`, `thirst`, `fatigue`, `bladder`, `dirtiness` (all `u16`). `AgentStats` at `observer.rs:55-77` holds `needs_samples: Vec<NeedsSample>`. Per-agent action timeline computed in 100-tick bins at `observer.rs:738-763` using `BTreeMap<u64, BTreeMap<&str, u32>>`. Per-agent summary emits needs trajectory and anomaly flags — behavioral transitions would go between these.
+1. `NeedsSample` struct at `observer.rs:47-52` with fields `hunger`, `thirst`, `fatigue`, `bladder`, `dirtiness` (all `u16`). `AgentStats` at `observer.rs:55-77` holds `needs_samples: Vec<NeedsSample>`. The relevant action-type bins are currently computed in the global "Per-Agent Action Timeline" section from `action_trace` events, not in the per-agent decision summary. Section 2 — Per-Agent Summary already emits needs trajectory and then proceeds to later summary subsections without any existing behavioral-transition block.
 2. S85 spec (Deliverable 3) describes this change. The action timeline bins and needs samples are both existing infrastructure.
 3. Single-layer ticket: observer-only analysis and formatting. No shared abstraction boundary.
 
@@ -30,9 +30,9 @@ The observer samples needs every tick and reports min/max/average in the per-age
 
 ## What to Change
 
-### 1. Compute behavioral transitions in per-agent decision trace summary
+### 1. Compute behavioral transitions from existing action timeline data
 
-In the Decision Trace Summary section (Section 3), after the per-agent action timeline bins are computed (around `observer.rs:760`), add transition detection logic:
+Factor the 100-tick action-type binning into a local observer helper so the same already-collected `action_trace` data can drive both the existing "Per-Agent Action Timeline" section and the new Section 2 per-agent summary transition detection.
 
 For each agent, iterate consecutive 100-tick bins. Count the number of distinct action types in each bin. When the count drops by 50% or more from one bin to the next, record a `BehavioralTransition`:
 
@@ -49,7 +49,7 @@ To get the needs snapshot at the transition tick: find the `needs_samples` entry
 
 ### 2. Emit behavioral transitions in per-agent summary
 
-In the per-agent summary section, after the needs trajectory and before the anomaly flags, emit each detected transition:
+In Section 2 — Per-Agent Summary, after the needs trajectory block, emit each detected transition:
 
 ```
 **Behavioral transition** at tick 500: action repertoire narrowed (5 types → 2 types)
@@ -98,3 +98,23 @@ In the per-agent summary section, after the needs trajectory and before the anom
 
 1. `cargo test -p worldwake-cli`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Added observer-local helpers to reuse the existing per-agent 100-tick action-type bins for Section 2 summary analysis and to detect behavioral transitions from already-collected `action_trace` plus `needs_samples`.
+- Section 2 — Per-Agent Summary now emits `**Behavioral transition**` lines after the needs trajectory block when an agent's distinct action types drop by 50% or more between consecutive bins, including a clamped needs snapshot at the transition tick.
+- Added focused observer tests covering threshold-crossing detection, stable-action negative behavior, gradual-decline negative behavior, and transition formatting.
+
+## Deviations
+
+- During reassessment, the ticket was corrected to use the global per-agent action timeline bins as the live computation surface. The transition output still lands in Section 2 — Per-Agent Summary, but the owned binning logic is shared helper logic rather than a Decision Trace Summary-local calculation.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli behavioral_transition_detected_when_action_types_drop_by_half`
+- Passed `cargo test -p worldwake-cli behavioral_transition_not_detected_when_action_types_are_stable`
+- Passed `cargo test -p worldwake-cli behavioral_transition_only_fires_when_threshold_is_crossed`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
