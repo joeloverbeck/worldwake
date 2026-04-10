@@ -13,14 +13,14 @@ No candidate generation logic emits `FreeCarryCapacity` goals, and the CLI scena
 ## Assumption Reassessment (2026-04-10)
 
 1. `candidate_generation.rs` has 40+ `emit_*` functions. `GenerationContext` at lines 144-155 provides `ctx.view: &dyn GoalBeliefView`. `emit_candidate()` at lines 3281-3300 takes `(candidates, kind, anchor, evidence, blocked, current_tick)`.
-2. `ctx.view.carry_capacity()` and `ctx.view.load_of_entity()` already used at lines 3051-3058. `ctx.view.commodity_quantity()` used at line 3047. `ctx.view.direct_possessor()` at `belief_view.rs:172`.
+2. `ctx.view.carry_capacity()` is already used in `candidate_generation.rs`, but `ctx.view.load_of_entity(agent)` is not a lawful carried-load surface for agents: the runtime belief view forwards it to `worldwake_core::load_of_entity()`, which returns `LoadUnits(0)` for non-item entities. Candidate-generation threshold checks must therefore derive carried load from `ctx.view.commodity_quantity(agent, kind)` plus `worldwake_core::load_per_unit(kind)`. `ctx.view.direct_possessor()` at `belief_view.rs:172`.
 3. `AgentDef` at `scenario/types.rs:66-129` has 33 fields. No `disposal_profile` field exists.
 4. `spawn_agent()` at `scenario/mod.rs:323-468` uses `unwrap_or_default()` pattern for universal profiles (e.g., line 343 for `metabolism_profile`).
 5. `BelievedEntityState` at `belief.rs:1320-1339` has `believed_kind: Option<EntityKind>` and `last_known_inventory: BTreeMap<CommodityKind, Quantity>`. No `commodity_kind` or `direct_possessor` fields — must use belief-view accessor methods instead.
 
 ## Architecture Check
 
-1. `emit_disposal_candidates()` follows the existing pattern exactly: check threshold, iterate beliefs, emit candidates. Uses belief-view accessors (P14 — never reads authoritative state).
+1. `emit_disposal_candidates()` follows the existing pattern exactly: derive carried-load strain from belief-view inventory, compare against threshold, iterate beliefs, emit candidates. Uses belief-view accessors only (P14 — never reads authoritative state).
 2. CLI integration follows the universal profile pattern: `Option<DisposalProfile>` on `AgentDef`, `unwrap_or_default()` in `spawn_agent()`.
 3. No backward-compatibility shims.
 
@@ -50,10 +50,14 @@ fn emit_disposal_candidates(
         .map_or(Permille::new_unchecked(800), |p| p.capacity_strain_threshold);
 
     let Some(carry_capacity) = ctx.view.carry_capacity(ctx.agent) else { return };
-    let Some(current_load) = ctx.view.load_of_entity(ctx.agent) else { return };
+    let current_load = CommodityKind::ALL
+        .iter()
+        .copied()
+        .map(|kind| ctx.view.commodity_quantity(ctx.agent, kind).0 * worldwake_core::load_per_unit(kind).0)
+        .sum::<u32>();
 
     // Check strain threshold
-    if (current_load.0 as u32) * 1000 < (carry_capacity.0 as u32) * (threshold.value() as u32) {
+    if current_load * 1000 < (carry_capacity.0 as u32) * (threshold.value() as u32) {
         return;
     }
 
@@ -127,7 +131,7 @@ let disposal = agent_def.disposal_profile.unwrap_or_default();
 
 ### Invariants
 
-1. Candidate generation never reads authoritative world state (P14)
+1. Candidate generation never reads authoritative world state and derives carried load from believed inventory rather than `load_of_entity(agent)` (P14)
 2. All existing candidates unaffected by the new function
 3. `cargo clippy --workspace --all-targets -- -D warnings` passes
 

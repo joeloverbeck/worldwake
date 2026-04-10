@@ -22,7 +22,7 @@ use worldwake_core::{
     HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
     NoticeTopic, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity,
     RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
-    belief_confidence, failure_ratio_permille,
+    belief_confidence, failure_ratio_permille, load_per_unit,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -595,7 +595,18 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             |needs| needs.dirtiness,
             |utility| utility.dirtiness_weight,
         ),
-        GoalKind::FreeCarryCapacity => 0,
+        GoalKind::FreeCarryCapacity => {
+            context
+                .view
+                .carry_capacity(context.agent)
+                .map_or(0, |carry_capacity| {
+                    let carried_load = carried_commodity_load(context.view, context.agent);
+                    let strain = Permille::new_unchecked(
+                        ((carried_load * 1000) / carry_capacity.0.max(1)).min(1000) as u16,
+                    );
+                    score_product(context.utility.enterprise_weight, strain)
+                })
+        }
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
@@ -1188,6 +1199,18 @@ fn reward_signal_from_quantity(quantity: Quantity) -> Permille {
     Permille::new(scaled).unwrap_or_else(|_| Permille::new_unchecked(1000))
 }
 
+fn carried_commodity_load(view: &dyn GoalBeliefView, agent: EntityId) -> u32 {
+    CommodityKind::ALL
+        .iter()
+        .copied()
+        .map(|kind| {
+            view.commodity_quantity(agent, kind)
+                .0
+                .saturating_mul(load_per_unit(kind).0)
+        })
+        .fold(0u32, u32::saturating_add)
+}
+
 fn score_product(weight: Permille, pressure: Permille) -> u32 {
     u32::from(weight.value()) * u32::from(pressure.value())
 }
@@ -1641,6 +1664,8 @@ mod tests {
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         institutional_claims: BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        carry_capacities: BTreeMap<EntityId, LoadUnits>,
+        entity_loads: BTreeMap<EntityId, LoadUnits>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         listed_sale_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         sale_lot_sellers: BTreeMap<EntityId, EntityId>,
@@ -2006,11 +2031,11 @@ mod tests {
         fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
         }
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
         }
         fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
             self.known_recipes.get(&agent).cloned().unwrap_or_default()
@@ -5186,6 +5211,121 @@ mod tests {
         assert_eq!(
             ranked[0].motive_score,
             u32::from(utility().enterprise_weight.value())
+        );
+    }
+
+    #[test]
+    fn free_carry_capacity_uses_low_priority_class() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.carry_capacities.insert(agent, LoadUnits(10));
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(1));
+
+        let ranked = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+    }
+
+    #[test]
+    fn free_carry_capacity_motive_scales_with_carried_load_strain() {
+        let agent = entity(1);
+        let mut fifty_view = base_view(agent);
+        fifty_view.carry_capacities.insert(agent, LoadUnits(10));
+        fifty_view
+            .commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(5));
+
+        let fifty_ranked = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &fifty_view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(fifty_ranked.len(), 1);
+        assert_eq!(
+            fifty_ranked[0].motive_score,
+            super::score_product(utility().enterprise_weight, pm(500))
+        );
+
+        let mut full_view = base_view(agent);
+        full_view.carry_capacities.insert(agent, LoadUnits(10));
+        full_view
+            .commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(10));
+
+        let full_ranked = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &full_view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(full_ranked.len(), 1);
+        assert_eq!(
+            full_ranked[0].motive_score,
+            super::score_product(utility().enterprise_weight, pm(1000))
+        );
+        assert!(full_ranked[0].motive_score > fifty_ranked[0].motive_score);
+    }
+
+    #[test]
+    fn free_carry_capacity_motive_uses_concrete_carried_commodity_load_not_agent_load_accessor() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.carry_capacities.insert(agent, LoadUnits(10));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(8));
+
+        let ranked = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(
+            ranked[0].motive_score,
+            super::score_product(utility().enterprise_weight, pm(800))
+        );
+    }
+
+    #[test]
+    fn free_carry_capacity_motive_is_zero_when_capacity_unavailable() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(8));
+
+        let outcome = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(outcome.ranked.is_empty());
+        assert_eq!(
+            outcome.zero_motive,
+            vec![GoalKey::from(GoalKind::FreeCarryCapacity)]
         );
     }
 

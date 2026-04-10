@@ -43,6 +43,8 @@ Verify the ticket against the current codebase, not stale architectural memory. 
 
 For cross-crate accessor, trait-surface, or API-surface tickets, verify the real downstream caller-facing boundary before coding, not just the immediate trait or type named in the ticket. If live callers consume the data through a broader wrapper, supertrait, blanket impl, or facade surface, correct the ticket to that owned boundary before editing code.
 
+When a ticket relies on an existing helper or accessor, verify not only that the symbol exists on the expected boundary but that its live implementation returns the intended semantic quantity for the concrete subject type under test. Do not trust plausible naming alone when helpers can be overloaded, entity-type-specific, or historically repurposed; if the live helper computes a different concept than the ticket assumes, correct the ticket to the lawful contract before editing code.
+
 For planner-visible belief, profile, or snapshot-completeness tickets, verify the full carriage path before coding: runtime belief view -> snapshot builder -> snapshot storage -> `PlanningState`/planner-facing view surface. Do not stop at the final accessor if planner-visible data can be dropped earlier in the pipeline.
 
 Load `references/reassessment-checks.md`.
