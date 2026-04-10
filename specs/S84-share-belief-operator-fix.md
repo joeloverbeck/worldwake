@@ -118,12 +118,16 @@ In `crates/worldwake-ai/tests/`:
 
 ### 5. Diagnostic Enhancement
 
-Extend `PlanAttemptTrace` (`decision_trace.rs:856-866`) to record, for frontier-exhausted goals:
-- Number of operators checked
-- Number of target entities found in snapshot matching the operator's `TargetSpec`
-- If zero targets: the reason (no co-located agents in snapshot place index, listener entity present but not indexed at actor's place, no agents in snapshot at all)
+Live reassessment showed the planner already owns the intended frontier-exhaustion explanation surface through root omission tracing rather than extra counters on `PlanAttemptTrace`.
 
-Note: `CandidateGenerationDiagnostics` (`candidate_generation.rs:159-168`) already has `omitted_social: Vec<SocialCandidateOmission>` for tracking social candidate omissions at the candidate generation stage. The diagnostic enhancement here targets the separate search stage — when the planner has a ShareBelief goal but the search cannot find affordances for it.
+The current planner-boundary diagnostic carrier is:
+- `PlanAttemptTrace.expansion_summaries`
+- root expansion `SearchExpansionSummary.root_omissions`
+- typed `RootOperatorOmissionReason` values rendered by `decision_trace.rs`
+
+This already explains why a relevant root operator never surfaced, including missing action defs, missing affordance/synthesis paths, unsupported goal/operator pairings, and target-derivation failure.
+
+Note: `CandidateGenerationDiagnostics` (`candidate_generation.rs:159-168`) still separately tracks candidate-generation-stage omissions. Search-stage omission diagnostics remain owned by the root omission trace path rather than by a second per-attempt counter/reason carrier.
 
 ## Section H: Causal Hooks (FND-01)
 
