@@ -1,6 +1,6 @@
 # S85OBSBEHENR-002: Frontier-exhaustion rejection reasons in observer
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -14,7 +14,8 @@ When a plan frontier-exhausts at depth 0, the observer shows only `"frontier-exh
 
 1. `PlanSearchOutcome::FrontierExhausted { expansions_used }` at `decision_trace.rs:881`. `PlanAttemptTrace` has `expansion_summaries: Vec<SearchExpansionSummary>` at `decision_trace.rs:865`. `SearchExpansionSummary` has `depth: u8`, `candidates_generated: u16`, `candidates_skipped: u16`, `terminal_successors: u16`, `non_terminal_after_beam: u16` (among other fields) at `decision_trace.rs:764-783`. Observer currently renders frontier-exhausted outcomes at `observer.rs:1174-1176` with only `expansions_used` and max depth.
 2. S85 spec (Deliverable 2) describes this change. S78 (completed) added frontier-exhausted counting and failed-plan tables.
-3. Single-layer ticket: observer-only formatting of existing trace data. No shared abstraction boundary.
+3. `candidates_skipped` is semantically narrower than "pruned by beam": if all generated candidates were skipped because `build_successor` returned `None`, then `non_terminal_after_beam == 0` and `terminal_successors == 0` are also true. The observer should prefer the skip-specific explanation before the broader "all pruned by beam" fallback.
+4. Single-layer ticket: observer-only formatting of existing trace data. No shared abstraction boundary.
 
 ## Architecture Check
 
@@ -34,8 +35,8 @@ When a plan frontier-exhausts at depth 0, the observer shows only `"frontier-exh
 In the observer's failed-plan detail rendering (around `observer.rs:1174`), when the outcome is `FrontierExhausted` and `expansions_used <= 1`, check whether `expansion_summaries` has a depth-0 entry. If so, format a reason string:
 
 - If `candidates_generated == 0`: `"frontier-exhausted at depth 0: 0 candidates generated"`
-- If `candidates_generated > 0` and `non_terminal_after_beam == 0` and `terminal_successors == 0`: `"frontier-exhausted at depth 0: {n} candidates generated, all pruned by beam"`
 - If `candidates_generated > 0` and `candidates_skipped == candidates_generated`: `"frontier-exhausted at depth 0: {n} candidates generated, all skipped (build_successor returned None)"`
+- If `candidates_generated > 0` and `non_terminal_after_beam == 0` and `terminal_successors == 0`: `"frontier-exhausted at depth 0: {n} candidates generated, all pruned by beam"`
 - Otherwise: `"frontier-exhausted at depth 0: {gen} generated, {skipped} skipped, {term} terminal, {beam} after beam"`
 
 ### 2. Add unit test
@@ -76,3 +77,24 @@ Add a test that constructs a `PlanAttemptTrace` with `FrontierExhausted { expans
 
 1. `cargo test -p worldwake-cli`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Added observer-local `failed_plan_outcome_label()` formatting so depth-0 `FrontierExhausted` attempts can explain zero-candidate, all-skipped, all-pruned, and mixed summary cases using existing `expansion_summaries`.
+- Updated the failed-plan table renderer to use the enriched frontier-exhaustion label while leaving non-depth-0 frontier exhaustion unchanged.
+- Added focused observer tests for zero-candidate depth-0 exhaustion, all-pruned-by-beam depth-0 exhaustion, skip-specific precedence over beam fallback, and the unchanged non-depth-0 fallback label.
+
+## Deviations
+
+- During reassessment, the ticket was corrected so `candidates_skipped == candidates_generated` is explained as `"all skipped (build_successor returned None)"` before the broader `"all pruned by beam"` fallback. Without that precedence, the observer would mislabel skip-only exhaustion.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli failed_plan_outcome_label_explains_zero_depth_zero_candidate_frontier_exhaustion`
+- Passed `cargo test -p worldwake-cli failed_plan_outcome_label_explains_all_pruned_by_beam`
+- Passed `cargo test -p worldwake-cli failed_plan_outcome_label_preserves_skip_specific_reason_before_beam_fallback`
+- Passed `cargo test -p worldwake-cli failed_plan_outcome_label_leaves_non_depth_zero_frontier_exhaustion_unchanged`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

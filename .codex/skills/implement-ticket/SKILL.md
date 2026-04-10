@@ -18,14 +18,14 @@ Before running the full workflow, classify the ticket:
 2. Confirm the dependency path and the exact owned symbol/file boundary.
 3. Run a narrow constructor/usage sweep for the changed shape: confirm the named symbols and accessors exist, search local callers/render sites, check obvious constructor or test-helper fallout, and identify the narrowest real proof entry point.
 4. Implement the owned change with focused proof first.
-5. Run the affected crate's tests as the normal broadened proof for the ticket, then use compile/lint fallout as a supplemental sweep for remaining shared-shape literals/helpers when warranted.
+5. Run the affected crate's tests as the normal broadened proof for the ticket. For Rust tickets, if the ticket's Test Plan or repo norms call for CI-matching clippy, run `cargo clippy --workspace --all-targets -- -D warnings` as part of normal broadened verification; use compile/lint fallout to catch remaining shared-shape literals/helpers and local cleanup.
 6. Close out the ticket with the actual verification set and tracked-vs-untracked note.
 
 For CLI/tooling-only tickets, if the owned logic can be factored into local helpers, prefer bin-local `#[cfg(test)]` coverage over command-only validation.
 
 Do not skip reassessment for small tickets, but scale it down: read the ticket, cited references, and owned symbol/file; confirm the dependency path is present; run a narrow existence/fallout sweep for prior implementation or obvious constructor/usage fallout. Do not force the full Step 2 matrix when the owned surface is genuinely small and local.
 
-For small/local tickets, load the reference docs only if reassessment exposes ambiguity, mismatch, or broader fallout. The normal fast path is the ticket, its cited references, the owned symbol/file boundary, focused proof, and the affected crate's tests.
+For small/local tickets, load the reference docs only if reassessment exposes ambiguity, mismatch, or broader fallout. The normal fast path is the ticket, its cited references, the owned symbol/file boundary, focused proof, the affected crate's tests, and any explicitly required CI-matching lint surface.
 
 For straightforward shared-type additive tickets (new field on an existing struct/component, derive-safe enum payload addition, or similar constructor fallout with no boundary dispute yet visible), start with the ticket, cited spec/docs, `references/reassessment-checks.md`, `references/verification.md`, and `references/closeout.md`. Load `mismatch-handling.md`, `scope-extraction.md`, or `implementation-discipline.md` only if reassessment exposes a mismatch, ownership ambiguity, or non-mechanical implementation choice.
 

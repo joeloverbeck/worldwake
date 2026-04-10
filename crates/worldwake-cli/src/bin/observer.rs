@@ -413,6 +413,43 @@ fn failed_plan_target_beliefs(attempt: &PlanAttemptTrace) -> &'static str {
     }
 }
 
+fn failed_plan_outcome_label(attempt: &PlanAttemptTrace) -> String {
+    match &attempt.outcome {
+        PlanSearchOutcome::FrontierExhausted { expansions_used } => {
+            if *expansions_used <= 1
+                && let Some(summary) = attempt
+                    .expansion_summaries
+                    .iter()
+                    .find(|summary| summary.depth == 0)
+            {
+                let generated = summary.candidates_generated;
+                let skipped = summary.candidates_skipped;
+                let terminal = summary.terminal_successors;
+                let after_beam = summary.non_terminal_after_beam;
+                if generated == 0 {
+                    return "frontier-exhausted at depth 0: 0 candidates generated".to_string();
+                }
+                if skipped == generated {
+                    return format!(
+                        "frontier-exhausted at depth 0: {generated} candidates generated, all skipped (build_successor returned None)"
+                    );
+                }
+                if after_beam == 0 && terminal == 0 {
+                    return format!(
+                        "frontier-exhausted at depth 0: {generated} candidates generated, all pruned by beam"
+                    );
+                }
+                return format!(
+                    "frontier-exhausted at depth 0: {generated} generated, {skipped} skipped, {terminal} terminal, {after_beam} after beam"
+                );
+            }
+            "frontier-exhausted".to_string()
+        }
+        PlanSearchOutcome::BudgetExhausted { .. } => "budget-exhausted".to_string(),
+        PlanSearchOutcome::Found { .. } | PlanSearchOutcome::Unsupported => unreachable!(),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct FailedPlanBreakdown {
     total: u32,
@@ -1193,21 +1230,21 @@ fn format_report(
                     if shown >= 20 {
                         break;
                     }
-                    let (outcome_label, expansions) = match &attempt.outcome {
-                        PlanSearchOutcome::FrontierExhausted { expansions_used } => {
-                            ("frontier-exhausted", expansions_used)
-                        }
-                        PlanSearchOutcome::BudgetExhausted { expansions_used } => {
-                            ("budget-exhausted", expansions_used)
-                        }
-                        _ => continue,
+                    let (PlanSearchOutcome::FrontierExhausted {
+                        expansions_used: expansions,
+                    }
+                    | PlanSearchOutcome::BudgetExhausted {
+                        expansions_used: expansions,
+                    }) = &attempt.outcome
+                    else {
+                        continue;
                     };
                     writeln!(
                         out,
                         "| {} | {:?} | {} | {} | {} | {} | {} | {} |",
                         tick,
                         attempt.goal.kind,
-                        outcome_label,
+                        failed_plan_outcome_label(attempt),
                         expansions,
                         failed_plan_max_depth(attempt),
                         failed_plan_candidates(attempt),
@@ -1540,7 +1577,7 @@ mod tests {
     use super::{
         PlanAttemptTrace, PlanSearchOutcome, death_summary_line, failed_plan_breakdown,
         failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
-        failed_plan_target_beliefs, format_death_cause,
+        failed_plan_outcome_label, failed_plan_target_beliefs, format_death_cause,
     };
     use worldwake_ai::decision_trace::{SearchExpansionSummary, TargetBeliefPresence};
     use worldwake_core::{
@@ -1560,6 +1597,31 @@ mod tests {
             terminal_successors: 0,
             non_terminal_before_beam: 0,
             non_terminal_after_beam: 0,
+            found_goal_satisfied: false,
+            travel_pruning: None,
+            prerequisite_guidance: None,
+            root_candidates: Vec::new(),
+            root_omissions: Vec::new(),
+        }
+    }
+
+    fn sample_summary_with_counts(
+        depth: u8,
+        candidates_generated: u16,
+        candidates_skipped: u16,
+        terminal_successors: u16,
+        non_terminal_after_beam: u16,
+    ) -> SearchExpansionSummary {
+        SearchExpansionSummary {
+            depth,
+            remaining_travel_ticks: 0,
+            combined_places_count: 0,
+            prerequisite_places_count: 0,
+            candidates_generated,
+            candidates_skipped,
+            terminal_successors,
+            non_terminal_before_beam: 0,
+            non_terminal_after_beam,
             found_goal_satisfied: false,
             travel_pruning: None,
             prerequisite_guidance: None,
@@ -1666,6 +1728,55 @@ mod tests {
             failed_plan_target_beliefs(&sample_attempt(Vec::new())),
             "n/a"
         );
+    }
+
+    #[test]
+    fn failed_plan_outcome_label_explains_zero_depth_zero_candidate_frontier_exhaustion() {
+        let attempt = PlanAttemptTrace {
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+            ..sample_attempt(vec![sample_summary_with_counts(0, 0, 0, 0, 0)])
+        };
+
+        assert_eq!(
+            failed_plan_outcome_label(&attempt),
+            "frontier-exhausted at depth 0: 0 candidates generated"
+        );
+    }
+
+    #[test]
+    fn failed_plan_outcome_label_explains_all_pruned_by_beam() {
+        let attempt = PlanAttemptTrace {
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+            ..sample_attempt(vec![sample_summary_with_counts(0, 3, 1, 0, 0)])
+        };
+
+        assert_eq!(
+            failed_plan_outcome_label(&attempt),
+            "frontier-exhausted at depth 0: 3 candidates generated, all pruned by beam"
+        );
+    }
+
+    #[test]
+    fn failed_plan_outcome_label_preserves_skip_specific_reason_before_beam_fallback() {
+        let attempt = PlanAttemptTrace {
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+            ..sample_attempt(vec![sample_summary_with_counts(0, 3, 3, 0, 0)])
+        };
+
+        assert_eq!(
+            failed_plan_outcome_label(&attempt),
+            "frontier-exhausted at depth 0: 3 candidates generated, all skipped (build_successor returned None)"
+        );
+    }
+
+    #[test]
+    fn failed_plan_outcome_label_leaves_non_depth_zero_frontier_exhaustion_unchanged() {
+        let attempt = PlanAttemptTrace {
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 3 },
+            ..sample_attempt(vec![sample_summary_with_counts(1, 4, 0, 0, 0)])
+        };
+
+        assert_eq!(failed_plan_outcome_label(&attempt), "frontier-exhausted");
     }
 
     #[test]
