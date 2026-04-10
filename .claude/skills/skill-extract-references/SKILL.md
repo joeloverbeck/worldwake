@@ -72,6 +72,7 @@ For each block, determine one of three categories:
   - A load instruction pointing to a reference file:
     - Unconditional: "Load `references/verification-and-closeout.md`."
     - Conditional: "If the change touches AI pipelines, load `references/ai-pipeline-checks.md`."
+- Non-workflow core sections (e.g., invocation details, background context, diagrams) stay inline as regular markdown sections. The numbered step list covers only the procedural/orchestration flow.
 - **Preserve** universal hard rules as a short section at the bottom.
 - The thin SKILL.md should read as a clear, scannable orchestration sequence — not a wall of checklists.
 - Each step may include a brief framing sentence (1-2 sentences) before or after the load instruction to preserve workflow context (e.g., what the step's purpose is, what to do with results). For steps where the load instruction is the primary content, integrate it naturally (e.g., "Load `references/codebase-validation.md`. Validate every reference from Step 2.") rather than making it a standalone directive.
@@ -82,7 +83,7 @@ After rewriting, verify that every H2/H3 section from the original SKILL.md appe
 
 ### 9. Cross-Skill Reference Check
 
-Grep other skill files (`.claude/skills/*/SKILL.md`, `.codex/skills/*/SKILL.md`) for references to the target skill's section headers or step numbers. If found, note them in the output summary as "references that may need updating" so the user can fix external pointers.
+Grep other skill files (`.claude/skills/*/SKILL.md`, `.codex/skills/*/SKILL.md`) for references to the target skill by name or path (e.g., `detect-architectural-debt`, `references/ai-pipeline-checks.md`). If the target skill has uniquely named sections, also grep for those. Skip generic headers (e.g., "Hard Rules", "Procedure") that would produce false positives. If found, note them in the output summary as "references that may need updating" so the user can fix external pointers.
 
 ### 10. Output Summary
 
