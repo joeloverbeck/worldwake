@@ -131,20 +131,18 @@ S85 ✅ archived
 
 ### Adjunct Wave: Simulation Remediation Phase 3
 
-Derived from 2026-04-10 post-S85 simulation observer re-run (`reports/simulation-remediation.md`) validated against
+Derived from 2026-04-10 post-S85 simulation observer re-run and deep research into GOAP scaling
+(LAMA planner, LGOAP, Fast Downward deferred evaluation) validated against
 the actual codebase and `docs/FOUNDATIONS.md`. S83's belief-gated acquisition filtering was insufficient —
 1400–2600 candidates still exhaust the planner budget at depth 0, blocking all multi-location plans.
-S85's observer enrichments did not deliver belief history, StartFailed reasons, or inventory timelines.
+Root cause: flat A* forward search with 1400+ branching factor is architecturally unsound.
 
 ```text
-S86 (independent)
-S87 (independent)
-S86, S87 (parallel)
+S88 (independent, supersedes S86 + S87)
 ```
 
-**Wave** (parallel, no deps):
-- **S86**: Planner Pre-Expansion Candidate Heuristics — pre-expansion scoring and truncation of search candidates by goal relevance, depth-sensitive cap on `ExecutionBudget`, golden coverage proving multi-location travel+acquire plans succeed within budget
-- **S87**: Observer Diagnostic Gaps — belief formation/decay timeline (TK-6), StartFailed precondition name extraction (TK-7), inventory capacity timeline with saturation anomaly (TK-8)
+**Wave**:
+- **S88**: Two-Phase Landmark-Guided Planning — replaces flat A* with belief-driven strategic planner (location sequencing) + locality-scoped tactical planner with landmark-based preferred operators. Supersedes S86 (heuristic candidate scoring) and S87 (observer diagnostic gaps; observer tooling may be reconsidered as a future spec)
 
 ### Phase 7 Gate
 
