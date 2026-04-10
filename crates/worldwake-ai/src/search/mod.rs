@@ -2,6 +2,7 @@ mod candidates;
 mod frontier;
 mod heuristic;
 pub(crate) mod landmarks;
+pub(crate) mod strategic;
 mod transition;
 
 use crate::{

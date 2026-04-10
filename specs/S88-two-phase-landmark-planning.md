@@ -163,6 +163,7 @@ The strategic planner operates on the agent's belief model to produce a location
 - `PlanningSnapshot` — the agent's belief surface
 - `GroundedGoal` — the concrete goal being planned for
 - `ExecutionBudget` — agent's cognitive parameters
+- `RecipeRegistry` — required to derive live goal-relevant and prerequisite places without degrading recipe-driven goals
 
 **State representation**: `(believed_agent_location, set_of_unvisited_goal_relevant_places)`. The state is abstract — it tracks only which location the agent believes it is at and which goal-relevant locations remain to visit.
 
@@ -201,8 +202,8 @@ pub enum TacticalSubGoal {
 ```
 
 **When beliefs are empty** (no known location has the needed resource):
-1. If `ExplorationProfile` is present and exploration is enabled: produce exploration itinerary — visit nearest adjacent places the agent has not recently visited. The strategic planner derives exploration targets from `ExplorationProfile` and the agent's believed adjacent places in `PlanningSnapshot`, independently of the candidate generation pipeline (the private `emit_exploration_candidates()` in `candidate_generation.rs` serves a different purpose — it generates tactical exploration candidates, not strategic exploration itineraries).
-2. If co-located agents exist: include `TacticalSubGoal::SocialQuery` targeting `AskWitness` or `Consult` actions.
+1. If believed adjacent places are available from the actor's current place in `PlanningSnapshot`, produce an exploration itinerary over those adjacent places. This stays within the live planner boundary and does not depend on `ExplorationProfile`, which is not currently present on `search_plan()`'s input surface.
+2. If co-located agents exist and the goal exposes a missing commodity, include `TacticalSubGoal::SocialQuery` for that commodity.
 3. If neither applies: return empty strategic plan. The planner falls through to local-only tactical planning (current behavior).
 
 ### D4: Locality-scoped candidate generation via strategic decomposition
@@ -345,7 +346,7 @@ Modify `search_plan()` to:
 
 1. **Run strategic planning** before the tactical search loop:
    ```rust
-   let strategic_plan = strategic::plan(snapshot, goal, execution_budget);
+   let strategic_plan = strategic::plan(snapshot, goal, execution_budget, recipes);
    ```
    If a strategic plan is found with steps, the first step's destination becomes the travel target. The tactical search proceeds with the strategic plan as context.
 

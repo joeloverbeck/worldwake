@@ -16,7 +16,8 @@ The individual components of two-phase planning (strategic planner, landmarks, d
 2. `CognitiveProfile` will have `landmark_extraction_depth` (S88TWOPHALAN-001). `ExecutionBudget` will have `preferred_operator_boost` (S88TWOPHALAN-002). Both are already passed to `search_plan()` at lines 85–86.
 3. The existing `search_candidates()` function continues unchanged — candidate reduction comes from the strategic phase narrowing the sub-goal context, not from modifying candidate generation. The spec (D4) explicitly states: "No modifications to `search_candidates()` itself are required."
 4. `build_successor_detailed` in `transition.rs` computes the heuristic per successor. The landmark heuristic integration adds a `.max(landmark_h)` to the existing spatial heuristic in the successor-building path.
-5. This is a planner-internal change (worldwake-ai only). No cross-system calls. Reads from `CognitiveProfile` and `ExecutionBudget` (core, read-only) and `PlanningSnapshot` (AI-internal, read-only).
+5. `strategic::plan()` now takes `RecipeRegistry` in addition to `PlanningSnapshot`, `GroundedGoal`, and `ExecutionBudget`, because the live `goal_relevant_places()` / `prerequisite_places()` helpers require recipes for lawful goal-place derivation.
+6. This is a planner-internal change (worldwake-ai only). No cross-system calls. Reads from `CognitiveProfile` and `ExecutionBudget` (core, read-only), `PlanningSnapshot` (AI-internal, read-only), and `RecipeRegistry`.
 
 ## Architecture Check
 
@@ -51,7 +52,7 @@ This conversion extracts facts from the candidate's preconditions and effects as
 
 ```rust
 // Phase 1: Strategic planning
-let strategic_plan = strategic::plan(snapshot, goal, execution_budget);
+let strategic_plan = strategic::plan(snapshot, goal, execution_budget, recipes);
 // If strategic plan has steps, the first destination informs the tactical context.
 
 // Phase 2: Extract landmarks for tactical search
