@@ -1,6 +1,6 @@
 # S85OBSBEHENR-004: Affordance snapshots after travel
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -12,13 +12,13 @@ The observer captures affordances only from the first planning decision (effecti
 
 ## Assumption Reassessment (2026-04-10)
 
-1. `AffordanceTrace` at `decision_trace.rs:218-221` with `available: Vec<AffordanceSummary>` and `place: Option<EntityId>`. `AffordanceSummary` at `decision_trace.rs:208-212` with `def_id`, `action_name`, `target_count`. Current observer captures initial affordances at `observer.rs:1260-1278` from the first planning decision with affordances. `AgentStats` at `observer.rs:55-77` does not currently store post-travel affordances.
+1. `AffordanceTrace` at `decision_trace.rs:218-221` with `available: Vec<AffordanceSummary>` and `place: Option<EntityId>`. `AffordanceSummary` at `decision_trace.rs:208-212` with `def_id`, `action_name`, `target_count`. Current observer captures initial affordances at `observer.rs:1388-1406` from the first planning decision with affordances. The live observer summary already has access to both `DecisionTraceSink::traces_for(agent)` and `ActionTraceSink::events_for(agent)`, so post-travel snapshots can be derived during report rendering without extending `AgentStats`.
 2. S85 spec (Deliverable 4) describes this change. The observer already uses `AffordanceTrace` for initial display.
 3. Single-layer ticket: observer-only data collection and formatting. No shared abstraction boundary.
 
 ## Architecture Check
 
-1. Extends `AgentStats` with a `Vec<(Tick, AffordanceTrace)>` to accumulate post-travel affordance snapshots. Detection is based on observing committed `travel` actions in the action trace followed by a planning decision with affordances at a different place. This reuses existing trace data — no new simulation queries.
+1. Derives post-travel affordance snapshots directly at report-render time by correlating committed `travel` events from `ActionTraceSink::events_for(agent)` with later planning traces that carry `AffordanceTrace`. The observer remains read-only and avoids duplicating trace-derived state into `AgentStats`.
 2. No backwards-compatibility aliasing or shims introduced.
 
 ## Verification Layers
@@ -30,23 +30,13 @@ The observer captures affordances only from the first planning decision (effecti
 
 ## What to Change
 
-### 1. Add post-travel affordance tracking to AgentStats
+### 1. Derive post-travel affordance snapshots during report rendering
 
-Add a field to `AgentStats`:
-
-```rust
-post_travel_affordances: Vec<(Tick, AffordanceTrace)>,
-```
-
-Initialize as empty in `AgentStats::new`.
-
-### 2. Collect post-travel affordances during trace analysis
-
-In the Decision Trace Summary section where per-agent traces are iterated (around `observer.rs:1040+`), track committed `travel` actions from the action trace. When a planning decision occurs after a travel commit and has affordances at a different place than the last recorded affordance place, push `(tick, affordance_trace.clone())` to `post_travel_affordances`.
+In the per-agent Decision Trace Summary section, correlate committed `travel` actions from `action_trace.events_for(agent)` with later planning traces from `sink.traces_for(agent)`. When the first later planning decision with affordances occurs at a different place than the last recorded affordance place, emit that snapshot as a post-travel affordance view.
 
 Also track the last planning decision with affordances to capture final affordances.
 
-### 3. Emit post-travel affordance snapshots in per-agent summary
+### 2. Emit post-travel affordance snapshots in per-agent summary
 
 In the per-agent summary, after the initial affordances section, emit each post-travel snapshot:
 
@@ -64,7 +54,7 @@ Also emit end-of-simulation affordances from the last planning decision with aff
 
 Format each affordance as `action_name(target_count targets)` or just `action_name` when `target_count == 0`.
 
-### 4. Add unit tests
+### 3. Add unit tests
 
 - Test with a trace that includes a travel commit followed by planning with affordances at a new place — verify post-travel snapshot is emitted
 - Test final affordances are emitted from the last planning decision
@@ -106,3 +96,20 @@ Format each affordance as `action_name(target_count targets)` or just `action_na
 
 1. `cargo test -p worldwake-cli`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Added observer-local affordance snapshot helpers that derive planning affordance snapshots, committed travel ticks, post-travel affordance snapshots, and final affordances directly from the existing decision and action traces.
+- Section 2 now emits `**Affordances after travel**` entries when a committed `travel` is followed by a planning affordance snapshot at a new place, and it also emits `**Final affordances**` from the last planning tick with affordances.
+- Added focused observer tests covering committed travel filtering, post-travel snapshot detection, final snapshot selection, no-travel negative behavior, and affordance formatting.
+
+## Deviations
+
+- During reassessment, the ticket was corrected away from extending `AgentStats`. The live observer already had the required data at report time through `DecisionTraceSink::traces_for(agent)` and `ActionTraceSink::events_for(agent)`, so the implementation kept the new logic as render-time derivation instead of duplicating trace-derived state.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

@@ -19,7 +19,7 @@ Before running the full workflow, classify the ticket:
 3. Run a narrow constructor/usage sweep for the changed shape: confirm the named symbols and accessors exist, search local callers/render sites, check obvious constructor or test-helper fallout, and identify the narrowest real proof entry point.
 4. Implement the owned change with focused proof first.
 5. Run the affected crate's tests as the normal broadened proof for the ticket. For Rust tickets, if the ticket's Test Plan or repo norms call for CI-matching clippy, run `cargo clippy --workspace --all-targets -- -D warnings` as part of normal broadened verification; use compile/lint fallout to catch remaining shared-shape literals/helpers and local cleanup.
-6. Close out the ticket with the actual verification set and tracked-vs-untracked note.
+6. Close out the ticket with the actual verification set and tracked-vs-untracked note. This normally includes updating the ticket file itself with completion metadata such as `Status`, `Outcome`, `Deviations` when needed, and `Verification Result`, not just reporting those details in the conversation.
 
 For CLI/tooling-only tickets, if the owned logic can be factored into local helpers, prefer bin-local `#[cfg(test)]` coverage over command-only validation.
 

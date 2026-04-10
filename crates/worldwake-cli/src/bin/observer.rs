@@ -13,15 +13,16 @@ use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
 use worldwake_ai::AgentTickDriver;
 use worldwake_ai::decision_trace::{
-    AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace, PlanSearchOutcome, TargetBeliefPresence,
+    AffordanceSummary, AffordanceTrace, AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace,
+    PlanSearchOutcome, TargetBeliefPresence,
 };
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
-use worldwake_core::{DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView};
+use worldwake_core::{DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView, Tick};
 use worldwake_sim::{
-    ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime, InstitutionalKnowledgeTraceSink,
-    PerceptionTraceSink, PoliticalTraceSink, RequestResolutionTraceSink, TickStepServices,
-    step_tick,
+    ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
+    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink,
+    RequestResolutionTraceSink, TickStepServices, step_tick,
 };
 
 #[derive(Parser)]
@@ -441,6 +442,90 @@ fn action_timeline_bins_for_agent<'a>(
             .or_insert(0) += 1;
     }
     bins
+}
+
+fn planning_affordance_snapshots<'a>(
+    traces: &'a [&'a AgentDecisionTrace],
+) -> Vec<(Tick, &'a AffordanceTrace)> {
+    traces
+        .iter()
+        .filter_map(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => planning
+                .affordances
+                .as_ref()
+                .map(|affordances| (trace.tick, affordances)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn committed_travel_ticks(events: &[&ActionTraceEvent]) -> Vec<Tick> {
+    events
+        .iter()
+        .filter(|event| {
+            event.action_name == "travel"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .map(|event| event.tick)
+        .collect()
+}
+
+fn post_travel_affordance_snapshots<'a>(
+    affordance_snapshots: &[(Tick, &'a AffordanceTrace)],
+    travel_commit_ticks: &[Tick],
+) -> Vec<(Tick, &'a AffordanceTrace)> {
+    let mut snapshots = Vec::new();
+    let mut last_recorded_place = None;
+    let mut pending_post_travel = false;
+    let mut travel_index = 0usize;
+
+    for (tick, affordances) in affordance_snapshots {
+        while let Some(travel_tick) = travel_commit_ticks.get(travel_index) {
+            if *travel_tick >= *tick {
+                break;
+            }
+            pending_post_travel = true;
+            travel_index += 1;
+        }
+
+        if pending_post_travel {
+            if affordances.place != last_recorded_place {
+                snapshots.push((*tick, *affordances));
+                last_recorded_place = affordances.place;
+            }
+            pending_post_travel = false;
+        } else {
+            last_recorded_place = affordances.place;
+        }
+    }
+
+    snapshots
+}
+
+fn final_affordance_snapshot<'a>(
+    affordance_snapshots: &[(Tick, &'a AffordanceTrace)],
+) -> Option<(Tick, &'a AffordanceTrace)> {
+    affordance_snapshots.last().copied()
+}
+
+fn format_affordance_summary(summary: &AffordanceSummary) -> String {
+    if summary.target_count == 0 {
+        summary.action_name.clone()
+    } else {
+        format!("{} ({} targets)", summary.action_name, summary.target_count)
+    }
+}
+
+fn write_affordance_list(
+    out: &mut String,
+    heading: &str,
+    affordances: &AffordanceTrace,
+) -> std::fmt::Result {
+    writeln!(out, "{heading}\n")?;
+    for affordance in &affordances.available {
+        writeln!(out, "- {}", format_affordance_summary(affordance))?;
+    }
+    writeln!(out)
 }
 
 fn behavioral_transitions(
@@ -1390,25 +1475,50 @@ fn format_report(
                 writeln!(out).unwrap();
             }
 
+            let affordance_snapshots = planning_affordance_snapshots(&traces);
+            let travel_commit_ticks = committed_travel_ticks(&action_trace.events_for(*agent_id));
+
             // Affordances available (from first planning tick that has them)
-            if let Some(trace) = traces.iter().find(
-                |t| matches!(&t.outcome, DecisionOutcome::Planning(p) if p.affordances.is_some()),
-            ) && let DecisionOutcome::Planning(planning) = &trace.outcome
-                && let Some(affordances) = &planning.affordances
-            {
-                writeln!(
-                    out,
-                    "**Affordances available at tick {}** (at {})\n",
-                    trace.tick.0,
-                    affordances
-                        .place
-                        .map_or_else(|| "unknown".to_string(), |p| p.to_string())
+            if let Some((tick, affordances)) = affordance_snapshots.first().copied() {
+                write_affordance_list(
+                    &mut out,
+                    &format!(
+                        "**Affordances available at tick {}** (at {})",
+                        tick.0,
+                        affordances
+                            .place
+                            .map_or_else(|| "unknown".to_string(), |p| p.to_string())
+                    ),
+                    affordances,
                 )
                 .unwrap();
-                for aff in &affordances.available {
-                    writeln!(out, "- {} ({} targets)", aff.action_name, aff.target_count).unwrap();
-                }
-                writeln!(out).unwrap();
+            }
+
+            for (tick, affordances) in
+                post_travel_affordance_snapshots(&affordance_snapshots, &travel_commit_ticks)
+            {
+                let place_label = affordances.place.map_or_else(
+                    || "unknown".to_string(),
+                    |place| entity_display_name(world, place),
+                );
+                write_affordance_list(
+                    &mut out,
+                    &format!(
+                        "**Affordances after travel** (tick {}, arrived at {})",
+                        tick.0, place_label
+                    ),
+                    affordances,
+                )
+                .unwrap();
+            }
+
+            if let Some((tick, affordances)) = final_affordance_snapshot(&affordance_snapshots) {
+                write_affordance_list(
+                    &mut out,
+                    &format!("**Final affordances** (tick {})", tick.0),
+                    affordances,
+                )
+                .unwrap();
             }
         }
     } else {
@@ -1649,17 +1759,22 @@ fn main() {
 mod tests {
     use super::{
         BehavioralTransition, NeedsSample, PlanAttemptTrace, PlanSearchOutcome,
-        behavioral_transitions, death_summary_line, failed_plan_breakdown, failed_plan_candidates,
-        failed_plan_location, failed_plan_max_depth, failed_plan_outcome_label,
-        failed_plan_target_beliefs, format_behavioral_transition, format_death_cause,
+        behavioral_transitions, committed_travel_ticks, death_summary_line,
+        failed_plan_breakdown, failed_plan_candidates, failed_plan_location,
+        failed_plan_max_depth, failed_plan_outcome_label, failed_plan_target_beliefs,
+        final_affordance_snapshot, format_behavioral_transition, format_death_cause,
+        format_affordance_summary, post_travel_affordance_snapshots,
     };
     use std::collections::BTreeMap;
-    use worldwake_ai::decision_trace::{SearchExpansionSummary, TargetBeliefPresence};
-    use worldwake_core::{
-        CauseRef, ControlSource, DeadAt, DeathCause, EntityId, EventLog, GoalKey, GoalKind,
-        HomeostaticNeedId, OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
-        build_prototype_world,
+    use worldwake_ai::decision_trace::{
+        AffordanceSummary, AffordanceTrace, SearchExpansionSummary, TargetBeliefPresence,
     };
+    use worldwake_core::{
+        ActionDefId, CauseRef, ControlSource, DeadAt, DeathCause, EntityId, EventLog, GoalKey,
+        GoalKind, HomeostaticNeedId, OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn, build_prototype_world,
+    };
+    use worldwake_sim::{ActionInstanceId, ActionTraceEvent, ActionTraceKind, CommitOutcome};
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
         SearchExpansionSummary {
@@ -1741,6 +1856,25 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId { slot, generation: 0 }
+    }
+
+    fn affordance_trace(place: Option<EntityId>, entries: &[(&str, usize)]) -> AffordanceTrace {
+        AffordanceTrace {
+            place,
+            available: entries
+                .iter()
+                .enumerate()
+                .map(|(idx, (action_name, target_count))| AffordanceSummary {
+                    def_id: ActionDefId(idx as u32 + 1),
+                    action_name: (*action_name).to_string(),
+                    target_count: *target_count,
+                })
+                .collect(),
+        }
     }
 
     #[test]
@@ -1931,6 +2065,100 @@ mod tests {
         let needs_samples = (0..300).map(|_| need_sample(600)).collect::<Vec<_>>();
 
         assert!(behavioral_transitions(&bins, &needs_samples).is_empty());
+    }
+
+    #[test]
+    fn committed_travel_ticks_only_include_committed_travel_events() {
+        let actor = entity(1);
+        let events = [
+            ActionTraceEvent::new(
+                Tick(10),
+                actor,
+                ActionDefId(1),
+                "travel".to_string(),
+                ActionTraceKind::Started { targets: vec![] },
+            ),
+            ActionTraceEvent::new(
+                Tick(20),
+                actor,
+                ActionDefId(1),
+                "travel".to_string(),
+                ActionTraceKind::Committed {
+                    instance_id: ActionInstanceId(7),
+                    outcome: CommitOutcome::empty(),
+                },
+            ),
+            ActionTraceEvent::new(
+                Tick(30),
+                actor,
+                ActionDefId(2),
+                "eat".to_string(),
+                ActionTraceKind::Committed {
+                    instance_id: ActionInstanceId(8),
+                    outcome: CommitOutcome::empty(),
+                },
+            ),
+        ];
+        let event_refs = events.iter().collect::<Vec<_>>();
+
+        assert_eq!(committed_travel_ticks(&event_refs), vec![Tick(20)]);
+    }
+
+    #[test]
+    fn post_travel_affordance_snapshot_uses_first_new_place_after_travel() {
+        let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let after_travel = affordance_trace(Some(entity(20)), &[("harvest", 2), ("sell", 1)]);
+        let later_same_place = affordance_trace(Some(entity(20)), &[("drink", 0)]);
+        let snapshots = vec![
+            (Tick(0), &initial),
+            (Tick(12), &after_travel),
+            (Tick(18), &later_same_place),
+        ];
+
+        let post_travel = post_travel_affordance_snapshots(&snapshots, &[Tick(8)]);
+
+        assert_eq!(post_travel.len(), 1);
+        assert_eq!(post_travel[0].0, Tick(12));
+        assert_eq!(post_travel[0].1.place, Some(entity(20)));
+        assert_eq!(post_travel[0].1.available.len(), 2);
+    }
+
+    #[test]
+    fn final_affordances_use_last_planning_snapshot() {
+        let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let final_trace = affordance_trace(Some(entity(20)), &[("relieve", 0)]);
+        let snapshots = vec![(Tick(0), &initial), (Tick(42), &final_trace)];
+
+        let final_snapshot = final_affordance_snapshot(&snapshots).expect("final affordance");
+        assert_eq!(final_snapshot.0, Tick(42));
+        assert_eq!(final_snapshot.1.place, Some(entity(20)));
+        assert_eq!(final_snapshot.1.available[0].action_name, "relieve");
+    }
+
+    #[test]
+    fn no_post_travel_affordance_snapshot_without_travel_commit() {
+        let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let later = affordance_trace(Some(entity(20)), &[("harvest", 2)]);
+        let snapshots = vec![(Tick(0), &initial), (Tick(12), &later)];
+
+        assert!(post_travel_affordance_snapshots(&snapshots, &[]).is_empty());
+    }
+
+    #[test]
+    fn affordance_summary_omits_target_count_when_zero() {
+        let no_targets = AffordanceSummary {
+            def_id: ActionDefId(1),
+            action_name: "sleep".to_string(),
+            target_count: 0,
+        };
+        let with_targets = AffordanceSummary {
+            def_id: ActionDefId(2),
+            action_name: "harvest".to_string(),
+            target_count: 3,
+        };
+
+        assert_eq!(format_affordance_summary(&no_targets), "sleep");
+        assert_eq!(format_affordance_summary(&with_targets), "harvest (3 targets)");
     }
 
     #[test]
