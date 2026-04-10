@@ -41,6 +41,8 @@ When the ticket was authored by `/spec-to-tickets` in the current session from a
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
+For cross-crate accessor, trait-surface, or API-surface tickets, verify the real downstream caller-facing boundary before coding, not just the immediate trait or type named in the ticket. If live callers consume the data through a broader wrapper, supertrait, blanket impl, or facade surface, correct the ticket to that owned boundary before editing code.
+
 Load `references/reassessment-checks.md`.
 
 ### 3. Handle mismatches explicitly

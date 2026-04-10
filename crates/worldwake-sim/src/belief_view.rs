@@ -9,8 +9,9 @@ use worldwake_core::{
     ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
     BelievedInstitutionalClaim, CombatProfile, CommodityConsumableProfile, CommodityKind,
     CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant, DemandObservation,
-    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    DisposalProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore,
+    ExplorationProfile, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    InstitutionalBeliefRead,
     IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
     MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
     PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
@@ -191,6 +192,10 @@ pub trait GoalBeliefView {
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
+        let _ = agent;
+        None
+    }
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
         let _ = agent;
         None
@@ -426,6 +431,10 @@ pub trait ProfileBeliefView {
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
+    fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
+        let _ = agent;
+        None
+    }
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
         let _ = agent;
         None
@@ -1202,6 +1211,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::DriveThresholds> {
         ProfileBeliefView::drive_thresholds(self, agent)
+    }
+
+    fn disposal_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::DisposalProfile> {
+        ProfileBeliefView::disposal_profile(self, agent)
     }
 
     fn exploration_profile(

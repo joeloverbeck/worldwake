@@ -16,7 +16,7 @@ Draft
 
 - `worldwake-core` (new GoalKind variant)
 - `worldwake-systems` (new `drop_item` action definition and handler)
-- `worldwake-sim` (new `ProfileBeliefView` accessor for `DisposalProfile`)
+- `worldwake-sim` (new `GoalBeliefView` / `ProfileBeliefView` disposal-profile accessor path)
 - `worldwake-ai` (goal dispatch declaration, dispatch key, candidate generation, planner hypothetical, ranking)
 
 ## Dependencies
@@ -285,7 +285,7 @@ Universal profile (all agents can decide to drop items). Registered on `EntityKi
 
 In `crates/worldwake-sim/src/belief_view.rs`:
 
-Add `disposal_profile(&self, entity: EntityId) -> Option<DisposalProfile>` to the `ProfileBeliefView` trait. Implement forwarding in `RuntimeBeliefView` and `GoalBeliefView` blanket impl so the AI crate can read `capacity_strain_threshold` during candidate generation and goal satisfaction checks.
+Add `disposal_profile(&self, entity: EntityId) -> Option<DisposalProfile>` to both the `ProfileBeliefView` and `GoalBeliefView` surfaces, with blanket forwarding from `GoalBeliefView` through `ProfileBeliefView`, so the AI crate can read `capacity_strain_threshold` through its live caller-facing belief-view interface during candidate generation and goal satisfaction checks.
 
 Follow the existing pattern for profile accessors (e.g., `perception_profile`, `cognitive_profile`).
 
@@ -304,7 +304,7 @@ Follow the existing pattern for profile accessors (e.g., `perception_profile`, `
 
 ### H3. Concrete Dampeners
 
-- **Physical dampener for waste loop**: Dropping waste takes time (2 ticks) and occupies attention. Agent cannot produce while dropping. Recipe duration and raw material depletion further limit production rate.
+- **Physical dampener for waste loop**: Dropping waste takes time and occupies attention under the live transport contract (`DurationExpr::Fixed(NonZeroU32::MIN)`, `Permille::new_unchecked(100)`, `Interruptibility::InterruptibleWithPenalty`). Agent cannot produce while dropping. Recipe duration and raw material depletion further limit production rate.
 - **Dampener for waste pile growth**: Waste items on the ground are concrete world state subject to future systems (decay, cleanup, environmental effects). In the current system, waste piles accumulate but do not amplify further production.
 
 ### H4. Stored State vs. Derived

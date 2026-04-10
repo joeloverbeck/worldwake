@@ -31,7 +31,7 @@ No candidate generation logic emits `FreeCarryCapacity` goals, and the CLI scena
 3. No candidate emitted when no waste in inventory -> focused unit test
 4. DisposalProfile applied to spawned agents with default -> integration test via scenario loading
 5. Candidate generation uses beliefs only, never authoritative state -> code review (P14)
-6. Mixed-layer: candidate generation (AI layer) reads via belief-view accessor (sim layer). Shared boundary is `ProfileBeliefView::disposal_profile()`.
+6. Mixed-layer: candidate generation (AI layer) reads via `ctx.view: &dyn GoalBeliefView`. Shared boundary is `GoalBeliefView::disposal_profile()` with blanket forwarding through `ProfileBeliefView::disposal_profile()`.
 
 ## What to Change
 
