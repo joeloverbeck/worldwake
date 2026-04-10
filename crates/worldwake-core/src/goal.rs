@@ -26,6 +26,8 @@ pub enum GoalKind {
     Sleep,
     Relieve,
     Wash,
+    /// Agent wants to free carry capacity by dropping low-value items.
+    FreeCarryCapacity,
     EngageHostile {
         target: EntityId,
     },
@@ -218,6 +220,7 @@ impl From<GoalKind> for GoalKey {
             GoalKind::Sleep
             | GoalKind::Relieve
             | GoalKind::Wash
+            | GoalKind::FreeCarryCapacity
             | GoalKind::ReduceDanger
             | GoalKind::ProduceCommodity { .. } => (None, None, None),
             GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place } => {
@@ -314,6 +317,25 @@ mod tests {
         let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn free_carry_capacity_goal_roundtrips_through_bincode() {
+        let goal = GoalKind::FreeCarryCapacity;
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn free_carry_capacity_goal_key_has_no_canonical_fields() {
+        let key = GoalKey::from(GoalKind::FreeCarryCapacity);
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, None);
+        assert_eq!(key.place, None);
     }
 
     #[test]

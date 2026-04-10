@@ -46,13 +46,15 @@ Read ALL of these files before any analysis:
 3. **`docs/spec-drafting-rules.md`** — spec format requirements. Skip if read earlier in this session and not modified since.
 4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. Also determine the highest completed phase number for use in Phase 3. If the file does not exist in `specs/`, check `archive/specs/IMPLEMENTATION-ORDER*.md` for the most recently archived version and read that instead.
 
+**Temporal context**: After reading the assessment, determine its generation date (look for timestamps, headers, or metadata). Cross-reference against completion dates of specs referenced in the assessment. If the assessment was generated *after* referenced completed specs, note this: "Assessment post-dates S{N} (completed YYYY-MM-DD) — observations reflect post-fix simulation state." Carry this forward to Step 3.2 — post-fix observations take precedence over "already addressed" claims.
+
 **Pre-flight check**: If `specs/IMPLEMENTATION-ORDER.md` exists in `specs/`, note its presence for Step 10. Do not warn about overwriting yet — the write strategy (append vs. fresh) depends on the number and nature of accepted proposals, which is not known until after triage. If the file was already archived (read from `archive/`), note that no active file exists.
 
 #### Step 2: Extract Proposals
 
 From the assessment document, extract every distinct proposal. For each proposal, record:
 
-- **Proposal ID**: Sequential number (PR-1, PR-2, PR-3, ...)
+- **Proposal ID**: Sequential number (PR-1, PR-2, PR-3, ...). If the assessment already uses structured proposal IDs (e.g., GT-1, SC-2, TK-3), reuse those IDs instead of renumbering. Note the mapping if the assessment IDs are non-sequential or ambiguous.
 - **Title**: Short descriptive name
 - **Priority**: As stated in the assessment (Priority 0, 1, 2, etc.), or "Unranked" if not prioritized
 - **Claim**: What the assessment says is wrong, missing, or improvable
@@ -67,7 +69,7 @@ If the assessment contains heterogeneous proposal types (golden tests, tickets, 
 For each proposal, validate the assessment's assumptions against the actual codebase:
 
 1. **Grep/Glob** for types, functions, files, and components the proposal references. Confirm they exist and have the shape the assessment assumes. The external LLM may have outdated or inaccurate assumptions about the codebase.
-2. **Check if already addressed**: Some proposals may describe problems that have already been fixed in recent work. Cross-reference against completed specs in `specs/IMPLEMENTATION-ORDER.md` (or its archived equivalent if already archived).
+2. **Check if already addressed**: Some proposals may describe problems that have already been fixed in recent work. Cross-reference against completed specs in `specs/IMPLEMENTATION-ORDER.md` (or its archived equivalent if already archived). **Important**: If the Temporal Context note from Step 1 indicates the assessment post-dates a completed spec, the assessment's observations take precedence over the completed spec's claims — the fix was demonstrably insufficient. Do not classify these as Reject with reason "already addressed." Instead, classify as Accept or Scope-Down with a note that the prior fix was insufficient and the new spec should reference it.
 3. **Verify FOUNDATIONS alignment**: Confirm the proposal's cited FOUNDATIONS principles are correct (right number, right name). Check whether the proposal itself would violate any principles it doesn't cite.
 4. **Assess benefit**: Would this change create meaningful downstream consequences (Principle 5)? Or is it "nice to have" without real emergent payoff?
 5. **Check for overlap with active specs**: Glob `specs/S*.md` and check whether any existing active spec already covers the proposal's scope. If so, classify as Reject with reason "already covered by S{N}."
@@ -85,7 +87,7 @@ Before classifying, identify causal dependencies between proposals. If proposal 
 
 For each proposal, assign one of three classifications:
 
-- **Accept**: The proposal's assumptions are valid, it aligns with FOUNDATIONS, and the change would be beneficial. Record: which spec(s) it maps to, estimated scope.
+- **Accept**: The proposal's assumptions are valid, it aligns with FOUNDATIONS, and the change would be beneficial. Record: which spec(s) it maps to, estimated scope. If a prior spec addressed the same scope but the assessment demonstrates the problem persists (post-fix observation per Temporal Context from Step 1), classify as Accept with note: "Prior fix (S{N}) was insufficient — investigation required." The new spec should reference the prior spec and focus on the gap.
 - **Reject**: The proposal's assumptions are wrong (already addressed, codebase differs from what assessment assumes), it violates FOUNDATIONS, or it fails YAGNI (no meaningful downstream consequences). Record: the specific reason for rejection.
 - **Scope-Down**: The core idea is valuable but the proposal is too ambitious or mixes concerns. Record: what the reduced spec would cover, what is deferred to later.
 
@@ -119,7 +121,7 @@ Present the triage to the user in a structured format:
 
 Omit classification sections that have 0 entries (e.g., skip the "Rejected" header entirely if nothing was rejected). When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options. When open-ended, present in the report.
 
-**Wait for user response.** Do not proceed to Phase 2 until the user has approved or adjusted the triage. Treat classifications as approved unless the user explicitly changes them.
+**Wait for user response.** Do not proceed to Phase 2 until the user has approved or adjusted the triage. Treat classifications as approved unless the user explicitly changes them. The triage approval question must not be bundled with other decisions (e.g., append vs. fresh from Step 10). Present the triage report and wait for classification approval only. Defer implementation-order decisions to Phase 3.
 
 If the user reclassifies proposals (e.g., "accept P5 too" or "reject P2"), update the triage accordingly and confirm the updated list.
 
@@ -157,7 +159,7 @@ When writing multiple specs and the existing context from Phase 1 is insufficien
 
 #### Step 8: Verify and Present Written Specs
 
-After writing all specs, spot-check that each contains: FOUNDATIONS Alignment table (verify principle numbers match `docs/FOUNDATIONS.md` headings), Section H (where applicable), Deliverables with concrete types, and Component Registration section. Report any missing mandatory sections or misnumbered principles before presenting the summary.
+After writing all specs, spot-check that each contains: FOUNDATIONS Alignment table (verify principle numbers match `docs/FOUNDATIONS.md` headings), Section H (where applicable), Deliverables with concrete types, and Component Registration section. If the spot-check finds missing sections or misnumbered principles, fix them before presenting the summary. The summary should confirm all mandatory sections are present.
 
 ```
 ## Specs Written
@@ -267,3 +269,4 @@ Do NOT commit. Leave all files for user review.
 - **No commit**: Write all files and stop. The user handles the file lifecycle.
 - **Worktree discipline**: If working in a worktree, ALL file operations use the worktree root path.
 - **Preserve spec voice**: Match the existing writing style of specs in `specs/`. Do not introduce a different tone or structure.
+- **Plan-mode interaction**: If invoked from plan mode, the skill's file writes (specs, IMPLEMENTATION-ORDER.md) are permitted as the plan's only editable files. The plan file itself serves as the execution summary — do not duplicate the triage report or spec summaries in both the plan file and the conversation. Defer implementation-order decisions (append vs. fresh) to Phase 3, not to the triage approval interaction in Step 6.

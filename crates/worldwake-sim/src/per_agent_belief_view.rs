@@ -9,10 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
     AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
-    CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityValuationProfile, ContentionGrant, ControlSource, DemandObservation, DriveThresholds,
-    EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    CarryCapacity, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    CommodityValuationProfile, ContentionGrant, ControlSource, DemandObservation, DisposalProfile,
+    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds,
+    InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
     OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
     RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
@@ -472,9 +472,21 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_disposal_profile(agent).copied())
+            .flatten()
+    }
+
     fn exploration_profile(&self, agent: EntityId) -> Option<worldwake_core::ExplorationProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_exploration_profile(agent).copied())
+            .flatten()
+    }
+
+    fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_cognitive_profile(agent).copied())
             .flatten()
     }
 
@@ -1512,17 +1524,18 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, ActionDomain, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
-        BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind,
-        ControlSource, EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog,
-        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, OfficeData, PerceptionProfile, Permille, Place,
-        PlaceTag, PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
-        ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
-        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId, build_believed_entity_state, build_prototype_world,
+        BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CognitiveProfile,
+        CombatProfile, CommodityKind, ControlSource, DisposalProfile, EdgeExperience,
+        EffectiveRight, EntityId, EntityKind, EventLog, ExpectationBasis, ExpectationId,
+        ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile, FactionData,
+        FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+        OfficeData, PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
+        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
+        RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory,
+        Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+        build_believed_entity_state, build_prototype_world,
         test_utils::{
             sample_commodity_valuation_profile, sample_preference_profile, sample_route_experience,
             sample_source_reliability,
@@ -2394,6 +2407,56 @@ mod tests {
     }
 
     #[test]
+    fn disposal_profile_returns_actor_profile_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = DisposalProfile {
+            capacity_strain_threshold: Permille::new(875).unwrap(),
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_disposal_profile(agent, profile).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::disposal_profile(&view, agent),
+            Some(profile)
+        );
+        assert_eq!(
+            GoalBeliefView::disposal_profile(&view, agent),
+            Some(profile)
+        );
+    }
+
+    #[test]
+    fn disposal_profile_returns_none_for_non_self_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(ProfileBeliefView::disposal_profile(&view, other), None);
+        assert_eq!(GoalBeliefView::disposal_profile(&view, other), None);
+    }
+
+    #[test]
     fn exploration_profile_returns_actor_profile_when_present() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -2450,6 +2513,55 @@ mod tests {
             GoalBeliefView::exploration_profile(&view, agent),
             Some(ExplorationProfile::default())
         );
+    }
+
+    #[test]
+    fn cognitive_profile_returns_actor_profile_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = CognitiveProfile {
+            max_plan_depth: 12,
+            speculative_acquisition: true,
+            ..CognitiveProfile::default()
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_cognitive_profile(agent, profile).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::cognitive_profile(&view, agent),
+            Some(profile)
+        );
+        assert_eq!(GoalBeliefView::cognitive_profile(&view, agent), Some(profile));
+    }
+
+    #[test]
+    fn cognitive_profile_returns_none_for_non_self_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(ProfileBeliefView::cognitive_profile(&view, other), None);
+        assert_eq!(GoalBeliefView::cognitive_profile(&view, other), None);
     }
 
     #[test]

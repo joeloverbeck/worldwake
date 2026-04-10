@@ -4,14 +4,14 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
     BelievedInstitutionalClaim, BlockedIntentMemory, BlockingFact, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
-    PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation, ResourceSource, SocialObservation,
-    StockStoragePolicy, SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    ViolationDispositionProfile, WorkstationTag, Wound,
+    CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DisposalProfile,
+    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
+    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
+    PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation,
+    ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
+    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -186,6 +186,7 @@ pub(crate) struct SnapshotProfiles {
     pub(crate) homeostatic_needs: Option<HomeostaticNeeds>,
     pub(crate) drive_thresholds: Option<DriveThresholds>,
     pub(crate) metabolism_profile: Option<MetabolismProfile>,
+    pub(crate) disposal_profile: Option<DisposalProfile>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -278,6 +279,7 @@ impl Default for SnapshotEntity {
                 homeostatic_needs: None,
                 drive_thresholds: None,
                 metabolism_profile: None,
+                disposal_profile: None,
             },
             facility: SnapshotFacility {
                 workstation_tag: None,
@@ -475,7 +477,13 @@ impl PlanningSnapshot {
             max_per_place,
             &actor_known_entity_beliefs,
         );
-        let places = build_snapshot_places(view, actor, &included_places, &included_entities);
+        let places = build_snapshot_places(
+            view,
+            actor,
+            &included_places,
+            &included_entities,
+            evidence_entities,
+        );
         let actor_known_social_observations = view.known_social_observations(actor);
         let actor_confidence_policy = view.belief_confidence_policy(actor);
         let mut entities: BTreeMap<EntityId, SnapshotEntity> = included_entities
@@ -779,8 +787,9 @@ fn build_snapshot_places(
     actor: EntityId,
     included_places: &BTreeSet<EntityId>,
     included_entities: &BTreeSet<EntityId>,
+    evidence_entities: &BTreeSet<EntityId>,
 ) -> BTreeMap<EntityId, SnapshotPlace> {
-    included_places
+    let mut places: BTreeMap<EntityId, SnapshotPlace> = included_places
         .iter()
         .copied()
         .map(|place| {
@@ -808,7 +817,26 @@ fn build_snapshot_places(
                 },
             )
         })
-        .collect()
+        .collect();
+
+    for entity in evidence_entities {
+        if !included_entities.contains(entity) || view.effective_place(*entity).is_some() {
+            continue;
+        }
+
+        for place in included_places {
+            if view.entities_at(*place).contains(entity) {
+                places
+                    .get_mut(place)
+                    .expect("included place must exist in snapshot place map")
+                    .entities
+                    .insert(*entity);
+                break;
+            }
+        }
+    }
+
+    places
 }
 
 fn build_snapshot_entity(
@@ -858,6 +886,7 @@ fn build_snapshot_entity(
     let homeostatic_needs = view.homeostatic_needs(entity);
     let drive_thresholds = view.drive_thresholds(entity);
     let metabolism_profile = view.metabolism_profile(entity);
+    let disposal_profile = view.disposal_profile(entity);
     let theft_disposition_profile = view.theft_disposition_profile(entity);
     let trade_disposition_profile = view.trade_disposition_profile(entity);
     let justice_disposition_profile = view.justice_disposition_profile(entity);
@@ -929,6 +958,7 @@ fn build_snapshot_entity(
             homeostatic_needs,
             drive_thresholds,
             metabolism_profile,
+            disposal_profile,
         },
         facility: SnapshotFacility {
             workstation_tag,
@@ -1192,19 +1222,20 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BlockedIntentMemory,
         CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
-        DemandObservation, DriveThresholds, EligibilityRule, EntityId, EntityKind,
+        DemandObservation, DisposalProfile, DriveThresholds, EligibilityRule, EntityId, EntityKind,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
         MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Quantity, RecipeId,
         ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange,
         ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView,
-        TemporalBeliefView,
+        ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
+        ControlBeliefView, DurationExpr, EntityBeliefView, PoliticalBeliefView,
+        ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
+        get_affordances_for_defs,
     };
 
-    use crate::PlannerOpKind;
+    use crate::{PlannerOpKind, PlanningState};
 
     type SupportDeclarationBeliefs =
         BTreeMap<EntityId, Vec<(EntityId, InstitutionalBeliefRead<Option<EntityId>>)>>;
@@ -1228,6 +1259,7 @@ mod tests {
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, ContentionGrant>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
+        disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
@@ -1257,6 +1289,7 @@ mod tests {
                 facility_queue_positions: BTreeMap::new(),
                 facility_grants: BTreeMap::new(),
                 tell_profiles: BTreeMap::new(),
+                disposal_profiles: BTreeMap::new(),
                 told_beliefs: BTreeMap::new(),
                 confidence_policies: BTreeMap::new(),
                 patrol_routes: BTreeMap::new(),
@@ -1314,6 +1347,10 @@ mod tests {
 
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             None
+        }
+
+        fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
+            self.disposal_profiles.get(&agent).copied()
         }
     }
 
@@ -2004,6 +2041,96 @@ mod tests {
         );
 
         assert!(snapshot.entities.contains_key(&evidence_item));
+    }
+
+    #[test]
+    fn snapshot_indexes_evidence_entity_at_place_when_effective_place_is_missing() {
+        let actor = entity(1);
+        let place = entity(10);
+        let listener = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(listener, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(listener, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor, listener]);
+        view.known_entity_beliefs
+            .insert(actor, vec![(listener, sample_belief(true, 4))]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([listener]),
+            &BTreeSet::new(),
+            0,
+        );
+
+        let indexed_entities = snapshot
+            .places
+            .get(&place)
+            .map(|snapshot_place| snapshot_place.entities.clone())
+            .unwrap_or_default();
+        assert!(indexed_entities.contains(&actor));
+        assert!(
+            indexed_entities.contains(&listener),
+            "evidence listener should be indexed at the actor's place even when effective_place is absent"
+        );
+    }
+
+    #[test]
+    fn tell_affordance_surfaces_for_evidence_listener_without_effective_place() {
+        let actor = entity(1);
+        let place = entity(10);
+        let listener = entity(20);
+        let subject = entity(30);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(listener, true);
+        view.alive.insert(subject, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(listener, EntityKind::Agent);
+        view.kinds.insert(subject, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor, listener]);
+        view.tell_profiles.insert(actor, TellProfile::default());
+        view.tell_profiles.insert(listener, TellProfile::default());
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![
+                (listener, sample_belief(true, 4)),
+                (subject, sample_belief(true, 5)),
+            ],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([listener]),
+            &BTreeSet::new(),
+            0,
+        );
+        let planning_state = PlanningState::new(&snapshot);
+
+        let mut defs = ActionDefRegistry::default();
+        let mut handlers = ActionHandlerRegistry::default();
+        let tell_def = worldwake_systems::tell_actions::register_tell_action(&mut defs, &mut handlers);
+        let affordances = get_affordances_for_defs(
+            &planning_state,
+            actor,
+            &defs,
+            &handlers,
+            &BTreeSet::from([tell_def]),
+        );
+
+        assert!(
+            affordances
+                .iter()
+                .any(|affordance| affordance.bound_targets == vec![listener]),
+            "tell affordance should bind the co-located listener carried only by evidence_entities"
+        );
     }
 
     #[test]

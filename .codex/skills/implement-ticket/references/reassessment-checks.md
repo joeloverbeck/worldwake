@@ -16,17 +16,19 @@ If focused traces, regression tests, or lower-layer proofs falsify the current i
 - When the ticket's owned surface is partially landed in the worktree, treat the live state as baseline; limit edits to the missing slice.
 - For CLI/scenario tickets, verify that authored bootstrap data populates the same live runtime registries, catalogs, and canonical bootstrap state the ticket expects. Do not treat per-entity wiring as sufficient until the scenario/bootstrap path and the runtime path agree on the same source of truth.
 - Cross-check `Deps` against `What to Change` for additive tickets that assume earlier slices landed.
+- When the ticket belongs to a numbered family or references a parent spec with split follow-up tickets, scan sibling tickets in that family before coding. Confirm whether adjacent missing substrate is already owned elsewhere so the current ticket neither over-claims sibling work nor narrows away an unowned gap.
 - For staged decomposition tickets, verify whether any temporary carrier or intermediate shape named in the ticket still exists on the current branch. If an earlier slice already removed it, narrow the ticket to the remaining live debt.
 - When roadmap summary, active spec, and live ticket disagree, compare all three and record which is authoritative.
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
 - Described architecture still matches live code.
 - Stated coverage gaps are real and correctly classified.
-- When adding a universal agent profile or other always-present bootstrap component, verify both the schema registration path and the canonical default-seeding path (for example `World::create_agent()` plus any transaction/bootstrap delta tests). Do not treat registration alone as satisfying the live universal-profile contract.
+- When adding, extending, or newly reading a universal agent profile or other always-present bootstrap component, verify both the schema registration/read surface and the canonical default-seeding path (for example `World::create_agent()` plus any transaction/bootstrap delta tests). Do not treat registration alone, or a plausible "component may be absent" assumption, as satisfying the live universal-profile contract.
 - When a canonical registry or catalog gains entries (for example recipe, action, component, or manifest registries), sweep for hardcoded `RecipeId`, `ActionDefId`, ordinal, or registration-order assumptions in tests and helpers. Prefer resolving by name unless the stable ordinal is itself the owned contract.
 - For scenario/world-authoring tickets, state whether the same runtime fact is currently authored through more than one lawful path, which path is canonical after the change, and whether any duplicate authoring path remains intentionally supported or is deferred to a named follow-up ticket.
 - When reassessment changes the live root cause or owned surface, apply the section-update rule (see Section 3, "Affected section updates").
 - When a ticket names campaign, harness, or telemetry metrics as proof obligations, verify the live output contract. Confirm the actual emitted keys, counters, and summary carrier instead of assuming the ticket's metric names are still current.
 - When replacing inline code with a delegation to data populated by a prior ticket, verify line-by-line that the prior ticket's data captures every branch of the original code.
+- When a ticket adds a pruning gate, prefilter, or early-return check in front of an existing helper that still decides the final lawful opportunities, compare the new gate predicate against the full live downstream helper contract before coding. Do not let the new front-door filter silently narrow branches the downstream helper would still lawfully admit (for example seller lots, corpse inventory, recipe-backed acquisition, or other non-obvious evidence families).
 
 ## Golden-specific reassessment
 
@@ -119,7 +121,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 
 - For component-registration tickets, check hardcoded schema inventories, sample `ComponentValue` enumerations, and manifest-style tests.
 - When registering a new authoritative component, search for hand-maintained `ComponentKind` inventories and sample builders outside the registration macro.
-- When registering a new universal profile on `EntityKind::Agent`, verify the runtime bootstrap path that makes the profile universal, not just the schema entry. Sweep agent factory/default-seeding code and any delta/assertion tests that encode the bootstrap component set.
+- When registering a new universal profile on `EntityKind::Agent`, or widening reads/tests around an existing one, verify the runtime bootstrap path that makes the profile universal, not just the schema entry. Sweep agent factory/default-seeding code and any delta/assertion tests that encode the bootstrap component set, and reject negative proofs that rely on agents lawfully lacking the seeded component.
 - When a scenario ticket adds authoritative components to places, verify whether place entities are topology-owned and created before `World::new(topology)`. Land component assignment in the bootstrap `WorldTxn` phase if so.
 - When renaming or replacing an authoritative identifier, search display strings, manifest inventories, serialized name surfaces, and identity-assertion tests.
 - When adding or reordering a `SystemId`, verify separately whether runtime dispatch uses a dense ordinal (`SystemId::ALL`) vs. a distinct manifest (`SystemManifest::canonical()`). Update each independently.

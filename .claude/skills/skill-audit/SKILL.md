@@ -1,6 +1,7 @@
 ---
 name: skill-audit
 description: Session-aware skill quality audit. Analyzes a skill file against the current session's work to find issues, improvements, and missing features. Cross-checks against FOUNDATIONS.md and CLAUDE.md. Invoke at end of session with the skill path as argument.
+user-invocable: true
 arguments:
   - name: skill-path
     description: "Path to skill directory (e.g., .claude/skills/improve-loop)"
@@ -24,7 +25,7 @@ The argument is the skill directory path. The framework automatically resolves `
 ## Checklist
 
 1. **Read the target skill** — Read the SKILL.md file at the provided path. Parse its name, description, and full content. If the exact path does not resolve, glob for near-matches (e.g., `<path>*`). If exactly one match is found, use it and note the correction. If zero or multiple matches, stop and report the error.
-2. **Read alignment documents** — Read `docs/FOUNDATIONS.md` — skip only if explicitly read earlier in this session (not from memory or training knowledge). If the file exceeds the Read tool's token limit, read the first 200 lines (preamble + principle listing) using offset/limit, or read relevant sections targeted to the audit topic. System context injection of CLAUDE.md (which summarizes key principles) is acceptable as a supplement but not a replacement for reading FOUNDATIONS.md at least once per session. `CLAUDE.md` is always available via system context injection and does not need explicit reading.
+2. **Read alignment documents** — Read `docs/FOUNDATIONS.md` — skip only if read earlier in this session (fully or via partial reads that cumulatively covered the document), not from memory or training knowledge. If the file exceeds the Read tool's token limit, read the first 200 lines (preamble + principle listing) using offset/limit, or read relevant sections targeted to the audit topic. Multiple partial reads that cumulatively cover the full document satisfy this requirement. System context injection of CLAUDE.md (which summarizes key principles) is acceptable as a supplement but not a replacement for reading FOUNDATIONS.md at least once per session. `CLAUDE.md` is always available via system context injection and does not need explicit reading.
 3. **Session reflection** — Review the current conversation context to identify the items below. If the target skill is skill-audit itself (self-audit), use session evidence from any prior audit invocation(s) in this session. The self-audit invocation provides no independent session evidence beyond confirming the skill's flow works. If no prior audit invocation exists in this session, report "No session evidence available — self-audit with no prior invocations produces no findings beyond confirming the skill's flow parses correctly." and skip steps 3-6.
    - Moments where the skill's instructions were unclear or ambiguous
    - Steps that were skipped, reordered, or worked around
@@ -92,6 +93,8 @@ Output this structure to the conversation (do not write to a file):
 **Total**: N issues, N improvements, N features — N CRITICAL, N HIGH, N MEDIUM, N LOW
 ```
 
+Double-check severity counts against findings before presenting. If a correction is needed after presenting, strike the incorrect line and restate.
+
 ## Guardrails
 
 - **Report only** — Never modify the target skill file. Output the report to the conversation only.
@@ -105,11 +108,15 @@ Output this structure to the conversation (do not write to a file):
 
   **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding. If the user requests all findings be implemented (e.g., "implement all", "implement recommended suggestions", "implement everything"), skip dependency checking and apply all edits in document order. Treat "recommended" as "all" unless the audit report explicitly distinguished recommended from optional findings.
 
-  **Edit ordering**: Apply edits in document order (top to bottom) to minimize line-number shifts invalidating later edits. If applying an earlier finding renders a later finding moot (e.g., the target text no longer exists), skip the moot finding and note it in the post-edit verification as "superseded by finding N."
+  **Edit ordering**: Apply edits in document order (top to bottom) to minimize line-number shifts invalidating later edits. If applying an earlier finding renders a later finding moot (e.g., the target text no longer exists), skip the moot finding and note it in the post-edit verification as "superseded by finding N." If an edit inserts a new numbered step, renumber all subsequent steps and verify that the output summary or other sections referencing step numbers are updated accordingly.
 
   **Post-edit verification**: After all edits are applied, re-read the full skill file and verify as a single pass:
   1. **No overlap or contradiction** — edits don't conflict with each other
-  2. **Cross-references valid** — phase numbers, step numbers, and file paths still point to correct targets. For files with many numbered references, use pattern search (e.g., grep for `Step [0-9]`, `Phase [0-9]`, `Section [0-9]`, or `### [0-9]`) to confirm numbering continuity. For smaller files, a full re-read with visual confirmation is sufficient. Verify that cross-references introduced by new text point to content that actually exists. High-level overview diagrams or summaries that become slightly inaccurate due to new branching logic are acceptable if the detailed step text handles the nuance — note the discrepancy but do not force-update overview text that would become harder to scan.
+  2. **Cross-references valid**:
+     - (a) **Numbering continuity** — step, phase, and section numbers are sequential with no gaps or duplicates. For files with many numbered references, use pattern search (e.g., grep for `Step [0-9]`, `### [0-9]`) to confirm; for smaller files, a visual scan suffices. Adapt grep patterns to the target skill's convention (numbered items, lettered sub-steps, or markdown headers).
+     - (b) **File paths valid** — all referenced file paths still exist and point to correct targets.
+     - (c) **New cross-references** — references introduced by new text point to content that actually exists.
+     - (d) **Overview diagrams** — high-level overviews that become slightly inaccurate due to new branching logic are acceptable if the detailed step text handles the nuance. Note the discrepancy but do not force-update overview text that would become harder to scan.
   3. **Sequential flow coherent** — the skill reads coherently end-to-end after all edits
   4. **Contextual consistency** — numbering, terminology, and cross-references are consistent with adjacent unchanged text
   5. **Frontmatter integrity** — if any edit touched the YAML frontmatter, verify `---` delimiters are intact and the YAML parses correctly (name, description, and arguments are present and properly quoted)

@@ -10,8 +10,8 @@ use worldwake_core::{
     ExplorationProfile, GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile,
     PerceptionSource, Quantity, ResourceSource, Seed, SharedTellState, SocialObservation,
     SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, Tick,
-    UtilityProfile, WorkstationTag, belief_confidence, build_believed_entity_state,
-    hash_event_log, hash_world, verify_authoritative_conservation,
+    UtilityProfile, WorkstationTag, belief_confidence, build_believed_entity_state, hash_event_log,
+    hash_world, verify_authoritative_conservation,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionTraceKind, CommitTraceData, InputKind,

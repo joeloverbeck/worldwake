@@ -51,7 +51,9 @@ Next-steps menu (user chooses)
 
 3. **If implementation-related OR if the topic directly concerns FOUNDATIONS.md principles**: Read `docs/FOUNDATIONS.md`. You will need it in Steps 3 and 4 to validate proposed approaches against architectural principles.
 
-4. **Project context**: Explore existing implementations relevant to the topic before starting the interview — this context informs better questions. For tooling/process topics, examine existing instances of the thing being designed (e.g., existing skills, configs, workflows — their structure, size, patterns). For codebase topics, check relevant files, specs, and tickets. Launch Explore agents for broad surveys when needed. Keep exploration targeted to what informs the interview.
+4. **Confidence calibration from reference file**: If the reference file provides a comprehensive design (rationale, decisions, structure, adaptation notes), set initial confidence based on how much of the problem space it covers. A thorough reference file may start confidence at 70-85%, reducing the interview to closing operational gaps (naming, cleanup, customization preferences).
+
+5. **Project context**: Explore existing implementations relevant to the topic before starting the interview — this context informs better questions. For tooling/process topics, examine existing instances of the thing being designed (e.g., existing skills, configs, workflows — their structure, size, patterns). For codebase topics, check relevant files, specs, and tickets. Launch Explore agents for broad surveys when needed. Keep exploration targeted to what informs the interview.
 
 ## Step 2: Confidence-Driven Interview
 
@@ -107,6 +109,8 @@ Present **2-3 distinct approaches** with:
 
 **If implementation-related**: For each approach, note which FOUNDATIONS.md principles it aligns with or tensions it creates. Use format: `Foundations: F1 (aligns), F8 (tensions — [reason])`.
 
+**If the problem space is fully constrained** (e.g., a reference document provides a proven design, or requirements eliminate alternatives), state why only one approach exists and present it directly. Do not invent artificial alternatives.
+
 **Wait for user to choose or ask questions.** Do not proceed until the user picks an approach (or asks you to refine/combine).
 
 ## Step 4: Present Design
@@ -127,13 +131,15 @@ Section names are suggestions. Rename or combine sections to match the topic's n
 
 **After each section**, ask: "Does this section look right?" Wait for confirmation before presenting the next section. If the user pushes back, revise that section before continuing.
 
+**If plan mode is active**: Per-section approval is replaced by whole-plan approval via `ExitPlanMode`. Present the key design decisions inline in the conversation before writing the plan file, so the user can course-correct before the plan is finalized.
+
 ## Step 5: Write Design Doc
 
 After design approval, do NOT apply changes or implement the design until the user selects an implementation option from the Step 6 menu. The design doc is the deliverable of this skill — implementation is a separate act that requires the user's explicit choice.
 
 **Deliverable classification**:
 - If the brainstorm topic is itself a skill design, the deliverable is the skill file (written to the appropriate skills directory, e.g., `.claude/skills/<name>/SKILL.md`). Skip the `docs/plans/` design doc — the skill file IS the design. Adjust the Step 6 menu to reflect this (omit "create a spec" option, replace with "run skill-audit on the new skill").
-- If the brainstorm topic is modifying or reconciling existing skill files, the deliverable is the modified skill file(s) themselves. Skip the `docs/plans/` design doc — the edits ARE the design.
+- If the brainstorm topic is modifying or reconciling existing skill files, the deliverable is the modified skill file(s) themselves. Skip the `docs/plans/` design doc — the edits ARE the design. If merging multiple skills, the deliverable includes the new unified skill file, deletion of superseded skill directories, and updating any cross-references in other skills or configuration files.
 
 Once all sections are approved, write the complete design:
 

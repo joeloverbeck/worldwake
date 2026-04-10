@@ -18,12 +18,11 @@ use std::{
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
     CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind,
-    HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-    OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey,
-    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
-    failure_ratio_permille,
+    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId,
+    HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+    NoticeTopic, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity,
+    RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
+    belief_confidence, failure_ratio_permille, load_per_unit,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -452,7 +451,8 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
                     classify_band(patient_pain, &thresholds.pain)
                 })
         }
-        GoalKind::LootCorpse { .. }
+        GoalKind::FreeCarryCapacity
+        | GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
         | GoalKind::SearchForMissing { .. }
         | GoalKind::ReportMissing { .. }
@@ -595,6 +595,18 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             |needs| needs.dirtiness,
             |utility| utility.dirtiness_weight,
         ),
+        GoalKind::FreeCarryCapacity => {
+            context
+                .view
+                .carry_capacity(context.agent)
+                .map_or(0, |carry_capacity| {
+                    let carried_load = carried_commodity_load(context.view, context.agent);
+                    let strain = Permille::new_unchecked(
+                        ((carried_load * 1000) / carry_capacity.0.max(1)).min(1000) as u16,
+                    );
+                    score_product(context.utility.enterprise_weight, strain)
+                })
+        }
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
@@ -677,19 +689,16 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
     }
 }
 
-fn exploration_motive(
-    context: &RankingContext<'_>,
-    motivating_need: HomeostaticNeedId,
-) -> u32 {
+fn exploration_motive(context: &RankingContext<'_>, motivating_need: HomeostaticNeedId) -> u32 {
     let Some(needs) = context.needs else {
         return 0;
     };
     let Some(profile) = context.exploration_profile else {
         return 0;
     };
-    u32::from(profile.curiosity_weight.value())
-        .saturating_mul(u32::from(need_pressure_for_id(needs, motivating_need).value()))
-        / 1000
+    u32::from(profile.curiosity_weight.value()).saturating_mul(u32::from(
+        need_pressure_for_id(needs, motivating_need).value(),
+    )) / 1000
 }
 
 fn need_pressure_for_id(needs: HomeostaticNeeds, need_id: HomeostaticNeedId) -> Permille {
@@ -1190,6 +1199,18 @@ fn reward_signal_from_quantity(quantity: Quantity) -> Permille {
     Permille::new(scaled).unwrap_or_else(|_| Permille::new_unchecked(1000))
 }
 
+fn carried_commodity_load(view: &dyn GoalBeliefView, agent: EntityId) -> u32 {
+    CommodityKind::ALL
+        .iter()
+        .copied()
+        .map(|kind| {
+            view.commodity_quantity(agent, kind)
+                .0
+                .saturating_mul(load_per_unit(kind).0)
+        })
+        .fold(0u32, u32::saturating_add)
+}
+
 fn score_product(weight: Permille, pressure: Permille) -> u32 {
     u32::from(weight.value()) * u32::from(pressure.value())
 }
@@ -1546,34 +1567,35 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::Sleep => 2,
         GoalKind::Relieve => 3,
         GoalKind::Wash => 4,
-        GoalKind::EngageHostile { .. } => 5,
-        GoalKind::RaidTarget { .. } => 6,
-        GoalKind::ReduceDanger => 7,
-        GoalKind::RegroupWithFaction { .. } => 8,
-        GoalKind::EstablishBanditCamp { .. } => 9,
-        GoalKind::TreatWounds { .. } => 10,
-        GoalKind::ProduceCommodity { .. } => 11,
-        GoalKind::SellCommodity { .. } => 12,
-        GoalKind::RestockCommodity { .. } => 13,
-        GoalKind::MoveCargo { .. } => 14,
-        GoalKind::LootCorpse { .. } => 15,
-        GoalKind::BuryCorpse { .. } => 16,
-        GoalKind::FulfillBounty { .. } => 17,
-        GoalKind::ShareBelief { .. } => 18,
-        GoalKind::ClaimOffice { .. } => 19,
-        GoalKind::SupportCandidateForOffice { .. } => 20,
-        GoalKind::InvestigateViolation { .. } => 21,
-        GoalKind::Patrol { .. } => 22,
-        GoalKind::StealItem { .. } => 23,
-        GoalKind::Accuse { .. } => 24,
-        GoalKind::PunishAccused { .. } => 25,
-        GoalKind::PostBounty { .. } => 26,
-        GoalKind::PostNotice { .. } => 27,
-        GoalKind::SearchForMissing { .. } => 28,
-        GoalKind::ReportMissing { .. } => 29,
-        GoalKind::EscortToSafety { .. } => 30,
-        GoalKind::ReportFound { .. } => 31,
-        GoalKind::ExploreLocation { .. } => 32,
+        GoalKind::FreeCarryCapacity => 5,
+        GoalKind::EngageHostile { .. } => 6,
+        GoalKind::RaidTarget { .. } => 7,
+        GoalKind::ReduceDanger => 8,
+        GoalKind::RegroupWithFaction { .. } => 9,
+        GoalKind::EstablishBanditCamp { .. } => 10,
+        GoalKind::TreatWounds { .. } => 11,
+        GoalKind::ProduceCommodity { .. } => 12,
+        GoalKind::SellCommodity { .. } => 13,
+        GoalKind::RestockCommodity { .. } => 14,
+        GoalKind::MoveCargo { .. } => 15,
+        GoalKind::LootCorpse { .. } => 16,
+        GoalKind::BuryCorpse { .. } => 17,
+        GoalKind::FulfillBounty { .. } => 18,
+        GoalKind::ShareBelief { .. } => 19,
+        GoalKind::ClaimOffice { .. } => 20,
+        GoalKind::SupportCandidateForOffice { .. } => 21,
+        GoalKind::InvestigateViolation { .. } => 22,
+        GoalKind::Patrol { .. } => 23,
+        GoalKind::StealItem { .. } => 24,
+        GoalKind::Accuse { .. } => 25,
+        GoalKind::PunishAccused { .. } => 26,
+        GoalKind::PostBounty { .. } => 27,
+        GoalKind::PostNotice { .. } => 28,
+        GoalKind::SearchForMissing { .. } => 29,
+        GoalKind::ReportMissing { .. } => 30,
+        GoalKind::EscortToSafety { .. } => 31,
+        GoalKind::ReportFound { .. } => 32,
+        GoalKind::ExploreLocation { .. } => 33,
     }
 }
 
@@ -1642,6 +1664,8 @@ mod tests {
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         institutional_claims: BTreeMap<EntityId, Vec<BelievedInstitutionalClaim>>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        carry_capacities: BTreeMap<EntityId, LoadUnits>,
+        entity_loads: BTreeMap<EntityId, LoadUnits>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         listed_sale_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         sale_lot_sellers: BTreeMap<EntityId, EntityId>,
@@ -2007,11 +2031,11 @@ mod tests {
         fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
-        fn carry_capacity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.carry_capacities.get(&entity).copied()
         }
-        fn load_of_entity(&self, _entity: EntityId) -> Option<LoadUnits> {
-            None
+        fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits> {
+            self.entity_loads.get(&entity).copied()
         }
         fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId> {
             self.known_recipes.get(&agent).cloned().unwrap_or_default()
@@ -5187,6 +5211,121 @@ mod tests {
         assert_eq!(
             ranked[0].motive_score,
             u32::from(utility().enterprise_weight.value())
+        );
+    }
+
+    #[test]
+    fn free_carry_capacity_uses_low_priority_class() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.carry_capacities.insert(agent, LoadUnits(10));
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(1));
+
+        let ranked = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+    }
+
+    #[test]
+    fn free_carry_capacity_motive_scales_with_carried_load_strain() {
+        let agent = entity(1);
+        let mut fifty_view = base_view(agent);
+        fifty_view.carry_capacities.insert(agent, LoadUnits(10));
+        fifty_view
+            .commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(5));
+
+        let fifty_ranked = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &fifty_view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(fifty_ranked.len(), 1);
+        assert_eq!(
+            fifty_ranked[0].motive_score,
+            super::score_product(utility().enterprise_weight, pm(500))
+        );
+
+        let mut full_view = base_view(agent);
+        full_view.carry_capacities.insert(agent, LoadUnits(10));
+        full_view
+            .commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(10));
+
+        let full_ranked = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &full_view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(full_ranked.len(), 1);
+        assert_eq!(
+            full_ranked[0].motive_score,
+            super::score_product(utility().enterprise_weight, pm(1000))
+        );
+        assert!(full_ranked[0].motive_score > fifty_ranked[0].motive_score);
+    }
+
+    #[test]
+    fn free_carry_capacity_motive_uses_concrete_carried_commodity_load_not_agent_load_accessor() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.carry_capacities.insert(agent, LoadUnits(10));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(8));
+
+        let ranked = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(
+            ranked[0].motive_score,
+            super::score_product(utility().enterprise_weight, pm(800))
+        );
+    }
+
+    #[test]
+    fn free_carry_capacity_motive_is_zero_when_capacity_unavailable() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(8));
+
+        let outcome = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(outcome.ranked.is_empty());
+        assert_eq!(
+            outcome.zero_motive,
+            vec![GoalKey::from(GoalKind::FreeCarryCapacity)]
         );
     }
 

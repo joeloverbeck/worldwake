@@ -34,6 +34,12 @@ pub fn register_transport_actions(
         commit_put_down,
         abort_transport,
     ));
+    let drop_item_handler = handlers.register(ActionHandler::new(
+        start_drop_item,
+        tick_transport,
+        commit_drop_item,
+        abort_transport,
+    ));
     let steal_handler = handlers.register(ActionHandler::new(
         start_steal,
         tick_transport,
@@ -43,7 +49,8 @@ pub fn register_transport_actions(
 
     let pick_up_id = ActionDefId(defs.len() as u32);
     let put_down_id = ActionDefId(pick_up_id.0 + 1);
-    let steal_id = ActionDefId(put_down_id.0 + 1);
+    let drop_item_id = ActionDefId(put_down_id.0 + 1);
+    let steal_id = ActionDefId(drop_item_id.0 + 1);
 
     vec![
         defs.register(ActionDef {
@@ -113,6 +120,38 @@ pub fn register_transport_actions(
             ]),
             payload: ActionPayload::None,
             handler: put_down_handler,
+        }),
+        defs.register(ActionDef {
+            id: drop_item_id,
+            name: "drop_item".to_string(),
+            domain: worldwake_core::ActionDomain::Transport,
+            actor_constraints: vec![Constraint::ActorAlive, Constraint::ActorHasControl],
+            targets: vec![TargetSpec::EntityDirectlyPossessedByActorAnyOf {
+                kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
+            }],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetDirectlyPossessedByActor(0),
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::MIN),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::new_unchecked(100),
+            interruptibility: Interruptibility::InterruptibleWithPenalty,
+            commit_conditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetDirectlyPossessedByActor(0),
+            ],
+            visibility: VisibilitySpec::ParticipantsOnly,
+            causal_event_tags: BTreeSet::from([
+                EventTag::WorldMutation,
+                EventTag::Inventory,
+                EventTag::Transfer,
+            ]),
+            payload: ActionPayload::None,
+            handler: drop_item_handler,
         }),
         defs.register(ActionDef {
             id: steal_id,
@@ -572,7 +611,37 @@ fn start_put_down(
     Ok(None)
 }
 
+fn start_drop_item(
+    _def: &ActionDef,
+    instance: &mut ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<worldwake_sim::ActionState>, ActionError> {
+    validate_put_down(txn, instance.actor, require_transport_target(instance)?)?;
+    Ok(None)
+}
+
 fn commit_put_down(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let target = require_transport_target(instance)?;
+    let actor_place = validate_put_down(txn, instance.actor, target)?;
+    txn.clear_possessor(target)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.set_ground_location(target, actor_place)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    ensure_unique_item_pickup_contention_components(txn, target)?;
+    txn.add_target(target);
+    Ok(CommitOutcome::empty())
+}
+
+fn commit_drop_item(
     _def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
@@ -739,8 +808,8 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, DeterministicRng, PerAgentBeliefView, TickOutcome, get_affordances,
-        start_action, tick_action,
+        ActionInstanceId, DeterministicRng, ExternalAbortReason, PerAgentBeliefView, TickOutcome,
+        abort_action, get_affordances, start_action, tick_action,
     };
 
     use super::*;
@@ -854,11 +923,12 @@ mod tests {
         ActionDefId,
         ActionDefId,
         ActionDefId,
+        ActionDefId,
     ) {
         let mut defs = ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
         let ids = register_transport_actions(&mut defs, &mut handlers);
-        (defs, handlers, ids[0], ids[1], ids[2])
+        (defs, handlers, ids[0], ids[1], ids[2], ids[3])
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -894,14 +964,16 @@ mod tests {
     }
 
     #[test]
-    fn register_transport_actions_creates_pick_up_put_down_and_steal_defs() {
-        let (defs, _, pick_up_id, put_down_id, steal_id) = setup_registries();
+    fn register_transport_actions_creates_pick_up_put_down_drop_item_and_steal_defs() {
+        let (defs, _, pick_up_id, put_down_id, drop_item_id, steal_id) = setup_registries();
         let pick_up = defs.get(pick_up_id).unwrap();
         let put_down = defs.get(put_down_id).unwrap();
+        let drop_item = defs.get(drop_item_id).unwrap();
         let steal = defs.get(steal_id).unwrap();
 
         assert_eq!(pick_up.name, "pick_up");
         assert_eq!(put_down.name, "put_down");
+        assert_eq!(drop_item.name, "drop_item");
         assert_eq!(steal.name, "steal");
         assert_eq!(
             pick_up.targets,
@@ -915,6 +987,7 @@ mod tests {
                 kinds: [EntityKind::ItemLot, EntityKind::UniqueItem],
             }]
         );
+        assert_eq!(drop_item.targets, put_down.targets);
         assert!(
             pick_up
                 .preconditions
@@ -930,6 +1003,11 @@ mod tests {
                 .preconditions
                 .contains(&Precondition::TargetDirectlyPossessedByActor(0))
         );
+        assert_eq!(drop_item.preconditions, put_down.preconditions);
+        assert_eq!(drop_item.commit_conditions, put_down.commit_conditions);
+        assert_eq!(drop_item.duration, put_down.duration);
+        assert_eq!(drop_item.interruptibility, put_down.interruptibility);
+        assert_eq!(drop_item.attention_cost, put_down.attention_cost);
         assert!(
             !steal
                 .preconditions
@@ -960,7 +1038,7 @@ mod tests {
             commit_txn(txn);
             (actor_a, actor_b, item)
         };
-        let (defs, handlers, pick_up_id, _, _) = setup_registries();
+        let (defs, handlers, pick_up_id, _, _, _) = setup_registries();
         let affordance_a = affordances_for(&world, actor_a, &defs, &handlers)
             .into_iter()
             .find(|affordance| {
@@ -1061,7 +1139,7 @@ mod tests {
             commit_txn(txn);
             (actor, item)
         };
-        let (defs, handlers, _, put_down_id, _) = setup_registries();
+        let (defs, handlers, _, put_down_id, _, _) = setup_registries();
         let affordance = affordances_for(&world, actor, &defs, &handlers)
             .into_iter()
             .find(|affordance| {
@@ -1117,7 +1195,7 @@ mod tests {
     #[test]
     fn pick_up_happy_path_moves_lot_into_actor_possession_and_emits_tags() {
         let (mut world, actor, lot, place, _) = setup_world();
-        let (defs, handlers, _, _, _) = setup_registries();
+        let (defs, handlers, _, _, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
@@ -1167,7 +1245,7 @@ mod tests {
     #[test]
     fn pick_up_fails_when_target_not_colocated() {
         let (mut world, actor, lot, _, other_place) = setup_world();
-        let (defs, handlers, pick_up_id, _, _) = setup_registries();
+        let (defs, handlers, pick_up_id, _, _, _) = setup_registries();
         {
             let mut txn = new_txn(&mut world, 2);
             txn.set_ground_location(lot, other_place).unwrap();
@@ -1210,7 +1288,7 @@ mod tests {
     #[test]
     fn pick_up_fails_when_actor_has_no_remaining_capacity() {
         let (mut world, actor, lot, place, _) = setup_world();
-        let (defs, handlers, pick_up_id, _, _) = setup_registries();
+        let (defs, handlers, pick_up_id, _, _, _) = setup_registries();
         {
             let mut txn = new_txn(&mut world, 2);
             let load_filler = txn
@@ -1270,7 +1348,7 @@ mod tests {
             commit_txn(txn);
             (actor, lot)
         };
-        let (defs, handlers, _, _, _) = setup_registries();
+        let (defs, handlers, _, _, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
@@ -1327,7 +1405,7 @@ mod tests {
     #[test]
     fn pick_up_transport_payload_moves_exact_requested_quantity() {
         let (mut world, actor, lot, place, _) = setup_world();
-        let (defs, handlers, pick_up_id, _, _) = setup_registries();
+        let (defs, handlers, pick_up_id, _, _, _) = setup_registries();
         let affordance = worldwake_sim::Affordance {
             def_id: pick_up_id,
             actor,
@@ -1412,7 +1490,7 @@ mod tests {
             commit_txn(txn);
             owner
         };
-        let (defs, handlers, _, _, _) = setup_registries();
+        let (defs, handlers, _, _, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
@@ -1448,6 +1526,124 @@ mod tests {
     }
 
     #[test]
+    fn drop_item_happy_path_clears_possession_without_changing_owner() {
+        let (mut world, actor, lot, place, _) = setup_world();
+        let owner = {
+            let mut txn = new_txn(&mut world, 2);
+            let owner = txn.create_faction("Granary Guild").unwrap();
+            txn.set_owner(lot, owner).unwrap();
+            txn.set_possessor(lot, actor).unwrap();
+            commit_txn(txn);
+            owner
+        };
+        let (defs, handlers, _, _, drop_item_id, _) = setup_registries();
+        let affordance = worldwake_sim::Affordance {
+            def_id: drop_item_id,
+            actor,
+            bound_targets: vec![lot],
+            payload_override: None,
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(world.possessor_of(lot), None);
+        assert_eq!(world.owner_of(lot), Some(owner));
+        assert_eq!(world.effective_place(lot), Some(place));
+        verify_live_lot_conservation(&world, CommodityKind::Bread, 3).unwrap();
+    }
+
+    #[test]
+    fn drop_item_abort_is_no_op_for_inventory_state() {
+        let (mut world, actor, lot, place, _) = setup_world();
+        {
+            let mut txn = new_txn(&mut world, 2);
+            txn.set_possessor(lot, actor).unwrap();
+            commit_txn(txn);
+        }
+        let (defs, handlers, _, _, drop_item_id, _) = setup_registries();
+        let affordance = worldwake_sim::Affordance {
+            def_id: drop_item_id,
+            actor,
+            bound_targets: vec![lot],
+            payload_override: None,
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut next_instance_id = ActionInstanceId(1);
+        let mut rng = test_rng();
+
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+
+        abort_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active_actions,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
+            ExternalAbortReason::Other,
+        )
+        .unwrap();
+
+        assert_eq!(world.possessor_of(lot), Some(actor));
+        assert_eq!(world.owner_of(lot), None);
+        assert_eq!(world.effective_place(lot), Some(place));
+    }
+
+    #[test]
     fn put_down_affordance_excludes_ground_and_nested_lots() {
         let (mut world, actor, ground_lot, place, _) = setup_world();
         let carried_lot = {
@@ -1474,7 +1670,7 @@ mod tests {
             commit_txn(txn);
             carried_lot
         };
-        let (defs, handlers, _, put_down_id, _) = setup_registries();
+        let (defs, handlers, _, put_down_id, _, _) = setup_registries();
 
         let affordances = affordances_for(&world, actor, &defs, &handlers)
             .into_iter()
@@ -1489,7 +1685,7 @@ mod tests {
     #[test]
     fn put_down_fails_for_non_possessed_lot() {
         let (mut world, actor, lot, _, _) = setup_world();
-        let (defs, handlers, _, put_down_id, _) = setup_registries();
+        let (defs, handlers, _, put_down_id, _, _) = setup_registries();
         let affordance = worldwake_sim::Affordance {
             def_id: put_down_id,
             actor,
@@ -1526,7 +1722,7 @@ mod tests {
     #[test]
     fn picked_up_lot_moves_with_travel_via_existing_possession_architecture() {
         let (mut world, actor, lot, _, destination) = setup_world();
-        let (defs, handlers, _, _, _) = setup_registries();
+        let (defs, handlers, _, _, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
@@ -1634,7 +1830,7 @@ mod tests {
             commit_txn(txn);
             contained_lot
         };
-        let (defs, handlers, pick_up_id, _, _) = setup_registries();
+        let (defs, handlers, pick_up_id, _, _, _) = setup_registries();
 
         let affordances = affordances_for(&world, actor, &defs, &handlers)
             .into_iter()
@@ -1661,7 +1857,7 @@ mod tests {
             txn.set_owner(lot, actor).unwrap();
             commit_txn(txn);
         }
-        let (defs, handlers, _, _, _) = setup_registries();
+        let (defs, handlers, _, _, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
@@ -1700,7 +1896,7 @@ mod tests {
     fn pick_up_succeeds_for_unowned_lot() {
         let (mut world, actor, lot, _place, _) = setup_world();
         assert_eq!(world.owner_of(lot), None);
-        let (defs, handlers, _, _, _) = setup_registries();
+        let (defs, handlers, _, _, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
@@ -1743,7 +1939,7 @@ mod tests {
             commit_txn(txn);
             other
         };
-        let (defs, handlers, pick_up_id, _, _) = setup_registries();
+        let (defs, handlers, pick_up_id, _, _, _) = setup_registries();
         let affordance = worldwake_sim::Affordance {
             def_id: pick_up_id,
             actor,
@@ -1786,7 +1982,7 @@ mod tests {
             txn.add_member(actor, faction).unwrap();
             commit_txn(txn);
         }
-        let (defs, handlers, _, _, _) = setup_registries();
+        let (defs, handlers, _, _, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
@@ -1830,7 +2026,7 @@ mod tests {
             txn.assign_office(office, actor).unwrap();
             commit_txn(txn);
         }
-        let (defs, handlers, _, _, _) = setup_registries();
+        let (defs, handlers, _, _, _, _) = setup_registries();
         let mut log = EventLog::new();
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
@@ -1883,7 +2079,7 @@ mod tests {
             commit_txn(txn);
             owner
         };
-        let (defs, handlers, _, _, steal_id) = setup_registries();
+        let (defs, handlers, _, _, _, steal_id) = setup_registries();
         let affordance = affordances_for(&world, actor, &defs, &handlers)
             .into_iter()
             .find(|affordance| {
@@ -1996,7 +2192,7 @@ mod tests {
             commit_txn(txn);
             owner
         };
-        let (defs, handlers, _, _, steal_id) = setup_registries();
+        let (defs, handlers, _, _, _, steal_id) = setup_registries();
         let affordance = affordances_for(&world, actor, &defs, &handlers)
             .into_iter()
             .find(|affordance| {
@@ -2103,7 +2299,7 @@ mod tests {
             commit_txn(txn);
             display_container
         };
-        let (defs, handlers, _, _, steal_id) = setup_registries();
+        let (defs, handlers, _, _, _, steal_id) = setup_registries();
         let affordance = affordances_for(&world, actor, &defs, &handlers)
             .into_iter()
             .find(|affordance| {
@@ -2218,7 +2414,7 @@ mod tests {
             .unwrap();
             commit_txn(txn);
         }
-        let (defs, handlers, _, _, steal_id) = setup_registries();
+        let (defs, handlers, _, _, _, steal_id) = setup_registries();
         let affordance = worldwake_sim::Affordance {
             def_id: steal_id,
             actor,
@@ -2260,7 +2456,7 @@ mod tests {
             txn.set_owner(lot, owner).unwrap();
             commit_txn(txn);
         }
-        let (defs, handlers, _, _, steal_id) = setup_registries();
+        let (defs, handlers, _, _, _, steal_id) = setup_registries();
         let affordance = worldwake_sim::Affordance {
             def_id: steal_id,
             actor,
@@ -2310,7 +2506,7 @@ mod tests {
             .unwrap();
             commit_txn(txn);
         }
-        let (defs, handlers, _, _, steal_id) = setup_registries();
+        let (defs, handlers, _, _, _, steal_id) = setup_registries();
         let affordance = worldwake_sim::Affordance {
             def_id: steal_id,
             actor,

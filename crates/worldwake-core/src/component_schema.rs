@@ -830,6 +830,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                disposal_profiles,
+                DisposalProfile,
+                insert_disposal_profile,
+                get_disposal_profile,
+                get_disposal_profile_mut,
+                remove_disposal_profile,
+                has_disposal_profile,
+                iter_disposal_profiles,
+                insert_component_disposal_profile,
+                get_component_disposal_profile,
+                get_component_disposal_profile_mut,
+                remove_component_disposal_profile,
+                has_component_disposal_profile,
+                entities_with_disposal_profile,
+                query_disposal_profile,
+                count_with_disposal_profile,
+                "DisposalProfile",
+                |kind| kind == EntityKind::Agent,
+                DisposalProfile,
+                crate::DisposalProfile,
+                set_component_disposal_profile,
+                clear_component_disposal_profile,
+                txn_simple_set
+            }
+            {
                 execution_budgets,
                 ExecutionBudget,
                 insert_execution_budget,

@@ -15,8 +15,8 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
     EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
-    OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, WorkstationTag,
-    belief_confidence,
+    LoadUnits, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw,
+    WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
@@ -476,6 +476,7 @@ impl GoalKindPlannerExt for GoalKind {
                     .map(|(commodity, _)| *commodity)
                     .collect()
             }),
+            GoalKind::FreeCarryCapacity => Some(BTreeSet::from([CommodityKind::Waste])),
             GoalKind::Sleep
             | GoalKind::Relieve
             | GoalKind::Wash
@@ -1056,6 +1057,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Patrol
             | PlannerOpKind::Tell
             | PlannerOpKind::MoveCargo
+            | PlannerOpKind::DropItem
             | PlannerOpKind::YieldForceClaim
             | PlannerOpKind::Investigate
             | PlannerOpKind::AskWitness
@@ -1234,6 +1236,23 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ExploreLocation { target_place, .. } => {
                 state.effective_place(actor) == Some(*target_place)
             }
+            GoalKind::FreeCarryCapacity => {
+                let Some(current_load) = carried_load_of_actor(state, actor) else {
+                    return false;
+                };
+                match state.disposal_profile(actor) {
+                    Some(profile) => state
+                        .carry_capacity_ref(PlanningEntityRef::Authoritative(actor))
+                        .is_some_and(|capacity| {
+                            current_load.0.saturating_mul(1_000)
+                                < capacity.0.saturating_mul(u32::from(
+                                    profile.capacity_strain_threshold.value(),
+                                ))
+                        }),
+                    None => carried_load_of_actor(&PlanningState::new(state.snapshot()), actor)
+                        .is_some_and(|baseline_load| current_load.0 < baseline_load.0),
+                }
+            }
             GoalKind::ProduceCommodity { .. }
             | GoalKind::SearchForMissing { .. }
             | GoalKind::ReportMissing { .. }
@@ -1296,6 +1315,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Wash
             | GoalKind::ReduceDanger
             | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
+            GoalKind::FreeCarryCapacity => state.effective_place(actor).into_iter().collect(),
             GoalKind::RegroupWithFaction { faction } => {
                 match state.believed_faction_rally_point(*faction) {
                     InstitutionalBeliefRead::Certain(Some(rally_place)) => vec![rally_place],
@@ -1483,6 +1503,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Craft
             | PlannerOpKind::QueueForFacilityUse
             | PlannerOpKind::MoveCargo
+            | PlannerOpKind::DropItem
             | PlannerOpKind::Consume
             | PlannerOpKind::Sleep
             | PlannerOpKind::Relieve
@@ -1528,6 +1549,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Sleep
             | GoalKind::Relieve
             | GoalKind::Wash
+            | GoalKind::FreeCarryCapacity
             | GoalKind::ReduceDanger
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }
@@ -1589,6 +1611,10 @@ impl GoalKindPlannerExt for GoalKind {
 
     fn candidate_is_available(&self, state: &PlanningState<'_>, op_kind: PlannerOpKind) -> bool {
         match (self, op_kind) {
+            (GoalKind::FreeCarryCapacity, PlannerOpKind::DropItem) => {
+                !free_carry_capacity_drop_targets(state).is_empty()
+            }
+            (GoalKind::FreeCarryCapacity, _) => false,
             (GoalKind::FulfillBounty { bounty }, op_kind) => {
                 let Some(terms) = believed_bounty_terms(state, *bounty) else {
                     return false;
@@ -1626,6 +1652,31 @@ impl GoalKindPlannerExt for GoalKind {
             _ => true,
         }
     }
+}
+
+fn carried_load_of_actor(state: &PlanningState<'_>, actor: EntityId) -> Option<LoadUnits> {
+    let actor_ref = PlanningEntityRef::Authoritative(actor);
+    let capacity = state.carry_capacity_ref(actor_ref)?.0;
+    let remaining = state.remaining_carry_capacity_ref(actor_ref)?.0;
+    capacity.checked_sub(remaining).map(LoadUnits)
+}
+
+fn free_carry_capacity_drop_targets(state: &PlanningState<'_>) -> Vec<PlanningEntityRef> {
+    state
+        .direct_possessions_ref(PlanningEntityRef::Authoritative(state.snapshot().actor()))
+        .into_iter()
+        .filter(|entity| {
+            state.entity_kind_ref(*entity) == Some(worldwake_core::EntityKind::ItemLot)
+        })
+        .filter(|entity| state.item_lot_commodity_ref(*entity) == Some(CommodityKind::Waste))
+        .filter(|entity| {
+            state
+                .item_lot_commodity_ref(*entity)
+                .is_some_and(|commodity| {
+                    state.commodity_quantity_ref(*entity, commodity) > Quantity(0)
+                })
+        })
+        .collect()
 }
 
 /// Collect places containing entities with a `ResourceSource` for the given commodity.
@@ -2279,15 +2330,14 @@ mod tests {
         AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
         BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget, HomeostaticNeedId,
-        HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille,
-        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
-        ResourceSource, RewardSource, SuccessionLaw, TellTopic, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag,
-        Wound,
+        DemandObservation, DemandObservationReason, DisposalProfile, DriveThresholds, EntityId,
+        EntityKind, EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget,
+        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, NoticeTopic, OfficeData, Permille, ProofRequirement, PunishmentKind,
+        Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource, RewardSource, SuccessionLaw,
+        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId,
+        VisibilitySpec, WorkstationTag, Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
     use worldwake_sim::PressForceClaimActionPayload;
@@ -2320,6 +2370,7 @@ mod tests {
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
                 .max_snapshot_entities_per_place,
+            speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
         }
     }
 
@@ -2738,6 +2789,16 @@ mod tests {
     }
 
     #[test]
+    fn free_carry_capacity_goal_observed_commodities_track_waste() {
+        let recipes = worldwake_sim::RecipeRegistry::new();
+
+        assert_eq!(
+            GoalKind::FreeCarryCapacity.relevant_observed_commodities(&recipes),
+            Some(BTreeSet::from([CommodityKind::Waste]))
+        );
+    }
+
+    #[test]
     fn produce_goal_observed_commodities_include_recipe_inputs_and_outputs() {
         let mut recipes = worldwake_sim::RecipeRegistry::new();
         let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
@@ -3106,6 +3167,7 @@ mod tests {
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
+        disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         listed_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
@@ -3155,6 +3217,7 @@ mod tests {
                 entity_loads: BTreeMap::new(),
                 needs: BTreeMap::new(),
                 thresholds: BTreeMap::new(),
+                disposal_profiles: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
                 listed_lots: BTreeMap::new(),
@@ -3227,6 +3290,10 @@ mod tests {
         }
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             Some(MetabolismProfile::default())
+        }
+
+        fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
+            self.disposal_profiles.get(&agent).copied()
         }
     }
 
@@ -3681,6 +3748,31 @@ mod tests {
             .insert((town, CommodityKind::Bread), vec![seller_lot]);
         view.lot_sellers.insert(seller_lot, seller);
         (view, actor, seller)
+    }
+
+    fn free_carry_capacity_view() -> (TestBeliefView, EntityId, EntityId, EntityId) {
+        let actor = entity(1);
+        let place = entity(10);
+        let waste_lot = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, waste_lot]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(waste_lot, EntityKind::ItemLot);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(waste_lot, place);
+        view.entities_at.insert(place, vec![actor, waste_lot]);
+        view.direct_possessions.insert(actor, vec![waste_lot]);
+        view.direct_possessors.insert(waste_lot, actor);
+        view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Waste), Quantity(9));
+        view.commodity_quantities
+            .insert((waste_lot, CommodityKind::Waste), Quantity(9));
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        (view, actor, place, waste_lot)
     }
 
     #[test]
@@ -6207,6 +6299,24 @@ mod tests {
     }
 
     #[test]
+    fn free_carry_capacity_goal_relevant_places_use_actor_place() {
+        let (view, actor, place, waste_lot) = free_carry_capacity_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([waste_lot]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            GoalKind::FreeCarryCapacity.goal_relevant_places(&state, &RecipeRegistry::new()),
+            vec![place]
+        );
+    }
+
+    #[test]
     fn sleep_returns_empty() {
         let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
         let recipes = worldwake_sim::RecipeRegistry::new();
@@ -8060,6 +8170,78 @@ mod tests {
         );
     }
 
+    #[test]
+    fn free_carry_capacity_is_not_satisfied_above_disposal_threshold() {
+        let (mut view, actor, place, waste_lot) = free_carry_capacity_view();
+        view.disposal_profiles.insert(
+            actor,
+            DisposalProfile {
+                capacity_strain_threshold: pm(800),
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([waste_lot]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(!GoalKind::FreeCarryCapacity.is_satisfied(&state));
+    }
+
+    #[test]
+    fn free_carry_capacity_is_satisfied_below_disposal_threshold() {
+        let (mut view, actor, place, waste_lot) = free_carry_capacity_view();
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Waste), Quantity(7));
+        view.commodity_quantities
+            .insert((waste_lot, CommodityKind::Waste), Quantity(7));
+        view.disposal_profiles.insert(
+            actor,
+            DisposalProfile {
+                capacity_strain_threshold: pm(800),
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([waste_lot]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(GoalKind::FreeCarryCapacity.is_satisfied(&state));
+    }
+
+    #[test]
+    fn free_carry_capacity_falls_back_to_load_reduction_without_profile() {
+        let (view, actor, place, waste_lot) = free_carry_capacity_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([waste_lot]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let base_state = PlanningState::new(&snapshot);
+
+        assert!(!GoalKind::FreeCarryCapacity.is_satisfied(&base_state));
+
+        let progressed = base_state.move_lot_ref_to_ground(
+            crate::PlanningEntityRef::Authoritative(waste_lot),
+            place,
+            CommodityKind::Waste,
+            Quantity(9),
+        );
+
+        assert!(GoalKind::FreeCarryCapacity.is_satisfied(&progressed));
+    }
+
     // ── E16DPOLPLAN-006: Integration tests — planner finds Bribe/Threaten plans ──
 
     fn build_registry() -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry) {
@@ -9187,6 +9369,61 @@ mod tests {
         assert!(
             goal.relevant_op_kinds()
                 .contains(&PlannerOpKind::ClaimBounty)
+        );
+    }
+
+    #[test]
+    fn free_carry_capacity_candidate_is_available_only_for_drop_item_with_waste() {
+        let (view, actor, place, waste_lot) = free_carry_capacity_view();
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([waste_lot]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+
+        assert!(
+            GoalKind::FreeCarryCapacity.candidate_is_available(&state, PlannerOpKind::DropItem)
+        );
+        assert!(!GoalKind::FreeCarryCapacity.candidate_is_available(&state, PlannerOpKind::Trade));
+
+        let clean_lot = entity(21);
+        let mut clean_view = TestBeliefView::default();
+        clean_view.alive.extend([actor, place, clean_lot]);
+        clean_view.kinds.insert(actor, EntityKind::Agent);
+        clean_view.kinds.insert(place, EntityKind::Place);
+        clean_view.kinds.insert(clean_lot, EntityKind::ItemLot);
+        clean_view.effective_places.insert(actor, place);
+        clean_view.effective_places.insert(clean_lot, place);
+        clean_view.entities_at.insert(place, vec![actor, clean_lot]);
+        clean_view.direct_possessions.insert(actor, vec![clean_lot]);
+        clean_view.direct_possessors.insert(clean_lot, actor);
+        clean_view
+            .lot_commodities
+            .insert(clean_lot, CommodityKind::Bread);
+        clean_view
+            .commodity_quantities
+            .insert((actor, CommodityKind::Bread), Quantity(1));
+        clean_view
+            .commodity_quantities
+            .insert((clean_lot, CommodityKind::Bread), Quantity(1));
+        clean_view.carry_capacities.insert(actor, LoadUnits(10));
+        clean_view.entity_loads.insert(actor, LoadUnits(0));
+
+        let clean_snapshot = build_planning_snapshot(
+            &clean_view,
+            actor,
+            &BTreeSet::from([clean_lot]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let clean_state = PlanningState::new(&clean_snapshot);
+
+        assert!(
+            !GoalKind::FreeCarryCapacity
+                .candidate_is_available(&clean_state, PlannerOpKind::DropItem)
         );
     }
 

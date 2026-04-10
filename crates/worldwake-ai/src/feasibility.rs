@@ -110,7 +110,10 @@ fn goal_specific_feasibility(
         (FeasibilityStrategy::EvidencePlaceLocal, _) => {
             check_evidence_places_local(view, agent, goal)
         }
-        (FeasibilityStrategy::AlwaysLikely, GoalKind::Sleep | GoalKind::Relieve) => {
+        (
+            FeasibilityStrategy::AlwaysLikely,
+            GoalKind::Sleep | GoalKind::Relieve | GoalKind::FreeCarryCapacity,
+        ) => {
             Some(FeasibilityHint::Likely)
         }
         (FeasibilityStrategy::CommodityPresenceCheck, GoalKind::Wash) => {
@@ -216,7 +219,8 @@ fn goal_specific_feasibility(
             GoalKind::InvestigateViolation { place, .. }
             | GoalKind::Patrol { place }
             | GoalKind::ExploreLocation {
-                target_place: place, ..
+                target_place: place,
+                ..
             },
         ) => {
             let agent_place = view.effective_place(agent)?;
@@ -1138,6 +1142,22 @@ mod tests {
                 },
             })),
             crate::FeasibilityStrategy::ColocationOrDead
+        );
+        assert_eq!(
+            goal_specific_feasibility_strategy(&ranked_goal(GoalKind::FreeCarryCapacity)),
+            crate::FeasibilityStrategy::AlwaysLikely
+        );
+    }
+
+    #[test]
+    fn always_likely_strategy_covers_free_carry_capacity() {
+        let view = MockView::default();
+        let blocked = empty_blocked_memory();
+        let goal = ranked_goal(GoalKind::FreeCarryCapacity);
+
+        assert_eq!(
+            feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1)),
+            FeasibilityHint::Likely
         );
     }
 

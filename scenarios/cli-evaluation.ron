@@ -10,6 +10,8 @@
 //   (S56 PlaceVisibilityProfile coverage). Added remaining PlaceTag variants (Gate,
 //   Crossroads, Camp, Barracks). Added remaining WorkstationTag variants (WashBasin,
 //   Loom, GravePlot).
+// Updated 2026-04-10: S80 coverage — Added exploration_profile to Forager Lina
+//   and last_seen_memory (capacity 30) to Guard Theron for field coverage.
 // Updated 2026-04-09: S79RESSOUCON-004 — Added canonical Well facility coverage and
 //   attached Thornwall Village water source to the named Village Well.
 // Updated 2026-04-06: TK-1 — Added Water resource source at Thornwall Village and
@@ -258,6 +260,12 @@
                 theft_motive_weight: 200,
                 witness_risk_penalty: 400,
             ),
+            exploration_profile: (
+                curiosity_weight: 650,
+                need_activation_threshold: 350,
+                max_consecutive_explorations: 4,
+                visit_lookback_ticks: 150,
+            ),
         ),
         // AI guard on the trail — brave, vigilant, patrols, pursues, enforces justice
         (
@@ -354,6 +362,10 @@
                 ownership_motive_bonus: 300,
             ),
             carry_capacity: 40,
+            last_seen_memory: (
+                records: {},
+                capacity: 30,
+            ),
             justice_disposition: (
                 accusation_motive_weight: 700,
                 fine_severity: 500,

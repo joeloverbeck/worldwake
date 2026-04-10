@@ -6,13 +6,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use worldwake_core::{
     ActionDefId, ActionDomain, BelievedEntityState, BelievedInstitutionalClaim, CombatProfile,
-    CommodityKind, ContentionGrant, DemandObservation, DriveThresholds, EntityId, EntityKind,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
-    LoadUnits, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, ResourceSource, SharedTellState,
-    SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
-    TheftDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit, to_shared_belief_snapshot,
+    CommodityKind, ContentionGrant, DemandObservation, DisposalProfile, DriveThresholds, EntityId,
+    EntityKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+    JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData, PatrolProfile,
+    PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+    ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile,
+    TellTopic, TheftDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit,
+    to_shared_belief_snapshot,
 };
 use worldwake_sim::{
     ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -1201,6 +1202,13 @@ impl ProfileBeliefView for PlanningState<'_> {
             .get(&agent)
             .and_then(|snapshot| snapshot.profiles.metabolism_profile)
     }
+
+    fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.profiles.disposal_profile)
+    }
 }
 
 impl SpatialBeliefView for PlanningState<'_> {
@@ -2148,7 +2156,7 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BelievedActivity, BelievedEntityState, BodyCostPerTick, CombatProfile,
         CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
-        DemandObservationReason, DriveThresholds, EntityId, EntityKind,
+        DemandObservationReason, DisposalProfile, DriveThresholds, EntityId, EntityKind,
         EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
         JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
         PatrolProfile, PatrolRoute, Permille, Quantity, RecipeId, RecipientKnowledgeStatus,
@@ -2188,6 +2196,7 @@ mod tests {
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         metabolism_profiles: BTreeMap<EntityId, MetabolismProfile>,
+        disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
@@ -2242,6 +2251,7 @@ mod tests {
                 needs: BTreeMap::new(),
                 thresholds: BTreeMap::new(),
                 metabolism_profiles: BTreeMap::new(),
+                disposal_profiles: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
                 patrol_profiles: BTreeMap::new(),
                 patrol_routes: BTreeMap::new(),
@@ -2335,6 +2345,10 @@ mod tests {
 
         fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
             self.metabolism_profiles.get(&agent).copied()
+        }
+
+        fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
+            self.disposal_profiles.get(&agent).copied()
         }
     }
 
@@ -4268,6 +4282,12 @@ mod tests {
         view.entity_loads.insert(actor, LoadUnits(0));
         view.consultation_speed_factors
             .insert(actor, Permille::new(500).unwrap());
+        view.disposal_profiles.insert(
+            actor,
+            DisposalProfile {
+                capacity_strain_threshold: Permille::new(750).unwrap(),
+            },
+        );
         view.record_data.insert(
             record,
             RecordData {
@@ -4511,6 +4531,10 @@ mod tests {
         assert_eq!(
             ProfileBeliefView::metabolism_profile(&state, actor),
             view.metabolism_profiles.get(&actor).copied()
+        );
+        assert_eq!(
+            ProfileBeliefView::disposal_profile(&state, actor),
+            view.disposal_profiles.get(&actor).copied()
         );
 
         for dependency in PlannerDurationDependency::all() {

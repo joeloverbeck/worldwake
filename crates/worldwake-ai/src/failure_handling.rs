@@ -140,6 +140,7 @@ fn derive_blocking_fact(
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::MoveCargo
+        | PlannerOpKind::DropItem
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Tell
@@ -391,6 +392,7 @@ fn classify_input_failure(
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
         | PlannerOpKind::MoveCargo
+        | PlannerOpKind::DropItem
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Tell
@@ -437,6 +439,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep
         | PlannerOpKind::EstablishCamp
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::MoveCargo
+        | PlannerOpKind::DropItem
         | PlannerOpKind::Loot
         | PlannerOpKind::Bury
         | PlannerOpKind::Harvest
@@ -863,6 +866,7 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
         | PlannerOpKind::MoveCargo
+        | PlannerOpKind::DropItem
         | PlannerOpKind::Heal
         | PlannerOpKind::Tell
         | PlannerOpKind::ConsultRecord
@@ -923,7 +927,8 @@ fn related_place(
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
-        | PlannerOpKind::MoveCargo => view.effective_place(agent).or(goal_key.place),
+        | PlannerOpKind::MoveCargo
+        | PlannerOpKind::DropItem => view.effective_place(agent).or(goal_key.place),
         PlannerOpKind::Bury => step
             .targets
             .get(1)
@@ -1350,6 +1355,7 @@ mod tests {
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
                 .max_snapshot_entities_per_place,
+            speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
         }
     }
 

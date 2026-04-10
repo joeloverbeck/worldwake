@@ -36,28 +36,17 @@ fn build_exploration_topology() -> Topology {
         .add_place(PLACE_START, place("ExplorationStart", &[PlaceTag::Village]))
         .unwrap();
     topology
-        .add_place(PLACE_FRONTIER, place("ExplorationFrontier", &[PlaceTag::Farm]))
+        .add_place(
+            PLACE_FRONTIER,
+            place("ExplorationFrontier", &[PlaceTag::Farm]),
+        )
         .unwrap();
 
     topology
-        .add_edge(TravelEdge::new(
-            TravelEdgeId(900),
-            PLACE_START,
-            PLACE_FRONTIER,
-            1,
-            None,
-        )
-        .unwrap())
+        .add_edge(TravelEdge::new(TravelEdgeId(900), PLACE_START, PLACE_FRONTIER, 1, None).unwrap())
         .unwrap();
     topology
-        .add_edge(TravelEdge::new(
-            TravelEdgeId(901),
-            PLACE_FRONTIER,
-            PLACE_START,
-            1,
-            None,
-        )
-        .unwrap())
+        .add_edge(TravelEdge::new(TravelEdgeId(901), PLACE_FRONTIER, PLACE_START, 1, None).unwrap())
         .unwrap();
     topology
 }
@@ -90,7 +79,8 @@ fn set_agent_exploration_profile(
     profile: ExplorationProfile,
 ) {
     let mut txn = new_txn(&mut h.world, 0);
-    txn.set_component_exploration_profile(agent, profile).unwrap();
+    txn.set_component_exploration_profile(agent, profile)
+        .unwrap();
     commit_txn(txn, &mut h.event_log);
 }
 
@@ -205,12 +195,14 @@ fn planning_trace_selected_acquire_apple(h: &GoldenHarness, agent: EntityId, tic
         .expect("decision tracing should be enabled")
         .trace_at(agent, tick)
         .is_some_and(|trace| match &trace.outcome {
-            DecisionOutcome::Planning(planning) => planning.selection.selected_goal_is(
-                GoalKey::from(GoalKind::AcquireCommodity {
-                    commodity: CommodityKind::Apple,
-                    purpose: CommodityPurpose::SelfConsume,
-                }),
-            ),
+            DecisionOutcome::Planning(planning) => {
+                planning
+                    .selection
+                    .selected_goal_is(GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Apple,
+                        purpose: CommodityPurpose::SelfConsume,
+                    }))
+            }
             _ => false,
         })
 }

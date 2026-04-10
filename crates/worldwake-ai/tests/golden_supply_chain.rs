@@ -29,11 +29,10 @@ use worldwake_core::{
     BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
     DemandObservationReason, EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile,
     GoalKey, GoalKind, HomeostaticNeeds, KnownRecipes, MerchandiseProfile, MetabolismProfile,
-    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, ResourceSource, Seed,
-    StateHash, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
-    build_believed_entity_state, hash_event_log, hash_world, prototype_place_entity,
-    total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation,
+    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, ResourceSource, Seed, StateHash,
+    Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag, build_believed_entity_state,
+    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
+    total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::{ActionTraceDetail, ActionTraceKind, RecipeDefinition, RecipeRegistry};
 
