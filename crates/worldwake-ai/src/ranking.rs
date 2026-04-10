@@ -420,6 +420,7 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
         | GoalKind::PostNotice { .. }
         | GoalKind::ClaimOffice { .. }
         | GoalKind::SupportCandidateForOffice { .. } => GoalPriorityClass::Medium,
+        GoalKind::ExploreLocation { .. } => GoalPriorityClass::Background,
         GoalKind::Sleep => drive_priority(
             context,
             |needs| needs.fatigue,
@@ -658,6 +659,7 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             score_product(context.utility.care_weight, subject_pain) / 4
         }
         GoalKind::Patrol { .. } => patrol_motive(context),
+        GoalKind::ExploreLocation { .. } => 0,
         GoalKind::StealItem { .. } => theft_motive(context),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
         GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
@@ -1541,6 +1543,7 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::ReportMissing { .. } => 29,
         GoalKind::EscortToSafety { .. } => 30,
         GoalKind::ReportFound { .. } => 31,
+        GoalKind::ExploreLocation { .. } => 32,
     }
 }
 

@@ -429,6 +429,16 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::Patrol { place } => {
             format!("Patrol({})", entity_display_name(world, *place))
         }
+        GoalKind::ExploreLocation {
+            target_place,
+            motivating_need,
+        } => {
+            format!(
+                "ExploreLocation({:?} at {})",
+                motivating_need,
+                entity_display_name(world, *target_place)
+            )
+        }
         GoalKind::StealItem { target_item } => {
             format!("StealItem({})", entity_display_name(world, *target_item))
         }

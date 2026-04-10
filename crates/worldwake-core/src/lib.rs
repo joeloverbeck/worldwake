@@ -54,6 +54,7 @@ pub mod evidence;
 pub mod execution_budget;
 pub mod expectation;
 pub mod experience;
+pub mod exploration;
 pub mod factions;
 pub mod goal;
 pub mod ids;
@@ -155,6 +156,7 @@ pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
     SourceReliability, danger_ratio_permille, failure_ratio_permille,
 };
+pub use exploration::ExplorationProfile;
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};

@@ -695,9 +695,10 @@ fn golden_multi_agent_convergence_replays_deterministically() {
 }
 
 fn starvation_traceability_metabolism() -> MetabolismProfile {
-    let mut metabolism = MetabolismProfile::default();
-    metabolism.starvation_tolerance_ticks = nz(2);
-    metabolism
+    MetabolismProfile {
+        starvation_tolerance_ticks: nz(2),
+        ..MetabolismProfile::default()
+    }
 }
 
 fn run_death_traceability(

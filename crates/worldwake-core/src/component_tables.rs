@@ -19,6 +19,7 @@ use crate::{
     evidence::SceneEvidence,
     execution_budget::ExecutionBudget,
     expectation::{ExpectationStore, LastSeenMemory},
+    exploration::ExplorationProfile,
     experience::{PreferenceProfile, RouteExperience, SourceReliability},
     factions::FactionData,
     institutional::RecordData,

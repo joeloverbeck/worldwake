@@ -32,6 +32,8 @@ After the owned implementation is fully verified:
 
 When a ticket lands pure scaffolding ahead of downstream integration, wire immediate call sites or mark the temporary unused surface deliberately. Do not let staged work fail later CI clippy passes.
 
+When a staged ticket lands a new shared enum variant, dispatch key, or goal family ahead of later behavioral tickets, record in the ticket Outcome which branches are intentionally inert and which downstream ticket(s) are expected to make them live. This keeps the close-out honest when the type surface is complete but behavior is deliberately deferred.
+
 ## Step 8: Close the loop on the ticket
 
 If the user asked for full ticket completion, archive per [docs/archival-workflow.md](../../../../docs/archival-workflow.md):

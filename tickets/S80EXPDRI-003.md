@@ -8,7 +8,7 @@
 
 ## Problem
 
-The planner cannot handle `GoalKind::ExploreLocation` without dispatch infrastructure mapping it to planner operations, and without `GoalKindPlannerExt` telling the planner how to search for and satisfy the goal. Without this ticket, any ExploreLocation goal produced by candidate generation would be classified as `Unsupported` by `search_plan()`.
+`GoalKind::ExploreLocation` now has compile-safe inert dispatch scaffolding from `S80EXPDRI-001`, but the planner still does not handle it as a live travel goal. Until this ticket replaces the inert declaration/goal-model branches with real travel semantics, any ExploreLocation goal produced by candidate generation would remain non-functional in `search_plan()`.
 
 ## Assumption Reassessment (2026-04-10)
 
@@ -18,6 +18,7 @@ The planner cannot handle `GoalKind::ExploreLocation` without dispatch infrastru
 5. The spec says `EXPLORE_OPS = &[PlannerOpKind::Travel]` — exploration uses Travel only, unlike Patrol which has its own PlannerOpKind. No new PlannerOpKind variant needed. Confirmed: `PlannerOpKind::Travel` exists at `crates/worldwake-ai/src/planner_ops.rs`.
 6. `GoalPriorityClass` at `crates/worldwake-ai/src/goal_model.rs` has variants: `Background`, `Low`, `Medium`, `High`, `Critical`. ExploreLocation uses `Low`.
 7. `InvalidationStrategy` and `FeasibilityStrategy` enums exist in `crates/worldwake-ai/src/goal_dispatch_decl.rs`. Need to select appropriate variants for ExploreLocation.
+8. `S80EXPDRI-001` already landed the additive substrate needed to keep the new goal kind compile-safe: `GoalDispatchKey::ExploreLocation`, a placeholder declaration using `InvalidationStrategy::NoOpinion` / `FeasibilityStrategy::NoOpinion`, and inert `GoalKindPlannerExt` / ranking branches. This ticket now owns replacing those inert branches with the live planner contract rather than re-adding the symbol.
 
 ## Architecture Check
 
@@ -35,31 +36,21 @@ The planner cannot handle `GoalKind::ExploreLocation` without dispatch infrastru
 
 ## What to Change
 
-### 1. Add GoalDispatchKey variant
-
-In `crates/worldwake-ai/src/goal_dispatch_key.rs`:
-- Add `ExploreLocation` to the enum
-- Update `ALL` array length from 38 to 39
-- Add to `ALL` array
-- Add match arm: `GoalKind::ExploreLocation { .. } => GoalDispatchKey::ExploreLocation`
-
-### 2. Add GoalDispatchDeclaration entry
+### 1. Replace inert GoalDispatchDeclaration scaffolding with live travel semantics
 
 In `crates/worldwake-ai/src/goal_dispatch_decl.rs`:
-- Add `const EXPLORE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel];`
-- Add `const EXPLORE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Travel];`
-- Add match arm in the dispatch declaration function returning a `GoalDispatchDeclaration` with:
-  - `trace_label: "explore_location"`
-  - `relevant_ops: EXPLORE_OPS`
-  - `progress_barrier_ops: EXPLORE_BARRIER`
-  - Appropriate `InvalidationStrategy` (belief-gated — invalidate when motivating need drops or resource source found)
-  - Standard travel `FeasibilityStrategy`
+- Replace the placeholder ExploreLocation declaration with the live dispatch contract:
+  - `relevant_ops: &[PlannerOpKind::Travel]`
+  - progress barrier matching terminal travel completion to `target_place`
+  - appropriate invalidation/feasibility behavior for a belief-gated travel goal
+  - trace label and tests aligned with the final live contract
+- Keep the existing `GoalDispatchKey::ExploreLocation` mapping added by `S80EXPDRI-001`.
 
-### 3. Implement GoalKindPlannerExt for ExploreLocation
+### 2. Replace inert GoalKindPlannerExt handling for ExploreLocation
 
 In `crates/worldwake-ai/src/goal_model.rs`, add match arms in the `impl GoalKindPlannerExt for GoalKind` block:
 
-- `ranked_goal_provenance_family()` → `None` initially (add `Exploration` variant to `RankedGoalProvenanceFamily` if provenance tracking desired later)
+- `ranked_goal_provenance_family()` → `None` initially (add `Exploration` variant to `RankedGoalProvenanceFamily` only if provenance tracking is now needed)
 - `relevant_op_kinds()` → `EXPLORE_OPS`
 - `relevant_observed_commodities()` → `None`
 - `build_payload_override()` → `Ok(None)`
@@ -73,14 +64,13 @@ In `crates/worldwake-ai/src/goal_model.rs`, add match arms in the `impl GoalKind
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/goal_dispatch_key.rs` (modify — new variant, ALL update, from_goal_kind arm)
-- `crates/worldwake-ai/src/goal_dispatch_decl.rs` (modify — ops consts, declaration entry)
-- `crates/worldwake-ai/src/goal_model.rs` (modify — 11 match arms in GoalKindPlannerExt impl)
+- `crates/worldwake-ai/src/goal_dispatch_decl.rs` (modify — replace inert ExploreLocation declaration with live travel semantics)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — replace inert ExploreLocation planner arms with live search/satisfaction behavior)
 
 ## Out of Scope
 
 - Candidate generation emitter (ticket 004)
-- Ranking motive score computation (ticket 004)
+- Ranking motive score computation beyond the planner-visible minimum contract (ticket 004)
 - Counter management for consecutive explorations (ticket 004)
 - Golden E2E tests (ticket 005)
 - New PlannerOpKind variant (not needed — reuses Travel)
@@ -89,25 +79,24 @@ In `crates/worldwake-ai/src/goal_model.rs`, add match arms in the `impl GoalKind
 
 ### Tests That Must Pass
 
-1. `GoalDispatchKey::from(GoalKind::ExploreLocation { .. })` returns `GoalDispatchKey::ExploreLocation`
-2. `GoalDispatchKey::ALL` length == 39 and contains ExploreLocation
-3. `GoalKindPlannerExt::is_satisfied` returns true when at target_place, false otherwise
-4. `GoalKindPlannerExt::goal_relevant_places` returns `[target_place]`
-5. `search_plan` returns `Found` for an ExploreLocation goal with a reachable target
-6. Existing suite: `cargo test -p worldwake-ai`
-7. Existing suite: `cargo clippy --workspace --all-targets -- -D warnings`
+1. ExploreLocation declaration uses the intended travel-only planner contract rather than the inert placeholder shipped in `S80EXPDRI-001`
+2. `GoalKindPlannerExt::is_satisfied` returns true when at target_place, false otherwise
+3. `GoalKindPlannerExt::goal_relevant_places` returns `[target_place]`
+4. `search_plan` returns `Found` for an ExploreLocation goal with a reachable target
+5. Existing suite: `cargo test -p worldwake-ai`
+6. Existing suite: `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Invariants
 
 1. No new PlannerOpKind variant — ExploreLocation reuses Travel only
-2. GoalDispatchKey::ALL must be exhaustive and match the enum variant count
-3. Every GoalKindPlannerExt method has an ExploreLocation arm (no wildcard fallthrough)
+2. `GoalDispatchKey::ExploreLocation` remains the canonical dispatch identity introduced by `S80EXPDRI-001`
+3. Every GoalKindPlannerExt method has an ExploreLocation arm with live semantics (no wildcard fallthrough, no inert placeholder left behind)
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/goal_dispatch_key.rs` (test module) — dispatch key mapping, ALL exhaustiveness
+1. `crates/worldwake-ai/src/goal_dispatch_decl.rs` (test module) — ExploreLocation declaration is live and travel-only
 2. `crates/worldwake-ai/src/goal_model.rs` (test module) — is_satisfied, goal_relevant_places, matches_binding for ExploreLocation
 3. `crates/worldwake-ai/src/search/` (test module) — search_plan finds travel plan for ExploreLocation
 

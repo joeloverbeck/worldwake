@@ -498,6 +498,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SupportCandidateForOffice { .. }
             | GoalKind::InvestigateViolation { .. }
             | GoalKind::Patrol { .. }
+            | GoalKind::ExploreLocation { .. }
             | GoalKind::StealItem { .. }
             | GoalKind::Accuse { .. }
             | GoalKind::PunishAccused { .. }
@@ -1240,6 +1241,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::PostNotice { .. }
             | GoalKind::InvestigateViolation { .. }
             | GoalKind::Patrol { .. }
+            | GoalKind::ExploreLocation { .. }
             | GoalKind::Accuse { .. }
             | GoalKind::PunishAccused { .. } => false,
         }
@@ -1378,6 +1380,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place } => {
                 vec![*place]
             }
+            GoalKind::ExploreLocation { target_place, .. } => vec![*target_place],
             GoalKind::StealItem { target_item } => {
                 state.effective_place(*target_item).into_iter().collect()
             }
@@ -1534,6 +1537,10 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. } => true,
+
+            GoalKind::ExploreLocation { target_place, .. } => {
+                authoritative_targets.contains(target_place)
+            }
 
             GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place } => {
                 authoritative_targets.contains(place)

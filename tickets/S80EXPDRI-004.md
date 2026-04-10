@@ -8,7 +8,7 @@
 
 ## Problem
 
-Agents with unmet needs and no known satisfaction path currently enter indefinite sleep+relieve loops because no goal kind motivates geographic information-seeking. This ticket adds the exploration candidate emitter that detects the need+ignorance condition and generates `ExploreLocation` goals, plus the ranking formula that positions exploration below direct need satisfaction but above idle behaviors.
+Agents with unmet needs and no known satisfaction path currently enter indefinite sleep+relieve loops because no live exploration candidate emitter exists. `S80EXPDRI-001` landed only inert ranking substrate for `ExploreLocation` so the symbol compiles safely; this ticket still needs to add the need+ignorance emitter, promote ranking from inert `Background`/`0` handling to the real exploration motive formula, and manage consecutive-exploration counters.
 
 ## Assumption Reassessment (2026-04-10)
 
@@ -18,6 +18,7 @@ Agents with unmet needs and no known satisfaction path currently enter indefinit
 5. The spec's planner-driven scope: `GoalKind::ExploreLocation` with `GoalPriorityClass::Low` and motive score `need_level.as_raw() * curiosity_weight.as_raw() / 1000`. The ranking system uses `RankedGoal` with `priority_class` and `motive_score: u32` fields.
 6. `GoalBeliefView::resource_sources_at()` at `belief_view.rs:183` returns `Vec<EntityId>` — used to check whether the agent knows of any resource source for a need's commodity at reachable places.
 7. Counter management: `consecutive_exploration_count` on `ExplorationProfile` is incremented when ExploreLocation is selected, reset to 0 when any other goal is selected. This happens during goal selection in the agent tick, not in candidate generation itself.
+8. `S80EXPDRI-001` already added compile-safe inert ranking coverage for `ExploreLocation` in `crates/worldwake-ai/src/ranking.rs` (`GoalPriorityClass::Background`, motive `0`, discriminant branch). This ticket owns replacing that inert handling with the live `Low` priority / motive formula rather than introducing the symbol for the first time.
 
 ## Architecture Check
 
@@ -60,9 +61,10 @@ fn emit_exploration_candidates(candidates: &mut CandidateCollector, ctx: &Genera
 
 Call `emit_exploration_candidates` as a new emitter group in `generate_candidates_with_travel_horizon`, after existing emitters.
 
-### 3. Add ranking integration
+### 3. Replace inert ranking handling with live exploration ranking
 
 In the ranking system (`crates/worldwake-ai/src/ranking.rs` or `goal_model.rs`):
+- Replace the inert `ExploreLocation` ranking branches shipped in `S80EXPDRI-001`
 - ExploreLocation gets `GoalPriorityClass::Low`
 - Motive score: `need_level.as_raw() as u32 * curiosity_weight.as_raw() as u32 / 1000`
 
@@ -102,7 +104,7 @@ Add a helper that maps `HomeostaticNeedId` to the commodity that satisfies it (e
 4. Agent with `consecutive_exploration_count >= max_consecutive_explorations` → NO ExploreLocation candidate
 5. Agent with `curiosity_weight: Permille(0)` → NO ExploreLocation candidate (motive score 0)
 6. Target selection excludes current place and recently visited places
-7. ExploreLocation ranked at GoalPriorityClass::Low with correct motive score
+7. ExploreLocation ranking is promoted from inert `Background`/`0` handling to `GoalPriorityClass::Low` with the correct motive score
 8. Counter increments on exploration selection, resets on other goal selection
 9. Existing suite: `cargo test -p worldwake-ai`
 10. Existing suite: `cargo clippy --workspace --all-targets -- -D warnings`
@@ -112,7 +114,7 @@ Add a helper that maps `HomeostaticNeedId` to the commodity that satisfies it (e
 1. Exploration candidates are belief-gated: agent queries only `AgentBeliefStore` and `GoalBeliefView`, never authoritative world state directly (P14)
 2. No global state access: topology neighbors accessed through `GoalBeliefView::adjacent_places_with_travel_ticks()` (P7)
 3. Exploration pressure is derived, never stored — computed from need levels + belief gaps each tick (P3)
-4. GoalPriorityClass::Low ensures exploration never outprioritizes direct need satisfaction
+4. Replacing the inert ranking branch preserves the intended ordering: GoalPriorityClass::Low ensures exploration never outprioritizes direct need satisfaction
 
 ## Test Plan
 

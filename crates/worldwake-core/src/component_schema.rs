@@ -805,6 +805,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                exploration_profiles,
+                ExplorationProfile,
+                insert_exploration_profile,
+                get_exploration_profile,
+                get_exploration_profile_mut,
+                remove_exploration_profile,
+                has_exploration_profile,
+                iter_exploration_profiles,
+                insert_component_exploration_profile,
+                get_component_exploration_profile,
+                get_component_exploration_profile_mut,
+                remove_component_exploration_profile,
+                has_component_exploration_profile,
+                entities_with_exploration_profile,
+                query_exploration_profile,
+                count_with_exploration_profile,
+                "ExplorationProfile",
+                |kind| kind == EntityKind::Agent,
+                ExplorationProfile,
+                crate::ExplorationProfile,
+                set_component_exploration_profile,
+                clear_component_exploration_profile,
+                txn_simple_set
+            }
+            {
                 execution_budgets,
                 ExecutionBudget,
                 insert_execution_budget,

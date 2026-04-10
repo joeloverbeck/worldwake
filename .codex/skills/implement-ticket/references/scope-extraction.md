@@ -45,6 +45,7 @@ Distinguish:
 - live macro-expansion sites or generated API surfaces
 - runtime code-generation sites requiring the bare type in scope
 - test-only helper or manifest sites mirroring the component set
+- universal/bootstrap seeding paths when the new component is supposed to exist by default on newly created entities
 
 Verify actual local type use before adding imports.
 

@@ -1976,8 +1976,8 @@ mod tests {
     use crate::{
         AgentBeliefStore, BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim,
         BlockedIntentMemory, CognitiveProfile, CommunicationProfile, DemandMemory,
-        EpistemicDispositionProfile, ExecutionBudget, FactionData, FactionPurpose,
-        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+        EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, FactionData,
+        FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
         InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
         OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
         PerceptionSource, PreferenceProfile, RecordData, RecordEntryId, RecordKind,
@@ -2433,6 +2433,12 @@ mod tests {
                     component_kind: ComponentKind::CognitiveProfile,
                     before: None,
                     after: ComponentValue::CognitiveProfile(CognitiveProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::ExplorationProfile,
+                    before: None,
+                    after: ComponentValue::ExplorationProfile(ExplorationProfile::default()),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

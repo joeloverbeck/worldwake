@@ -1,6 +1,6 @@
 # S80EXPDRI-001: Core types and component registration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new component type, new GoalKind variant, component schema registration
@@ -17,6 +17,8 @@ No exploration-related types exist in the codebase. All downstream tickets (beli
 3. Shared abstraction boundary: `EntityKind::Agent` component registration pattern (universal profile with Default impl, `set_component_*`/`get_component_*` accessors).
 4. `Permille` at `crates/worldwake-core/src/numerics.rs:20` derives `Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize`. ExplorationProfile uses `Permille` for two fields — compatible.
 5. `HomeostaticNeedId` at `crates/worldwake-core/src/needs.rs:18` derives `Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize`. Used as field in ExploreLocation variant — compatible.
+6. Universal agent profiles are not implied by schema registration alone on the current branch. Live contract requires `World::create_agent()` to seed default components, so the owned scope widened to include default `ExplorationProfile` insertion plus the resulting transaction/registry test fallout.
+7. Adding a new `GoalKind` variant is not crate-local even for a substrate ticket. Live downstream exhaustive matches in `worldwake-ai` and `worldwake-cli` required compile-safe inert branches so `ExploreLocation` is type-visible without becoming behaviorally active before tickets 003-005.
 
 ## Architecture Check
 
@@ -53,6 +55,8 @@ Implement `Component` for `ExplorationProfile`.
 
 Export from `crates/worldwake-core/src/lib.rs`.
 
+Seed `ExplorationProfile::default()` during `World::create_agent()` so the universal profile contract holds immediately for newly created agents.
+
 ### 2. Add GoalKind::ExploreLocation
 
 In `crates/worldwake-core/src/goal.rs`, add variant:
@@ -63,6 +67,8 @@ ExploreLocation {
     motivating_need: HomeostaticNeedId,
 },
 ```
+
+Absorb compile-safe downstream exhaustive handling so the new variant builds across `worldwake-ai` and `worldwake-cli`, but keep motive/planner behavior inert until the later S80 tickets land.
 
 ### 3. Register ExplorationProfile in component schema
 
@@ -84,6 +90,13 @@ Ensure macro expansion sites import the new type:
 - `crates/worldwake-core/src/world.rs` (modify — import ExplorationProfile for macro expansion)
 - `crates/worldwake-core/src/component_tables.rs` (modify — import ExplorationProfile for macro expansion)
 - `crates/worldwake-core/src/lib.rs` (modify — declare and export exploration module)
+- `crates/worldwake-core/src/world_txn.rs` (modify — agent bootstrap delta expectation fallout)
+- `crates/worldwake-ai/src/goal_dispatch_key.rs` (modify — add inert dispatch key mapping for ExploreLocation)
+- `crates/worldwake-ai/src/goal_dispatch_decl.rs` (modify — inert declaration for ExploreLocation)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — compile-safe inert ExploreLocation handling)
+- `crates/worldwake-ai/src/ranking.rs` (modify — inert priority/motive/discriminant handling)
+- `crates/worldwake-cli/src/display.rs` (modify — render ExploreLocation goals)
+- `crates/worldwake-ai/tests/golden_simulation_gaps.rs` (modify — adjacent clippy blocker required for CI-matching verification)
 
 ## Out of Scope
 
@@ -123,3 +136,18 @@ Ensure macro expansion sites import the new type:
 1. `cargo test -p worldwake-core`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo build --workspace`
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Added `ExplorationProfile` as a new universal agent component in `worldwake-core`, with default values, serde coverage, ECS registration, public exports, and default seeding during `World::create_agent()`.
+- Added `GoalKind::ExploreLocation { target_place, motivating_need }` and updated `GoalKey` extraction plus serde coverage for the new variant.
+- Absorbed the required shared-shape fallout: registry/delta transaction expectations in core, compile-safe inert `ExploreLocation` handling in AI/CLI exhaustive matches, and one unrelated-but-local clippy lint fix in `golden_simulation_gaps.rs` that blocked the ticket's required CI-matching verification.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo build --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
