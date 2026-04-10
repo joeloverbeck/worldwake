@@ -1,6 +1,6 @@
 # S85OBSBEHENR-005: Unknown location clarity for place entities
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -79,3 +79,16 @@ This means the `None` group may produce two output lines if it contains both pla
 
 1. `cargo test -p worldwake-cli`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Added observer-local helpers to keep believed-location rendering shared while splitting the `last_known_place: None` bucket into believed places vs. other entities using `BelievedEntityState::believed_kind`.
+- The "Believed entity locations" section now renders believed places with `"(place entity — no parent location)"` and preserves `"Unknown location"` for non-place entities with no believed parent place.
+- Added focused observer tests covering place-only, non-place-only, and mixed unknown-location groups.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

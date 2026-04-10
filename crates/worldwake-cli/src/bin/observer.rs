@@ -528,6 +528,55 @@ fn write_affordance_list(
     writeln!(out)
 }
 
+fn believed_location_parts(world: &worldwake_core::World, entities: &[EntityId]) -> Vec<String> {
+    let mut commodity_totals: BTreeMap<String, u64> = BTreeMap::new();
+    let mut non_item_names: Vec<String> = Vec::new();
+
+    for id in entities {
+        if let Some(lot) = world.get_component_item_lot(*id) {
+            *commodity_totals
+                .entry(format!("{:?}", lot.commodity))
+                .or_insert(0) += u64::from(lot.quantity.0);
+        } else {
+            non_item_names.push(entity_display_name(world, *id));
+        }
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    parts.extend(non_item_names);
+    for (commodity, total) in &commodity_totals {
+        parts.push(format!("{total}\u{00d7} {commodity}"));
+    }
+    parts
+}
+
+fn unknown_location_entity_groups(
+    entities: &[EntityId],
+    store: &worldwake_core::AgentBeliefStore,
+) -> Vec<(String, Vec<EntityId>)> {
+    let mut place_entities = Vec::new();
+    let mut unknown_entities = Vec::new();
+
+    for entity in entities {
+        match store.known_entities.get(entity).and_then(|state| state.believed_kind) {
+            Some(EntityKind::Place) => place_entities.push(*entity),
+            _ => unknown_entities.push(*entity),
+        }
+    }
+
+    let mut groups = Vec::new();
+    if !place_entities.is_empty() {
+        groups.push((
+            "(place entity \u{2014} no parent location)".to_string(),
+            place_entities,
+        ));
+    }
+    if !unknown_entities.is_empty() {
+        groups.push(("Unknown location".to_string(), unknown_entities));
+    }
+    groups
+}
+
 fn behavioral_transitions(
     bins: &BTreeMap<u64, BTreeMap<&str, u32>>,
     needs_samples: &[NeedsSample],
@@ -1114,28 +1163,21 @@ fn format_report(
         if !by_place.is_empty() {
             writeln!(out, "**Believed entity locations**:").unwrap();
             for (place_opt, entities) in &by_place {
-                let place_label = match place_opt {
-                    Some(pid) => entity_display_name(world, *pid),
-                    None => "Unknown location".to_string(),
-                };
-                // Aggregate item lots by commodity, list non-items individually
-                let mut commodity_totals: BTreeMap<String, u64> = BTreeMap::new();
-                let mut non_item_names: Vec<String> = Vec::new();
-                for id in entities {
-                    if let Some(lot) = world.get_component_item_lot(*id) {
-                        *commodity_totals
-                            .entry(format!("{:?}", lot.commodity))
-                            .or_insert(0) += u64::from(lot.quantity.0);
-                    } else {
-                        non_item_names.push(entity_display_name(world, *id));
+                match place_opt {
+                    Some(pid) => {
+                        let place_label = entity_display_name(world, *pid);
+                        let parts = believed_location_parts(world, entities);
+                        writeln!(out, "- {place_label}: {}", parts.join(", ")).unwrap();
+                    }
+                    None => {
+                        for (place_label, grouped_entities) in
+                            unknown_location_entity_groups(entities, store)
+                        {
+                            let parts = believed_location_parts(world, &grouped_entities);
+                            writeln!(out, "- {place_label}: {}", parts.join(", ")).unwrap();
+                        }
                     }
                 }
-                let mut parts: Vec<String> = Vec::new();
-                parts.extend(non_item_names);
-                for (commodity, total) in &commodity_totals {
-                    parts.push(format!("{total}\u{00d7} {commodity}"));
-                }
-                writeln!(out, "- {place_label}: {}", parts.join(", ")).unwrap();
             }
             writeln!(out).unwrap();
         }
@@ -1764,16 +1806,20 @@ mod tests {
         failed_plan_max_depth, failed_plan_outcome_label, failed_plan_target_beliefs,
         final_affordance_snapshot, format_behavioral_transition, format_death_cause,
         format_affordance_summary, post_travel_affordance_snapshots,
+        unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
     use worldwake_ai::decision_trace::{
         AffordanceSummary, AffordanceTrace, SearchExpansionSummary, TargetBeliefPresence,
     };
     use worldwake_core::{
-        ActionDefId, CauseRef, ControlSource, DeadAt, DeathCause, EntityId, EventLog, GoalKey,
-        GoalKind, HomeostaticNeedId, OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn, build_prototype_world,
+        ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, ControlSource, DeadAt,
+        DeathCause, EntityId, EntityKind, EventLog, GoalKey, GoalKind, HomeostaticNeedId,
+        OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
     };
+    use std::collections::BTreeSet;
+    use worldwake_core::PerceptionSource;
     use worldwake_sim::{ActionInstanceId, ActionTraceEvent, ActionTraceKind, CommitOutcome};
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
@@ -1874,6 +1920,25 @@ mod tests {
                     target_count: *target_count,
                 })
                 .collect(),
+        }
+    }
+
+    fn belief_state(kind: Option<EntityKind>, last_known_place: Option<EntityId>) -> BelievedEntityState {
+        BelievedEntityState {
+            believed_kind: kind,
+            last_known_place,
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(0),
+            source: PerceptionSource::DirectObservation,
         }
     }
 
@@ -2159,6 +2224,71 @@ mod tests {
 
         assert_eq!(format_affordance_summary(&no_targets), "sleep");
         assert_eq!(format_affordance_summary(&with_targets), "harvest (3 targets)");
+    }
+
+    #[test]
+    fn unknown_location_group_labels_place_entities_separately() {
+        let place = entity(10);
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(place, belief_state(Some(EntityKind::Place), None));
+
+        let groups = unknown_location_entity_groups(&[place], &store);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "(place entity — no parent location)");
+        assert_eq!(groups[0].1, vec![place]);
+    }
+
+    #[test]
+    fn unknown_location_group_keeps_non_place_entities_unknown() {
+        let agent = entity(20);
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(agent, belief_state(Some(EntityKind::Agent), None));
+
+        let groups = unknown_location_entity_groups(&[agent], &store);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "Unknown location");
+        assert_eq!(groups[0].1, vec![agent]);
+    }
+
+    #[test]
+    fn unknown_location_group_splits_place_and_non_place_entities() {
+        let place = entity(30);
+        let item = entity(31);
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(place, belief_state(Some(EntityKind::Place), None));
+        store
+            .known_entities
+            .insert(item, belief_state(Some(EntityKind::ItemLot), None));
+
+        let groups = unknown_location_entity_groups(&[place, item], &store);
+        let labels = groups.iter().map(|(label, _)| label.clone()).collect::<Vec<_>>();
+        let grouped_entities = groups
+            .iter()
+            .map(|(_, ids)| ids.iter().copied().collect::<BTreeSet<_>>())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec![
+                "(place entity — no parent location)".to_string(),
+                "Unknown location".to_string()
+            ]
+        );
+        assert_eq!(
+            grouped_entities,
+            vec![
+                BTreeSet::from([place]),
+                BTreeSet::from([item]),
+            ]
+        );
     }
 
     #[test]

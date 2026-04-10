@@ -1,5 +1,7 @@
 # S85: Observer Behavioral Enrichment
 
+**Status**: COMPLETED
+
 ## Summary
 
 Enrich the observer binary (`crates/worldwake-cli/src/bin/observer.rs`) with five diagnostic enhancements that improve the ability to diagnose agent behavioral pathologies in simulation runs. These address specific diagnostic gaps identified in the simulation observer report: missing death tick/cause display, missing frontier-exhaustion rejection reasons, missing need snapshots at behavioral transitions, missing post-travel affordance snapshots, and confusing "Unknown location" display for place entities.
@@ -7,10 +9,6 @@ Enrich the observer binary (`crates/worldwake-cli/src/bin/observer.rs`) with fiv
 ## Phase
 
 Phase 7: Consequence Carriers (Adjunct — Simulation Remediation)
-
-## Status
-
-Draft
 
 ## Crates
 
@@ -149,3 +147,11 @@ No new components. The observer reads existing components (`DeadAt`, `Homeostati
 ## Cross-System Interactions
 
 None — the observer is a read-only analysis tool that runs after simulation completes. It has no runtime interactions with simulation systems.
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Landed all five observer-only enrichments in `crates/worldwake-cli/src/bin/observer.rs` across tickets `S85OBSBEHENR-001` through `S85OBSBEHENR-005`: death tick/cause display, depth-0 frontier-exhaustion reason formatting, behavioral-transition need snapshots, post-travel/final affordance snapshots, and clearer unknown-location rendering for believed place entities.
+- Verification passed during the ticket sequence via repeated `cargo test -p worldwake-cli` and `cargo clippy --workspace --all-targets -- -D warnings` runs after each bounded observer change.
+- The affordance-follow-up slice landed as observer report-time derivation from existing decision and action traces rather than persistent `AgentStats` storage, preserving the same delivered diagnostic contract without adding duplicate trace-derived state.
