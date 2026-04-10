@@ -108,6 +108,27 @@ S80 ✅ archived
 - **S81**: ✅ COMPLETED — Golden Gaps — Simulation Remediation — archived at [archive/specs/S81-golden-gaps-simulation-remediation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S81-golden-gaps-simulation-remediation.md). Landed GT-1 multi-agent convergence, GT-2 death traceability, and GT-3 colocated harvest-to-consume proof, plus the supporting death traceability substrate/runtime slices.
 - **S80**: ✅ COMPLETED — Exploration Drive — archived at [archive/specs/S80-exploration-drive.md](/home/joeloverbeck/projects/worldwake/archive/specs/S80-exploration-drive.md). Landed exploration pressure from unmet needs + limited geographic beliefs, per-agent `ExplorationProfile`, self-care fallback dispatch wiring, and exploration-specific golden coverage.
 
+### Adjunct Wave: Simulation Remediation Phase 2
+
+Derived from re-run of simulation observer report (`reports/simulation-remediation.md`) validated against
+the actual codebase and `docs/FOUNDATIONS.md` post-S78/S79/S80/S81. Addresses remaining planner budget
+exhaustion root cause, waste accumulation dampener gap, ShareBelief frontier-exhaustion, and observer
+diagnostic enrichments.
+
+```text
+S82 (independent)
+S83 (independent)
+S84 (independent)
+S85 (independent)
+All four are parallel — no inter-dependencies.
+```
+
+**Wave** (parallel, no deps):
+- **S82**: Waste Disposal and Inventory Management — `drop_item` action, `FreeCarryCapacity` goal, `DisposalProfile` per-agent parameter. Dampener for FND-11 waste accumulation loop.
+- **S83**: Belief-Informed Candidate Pruning — belief-gated place filtering in `AcquireCommodity` candidate generation, `speculative_acquisition` per-agent parameter. Fixes root cause of planner budget exhaustion.
+- **S84**: ShareBelief Operator Fix — investigate and fix frontier-exhaustion at depth 0 for ShareBelief goals despite co-location. Likely S73 snapshot filtering excluding agents from Tell operator search.
+- **S85**: Observer Behavioral Enrichment — death tick/cause display, frontier-exhaustion rejection reasons, need snapshots at behavioral transitions, post-travel affordance snapshots, "Unknown location" clarity.
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed

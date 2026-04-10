@@ -16,6 +16,15 @@ Read the simulation observer report and propose concrete remediations for each f
 
 No arguments. Always reads from `reports/simulation-observer-report.md`.
 
+## Expected Input Format
+
+The observer report (produced by `/simulation-observer`) must contain:
+- **Findings** with severity levels: NONE, LOW, MEDIUM, HIGH, CRITICAL
+- **Trace Quality Assessment** table with columns: ID, Limitation, Classification (Actionable / Acceptable trade-off), Rationale
+- **Cross-Cutting Patterns** section identifying systemic issues across findings
+
+If the observer report format changes, update these expectations accordingly.
+
 ## Process
 
 Follow these steps in order. Do not skip any step.
@@ -31,9 +40,9 @@ Read `reports/simulation-observer-report.md`.
 1. Read `docs/FOUNDATIONS.md` -- needed to evaluate whether findings violate foundational principles. If the file exceeds read limits, prioritize sections III (Knowledge, Belief, and Evidence) and IV (Agents, Institutions, and Social Order) as these are most commonly implicated by behavioral smells.
 2. List the `specs/` directory to know which specs exist.
 3. List the `tickets/` directory to check for existing related tickets.
-4. Glob `crates/worldwake-ai/tests/golden_*.rs` to identify existing test files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern.
+4. Glob `crates/worldwake-ai/tests/golden_*.rs` to identify existing test files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern. Batch all keyword searches into a single operation (e.g., delegate to an Explore agent with all finding-related keywords) rather than grepping per-finding sequentially.
 5. Read `docs/spec-drafting-rules.md` -- only if any spec changes will be proposed. Skip if all findings map to golden tests or tickets.
-6. If `reports/simulation-remediation.md` already exists (from a prior run), read it and note which prior proposals recurred in the current observer report. Flag recurring issues with a `RECURRING` marker in the proposal severity.
+6. If `reports/simulation-remediation.md` already exists (from a prior run), read it and note which prior proposals recurred in the current observer report. Flag recurring issues by appending `RECURRING` to the severity field in the output template (e.g., `**Severity**: CRITICAL RECURRING`).
 7. Note the Trace Quality Assessment section of the observer report for processing in Step 3b.
 
 ### Step 3: Classify Each Finding
@@ -60,6 +69,7 @@ For each finding in the observer report (each smell with severity above NONE), d
 - Acceptance criteria
 - Which crate(s) are affected
 - Priority (P0-P3)
+- Dependencies (other proposals this is blocked by, or "none")
 
 ### Step 3b: Classify Trace Quality Items
 
@@ -79,7 +89,7 @@ Tickets and spec changes from trace-quality items use the same format as behavio
 
 ### Step 4: Write Proposals
 
-If invoked in plan mode, write the report content to the plan file. After plan mode exits, write the final report to `reports/simulation-remediation.md` using the same content as the plan file.
+If invoked in plan mode, draft the report content in the plan file. After plan mode exits, write the plan file content directly to `reports/simulation-remediation.md` -- do not re-analyze or duplicate work.
 
 Write `reports/simulation-remediation.md` with this structure:
 
@@ -88,6 +98,10 @@ Write `reports/simulation-remediation.md` with this structure:
 
 Source report: `reports/simulation-observer-report.md`
 Generated: [date]
+
+## Context
+
+[1-2 paragraph summary: number of agents, places, ticks simulated, dominant failure mode, root cause summary. Frame the report so a reader unfamiliar with this specific run understands why certain findings are deferred and which root cause dominates.]
 
 ## Proposed Golden Tests
 
@@ -106,6 +120,7 @@ Generated: [date]
 
 ### SC-1: [Spec Change Title]
 **Source finding**: [reference to observer report finding]
+**Severity**: [from observer report source finding]
 **Spec**: `specs/[file].md`
 **Section**: [which section]
 **Change**: [what to add/modify]

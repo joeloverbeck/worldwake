@@ -12,8 +12,9 @@ use types::ScenarioDef;
 use worldwake_core::{
     CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
     ExplorationProfile, KnownRecipes, LoadUnits, MerchandiseProfile, PatrolRoute, Place,
-    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-    WorkstationMarker, World, WorldTxn, hash_world,
+    ProductionOutputOwner, ProductionOutputOwnershipPolicy, ResourceSource, Seed, Tick, Topology,
+    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn,
+    hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -249,6 +250,12 @@ fn spawn_entities(
             WorkstationMarker(facility_def.workstation),
         )?;
         txn.set_ground_location(facility_id, place_id)?;
+        txn.set_component_production_output_ownership_policy(
+            facility_id,
+            ProductionOutputOwnershipPolicy {
+                output_owner: ProductionOutputOwner::Actor,
+            },
+        )?;
         facility_locations.insert(facility_id, place_id);
         if let Some(name) = &facility_def.name {
             names.insert(name.clone(), facility_id);
@@ -287,6 +294,12 @@ fn spawn_entities(
         } else {
             let source_id = txn.create_entity(EntityKind::Facility);
             txn.set_ground_location(source_id, place_id)?;
+            txn.set_component_production_output_ownership_policy(
+                source_id,
+                ProductionOutputOwnershipPolicy {
+                    output_owner: ProductionOutputOwner::Actor,
+                },
+            )?;
             facility_locations.insert(source_id, place_id);
             source_id
         };
