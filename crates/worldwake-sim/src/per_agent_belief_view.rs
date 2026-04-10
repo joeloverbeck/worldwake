@@ -1524,18 +1524,17 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, ActionDomain, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
-        BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CognitiveProfile,
-        CombatProfile, CommodityKind, ControlSource, DisposalProfile, EdgeExperience,
-        EffectiveRight, EntityId, EntityKind, EventLog, ExpectationBasis, ExpectationId,
-        ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile, FactionData,
-        FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-        OfficeData, PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
-        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
-        RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory,
-        Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-        build_believed_entity_state, build_prototype_world,
+        BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CognitiveProfile, CombatProfile,
+        CommodityKind, ControlSource, DisposalProfile, EdgeExperience, EffectiveRight, EntityId,
+        EntityKind, EventLog, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
+        ExpectationStore, ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, OfficeData, PerceptionProfile, Permille, Place,
+        PlaceTag, PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
+        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId, build_believed_entity_state, build_prototype_world,
         test_utils::{
             sample_commodity_valuation_profile, sample_preference_profile, sample_route_experience,
             sample_source_reliability,
@@ -2540,7 +2539,10 @@ mod tests {
             ProfileBeliefView::cognitive_profile(&view, agent),
             Some(profile)
         );
-        assert_eq!(GoalBeliefView::cognitive_profile(&view, agent), Some(profile));
+        assert_eq!(
+            GoalBeliefView::cognitive_profile(&view, agent),
+            Some(profile)
+        );
     }
 
     #[test]

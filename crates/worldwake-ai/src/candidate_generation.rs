@@ -4203,10 +4203,13 @@ fn place_has_direct_acquisition_support(
         .filter_map(|lot| view.seller_for_sale_lot(lot))
         .any(|seller| seller != agent)
         || local_unpossessed_commodity_evidence(view, place, commodity).is_some()
-        || view.resource_sources_at(place, commodity).into_iter().any(|source| {
-            view.resource_source(source)
-                .is_some_and(|resource| resource.available_quantity > Quantity(0))
-        })
+        || view
+            .resource_sources_at(place, commodity)
+            .into_iter()
+            .any(|source| {
+                view.resource_source(source)
+                    .is_some_and(|resource| resource.available_quantity > Quantity(0))
+            })
         || view
             .corpse_entities_at(place)
             .into_iter()
@@ -4224,7 +4227,10 @@ fn place_has_recipe_backed_acquisition_support(
 ) -> bool {
     view.known_recipes(agent).into_iter().any(|recipe_id| {
         recipes.get(recipe_id).is_some_and(|recipe| {
-            recipe.outputs.iter().any(|(output, _)| *output == commodity)
+            recipe
+                .outputs
+                .iter()
+                .any(|(output, _)| *output == commodity)
                 && recipe_path_evidence_at_place(
                     view,
                     agent,
@@ -4931,21 +4937,22 @@ mod tests {
         AgentBeliefStore, ArtifactKind, ArtifactPostingContext, ArtifactState,
         BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
-        BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
-        DemandObservationReason, DisposalProfile, DriveThresholds, EffectiveRight, EligibilityRule,
-        EntityId, EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
-        ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile, GoalKey,
-        GoalKind, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource,
-        Permille, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
-        ResourceSource, RewardSource, RightKind, SharedTellState, SocialObservation,
-        SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
+        BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
+        DemandObservation, DemandObservationReason, DisposalProfile, DriveThresholds,
+        EffectiveRight, EligibilityRule, EntityId, EntityKind, EpistemicDispositionProfile,
+        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
+        ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
+        OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, Quantity,
+        RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
+        RewardSource, RightKind, SharedTellState, SocialObservation, SocialObservationDetail,
+        TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationKind, ViolationMemory,
+        WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
@@ -8476,7 +8483,13 @@ mod tests {
         let filtered = belief_gated_places(
             &view,
             agent,
-            &[origin, seller_place, source_place, corpse_place, ignored_place],
+            &[
+                origin,
+                seller_place,
+                source_place,
+                corpse_place,
+                ignored_place,
+            ],
             CommodityKind::Bread,
             BeliefGateOptions {
                 recipes: &RecipeRegistry::new(),

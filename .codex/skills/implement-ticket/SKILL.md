@@ -16,14 +16,16 @@ Before running the full workflow, classify the ticket:
 **Small/local tickets** (fast path) — single-file additive CLI/tooling/reporting/action-registry change, narrow helper extraction, formatting update, or other owned-module additive change with no shared type/planner/golden/persistence/cross-crate fallout expected. Typical examples include a single-file transport/action registration, local handler addition, narrow helper extraction, or bin-local coverage for factored logic:
 1. Resolve the exact live ticket/spec path, including typos or shorthand.
 2. Confirm the dependency path and the exact owned symbol/file boundary.
-3. Run a constructor/usage sweep for the changed shape (see Step 4, Type-change scope).
+3. Run a narrow constructor/usage sweep for the changed shape: confirm the named symbols and accessors exist, search local callers/render sites, check obvious constructor or test-helper fallout, and identify the narrowest real proof entry point.
 4. Implement the owned change with focused proof first.
-5. Use all-target compile fallout to catch remaining shared-shape literals/helpers.
+5. Run the affected crate's tests as the normal broadened proof for the ticket, then use compile/lint fallout as a supplemental sweep for remaining shared-shape literals/helpers when warranted.
 6. Close out the ticket with the actual verification set and tracked-vs-untracked note.
 
 For CLI/tooling-only tickets, if the owned logic can be factored into local helpers, prefer bin-local `#[cfg(test)]` coverage over command-only validation.
 
 Do not skip reassessment for small tickets, but scale it down: read the ticket, cited references, and owned symbol/file; confirm the dependency path is present; run a narrow existence/fallout sweep for prior implementation or obvious constructor/usage fallout. Do not force the full Step 2 matrix when the owned surface is genuinely small and local.
+
+For small/local tickets, load the reference docs only if reassessment exposes ambiguity, mismatch, or broader fallout. The normal fast path is the ticket, its cited references, the owned symbol/file boundary, focused proof, and the affected crate's tests.
 
 For straightforward shared-type additive tickets (new field on an existing struct/component, derive-safe enum payload addition, or similar constructor fallout with no boundary dispute yet visible), start with the ticket, cited spec/docs, `references/reassessment-checks.md`, `references/verification.md`, and `references/closeout.md`. Load `mismatch-handling.md`, `scope-extraction.md`, or `implementation-discipline.md` only if reassessment exposes a mismatch, ownership ambiguity, or non-mechanical implementation choice.
 
@@ -65,6 +67,8 @@ Load `references/reassessment-checks.md`.
 Load `references/mismatch-handling.md`.
 
 When reassessment shows that part of the ticket's claimed substrate is already present in live code, update the ticket before coding so it describes only the remaining owned delta. Reflect that narrowed scope in the ticket's `Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria` sections instead of leaving stale "add X" language in place.
+
+When the ticket points at the wrong live section, function, symbol, or report/render location, correct that stale reference during reassessment before relying on the ticket's execution narrative. Do not preserve a misleading "change goes here" description once the live owned boundary is known.
 
 After narrowing a ticket because substrate is already live, re-sweep the adjacent fallout that commonly remains owned by the current ticket: declaration/dispatch tables, snapshot/state carriers, local test stubs/helpers, synthetic candidate/root helpers, and the broadened verification selectors that should now prove only the remaining live delta.
 

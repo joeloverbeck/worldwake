@@ -17,7 +17,7 @@ use worldwake_ai::decision_trace::{
 };
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
-use worldwake_core::{EntityId, EntityKind, EventId, EventView};
+use worldwake_core::{DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView};
 use worldwake_sim::{
     ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime, InstitutionalKnowledgeTraceSink,
     PerceptionTraceSink, PoliticalTraceSink, RequestResolutionTraceSink, TickStepServices,
@@ -478,6 +478,25 @@ fn collect_failed_plan_attempts<'a>(
         .collect()
 }
 
+fn format_death_cause(cause: DeathCause) -> String {
+    match cause {
+        DeathCause::NeedDeprivation { need } => format!("NeedDeprivation {{ {need:?} }}"),
+        DeathCause::CombatWounds => "CombatWounds".to_string(),
+    }
+}
+
+fn death_summary_line(world: &worldwake_core::World, agent_id: EntityId) -> Option<String> {
+    world
+        .get_component_dead_at(agent_id)
+        .map(|DeadAt { tick, cause }| {
+            format!(
+                "**Death**: Tick {} (cause: {})",
+                tick.0,
+                format_death_cause(*cause)
+            )
+        })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn format_report(
     scenario_path: &str,
@@ -522,8 +541,12 @@ fn format_report(
 
     // Section 2: Per-Agent Summary
     writeln!(out, "## Section 2 — Per-Agent Summary\n").unwrap();
-    for stats in agent_stats.values() {
+    for (agent_id, stats) in agent_stats {
         writeln!(out, "### {}\n", stats.name).unwrap();
+        if let Some(line) = death_summary_line(world, *agent_id) {
+            writeln!(out, "{line}").unwrap();
+            writeln!(out).unwrap();
+        }
 
         // Action counts
         writeln!(
@@ -1515,11 +1538,16 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        PlanAttemptTrace, PlanSearchOutcome, failed_plan_breakdown, failed_plan_candidates,
-        failed_plan_location, failed_plan_max_depth, failed_plan_target_beliefs,
+        PlanAttemptTrace, PlanSearchOutcome, death_summary_line, failed_plan_breakdown,
+        failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
+        failed_plan_target_beliefs, format_death_cause,
     };
     use worldwake_ai::decision_trace::{SearchExpansionSummary, TargetBeliefPresence};
-    use worldwake_core::{EntityId, GoalKey, GoalKind, OpportunityAnchor};
+    use worldwake_core::{
+        CauseRef, ControlSource, DeadAt, DeathCause, EntityId, EventLog, GoalKey, GoalKind,
+        HomeostaticNeedId, OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
+    };
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
         SearchExpansionSummary {
@@ -1549,6 +1577,23 @@ mod tests {
             binding_rejections: Vec::new(),
             expansion_summaries,
         }
+    }
+
+    fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
+        WorldTxn::new(
+            world,
+            Tick(tick),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        )
+    }
+
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
     }
 
     #[test]
@@ -1621,5 +1666,55 @@ mod tests {
             failed_plan_target_beliefs(&sample_attempt(Vec::new())),
             "n/a"
         );
+    }
+
+    #[test]
+    fn format_death_cause_renders_spec_strings() {
+        assert_eq!(
+            format_death_cause(DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Hunger,
+            }),
+            "NeedDeprivation { Hunger }"
+        );
+        assert_eq!(format_death_cause(DeathCause::CombatWounds), "CombatWounds");
+    }
+
+    #[test]
+    fn death_summary_line_includes_tick_and_cause_for_dead_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 42);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_component_dead_at(
+                agent,
+                DeadAt {
+                    tick: Tick(42),
+                    cause: DeathCause::NeedDeprivation {
+                        need: HomeostaticNeedId::Hunger,
+                    },
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        assert_eq!(
+            death_summary_line(&world, agent).as_deref(),
+            Some("**Death**: Tick 42 (cause: NeedDeprivation { Hunger })")
+        );
+    }
+
+    #[test]
+    fn death_summary_line_is_absent_for_alive_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        assert_eq!(death_summary_line(&world, agent), None);
     }
 }

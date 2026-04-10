@@ -56,6 +56,7 @@ Analyze the spec and identify discrete work units:
 - When multiple spec deliverables share the same file set and cannot compile independently, merge them into a single ticket. Note merged deliverables in the Step 4 summary table notes
 - Use the spec's "What This Does NOT Change" or equivalent non-goals section to populate tickets' Out of Scope fields — these are pre-validated non-goals from reassessment
 - Ensure **workspace builds after each ticket** — if removing types/functions from a shared crate, all consumers must be updated in the same ticket. Splitting a migration across tickets is only valid when intermediate states compile.
+- When all deliverables modify the **same file**, decompose by logical section or feature, not by file boundary. Each ticket targeting a different section of the same file is a valid reviewable diff. Note the shared file in the Step 4 summary rather than repeating it per-ticket.
 - For **mechanical refactoring specs** (trait decomposition, enum splitting, interface migrations), recognize that multiple tickets may share an identical file set. In the summary table (Step 4), note the shared file set once and reference it from each ticket rather than forcing each ticket to independently discover the same list. Individual tickets should list only *additional* files beyond the shared set.
 
 ### Step 4: Present Summary for Approval
@@ -72,6 +73,8 @@ Analyze the spec and identify discrete work units:
 
 Include a 1-line description of each ticket's scope. The FND column is optional — populate it only for tickets with notable FOUNDATIONS concerns (e.g., a ticket touching derived views should note P27). Use `—` for tickets with no specific concern.
 
+If all tickets are independent, state this once rather than repeating `None` in every Deps cell. The Step 6 dependency graph can be a single sentence (e.g., "All tickets are independent — implement in any order").
+
 **Wait for user approval or adjustments.** Do not write files until the user confirms.
 
 ### Step 5: Write Ticket Files
@@ -86,7 +89,7 @@ Every ticket MUST include:
 - **Engine Changes**: None or list of affected areas
 - **Deps**: Other tickets or specs this depends on
 - **Problem**: What user-facing or architecture problem this solves
-- **Assumption Reassessment**: Assumptions validated against current code (use today's date). Include items 1-3 from the template (always required) plus any domain-specific items from items 4-15 that match the ticket's scope. Omit inapplicable items silently — do not pad with "N/A" boilerplate. For pure structural refactoring tickets (no behavioral changes, no new actions/components), items 1-3 may be satisfied concisely by confirming: (a) the symbols being moved exist at stated locations, (b) the impl block count matches the spec's claim, (c) the shared boundary is the trait/struct under edit. Items 4-15 are typically all inapplicable for structural refactors
+- **Assumption Reassessment**: Assumptions validated against current code (use today's date). Include items 1-3 from the template (always required) plus any domain-specific items from items 4-15 that match the ticket's scope. Omit inapplicable items silently — do not pad with "N/A" boilerplate. For pure structural refactoring tickets (no behavioral changes, no new actions/components), items 1-3 may be satisfied concisely by confirming: (a) the symbols being moved exist at stated locations, (b) the impl block count matches the spec's claim, (c) the shared boundary is the trait/struct under edit. Items 4-15 are typically all inapplicable for structural refactors. For observer-only, CLI-only, or tooling-only specs (no engine changes, no simulation state mutations), items 1-3 are typically sufficient — items 4-15 apply only when the ticket touches simulation runtime, planning, or action systems
 - **Architecture Check**: Why this approach is clean, how it preserves agnostic boundaries
 - **Verification Layers**: Map each invariant to its proof surface (for mixed-layer or cross-system tickets: decision trace, action trace, event-log delta, authoritative world state)
 - **What to Change**: Numbered sections with specific implementation details

@@ -113,9 +113,7 @@ fn goal_specific_feasibility(
         (
             FeasibilityStrategy::AlwaysLikely,
             GoalKind::Sleep | GoalKind::Relieve | GoalKind::FreeCarryCapacity,
-        ) => {
-            Some(FeasibilityHint::Likely)
-        }
+        ) => Some(FeasibilityHint::Likely),
         (FeasibilityStrategy::CommodityPresenceCheck, GoalKind::Wash) => {
             if view.commodity_quantity(agent, CommodityKind::Water) > Quantity(0) {
                 Some(FeasibilityHint::Likely)

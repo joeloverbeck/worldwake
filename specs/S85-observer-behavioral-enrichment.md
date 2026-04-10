@@ -20,6 +20,7 @@ Draft
 
 - S78 (Observer Failed-Plan Diagnostics) — completed (provides the base diagnostic infrastructure this spec extends)
 - S81 (Golden Gaps — Simulation Remediation) — completed (provides `DeadAt { tick, cause: DeathCause }` component this spec surfaces)
+- S77 (Belief Capacity Prioritization) — completed (provides `believed_kind` field on `BelievedEntityState` used in Deliverable 5)
 
 ## Design Goals
 
@@ -48,9 +49,9 @@ Draft
 
 **Diagnostic question**: "When exactly did this agent die and why?"
 
-**Current state**: S81 implemented `DeadAt { tick: Tick, cause: DeathCause }` component and `EventTag::Death` events. The observer counts `dead_ticks` in the tick breakdown but does not query the `DeadAt` component for the exact tick and cause.
+**Current state**: S81 implemented `DeadAt { tick: Tick, cause: DeathCause }` component and `EventTag::Death` events. The observer counts `dead_ticks` in the Decision Trace Summary tick breakdown but does not query the `DeadAt` component for the exact tick and cause.
 
-**Change**: In the per-agent summary section (around line 579 of observer.rs), query `world.get_component_dead_at(agent_id)`. If present, emit at the top of the agent's section:
+**Change**: In the per-agent summary section ("Section 2 — Per-Agent Summary" in observer.rs), query `world.get_component_dead_at(agent_id)`. If present, emit at the top of the agent's section:
 
 ```
 **Death**: Tick 1438 (cause: NeedDeprivation { Hunger })
@@ -83,13 +84,13 @@ or:
 frontier-exhausted at depth 0: 3 candidates generated, all pruned by beam
 ```
 
-The `expansion_summaries` field of `PlanAttemptTrace` already contains `SearchExpansionSummary` with `candidates_generated`, `candidates_skipped`, `terminal_successors`, and `non_terminal_after_beam` per depth. The observer needs to read and format these for depth-0 frontier-exhaustion cases.
+The `expansion_summaries` field of `PlanAttemptTrace` already contains `SearchExpansionSummary` with `candidates_generated`, `candidates_skipped`, `terminal_successors`, and `non_terminal_after_beam` per depth (among other fields — the struct has 14 fields total; only these 4 are relevant here). The observer needs to read and format these for depth-0 frontier-exhaustion cases.
 
 ### 3. Need Snapshots at Behavioral Transitions (from TK-5)
 
 **Diagnostic question**: "What were the agent's needs when their behavior narrowed?"
 
-**Current state**: The observer samples needs every tick (`NeedsSample` at line 46-52) and reports min/max/average in the per-agent summary. It also computes per-agent action type counts per time bin. But it does not correlate the two.
+**Current state**: The observer samples needs every tick (the `NeedsSample` struct defined near the top of observer.rs) and reports min/max/average in the per-agent summary. It also computes per-agent action type counts per 100-tick time bin in the "Per-Agent Action Timeline" section. But it does not correlate the two.
 
 **Change**: After computing per-agent action timelines (action type counts per 100-tick bin), detect behavioral transitions: consecutive bins where the action type count drops by 50% or more. At each detected transition, emit a snapshot:
 
@@ -104,9 +105,9 @@ Place these in the per-agent summary, after the needs trajectory and before the 
 
 **Diagnostic question**: "What affordances did the agent have after arriving at a new location?"
 
-**Current state**: Affordances are captured from the first planning decision that has them (effectively tick 0 or near-0, observer.rs lines 1262-1275). Agents that travel have different affordances at their new location, but these are never shown.
+**Current state**: Affordances are captured from the first planning decision that has them (effectively tick 0 or near-0, in the "Affordances available" rendering section of the per-agent decision trace). Agents that travel have different affordances at their new location, but these are never shown.
 
-**Change**: In addition to the initial affordance snapshot, capture affordances from the first planning decision after each `travel` action commits. Store as `Vec<(Tick, Vec<AffordanceEntry>)>` in `AgentStats`. In the per-agent summary, emit:
+**Change**: In addition to the initial affordance snapshot, capture affordances from the first planning decision after each `travel` action commits. Store as `Vec<(Tick, AffordanceTrace)>` in `AgentStats`, where `AffordanceTrace` (from `decision_trace.rs`) bundles `available: Vec<AffordanceSummary>` with `place: Option<EntityId>`. In the per-agent summary, emit:
 
 ```
 **Affordances after travel** (tick 340, arrived at Thornwall Village):
@@ -124,7 +125,7 @@ Also emit end-of-simulation affordances (from the last planning decision with af
 
 **Diagnostic question**: "Why does this agent believe a place's location is 'Unknown location'?"
 
-**Current state**: Line 901 of observer.rs renders `last_known_place: None` as `"Unknown location"`. For place entities this is expected behavior — places don't have a "location of a location." But the display is confusing.
+**Current state**: The "Believed entity locations" rendering section of observer.rs renders `last_known_place: None` as `"Unknown location"`. For place entities this is expected behavior — places don't have a "location of a location." But the display is confusing.
 
 **Change**: When rendering entity beliefs, distinguish between entity kinds:
 

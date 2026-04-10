@@ -4254,8 +4254,9 @@ fn run_waste_disposal_cycle_scenario(
             .expect("action tracing should be enabled for waste disposal")
             .events_for(cleaner);
         drop_commit = cleaner_events.iter().find_map(|event| {
-            (event.action_name == "drop_item" && matches!(event.kind, ActionTraceKind::Committed { .. }))
-                .then_some((event.tick, event.sequence_in_tick))
+            (event.action_name == "drop_item"
+                && matches!(event.kind, ActionTraceKind::Committed { .. }))
+            .then_some((event.tick, event.sequence_in_tick))
         });
 
         verify_live_lot_conservation(&h.world, CommodityKind::Waste, u64::from(waste_quantity.0))
@@ -4394,11 +4395,8 @@ fn golden_goal_switch_clears_contention_queue_entry_replays_deterministically() 
 
 #[test]
 fn golden_waste_disposal_cycle() {
-    let _ = run_waste_disposal_cycle_scenario(
-        Seed([27; 32]),
-        DisposalProfile::default(),
-        Quantity(8),
-    );
+    let _ =
+        run_waste_disposal_cycle_scenario(Seed([27; 32]), DisposalProfile::default(), Quantity(8));
 }
 
 #[test]
