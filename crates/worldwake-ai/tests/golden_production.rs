@@ -3334,6 +3334,13 @@ fn golden_materialization_barrier_chain() {
         },
         ProductionOutputOwner::Actor,
     );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
     let initial_hunger = h.agent_hunger(agent);
     let acquire_apple_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,

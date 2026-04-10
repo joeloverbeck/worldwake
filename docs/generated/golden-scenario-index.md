@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 151
-- Contributing golden test files: 24
-- Associated tests: 323
+- Scenario blocks: 155
+- Contributing golden test files: 25
+- Associated tests: 327
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -681,6 +681,66 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: Two equally hungry agents share the same topology, source beliefs, and
 
 **Proves**: 1. The same recorded route history can lead to different travel choices. 2. `PreferenceProfile` acts as a tie-breaking cost influence rather than a suppression gate.
+
+### Scenario 133: Ignorance-Driven Frontier Exploration
+
+- Source: `golden_exploration.rs:219`
+- Systems: AI, Needs, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ExplorationStart, ExplorationFrontier
+- Principles: 7, 14, 20
+
+**Setup**: A hungry agent at ExplorationStart knows only the start place and a frontier place belief for ExplorationFrontier. No believed food source exists, and no competing non-self-care goal families are seeded.
+
+**Proves**: opening planning emits `ExploreLocation` for the frontier place, and the live planner can turn that fallback into a lawful travel plan rather than skipping directly to concrete food acquisition.
+
+**Cross-system chain**: unmet self-care need + frontier place belief -> exploration candidate generation -> planning selection -> travel plan synthesis.
+
+### Scenario 134: Known Satisfaction Path Suppresses Exploration
+
+- Source: `golden_exploration.rs:282`
+- Systems: AI, Needs, Production, Perception
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+- ActionDomains: Production
+- Places: ExplorationStart
+- Principles: 7, 14, 20
+
+**Setup**: Same hungry exploration setup as Scenario 133, except the agent also directly observes a lawful local apple source at ExplorationStart.
+
+**Proves**: once a concrete self-care path is believed, `ExploreLocation` is not generated and planning shifts to `AcquireCommodity(SelfConsume)` instead.
+
+**Cross-system chain**: local source observation -> belief update -> candidate generation -> exploration suppression -> concrete self-care selection.
+
+### Scenario 135: Consecutive Exploration Cap Suppresses Re-Emission
+
+- Source: `golden_exploration.rs:346`
+- Systems: AI, Needs, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: N/A
+- Places: ExplorationStart
+- Principles: 20, 21, 22A
+
+**Setup**: A hungry agent at ExplorationStart has the normal frontier belief, but its `ExplorationProfile` is pre-seeded with `consecutive_exploration_count` already at `max_consecutive_explorations`.
+
+**Proves**: candidate generation honors the profile cap and omits `ExploreLocation` rather than emitting another exploration goal.
+
+**Cross-system chain**: stored exploration-profile counter -> candidate gating -> no exploration fallback emitted.
+
+### Scenario 136: Arrival Perception Unlocks Concrete Relief
+
+- Source: `golden_exploration.rs:393`
+- Systems: AI, Needs, Travel, Perception, Production
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Production
+- Places: ExplorationStart, ExplorationFrontier
+- Principles: 7, 14, 15, 20
+
+**Setup**: A hungry agent knows only ExplorationStart and a frontier place belief for ExplorationFrontier. The frontier authoritatively contains an apple source, but that source starts unknown to the agent. The agent has an explicit `PerceptionProfile` so post-arrival observation is lawful.
+
+**Proves**: the agent first commits travel under `ExploreLocation`, then arrival perception adds a resource-source belief for the frontier, and later planning shifts to `AcquireCommodity(SelfConsume)`.
+
+**Cross-system chain**: unmet need + frontier belief -> exploration travel -> arrival perception -> source belief acquisition -> concrete self-care plan.
 
 ### Scenario 20: Apple Stockout → Carrier Reroute → Supply Chain Disruption
 
@@ -1450,7 +1510,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 6b: Multi-Recipe Craft Path
 
-- Source: `golden_production.rs:3486`
+- Source: `golden_production.rs:3493`
 - Systems: Production, Transport, Needs, AI
 - GoalKinds: ProduceCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Transport, Needs
@@ -1464,7 +1524,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 103: Unique-Item Race Rejection Redirects To Local Alternative
 
-- Source: `golden_production.rs:3660`
+- Source: `golden_production.rs:3667`
 - Systems: Transport, Contention, Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Transport, Production
@@ -1479,7 +1539,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 3f: Faction-Owned Production — Member vs Outsider
 
-- Source: `golden_production.rs:3720`
+- Source: `golden_production.rs:3727`
 - Systems: Production, Ownership, Factions, AI, Travel, Needs, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Transport, Needs
@@ -1494,7 +1554,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 123: Goal Switch Clears Contention Queue Entry
 
-- Source: `golden_production.rs:3991`
+- Source: `golden_production.rs:3998`
 - Systems: Contention, Production, Needs, AI, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), Sleep
 - ActionDomains: Production, Needs, Travel
@@ -1642,7 +1702,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 130: Multi-Agent Convergence Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:661`
+- Source: `golden_simulation_gaps.rs:659`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Travel, Production, Needs
@@ -1657,7 +1717,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 131: Death Traceability Under Unmet Needs
 
-- Source: `golden_simulation_gaps.rs:1021`
+- Source: `golden_simulation_gaps.rs:1019`
 - Systems: Needs, Wounds, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Needs
@@ -1672,7 +1732,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
 
-- Source: `golden_simulation_gaps.rs:1058`
+- Source: `golden_simulation_gaps.rs:1056`
 - Systems: Production, Needs, AI
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Needs
@@ -1687,7 +1747,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
 
-- Source: `golden_social.rs:529`
+- Source: `golden_social.rs:530`
 - Systems: Perception, Conversation memory, Tell, AI, Travel
 - GoalKinds: ShareBelief, ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs, Travel
@@ -1702,23 +1762,23 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 98: Alarm survives critical stress while gossip is suppressed
 
-- Source: `golden_social.rs:2482`
+- Source: `golden_social.rs:2493`
 
 ### Scenario 99: Gossip acceptance diverges by listener CommunicationProfile
 
-- Source: `golden_social.rs:2664`
+- Source: `golden_social.rs:2675`
 
 ### Scenario 100: Alarm relays through a critically stressed intermediary
 
-- Source: `golden_social.rs:2839`
+- Source: `golden_social.rs:2850`
 
 ### Scenario 115: Contradictory location claims coexist and direct observation wins
 
-- Source: `golden_social.rs:3047`
+- Source: `golden_social.rs:3058`
 
 ### Scenario 88: Full Supply Chain Negotiated Restock To Consumption
 
-- Source: `golden_supply_chain.rs:1961`
+- Source: `golden_supply_chain.rs:1970`
 - Systems: Enterprise, Travel, Production, Trade, Needs, Conservation
 - GoalKinds: RestockCommodity, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Trade, Needs

@@ -7,6 +7,8 @@ description: Post-implementation golden E2E coverage gap analysis — identifies
 
 Analyzes golden E2E test coverage after a spec has been implemented, identifies meaningful gaps, and creates an S-series spec for recommended new golden scenarios that demonstrate emergent cross-system behavior.
 
+The goal is not exhaustive scenario accumulation. The goal is to find high-value cross-system emergence that the current golden suite does not yet demonstrate.
+
 ## Invocation
 
 ```
@@ -207,4 +209,5 @@ Use this structure in the conversation:
 - **Every proposed scenario must be grounded in live code** — not just the completed spec text
 - **Every proposed scenario must explain why it exercises multiple systems** and why that emergence matters
 - **Include replay companions** — every primary golden test should have a `*_replays_deterministically` variant
+- **Reject non-causal scenarios** — never propose scenarios that require cheating, omniscient setup assumptions, or non-causal authoring
 - **Follow spec conventions** — match the format and style of existing specs in `specs/`

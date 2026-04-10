@@ -131,7 +131,9 @@ Section names are suggestions. Rename or combine sections to match the topic's n
 
 After design approval, do NOT apply changes or implement the design until the user selects an implementation option from the Step 6 menu. The design doc is the deliverable of this skill — implementation is a separate act that requires the user's explicit choice.
 
-**Deliverable classification**: If the brainstorm topic is itself a skill design, the deliverable is the skill file (written to the appropriate skills directory, e.g., `.claude/skills/<name>/SKILL.md`). Skip the `docs/plans/` design doc — the skill file IS the design. Adjust the Step 6 menu to reflect this (omit "create a spec" option, replace with "run skill-audit on the new skill").
+**Deliverable classification**:
+- If the brainstorm topic is itself a skill design, the deliverable is the skill file (written to the appropriate skills directory, e.g., `.claude/skills/<name>/SKILL.md`). Skip the `docs/plans/` design doc — the skill file IS the design. Adjust the Step 6 menu to reflect this (omit "create a spec" option, replace with "run skill-audit on the new skill").
+- If the brainstorm topic is modifying or reconciling existing skill files, the deliverable is the modified skill file(s) themselves. Skip the `docs/plans/` design doc — the edits ARE the design.
 
 Once all sections are approved, write the complete design:
 
@@ -163,6 +165,8 @@ What would you like to do next?
 Use AskUserQuestion to present this as a proper choice. If the user picks an option that invokes another skill, invoke it. If they pick "done", end the session.
 
 **If plan mode is active**: Call `ExitPlanMode` instead of presenting the next-steps menu. The user will direct next steps after approving the plan.
+
+**If implementation was completed inline**: If the task was simple enough that implementation was completed during or immediately after design approval, skip the menu and summarize what was done.
 
 ## Guardrails
 

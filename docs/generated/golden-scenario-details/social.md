@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
 
-- Source: `golden_social.rs:529`
+- Source: `golden_social.rs:530`
 - Systems: Perception, Conversation memory, Tell, AI, Travel
 - GoalKinds: ShareBelief, ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs, Travel
@@ -25,28 +25,28 @@ Scenarios: 5
 
 ### Scenario 98: Alarm survives critical stress while gossip is suppressed
 
-- Source: `golden_social.rs:2482`
+- Source: `golden_social.rs:2493`
 - Primary tests: `golden_alarm_survives_stress_suppression`
 - Replay tests: None
 - All tests: `golden_alarm_survives_stress_suppression`
 
 ### Scenario 99: Gossip acceptance diverges by listener CommunicationProfile
 
-- Source: `golden_social.rs:2664`
+- Source: `golden_social.rs:2675`
 - Primary tests: `golden_class_aware_acceptance`
 - Replay tests: None
 - All tests: `golden_class_aware_acceptance`
 
 ### Scenario 100: Alarm relays through a critically stressed intermediary
 
-- Source: `golden_social.rs:2839`
+- Source: `golden_social.rs:2850`
 - Primary tests: `golden_alarm_relay_through_stressed_intermediary`
 - Replay tests: None
 - All tests: `golden_alarm_relay_through_stressed_intermediary`
 
 ### Scenario 115: Contradictory location claims coexist and direct observation wins
 
-- Source: `golden_social.rs:3047`
+- Source: `golden_social.rs:3058`
 - Primary tests: `golden_contradictory_location_claims_coexist_and_direct_observation_wins`
 - Replay tests: None
 - All tests: `golden_contradictory_location_claims_coexist_and_direct_observation_wins`

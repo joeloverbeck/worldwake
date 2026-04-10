@@ -563,7 +563,7 @@ static DECL_EXPLORE_LOCATION: GoalDispatchDeclaration = GoalDispatchDeclaration 
     relevant_ops: EXPLORE_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::PlaceMatch,
-    family_policy: SOCIAL_POLICY,
+    family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
 static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
@@ -653,6 +653,7 @@ impl GoalDispatchKey {
 #[cfg(test)]
 mod tests {
     use super::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
+    use crate::goal_policy::SuppressionRule;
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
     use worldwake_core::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommodityPurpose,
@@ -1191,6 +1192,18 @@ mod tests {
             free_interrupt_variants.len(),
             3,
             "expected all FreeInterruptRole variants represented"
+        );
+    }
+
+    #[test]
+    fn explore_location_uses_self_care_policy() {
+        assert_eq!(
+            GoalDispatchKey::ExploreLocation
+                .declaration()
+                .family_policy
+                .suppression,
+            SuppressionRule::Never,
+            "ExploreLocation is a self-care fallback and must remain available under self-care stress"
         );
     }
 

@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 25
-- Files contributing `golden_*` tests: 25
-- Total `golden_*` tests: 338
+- Golden test files: 26
+- Files contributing `golden_*` tests: 26
+- Total `golden_*` tests: 342
 
 ## Per-File Inventory
 
@@ -21,6 +21,7 @@ Do not hand-edit it.
 | `golden_emergent.rs` | 51 |
 | `golden_expectation.rs` | 10 |
 | `golden_experience_preferences.rs` | 6 |
+| `golden_exploration.rs` | 4 |
 | `golden_integration.rs` | 26 |
 | `golden_long_scenarios.rs` | 4 |
 | `golden_merchant_selling.rs` | 20 |
@@ -208,6 +209,13 @@ Do not hand-edit it.
 - `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically`
 - `golden_preference_profile_diversifies_route_selection`
 - `golden_preference_profile_diversifies_route_selection_replays_deterministically`
+
+### `golden_exploration.rs`
+
+- `golden_exploration_triggers_on_need_and_ignorance`
+- `golden_exploration_is_suppressed_when_known_satisfaction_path_exists`
+- `golden_exploration_consecutive_cap_is_respected`
+- `golden_exploration_arrival_unlocks_beliefs_and_concrete_relief`
 
 ### `golden_integration.rs`
 
