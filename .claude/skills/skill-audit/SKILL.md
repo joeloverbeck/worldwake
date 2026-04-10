@@ -92,6 +92,8 @@ Output this structure to the conversation (do not write to a file):
 **Total**: N issues, N improvements, N features — N CRITICAL, N HIGH, N MEDIUM, N LOW
 ```
 
+Double-check severity counts against findings before presenting. If a correction is needed after presenting, strike the incorrect line and restate.
+
 ## Guardrails
 
 - **Report only** — Never modify the target skill file. Output the report to the conversation only.

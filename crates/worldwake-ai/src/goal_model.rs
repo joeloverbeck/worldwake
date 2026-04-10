@@ -479,6 +479,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::Sleep
             | GoalKind::Relieve
             | GoalKind::Wash
+            | GoalKind::FreeCarryCapacity
             | GoalKind::EngageHostile { .. }
             | GoalKind::RaidTarget { .. }
             | GoalKind::ReduceDanger
@@ -1234,7 +1235,8 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ExploreLocation { target_place, .. } => {
                 state.effective_place(actor) == Some(*target_place)
             }
-            GoalKind::ProduceCommodity { .. }
+            GoalKind::FreeCarryCapacity
+            | GoalKind::ProduceCommodity { .. }
             | GoalKind::SearchForMissing { .. }
             | GoalKind::ReportMissing { .. }
             | GoalKind::ReportFound { .. }
@@ -1294,6 +1296,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::ReportFound { .. }
             | GoalKind::Sleep
             | GoalKind::Wash
+            | GoalKind::FreeCarryCapacity
             | GoalKind::ReduceDanger
             | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
             GoalKind::RegroupWithFaction { faction } => {
@@ -1528,6 +1531,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::Sleep
             | GoalKind::Relieve
             | GoalKind::Wash
+            | GoalKind::FreeCarryCapacity
             | GoalKind::ReduceDanger
             | GoalKind::RegroupWithFaction { .. }
             | GoalKind::EstablishBanditCamp { .. }

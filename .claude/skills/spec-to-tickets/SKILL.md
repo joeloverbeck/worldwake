@@ -53,6 +53,7 @@ Analyze the spec and identify discrete work units:
 - Determine **priority ordering** (what to implement first)
 - Ensure **every spec deliverable is covered** — no silent skipping. If a deliverable seems wrong or unnecessary, flag it to the user using the 1-3-1 rule instead of omitting it. Deliverables that explicitly state no changes are needed (e.g., "No new profile", "No new components") do not require tickets. Note their existence in the Step 4 summary if non-obvious
 - Consider natural boundaries: type changes, new modules, test suites, integration points
+- When multiple spec deliverables share the same file set and cannot compile independently, merge them into a single ticket. Note merged deliverables in the Step 4 summary table notes
 - Use the spec's "What This Does NOT Change" or equivalent non-goals section to populate tickets' Out of Scope fields — these are pre-validated non-goals from reassessment
 - Ensure **workspace builds after each ticket** — if removing types/functions from a shared crate, all consumers must be updated in the same ticket. Splitting a migration across tickets is only valid when intermediate states compile.
 - For **mechanical refactoring specs** (trait decomposition, enum splitting, interface migrations), recognize that multiple tickets may share an identical file set. In the summary table (Step 4), note the shared file set once and reference it from each ticket rather than forcing each ticket to independently discover the same list. Individual tickets should list only *additional* files beyond the shared set.
@@ -98,7 +99,7 @@ Every ticket MUST include:
   - **New/Modified Tests**: Paths with rationale
   - **Commands**: Targeted test commands and full suite verification
 
-For decompositions producing 5+ tickets, batch ticket file writes in parallel where tickets are independent. Group by similarity (e.g., all extraction tickets in one batch, infrastructure tickets in another).
+Write all ticket files in parallel — ticket file writes are always independent since each creates a new file.
 
 ### Step 6: Final Summary
 

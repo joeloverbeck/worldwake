@@ -11,6 +11,7 @@ pub enum GoalDispatchKey {
     Sleep,
     Relieve,
     Wash,
+    FreeCarryCapacity,
     EngageHostile,
     RaidTarget,
     ReduceDanger,
@@ -46,7 +47,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 40] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -54,6 +55,7 @@ impl GoalDispatchKey {
         Self::Sleep,
         Self::Relieve,
         Self::Wash,
+        Self::FreeCarryCapacity,
         Self::EngageHostile,
         Self::RaidTarget,
         Self::ReduceDanger,
@@ -105,6 +107,7 @@ impl GoalDispatchKey {
             GoalKind::Sleep => Self::Sleep,
             GoalKind::Relieve => Self::Relieve,
             GoalKind::Wash => Self::Wash,
+            GoalKind::FreeCarryCapacity => Self::FreeCarryCapacity,
             GoalKind::EngageHostile { .. } => Self::EngageHostile,
             GoalKind::RaidTarget { .. } => Self::RaidTarget,
             GoalKind::ReduceDanger => Self::ReduceDanger,
@@ -473,7 +476,7 @@ mod tests {
     #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 39);
+        assert_eq!(GoalDispatchKey::all().len(), 40);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),

@@ -139,7 +139,7 @@ Skip sub-steps 5a-5g if the spec does not add fields to components, create new c
   - *Spec-acknowledged overlap*: If the spec documents the relationship between a new field and an existing field, note "overlap acknowledged by spec" and skip the grep.
   - *Unacknowledged overlap*: Grep for semantically similar field names across all components. Also check functional overlap — fields serving the same purpose with different names. Flag as P28 migration candidates. For new components, apply the **novel-domain test**: a component is novel if no existing component serves the same downstream consequence (P5). Novel-domain components focus on functional overlap; domain-extension components also need field name similarity checks.
 - **5g. EntityKind variant overlap**: Check whether existing enum variants overlap semantically with proposed additions. Flag empty/unused variants that fragment the same domain as P28 candidates.
-- **5h. Trait accessor propagation**: For new components read by the AI crate during candidate generation, goal ranking, or planning, check whether `GoalBeliefView` (`worldwake-sim/src/belief_view.rs`) or `BeliefView` needs a new accessor method. If so, flag the spec's crate list as needing update and note the `RuntimeBeliefView` impl + `impl_goal_belief_view!` macro forwarding required. This is a common pattern: new behavioral components almost always need a belief-view accessor for the AI crate to read them.
+- **5h. Trait accessor propagation**: For new components read by the AI crate during candidate generation, goal ranking, or planning, check whether `GoalBeliefView` (`worldwake-sim/src/belief_view.rs`) or `BeliefView` needs a new accessor method. If so, flag the spec's crate list as needing update and note the `RuntimeBeliefView` impl and `GoalBeliefView` blanket impl forwarding required. This is a common pattern: new behavioral components almost always need a belief-view accessor for the AI crate to read them.
 
 #### 3.6 Downstream Consumers
 
@@ -158,6 +158,8 @@ For specs adding new `GoalKind` variants, verify the spec addresses all mandator
 4. **Ranking integration**: Priority class (`GoalPriorityClass`) and `motive_score` computation formula.
 
 Flag each missing item as a HIGH Issue. If the spec says "reuse existing travel planning" or similar, verify it still names the specific ops and dispatch types.
+
+Verify the `GoalKindPlannerExt` method list above against the current trait definition in `goal_model.rs` — methods may have been added or removed since this skill was last updated.
 
 See `references/worldwake-validation-patterns.md` for additional project-specific patterns.
 
@@ -268,7 +270,7 @@ Present in this format:
 - **Follow-up rounds**: One question at a time. If answers raise new questions or invalidate findings, present a follow-up round (same format). Repeat until resolved.
 - **Delegated resolution**: If the user delegates (e.g., "you decide based on FOUNDATIONS"), resolve by reasoning against the referenced constraint. If resolution requires additional codebase investigation, perform a mini Step 3 scoped to the question. If none of the original options are ideal, propose a new option with justification — scope investigation to 1-3 targeted checks. If the new option affects the dependency graph or crate boundaries, present as a new finding first. In plan mode, the new option is included in the plan file and ExitPlanMode approval covers it.
 
-Wait for user response before proceeding to Step 7. Findings are approved unless explicitly objected to.
+Wait for user response before proceeding to Step 7. (In plan mode, this wait is replaced by ExitPlanMode approval — see Plan Mode Awareness.) Findings are approved unless explicitly objected to.
 
 ### Step 7: Write the Updated Spec
 
@@ -282,8 +284,8 @@ Run targeted checks to confirm each finding still holds (e.g., grep confirming s
 
 - Incorporate corrections from the user's plan approval or question responses.
 - Preserve existing structure and voice. Change only what was agreed upon.
-- When changes are numerous and spread throughout, a full Write is acceptable.
-- If inserting a new deliverable, renumber subsequent deliverables.
+- When changes are numerous and spread throughout, a full Write is acceptable. Prefer Edit for ≤3 localized changes; prefer full Write when changes span >50% of deliverables or when insertions cause cascading renumbering.
+- If inserting new deliverables, renumber all subsequent deliverables and update any intra-spec cross-references to deliverable numbers.
 - **New deliverable vs. amendment**: When a finding introduces substantial new logic (new mechanism, new type, new event tag), consider a new numbered deliverable rather than expanding an existing one. Criteria: (a) distinct implementation site, (b) independently implementable and testable, (c) would make existing deliverable unwieldy if inlined.
 - If new deliverables introduce actions, components, or system functions, update Section H for P30 compliance. Also update Section H's information-path and stored-state entries when reassessment changes the causal mechanism.
 - If the user requests corrections after reviewing, apply them and re-present affected sections.

@@ -304,6 +304,7 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::Sleep => "Sleep".to_string(),
         GoalKind::Relieve => "Relieve".to_string(),
         GoalKind::Wash => "Wash".to_string(),
+        GoalKind::FreeCarryCapacity => "FreeCarryCapacity".to_string(),
         GoalKind::EngageHostile { target } => {
             format!("EngageHostile({})", entity_display_name(world, *target))
         }

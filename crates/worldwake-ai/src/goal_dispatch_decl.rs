@@ -79,6 +79,7 @@ const WASH_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::MoveCargo,
 ];
+const FREE_CARRY_CAPACITY_OPS: &[PlannerOpKind] = &[];
 const ENGAGE_HOSTILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];
 const RAID_TARGET_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];
 const REDUCE_DANGER_OPS: &[PlannerOpKind] = &[
@@ -313,6 +314,15 @@ static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
     feasibility_strategy: FeasibilityStrategy::CommodityPresenceCheck,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
+};
+static DECL_FREE_CARRY_CAPACITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "FreeCarryCapacity",
+    provenance_family: None,
+    relevant_ops: FREE_CARRY_CAPACITY_OPS,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
+    family_policy: SELF_CARE_POLICY,
+    progress_barrier_ops: FREE_CARRY_CAPACITY_OPS,
 };
 static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "EngageHostile",
@@ -614,6 +624,7 @@ impl GoalDispatchKey {
             Self::Sleep => &DECL_SLEEP,
             Self::Relieve => &DECL_RELIEVE,
             Self::Wash => &DECL_WASH,
+            Self::FreeCarryCapacity => &DECL_FREE_CARRY_CAPACITY,
             Self::EngageHostile => &DECL_ENGAGE_HOSTILE,
             Self::RaidTarget => &DECL_RAID_TARGET,
             Self::ReduceDanger => &DECL_REDUCE_DANGER,
@@ -669,6 +680,7 @@ mod tests {
         GoalDispatchKey::Sleep,
         GoalDispatchKey::Relieve,
         GoalDispatchKey::Wash,
+        GoalDispatchKey::FreeCarryCapacity,
         GoalDispatchKey::EngageHostile,
         GoalDispatchKey::RaidTarget,
         GoalDispatchKey::ReduceDanger,
@@ -734,6 +746,7 @@ mod tests {
             GoalDispatchKey::Sleep => GoalKind::Sleep,
             GoalDispatchKey::Relieve => GoalKind::Relieve,
             GoalDispatchKey::Wash => GoalKind::Wash,
+            GoalDispatchKey::FreeCarryCapacity => GoalKind::FreeCarryCapacity,
             GoalDispatchKey::EngageHostile => GoalKind::EngageHostile { target },
             GoalDispatchKey::RaidTarget => GoalKind::RaidTarget { target },
             GoalDispatchKey::ReduceDanger => GoalKind::ReduceDanger,

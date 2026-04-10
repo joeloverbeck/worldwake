@@ -42,6 +42,7 @@ pub mod contention;
 pub mod control;
 pub mod crime;
 pub mod delta;
+pub mod disposal;
 pub mod drives;
 pub mod entity;
 pub mod entity_belief_claim;
@@ -137,6 +138,7 @@ pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
     RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
+pub use disposal::DisposalProfile;
 pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBeliefClaim};

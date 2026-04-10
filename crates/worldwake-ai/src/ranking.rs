@@ -452,7 +452,8 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
                     classify_band(patient_pain, &thresholds.pain)
                 })
         }
-        GoalKind::LootCorpse { .. }
+        GoalKind::FreeCarryCapacity
+        | GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
         | GoalKind::SearchForMissing { .. }
         | GoalKind::ReportMissing { .. }
@@ -595,6 +596,7 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             |needs| needs.dirtiness,
             |utility| utility.dirtiness_weight,
         ),
+        GoalKind::FreeCarryCapacity => 0,
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
@@ -1546,34 +1548,35 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::Sleep => 2,
         GoalKind::Relieve => 3,
         GoalKind::Wash => 4,
-        GoalKind::EngageHostile { .. } => 5,
-        GoalKind::RaidTarget { .. } => 6,
-        GoalKind::ReduceDanger => 7,
-        GoalKind::RegroupWithFaction { .. } => 8,
-        GoalKind::EstablishBanditCamp { .. } => 9,
-        GoalKind::TreatWounds { .. } => 10,
-        GoalKind::ProduceCommodity { .. } => 11,
-        GoalKind::SellCommodity { .. } => 12,
-        GoalKind::RestockCommodity { .. } => 13,
-        GoalKind::MoveCargo { .. } => 14,
-        GoalKind::LootCorpse { .. } => 15,
-        GoalKind::BuryCorpse { .. } => 16,
-        GoalKind::FulfillBounty { .. } => 17,
-        GoalKind::ShareBelief { .. } => 18,
-        GoalKind::ClaimOffice { .. } => 19,
-        GoalKind::SupportCandidateForOffice { .. } => 20,
-        GoalKind::InvestigateViolation { .. } => 21,
-        GoalKind::Patrol { .. } => 22,
-        GoalKind::StealItem { .. } => 23,
-        GoalKind::Accuse { .. } => 24,
-        GoalKind::PunishAccused { .. } => 25,
-        GoalKind::PostBounty { .. } => 26,
-        GoalKind::PostNotice { .. } => 27,
-        GoalKind::SearchForMissing { .. } => 28,
-        GoalKind::ReportMissing { .. } => 29,
-        GoalKind::EscortToSafety { .. } => 30,
-        GoalKind::ReportFound { .. } => 31,
-        GoalKind::ExploreLocation { .. } => 32,
+        GoalKind::FreeCarryCapacity => 5,
+        GoalKind::EngageHostile { .. } => 6,
+        GoalKind::RaidTarget { .. } => 7,
+        GoalKind::ReduceDanger => 8,
+        GoalKind::RegroupWithFaction { .. } => 9,
+        GoalKind::EstablishBanditCamp { .. } => 10,
+        GoalKind::TreatWounds { .. } => 11,
+        GoalKind::ProduceCommodity { .. } => 12,
+        GoalKind::SellCommodity { .. } => 13,
+        GoalKind::RestockCommodity { .. } => 14,
+        GoalKind::MoveCargo { .. } => 15,
+        GoalKind::LootCorpse { .. } => 16,
+        GoalKind::BuryCorpse { .. } => 17,
+        GoalKind::FulfillBounty { .. } => 18,
+        GoalKind::ShareBelief { .. } => 19,
+        GoalKind::ClaimOffice { .. } => 20,
+        GoalKind::SupportCandidateForOffice { .. } => 21,
+        GoalKind::InvestigateViolation { .. } => 22,
+        GoalKind::Patrol { .. } => 23,
+        GoalKind::StealItem { .. } => 24,
+        GoalKind::Accuse { .. } => 25,
+        GoalKind::PunishAccused { .. } => 26,
+        GoalKind::PostBounty { .. } => 27,
+        GoalKind::PostNotice { .. } => 28,
+        GoalKind::SearchForMissing { .. } => 29,
+        GoalKind::ReportMissing { .. } => 30,
+        GoalKind::EscortToSafety { .. } => 31,
+        GoalKind::ReportFound { .. } => 32,
+        GoalKind::ExploreLocation { .. } => 33,
     }
 }
 

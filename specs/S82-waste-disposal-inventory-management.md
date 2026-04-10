@@ -16,7 +16,8 @@ Draft
 
 - `worldwake-core` (new GoalKind variant)
 - `worldwake-systems` (new `drop_item` action definition and handler)
-- `worldwake-ai` (goal dispatch declaration, candidate generation, planner hypothetical)
+- `worldwake-sim` (new `ProfileBeliefView` accessor for `DisposalProfile`)
+- `worldwake-ai` (goal dispatch declaration, dispatch key, candidate generation, planner hypothetical, ranking)
 
 ## Dependencies
 
@@ -68,7 +69,7 @@ No parameters — the goal is satisfied when the agent has dropped at least one 
 
 ### 2. Drop Item Action Definition
 
-In `crates/worldwake-systems/src/transport_actions.rs`, register alongside existing `put_down`:
+In `crates/worldwake-systems/src/transport_actions.rs`, register alongside existing `put_down` within `register_transport_actions()`:
 
 ```rust
 ActionDef {
@@ -105,20 +106,53 @@ ActionDef {
 }
 ```
 
-Duration is 2 ticks (non-instant per FND-08) with low attention cost (`50‰`). Reuses existing `TargetSpec::EntityDirectlyPossessedByActorAnyOf` and the same precondition pattern as `put_down`.
+Duration is 2 ticks (non-instant per FND-08) with low attention cost (`50‰`). Reuses existing `TargetSpec::EntityDirectlyPossessedByActorAnyOf` (fixed 2-element array `[EntityKind; 2]` per `action_semantics.rs:42`) and the same precondition pattern as `put_down`.
+
+A new `ActionHandler` struct must be registered via `handlers.register(drop_item_id, drop_item_handler)` even though tick and abort functions are shared with the existing transport handlers.
 
 ### 3. Drop Item Handler
 
 In `crates/worldwake-systems/src/transport_actions.rs`:
 
 - **start_drop_item**: Validate actor possesses target. Return `ActionState::Empty`.
-- **tick_drop_item**: Return `ActionProgress::Continue` (no per-tick logic).
-- **commit_drop_item**: `txn.clear_possessor(target)` + `txn.set_ground_location(target, actor_place)` + `txn.add_target(target)`. Identical to `commit_put_down` — the action is semantically equivalent but distinguished in the planner as a disposal-motivated action vs. a placement action.
-- **abort_drop_item**: No-op.
+- **tick_drop_item**: Reuse `tick_transport` (lines 652-660) — return `ActionProgress::Continue`.
+- **commit_drop_item**: `txn.clear_possessor(target)` + `txn.set_ground_location(target, actor_place)` + `txn.add_target(target)`. Identical to `commit_put_down` (lines 575-592 of `transport_actions.rs`). The action is semantically equivalent but distinguished in the planner as a disposal-motivated action vs. a placement action.
+- **abort_drop_item**: Reuse `abort_transport` (lines 663-671) — no-op.
 
-Note: The commit function pattern matches the existing `commit_put_down` (lines 575-592 of `transport_actions.rs`). The handler can share tick and abort functions with the existing `tick_transport`/`abort_transport`.
+### 4. GoalDispatchKey Variant
 
-### 4. GoalDispatchDeclaration for FreeCarryCapacity
+In `crates/worldwake-ai/src/goal_dispatch_key.rs`:
+
+- Add `FreeCarryCapacity` variant to `GoalDispatchKey` enum.
+- Add `FreeCarryCapacity` to the `ALL` constant array.
+- Add match arm in `from_goal_kind()`: `GoalKind::FreeCarryCapacity => GoalDispatchKey::FreeCarryCapacity`.
+
+### 5. PlannerOpKind::DropItem
+
+In `crates/worldwake-ai/src/planner_ops.rs`:
+
+Add `DropItem` variant to `PlannerOpKind` enum.
+
+In `classify_action_def()` (line 88), add a new match arm:
+
+```rust
+(ActionDomain::Transport, "drop_item") => Some(PlannerOpKind::DropItem),
+```
+
+This must be placed before the existing `(ActionDomain::Transport, "pick_up" | "put_down" | "steal")` arm to avoid being captured by a future wildcard.
+
+The `PlannerOpSemantics` for `DropItem` reuses `PlannerTransitionKind::PutDownGroundLot` since the hypothetical state effect is identical (clear possessor, set ground location):
+
+```rust
+PlannerOpKind::DropItem => PlannerOpSemantics {
+    op_kind: PlannerOpKind::DropItem,
+    may_appear_mid_plan: false,
+    is_materialization_barrier: true,
+    transition_kind: PlannerTransitionKind::PutDownGroundLot,
+},
+```
+
+### 6. GoalDispatchDeclaration for FreeCarryCapacity
 
 In `crates/worldwake-ai/src/goal_dispatch_decl.rs`:
 
@@ -131,64 +165,103 @@ const DECL_FREE_CARRY_CAPACITY: GoalDispatchDeclaration = GoalDispatchDeclaratio
     trace_label: "FreeCarryCapacity",
     provenance_family: None,
     relevant_ops: FREE_CARRY_OPS,
-    invalidation_strategy: InvalidationStrategy::Never,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
-    family_policy: GoalFamilyPolicy::standard_singleton(),
+    family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: FREE_CARRY_BARRIER,
 };
 ```
 
-`AlwaysLikely` feasibility: if the candidate generation decided to emit the goal, it's always feasible to plan (agent is holding the item).
+`AlwaysLikely` feasibility: if the candidate generation decided to emit the goal, it's always feasible to plan (agent is holding the item). `SELF_CARE_POLICY` matches the self-care nature of capacity management (suppression: Never, penalty interrupt on critical survival, reactive free interrupt).
 
-### 5. PlannerOpKind::DropItem
+### 7. GoalKindPlannerExt Implementation
 
-In `crates/worldwake-ai/src/planner_ops.rs`:
+In `crates/worldwake-ai/src/goal_model.rs`, implement all 11 `GoalKindPlannerExt` trait methods for `GoalKind::FreeCarryCapacity`:
 
-```rust
-DropItem,
+1. **`ranked_goal_provenance_family`**: Return `None` — no drive or danger provenance.
+2. **`relevant_op_kinds`**: Return `&[PlannerOpKind::DropItem]`.
+3. **`relevant_observed_commodities`**: Return `Some(BTreeSet::from([CommodityKind::Waste]))` — the goal cares about waste items.
+4. **`build_payload_override`**: Return `Ok(None)` — `ActionPayload::None`, no override needed.
+5. **`apply_planner_step`**: For `PlannerOpKind::DropItem`, remove the target item from the agent's hypothetical possession and place it on the ground. This allows chaining: drop waste → now has capacity → pick up food.
+6. **`is_progress_barrier`**: Return `true` when `step.op_kind == PlannerOpKind::DropItem`.
+7. **`is_satisfied`**: Check that the agent's hypothetical load is below the `capacity_strain_threshold` from `DisposalProfile`. If no profile is available, satisfied when any item has been dropped (load decreased from initial state).
+8. **`goal_relevant_places`**: Return the agent's current believed place — dropping happens in-place.
+9. **`prerequisite_places`**: Return empty — no travel prerequisite (agent drops at current location).
+10. **`matches_binding`**: Return `true` when `op_kind == PlannerOpKind::DropItem`.
+11. **`candidate_is_available`**: Return `true` when `op_kind == PlannerOpKind::DropItem` and the agent has waste items in hypothetical possession.
+
+### 8. Ranking Integration
+
+In `crates/worldwake-ai/src/ranking.rs`:
+
+**Priority class** (`priority_class()` function): `GoalKind::FreeCarryCapacity` maps to `GoalPriorityClass::Low`. Disposal is housekeeping — important but not urgent compared to survival or enterprise goals.
+
+**Motive score** (`motive_score()` function): Compute based on capacity strain:
+
+```
+GoalKind::FreeCarryCapacity => {
+    let Some(carry_cap) = context.view.carry_capacity(context.agent) else { return 0 };
+    let Some(load) = context.view.load_of_entity(context.agent) else { return 0 };
+    let strain = Permille::new_unchecked(
+        (u32::from(load.0) * 1000 / u32::from(carry_cap.0).max(1)).min(1000) as u16
+    );
+    score_product(context.utility.enterprise_weight, strain)
+}
 ```
 
-Mapped from `(ActionDomain::Transport, "drop_item")`.
+Higher capacity strain produces higher motive score, scaled by the agent's `enterprise_weight`.
 
-### 6. Planner Hypothetical State Effect
-
-In `crates/worldwake-ai/src/goal_model.rs`, add a `apply_planner_step` arm for `PlannerOpKind::DropItem`:
-
-After the drop step, the planner's hypothetical state removes the item from the agent's possession and places it on the ground. This allows the planner to chain: drop waste → now has capacity → pick up food.
-
-### 7. Candidate Generation
+### 9. Candidate Generation
 
 In `crates/worldwake-ai/src/candidate_generation.rs`, add `emit_disposal_candidates()`:
 
 ```
 fn emit_disposal_candidates(candidates, diagnostics, ctx):
-    // 1. Check agent's believed carry capacity
-    carry_capacity = ctx.view.carry_capacity(ctx.agent)
-    current_load = ctx.view.load_of_entity(ctx.agent)
-    if current_load < carry_capacity * disposal_threshold:
-        return  // Not strained enough to bother
+    // 1. Read disposal profile via belief view
+    let profile = ctx.view.disposal_profile(ctx.agent);
+    let threshold = profile.map_or(Permille::new_unchecked(800), |p| p.capacity_strain_threshold);
 
-    // 2. Find waste items in believed inventory
-    for (entity, state) in ctx.view.known_entity_beliefs(ctx.agent):
-        if state.believed_kind != Some(EntityKind::ItemLot):
-            continue
-        if state.commodity_kind != Some(CommodityKind::Waste):
-            continue
-        if state.direct_possessor != Some(ctx.agent):
-            continue
+    // 2. Check agent's believed carry capacity
+    let Some(carry_capacity) = ctx.view.carry_capacity(ctx.agent) else { return };
+    let Some(current_load) = ctx.view.load_of_entity(ctx.agent) else { return };
 
-        emit_candidate(GoalKind::FreeCarryCapacity, OpportunityAnchor::Entity(entity), ...)
+    // 3. Check strain threshold
+    if current_load.0 * 1000 < carry_capacity.0 as u32 * threshold.value() as u32 {
+        return;  // Not strained enough
+    }
+
+    // 4. Find waste items in believed inventory via commodity_quantity
+    //    Check if agent believes it possesses any Waste
+    if ctx.view.commodity_quantity(ctx.agent, CommodityKind::Waste) == Quantity(0) {
+        return;  // No believed waste
+    }
+
+    // 5. Emit candidate for each waste item the agent believes it directly possesses
+    for (entity, state) in ctx.view.known_entity_beliefs(ctx.agent) {
+        if state.believed_kind != Some(EntityKind::ItemLot) { continue }
+        if !state.last_known_inventory.contains_key(&CommodityKind::Waste) { continue }
+        if ctx.view.direct_possessor(entity) != Some(ctx.agent) { continue }
+
+        emit_candidate(
+            candidates,
+            GoalKind::FreeCarryCapacity,
+            OpportunityAnchor::Entity(entity),
+            Evidence::from_entity(entity),
+            ctx.blocked,
+            ctx.current_tick,
+        );
+    }
 ```
 
-The `disposal_threshold` is a profile-driven parameter (see Deliverable 8).
+Call `emit_disposal_candidates()` from the main `generate_candidates()` pipeline.
 
-### 8. DisposalProfile Component
+### 10. DisposalProfile Component
 
 In `crates/worldwake-core/src/`:
 
 ```rust
 /// Per-agent parameters for waste disposal behavior.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DisposalProfile {
     /// Fraction of carry capacity that must be used before disposal candidates
     /// are generated. 800‰ means "consider dropping when 80%+ full."
@@ -206,7 +279,15 @@ impl Default for DisposalProfile {
 impl Component for DisposalProfile {}
 ```
 
-Universal profile (all agents can decide to drop items). Registered on `EntityKind::Agent`. Added to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs` with `unwrap_or_default()` in `spawn_agent()`.
+Universal profile (all agents can decide to drop items). Registered on `EntityKind::Agent` in `component_schema.rs`. Added to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs` with `unwrap_or_default()` in `spawn_agent()`.
+
+### 11. Belief-View Accessor for DisposalProfile
+
+In `crates/worldwake-sim/src/belief_view.rs`:
+
+Add `disposal_profile(&self, entity: EntityId) -> Option<DisposalProfile>` to the `ProfileBeliefView` trait. Implement forwarding in `RuntimeBeliefView` and `GoalBeliefView` blanket impl so the AI crate can read `capacity_strain_threshold` during candidate generation and goal satisfaction checks.
+
+Follow the existing pattern for profile accessors (e.g., `perception_profile`, `cognitive_profile`).
 
 ## Section H: Causal Hooks (FND-01)
 
@@ -230,6 +311,20 @@ Universal profile (all agents can decide to drop items). Registered on `EntityKi
 
 - **Stored**: `DisposalProfile` (per-agent), item possession (existing), item ground location (existing).
 - **Derived**: Carry capacity strain ratio (computed from believed inventory vs. capacity). Never stored.
+
+### H5. Conservation
+
+Items are never created or destroyed by the drop action. The `commit_drop_item` handler transfers possession: item moves from agent inventory to ground at agent's place. Total item count is conserved.
+
+### H6. Partial Failures
+
+If the `drop_item` action is interrupted before commit (e.g., by combat or critical need), the item remains in the agent's inventory. No partial drop state exists — the action is atomic at commit. The agent may reattempt disposal on the next planning cycle.
+
+### H7. Target Patterns and Invariants
+
+- **Golden test**: An agent with a production recipe that generates waste should eventually emit `FreeCarryCapacity` goals and execute `drop_item` actions when capacity is strained. Verify: (1) waste item appears on ground at agent's location, (2) agent's carry load decreases, (3) agent can resume production after dropping.
+- **Invariant**: `verify_conservation` must pass after `drop_item` commits — no items created or destroyed.
+- **Falsification**: An agent with `capacity_strain_threshold: 1000‰` (always strained) should attempt disposal every cycle if holding waste.
 
 ## SystemFn Integration
 

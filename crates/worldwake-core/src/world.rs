@@ -5,7 +5,8 @@ use crate::{
     BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance,
     CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables,
     ComponentValue, Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
-    ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator,
+    ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DisposalProfile,
+    DriveThresholds, EntityAllocator,
     EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
     ExpectationStore, ExplorationProfile, FactionData, HomeostaticNeeds, InTransitOnEdge,
     IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
@@ -163,6 +164,7 @@ impl World {
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
             world.insert_component_exploration_profile(entity, ExplorationProfile::default())?;
+            world.insert_component_disposal_profile(entity, DisposalProfile::default())?;
             world.insert_component_execution_budget(entity, ExecutionBudget::default())?;
             world.insert_component_epistemic_disposition_profile(
                 entity,
@@ -617,7 +619,7 @@ mod tests {
         AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
         BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
         CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory, DeprivationExposure,
-        DeprivationKind, DriveThresholds, EffectiveRight, EntityId, EntityKind,
+        DeprivationKind, DisposalProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
         EpistemicDispositionProfile, EventId, FactionData, FactionPurpose, HomeostaticNeeds,
         InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
         JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
@@ -1246,6 +1248,10 @@ mod tests {
             world.get_component_tell_profile(id),
             Some(&TellProfile::default())
         );
+        assert_eq!(
+            world.get_component_disposal_profile(id),
+            Some(&DisposalProfile::default())
+        );
     }
 
     #[test]
@@ -1637,6 +1643,9 @@ mod tests {
         manual_world
             .insert_component_tell_profile(manual_id, TellProfile::default())
             .unwrap();
+        manual_world
+            .insert_component_disposal_profile(manual_id, DisposalProfile::default())
+            .unwrap();
 
         assert_eq!(factory_id, manual_id);
         assert_eq!(
@@ -1662,6 +1671,10 @@ mod tests {
         assert_eq!(
             factory_world.get_component_tell_profile(factory_id),
             manual_world.get_component_tell_profile(manual_id)
+        );
+        assert_eq!(
+            factory_world.get_component_disposal_profile(factory_id),
+            manual_world.get_component_disposal_profile(manual_id)
         );
     }
 

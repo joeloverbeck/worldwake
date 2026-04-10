@@ -14,6 +14,7 @@ use crate::{
         ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
     },
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
+    disposal::DisposalProfile,
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
     evidence::SceneEvidence,

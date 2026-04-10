@@ -1976,6 +1976,7 @@ mod tests {
     use crate::{
         AgentBeliefStore, BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim,
         BlockedIntentMemory, CognitiveProfile, CommunicationProfile, DemandMemory,
+        DisposalProfile,
         EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
         InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
@@ -2439,6 +2440,12 @@ mod tests {
                     component_kind: ComponentKind::ExplorationProfile,
                     before: None,
                     after: ComponentValue::ExplorationProfile(ExplorationProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::DisposalProfile,
+                    before: None,
+                    after: ComponentValue::DisposalProfile(DisposalProfile::default()),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,
@@ -4719,6 +4726,38 @@ mod tests {
     }
 
     #[test]
+    fn set_component_disposal_profile_records_component_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = world.get_component_disposal_profile(agent).copied().unwrap();
+        let after = DisposalProfile {
+            capacity_strain_threshold: Permille::new(925).unwrap(),
+        };
+
+        let mut txn = new_txn(&mut world);
+        txn.set_component_disposal_profile(agent, after).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Set {
+                entity: agent,
+                component_kind: ComponentKind::DisposalProfile,
+                before: Some(ComponentValue::DisposalProfile(before)),
+                after: ComponentValue::DisposalProfile(after),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_disposal_profile(agent), Some(&after));
+    }
+
+    #[test]
     fn set_component_blocked_intent_memory_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
@@ -5012,6 +5051,34 @@ mod tests {
 
         assert_eq!(record.state_deltas().len(), 1);
         assert_eq!(world.get_component_utility_profile(agent), None);
+    }
+
+    #[test]
+    fn clear_component_disposal_profile_records_removed_delta_and_updates_world_on_commit() {
+        let mut world = World::new(test_topology()).unwrap();
+        let agent = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let before = world.get_component_disposal_profile(agent).copied().unwrap();
+
+        let mut txn = new_txn(&mut world);
+        txn.clear_component_disposal_profile(agent).unwrap();
+
+        assert_eq!(
+            txn.deltas(),
+            &[StateDelta::Component(ComponentDelta::Removed {
+                entity: agent,
+                component_kind: ComponentKind::DisposalProfile,
+                before: ComponentValue::DisposalProfile(before),
+            })]
+        );
+
+        let mut log = EventLog::new();
+        let event_id = txn.commit(&mut log);
+        let record = log.get(event_id).unwrap();
+
+        assert_eq!(record.state_deltas().len(), 1);
+        assert_eq!(world.get_component_disposal_profile(agent), None);
     }
 
     #[test]
