@@ -1,6 +1,6 @@
 # S88TWOPHALAN-005: Implement landmark count heuristic
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — new function in existing heuristic module
@@ -45,6 +45,10 @@ Returns the count of landmarks in `landmarks.landmarks` that:
 
 This counts "how many mandatory milestones are currently actionable but unachieved."
 
+To keep the landmark heuristic and preferred-operator selection aligned, extract
+the shared "actionable landmark" filter into a planner-internal helper rather
+than duplicating that predicate in both places.
+
 ### 2. Write focused unit tests
 
 - `test_landmark_heuristic_all_achieved` — all landmarks in current_facts → returns 0
@@ -55,6 +59,7 @@ This counts "how many mandatory milestones are currently actionable but unachiev
 ## Files to Touch
 
 - `crates/worldwake-ai/src/search/heuristic.rs` (modify)
+- `crates/worldwake-ai/src/search/landmarks.rs` (modify — shared actionable-landmark helper)
 
 ## Out of Scope
 
@@ -85,3 +90,25 @@ This counts "how many mandatory milestones are currently actionable but unachiev
 
 1. `cargo test -p worldwake-ai -- heuristic`
 2. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-11.
+
+- Added `compute_landmark_heuristic()` to
+  `crates/worldwake-ai/src/search/heuristic.rs` to count currently actionable,
+  unachieved landmarks.
+- Added four focused inline tests in `heuristic.rs` covering empty, fully
+  achieved, actionable, and blocked landmark sets.
+- Extracted a shared planner-internal `actionable_landmarks()` helper in
+  `crates/worldwake-ai/src/search/landmarks.rs` so landmark counting and
+  preferred-operator selection use the same predicate.
+- Marked `compute_landmark_heuristic()` with `#[allow(dead_code)]` because this
+  heuristic lands ahead of the live search-loop integration in
+  `S88TWOPHALAN-007`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai -- heuristic`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

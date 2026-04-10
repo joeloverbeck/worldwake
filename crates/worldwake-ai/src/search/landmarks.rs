@@ -90,23 +90,7 @@ pub(super) fn preferred_operators(
     candidates: &[SearchCandidate],
     operators: &[PlanningOperator],
 ) -> BTreeSet<usize> {
-    if landmarks.landmarks.is_empty() {
-        return BTreeSet::new();
-    }
-
-    let actionable_landmarks = landmarks
-        .landmarks
-        .iter()
-        .filter(|landmark| !current_facts.contains(*landmark))
-        .filter(|landmark| {
-            landmarks
-                .orderings
-                .iter()
-                .filter(|(_, successor)| successor == *landmark)
-                .all(|(predecessor, _)| current_facts.contains(predecessor))
-        })
-        .cloned()
-        .collect::<BTreeSet<_>>();
+    let actionable_landmarks = actionable_landmarks(landmarks, current_facts);
     if actionable_landmarks.is_empty() {
         return BTreeSet::new();
     }
@@ -122,6 +106,25 @@ pub(super) fn preferred_operators(
                 .any(|effect| actionable_landmarks.contains(effect))
                 .then_some(index)
         })
+        .collect()
+}
+
+pub(super) fn actionable_landmarks(
+    landmarks: &LandmarkSet,
+    current_facts: &BTreeSet<PlanningFact>,
+) -> BTreeSet<PlanningFact> {
+    landmarks
+        .landmarks
+        .iter()
+        .filter(|landmark| !current_facts.contains(*landmark))
+        .filter(|landmark| {
+            landmarks
+                .orderings
+                .iter()
+                .filter(|(_, successor)| successor == *landmark)
+                .all(|(predecessor, _)| current_facts.contains(predecessor))
+        })
+        .cloned()
         .collect()
 }
 
