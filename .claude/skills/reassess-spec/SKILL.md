@@ -46,6 +46,13 @@ Before beginning Steps 2-3, classify the spec:
   - Step 4 applies but 4.4 is N/A.
   - Section H updates are N/A unless the test reveals a missing causal hook.
 
+- **(e) Investigation/bugfix** — proposes root cause hypotheses with conditional fixes, no new systems or components.
+  - Steps 3.1-3.4 apply (validate all referenced paths, types, functions, dependencies).
+  - Steps 3.5-3.8 apply only to proposed fix deliverables (not to hypothesis text).
+  - Step 3.9 applies if claims about runtime behavior are made.
+  - Step 4 applies; 4.4 applies if any proposed fix touches action preconditions.
+  - Section H updates only if the fix changes causal hooks.
+
 **Hybrid specs**: Apply the union of applicable steps — use the most rigorous classification's checklist for shared steps.
 
 **Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and not externally modified, Steps 2-3 may scope to only references affected by the triggering change. Step 1 still applies.
@@ -72,6 +79,7 @@ Extract every concrete codebase reference from the spec:
 - **Crate/module names**
 - **Test file paths or test names**
 - **Other specs or tickets** in Dependencies
+- **Code examples** (inline code blocks showing API usage, precondition lists, struct definitions) — extract for fidelity checking against actual source
 
 Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
 

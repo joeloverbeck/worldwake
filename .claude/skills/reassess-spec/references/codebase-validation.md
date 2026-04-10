@@ -84,13 +84,22 @@ For each claim about who reads/writes a type at runtime, grep all call sites and
 
 ## Agent Delegation
 
+In plan mode, Explore agents are the primary validation mechanism (read-only, inherently compatible). Launch 2-3 agents organized by theme for specs with >10 references.
+
 For specs with many references, launch parallel Explore agents organized by theme (e.g., action/type references, AI/test references, dependencies/infrastructure). Choose themes to minimize cross-agent dependencies. Typical: 1 agent for 10-15 references with a single domain, 2-3 agents for 15+ references spanning multiple domains. Max 3 agents.
 
 Guidelines:
 - After results arrive, cross-reference findings against the spec's type assumptions and formulas. Agents validate existence; you validate semantic compatibility.
 - For static lookup tables indexed by discriminator enums, verify key granularity matches discrimination needs.
 - Spot-check agent claims with direct Grep/Read before including in findings — agent results are leads, not facts. Especially spot-check when an agent reports a referenced type as "does not exist" or "needs to be created" — verify whether the spec used a wrong name for an existing type before accepting the agent's conclusion.
-- In plan mode, Explore agents are inherently compatible (read-only).
 - For structural refactor specs (type c), direct agents toward discrepancy checking (counts, symbol existence, blast radius) rather than broad exploration.
 
 After Explore agents return, a Plan agent may be used to organize and classify findings, cross-reference agent results against the spec's type assumptions, and identify gaps the Explore agents missed. This is optional and most useful when findings are numerous (>5) or span multiple domains.
+
+## Conditional Deliverable Validation
+
+For specs with conditional deliverables ("If root cause X is confirmed, do Y"), validate:
+
+1. **Diagnostic sufficiency** — the investigation steps can distinguish between hypotheses (e.g., each hypothesis predicts different observable outcomes)
+2. **Fix correctness** — each proposed fix references correct types, functions, and file paths, regardless of whether it will ultimately be selected
+3. **Architectural soundness** — each proposed fix respects crate boundaries and FOUNDATIONS principles even though it is conditional. Flag fixes that violate constraints even if conditional — a conditional violation is still a spec defect.

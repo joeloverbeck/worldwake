@@ -4,6 +4,7 @@ If plan mode is active:
 
 - **Steps 1-6** proceed normally (all read-only).
 - **Step 6** includes the initial findings report and any question-resolution rounds.
+- **If questions exist**: Present Step 6 findings in conversation → use AskUserQuestion for each question → incorporate resolved answers into the plan file. The conversational report + question resolutions constitute the decision record; the plan file is the condensed implementation reference.
 - **After all questions are resolved**: Write a condensed summary to the plan file, then call ExitPlanMode. If question resolution produces new findings, the plan file reflects the final resolved state, not the initial report.
 - **After plan approval**: Steps 7-8 execute. The user's approval covers both question resolutions and overall changes — no separate gate.
 - **Pre-Apply Verification** runs after ExitPlanMode approval, before Step 7.

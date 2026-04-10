@@ -22,6 +22,9 @@ Present in this format:
 ```
 ## Reassessment: <spec-name>
 
+### Classification
+<spec type (a)-(e)> — <one-line description>. Steps applied: <list>. Steps skipped: <list>.
+
 ### Issues (must fix)
 [If none: "No issues found."]
 1. **[SEVERITY] <title>** — <spec says> vs. <codebase has>. Recommendation: <change>.
@@ -38,7 +41,14 @@ Present in this format:
 - <Foundation N>: <aligned | see Issue #N [SEVERITY]>
 
 ### Authoritative-to-AI Impact Rule
-[Only if Step 4.4 triggered: list 7 checklist points with pass / N-A / flag status. Otherwise omit.]
+[Only if Step 4.4 triggered. Otherwise omit. Format each point as:]
+1. `get_affordances` — pass | N/A | **flag** (reason)
+2. `generate_candidates` — pass | N/A | **flag** (reason)
+3. `search_plan` — pass | N/A | **flag** (reason)
+4. `BestEffort` action start — pass | N/A | **flag** (reason)
+5. `handle_plan_failure` — pass | N/A | **flag** (reason)
+6. Payload revalidation — pass | N/A | **flag** (reason)
+7. Golden tests — pass | N/A | **flag** (reason)
 
 ### Questions
 [If none: "No questions."]

@@ -2,7 +2,7 @@
 
 ## Summary
 
-Investigate and fix why `ShareBelief` goals consistently frontier-exhaust at depth 0 with 1 expansion despite agents being co-located. S69 (Goal Dispatch Consolidation) correctly registered all three ShareBelief variants with `PlannerOpKind::Tell` operators, yet the simulation shows 14 of 20 failed plans for agents are frontier-exhausted ShareBelief goals. This spec traces the root cause — likely a mismatch between the `tell` action's `TargetSpec` and the planner's candidate search — and delivers the fix plus golden test coverage.
+Investigate and fix why `ShareBelief` goals consistently frontier-exhaust at depth 0 with 1 expansion despite agents being co-located. S69 (Goal Dispatch Consolidation) correctly registered all three ShareBelief variants with `PlannerOpKind::Tell` operators, yet the simulation shows 14 of 20 failed plans for agents are frontier-exhausted ShareBelief goals. This spec traces the confirmed root cause — a mismatch between the planning snapshot's entity indexing and the agent's belief state about co-located listeners — and delivers the fix plus golden test coverage.
 
 ## Phase
 
@@ -14,7 +14,7 @@ Draft
 
 ## Crates
 
-- `worldwake-ai` (search candidate matching, goal dispatch)
+- `worldwake-ai` (search candidate matching, goal dispatch, planning snapshot)
 - `worldwake-systems` (tell action definition, if target spec adjustment needed)
 
 ## Dependencies
@@ -40,7 +40,8 @@ Draft
 |-----------|-----------|
 | FND-01 (Emergence) | Social information propagation (telling, gossip, testimony) is a core emergence mechanism — agents sharing beliefs drives downstream decisions |
 | FND-07 (Locality) | Tell requires co-location — beliefs travel through physical proximity |
-| FND-08 (Preconditions/Duration/Cost) | Tell action has preconditions (co-location, both alive), duration (2 ticks), and occupancy |
+| FND-08 (Preconditions/Duration/Cost) | Tell action has preconditions (actor alive, co-location, both alive), duration (2 ticks), and occupancy |
+| FND-14 (World State != Belief State) | The confirmed root cause involves the distinction between authoritative co-location and the agent's belief about the listener's effective place. The planner operates on belief state only; if the agent lacks a belief about the listener's location, the search snapshot cannot index the listener at the actor's place even though the listener entity is included |
 | FND-20 (Resource-Bounded Reasoning) | Budget should not be wasted on infeasible ShareBelief goals; early pruning when no listener exists |
 | FND-29 (Debuggability) | The fix must leave clear traces of why ShareBelief succeeded or failed |
 
@@ -48,10 +49,12 @@ Draft
 
 ### 1. Root Cause Investigation
 
-The `tell` action (in `crates/worldwake-systems/src/tell_actions.rs`, lines 38-76) has these preconditions:
+The `tell` action (in `crates/worldwake-systems/src/tell_actions.rs`, lines 38-77) has these constraints and preconditions:
 
 ```
-TargetSpec::EntityAtActorPlace { kind: Agent }
+actor_constraints: [Constraint::ActorAlive]
+TargetSpec::EntityAtActorPlace { kind: EntityKind::Agent }
+Precondition::ActorAlive
 Precondition::TargetExists(0)
 Precondition::TargetAtActorPlace(0)
 Precondition::TargetKind { target_index: 0, kind: EntityKind::Agent }
@@ -60,58 +63,67 @@ Precondition::TargetAlive(0)
 
 The search system (`crates/worldwake-ai/src/search/mod.rs`) generates candidates at depth 0 by matching `relevant_ops` (which is `[PlannerOpKind::Tell]`) against available action definitions. The candidates must pass:
 
-1. **Action def lookup**: `PlannerOpKind::Tell` maps to `(ActionDomain::Social, "tell")`.
-2. **Target resolution**: The search must find entities matching `TargetSpec::EntityAtActorPlace { kind: Agent }` in the planning snapshot.
+1. **Action def lookup**: `PlannerOpKind::Tell` maps to `(ActionDomain::Social, "tell")` via `classify_action_def` in `planner_ops.rs`.
+2. **Target resolution**: The search calls `get_affordances_for_defs` (`affordance_query.rs:60`), which enumerates entities matching `TargetSpec::EntityAtActorPlace { kind: EntityKind::Agent }` by querying `view.entities_at(place)` on the planning snapshot.
 3. **Precondition check**: All preconditions must pass against the hypothetical state.
 
-The likely root cause is one of:
-- **a)** The planning snapshot does not include co-located agents (filtered out by S73's entity relevance filtering, which may exclude agents not relevant to the goal's `relevant_op_kinds()`).
-- **b)** The target resolution in the search does not correctly enumerate co-located agents for the `Tell` operator.
-- **c)** The listener target is not populated in the `GoalKind::ShareBelief { listener, .. }` variant, or the search uses the wrong entity as the target.
+The root cause audit originally considered several possibilities. Current code and ticket outcomes now confirm the snapshot-indexing path below as the live production contradiction:
 
-### 2. Fix: Ensure Co-Located Agents Appear in Planning Snapshot for Tell Goals
+- **Confirmed**: The agent's belief view does not report the listener's `effective_place` — The planning snapshot includes the listener entity unconditionally (via `evidence_entities`, `planning_snapshot.rs:1108`), but `build_snapshot_places` (`planning_snapshot.rs:789-792`) only indexes an entity at a place if `view.effective_place(*entity) == Some(place)`. If the agent has no belief about the listener's location (despite physical co-location), the listener will not appear in `snapshot.entities_at(actor_place)`, causing the affordance query to find zero targets.
+- **b) Target resolution in the search does not correctly enumerate co-located agents for the `Tell` operator** — The affordance query may fail for a reason unrelated to the snapshot's entity index (e.g., precondition evaluation rejects valid targets).
+- **c) The listener target is not populated correctly in the `GoalKind::ShareBelief { listener, .. }` variant, or the search uses the wrong entity as the target** — The candidate generation (`candidate_generation.rs:1135`) uses `social_listeners_at()` which queries `view.entities_at(place)` on the belief view. If this function correctly finds listeners but the search cannot use them, the issue is in the handoff from candidate generation to search.
+- **a) [Disproven] The planning snapshot filters out co-located agents** — Codebase analysis shows this is not the case: `SnapshotEntityFilter::includes(EntityKind::Agent, alive)` always returns `true` for living agents (`planning_snapshot.rs:93-95`), and the listener is unconditionally added via `evidence_entities`. However, the listener's placement in the snapshot's `entities_at` index depends on belief-layer `effective_place` (see hypothesis d).
 
-If root cause (a) is confirmed: S73's `relevant_op_kinds()` for ShareBelief returns `[PlannerOpKind::Tell]`, and the snapshot relevance predicate must include `EntityKind::Agent` entities at the agent's place when Tell is a relevant op.
+**Diagnostic steps for investigation**:
+1. Instrument `build_snapshot_places` to log whether the listener entity appears in `entities_at(actor_place)` for ShareBelief goals
+2. Check whether `view.effective_place(listener)` returns `Some(actor_place)` or `None` during snapshot construction
+3. If `effective_place` returns `None`, trace why the agent lacks a belief about the listener's location despite being co-located — likely a perception gap
+4. If `effective_place` is correct, check whether `get_affordances_for_defs` returns any affordances for the tell action with the listener as target
 
-In `crates/worldwake-ai/src/search/` (snapshot construction or candidate resolution), ensure the relevance predicate for `PlannerOpKind::Tell` includes:
+### 2. Fix: Ensure Listener Appears in Planning Snapshot's Place Index
 
-```rust
-PlannerOpKind::Tell => {
-    // Include agents at the same place as the planning agent
-    entity_kind == EntityKind::Agent && entity_place == agent_place
-}
-```
+If root cause (d) is confirmed: the agent's belief view lacks `effective_place` for the listener, so the snapshot cannot index the listener at the actor's place.
+
+**Option A (preferred)**: In `build_snapshot_places` (`planning_snapshot.rs:789-792`), for evidence entities whose `effective_place` is `None`, fall back to checking whether the entity was observed at any included place. This preserves the belief-only planning invariant (FND-14) while handling the case where the agent knows about an entity but lacks explicit location beliefs.
+
+**Option B**: Ensure the perception system generates `effective_place` beliefs for co-located agents. This is a broader fix that may require changes to the perception pipeline.
+
+The fix must not violate FND-14 — agents must never read authoritative world state. Any fallback must derive from the agent's existing belief state.
 
 ### 3. Fix: Early Pruning When No Listener Available
 
-If the goal target (listener) is specified in `GoalKind::ShareBelief { listener, .. }` but the listener is not co-located at planning time, the feasibility strategy `ColocationOrDead` should return `None` (Uncertain), which currently does NOT block the search — it only deprioritizes.
+The feasibility system (`feasibility.rs:19-20`) is explicitly documented as reordering-only: "Used to reorder candidates within the same `GoalPriorityClass` — never to exclude goals from search." The `check_colocated_or_dead` function (`feasibility.rs:240-254`) returns `Option<FeasibilityHint>` where `Option::None` (Rust's `None`, not a `FeasibilityHint` variant) means "neither co-located nor dead — no opinion."
 
-Add a pre-search filter in the goal dispatch pipeline: if `ColocationOrDead` returns `None` (neither co-located nor dead), skip the search entirely and record a clear rejection reason:
+Since the feasibility system is not a gate, early pruning requires a separate mechanism. Two approaches:
+
+**Option A (recommended)**: Add a pre-search validation step in the planning pipeline (after feasibility scoring, before `search_plan`) that checks whether the goal's `relevant_ops` require specific target kinds and whether the snapshot contains any matching targets at the actor's place. If zero targets exist, skip the search and record a clear rejection:
 
 ```rust
-FeasibilityHint::None => {
-    // Listener exists but not co-located — goal is infeasible right now
-    record_rejection("listener not co-located");
+// In the planning pipeline, before calling search_plan:
+if snapshot_has_no_matching_targets(goal, &snapshot) {
+    record_rejection("no matching targets in snapshot for goal's relevant ops");
     return PlanSearchOutcome::FrontierExhausted { expansions_used: 0 };
 }
 ```
 
-This prevents wasting 1 expansion on a goal that cannot produce candidates.
+**Option B**: Accept the 1-expansion cost and rely on improved diagnostics (Deliverable 5) to explain why the search exhausted. This avoids adding a new mechanism but wastes budget on clearly infeasible goals.
 
 ### 4. Golden Test: ShareBelief Succeeds Under Co-Location
 
 In `crates/worldwake-ai/tests/`:
 
-**Setup**: Two agents at the same location. Agent A has a belief that Agent B does not have. Agent A has a ShareBelief goal targeting Agent B.
+**Setup**: Two agents at the same location. Agent A has a belief that Agent B does not have. Agent A has a ShareBelief goal targeting Agent B. Both agents have `PerceptionProfile` so they can observe each other (required for `effective_place` beliefs).
 
 **Assertion**: Within a bounded tick count, Agent A plans and executes a `tell` action targeting Agent B. After the tell commits, Agent B's belief store contains the shared belief.
 
 ### 5. Diagnostic Enhancement
 
-Extend `PlanAttemptTrace` or `CandidateGenerationDiagnostics` to record, for frontier-exhausted goals:
+Extend `PlanAttemptTrace` (`decision_trace.rs:856-866`) to record, for frontier-exhausted goals:
 - Number of operators checked
 - Number of target entities found in snapshot matching the operator's `TargetSpec`
-- If zero targets: the reason (no co-located agents, no agents in snapshot, listener not at place)
+- If zero targets: the reason (no co-located agents in snapshot place index, listener entity present but not indexed at actor's place, no agents in snapshot at all)
+
+Note: `CandidateGenerationDiagnostics` (`candidate_generation.rs:159-168`) already has `omitted_social: Vec<SocialCandidateOmission>` for tracking social candidate omissions at the candidate generation stage. The diagnostic enhancement here targets the separate search stage — when the planner has a ShareBelief goal but the search cannot find affordances for it.
 
 ## Section H: Causal Hooks (FND-01)
 
@@ -120,6 +132,7 @@ Extend `PlanAttemptTrace` or `CandidateGenerationDiagnostics` to record, for fro
 - **Trigger**: Agent has a belief it wants to share (alarm, testimony, gossip).
 - **Path**: Agent's belief store → ShareBelief goal generated → planner searches for Tell operator → tell action fires → listener's belief store updated.
 - The information path is fully local: both agents must be co-located.
+- **Belief-layer dependency**: The planner can only find the Tell affordance if the agent has a belief about the listener's location (effective_place). This belief must be acquired through perception — the agent must have observed the listener at their shared location.
 
 ### H2. Positive-Feedback Analysis
 
@@ -131,8 +144,8 @@ Extend `PlanAttemptTrace` or `CandidateGenerationDiagnostics` to record, for fro
 
 ### H4. Stored State vs. Derived
 
-- **Stored**: Agent beliefs, ShareBelief goal target (listener EntityId).
-- **Derived**: Co-location check (computed from belief about effective places).
+- **Stored**: Agent beliefs, ShareBelief goal target (listener EntityId), listener's believed effective_place.
+- **Derived**: Co-location check (computed from beliefs about effective places), snapshot place index (derived from belief-layer effective_place queries).
 
 ## SystemFn Integration
 
@@ -144,5 +157,5 @@ No new components.
 
 ## Cross-System Interactions
 
-- **Perception → Tell** (via belief state): Agent perceives events → forms beliefs → ShareBelief goal generated → Tell action shares the belief.
-- **S73 Snapshot filtering → Tell search** (potential conflict): S73's entity relevance filter may exclude agents from the snapshot when the goal's `relevant_op_kinds()` doesn't signal that agents are needed. The fix ensures Tell goals include co-located agents in the snapshot.
+- **Perception → Tell** (via belief state): Agent perceives events and co-located entities → forms beliefs including effective_place for nearby agents → ShareBelief goal generated → Tell action shares the belief.
+- **Snapshot place indexing → Tell search** (potential root cause): The planning snapshot includes evidence entities unconditionally but only indexes them at a place if the belief view reports their `effective_place`. When the agent lacks this belief for the listener, the search's affordance query finds zero targets despite the listener being in the snapshot's entity set.

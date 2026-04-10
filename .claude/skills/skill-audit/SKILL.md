@@ -1,6 +1,7 @@
 ---
 name: skill-audit
 description: Session-aware skill quality audit. Analyzes a skill file against the current session's work to find issues, improvements, and missing features. Cross-checks against FOUNDATIONS.md and CLAUDE.md. Invoke at end of session with the skill path as argument.
+user-invocable: true
 arguments:
   - name: skill-path
     description: "Path to skill directory (e.g., .claude/skills/improve-loop)"

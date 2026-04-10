@@ -27,7 +27,11 @@ Do not skip reassessment for small tickets, but scale it down: read the ticket, 
 
 For straightforward shared-type additive tickets (new field on an existing struct/component, derive-safe enum payload addition, or similar constructor fallout with no boundary dispute yet visible), start with the ticket, cited spec/docs, `references/reassessment-checks.md`, `references/verification.md`, and `references/closeout.md`. Load `mismatch-handling.md`, `scope-extraction.md`, or `implementation-discipline.md` only if reassessment exposes a mismatch, ownership ambiguity, or non-mechanical implementation choice.
 
+Single-file planner-root, snapshot-completeness, planner-traceability, or AI carriage-path tickets still use the full workflow when the contract under audit crosses the planner boundary even if the eventual edit surface stays narrow and local.
+
 **All other tickets** — use the full workflow below (Steps 1-8).
+
+For full-workflow tickets, start by loading `references/reassessment-checks.md`, then `references/verification.md` and `references/closeout.md`; load `mismatch-handling.md`, `scope-extraction.md`, and `implementation-discipline.md` when reassessment or implementation reaches those steps or exposes the need.
 
 When the ticket was authored by `/spec-to-tickets` in the current session from a freshly reassessed spec, scale reassessment to a targeted sweep: confirm the ticket's owned types still exist at stated paths, check for exhaustive matchers on modified enums, verify trait bounds on any types used in new test code, check for manual struct literals of modified types (constructors, test helpers, `from_*_for_test` patterns) that would need updating for new fields, and before adding new test-only accessors or helpers, check whether existing test infrastructure (e.g., `ActualWorldState::from_world`, test harness methods) already provides the needed capability.
 

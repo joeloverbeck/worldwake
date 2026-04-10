@@ -127,7 +127,7 @@ S84/S85 remain parallel — no inter-dependencies.
 - **S82**: ✅ COMPLETED — Waste Disposal and Inventory Management — archived at [archive/specs/S82-waste-disposal-inventory-management.md](/home/joeloverbeck/projects/worldwake/archive/specs/S82-waste-disposal-inventory-management.md). Landed `drop_item`, `FreeCarryCapacity`, `DisposalProfile`, planner/candidate/ranking integration, CLI disposal-profile override support, and disposal-cycle golden coverage with deterministic replay.
 - **S83**: ✅ COMPLETED — Belief-Informed Candidate Pruning — archived at [archive/specs/S83-belief-informed-candidate-pruning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S83-belief-informed-candidate-pruning.md). Landed belief-gated acquisition-place filtering, `speculative_acquisition` profile support, and candidate-trace counters for reachable-vs-filtered places while preserving lawful acquisition coverage.
 - **Active parallel remainder**:
-  - **S84**: ShareBelief Operator Fix — investigate and fix frontier-exhaustion at depth 0 for ShareBelief goals despite co-location. Likely S73 snapshot filtering excluding agents from Tell operator search.
+  - **S84**: ShareBelief Operator Fix — investigate and fix frontier-exhaustion at depth 0 for ShareBelief goals despite co-location. Confirmed root cause: snapshot place indexing drops evidence listeners from Tell affordance search when they lack believed `effective_place`; remaining follow-up slices cover pruning, diagnostics, and golden proof.
   - **S85**: Observer Behavioral Enrichment — death tick/cause display, frontier-exhaustion rejection reasons, need snapshots at behavioral transitions, post-travel affordance snapshots, "Unknown location" clarity.
 
 ### Phase 7 Gate
