@@ -201,9 +201,16 @@ In `crates/worldwake-ai/src/ranking.rs`:
 ```
 GoalKind::FreeCarryCapacity => {
     let Some(carry_cap) = context.view.carry_capacity(context.agent) else { return 0 };
-    let Some(load) = context.view.load_of_entity(context.agent) else { return 0 };
+    let carried_load = CommodityKind::ALL
+        .iter()
+        .copied()
+        .map(|kind| {
+            context.view.commodity_quantity(context.agent, kind).0
+                * worldwake_core::load_per_unit(kind).0
+        })
+        .sum::<u32>();
     let strain = Permille::new_unchecked(
-        (u32::from(load.0) * 1000 / u32::from(carry_cap.0).max(1)).min(1000) as u16
+        (carried_load * 1000 / u32::from(carry_cap.0).max(1)).min(1000) as u16
     );
     score_product(context.utility.enterprise_weight, strain)
 }
@@ -223,10 +230,14 @@ fn emit_disposal_candidates(candidates, diagnostics, ctx):
 
     // 2. Check agent's believed carry capacity
     let Some(carry_capacity) = ctx.view.carry_capacity(ctx.agent) else { return };
-    let Some(current_load) = ctx.view.load_of_entity(ctx.agent) else { return };
+    let current_load = CommodityKind::ALL
+        .iter()
+        .copied()
+        .map(|kind| ctx.view.commodity_quantity(ctx.agent, kind).0 * worldwake_core::load_per_unit(kind).0)
+        .sum::<u32>();
 
     // 3. Check strain threshold
-    if current_load.0 * 1000 < carry_capacity.0 as u32 * threshold.value() as u32 {
+    if current_load * 1000 < carry_capacity.0 as u32 * threshold.value() as u32 {
         return;  // Not strained enough
     }
 
@@ -246,7 +257,7 @@ fn emit_disposal_candidates(candidates, diagnostics, ctx):
             candidates,
             GoalKind::FreeCarryCapacity,
             OpportunityAnchor::Entity(entity),
-            Evidence::from_entity(entity),
+            Evidence::with_entity(entity),
             ctx.blocked,
             ctx.current_tick,
         );
@@ -279,7 +290,7 @@ impl Default for DisposalProfile {
 impl Component for DisposalProfile {}
 ```
 
-Universal profile (all agents can decide to drop items). Registered on `EntityKind::Agent` in `component_schema.rs`. Added to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs` with `unwrap_or_default()` in `spawn_agent()`.
+Universal profile (all agents can decide to drop items). Registered on `EntityKind::Agent` in `component_schema.rs`, with `World::create_agent()` seeding `DisposalProfile::default()` as the canonical default path. `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs` exposes an optional scenario-authored override, and `spawn_agent()` only writes the component when that override is explicitly present.
 
 ### 11. Belief-View Accessor for DisposalProfile
 

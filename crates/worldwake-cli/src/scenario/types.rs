@@ -8,13 +8,13 @@ use std::num::NonZeroU32;
 use serde::Deserialize;
 use worldwake_core::{
     CarryCapacity, CognitiveProfile, CombatProfile, CommodityValuationProfile,
-    CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
-    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
-    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, MetabolismProfile,
-    PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile,
-    PursuitProfile, Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
-    items::CommodityKind, topology::PlaceTag,
+    CommunicationProfile, ContentionDispositionProfile, ControlSource, DisposalProfile,
+    DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
+    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory,
+    MetabolismProfile, PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile,
+    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -102,6 +102,8 @@ pub struct AgentDef {
     pub drive_thresholds: Option<DriveThresholds>,
     #[serde(default)]
     pub metabolism_profile: Option<MetabolismProfile>,
+    #[serde(default)]
+    pub disposal_profile: Option<DisposalProfile>,
     #[serde(default)]
     pub exploration_profile: Option<ExplorationProfileDef>,
     #[serde(default)]

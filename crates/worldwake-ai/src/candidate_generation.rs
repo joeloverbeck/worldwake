@@ -30,7 +30,7 @@ use worldwake_core::{
     EntityId, EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState, GoalKey,
     GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
+    OpportunityKey, PerceptionSource, Permille, ProofRequirement, PunishmentFineSelectionTrace,
     PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
     RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
     UtilityProfile, ViolationId, ViolationKind, ViolationMemory, classify_communication,
@@ -246,6 +246,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
     emit_production_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
     emit_enterprise_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_disposal_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_bounty_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_artifact_posting_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
@@ -3061,6 +3062,69 @@ fn deliverable_quantity(
     Quantity(local_quantity.0.min(restock_gap.0).min(carry_fit.0))
 }
 
+fn emit_disposal_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    _diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let threshold = ctx
+        .view
+        .disposal_profile(ctx.agent)
+        .map_or(Permille::new_unchecked(800), |p| {
+            p.capacity_strain_threshold
+        });
+    let Some(carry_capacity) = ctx.view.carry_capacity(ctx.agent) else {
+        return;
+    };
+
+    let current_load = CommodityKind::ALL
+        .iter()
+        .copied()
+        .map(|kind| {
+            ctx.view
+                .commodity_quantity(ctx.agent, kind)
+                .0
+                .saturating_mul(load_per_unit(kind).0)
+        })
+        .fold(0u32, u32::saturating_add);
+
+    if current_load.saturating_mul(1000)
+        < carry_capacity
+            .0
+            .saturating_mul(u32::from(threshold.value()))
+    {
+        return;
+    }
+
+    if ctx.view.commodity_quantity(ctx.agent, CommodityKind::Waste) == Quantity(0) {
+        return;
+    }
+
+    for (item, state) in ctx.view.known_entity_beliefs(ctx.agent) {
+        if state.believed_kind != Some(EntityKind::ItemLot) {
+            continue;
+        }
+        if !state
+            .last_known_inventory
+            .contains_key(&CommodityKind::Waste)
+        {
+            continue;
+        }
+        if ctx.view.direct_possessor(item) != Some(ctx.agent) {
+            continue;
+        }
+
+        emit_candidate(
+            candidates,
+            GoalKind::FreeCarryCapacity,
+            OpportunityAnchor::Entity(item),
+            Evidence::with_entity(item),
+            ctx.blocked,
+            ctx.current_tick,
+        );
+    }
+}
+
 fn emit_loot_goals(
     candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
@@ -4714,8 +4778,8 @@ mod tests {
         BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
         BodyPart, BountyTarget, BountyTerms, CombatProfile, CommodityConsumableProfile,
         CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
-        DemandObservationReason, DriveThresholds, EffectiveRight, EligibilityRule, EntityId,
-        EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
+        DemandObservationReason, DisposalProfile, DriveThresholds, EffectiveRight, EligibilityRule,
+        EntityId, EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
         ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile, GoalKey,
         GoalKind, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
@@ -4774,6 +4838,7 @@ mod tests {
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         utility_profiles: BTreeMap<EntityId, UtilityProfile>,
         exploration_profiles: BTreeMap<EntityId, ExplorationProfile>,
+        disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
         belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
@@ -4854,6 +4919,7 @@ mod tests {
                 merchandise_profiles: BTreeMap::new(),
                 utility_profiles: BTreeMap::new(),
                 exploration_profiles: BTreeMap::new(),
+                disposal_profiles: BTreeMap::new(),
                 corpses_at: BTreeMap::new(),
                 belief_stores: BTreeMap::new(),
                 beliefs: BTreeMap::new(),
@@ -5010,6 +5076,10 @@ mod tests {
 
         fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
             self.exploration_profiles.get(&agent).copied()
+        }
+
+        fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
+            self.disposal_profiles.get(&agent).copied()
         }
     }
 
@@ -5730,6 +5800,162 @@ mod tests {
         candidates
             .iter()
             .any(|candidate| candidate.key.kind == goal)
+    }
+
+    fn free_carry_capacity_candidates(
+        view: &TestBeliefView,
+        agent: EntityId,
+    ) -> Vec<crate::GroundedGoal> {
+        generate_candidates(
+            view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(100),
+        )
+    }
+
+    #[test]
+    fn free_carry_capacity_candidate_emitted_when_strained_and_waste_present() {
+        let agent = entity(1);
+        let place = entity(10);
+        let waste_lot = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(waste_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(waste_lot, place);
+        view.entities_at.insert(place, vec![agent, waste_lot]);
+        view.carry_capacities.insert(agent, LoadUnits(10));
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(8));
+        view.direct_possessors.insert(waste_lot, agent);
+        let mut waste_belief = belief_at_place(place, Tick(99));
+        waste_belief.believed_kind = Some(EntityKind::ItemLot);
+        waste_belief
+            .last_known_inventory
+            .insert(CommodityKind::Waste, Quantity(1));
+        view.beliefs.insert(agent, vec![(waste_lot, waste_belief)]);
+
+        let candidates = free_carry_capacity_candidates(&view, agent);
+
+        assert!(contains_goal(&candidates, GoalKind::FreeCarryCapacity));
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|candidate| candidate.key.kind == GoalKind::FreeCarryCapacity)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn free_carry_capacity_candidate_omitted_below_threshold() {
+        let agent = entity(1);
+        let place = entity(10);
+        let waste_lot = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(waste_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(waste_lot, place);
+        view.entities_at.insert(place, vec![agent, waste_lot]);
+        view.carry_capacities.insert(agent, LoadUnits(10));
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(7));
+        view.direct_possessors.insert(waste_lot, agent);
+        let mut waste_belief = belief_at_place(place, Tick(99));
+        waste_belief.believed_kind = Some(EntityKind::ItemLot);
+        waste_belief
+            .last_known_inventory
+            .insert(CommodityKind::Waste, Quantity(1));
+        view.beliefs.insert(agent, vec![(waste_lot, waste_belief)]);
+
+        let candidates = free_carry_capacity_candidates(&view, agent);
+
+        assert!(!contains_goal(&candidates, GoalKind::FreeCarryCapacity));
+    }
+
+    #[test]
+    fn free_carry_capacity_candidate_omitted_without_believed_waste_inventory() {
+        let agent = entity(1);
+        let place = entity(10);
+        let waste_lot = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(waste_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(waste_lot, place);
+        view.entities_at.insert(place, vec![agent, waste_lot]);
+        view.carry_capacities.insert(agent, LoadUnits(10));
+        view.direct_possessors.insert(waste_lot, agent);
+        let waste_belief = belief_at_place(place, Tick(99));
+        view.beliefs.insert(agent, vec![(waste_lot, waste_belief)]);
+
+        let candidates = free_carry_capacity_candidates(&view, agent);
+
+        assert!(!contains_goal(&candidates, GoalKind::FreeCarryCapacity));
+    }
+
+    #[test]
+    fn free_carry_capacity_candidate_only_emitted_for_directly_possessed_waste_lots() {
+        let agent = entity(1);
+        let place = entity(10);
+        let carried_waste_lot = entity(20);
+        let remote_waste_lot = entity(21);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds
+            .insert(carried_waste_lot, EntityKind::ItemLot);
+        view.entity_kinds
+            .insert(remote_waste_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(carried_waste_lot, place);
+        view.effective_places.insert(remote_waste_lot, place);
+        view.entities_at
+            .insert(place, vec![agent, carried_waste_lot, remote_waste_lot]);
+        view.carry_capacities.insert(agent, LoadUnits(10));
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(8));
+        view.direct_possessors.insert(carried_waste_lot, agent);
+
+        let mut carried_belief = belief_at_place(place, Tick(99));
+        carried_belief.believed_kind = Some(EntityKind::ItemLot);
+        carried_belief
+            .last_known_inventory
+            .insert(CommodityKind::Waste, Quantity(1));
+        let mut remote_belief = belief_at_place(place, Tick(99));
+        remote_belief.believed_kind = Some(EntityKind::ItemLot);
+        remote_belief
+            .last_known_inventory
+            .insert(CommodityKind::Waste, Quantity(1));
+        view.beliefs.insert(
+            agent,
+            vec![
+                (carried_waste_lot, carried_belief),
+                (remote_waste_lot, remote_belief),
+            ],
+        );
+
+        let candidates = free_carry_capacity_candidates(&view, agent);
+
+        let disposal_candidates = candidates
+            .iter()
+            .filter(|candidate| candidate.key.kind == GoalKind::FreeCarryCapacity)
+            .collect::<Vec<_>>();
+        assert_eq!(disposal_candidates.len(), 1);
+        assert_eq!(
+            disposal_candidates[0].anchor,
+            OpportunityAnchor::Entity(carried_waste_lot)
+        );
     }
 
     fn believed_bounty_state(

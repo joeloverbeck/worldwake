@@ -342,6 +342,9 @@ fn spawn_agent(
     txn.set_component_drive_thresholds(agent_id, thresholds)?;
     let metabolism = agent_def.metabolism_profile.unwrap_or_default();
     txn.set_component_metabolism_profile(agent_id, metabolism)?;
+    if let Some(profile) = agent_def.disposal_profile {
+        txn.set_component_disposal_profile(agent_id, profile)?;
+    }
     let exploration =
         agent_def
             .exploration_profile
@@ -568,12 +571,12 @@ mod tests {
     use worldwake_core::{
         BeliefConfidencePolicy, CarryCapacity, CognitiveProfile, CommodityKind,
         CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
-        ControlSource, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-        ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-        LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
-        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
-        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WorkstationTag,
+        ControlSource, DisposalProfile, DriveThresholds, EpistemicDispositionProfile,
+        ExecutionBudget, ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile,
+        JusticeDispositionProfile, LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute,
+        PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
+        Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
+        TradeCategory, ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -598,6 +601,7 @@ mod tests {
             last_seen_memory: None,
             drive_thresholds: None,
             metabolism_profile: None,
+            disposal_profile: None,
             exploration_profile: None,
             carry_capacity: None,
             theft_disposition: None,
@@ -732,6 +736,73 @@ mod tests {
         assert_eq!(
             world.get_component_carry_capacity(agent),
             Some(&CarryCapacity(LoadUnits(20)))
+        );
+    }
+
+    #[test]
+    fn test_spawn_agents_keep_default_disposal_profile_when_override_absent() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_disposal_profile(agent),
+            Some(&DisposalProfile::default())
+        );
+    }
+
+    #[test]
+    fn test_spawn_agents_apply_disposal_profile_override_when_present() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                disposal_profile: Some(DisposalProfile {
+                    capacity_strain_threshold: Permille::new(950).unwrap(),
+                }),
+                ..minimal_agent("Alice", "Town", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_disposal_profile(agent),
+            Some(&DisposalProfile {
+                capacity_strain_threshold: Permille::new(950).unwrap(),
+            })
         );
     }
 
