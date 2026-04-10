@@ -1,6 +1,6 @@
 # S88TWOPHALAN-003: Implement PlanningFact and landmark extraction
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — new module internal to worldwake-ai planner
@@ -96,3 +96,22 @@ Tests within `landmarks.rs` or in a `landmarks/tests.rs`:
 
 1. `cargo test -p worldwake-ai -- landmarks`
 2. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-11.
+
+- Added [`search/landmarks.rs`] with `PlanningFact`, `PlanningOperator`,
+  `LandmarkSet`, `extract_landmarks`, and `preferred_operators`, plus 8 focused
+  inline unit tests covering landmark extraction, ordering, depth limits, and
+  preferred-operator selection.
+- Registered the module in `search/mod.rs` for downstream S88 tickets.
+- Marked the new module with `#![allow(dead_code)]` because this ticket lands
+  staged planner scaffolding that is intentionally unused until S88TWOPHALAN-005
+  and S88TWOPHALAN-007 integrate it.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai -- landmarks`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`
