@@ -116,18 +116,19 @@ exhaustion root cause, waste accumulation dampener gap, ShareBelief frontier-exh
 diagnostic enrichments.
 
 ```text
-S82 (independent)
+S82 ✅ archived
 S83 (independent)
 S84 (independent)
 S85 (independent)
-All four are parallel — no inter-dependencies.
+S83/S84/S85 remain parallel — no inter-dependencies.
 ```
 
-**Wave** (parallel, no deps):
-- **S82**: Waste Disposal and Inventory Management — `drop_item` action, `FreeCarryCapacity` goal, `DisposalProfile` per-agent parameter. Dampener for FND-11 waste accumulation loop.
-- **S83**: Belief-Informed Candidate Pruning — belief-gated place filtering in `AcquireCommodity` candidate generation, `speculative_acquisition` per-agent parameter. Fixes root cause of planner budget exhaustion.
-- **S84**: ShareBelief Operator Fix — investigate and fix frontier-exhaustion at depth 0 for ShareBelief goals despite co-location. Likely S73 snapshot filtering excluding agents from Tell operator search.
-- **S85**: Observer Behavioral Enrichment — death tick/cause display, frontier-exhaustion rejection reasons, need snapshots at behavioral transitions, post-travel affordance snapshots, "Unknown location" clarity.
+**Wave**:
+- **S82**: ✅ COMPLETED — Waste Disposal and Inventory Management — archived at [archive/specs/S82-waste-disposal-inventory-management.md](/home/joeloverbeck/projects/worldwake/archive/specs/S82-waste-disposal-inventory-management.md). Landed `drop_item`, `FreeCarryCapacity`, `DisposalProfile`, planner/candidate/ranking integration, CLI disposal-profile override support, and disposal-cycle golden coverage with deterministic replay.
+- **Active parallel remainder**:
+  - **S83**: Belief-Informed Candidate Pruning — belief-gated place filtering in `AcquireCommodity` candidate generation, `speculative_acquisition` per-agent parameter. Fixes root cause of planner budget exhaustion.
+  - **S84**: ShareBelief Operator Fix — investigate and fix frontier-exhaustion at depth 0 for ShareBelief goals despite co-location. Likely S73 snapshot filtering excluding agents from Tell operator search.
+  - **S85**: Observer Behavioral Enrichment — death tick/cause display, frontier-exhaustion rejection reasons, need snapshots at behavioral transitions, post-travel affordance snapshots, "Unknown location" clarity.
 
 ### Phase 7 Gate
 

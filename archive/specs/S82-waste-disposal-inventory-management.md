@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers (Adjunct — Simulation Remediation)
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -333,9 +333,9 @@ If the `drop_item` action is interrupted before commit (e.g., by combat or criti
 
 ### H7. Target Patterns and Invariants
 
-- **Golden test**: An agent with a production recipe that generates waste should eventually emit `FreeCarryCapacity` goals and execute `drop_item` actions when capacity is strained. Verify: (1) waste item appears on ground at agent's location, (2) agent's carry load decreases, (3) agent can resume production after dropping.
+- **Golden test**: An agent already carrying waste should emit and select `FreeCarryCapacity`, execute `drop_item` when capacity is strained, and stop selecting the disposal goal once the strain is relieved. Verify: (1) the same waste lot appears on the ground at the agent's location, (2) carried waste quantity decreases, (3) later traces no longer select `FreeCarryCapacity` after the disposal commit resolves the strain.
 - **Invariant**: `verify_conservation` must pass after `drop_item` commits — no items created or destroyed.
-- **Falsification**: An agent with `capacity_strain_threshold: 1000‰` (always strained) should attempt disposal every cycle if holding waste.
+- **Falsification**: An agent with `capacity_strain_threshold: 1000‰` should still dispose when carried waste exactly fills carry capacity.
 
 ## SystemFn Integration
 
@@ -360,3 +360,20 @@ All tunable parameters live in `DisposalProfile`:
 | Parameter | Type | Default | Purpose |
 |-----------|------|---------|---------|
 | `capacity_strain_threshold` | `Permille` | 800 | Minimum capacity usage before disposal candidates are generated |
+
+## Outcome
+
+- **Completion date**: 2026-04-10
+- **What actually changed**: Landed the full waste-disposal stack across the planned crates: `GoalKind::FreeCarryCapacity`, `DisposalProfile`, the Transport-domain `drop_item` action, live planner dispatch/op wiring for `DropItem`, goal-model semantics, ranking integration, candidate generation, CLI scenario disposal-profile override support, and golden disposal-cycle coverage with deterministic replay in `crates/worldwake-ai/tests/golden_production.rs`.
+- **Deviations from original plan**: The original spec overclaimed the strongest golden root. Live reassessment showed that "produce waste first" was not a lawful autonomous branch, and that the broader "disposal resumes production" chain was not uniquely attributable to `FreeCarryCapacity` because generic transport planning could already free capacity via `put_down`. The landed golden was therefore narrowed to the dedicated disposal-cycle contract. Focused proof also exposed an implementation contradiction not called out in the draft: `GoalDispatchDeclaration::FreeCarryCapacity` already used `FeasibilityStrategy::AlwaysLikely`, but feasibility matching did not yet handle `GoalKind::FreeCarryCapacity` until fixed in `crates/worldwake-ai/src/feasibility.rs`.
+- **Verification results**:
+  - `cargo test -p worldwake-systems transport_actions::tests::register_transport_actions_creates_pick_up_put_down_drop_item_and_steal_defs`
+  - `cargo test -p worldwake-ai free_carry_capacity_candidate_`
+  - `cargo test -p worldwake-ai free_carry_capacity_`
+  - `cargo test -p worldwake-ai golden_waste_disposal_cycle -- --nocapture`
+  - `cargo test -p worldwake-ai golden_waste_disposal_exact_full_threshold_cycle -- --nocapture`
+  - `cargo test -p worldwake-ai always_likely_strategy_covers_free_carry_capacity -- --nocapture`
+  - `cargo test -p worldwake-ai declaration_routing_assigns_expected_feasibility_strategies -- --nocapture`
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-cli`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

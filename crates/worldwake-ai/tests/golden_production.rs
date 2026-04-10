@@ -12,12 +12,12 @@ use worldwake_ai::{
 use worldwake_core::{
     AgentData, BlockingFact, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
     ContentionGrant, ControlSource, DemandMemory, DemandObservation, DemandObservationReason,
-    DeprivationExposure, DeprivationKind, EntityId, EventTag, EventView, HomeostaticNeeds,
-    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, PerceptionProfile,
-    PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, WorkstationTag, Wound, WoundCause, WoundId, WoundList,
-    hash_event_log, hash_world, total_authoritative_commodity_quantity, total_live_lot_quantity,
-    verify_authoritative_conservation, verify_live_lot_conservation,
+    DeprivationExposure, DeprivationKind, DisposalProfile, EntityId, EventTag, EventView,
+    HomeostaticNeeds, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
+    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, Wound, WoundCause,
+    WoundId, WoundList, hash_event_log, hash_world, total_authoritative_commodity_quantity,
+    total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::{
     ActionRequestMode, ActionStartFailureReason, ActionTraceKind, InputKind, RequestAttemptTrace,
@@ -4183,6 +4183,176 @@ fn run_goal_switch_contention_cleanup_scenario(seed: Seed) -> GoalSwitchContenti
     }
 }
 
+fn run_waste_disposal_cycle_scenario(
+    seed: Seed,
+    disposal_profile: DisposalProfile,
+    waste_quantity: Quantity,
+) -> (StateHash, StateHash) {
+    let mut h = GoldenHarness::new(seed);
+    let cleaner = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Cleaner",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::default(),
+        MetabolismProfile {
+            hunger_rate: pm(0),
+            thirst_rate: pm(0),
+            fatigue_rate: pm(0),
+            bladder_rate: pm(0),
+            dirtiness_rate: pm(0),
+            ..MetabolismProfile::default()
+        },
+        UtilityProfile::default(),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        cleaner,
+        production_perception_profile(),
+    );
+
+    let waste_lot = give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        cleaner,
+        VILLAGE_SQUARE,
+        CommodityKind::Waste,
+        waste_quantity,
+    );
+    let initial_owner = h.world.owner_of(waste_lot);
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_carry_capacity(cleaner, CarryCapacity(LoadUnits(10)))
+        .unwrap();
+    txn.set_component_disposal_profile(cleaner, disposal_profile)
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        cleaner,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    verify_live_lot_conservation(&h.world, CommodityKind::Waste, u64::from(waste_quantity.0))
+        .unwrap();
+    verify_authoritative_conservation(&h.world, CommodityKind::Waste, u64::from(waste_quantity.0))
+        .unwrap();
+
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let mut drop_commit = None;
+
+    for _ in 0..120 {
+        h.step_once();
+
+        let cleaner_events = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled for waste disposal")
+            .events_for(cleaner);
+        drop_commit = cleaner_events.iter().find_map(|event| {
+            (event.action_name == "drop_item" && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some((event.tick, event.sequence_in_tick))
+        });
+
+        verify_live_lot_conservation(&h.world, CommodityKind::Waste, u64::from(waste_quantity.0))
+            .unwrap();
+        verify_authoritative_conservation(
+            &h.world,
+            CommodityKind::Waste,
+            u64::from(waste_quantity.0),
+        )
+        .unwrap();
+
+        if drop_commit.is_some() {
+            break;
+        }
+    }
+
+    let trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled for waste disposal");
+    let free_capacity_goal = GoalKey::from(GoalKind::FreeCarryCapacity);
+    let disposal_trace = trace_sink
+        .traces_for(cleaner)
+        .into_iter()
+        .find_map(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning)
+                if planning.candidates.generated_contains_goal(free_capacity_goal)
+                    && planning.selection.selected_goal() == Some(free_capacity_goal) =>
+            {
+                Some((trace.tick, planning))
+            }
+            _ => None,
+        })
+        .expect(
+            "capacity-strained waste scenario should generate and select FreeCarryCapacity before disposal",
+        );
+    let disposal_next_step = disposal_trace
+        .1
+        .selection
+        .selected_plan
+        .as_ref()
+        .and_then(|plan| plan.next_step.as_ref())
+        .expect("selected FreeCarryCapacity plan should expose a next step");
+
+    assert_eq!(
+        disposal_next_step.op_kind,
+        PlannerOpKind::DropItem,
+        "FreeCarryCapacity should route through the drop-item planner operator"
+    );
+
+    let drop_commit = drop_commit.expect("waste disposal scenario should commit drop_item");
+
+    assert!(
+        disposal_trace.0 <= drop_commit.0,
+        "FreeCarryCapacity should be selected on or before the disposal commit; trace_tick={:?} drop_commit={drop_commit:?}",
+        disposal_trace.0
+    );
+    assert_eq!(
+        h.world.possessor_of(waste_lot),
+        None,
+        "drop_item should clear possession for the carried waste lot"
+    );
+    assert_eq!(
+        h.world.effective_place(waste_lot),
+        Some(VILLAGE_SQUARE),
+        "dropped waste should remain on the ground at the cleaner's place"
+    );
+    assert_eq!(
+        h.world.owner_of(waste_lot),
+        initial_owner,
+        "drop_item should preserve the waste lot's existing ownership state"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(cleaner, CommodityKind::Waste),
+        Quantity(0),
+        "the cleaner should carry no waste after disposal commits"
+    );
+    assert!(
+        trace_sink
+            .traces_for(cleaner)
+            .into_iter()
+            .filter(|trace| trace.tick > drop_commit.0)
+            .all(|trace| match &trace.outcome {
+                DecisionOutcome::Planning(planning) => {
+                    planning.selection.selected_goal() != Some(free_capacity_goal)
+                }
+                _ => true,
+            }),
+        "FreeCarryCapacity should stop being selected after the disposal commit resolves the strain"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 #[test]
 fn golden_goal_switch_clears_contention_queue_entry() {
     let outcome = run_goal_switch_contention_cleanup_scenario(Seed([26; 32]));
@@ -4219,5 +4389,54 @@ fn golden_goal_switch_clears_contention_queue_entry_replays_deterministically() 
     assert_eq!(
         outcome_1.log_hash, outcome_2.log_hash,
         "Goal-switch contention cleanup should replay to the same event log hash"
+    );
+}
+
+#[test]
+fn golden_waste_disposal_cycle() {
+    let _ = run_waste_disposal_cycle_scenario(
+        Seed([27; 32]),
+        DisposalProfile::default(),
+        Quantity(8),
+    );
+}
+
+#[test]
+fn golden_waste_disposal_cycle_replays_deterministically() {
+    let seed = Seed([27; 32]);
+
+    let first = run_waste_disposal_cycle_scenario(seed, DisposalProfile::default(), Quantity(8));
+    let second = run_waste_disposal_cycle_scenario(seed, DisposalProfile::default(), Quantity(8));
+
+    assert_eq!(
+        first, second,
+        "Waste-disposal cycle should replay deterministically"
+    );
+}
+
+#[test]
+fn golden_waste_disposal_exact_full_threshold_cycle() {
+    let _ = run_waste_disposal_cycle_scenario(
+        Seed([28; 32]),
+        DisposalProfile {
+            capacity_strain_threshold: pm(1000),
+        },
+        Quantity(10),
+    );
+}
+
+#[test]
+fn golden_waste_disposal_exact_full_threshold_cycle_replays_deterministically() {
+    let seed = Seed([28; 32]);
+    let profile = DisposalProfile {
+        capacity_strain_threshold: pm(1000),
+    };
+
+    let first = run_waste_disposal_cycle_scenario(seed, profile, Quantity(10));
+    let second = run_waste_disposal_cycle_scenario(seed, profile, Quantity(10));
+
+    assert_eq!(
+        first, second,
+        "Exact-full-threshold waste-disposal scenario should replay deterministically"
     );
 }
