@@ -562,7 +562,7 @@ static DECL_EXPLORE_LOCATION: GoalDispatchDeclaration = GoalDispatchDeclaration 
     provenance_family: None,
     relevant_ops: EXPLORE_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
-    feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::PlaceMatch,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };

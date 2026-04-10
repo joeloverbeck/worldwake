@@ -1,14 +1,14 @@
 # S80EXPDRI-004: Candidate generation and ranking
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — new candidate emitter, ranking integration, counter management in agent tick
+**Engine Changes**: Yes — new exploration candidate emitter, ranking integration, counter management at the agent-tick ECS write boundary
 **Deps**: S80EXPDRI-001, S80EXPDRI-002, S80EXPDRI-003
 
 ## Problem
 
-Agents with unmet needs and no known satisfaction path currently enter indefinite sleep+relieve loops because no live exploration candidate emitter exists. `S80EXPDRI-001` landed only inert ranking substrate for `ExploreLocation` so the symbol compiles safely; this ticket still needs to add the need+ignorance emitter, promote ranking from inert `Background`/`0` handling to the real exploration motive formula, and manage consecutive-exploration counters.
+Agents with unmet needs and no known satisfaction path currently enter indefinite sleep+relieve loops because no live exploration candidate emitter exists. `S80EXPDRI-001` and `S80EXPDRI-003` already landed the `ExploreLocation` goal symbol, dispatch substrate, and planner satisfaction path; this ticket still needs to add the need+ignorance emitter, promote ranking from inert `Background`/`0` handling to the real exploration motive formula, and manage consecutive-exploration counters at the runtime write boundary.
 
 ## Assumption Reassessment (2026-04-10)
 
@@ -20,6 +20,8 @@ Agents with unmet needs and no known satisfaction path currently enter indefinit
 7. Counter management: `consecutive_exploration_count` on `ExplorationProfile` is incremented when ExploreLocation is selected, reset to 0 when any other goal is selected. This happens during goal selection in the agent tick, not in candidate generation itself.
 8. `S80EXPDRI-001` already added compile-safe inert ranking coverage for `ExploreLocation` in `crates/worldwake-ai/src/ranking.rs` (`GoalPriorityClass::Background`, motive `0`, discriminant branch). This ticket owns replacing that inert handling with the live `Low` priority / motive formula rather than introducing the symbol for the first time.
 9. Scenario authoring cleanup for the runtime-only `ExplorationProfile.consecutive_exploration_count` field is not owned here. That bootstrap/schema correction is tracked separately by `S80EXPDRI-006`; this ticket only owns runtime counter updates during goal selection.
+10. `agent_tick/planning.rs` owns plan selection over immutable world reads, but the actual mutable ECS write boundary for component updates is `crates/worldwake-ai/src/agent_tick/mod.rs` via `AgentTickContext { world: &mut World }`. Counter writes belong there, not in the planning helper layer.
+11. Candidate generation already has live consumable-profile helpers `relieves_hunger()` / `relieves_thirst()` and acquisition-path scans in `crates/worldwake-ai/src/candidate_generation.rs`. This ticket can reuse those existing hunger/thirst mappings instead of introducing a hardcoded one-commodity-per-need table.
 
 ## Architecture Check
 
@@ -71,21 +73,21 @@ In the ranking system (`crates/worldwake-ai/src/ranking.rs` or `goal_model.rs`):
 
 ### 4. Counter management in agent tick
 
-In the agent tick goal selection flow:
+In the agent tick goal selection flow at the mutable ECS boundary:
 - When ExploreLocation is selected: increment `consecutive_exploration_count` on the agent's `ExplorationProfile`
 - When any other goal is selected: reset `consecutive_exploration_count` to 0
 - Write updated profile back to ECS store
+  - Owned runtime file is `crates/worldwake-ai/src/agent_tick/mod.rs` unless reassessment finds a narrower existing write helper.
 
-### 5. Need-to-commodity mapping
+### 5. Need-to-consumable mapping
 
-Add a helper that maps `HomeostaticNeedId` to the commodity that satisfies it (e.g., `Hunger → Food/Apple`, `Thirst → Water`). This enables checking whether the agent knows of resource sources for a given need. If such a mapping already exists, reuse it.
+Reuse the existing consumable-profile helpers that classify hunger- and thirst-relieving commodities when checking whether a need has a known acquisition path. Do not introduce a hardcoded `Hunger -> Apple` / `Thirst -> Water` shortcut if the live helper surface already covers all lawful consumables.
 
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — add exploration emitter call)
-- `crates/worldwake-ai/src/exploration_candidates.rs` (new — emitter function, target selection)
 - `crates/worldwake-ai/src/ranking.rs` (modify — ExploreLocation priority class and motive score)
-- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — counter management on goal selection)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — counter management on goal selection at the mutable ECS boundary)
 
 ## Out of Scope
 
@@ -131,3 +133,28 @@ Add a helper that maps `HomeostaticNeedId` to the commodity that satisfies it (e
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo build --workspace`
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Added a live exploration emitter in `crates/worldwake-ai/src/candidate_generation.rs` for hunger/thirst ignorance cases using the existing consumable-profile and acquisition-path helpers rather than a new hardcoded need-to-commodity table.
+- Narrowed exploration emission to a self-care fallback surface: it only emits when the agent lacks a known hunger/thirst satisfaction path and no non-self-care candidate families are already present, which preserved the existing pursuit information-boundary golden contract during broadened verification.
+- Implemented deterministic exploration target selection from believed and adjacent-to-known places, filtering current/recent places and preferring unseen frontier places before shorter/older-known alternatives rather than introducing an RNG tiebreak.
+- Replaced inert `ExploreLocation` ranking with the live `GoalPriorityClass::Low` branch and the ticketed motive formula `need * curiosity / 1000` in `crates/worldwake-ai/src/ranking.rs`.
+- Added runtime exploration-counter updates at the mutable ECS boundary in `crates/worldwake-ai/src/agent_tick/mod.rs` via transaction-backed component writes when a goal is adopted.
+- Broadened the ticket-owned live contract slightly during verification by updating `crates/worldwake-ai/src/goal_dispatch_decl.rs` and `crates/worldwake-ai/src/feasibility.rs` so `ExploreLocation` uses the correct place-match feasibility behavior in the broader AI pipeline.
+
+### Deviations From Original Plan
+
+- Exploration remained hunger/thirst-scoped in candidate generation because those are the live needs with lawful consumable/acquisition-path substrate today.
+- The landed emitter is narrower than the original spec text: instead of competing with every other candidate family whenever need+ignorance is present, it currently acts as a self-care fallback after broader candidate generation, which avoided reopening the existing pursuit information-boundary golden failures.
+- Target selection uses deterministic novelty/proximity ordering instead of an RNG tiebreak, aligning the landed behavior with the repository's determinism requirements.
+
+## Verification Result
+
+- Passed focused `worldwake-ai` tests for exploration candidate emission, ranking, and counter updates during implementation.
+- Passed `cargo test -p worldwake-ai`.
+- Passed targeted regression checks `cargo test -p worldwake-ai --test golden_integration t28_pursuit_information_boundary_seed_1` and `cargo test -p worldwake-ai --test golden_integration t28_pursuit_information_boundary_seed_2`.
+- Passed `cargo build --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.

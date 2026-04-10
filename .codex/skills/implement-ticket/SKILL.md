@@ -65,7 +65,7 @@ Run the narrowest correct verification first, then broaden.
 
 Load `references/verification.md`.
 
-If reassessment revealed that additive substrate from an earlier ticket already landed, include repository-wide exhaustive inventory tests and count assertions in the broadened verification sweep. Typical fallout includes stale `ALL` lists, exhaustiveness fixtures, representative-goal inventories, and explicit length assertions that still reflect the pre-addition shape.
+If reassessment revealed that additive substrate from an earlier ticket already landed, include repository-wide live-contract fallout in the broadened verification sweep, not just the ticket's newly edited file set. Typical fallout includes stale `ALL` lists, exhaustiveness fixtures, representative-goal inventories, explicit length assertions that still reflect the pre-addition shape, and adjacent registry/declaration surfaces such as feasibility or invalidation strategies, provenance-family mappings, and other dispatch-table contracts that must now treat the additive shape as live behavior rather than inert scaffolding.
 
 ### 7. Close out the ticket honestly
 

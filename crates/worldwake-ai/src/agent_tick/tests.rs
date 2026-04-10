@@ -11,7 +11,8 @@ use super::{
     AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
     committed_action_for_step, effective_goal_switch_margin,
     handle_recoverable_travel_step_blockage, persist_blocked_memory,
-    plan_and_validate_next_step_traced, update_frame_for_adopted_plan,
+    plan_and_validate_next_step_traced, update_exploration_counter_for_adopted_goal,
+    update_frame_for_adopted_plan,
 };
 use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
@@ -33,15 +34,16 @@ use worldwake_core::{
     CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents,
     ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
     DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
-    EventPayload, ExecutionBudget, FrameState, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain,
-    IntentionFrame, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-    PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place,
-    Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed,
-    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
-    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
-    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-    WoundList, build_believed_entity_state, build_prototype_world,
+    EventPayload, ExecutionBudget, ExplorationProfile, FrameState, HomeostaticNeedId,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    IntentionDispositionProfile, IntentionDomain, IntentionFrame, KnownRecipes, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent,
+    PerceptionProfile, PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent,
+    RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
+    TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId,
+    UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -5970,5 +5972,84 @@ fn affordance_trace_absent_when_tracing_disabled() {
     assert!(
         harness.driver.trace_sink().is_none(),
         "trace sink should be None when tracing is disabled"
+    );
+}
+
+#[test]
+fn exploration_counter_increments_when_explore_goal_is_adopted() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let mut txn = new_txn(&mut harness.world, 1);
+    txn.set_component_exploration_profile(
+        harness.actor,
+        ExplorationProfile {
+            consecutive_exploration_count: 1,
+            ..ExplorationProfile::default()
+        },
+    )
+    .unwrap();
+    commit_txn(txn);
+
+    let active_goal = worldwake_core::ActiveGoal {
+        goal_key: GoalKey::from(GoalKind::ExploreLocation {
+            target_place: entity(99),
+            motivating_need: HomeostaticNeedId::Hunger,
+        }),
+        adopted_at: Tick(5),
+    };
+
+    update_exploration_counter_for_adopted_goal(
+        &mut harness.world,
+        &mut harness.event_log,
+        harness.actor,
+        Some(&active_goal),
+        Tick(5),
+    )
+    .unwrap();
+
+    assert_eq!(
+        harness
+            .world
+            .get_component_exploration_profile(harness.actor)
+            .unwrap()
+            .consecutive_exploration_count,
+        2
+    );
+}
+
+#[test]
+fn exploration_counter_resets_when_non_explore_goal_is_adopted() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let mut txn = new_txn(&mut harness.world, 1);
+    txn.set_component_exploration_profile(
+        harness.actor,
+        ExplorationProfile {
+            consecutive_exploration_count: 2,
+            ..ExplorationProfile::default()
+        },
+    )
+    .unwrap();
+    commit_txn(txn);
+
+    let active_goal = worldwake_core::ActiveGoal {
+        goal_key: GoalKey::from(GoalKind::Sleep),
+        adopted_at: Tick(5),
+    };
+
+    update_exploration_counter_for_adopted_goal(
+        &mut harness.world,
+        &mut harness.event_log,
+        harness.actor,
+        Some(&active_goal),
+        Tick(5),
+    )
+    .unwrap();
+
+    assert_eq!(
+        harness
+            .world
+            .get_component_exploration_profile(harness.actor)
+            .unwrap()
+            .consecutive_exploration_count,
+        0
     );
 }

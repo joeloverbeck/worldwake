@@ -257,6 +257,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_search_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_report_found_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_escort_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_exploration_candidates(&mut candidates, &mut diagnostics, &ctx, needs);
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
@@ -2306,6 +2307,85 @@ fn emit_self_consume_candidates(
     );
 }
 
+fn emit_exploration_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+    needs: Option<HomeostaticNeeds>,
+) {
+    if candidates
+        .iter()
+        .any(|candidate| !goal_is_self_care_fallback(candidate.key.kind))
+    {
+        return;
+    }
+    let Some(needs) = needs else {
+        return;
+    };
+    let Some(profile) = ctx.view.exploration_profile(ctx.agent) else {
+        return;
+    };
+    if profile.curiosity_weight.value() == 0 {
+        return;
+    }
+    if profile.max_consecutive_explorations > 0
+        && profile.consecutive_exploration_count >= profile.max_consecutive_explorations
+    {
+        return;
+    }
+
+    let Some(target_place) = select_exploration_target(ctx, profile) else {
+        return;
+    };
+
+    for (need_id, pressure, matches_need) in [
+        (
+            HomeostaticNeedId::Hunger,
+            needs.hunger,
+            relieves_hunger as fn(CommodityKind) -> bool,
+        ),
+        (
+            HomeostaticNeedId::Thirst,
+            needs.thirst,
+            relieves_thirst as fn(CommodityKind) -> bool,
+        ),
+    ] {
+        if pressure < profile.need_activation_threshold
+            || any_local_need_relief(ctx.view, ctx.agent, ctx.place, matches_need)
+            || need_has_known_acquisition_path(ctx, matches_need)
+        {
+            continue;
+        }
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            GoalKind::ExploreLocation {
+                target_place,
+                motivating_need: need_id,
+            },
+            OpportunityAnchor::Place(target_place),
+            Evidence::with_place(target_place),
+            EvidenceTrace::default(),
+        );
+    }
+}
+
+fn goal_is_self_care_fallback(goal_kind: GoalKind) -> bool {
+    matches!(
+        goal_kind,
+        GoalKind::ConsumeOwnedCommodity { .. }
+            | GoalKind::AcquireCommodity {
+                purpose: CommodityPurpose::SelfConsume,
+                ..
+            }
+            | GoalKind::ProduceCommodity { .. }
+            | GoalKind::Sleep
+            | GoalKind::Relieve
+            | GoalKind::Wash
+    )
+}
+
 fn emit_need_driven_candidates(
     candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
@@ -3941,6 +4021,92 @@ fn acquisition_path_opportunities_inner(
         .collect()
 }
 
+fn need_has_known_acquisition_path(
+    ctx: &GenerationContext<'_>,
+    matches_need: fn(CommodityKind) -> bool,
+) -> bool {
+    CommodityKind::ALL.into_iter().any(|commodity| {
+        matches_need(commodity)
+            && !acquisition_path_opportunities(
+                ctx.view,
+                ctx.agent,
+                ctx.place,
+                commodity,
+                ctx.recipes,
+                ctx.travel_horizon,
+            )
+            .is_empty()
+    })
+}
+
+fn select_exploration_target(
+    ctx: &GenerationContext<'_>,
+    profile: worldwake_core::ExplorationProfile,
+) -> Option<EntityId> {
+    let origin = ctx.place?;
+    let current_tick = ctx.view.current_tick();
+    let known_places = known_place_observations(ctx.view, ctx.agent);
+    if known_places.is_empty() {
+        return None;
+    }
+
+    let mut candidates = BTreeMap::<EntityId, Option<Tick>>::new();
+    for (place, observed_tick) in &known_places {
+        candidates.insert(*place, Some(*observed_tick));
+        for (adjacent, _) in ctx.view.adjacent_places_with_travel_ticks(*place) {
+            candidates.entry(adjacent).or_insert(None);
+        }
+    }
+
+    candidates
+        .into_iter()
+        .filter(|(candidate_place, observed_tick)| {
+            *candidate_place != origin
+                && !observed_tick.is_some_and(|observed_tick| {
+                    current_tick
+                        .0
+                        .saturating_sub(observed_tick.0)
+                        <= u64::from(profile.visit_lookback_ticks)
+                })
+        })
+        .filter_map(|(candidate_place, observed_tick)| {
+            let travel_ticks = min_travel_ticks_via_view(ctx.view, origin, candidate_place)?;
+            (travel_ticks <= u32::from(ctx.travel_horizon)).then_some((
+                observed_tick.is_some(),
+                travel_ticks,
+                observed_tick.map_or(u64::MAX, |tick| tick.0),
+                candidate_place,
+            ))
+        })
+        .min()
+        .map(|(_, _, _, place)| place)
+}
+
+fn known_place_observations(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+) -> BTreeMap<EntityId, Tick> {
+    let mut known_places = BTreeMap::new();
+    if let Some(store) = view.agent_belief_store(agent) {
+        for (entity, belief) in &store.known_entities {
+            if belief.believed_kind == Some(EntityKind::Place) {
+                known_places.insert(*entity, belief.observed_tick);
+            }
+        }
+    }
+
+    for (entity, belief) in view.known_entity_beliefs(agent) {
+        if belief.believed_kind == Some(EntityKind::Place) {
+            known_places
+                .entry(entity)
+                .and_modify(|tick| *tick = (*tick).max(belief.observed_tick))
+                .or_insert(belief.observed_tick);
+        }
+    }
+
+    known_places
+}
+
 fn acquisition_path_evidence_inner(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -4552,7 +4718,8 @@ mod tests {
         CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
         DemandObservationReason, DriveThresholds, EffectiveRight, EligibilityRule, EntityId,
         EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
-        ExpectationRecord, ExpectationState, ExpectationStore, GoalKey, GoalKind,
+        ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile, GoalKey,
+        GoalKind,
         HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
         LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
@@ -4609,6 +4776,7 @@ mod tests {
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         utility_profiles: BTreeMap<EntityId, UtilityProfile>,
+        exploration_profiles: BTreeMap<EntityId, ExplorationProfile>,
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
         belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
@@ -4688,6 +4856,7 @@ mod tests {
                 demand_memory: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
                 utility_profiles: BTreeMap::new(),
+                exploration_profiles: BTreeMap::new(),
                 corpses_at: BTreeMap::new(),
                 belief_stores: BTreeMap::new(),
                 beliefs: BTreeMap::new(),
@@ -4840,6 +5009,10 @@ mod tests {
 
         fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
             self.utility_profiles.get(&agent).cloned()
+        }
+
+        fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
+            self.exploration_profiles.get(&agent).copied()
         }
     }
 
@@ -14528,6 +14701,260 @@ mod tests {
         assert!(
             contains_goal(&candidates, GoalKind::RaidTarget { target: new_target }),
             "RaidTarget for a new target must NOT be suppressed by an EstablishBanditCamp blocker"
+        );
+    }
+
+    #[test]
+    fn generate_candidates_emits_exploration_for_hunger_without_known_food_path() {
+        let agent = entity(1);
+        let current_place = entity(10);
+        let known_place = entity(11);
+        let frontier_place = entity(12);
+
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, current_place);
+        view.entities_at.insert(current_place, vec![agent]);
+        view.adjacent_places.insert(current_place, vec![known_place]);
+        view.adjacent_places.insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places.insert(frontier_place, vec![known_place]);
+        view.homeostatic_needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new(700).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        );
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                max_consecutive_explorations: 3,
+                visit_lookback_ticks: 50,
+                consecutive_exploration_count: 0,
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                known_place,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    believed_evidence: None,
+                    observed_tick: Tick(100),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ExploreLocation {
+                target_place: frontier_place,
+                motivating_need: HomeostaticNeedId::Hunger,
+            }
+        ));
+    }
+
+    #[test]
+    fn generate_candidates_skips_exploration_when_food_path_is_known() {
+        let agent = entity(1);
+        let current_place = entity(10);
+        let known_place = entity(11);
+        let frontier_place = entity(12);
+        let source = entity(20);
+
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, current_place);
+        view.entities_at.insert(current_place, vec![agent]);
+        view.adjacent_places.insert(current_place, vec![known_place]);
+        view.adjacent_places.insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places.insert(frontier_place, vec![known_place]);
+        view.homeostatic_needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new(700).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        );
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                max_consecutive_explorations: 3,
+                visit_lookback_ticks: 50,
+                consecutive_exploration_count: 0,
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                known_place,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    believed_evidence: None,
+                    observed_tick: Tick(100),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        view.sources_at
+            .insert((known_place, CommodityKind::Bread), vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Bread,
+                available_quantity: Quantity(5),
+                max_quantity: Quantity(5),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+        );
+
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| matches!(candidate.key.kind, GoalKind::ExploreLocation { .. })),
+            "known bread source should suppress hunger-driven exploration"
+        );
+    }
+
+    #[test]
+    fn generate_candidates_skips_exploration_when_consecutive_limit_reached() {
+        let agent = entity(1);
+        let current_place = entity(10);
+        let known_place = entity(11);
+        let frontier_place = entity(12);
+
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, current_place);
+        view.entities_at.insert(current_place, vec![agent]);
+        view.adjacent_places.insert(current_place, vec![known_place]);
+        view.adjacent_places.insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places.insert(frontier_place, vec![known_place]);
+        view.homeostatic_needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new(700).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        );
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                max_consecutive_explorations: 1,
+                visit_lookback_ticks: 50,
+                consecutive_exploration_count: 1,
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                known_place,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    believed_evidence: None,
+                    observed_tick: Tick(100),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+        );
+
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| matches!(candidate.key.kind, GoalKind::ExploreLocation { .. })),
+            "exploration should stop once the consecutive cap is reached"
         );
     }
 }

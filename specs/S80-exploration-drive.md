@@ -31,7 +31,7 @@ Draft
 - Exploration emerges from unmet needs + limited geographic beliefs, not from a scripted "explore" trigger (FND-01)
 - Agents reason about their own ignorance — "I don't know where water is" motivates information-seeking (FND-14)
 - Geographic knowledge propagates through travel, testimony, and observation — exploration is one of these paths (FND-15)
-- Exploration goals compete with other goals through the normal priority/planning pipeline (FND-20)
+- Exploration goals enter the normal priority/planning pipeline once emitted, but the current emitter is a self-care fallback that suppresses itself when non-self-care candidate families are already present (FND-20)
 - Per-agent curiosity weight varies — some agents are homebodies, others are natural explorers (FND-22)
 - Exploration targets are belief-gated: agents only consider places they have heard about or that are topologically adjacent to known places
 
@@ -169,7 +169,7 @@ In `crates/worldwake-ai/src/candidate_generation.rs` (or a new exploration-speci
 1. Enumerate places the agent believes exist (from `AgentBeliefStore.known_entities` where kind = Place)
 2. Add places adjacent to known places via `GoalBeliefView::adjacent_places_with_travel_ticks()` (one hop beyond known — public structural topology, same mechanism all travel-based goals use)
 3. Filter out the agent's current place and places visited within `visit_lookback_ticks` (derived from belief timestamps in `AgentBeliefStore.known_entities`)
-4. Rank by: (a) proximity (fewer hops preferred), (b) novelty (less-visited preferred), (c) random tiebreak via agent's RNG seed for diversity
+4. Rank deterministically by: (a) novelty/frontier preference (adjacent-to-known places without a direct place belief first), (b) proximity (fewer hops preferred), (c) oldest surviving place belief, then stable entity-id order
 5. Generate `ExploreLocation` goal for the top-ranked candidate
 
 **Counter management**: When the agent tick selects an `ExploreLocation` goal, increment `consecutive_exploration_count`. When any other goal is selected, reset to 0.
