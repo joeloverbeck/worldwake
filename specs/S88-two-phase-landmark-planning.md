@@ -2,7 +2,7 @@
 
 ## Summary
 
-Replace the GOAP planner's flat A* forward search with a two-phase architecture: a belief-driven **strategic planner** that sequences location visits, followed by a **tactical planner** that uses locality-scoped candidate generation and landmark-based preferred operators to find concrete action plans at each location.
+Replace the GOAP planner's flat A* forward search with a two-phase architecture: a belief-driven **strategic planner** that sequences location visits, followed by a **tactical planner** that uses landmark-based preferred operators to find concrete action plans at each location.
 
 The current planner generates 1400–2600 search candidates per expansion (cartesian product of action_defs × target_entities × payload_variants), consuming its entire expansion budget (224–300) at depth 0–1. This prevents multi-location plans (travel + acquire + consume) from ever being found, causing behavioral collapse across all agents.
 
@@ -17,7 +17,7 @@ This spec supersedes S86 (Planner Pre-Expansion Candidate Heuristics) and S87 (O
 ## Design Goals
 
 - Enable agents to find multi-location plans (travel to location B + acquire resource + consume) within the existing expansion budget
-- Reduce per-expansion candidate count from 1400+ to ~20–50 through locality-scoped generation
+- Reduce per-expansion candidate count from 1400+ to ~20–50 by decomposing multi-location goals into locality-scoped tactical sub-problems via the strategic planner
 - Provide landmark-based search guidance that understands goal substructure (harvest precedes pick_up precedes consume)
 - Operate on agent beliefs, never world truth (FND-14)
 - Make cognitive parameters per-agent for diversity (FND-22)
@@ -47,7 +47,7 @@ Key finding: no shipped GOAP game has successfully used flat A* forward search w
 | FND-1 (Maximal Emergence) | Both phases use search, not authored decompositions. Plan structure emerges from beliefs + goals. No pre-scripted action sequences. |
 | FND-3 (Concrete State) | Landmarks are concrete state propositions (has(Water), at(Well_location)), not abstract scores. Derived from goal structure and beliefs. |
 | FND-7 (Locality) | Strategic planner uses only believed travel costs and believed place contents from `PlanningSnapshot`. No global queries. |
-| FND-12 (Perf Compresses Computation) | Locality scoping and landmarks reduce search computation. All lawfully reachable plans remain reachable; search is guided, not pruned of legal options. |
+| FND-12 (Perf Compresses Computation) | Strategic decomposition and landmarks reduce search computation. All lawfully reachable plans remain reachable; search is guided, not pruned of legal options. |
 | FND-14 (Belief-Only Planning) | Both phases operate on `PlanningSnapshot` belief surface. Landmarks are belief-dependent — an agent who doesn't know about a Well has no landmark requiring it. |
 | FND-16 (Ignorance First-Class) | Missing beliefs produce exploration itineraries. Wrong beliefs produce belief contradiction on arrival, triggering replanning. |
 | FND-20 (Bounded Reasoning) | FND-20 explicitly authorizes "agent-local summaries, heuristics, and bounded lookahead derived from accessible belief state." Landmarks are exactly this: bounded lookahead over the agent's believed operator effects. The strategic phase is an agent-local reasoning summary. |
@@ -115,8 +115,8 @@ No amplifying loops introduced. The strategic planner runs once per planning cal
 
 | Item | Classification | Justification |
 |------|---------------|---------------|
-| `StrategicPlan` | Transient derived | Computed per planning call from beliefs. Not stored as component. |
-| `LandmarkSet` | Transient derived | Computed per tactical planning call from believed operators. Not stored. |
+| `StrategicPlan` | Transient derived | Computed per planning call from beliefs. Not stored as component. Does not survive save/load. |
+| `LandmarkSet` | Transient derived | Computed per tactical planning call from believed operators. Not stored. Does not survive save/load. |
 | `landmark_extraction_depth` on `CognitiveProfile` | Authoritative stored | Per-agent cognitive parameter. Scenario-definable. |
 | `preferred_operator_boost` on `ExecutionBudget` | Authoritative stored | Per-agent search parameter. Scenario-definable. |
 | Decision trace entries | Diagnostic | Debug-only output. Not authoritative state. |
@@ -136,7 +136,7 @@ Add to `CognitiveProfile`:
 pub landmark_extraction_depth: u8,
 ```
 
-Default: `4`. Range: 0–8. Scenario-definable via `CognitiveProfileDef`.
+Default: `4`. Range: 0–8. Scenario-definable: the CLI's `AgentDef` uses `Option<CognitiveProfile>` directly (`crates/worldwake-cli/src/scenario/types.rs:86`), and `spawn_agent()` applies it via `unwrap_or_default()` (`crates/worldwake-cli/src/scenario/mod.rs:368`). New fields are picked up automatically — no CLI changes needed.
 
 ### D2: `preferred_operator_boost` on `ExecutionBudget`
 
@@ -151,7 +151,7 @@ Add to `ExecutionBudget`:
 pub preferred_operator_boost: u8,
 ```
 
-Default: `2`. Range: 0–8. Scenario-definable via `ExecutionBudgetDef`.
+Default: `2`. Range: 0–8. Scenario-definable: same mechanism as D1 — `AgentDef` uses `Option<ExecutionBudget>` directly (`types.rs:88`), and `spawn_agent()` applies via `unwrap_or_default()` (`scenario/mod.rs:369`). No CLI changes needed.
 
 ### D3: Strategic planner
 
@@ -201,29 +201,22 @@ pub enum TacticalSubGoal {
 ```
 
 **When beliefs are empty** (no known location has the needed resource):
-1. If `ExplorationProfile` is present and exploration is enabled: produce exploration itinerary — visit nearest adjacent places the agent has not recently visited. Uses `exploration_candidates()` from existing exploration drive (S80).
+1. If `ExplorationProfile` is present and exploration is enabled: produce exploration itinerary — visit nearest adjacent places the agent has not recently visited. The strategic planner derives exploration targets from `ExplorationProfile` and the agent's believed adjacent places in `PlanningSnapshot`, independently of the candidate generation pipeline (the private `emit_exploration_candidates()` in `candidate_generation.rs` serves a different purpose — it generates tactical exploration candidates, not strategic exploration itineraries).
 2. If co-located agents exist: include `TacticalSubGoal::SocialQuery` targeting `AskWitness` or `Consult` actions.
 3. If neither applies: return empty strategic plan. The planner falls through to local-only tactical planning (current behavior).
 
-### D4: Locality-scoped candidate generation
+### D4: Locality-scoped candidate generation via strategic decomposition
 
-**File**: `crates/worldwake-ai/src/search/candidates.rs`
+**File**: `crates/worldwake-ai/src/search/candidates.rs` (integration point)
 
-Modify `search_candidates()` so that at each expansion node, candidate generation is **scoped to the agent's current location in the planning state**.
+**Note on existing locality scoping**: The current affordance system already provides locality scoping through `RuntimeBeliefView`. Specifically:
+- `get_affordances_for_defs()` (`affordance_query.rs:60`) passes the `PlanningState` as a `RuntimeBeliefView`, and `enumerate_targets()` (`affordance_query.rs:463`) uses `view.effective_place(actor)` to scope `EntityAtActorPlace` targets to the agent's hypothetical location.
+- `goal_synthesized_candidates()` (`candidates.rs:302`) passes `state.effective_place(actor)` to `synthesized_root_candidate_targets()`, which locality-filters.
+- `planner_only_candidates()` (`planner_ops.rs:831`) operates on direct possessions only — inherently scoped.
 
-The planning state already tracks the agent's hypothetical location (via `PlanningState.effective_place()`). The modification:
+**How strategic decomposition achieves candidate reduction**: The candidate reduction from 1400+ to ~20–50 comes from the strategic phase (D3) decomposing a multi-location goal into locality-scoped tactical sub-problems. Each tactical search targets a specific sub-goal at a specific location, which narrows the `relevant_defs` set (only operators relevant to the sub-goal are enumerated). Additionally, remote locations typically have fewer entities than the starting location. The existing locality scoping mechanisms ensure candidates at each tactical location are correctly filtered.
 
-1. **Non-travel candidates**: Only enumerate affordances for entities at `effective_place`. The existing target spec `EntityAtActorPlace` already filters by place — the change is to skip affordance enumeration for action defs whose targets cannot be at the current planning-state place. This requires passing `effective_place` into `get_affordances_for_defs()` and filtering the returned affordances.
-
-2. **Travel candidates**: Continue to enumerate `AdjacentPlace` targets as today. The existing `prune_travel_away_from_goal()` further filters these.
-
-3. **Planner-only synthetic candidates**: Continue as today (these are already scoped to agent state, e.g., `put_down` for possessed items).
-
-4. **Goal-synthesized candidates**: Scope to entities the agent believes exist at `effective_place`.
-
-This is a correctness constraint, not a heuristic: an action targeting an entity at location B cannot be executed when the agent is at location A. The existing precondition checks would reject such candidates anyway — locality scoping simply avoids generating and evaluating them.
-
-**Expected reduction**: From 1400–2600 candidates per expansion to ~20–80, depending on location complexity.
+**Integration**: When a strategic plan is active, the tactical search receives the narrowed sub-goal context. The existing `search_candidates()` function continues to use `relevant_defs` (from `GoalDispatchDeclaration.relevant_ops`) to scope which action defs are enumerated. No modifications to `search_candidates()` itself are required — the candidate reduction emerges from the sub-goal narrowing, not from changes to the candidate generation pipeline.
 
 ### D5: Landmark extraction
 
@@ -234,13 +227,13 @@ Landmark extraction adapted from LAMA (Richter & Westphal 2010) for GOAP operato
 **Input**:
 - Initial state: the planning state at the start of tactical search (believed local state)
 - Goal facts: the set of propositions that must be true for the tactical sub-goal to be satisfied
-- Operators: the set of GOAP operators available at the current location (from locality-scoped candidate generation), represented as `(preconditions: BTreeSet<Fact>, add_effects: BTreeSet<Fact>, del_effects: BTreeSet<Fact>)`
+- Operators: the set of GOAP operators available at the current location (from candidate generation), represented as `(preconditions: BTreeSet<Fact>, add_effects: BTreeSet<Fact>, del_effects: BTreeSet<Fact>)`
 - `landmark_extraction_depth`: maximum chain length from `CognitiveProfile`
 
 **Fact representation**: Planning propositions represented as an enum:
 
 ```rust
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum PlanningFact {
     /// Agent is at this place
     AtPlace(EntityId),
@@ -253,7 +246,7 @@ pub enum PlanningFact {
     /// A specific entity exists at the current place
     EntityPresent(EntityId),
     /// Agent's need is below threshold (goal-terminal condition)
-    NeedSatisfied(NeedKind),
+    NeedSatisfied(HomeostaticNeedId),
 }
 ```
 
@@ -342,7 +335,7 @@ let landmark_h = compute_landmark_heuristic(&landmarks, &current_facts);
 let combined_h = spatial_h.max(landmark_h);
 ```
 
-Taking the max of both heuristics is admissible if both are admissible individually. The spatial heuristic provides distance guidance; the landmark heuristic provides subgoal-structure guidance.
+Taking the max of both heuristics preserves the existing search's guidance properties. The spatial heuristic provides distance guidance; the landmark heuristic provides subgoal-structure guidance. Note: the current search uses beam truncation (`ExecutionBudget.beam_width`), so optimality is already not guaranteed — the combined heuristic improves guidance quality within the existing satisficing search framework.
 
 ### D8: Integration into search_plan()
 
@@ -370,7 +363,7 @@ Modify `search_plan()` to:
    let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);
    ```
 
-4. **In the expansion loop**: After generating candidates (now locality-scoped), compute preferred operators from landmarks and insert into the dual frontier accordingly.
+4. **In the expansion loop**: After generating candidates (locality-scoped via the existing `RuntimeBeliefView` mechanism), compute preferred operators from landmarks and insert into the dual frontier accordingly.
 
 5. **Heuristic computation**: Use combined spatial + landmark heuristic.
 
@@ -378,10 +371,10 @@ Modify `search_plan()` to:
 
 **File**: `crates/worldwake-ai/src/decision_trace.rs`
 
-Add to the decision trace:
+Add strategic plan and landmark trace data to `PlanAttemptTrace` (per-attempt, since each goal attempt may produce a different strategic plan):
 
 ```rust
-pub struct PlanSearchTrace {
+pub struct PlanAttemptTrace {
     // ... existing fields ...
     pub strategic_plan: Option<Vec<StrategicStepTrace>>,
     pub landmarks_extracted: u16,
@@ -393,7 +386,11 @@ pub struct StrategicStepTrace {
     pub sub_goal: String,  // debug representation
     pub estimated_travel_ticks: u32,
 }
+```
 
+Add per-expansion landmark guidance data to `SearchExpansionSummary` (per-expansion, since preferred operator status changes at each expansion):
+
+```rust
 pub struct SearchExpansionSummary {
     // ... existing fields ...
     pub preferred_candidates: u16,
@@ -401,13 +398,7 @@ pub struct SearchExpansionSummary {
 }
 ```
 
-### D10: Scenario and AgentDef integration
-
-**File**: `crates/worldwake-cli/src/scenario/types.rs`
-
-`CognitiveProfileDef` gains `landmark_extraction_depth: Option<u8>`. `ExecutionBudgetDef` gains `preferred_operator_boost: Option<u8>`. Both use `unwrap_or_default()` in `spawn_agent()`.
-
-### D11: Golden tests
+### D10: Golden tests
 
 **File**: `crates/worldwake-ai/tests/golden_two_phase_planning.rs` (new)
 
@@ -419,9 +410,9 @@ pub struct SearchExpansionSummary {
 
 **Scenario 4 — Agent cognitive diversity**: Two agents at same barren location with different `landmark_extraction_depth` (2 vs 6). Both have beliefs about remote resource. Assert: agent with depth 6 finds multi-step plan more reliably than agent with depth 2 (different expansion profiles, potentially different plan-found rates).
 
-**Scenario 5 — Regression guard (branching factor)**: Reproduce the 1400+ candidate scenario from the simulation observer report. Assert: with locality scoping, candidate count per expansion drops below 100. With the old code path (disabled locality scoping), candidate count exceeds 1000.
+**Scenario 5 — Regression guard (branching factor)**: Reproduce the 1400+ candidate scenario from the simulation observer report. Assert: with strategic decomposition, the tactical search at each location produces fewer than 100 candidates per expansion. Without strategic decomposition (single flat search), candidate count exceeds 1000.
 
-**Scenario 6 — Graceful degradation**: Agent with `landmark_extraction_depth = 0` (landmarks disabled). Assert: planner still functions using spatial heuristic only, equivalent to current behavior minus the candidate explosion (locality scoping still active).
+**Scenario 6 — Graceful degradation**: Agent with `landmark_extraction_depth = 0` (landmarks disabled). Assert: planner still functions using spatial heuristic only, equivalent to current behavior. Strategic decomposition still reduces candidate count via sub-goal narrowing.
 
 ## SystemFn Integration
 

@@ -30,7 +30,7 @@ Read ALL of these files before any analysis:
 1. **The spec file** (from argument 1) — read the entire file
 2. **`tickets/_TEMPLATE.md`** — the canonical ticket structure; every ticket you produce must follow this template exactly
 3. **`tickets/README.md`** — the ticket authoring contract; understand the required sections and checks
-4. **`docs/FOUNDATIONS.md`** — architectural commandments; every ticket must align with these principles. Skip if read earlier in this session and not modified since.
+4. **`docs/FOUNDATIONS.md`** — architectural commandments; every ticket must align with these principles. Skip if read earlier in this session and not modified since. If the file exceeds the Read tool's token limit, read the preamble and principle listing (first ~200 lines) using offset/limit, which covers the non-negotiable principles. The summary in `CLAUDE.md` (available via system context) supplements the direct read.
 5. **`docs/precision-rules.md`** — precision rules for technical claims; governs Assumption Reassessment and Verification Layers sections. Skip if read earlier in this session and not modified since.
 
 ### Step 2: Codebase Validation
@@ -64,14 +64,14 @@ Analyze the spec and identify discrete work units:
 **Before writing any ticket files**, present a numbered summary table:
 
 ```
-| # | Ticket ID | Title | Scope | Effort | Deps | FND |
-|---|-----------|-------|-------|--------|------|-----|
-| 1 | <NS>-001  | ...   | <5-10 word scope> | Small  | None | — |
-| 2 | <NS>-002  | ...   | <5-10 word scope> | Medium | 001  | P12,P27 |
+| # | Ticket ID | Title | Scope | Effort | Deps | FND | Notes |
+|---|-----------|-------|-------|--------|------|-----|-------|
+| 1 | <NS>-001  | ...   | <5-10 word scope> | Small  | None | — | — |
+| 2 | <NS>-002  | ...   | <5-10 word scope> | Medium | 001  | P12,P27 | 34 construction sites |
 | ...
 ```
 
-Include a 1-line description of each ticket's scope. The FND column is optional — populate it only for tickets with notable FOUNDATIONS concerns (e.g., a ticket touching derived views should note P27). Use `—` for tickets with no specific concern.
+Include a 1-line description of each ticket's scope. The FND column is optional — populate it only for tickets with notable FOUNDATIONS concerns (e.g., a ticket touching derived views should note P27). Use `—` for tickets with no specific concern. The Notes column captures construction site counts, merged deliverables, shared file sets, or other decomposition-relevant details that don't fit in other columns.
 
 If all tickets are independent, state this once rather than repeating `None` in every Deps cell. The Step 6 dependency graph can be a single sentence (e.g., "All tickets are independent — implement in any order").
 
@@ -106,10 +106,14 @@ Write all ticket files in parallel — ticket file writes are always independent
 
 ### Step 6: Final Summary
 
-After writing all files, list:
-- All ticket files created
-- The dependency graph (which tickets block which)
-- Suggested implementation order
+After writing all files:
+
+1. **Verify cross-ticket dependency consistency**: For each `Deps` reference, confirm the depended-on ticket actually produces what the dependent ticket needs (types, modules, files). If a dependency is broken (e.g., ticket 005 depends on a type from 003 but 003's scope doesn't define it), flag the inconsistency.
+
+2. List:
+   - All ticket files created
+   - The dependency graph (which tickets block which)
+   - Suggested implementation order
 
 Do NOT commit. Leave files for user review.
 
@@ -121,4 +125,4 @@ Do NOT commit. Leave files for user review.
 - **Codebase truth**: File paths and type references in tickets must be validated against the actual codebase, not assumed from the spec
 - **Reviewable size**: Each ticket should be small enough to review as a single diff. When in doubt, split further
 - **Explicit dependencies**: Use the `Deps` field to declare inter-ticket dependencies; never leave implicit ordering
-- **Performance-optimization specs**: For P12-type specs that compress computation without changing world meaning, tickets should include benchmark acceptance criteria with concrete metric thresholds (e.g., "per-agent-tick planning cost does not exceed X ms at tick 10,080") and regression guard commands (e.g., soak seed runs). Acceptance criteria should distinguish correctness (golden tests pass) from performance (metric thresholds met)
+- **Performance-optimization specs**: For P12-type specs that compress computation without changing world meaning, tickets should include regression guard acceptance criteria with concrete metric thresholds. The metric should match what the spec actually optimizes — e.g., candidate count per expansion, expansion count, branching factor, or wall-clock time — not necessarily wall-clock time alone, which may be non-deterministic or platform-dependent. Include regression guard commands (e.g., soak seed runs, candidate-count assertions in golden tests). Acceptance criteria should distinguish correctness (golden tests pass) from performance (metric thresholds met)

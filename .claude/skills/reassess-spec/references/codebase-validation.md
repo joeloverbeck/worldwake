@@ -26,6 +26,7 @@ Grep for each function. Confirm signature, module location, and export status. C
 - **Symbol partitioning** (splitting traits/enums): Verify the partition is complete (all symbols accounted for) and disjoint (no symbol in two categories). Verify stated counts match listed names. Use automated scripts for large sets (>20 symbols).
 - **Code example fidelity**: If the spec includes Before/After code snippets, verify they match the actual code's control flow structure (e.g., imperative loops vs. iterator chains, match arms vs. if-let chains). Style mismatches in code examples mislead implementers.
 - **Reuse opportunities**: For each new function or trait method the spec proposes to create, grep the codebase for existing functions serving the same purpose. A proposed new method that duplicates existing functionality should be flagged as an Issue (prefer reuse) or Improvement (note the existing alternative).
+- **Existing behavior overlap**: For deliverables that propose modifying existing functions, verify the proposed change isn't already implemented. If the current code already exhibits the described behavior (e.g., locality scoping via a trait implementation the spec doesn't acknowledge), flag as an Issue — the deliverable should either be eliminated, merged into a sibling deliverable, or rewritten as an explanatory note about existing behavior. This requires reading beyond the function signature into the implementation and its call chain.
 
 ## 3.4 Dependencies (specs/tickets)
 

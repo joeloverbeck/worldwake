@@ -19,6 +19,10 @@ pub struct CognitiveProfile {
     /// Whether this agent considers known places even without current positive
     /// resource evidence when generating acquisition candidates.
     pub speculative_acquisition: bool,
+    /// Maximum depth of landmark chain extraction during tactical planning.
+    /// Higher values produce more landmarks for better search guidance at
+    /// increased extraction cost. 0 disables landmarks.
+    pub landmark_extraction_depth: u8,
 }
 
 impl Default for CognitiveProfile {
@@ -37,6 +41,7 @@ impl Default for CognitiveProfile {
             max_cooldown_ticks: 64,
             max_snapshot_entities_per_place: 50,
             speculative_acquisition: false,
+            landmark_extraction_depth: 4,
         }
     }
 }
@@ -80,6 +85,7 @@ mod tests {
         assert_eq!(profile.max_cooldown_ticks, 64);
         assert_eq!(profile.max_snapshot_entities_per_place, 50);
         assert!(!profile.speculative_acquisition);
+        assert_eq!(profile.landmark_extraction_depth, 4);
     }
 
     #[test]
@@ -98,6 +104,7 @@ mod tests {
             max_cooldown_ticks: 72,
             max_snapshot_entities_per_place: 75,
             speculative_acquisition: true,
+            landmark_extraction_depth: 5,
         };
 
         let bytes = bincode::serialize(&profile).unwrap();

@@ -563,6 +563,7 @@ mod tests {
                 max_cooldown_ticks: 90,
                 max_snapshot_entities_per_place: 60,
                 speculative_acquisition: false,
+                landmark_extraction_depth: 3,
             }),
             ComponentValue::ExplorationProfile(ExplorationProfile {
                 curiosity_weight: Permille::new(650).unwrap(),

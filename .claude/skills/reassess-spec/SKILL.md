@@ -64,7 +64,7 @@ Before beginning Steps 2-3, classify the spec:
 Read ALL of these before any analysis:
 
 1. **The spec file** (from the argument) — entire file
-2. **`docs/FOUNDATIONS.md`** — skip if read earlier in this session and unmodified
+2. **`docs/FOUNDATIONS.md`** — skip if read earlier in this session and unmodified. If the file exceeds the Read tool's token limit, read in sections (e.g., 200 lines each) to cumulatively cover the full document, or target specific principle sections relevant to the spec's domain.
 3. **`docs/spec-drafting-rules.md`** (if the spec contains or should contain Section H) — skip if read earlier and unmodified
 
 Parse the spec's metadata: Phase, Status, Priority, Crates, Dependencies, Goals/Design Goals, Non-Goals, FOUNDATIONS Alignment, and all deliverable sections.
@@ -113,7 +113,7 @@ Present:
 - Deferred items the user chose not to address
 - Items excluded by reassessment-driven scope changes (distinct from user-deferred) — note why. Omit if none.
 - 1-3 sections that changed most substantially, with a note to review before proceeding
-- Suggested next step: `/spec-to-tickets <spec-path> <NAMESPACE>`
+- Suggested next step: `/spec-to-tickets <spec-path>` (the spec-to-tickets skill will prompt for the ticket namespace)
 
 Do NOT commit. Leave the file for user review.
 
