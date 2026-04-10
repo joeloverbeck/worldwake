@@ -504,6 +504,7 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::Wash
         | crate::PlannerOpKind::Heal
         | crate::PlannerOpKind::MoveCargo
+        | crate::PlannerOpKind::DropItem
         | crate::PlannerOpKind::Loot
         | crate::PlannerOpKind::Bury
         | crate::PlannerOpKind::Tell

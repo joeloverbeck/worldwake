@@ -1,6 +1,6 @@
 # S82WASDISINV-004: Add PlannerOpKind::DropItem, GoalDispatchKey, and GoalDispatchDeclaration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new PlannerOpKind variant, live GoalDispatchDeclaration wiring for disposal
@@ -121,3 +121,21 @@ Add `PlannerOpKind::DropItem` arms to exhaustive matches in the AI crate and upd
 
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed: 2026-04-10
+
+- Added `PlannerOpKind::DropItem` in `crates/worldwake-ai/src/planner_ops.rs`, mapped `Transport/"drop_item"` in `classify_action_def()`, and gave it live `PlannerOpSemantics` using `PlannerTransitionKind::PutDownGroundLot`.
+- Replaced inert `DECL_FREE_CARRY_CAPACITY` op wiring in `crates/worldwake-ai/src/goal_dispatch_decl.rs` with live `DropItem` `relevant_ops` / `progress_barrier_ops`.
+- Landed required additive-fallout handling for the new planner op in `crates/worldwake-ai/src/agent_tick/observation.rs`, `crates/worldwake-ai/src/failure_handling.rs`, and `crates/worldwake-ai/src/goal_model.rs` so exhaustive `PlannerOpKind` consumers remain compile-safe and behaviorally aligned.
+- Added focused tests for `drop_item` classification and semantics plus declaration wiring, and updated synthetic candidate / search assertions to reflect that both `put_down` and `drop_item` now lawfully synthesize `PutDownGroundLot` planner-only candidates.
+
+Deviations from original plan:
+
+- The ticket remained single-crate AI work, but broadened verification exposed additional in-scope fallout beyond the original file list. Because planner-only candidate synthesis keys off shared `PlannerTransitionKind::PutDownGroundLot`, making `DropItem` live also required updating synthetic candidate and search expectations rather than only declaration/exhaustive-match sites.
+
+Verification:
+
+- `cargo test -p worldwake-ai`
+- `cargo clippy --workspace --all-targets -- -D warnings`

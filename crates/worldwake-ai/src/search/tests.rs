@@ -3017,15 +3017,20 @@ fn search_adds_put_down_candidate_for_directly_possessed_hypothetical_lot() {
         .into_iter()
         .map(search_candidate_from_planner)
         .collect::<Vec<_>>();
-    assert_eq!(candidates.len(), 1);
-    assert!(candidates[0].authoritative_targets.is_empty());
-    assert_eq!(candidates[0].payload_override, None);
-    assert!(matches!(
-        candidates[0].planning_targets.as_slice(),
-        [PlanningEntityRef::Hypothetical(_)]
-    ));
+    assert_eq!(candidates.len(), 2);
+    for candidate in &candidates {
+        assert!(candidate.authoritative_targets.is_empty());
+        assert_eq!(candidate.payload_override, None);
+        assert!(matches!(
+            candidate.planning_targets.as_slice(),
+            [PlanningEntityRef::Hypothetical(_)]
+        ));
+    }
     let put_down = registry.iter().find(|def| def.name == "put_down").unwrap();
-    assert_eq!(candidates[0].def_id, put_down.id);
+    let drop_item = registry.iter().find(|def| def.name == "drop_item").unwrap();
+    let candidate_ids = candidates.iter().map(|candidate| candidate.def_id).collect::<Vec<_>>();
+    assert!(candidate_ids.contains(&put_down.id));
+    assert!(candidate_ids.contains(&drop_item.id));
 }
 
 #[test]

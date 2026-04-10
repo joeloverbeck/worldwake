@@ -79,7 +79,7 @@ const WASH_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::MoveCargo,
 ];
-const FREE_CARRY_CAPACITY_OPS: &[PlannerOpKind] = &[];
+const FREE_CARRY_CAPACITY_OPS: &[PlannerOpKind] = &[PlannerOpKind::DropItem];
 const ENGAGE_HOSTILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];
 const RAID_TARGET_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];
 const REDUCE_DANGER_OPS: &[PlannerOpKind] = &[
@@ -663,7 +663,9 @@ impl GoalDispatchKey {
 
 #[cfg(test)]
 mod tests {
-    use super::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
+    use super::{
+        FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy, SELF_CARE_POLICY,
+    };
     use crate::goal_policy::SuppressionRule;
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
     use worldwake_core::{
@@ -887,7 +889,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 39);
+        assert_eq!(ALL_KEYS.len(), 40);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();
@@ -936,6 +938,24 @@ mod tests {
             declaration.feasibility_strategy,
             FeasibilityStrategy::PlaceMatch
         );
+    }
+
+    #[test]
+    fn test_free_carry_capacity_declaration_uses_drop_item_barrier_wiring() {
+        let declaration = GoalDispatchKey::FreeCarryCapacity.declaration();
+
+        assert_eq!(declaration.trace_label, "FreeCarryCapacity");
+        assert_eq!(declaration.relevant_ops, &[PlannerOpKind::DropItem]);
+        assert_eq!(
+            declaration.invalidation_strategy,
+            InvalidationStrategy::NoOpinion
+        );
+        assert_eq!(
+            declaration.feasibility_strategy,
+            FeasibilityStrategy::AlwaysLikely
+        );
+        assert_eq!(declaration.family_policy, SELF_CARE_POLICY);
+        assert_eq!(declaration.progress_barrier_ops, &[PlannerOpKind::DropItem]);
     }
 
     #[test]

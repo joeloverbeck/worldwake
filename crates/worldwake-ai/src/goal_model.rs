@@ -1057,6 +1057,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Patrol
             | PlannerOpKind::Tell
             | PlannerOpKind::MoveCargo
+            | PlannerOpKind::DropItem
             | PlannerOpKind::YieldForceClaim
             | PlannerOpKind::Investigate
             | PlannerOpKind::AskWitness
@@ -1486,6 +1487,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Craft
             | PlannerOpKind::QueueForFacilityUse
             | PlannerOpKind::MoveCargo
+            | PlannerOpKind::DropItem
             | PlannerOpKind::Consume
             | PlannerOpKind::Sleep
             | PlannerOpKind::Relieve

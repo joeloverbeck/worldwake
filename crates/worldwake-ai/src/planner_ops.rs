@@ -23,6 +23,7 @@ pub enum PlannerOpKind {
     Harvest,
     Craft,
     MoveCargo,
+    DropItem,
     Heal,
     Loot,
     Bury,
@@ -109,6 +110,7 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         {
             Some(PlannerOpKind::Craft)
         }
+        (ActionDomain::Transport, "drop_item") => Some(PlannerOpKind::DropItem),
         (ActionDomain::Transport, "pick_up" | "put_down" | "steal") => {
             Some(PlannerOpKind::MoveCargo)
         }
@@ -216,6 +218,12 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
                 "put_down" => PlannerTransitionKind::PutDownGroundLot,
                 _ => PlannerTransitionKind::GoalModelFallback,
             },
+        ),
+        PlannerOpKind::DropItem => base_semantics(
+            op_kind,
+            false,
+            true,
+            PlannerTransitionKind::PutDownGroundLot,
         ),
         PlannerOpKind::Bury => base_semantics(
             op_kind,
@@ -1658,6 +1666,7 @@ mod tests {
             ("wash", PlannerOpKind::Wash),
             ("establish_camp", PlannerOpKind::EstablishCamp),
             ("travel", PlannerOpKind::Travel),
+            ("drop_item", PlannerOpKind::DropItem),
             ("pick_up", PlannerOpKind::MoveCargo),
             ("put_down", PlannerOpKind::MoveCargo),
             ("steal", PlannerOpKind::MoveCargo),
@@ -1690,6 +1699,7 @@ mod tests {
             ("pick_up", PlannerTransitionKind::PickUpGroundLot),
             ("steal", PlannerTransitionKind::StealGroundLot),
             ("put_down", PlannerTransitionKind::PutDownGroundLot),
+            ("drop_item", PlannerTransitionKind::PutDownGroundLot),
             ("post_bounty", PlannerTransitionKind::GoalModelFallback),
             ("post_notice", PlannerTransitionKind::GoalModelFallback),
         ];
@@ -1822,6 +1832,7 @@ mod tests {
             let should_be_barrier = def.name == "trade"
                 || def.name == "bury"
                 || def.name == "loot"
+                || def.name == "drop_item"
                 || def.name.starts_with("harvest:")
                 || def.name.starts_with("craft:");
             assert_eq!(
@@ -1949,6 +1960,46 @@ mod tests {
 
             assert_eq!(classify_action_def(&def), Some(expected), "{name}");
         }
+    }
+
+    #[test]
+    fn classify_action_def_maps_drop_item_transport_action() {
+        let mut def = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "establish_camp")
+            .cloned()
+            .expect("establish_camp should exist in test registry");
+        def.id = ActionDefId(79);
+        def.name = "drop_item".to_string();
+        def.domain = ActionDomain::Transport;
+        def.payload = ActionPayload::None;
+        def.targets.clear();
+
+        assert_eq!(classify_action_def(&def), Some(PlannerOpKind::DropItem));
+    }
+
+    #[test]
+    fn drop_item_semantics_use_put_down_ground_lot_barrier() {
+        let mut def = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "establish_camp")
+            .cloned()
+            .expect("establish_camp should exist in test registry");
+        def.id = ActionDefId(80);
+        def.name = "drop_item".to_string();
+        def.domain = ActionDomain::Transport;
+        def.payload = ActionPayload::None;
+        def.targets.clear();
+
+        let semantics = semantics_for(&def, PlannerOpKind::DropItem);
+
+        assert_eq!(semantics.op_kind, PlannerOpKind::DropItem);
+        assert!(!semantics.may_appear_mid_plan);
+        assert!(semantics.is_materialization_barrier);
+        assert_eq!(
+            semantics.transition_kind,
+            PlannerTransitionKind::PutDownGroundLot
+        );
     }
 
     #[test]
@@ -2336,9 +2387,24 @@ mod tests {
 
         let candidates = planner_only_candidates(&state, &semantics_table);
 
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].targets, vec![hypothetical]);
-        assert_eq!(candidates[0].payload_override, None);
+        assert_eq!(candidates.len(), 2);
+        for candidate in &candidates {
+            assert_eq!(candidate.targets, vec![hypothetical]);
+            assert_eq!(candidate.payload_override, None);
+        }
+        let put_down = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "put_down")
+            .expect("put_down action must exist")
+            .id;
+        let drop_item = build_phase_two_registry()
+            .iter()
+            .find(|def| def.name == "drop_item")
+            .expect("drop_item action must exist")
+            .id;
+        let candidate_ids = candidates.iter().map(|candidate| candidate.def_id).collect::<Vec<_>>();
+        assert!(candidate_ids.contains(&put_down));
+        assert!(candidate_ids.contains(&drop_item));
     }
 
     #[test]
