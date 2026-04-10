@@ -163,6 +163,8 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_violation_detection: Vec<ViolationDetectionOmission>,
     pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
+    pub places_reachable: u32,
+    pub places_after_belief_filter: u32,
 }
 
 pub(crate) struct CandidateGenerationResult {
@@ -2436,14 +2438,26 @@ fn emit_need_driven_candidates(
             continue;
         }
 
-        for (candidate_place, evidence, mut evidence_trace) in direct_acquisition_path_opportunities(
+        let search = acquisition_path_search_inner(
             ctx.view,
             ctx.agent,
             ctx.place,
             commodity,
             ctx.recipes,
             ctx.travel_horizon,
-        ) {
+            AcquisitionSearchOptions {
+                include_recipes: false,
+                visited_commodities: &BTreeSet::new(),
+            },
+        );
+        diagnostics.places_reachable = diagnostics
+            .places_reachable
+            .saturating_add(search.reachable_places);
+        diagnostics.places_after_belief_filter = diagnostics
+            .places_after_belief_filter
+            .saturating_add(search.places_after_belief_filter);
+
+        for (candidate_place, evidence, mut evidence_trace) in search.opportunities {
             if ctx.tracing_enabled {
                 evidence_trace.knowledge_path.self_knowledge.push(
                     SelfKnowledgeProvenance::NeedLevel {
@@ -2840,14 +2854,26 @@ fn emit_restock_goals(
         if ctx.enterprise.restock_gap(commodity).is_none() {
             continue;
         }
-        for (candidate_place, evidence, mut evidence_trace) in acquisition_path_opportunities(
+        let search = acquisition_path_search_inner(
             ctx.view,
             ctx.agent,
             ctx.place,
             commodity,
             ctx.recipes,
             ctx.travel_horizon,
-        ) {
+            AcquisitionSearchOptions {
+                include_recipes: true,
+                visited_commodities: &BTreeSet::new(),
+            },
+        );
+        diagnostics.places_reachable = diagnostics
+            .places_reachable
+            .saturating_add(search.reachable_places);
+        diagnostics.places_after_belief_filter = diagnostics
+            .places_after_belief_filter
+            .saturating_add(search.places_after_belief_filter);
+
+        for (candidate_place, evidence, mut evidence_trace) in search.opportunities {
             if ctx.tracing_enabled {
                 evidence_trace
                     .knowledge_path
@@ -4019,7 +4045,7 @@ fn acquisition_path_opportunities(
     recipes: &RecipeRegistry,
     travel_horizon: u8,
 ) -> Vec<(EntityId, Evidence, EvidenceTrace)> {
-    acquisition_path_opportunities_inner(
+    acquisition_path_search_inner(
         view,
         agent,
         place,
@@ -4031,31 +4057,30 @@ fn acquisition_path_opportunities(
             visited_commodities: &BTreeSet::new(),
         },
     )
+    .opportunities
 }
 
-fn direct_acquisition_path_opportunities(
-    view: &dyn GoalBeliefView,
-    agent: EntityId,
-    place: Option<EntityId>,
-    commodity: CommodityKind,
-    recipes: &RecipeRegistry,
+#[derive(Copy, Clone)]
+struct FilteredAcquisitionPlace {
+    place: EntityId,
+    speculative: bool,
+}
+
+struct AcquisitionPathSearchResult {
+    opportunities: Vec<(EntityId, Evidence, EvidenceTrace)>,
+    reachable_places: u32,
+    places_after_belief_filter: u32,
+}
+
+#[derive(Copy, Clone)]
+struct BeliefGateOptions<'a> {
+    recipes: &'a RecipeRegistry,
     travel_horizon: u8,
-) -> Vec<(EntityId, Evidence, EvidenceTrace)> {
-    acquisition_path_opportunities_inner(
-        view,
-        agent,
-        place,
-        commodity,
-        recipes,
-        travel_horizon,
-        AcquisitionSearchOptions {
-            include_recipes: false,
-            visited_commodities: &BTreeSet::new(),
-        },
-    )
+    search: AcquisitionSearchOptions<'a>,
+    include_speculative: bool,
 }
 
-fn acquisition_path_opportunities_inner(
+fn acquisition_path_search_inner(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     place: Option<EntityId>,
@@ -4063,14 +4088,35 @@ fn acquisition_path_opportunities_inner(
     recipes: &RecipeRegistry,
     travel_horizon: u8,
     options: AcquisitionSearchOptions<'_>,
-) -> Vec<(EntityId, Evidence, EvidenceTrace)> {
+) -> AcquisitionPathSearchResult {
     let Some(origin) = place else {
-        return Vec::new();
+        return AcquisitionPathSearchResult {
+            opportunities: Vec::new(),
+            reachable_places: 0,
+            places_after_belief_filter: 0,
+        };
     };
 
-    reachable_places_within_horizon(view, origin, travel_horizon)
+    let reachable = reachable_places_within_horizon(view, origin, travel_horizon);
+    let filtered = belief_gated_places(
+        view,
+        agent,
+        &reachable,
+        commodity,
+        BeliefGateOptions {
+            recipes,
+            travel_horizon,
+            search: options,
+            include_speculative: view
+                .cognitive_profile(agent)
+                .is_some_and(|profile| profile.speculative_acquisition),
+        },
+    );
+    let places_after_belief_filter = filtered.len().try_into().unwrap_or(u32::MAX);
+    let opportunities = filtered
         .into_iter()
-        .filter_map(|candidate_place| {
+        .filter_map(|filtered_place| {
+            let candidate_place = filtered_place.place;
             acquisition_path_evidence_at_place(
                 view,
                 agent,
@@ -4081,8 +4127,116 @@ fn acquisition_path_opportunities_inner(
                 options,
             )
             .map(|(evidence, trace)| (candidate_place, evidence, trace))
+            .or_else(|| {
+                filtered_place.speculative.then(|| {
+                    (
+                        candidate_place,
+                        Evidence::with_place(candidate_place),
+                        EvidenceTrace::default(),
+                    )
+                })
+            })
+        })
+        .collect();
+
+    AcquisitionPathSearchResult {
+        opportunities,
+        reachable_places: reachable.len().try_into().unwrap_or(u32::MAX),
+        places_after_belief_filter,
+    }
+}
+
+fn belief_gated_places(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    reachable: &[EntityId],
+    commodity: CommodityKind,
+    options: BeliefGateOptions<'_>,
+) -> Vec<FilteredAcquisitionPlace> {
+    let current_place = view.effective_place(agent);
+    let known_places = options
+        .include_speculative
+        .then(|| known_place_observations(view, agent));
+
+    reachable
+        .iter()
+        .copied()
+        .filter_map(|place| {
+            if current_place == Some(place)
+                || place_has_direct_acquisition_support(view, agent, place, commodity)
+                || (options.search.include_recipes
+                    && place_has_recipe_backed_acquisition_support(
+                        view,
+                        agent,
+                        place,
+                        commodity,
+                        options.recipes,
+                        options.travel_horizon,
+                        options.search.visited_commodities,
+                    ))
+            {
+                return Some(FilteredAcquisitionPlace {
+                    place,
+                    speculative: false,
+                });
+            }
+
+            known_places
+                .as_ref()
+                .is_some_and(|known| known.contains_key(&place))
+                .then_some(FilteredAcquisitionPlace {
+                    place,
+                    speculative: true,
+                })
         })
         .collect()
+}
+
+fn place_has_direct_acquisition_support(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> bool {
+    view.listed_sale_lots_at(place, commodity)
+        .into_iter()
+        .filter_map(|lot| view.seller_for_sale_lot(lot))
+        .any(|seller| seller != agent)
+        || local_unpossessed_commodity_evidence(view, place, commodity).is_some()
+        || view.resource_sources_at(place, commodity).into_iter().any(|source| {
+            view.resource_source(source)
+                .is_some_and(|resource| resource.available_quantity > Quantity(0))
+        })
+        || view
+            .corpse_entities_at(place)
+            .into_iter()
+            .any(|corpse| corpse_contains_commodity(view, corpse, commodity))
+}
+
+fn place_has_recipe_backed_acquisition_support(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+    recipes: &RecipeRegistry,
+    travel_horizon: u8,
+    visited_commodities: &BTreeSet<CommodityKind>,
+) -> bool {
+    view.known_recipes(agent).into_iter().any(|recipe_id| {
+        recipes.get(recipe_id).is_some_and(|recipe| {
+            recipe.outputs.iter().any(|(output, _)| *output == commodity)
+                && recipe_path_evidence_at_place(
+                    view,
+                    agent,
+                    place,
+                    recipe,
+                    recipes,
+                    travel_horizon,
+                    visited_commodities,
+                )
+                .is_some()
+        })
+    })
 }
 
 fn need_has_known_acquisition_path(
@@ -4757,8 +4911,9 @@ fn relieves_thirst(commodity: CommodityKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidateGenerationDiagnostics, GenerationContext, deliverable_quantity,
-        emit_produce_goals, emit_restock_goals, generate_candidates,
+        AcquisitionSearchOptions, BeliefGateOptions, CandidateGenerationDiagnostics,
+        GenerationContext, acquisition_path_search_inner, belief_gated_places,
+        deliverable_quantity, emit_produce_goals, emit_restock_goals, generate_candidates,
         generate_candidates_with_travel_horizon,
     };
     use crate::{
@@ -8192,11 +8347,15 @@ mod tests {
         view.commodity_quantities
             .insert((agent, CommodityKind::Grain), Quantity(2));
         let mut recipes = RecipeRegistry::new();
-        recipes.register(sample_recipe(
-            vec![(CommodityKind::Bread, Quantity(1))],
-            vec![(CommodityKind::Grain, Quantity(2))],
-            WorkstationTag::Mill,
-        ));
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
 
         let candidates = generate_candidates(
             &view,
@@ -8272,6 +8431,268 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Firewood,
                 purpose: CommodityPurpose::RecipeInput(recipe_id),
+            }
+        ));
+    }
+
+    #[test]
+    fn belief_gated_places_preserves_direct_acquisition_support() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let seller_place = entity(11);
+        let source_place = entity(12);
+        let corpse_place = entity(13);
+        let ignored_place = entity(14);
+        let seller = entity(20);
+        let source = entity(21);
+        let corpse = entity(22);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.dead.insert(corpse);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.entity_kinds.insert(corpse, EntityKind::Agent);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(seller, seller_place);
+        view.effective_places.insert(corpse, corpse_place);
+        view.corpses_at.insert(corpse_place, vec![corpse]);
+        view.commodity_quantities
+            .insert((corpse, CommodityKind::Bread), Quantity(1));
+        view.register_seller(seller_place, CommodityKind::Bread, seller);
+        view.sources_at
+            .insert((source_place, CommodityKind::Bread), vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Bread,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let visited = BTreeSet::new();
+        let filtered = belief_gated_places(
+            &view,
+            agent,
+            &[origin, seller_place, source_place, corpse_place, ignored_place],
+            CommodityKind::Bread,
+            BeliefGateOptions {
+                recipes: &RecipeRegistry::new(),
+                travel_horizon: 6,
+                search: AcquisitionSearchOptions {
+                    include_recipes: false,
+                    visited_commodities: &visited,
+                },
+                include_speculative: false,
+            },
+        );
+
+        let kept: Vec<_> = filtered.into_iter().map(|place| place.place).collect();
+        assert_eq!(kept, vec![origin, seller_place, source_place, corpse_place]);
+    }
+
+    #[test]
+    fn belief_gated_places_preserves_recipe_backed_support() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let mill_place = entity(11);
+        let mill = entity(20);
+        let recipe_id = RecipeId(0);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(mill, EntityKind::Facility);
+        view.effective_places.insert(agent, origin);
+        view.effective_places.insert(mill, mill_place);
+        view.known_recipes.insert(agent, vec![recipe_id]);
+        view.workstations
+            .insert((mill_place, WorkstationTag::Mill), vec![mill]);
+        view.resource_sources.insert(
+            mill,
+            ResourceSource {
+                commodity: CommodityKind::Bread,
+                available_quantity: Quantity(1),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: Vec::new(),
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        });
+
+        let visited = BTreeSet::new();
+        let filtered = belief_gated_places(
+            &view,
+            agent,
+            &[origin, mill_place],
+            CommodityKind::Bread,
+            BeliefGateOptions {
+                recipes: &recipes,
+                travel_horizon: 6,
+                search: AcquisitionSearchOptions {
+                    include_recipes: true,
+                    visited_commodities: &visited,
+                },
+                include_speculative: false,
+            },
+        );
+
+        let kept: Vec<_> = filtered.into_iter().map(|place| place.place).collect();
+        assert_eq!(kept, vec![origin, mill_place]);
+    }
+
+    #[test]
+    fn belief_gated_places_speculative_includes_known_places() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let rumor_place = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, origin);
+        view.adjacent_places.insert(origin, vec![rumor_place]);
+        view.adjacent_places.insert(rumor_place, vec![origin]);
+        let mut known_place = belief_at_place(rumor_place, Tick(3));
+        known_place.believed_kind = Some(EntityKind::Place);
+        known_place.last_known_place = None;
+        view.beliefs.insert(agent, vec![(rumor_place, known_place)]);
+        view.sync_belief_store(agent);
+
+        let search_without_speculation = acquisition_path_search_inner(
+            &view,
+            agent,
+            Some(origin),
+            CommodityKind::Bread,
+            &RecipeRegistry::new(),
+            6,
+            AcquisitionSearchOptions {
+                include_recipes: false,
+                visited_commodities: &BTreeSet::new(),
+            },
+        );
+        assert!(
+            !search_without_speculation
+                .opportunities
+                .iter()
+                .any(|(place, _, _)| *place == rumor_place)
+        );
+
+        view.cognitive_profiles.insert(
+            agent,
+            CognitiveProfile {
+                speculative_acquisition: true,
+                ..CognitiveProfile::default()
+            },
+        );
+        let search_with_speculation = acquisition_path_search_inner(
+            &view,
+            agent,
+            Some(origin),
+            CommodityKind::Bread,
+            &RecipeRegistry::new(),
+            6,
+            AcquisitionSearchOptions {
+                include_recipes: false,
+                visited_commodities: &BTreeSet::new(),
+            },
+        );
+        assert!(
+            search_with_speculation
+                .opportunities
+                .iter()
+                .any(|(place, evidence, _)| {
+                    *place == rumor_place
+                        && evidence.places.contains(&rumor_place)
+                        && evidence.entities.is_empty()
+                }),
+            "speculative acquisition should keep known places as place-only opportunities"
+        );
+    }
+
+    #[test]
+    fn acquisition_path_diagnostics_record_filtering_ratio() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let supported_place = entity(11);
+        let ignored_place = entity(12);
+        let source = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(source, EntityKind::Facility);
+        view.effective_places.insert(agent, origin);
+        view.adjacent_places
+            .insert(origin, vec![supported_place, ignored_place]);
+        view.adjacent_places
+            .insert(supported_place, vec![origin, ignored_place]);
+        view.adjacent_places
+            .insert(ignored_place, vec![origin, supported_place]);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(origin),
+            },
+        );
+        view.demand_memory.insert(
+            agent,
+            vec![DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(3),
+                place: origin,
+                tick: Tick(2),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            }],
+        );
+        view.sources_at
+            .insert((supported_place, CommodityKind::Bread), vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Bread,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let blocked = BlockedIntentMemory::default();
+        let ctx = GenerationContext {
+            view: &view,
+            agent,
+            place: Some(origin),
+            travel_horizon: 6,
+            enterprise: analyze_candidate_enterprise(&view, agent, Some(origin)),
+            blocked: &blocked,
+            violation_memory: &ViolationMemory::default(),
+            recipes: &RecipeRegistry::new(),
+            current_tick: Tick(5),
+            tracing_enabled: false,
+        };
+        let mut candidates = Vec::new();
+        let mut diagnostics = CandidateGenerationDiagnostics::default();
+
+        emit_restock_goals(&mut candidates, &mut diagnostics, &ctx);
+
+        assert_eq!(diagnostics.places_reachable, 3);
+        assert_eq!(diagnostics.places_after_belief_filter, 2);
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Bread,
             }
         ));
     }

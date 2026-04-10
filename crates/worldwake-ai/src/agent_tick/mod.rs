@@ -757,6 +757,8 @@ fn process_agent(
                 generated: read_result.generated_keys,
                 evidence: read_result.candidate_evidence,
                 fully_blocked_desires: read_result.fully_blocked_desires,
+                places_reachable: read_result.places_reachable,
+                places_after_belief_filter: read_result.places_after_belief_filter,
                 ranked: ranked_candidates
                     .iter()
                     .map(summarize_ranked_goal)

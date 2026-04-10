@@ -117,16 +117,16 @@ diagnostic enrichments.
 
 ```text
 S82 ✅ archived
-S83 (independent)
+S83 ✅ archived
 S84 (independent)
 S85 (independent)
-S83/S84/S85 remain parallel — no inter-dependencies.
+S84/S85 remain parallel — no inter-dependencies.
 ```
 
 **Wave**:
 - **S82**: ✅ COMPLETED — Waste Disposal and Inventory Management — archived at [archive/specs/S82-waste-disposal-inventory-management.md](/home/joeloverbeck/projects/worldwake/archive/specs/S82-waste-disposal-inventory-management.md). Landed `drop_item`, `FreeCarryCapacity`, `DisposalProfile`, planner/candidate/ranking integration, CLI disposal-profile override support, and disposal-cycle golden coverage with deterministic replay.
+- **S83**: ✅ COMPLETED — Belief-Informed Candidate Pruning — archived at [archive/specs/S83-belief-informed-candidate-pruning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S83-belief-informed-candidate-pruning.md). Landed belief-gated acquisition-place filtering, `speculative_acquisition` profile support, and candidate-trace counters for reachable-vs-filtered places while preserving lawful acquisition coverage.
 - **Active parallel remainder**:
-  - **S83**: Belief-Informed Candidate Pruning — belief-gated place filtering in `AcquireCommodity` candidate generation, `speculative_acquisition` per-agent parameter. Fixes root cause of planner budget exhaustion.
   - **S84**: ShareBelief Operator Fix — investigate and fix frontier-exhaustion at depth 0 for ShareBelief goals despite co-location. Likely S73 snapshot filtering excluding agents from Tell operator search.
   - **S85**: Observer Behavioral Enrichment — death tick/cause display, frontier-exhaustion rejection reasons, need snapshots at behavioral transitions, post-travel affordance snapshots, "Unknown location" clarity.
 

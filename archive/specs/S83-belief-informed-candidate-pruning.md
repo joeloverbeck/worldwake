@@ -2,7 +2,7 @@
 
 ## Summary
 
-Filter candidate generation for multi-location goals (primarily `AcquireCommodity`) so that only places the agent has beliefs about containing the target resource are considered. Currently `reachable_places_within_horizon()` returns all topologically reachable places (potentially 1000-7000+), each generating a candidate that the 224-300 expansion budget cannot process. This spec adds a belief-gating layer between place enumeration and candidate emission, reducing the candidate set to places where the agent believes the target commodity exists.
+Filter candidate generation for multi-location goals (primarily `AcquireCommodity`, with the same shared helper also feeding `RestockCommodity`) so that only places with lawful belief-backed acquisition support are expanded. Currently `reachable_places_within_horizon()` returns all topologically reachable places (potentially 1000-7000+), and the shared acquisition helper only decides later whether each place has seller, source, corpse, loose-lot, or recipe-backed evidence worth keeping. This spec adds a belief-gating layer between place enumeration and final evidence assembly, reducing the candidate set to places with lawful acquisition support while still allowing speculative agents to keep known-but-currently-unsupported places.
 
 ## Phase
 
@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers (Adjunct — Simulation Remediation)
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -26,8 +26,8 @@ Draft
 
 ## Design Goals
 
-- Candidate generation for `AcquireCommodity` only emits candidates at places the agent believes contain the target commodity
-- Agents with no beliefs about remote resources generate zero remote acquisition candidates (instead relying on S80's `ExploreLocation` goal to discover resources)
+- Candidate generation for `AcquireCommodity` only emits remote candidates at places with lawful belief-backed acquisition support
+- Agents with no remote acquisition support generate zero remote acquisition candidates (instead relying on S80's `ExploreLocation` goal to discover resources)
 - Per-agent diversity: `CognitiveProfile` controls whether an agent also considers places where resources were last known but may be depleted (speculative candidates)
 - The filtering is belief-informed, not world-informed — an agent with false beliefs about a place having food will still generate candidates there (FND-14)
 - The change is localized to candidate generation — search, snapshot filtering, and goal dispatch are unaffected
@@ -58,61 +58,23 @@ Draft
 In `crates/worldwake-ai/src/candidate_generation.rs`:
 
 ```rust
-/// Filter reachable places to only those where the agent believes
-/// the target commodity exists (via resource sources or the agent's
-/// own controlled inventory at that place).
+/// Filter reachable places to only those with lawful acquisition support
+/// for the target commodity, plus speculative known places when enabled.
 fn belief_gated_places(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     reachable: &[EntityId],
     commodity: CommodityKind,
-    include_speculative: bool,
-) -> Vec<EntityId> {
-    // For the speculative path, build the set of places the agent
-    // has any beliefs about (visited or heard of). Reuses the existing
-    // known_place_observations() helper (line ~4147) which derives this
-    // from the agent's belief store.
-    let known_places = if include_speculative {
-        Some(known_place_observations(view, agent))
-    } else {
-        None
-    };
-
-    reachable
-        .iter()
-        .copied()
-        .filter(|&place| {
-            // Include current place always (local acquisition is always considered)
-            if view.effective_place(agent) == Some(place) {
-                return true;
-            }
-            // Check believed resource sources at this place (e.g., orchards,
-            // mines, wells — entities the agent believes produce this commodity)
-            if !view.resource_sources_at(place, commodity).is_empty() {
-                return true;
-            }
-            // Check agent's own controlled commodity quantity at this place
-            // (the agent's own remote stockpiles, not other entities' inventory)
-            if view.controlled_commodity_quantity_at_place(agent, place, commodity).0 > 0 {
-                return true;
-            }
-            // Speculative: include places the agent has any beliefs about
-            // (visited or heard of) even if no current resource evidence exists.
-            // The resource may have been depleted since last observation.
-            if let Some(ref known) = known_places {
-                if known.contains_key(&place) {
-                    return true;
-                }
-            }
-            false
-        })
-        .collect()
-}
+    gate_options: BeliefGateOptions<'_>,
+) -> Vec<FilteredAcquisitionPlace> { /* ... */ }
 ```
 
-The function uses existing belief view methods:
-- `resource_sources_at(place, commodity)` (defined in `per_agent_belief_view.rs`, trait at `belief_view.rs:184`) — checks believed resource sources. Note: no `agent` parameter; the belief view is already agent-scoped.
-- `controlled_commodity_quantity_at_place(agent, place, commodity)` — checks the agent's own controlled commodity quantities at the place (returns `Quantity`, a newtype over `u32`)
+The function uses existing belief view methods and the same downstream evidence families already recognized by `acquisition_path_evidence_at_place(...)`, including:
+- seller lots
+- loose lots
+- live resource sources
+- corpse inventory
+- recipe-backed acquisition paths
 - `known_place_observations(view, agent)` (existing helper at `candidate_generation.rs:4147`) — returns `BTreeMap<EntityId, Tick>` of places the agent has beliefs about, derived from the agent's belief store
 
 ### 2. GoalBeliefView Accessor for CognitiveProfile
@@ -155,18 +117,10 @@ let include_speculative = cognitive
     .map(|p| p.speculative_acquisition)
     .unwrap_or(false);
 let reachable = reachable_places_within_horizon(view, origin, travel_horizon);
-let belief_filtered = belief_gated_places(
-    view, agent, &reachable, commodity, include_speculative,
-);
-belief_filtered
+let search = acquisition_path_search_inner(/* ... */);
+search.opportunities
     .into_iter()
-    .filter_map(|candidate_place| {
-        acquisition_path_evidence_at_place(
-            view, agent, candidate_place, commodity,
-            recipes, travel_horizon, options,
-        )
-        .map(|(evidence, trace)| (candidate_place, evidence, trace))
-    })
+    // uses prefiltered candidate places plus speculative place-only fallthrough
     .collect()
 ```
 
@@ -201,7 +155,7 @@ pub places_after_belief_filter: u32,
 
 These `u32` fields default to `0` via the struct's `#[derive(Default)]`.
 
-**Integration point**: The diagnostic counters should be recorded at the call sites in `emit_self_consume_candidates` (line ~2284), which already has `&mut diagnostics` access. The counters are set after `reachable_places_within_horizon` returns (for `places_reachable`) and after `belief_gated_places` returns (for `places_after_belief_filter`). This may require `acquisition_path_opportunities_inner` to return the counts alongside its current `Vec` result, or the counters can be recorded by a wrapper at the `acquisition_path_opportunities` / `direct_acquisition_path_opportunities` level.
+**Integration point**: The diagnostic counters should be recorded at the shared acquisition-place search boundary used by both self-consume and restock candidate emission. To make the ratio debuggable, carry the counters through `CandidateGenerationDiagnostics`, the read-phase handoff, and `decision_trace::CandidateTrace` rather than leaving them in the internal generation helper only.
 
 This allows the observer and decision traces to surface the filtering ratio (e.g., "1200 reachable -> 3 belief-supported"), directly supporting FND-29 (Debuggability).
 
@@ -246,3 +200,22 @@ No new SystemFn required. The change is entirely within candidate generation, wh
 | Parameter | Type | Default | Purpose |
 |-----------|------|---------|---------|
 | `speculative_acquisition` | `bool` | `false` | Whether to include known-but-no-current-evidence places in acquisition candidates |
+
+## Outcome
+
+- Completion date: 2026-04-10
+- What changed:
+  - Added `speculative_acquisition` to `CognitiveProfile` and threaded `cognitive_profile()` through `GoalBeliefView`.
+  - Reworked acquisition-place search so belief-gated filtering happens before candidate expansion while preserving the full lawful acquisition surface, including seller lots, loose lots, corpse inventory, recipe-backed acquisition, and speculative known places.
+  - Added `places_reachable` and `places_after_belief_filter` diagnostics and carried them through the read-phase handoff into `decision_trace::CandidateTrace`.
+  - Added focused candidate-generation and trace-carrier coverage, plus golden verification for exploration and trade behavior.
+- Deviations from original plan:
+  - The landed helper was generalized into the shared acquisition-place search path rather than remaining a narrow `AcquireCommodity`-only filter, so `RestockCommodity` now uses the same belief-gated diagnostic surface.
+  - The spec was updated post-implementation to reflect the live helper contract and trace integration point instead of the earlier narrower draft wording.
+- Verification results:
+  - `cargo test -p worldwake-ai belief_gated`
+  - `cargo test -p worldwake-ai acquisition_path_diagnostics_record_filtering_ratio`
+  - `cargo test -p worldwake-ai candidate_trace_retains_place_filter_counters`
+  - `cargo test -p worldwake-ai -- golden_exploration`
+  - `cargo test -p worldwake-ai -- golden_trade`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

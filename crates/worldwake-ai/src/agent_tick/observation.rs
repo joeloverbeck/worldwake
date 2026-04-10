@@ -49,6 +49,10 @@ pub(crate) struct ReadPhaseResult {
     /// Desire-level diagnostics for goals whose emitted sibling opportunities
     /// were all filtered out as blocked before ranking.
     pub(super) fully_blocked_desires: Vec<crate::DesireFullyBlocked>,
+    /// Aggregate reachable-place count across acquisition-place searches.
+    pub(super) places_reachable: u32,
+    /// Aggregate kept-place count after belief gating across acquisition-place searches.
+    pub(super) places_after_belief_filter: u32,
     /// Goals suppressed by situational conditions.
     pub(super) suppressed: Vec<worldwake_core::GoalKey>,
     /// Goals with zero motive score.
@@ -180,6 +184,8 @@ pub(super) fn refresh_runtime_for_read_phase(
         generated_keys,
         candidate_evidence,
         fully_blocked_desires: candidates.diagnostics.fully_blocked_desires,
+        places_reachable: candidates.diagnostics.places_reachable,
+        places_after_belief_filter: candidates.diagnostics.places_after_belief_filter,
         suppressed: outcome.suppressed,
         zero_motive: outcome.zero_motive,
         omitted_political: candidates.diagnostics.omitted_political,

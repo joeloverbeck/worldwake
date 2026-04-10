@@ -305,6 +305,10 @@ pub struct CandidateTrace {
     /// Desire-level diagnostic emitted when every concrete opportunity for a
     /// generated `GoalKey` was filtered out as blocked before ranking.
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
+    /// Aggregate reachable-place count across acquisition-place searches.
+    pub places_reachable: u32,
+    /// Aggregate kept-place count after belief gating across acquisition-place searches.
+    pub places_after_belief_filter: u32,
     /// Ranked goals after all filters (sorted by ranking order).
     pub ranked: Vec<RankedGoalSummary>,
     /// Why the highest-ranked goal beat the immediate runner-up, when at least
@@ -2157,6 +2161,8 @@ mod tests {
                     generated: generated.into_iter().map(default_opportunity).collect(),
                     evidence: Vec::new(),
                     fully_blocked_desires: Vec::new(),
+                    places_reachable: 0,
+                    places_after_belief_filter: 0,
                     ranked,
                     top_ranked_comparison: None,
                     suppressed,
@@ -2193,6 +2199,66 @@ mod tests {
                 pursuit_invalidation: None,
             })),
         }
+    }
+
+    #[test]
+    fn candidate_trace_retains_place_filter_counters() {
+        let goal = GoalKey::new(GoalKind::Sleep);
+        let trace = AgentDecisionTrace {
+            agent: entity(1),
+            tick: Tick(5),
+            outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                affordances: None,
+                dirty: crate::DirtySet::default(),
+                plan_continued: false,
+                candidates: CandidateTrace {
+                    generated: vec![default_opportunity(goal)],
+                    evidence: Vec::new(),
+                    fully_blocked_desires: Vec::new(),
+                    places_reachable: 12,
+                    places_after_belief_filter: 3,
+                    ranked: Vec::new(),
+                    top_ranked_comparison: None,
+                    suppressed: Vec::new(),
+                    zero_motive: Vec::new(),
+                    omitted_political: Vec::new(),
+                    omitted_bandit: Vec::new(),
+                    omitted_social: Vec::new(),
+                    omitted_violation_detection: Vec::new(),
+                },
+                planning: PlanSearchTrace {
+                    attempts: Vec::new(),
+                    same_goal_trace: None,
+                },
+                selection: SelectionTrace {
+                    selected_opportunity: None,
+                    selected_plan: None,
+                    selected_plan_source: None,
+                    goal_switch: None,
+                    previous_goal: None,
+                    plan_replacement: None,
+                    snapshot_continuation: None,
+                },
+                execution: ExecutionTrace {
+                    enqueued_step: None,
+                    revalidation_passed: None,
+                    failure: None,
+                },
+                action_start_failures: Vec::new(),
+                unknown_blockers: Vec::new(),
+                exhaustion_snapshot: Vec::new(),
+                patrol_route: PatrolRouteSnapshotTrace::default(),
+                selected_patrol_anchor: None,
+                pursuit_invalidation: None,
+                frame_transition: None,
+            })),
+        };
+
+        let DecisionOutcome::Planning(planning) = trace.outcome else {
+            panic!("expected planning trace");
+        };
+        assert_eq!(planning.candidates.places_reachable, 12);
+        assert_eq!(planning.candidates.places_after_belief_filter, 3);
     }
 
     #[test]
@@ -2698,6 +2764,8 @@ mod tests {
                 generated: vec![orchard, market],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![
                     RankedGoalSummary {
                         opportunity: orchard,
@@ -2829,6 +2897,8 @@ mod tests {
             generated: vec![opportunity],
             evidence: vec![evidence.clone()],
             fully_blocked_desires: vec![],
+            places_reachable: 0,
+            places_after_belief_filter: 0,
             ranked: vec![],
             top_ranked_comparison: None,
             suppressed: vec![],
@@ -2882,6 +2952,8 @@ mod tests {
                 generated: vec![],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![RankedGoalSummary {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
                     priority_class: GoalPriorityClass::Critical,
@@ -3008,6 +3080,8 @@ mod tests {
                 generated: vec![default_opportunity(goal)],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3085,6 +3159,8 @@ mod tests {
                 }],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![RankedGoalSummary {
                     opportunity: OpportunityKey {
                         goal_key: goal,
@@ -3155,6 +3231,8 @@ mod tests {
                 generated: vec![],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![RankedGoalSummary {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
                     priority_class: GoalPriorityClass::Critical,
@@ -3220,6 +3298,8 @@ mod tests {
                 generated: vec![],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![RankedGoalSummary {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
                     priority_class: GoalPriorityClass::Critical,
@@ -3285,6 +3365,8 @@ mod tests {
                 generated: vec![],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![RankedGoalSummary {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
                     priority_class: GoalPriorityClass::Critical,
@@ -3346,6 +3428,8 @@ mod tests {
                 generated: vec![],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3422,6 +3506,8 @@ mod tests {
                     ],
                     blocker_matches: vec![],
                 }],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3480,6 +3566,8 @@ mod tests {
                 generated: vec![default_opportunity(winner), default_opportunity(loser)],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![
                     RankedGoalSummary {
                         opportunity: default_opportunity(winner),
@@ -3558,6 +3646,8 @@ mod tests {
                 generated: vec![default_opportunity(GoalKey::new(GoalKind::ReduceDanger))],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![RankedGoalSummary {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::ReduceDanger)),
                     priority_class: GoalPriorityClass::High,
@@ -3634,6 +3724,8 @@ mod tests {
                 ))],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![RankedGoalSummary {
                     opportunity: default_opportunity(GoalKey::new(
                         GoalKind::ConsumeOwnedCommodity {
@@ -3723,6 +3815,8 @@ mod tests {
                 }))],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![RankedGoalSummary {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::ClaimOffice {
                         office: entity(4),
@@ -4076,6 +4170,8 @@ mod tests {
                 generated: vec![],
                 evidence: vec![],
                 fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -4255,6 +4351,8 @@ mod tests {
                     generated: vec![default_opportunity(goal_key)],
                     evidence: vec![evidence],
                     fully_blocked_desires: vec![],
+                    places_reachable: 0,
+                    places_after_belief_filter: 0,
                     ranked: vec![RankedGoalSummary {
                         opportunity: default_opportunity(goal_key),
                         priority_class: GoalPriorityClass::Medium,
