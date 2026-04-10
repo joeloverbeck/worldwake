@@ -25,7 +25,7 @@ Scenarios: 2
 
 ### Scenario 32: Long Replay Consistency
 
-- Source: `golden_resilience.rs:280`
+- Source: `golden_resilience.rs:286`
 - Systems: Needs, Production, Trade, Combat, Travel, Social, Politics, Perception
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, RestockCommodity, ShareBelief, ClaimOffice, StealItem, Patrol, Harvest, Craft
 - ActionDomains: Needs, Trade, Travel, Combat, Production, Social, Transport

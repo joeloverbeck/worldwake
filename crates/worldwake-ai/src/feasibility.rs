@@ -213,7 +213,11 @@ fn goal_specific_feasibility(
         }
         (
             FeasibilityStrategy::PlaceMatch,
-            GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place },
+            GoalKind::InvestigateViolation { place, .. }
+            | GoalKind::Patrol { place }
+            | GoalKind::ExploreLocation {
+                target_place: place, ..
+            },
         ) => {
             let agent_place = view.effective_place(agent)?;
             if agent_place == *place {

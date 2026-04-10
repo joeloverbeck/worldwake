@@ -1064,8 +1064,14 @@ mod tests {
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         );
-        txn.set_component_dead_at(actor, DeadAt(context.tick))
-            .map_err(|error| SystemError::new(error.to_string()))?;
+        txn.set_component_dead_at(
+            actor,
+            DeadAt {
+                tick: context.tick,
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .map_err(|error| SystemError::new(error.to_string()))?;
         let _ = txn.commit(context.event_log);
         Ok(())
     }
@@ -2710,7 +2716,14 @@ mod tests {
         });
         {
             let mut txn = new_txn(&mut world, 1);
-            txn.set_component_dead_at(actor, DeadAt(Tick(1))).unwrap();
+            txn.set_component_dead_at(
+                actor,
+                DeadAt {
+                    tick: Tick(1),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             let _ = txn.commit(&mut event_log);
         }
         reset_hooks();
@@ -2792,8 +2805,14 @@ mod tests {
                 VisibilitySpec::SamePlace,
                 WitnessData::default(),
             );
-            txn.set_component_dead_at(actor, DeadAt(context.tick))
-                .map_err(|error| SystemError::new(error.to_string()))?;
+            txn.set_component_dead_at(
+                actor,
+                DeadAt {
+                    tick: context.tick,
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
+            .map_err(|error| SystemError::new(error.to_string()))?;
             let _ = txn.commit(context.event_log);
             Ok(())
         }
@@ -3018,7 +3037,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.systems_ran, crate::SystemId::ALL.len() as u32);
-        assert_eq!(world.get_component_dead_at(actor), Some(&DeadAt(Tick(0))));
+        assert_eq!(
+            world.get_component_dead_at(actor),
+            Some(&DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            })
+        );
     }
 
     #[test]

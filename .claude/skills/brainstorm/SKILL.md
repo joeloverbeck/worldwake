@@ -51,7 +51,7 @@ Next-steps menu (user chooses)
 
 3. **If implementation-related OR if the topic directly concerns FOUNDATIONS.md principles**: Read `docs/FOUNDATIONS.md`. You will need it in Steps 3 and 4 to validate proposed approaches against architectural principles.
 
-4. **Project context**: Briefly check relevant project state (recent files, existing specs/tickets in the area) only if the topic clearly relates to a specific part of the codebase. Do not do a broad exploration — keep it targeted.
+4. **Project context**: Explore existing implementations relevant to the topic before starting the interview — this context informs better questions. For tooling/process topics, examine existing instances of the thing being designed (e.g., existing skills, configs, workflows — their structure, size, patterns). For codebase topics, check relevant files, specs, and tickets. Launch Explore agents for broad surveys when needed. Keep exploration targeted to what informs the interview.
 
 ## Step 2: Confidence-Driven Interview
 
@@ -131,13 +131,14 @@ Section names are suggestions. Rename or combine sections to match the topic's n
 
 After design approval, do NOT apply changes or implement the design until the user selects an implementation option from the Step 6 menu. The design doc is the deliverable of this skill — implementation is a separate act that requires the user's explicit choice.
 
-Once all sections are approved, write the complete design to:
+**Deliverable classification**:
+- If the brainstorm topic is itself a skill design, the deliverable is the skill file (written to the appropriate skills directory, e.g., `.claude/skills/<name>/SKILL.md`). Skip the `docs/plans/` design doc — the skill file IS the design. Adjust the Step 6 menu to reflect this (omit "create a spec" option, replace with "run skill-audit on the new skill").
+- If the brainstorm topic is modifying or reconciling existing skill files, the deliverable is the modified skill file(s) themselves. Skip the `docs/plans/` design doc — the edits ARE the design.
 
-```
-docs/plans/YYYY-MM-DD-<topic>-design.md
-```
+Once all sections are approved, write the complete design:
 
-Where `<topic>` is a kebab-case short name derived from the brainstorm topic.
+- **If plan mode is active**: Write the design to the plan file (the only writable file in plan mode). The plan file serves as the design doc.
+- **Otherwise**: Write to `docs/plans/YYYY-MM-DD-<topic>-design.md`, where `<topic>` is a kebab-case short name derived from the brainstorm topic.
 
 The design doc should consolidate all approved sections into a clean document. Include a "Brainstorm Context" header at the top noting:
 - The original request
@@ -162,6 +163,10 @@ What would you like to do next?
 ```
 
 Use AskUserQuestion to present this as a proper choice. If the user picks an option that invokes another skill, invoke it. If they pick "done", end the session.
+
+**If plan mode is active**: Call `ExitPlanMode` instead of presenting the next-steps menu. The user will direct next steps after approving the plan.
+
+**If implementation was completed inline**: If the task was simple enough that implementation was completed during or immediately after design approval, skip the menu and summarize what was done.
 
 ## Guardrails
 

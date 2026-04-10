@@ -185,7 +185,7 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         );
     }
     if let Some(dead) = world.get_component_dead_at(entity) {
-        println!("  DeadAt: tick {}", dead.0.0);
+        println!("  DeadAt: tick {}", dead.tick.0);
     }
     if let Some(up) = world.get_component_utility_profile(entity) {
         println!("  UtilityProfile:");
@@ -693,6 +693,7 @@ mod tests {
                     last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
+                    exploration_profile: None,
                     carry_capacity: None,
                     theft_disposition: None,
                     justice_disposition: None,
@@ -703,6 +704,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
                 AgentDef {
                     name: "Kael".into(),
@@ -731,6 +733,7 @@ mod tests {
                     last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
+                    exploration_profile: None,
                     carry_capacity: None,
                     theft_disposition: None,
                     justice_disposition: None,
@@ -741,6 +744,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
             ],
             items: vec![ItemDef {

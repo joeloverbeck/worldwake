@@ -498,6 +498,7 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::SupportCandidateForOffice { .. }
             | GoalKind::InvestigateViolation { .. }
             | GoalKind::Patrol { .. }
+            | GoalKind::ExploreLocation { .. }
             | GoalKind::StealItem { .. }
             | GoalKind::Accuse { .. }
             | GoalKind::PunishAccused { .. }
@@ -1031,10 +1032,21 @@ impl GoalKindPlannerExt for GoalKind {
                 }
                 _ => state,
             },
+            PlannerOpKind::Harvest => {
+                if let Some(harvest) = payload_override.and_then(ActionPayload::as_harvest) {
+                    let current = state.commodity_quantity(actor, harvest.output_commodity);
+                    state.with_commodity_quantity(
+                        actor,
+                        harvest.output_commodity,
+                        Quantity(current.0.saturating_add(harvest.output_quantity.0)),
+                    )
+                } else {
+                    state
+                }
+            }
             PlannerOpKind::Trade
             | PlannerOpKind::StaffMarket
             | PlannerOpKind::StockManagement
-            | PlannerOpKind::Harvest
             | PlannerOpKind::Craft
             | PlannerOpKind::ClaimBounty
             | PlannerOpKind::PostBounty
@@ -1219,6 +1231,9 @@ impl GoalKindPlannerExt for GoalKind {
                 subject,
                 destination,
             } => state.effective_place(*subject) == Some(*destination),
+            GoalKind::ExploreLocation { target_place, .. } => {
+                state.effective_place(actor) == Some(*target_place)
+            }
             GoalKind::ProduceCommodity { .. }
             | GoalKind::SearchForMissing { .. }
             | GoalKind::ReportMissing { .. }
@@ -1367,6 +1382,7 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place } => {
                 vec![*place]
             }
+            GoalKind::ExploreLocation { target_place, .. } => vec![*target_place],
             GoalKind::StealItem { target_item } => {
                 state.effective_place(*target_item).into_iter().collect()
             }
@@ -1523,6 +1539,10 @@ impl GoalKindPlannerExt for GoalKind {
             | GoalKind::RestockCommodity { .. }
             | GoalKind::ClaimOffice { .. }
             | GoalKind::SupportCandidateForOffice { .. } => true,
+
+            GoalKind::ExploreLocation { target_place, .. } => {
+                authoritative_targets.contains(target_place)
+            }
 
             GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place } => {
                 authoritative_targets.contains(place)
@@ -2260,7 +2280,8 @@ mod tests {
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
         BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DriveThresholds, EntityId, EntityKind,
-        EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget, HomeostaticNeeds,
+        EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget, HomeostaticNeedId,
+        HomeostaticNeeds,
         InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille,
         ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind,
@@ -2273,8 +2294,8 @@ mod tests {
     use worldwake_sim::{
         AccuseActionPayload, ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId,
         ActionPayload, AskWitnessPayload, BribeActionPayload, ConsultRecordActionPayload,
-        ControlBeliefView, DurationExpr, EntityBeliefView, Interruptibility, InventoryBeliefView,
-        InvestigateActionPayload, ProfileBeliefView, PunishActionPayload,
+        ControlBeliefView, DurationExpr, EntityBeliefView, HarvestActionPayload, Interruptibility,
+        InventoryBeliefView, InvestigateActionPayload, ProfileBeliefView, PunishActionPayload,
         QueueForFacilityUsePayload, RecipeRegistry, ReportMissingActionPayload, RuntimeBeliefView,
         SearchPlaceActionPayload, SpatialBeliefView, TellActionPayload, TemporalBeliefView,
         ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
@@ -5365,6 +5386,82 @@ mod tests {
     }
 
     #[test]
+    fn harvest_step_updates_hypothetical_commodity_quantity() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+
+        let advanced = goal.apply_planner_step(
+            base_state,
+            PlannerOpKind::Harvest,
+            &[],
+            Some(&ActionPayload::Harvest(HarvestActionPayload {
+                recipe_id: RecipeId(4),
+                required_workstation_tag: WorkstationTag::OrchardRow,
+                output_commodity: CommodityKind::Apple,
+                output_quantity: Quantity(3),
+                required_tool_kinds: Vec::new(),
+            })),
+        );
+
+        assert_eq!(
+            advanced.commodity_quantity(actor, CommodityKind::Apple),
+            Quantity(3)
+        );
+    }
+
+    #[test]
+    fn harvest_step_without_payload_is_identity() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let before = base_state.commodity_quantity(actor, CommodityKind::Apple);
+
+        let advanced = goal.apply_planner_step(base_state, PlannerOpKind::Harvest, &[], None);
+
+        assert_eq!(
+            advanced.commodity_quantity(actor, CommodityKind::Apple),
+            before
+        );
+    }
+
+    #[test]
+    fn acquire_self_consume_goal_is_satisfied_after_hypothetical_harvest() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+
+        assert!(!goal.is_satisfied(&base_state));
+
+        let advanced = goal.apply_planner_step(
+            base_state,
+            PlannerOpKind::Harvest,
+            &[],
+            Some(&ActionPayload::Harvest(HarvestActionPayload {
+                recipe_id: RecipeId(4),
+                required_workstation_tag: WorkstationTag::OrchardRow,
+                output_commodity: CommodityKind::Apple,
+                output_quantity: Quantity(3),
+                required_tool_kinds: Vec::new(),
+            })),
+        );
+
+        assert!(goal.is_satisfied(&advanced));
+    }
+
+    #[test]
     fn loot_goal_step_transfers_believed_corpse_inventory_and_satisfies_goal() {
         let (mut view, actor, _seller) = base_view();
         let corpse = entity(30);
@@ -6810,6 +6907,10 @@ mod tests {
                 office: entity(99),
                 candidate: entity(98),
             },
+            GoalKind::ExploreLocation {
+                target_place: place_b,
+                motivating_need: HomeostaticNeedId::Hunger,
+            },
             GoalKind::StealItem {
                 target_item: entity(97),
             },
@@ -6829,7 +6930,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 26);
+        assert_eq!(goals.len(), 27);
         for goal in &goals {
             let _ = goal.goal_relevant_places(&state, &recipes);
         }
@@ -6900,6 +7001,10 @@ mod tests {
                 office: place_b,
                 candidate: actor,
             },
+            GoalKind::ExploreLocation {
+                target_place: place_b,
+                motivating_need: HomeostaticNeedId::Hunger,
+            },
             GoalKind::Patrol { place: place_b },
             GoalKind::StealItem {
                 target_item: place_b,
@@ -6923,6 +7028,42 @@ mod tests {
         for goal in goals {
             let _ = goal.prerequisite_places(&state, &recipes, &execution_budget(&budget));
         }
+    }
+
+    #[test]
+    fn explore_location_is_satisfied_when_actor_reaches_target_place() {
+        let (view, actor, place_a, _place_b, _place_c) = spatial_view();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::ExploreLocation {
+            target_place: place_a,
+            motivating_need: HomeostaticNeedId::Hunger,
+        };
+
+        assert!(goal.is_satisfied(&state));
+    }
+
+    #[test]
+    fn explore_location_goal_relevant_places_and_binding_follow_target_place() {
+        let (view, actor, _place_a, place_b, _place_c) = spatial_view();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let target_place = entity(99);
+        let goal = GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: HomeostaticNeedId::Hunger,
+        };
+
+        assert!(!goal.is_satisfied(&state));
+        assert_eq!(
+            goal.goal_relevant_places(&state, &RecipeRegistry::new()),
+            vec![target_place]
+        );
+        assert!(goal.matches_binding(&[target_place], PlannerOpKind::Travel));
+        assert!(
+            goal.matches_binding(&[place_b], PlannerOpKind::Travel),
+            "Travel remains an auxiliary op, so binding is intentionally permissive"
+        );
     }
 
     // ── matches_binding tests ──────────────────────────────────────────

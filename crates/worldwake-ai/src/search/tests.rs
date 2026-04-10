@@ -23,7 +23,8 @@ use worldwake_core::{
     CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
     ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
     DemandObservationReason, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-    EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget, HomeostaticNeeds,
+    EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget, HomeostaticNeedId,
+    HomeostaticNeeds,
     InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic,
     PerceptionSource, Permille, Place, PlaceTag, ProofRequirement, PrototypePlace, Quantity,
     RecipeId, ResourceSource, RewardSource, TheftDispositionProfile, Tick, TickRange, Topology,
@@ -3582,7 +3583,14 @@ fn build_contention_corpse_fixture() -> ContentionCorpseFixture {
         txn.set_ground_location(grave_plot, town).unwrap();
         txn.set_ground_location(coins, town).unwrap();
         txn.set_possessor(coins, corpse).unwrap();
-        txn.set_component_dead_at(corpse, DeadAt(Tick(1))).unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            DeadAt {
+                tick: Tick(1),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         txn.set_component_workstation_marker(
             grave_plot,
             WorkstationMarker(WorkstationTag::GravePlot),
@@ -3756,6 +3764,61 @@ fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
 }
 
 #[test]
+fn search_acquire_self_consume_queues_before_harvest_at_exclusive_facility_without_grant() {
+    let fixture = build_exclusive_orchard_fixture(false);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([fixture.orchard_row]),
+        evidence_places: BTreeSet::from([fixture.orchard_farm]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("exclusive orchard self-consume should still queue before harvest");
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
+    assert_eq!(
+        plan.steps[0].payload_override,
+        Some(ActionPayload::QueueForFacilityUse(
+            QueueForFacilityUsePayload {
+                intended_action: fixture.harvest_action,
+            },
+        ))
+    );
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(fixture.orchard_row)]
+    );
+}
+
+#[test]
 fn search_skips_queue_when_matching_grant_is_already_active() {
     let fixture = build_exclusive_orchard_fixture(true);
 
@@ -3793,6 +3856,62 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
     .expect("matching grant should allow direct harvest plan");
 
     assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Harvest);
+    assert_eq!(
+        plan.steps[0]
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_harvest),
+        Some(&worldwake_sim::HarvestActionPayload {
+            recipe_id: RecipeId(0),
+            required_workstation_tag: WorkstationTag::OrchardRow,
+            output_commodity: CommodityKind::Apple,
+            output_quantity: Quantity(2),
+            required_tool_kinds: Vec::new(),
+        })
+    );
+    assert_ne!(plan.steps[0].op_kind, PlannerOpKind::QueueForFacilityUse);
+}
+
+#[test]
+fn search_acquire_self_consume_skips_queue_when_matching_grant_is_already_active() {
+    let fixture = build_exclusive_orchard_fixture(true);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([fixture.orchard_row]),
+        evidence_places: BTreeSet::from([fixture.orchard_farm]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("matching grant should still allow direct self-consume harvest");
+
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Harvest);
     assert_eq!(
@@ -9276,5 +9395,82 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
         plan.steps[1].op_kind,
         PlannerOpKind::Attack,
         "second step should be Attack at remote place"
+    );
+}
+
+#[test]
+fn explore_location_search_finds_travel_plan_to_target_place() {
+    let actor = entity(1);
+    let actor_place = entity(10);
+    let target_place = entity(11);
+
+    let mut view = TestBeliefView {
+        current_tick: Tick(10),
+        ..TestBeliefView::default()
+    };
+    view.alive.extend([actor, actor_place, target_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(actor_place, EntityKind::Place);
+    view.kinds.insert(target_place, EntityKind::Place);
+    view.effective_places.insert(actor, actor_place);
+    view.entities_at.insert(actor_place, vec![actor]);
+    view.entities_at.entry(target_place).or_default();
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.adjacent.insert(
+        actor_place,
+        vec![(target_place, NonZeroU32::new(2).unwrap())],
+    );
+    view.adjacent.insert(
+        target_place,
+        vec![(actor_place, NonZeroU32::new(2).unwrap())],
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(target_place),
+        key: GoalKey::from(GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: HomeostaticNeedId::Hunger,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([target_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(10),
+        None,
+        None,
+    );
+    let plan = result
+        .into_plan()
+        .expect("search should find a Travel plan for ExploreLocation");
+
+    assert_eq!(
+        plan.steps.len(),
+        1,
+        "exploration should complete as soon as travel reaches the target place"
+    );
+    assert_eq!(
+        plan.steps[0].op_kind,
+        PlannerOpKind::Travel,
+        "plan should contain a single Travel step to the explored place"
+    );
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(target_place)]
     );
 }

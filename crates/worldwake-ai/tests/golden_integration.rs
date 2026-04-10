@@ -1192,7 +1192,7 @@ fn run_t27_controlled_agent_death(seed: Seed) -> (StateHash, StateHash) {
         h.step_once();
         if h.agent_is_dead(agent_a) {
             // Record the tick from the DeadAt component.
-            death_tick = h.world.get_component_dead_at(agent_a).map(|d| d.0);
+            death_tick = h.world.get_component_dead_at(agent_a).map(|d| d.tick);
             break;
         }
     }
@@ -1211,7 +1211,10 @@ fn run_t27_controlled_agent_death(seed: Seed) -> (StateHash, StateHash) {
     // --- Verification 1: DeadAt component present on Agent A ---
     assert_eq!(
         h.world.get_component_dead_at(agent_a),
-        Some(&DeadAt(death_tick)),
+        Some(&DeadAt {
+            tick: death_tick,
+            cause: worldwake_core::DeathCause::CombatWounds,
+        }),
         "Agent A must have DeadAt component set at the death tick",
     );
 

@@ -5,183 +5,206 @@
 Source report: `reports/simulation-observer-report.md`
 Generated: 2026-04-09
 
----
-
 ## Proposed Golden Tests
 
-### GT-1: Agent Travels To Resource When Local Supply Exhausted
-
-**Source finding**: Finding 2 (Action Loops), Finding 5 (Sustained Critical Needs), Finding 10 (Economic Stagnation)
+### GT-1: Multi-Agent Convergence at Barren Location Does Not Cause Prolonged Behavioral Collapse
+**Source finding**: Finding 2 (Action Loops — MEDIUM), Finding 3 (Stuck Agents — CRITICAL)
 **Severity**: CRITICAL
-**File**: `crates/worldwake-ai/tests/golden_ai_decisions.rs` (or new `golden_resource_seeking.rs`)
-**Setup**:
-- 2 places: ResourcelessCamp (no food/water sources), ResourceVillage (apple source + water source), connected by a road with short travel time
-- 1 AI agent at ResourcelessCamp with moderate hunger and thirst (e.g., 500 each)
-- Agent has beliefs about ResourceVillage and its resources (seeded via `seed_actor_local_beliefs` or manual belief injection)
-- Agent has PerceptionProfile configured
-**Assertion**: Within 300 ticks, the agent travels to ResourceVillage and performs eat or drink. If the agent remains at ResourcelessCamp for 200+ ticks doing only sleep/relieve, the test fails.
-**Rationale**: The existing `build_commitment_preservation_scenario` in `golden_determinism.rs:578` already tests travel-to-orchard-for-food, but that test focuses on commitment persistence across save/load, not on the planner's ability to generate cross-location resource-seeking plans from scratch. This test directly targets the pathological loop observed in the simulation.
+**File**: `crates/worldwake-ai/tests/golden_simulation_gaps.rs`
+**Setup**: 3+ agents at a resource-barren place (no food/water sources). Remote places hold food and water. Agents start with seeded beliefs about the remote resource locations. Run for 600+ ticks.
+**Assertion**: No agent enters a sleep+relieve-only loop for more than 200 consecutive ticks. At least one agent commits a `travel` action toward a resource-bearing location within 300 ticks.
+**Rationale**: Existing `golden_max_idle_under_remote_resource_scarcity` (Scenario 127) tests a single agent with pre-seeded remote beliefs and asserts <100 idle ticks. But the observer report shows the multi-agent case is qualitatively different: with 4 agents, all collapse into sleep+relieve by tick 500 for 900+ ticks. The multi-agent scenario may expose candidate explosion or contention effects not visible in the single-agent test. This test protects the invariant that agents with beliefs about remote resources should attempt travel rather than loop indefinitely.
+**Existing coverage**: Partially overlaps with Scenario 127 (`golden_max_idle_under_remote_resource_scarcity`) but that test uses 1 agent with pre-seeded beliefs and runs only 300 ticks. The observer report failure occurs at scale (4 agents, 1440 ticks) where the planner budget-exhausts under higher candidate counts.
 
-**Note**: This test requires agents to *have beliefs* about the remote resource location. If the test passes with seeded beliefs but the simulation fails without them, the root cause is belief formation (see GT-3), not planning.
-
-### GT-2: Max Consecutive Idle Ticks With Multiple Needs
-
-**Source finding**: Finding 3 (Stuck Agents -- Guard Theron 1019 idle ticks)
+### GT-2: Agent Death from Unaddressed Needs Triggers Within Expected Timeframe
+**Source finding**: Finding 3 (Stuck Agents — CRITICAL), Finding 6 (Unaddressed Needs — CRITICAL)
 **Severity**: CRITICAL
-**File**: `crates/worldwake-ai/tests/golden_ai_decisions.rs`
-**Setup**:
-- Existing test at line 2280 already checks `max_idle < 100` for an agent with unsatisfiable thirst but available food/sleep. Extend or create a sibling test:
-- 1 AI agent with ALL needs unsatisfiable at current location (no food, no water, no bed -- only relieve_wilderness available)
-- Agent has beliefs about a remote location with resources
-**Assertion**: `max_idle < 100` -- even when multiple needs are unsatisfiable, the agent should still attempt *something* (travel, sleep, relieve, or any fallback). A 1019-tick idle streak is never acceptable.
-**Rationale**: The existing idle-streak test (line 2378) covers the case where thirst is unsatisfiable but food exists locally. It does NOT cover the case where *nothing* is locally satisfiable except relieve. Theron's 1019-tick shutdown suggests the planner enters a deadlock state where it cannot produce any plan at all.
+**File**: `crates/worldwake-ai/tests/golden_simulation_gaps.rs`
+**Setup**: One agent at a location with no eat/drink affordances and no beliefs about remote resource locations. Run until the agent dies or 600 ticks elapse.
+**Assertion**: (1) The agent dies within an expected tick range (not too early — basic survival actions should delay death, not too late — needs should escalate). (2) A `DeadAt` component is set with an explicit cause traceable to the unmet need. (3) Post-death, no planning or action attempts occur for the dead agent.
+**Rationale**: Guard Theron died around tick 420 but the death mechanism wasn't explicitly logged. This test ensures death from starvation/dehydration is an explicit, traceable world event (FND-04 — Persistent Identity; FND-10 — Outcomes Are Granular and Leave Aftermath). The post-death silence is already implicitly tested but should be explicitly asserted.
+**Existing coverage**: `golden_supply_chain.rs` asserts `!h.agent_is_dead(...)` to confirm agents stay alive in supply chain scenarios. No existing test explicitly verifies the death-from-unmet-needs path or its traceability.
 
-### GT-3: Perception Forms Beliefs About Place-Graph Neighbors
+### GT-3: Affordances Include Eat/Drink When Resource Sources Exist at Agent Location
+**Source finding**: Finding 6 (Unaddressed Needs — CRITICAL)
+**Severity**: CRITICAL
+**File**: `crates/worldwake-ai/tests/golden_simulation_gaps.rs`
+**Setup**: One agent at a location with a Water resource source. A second agent at a location with an Apple resource source and a workstation (e.g., OrchardRow).
+**Assertion**: The affordance set generated for each agent at tick 0 includes `drink` (for the water agent) and `eat` (for the apple agent). If a resource source exists at an agent's location, the corresponding consumption affordance must be generated.
+**Rationale**: The observer report shows Vara at Thornwall Village (which has a Water source) lacked `drink` in her affordances, and Theron at Dusty Trail lacked both `eat` and `drink`. If a resource source exists at a location, the affordance system should produce consumption candidates. This may be a bug in `get_affordances` or a missing precondition in the affordance query. This is the highest-priority test because it's the root gate preventing agents from addressing their needs.
+**Existing coverage**: `golden_ai_decisions.rs` `golden_fallback_to_addressable_need_when_top_need_unsatisfiable` tests fallback when thirst is unsatisfiable, but it gives the agent owned food — it doesn't test affordance generation from resource sources at the location.
 
-**Source finding**: Finding 8 (Belief Staleness)
-**Severity**: HIGH
-**File**: New file `crates/worldwake-ai/tests/golden_perception_beliefs.rs` or add to `golden_perception_exposure.rs`
-**Setup**:
-- 3 places: StartVillage (water source), Forest (apple source), Camp (nothing), all connected
-- 1 AI agent starting at StartVillage with PerceptionProfile
-- Run perception system for enough ticks that the agent observes the local water source
-**Assertion**: After 50 ticks at StartVillage, the agent's belief store contains beliefs about: (a) the water source entity, (b) the place entity StartVillage itself, and (c) ideally neighboring places (Forest, Camp) if the agent has observed roads/connections.
-**Rationale**: The observer report shows agents perceive 91-204 events but their belief summaries contain only Waste items -- no places, no resource sources, no agents. This suggests the perception-to-belief pipeline filters out infrastructure entities. This test protects the invariant that perception *must* form beliefs about resource sources and places, not just portable items.
+## Proposed Spec Changes
 
-### GT-4: Agent Diversity -- Different Profiles Produce Different Behavior
+### SC-1: Exploration Drive / Geographic Knowledge Acquisition
+**Source finding**: Finding 8 (Belief Staleness — MEDIUM), Finding 10 (Economic Stagnation — CRITICAL)
+**Spec**: New spec needed — no existing spec covers exploration behavior
+**Section**: N/A (new spec)
+**Change**: Design an exploration/curiosity system where agents with unsatisfied needs and no known path to satisfaction develop an exploration pressure that generates travel goals to unvisited locations. This should be profile-driven (per-agent curiosity weight) and belief-gated (agents only explore places they've heard about or that are adjacent to known places in the topology).
+**FOUNDATIONS alignment**:
+- FND-01 (Maximal Emergence): Exploration should emerge from unmet needs + limited geographic beliefs, not from a scripted "explore" trigger
+- FND-14 (World State Is Not Belief State): Agents should reason about their own ignorance — "I don't know where water is" should motivate information-seeking behavior
+- FND-15 (Knowledge Is Acquired Locally): Geographic knowledge should propagate through travel, testimony, and observation
+- FND-20 (Resource-Bounded Practical Reasoning): Exploration goals compete with other goals through the normal priority/planning pipeline
+- FND-22 (Agent Diversity): Curiosity/exploration weight varies per agent — some agents are homebodies, others are natural explorers
 
-**Source finding**: Finding 2 (Action Loops -- all 3 AI agents collapse into identical sleep+relieve pattern)
-**Severity**: HIGH
-**File**: `crates/worldwake-ai/tests/golden_reasoning_diversity.rs`
-**Setup**:
-- 1 place with limited resources (e.g., 3 apples, 2 water)
-- 3 AI agents with *different* UtilityProfiles (one hunger-prioritizing, one thirst-prioritizing, one fatigue-prioritizing)
-- All agents have PerceptionProfile
-**Assertion**: Over 200 ticks, the 3 agents do NOT produce identical action sequences. At minimum, their first non-sleep action should differ, or their action distribution should show measurable variance. (Principle 22: Agent Diversity)
-**Rationale**: In the observer report, Kael, Merchant Vara, and Forager Lina -- who should have different roles and priorities -- converge on the exact same `sleep*10 + relieve*1` per 100-tick pattern. This violates Principle 22 (Agent Diversity Through Concrete Variation).
-
-**Note**: `golden_reasoning_diversity.rs` already exists -- check whether existing tests cover this specific collapse scenario before adding.
-
----
+### SC-2: Plan Search Budget Scaling or Complexity Reduction for AcquireCommodity
+**Source finding**: Finding 5 (Sustained Critical Needs — CRITICAL), Finding 10 (Economic Stagnation — CRITICAL)
+**Spec**: This may fit as a revision to the AI planning spec (check existing planning/GOAP specs) or as a new focused spec
+**Section**: Search budget and candidate pruning
+**Change**: Address the AcquireCommodity budget exhaustion at 224-300 expansions with 1500-2900 candidates. Options: (a) profile-driven search budget that scales with plan complexity, (b) hierarchical plan decomposition to reduce branching, (c) belief-informed candidate pruning that filters out plans involving unknown locations. The observer report shows agents know about resources but can't plan to reach them within the expansion budget — the search space branches too widely across locations and methods.
+**FOUNDATIONS alignment**:
+- FND-20 (Resource-Bounded Practical Reasoning): Agents reason under bounded computation — but the bound should be tunable per agent via profiles, not a hardcoded magic number
+- FND-02 (No Ungrounded Triggers): The budget should derive from agent cognitive profile, not be an arbitrary system constant
 
 ## Proposed Tickets
 
-### TK-1: Investigate Planner Deadlock Causing 1019-Tick Idle Streak
-
-**Source finding**: Finding 3 (Stuck Agents -- Guard Theron)
+### TK-1: Investigate Missing Drink/Eat Affordances at Locations with Resource Sources
+**Source finding**: Finding 6 (Unaddressed Needs — CRITICAL)
 **Priority**: P0
-**Crate(s)**: `worldwake-ai` (planner: `search.rs`, `agent_tick.rs`, `tick_step.rs`)
-**Description**: Guard Theron goes completely inert for 1019 consecutive ticks (71% of simulation). He stops performing ANY action -- not even sleep or relieve. This suggests the planner enters a state where it cannot produce any valid plan at all, causing the agent to idle indefinitely. The existing `max_idle < 100` golden test (golden_ai_decisions.rs:2378) should catch this but apparently doesn't fire because the test scenario differs from the simulation scenario.
+**Crate(s)**: `worldwake-systems` (affordance generation), possibly `worldwake-core` (resource source → affordance mapping)
+**Description**: The observer report shows Merchant Vara at Thornwall Village (which has a Water resource source) has no `drink` affordance, and Guard Theron at Dusty Trail has no `eat` or `drink` affordances. Investigate `get_affordances` / `affordance_query.rs` to determine why consumption affordances are not generated when resource sources exist at the agent's location. This may be: (a) a missing affordance rule for "resource source at location → consumption affordance", (b) a precondition requiring the agent to own the commodity before generating eat/drink, or (c) a missing intermediate step (harvest → own → eat) that the affordance system doesn't compose.
+**Dependencies**: None — this is the root cause investigation
+**Acceptance criteria**: (1) Identified the exact code path that filters out eat/drink affordances when a resource source is present at the location. (2) If it's a bug, fixed so affordances are generated. (3) GT-3 passes after the fix.
 
-Investigate:
-1. Add affordance trace logging to the observer binary to see what `get_affordances` returns for Theron at tick 420+
-2. Add failed-plan trace logging to see whether the planner generates goals but fails search, or never generates goals
-3. Determine why sleep/relieve (which should always be plannable) are not being selected
-4. Fix the root cause -- likely a planner edge case where multiple unsatisfiable high-priority needs block lower-priority but satisfiable actions
-
-**Acceptance criteria**:
-- No agent in the cli-evaluation scenario has >100 consecutive idle ticks
-- The fix is validated by GT-2 (proposed above)
-
-### TK-2: Perception System Does Not Form Beliefs About Resource Sources or Places
-
-**Source finding**: Finding 8 (Belief Staleness), Finding 10 (Economic Stagnation)
+### TK-2: Investigate AcquireCommodity Plan Search Budget Exhaustion
+**Source finding**: Finding 5 (Sustained Critical Needs — CRITICAL), Finding 10 (Economic Stagnation — CRITICAL)
 **Priority**: P0
-**Crate(s)**: `worldwake-systems` (perception), `worldwake-core` (belief store)
-**Description**: The observer report shows agents with 91-204 perception events but belief summaries containing only Waste items. No beliefs about: places, resource sources (apple trees, water wells), workstations, or other agents. This means the perception-to-belief pipeline is either (a) not observing infrastructure entities, or (b) observing them but not converting observations into retrievable beliefs.
+**Crate(s)**: `worldwake-ai` (planner, search.rs)
+**Description**: AcquireCommodity consistently generates 1500-2900 candidates and budget-exhausts at 112-300 expansions. The plan chains likely involve: locate resource source → plan travel → plan harvest/craft → plan consume, with each step branching across multiple locations and methods. Investigate: (a) what the actual plan graph looks like for a Water acquisition from Thornwall Village, (b) where the branching explosion occurs, (c) whether candidate pruning using belief state (agent only knows 1-2 places) could reduce the search space, (d) whether the expansion budget profile parameter needs tuning or the search strategy needs restructuring.
+**Dependencies**: None — can proceed in parallel with TK-1
+**Acceptance criteria**: (1) Documented the AcquireCommodity plan graph shape and branching hotspots. (2) Identified a concrete approach to make the plan search succeed within budget. (3) At least one agent in the cli-evaluation scenario successfully plans and executes an AcquireCommodity chain.
 
-Without beliefs about resource locations and place-graph topology, the planner CANNOT generate multi-location plans (travel to X, pick up food, eat). This is the root cause of findings 2, 5, 6, and 10.
+### TK-3: Add Death-Cause Logging to Mortality System
+**Source finding**: Finding 3 (Stuck Agents — CRITICAL)
+**Priority**: P2
+**Crate(s)**: `worldwake-systems` (needs/mortality)
+**Description**: Guard Theron died around tick 420 but the observer report notes "death mechanism isn't explicitly logged (which need killed him, at what tick)." The `DeadAt` component records the tick but not the cause. Add a `DeathCause` component or field (e.g., `Starvation`, `Dehydration`, `Combat`, `Other`) that is set alongside `DeadAt` when an agent dies, and emit an event to the event log with the cause.
+**Dependencies**: None
+**Acceptance criteria**: (1) `DeadAt` is accompanied by a cause. (2) The event log contains a death event with cause, tick, and agent. (3) Observer dump can report death cause.
 
-Investigate:
-1. What entity types does the perception system observe? Does it filter by EntityKind?
-2. Are resource sources (workstations with ResourceSource) being perceived but not stored as beliefs?
-3. Are place entities perceived? Do agents form beliefs about the place graph?
-4. Is the belief store capacity too small, causing infrastructure beliefs to be evicted in favor of Waste items?
+### TK-4: Perception System Change-Detection to Reduce Redundant Observations
+**Source finding**: Finding 1 (Redundant Perception — MEDIUM)
+**Priority**: P3
+**Crate(s)**: `worldwake-systems` (perception)
+**Description**: Every agent repeatedly observes the same entities — Kael observed itself 141 times. The perception system fires on a tick-aligned schedule regardless of whether the observed entity's state has changed. Consider: (a) a state-generation counter on entities that perception checks before creating a new observation event, (b) suppressing self-observation (agents don't need to "perceive" themselves), or (c) extending the perception interval when the observed entity hasn't changed.
+**Dependencies**: None
+**Acceptance criteria**: (1) Self-observation frequency is reduced or eliminated. (2) Repeated observations of unchanged entities are suppressed or batched. (3) Existing golden tests still pass (perception is not under-firing).
 
-**Acceptance criteria**:
-- After spending 50+ ticks at a location with a resource source, the agent's belief store contains a belief about that resource source
-- After observing a road/connection to another place, the agent has a belief about that place's existence
-- Validated by GT-3
+### TK-5: Periodic Affordance Snapshots in Observer Dump
+**Source finding**: Trace Quality — "Affordances are only shown at tick 0"
+**Priority**: P2
+**Crate(s)**: `worldwake-cli` (observer binary)
+**Description**: The observer binary currently captures affordances only at tick 0. Agents that travel have different affordances at their current location, making tick-0 data misleading for late-game analysis. Emit affordance snapshots every 200 ticks (configurable) so the observer report can track how an agent's action space evolves over time.
+**Dependencies**: None
+**FOUNDATIONS alignment**: FND-29 (Debuggability) — "Why did this agent not do X?" requires knowing what affordances were available when the need arose, not just at simulation start.
+**Acceptance criteria**: (1) Observer dump includes affordance snapshots at configurable intervals. (2) Remediation analysis can reference mid-simulation affordances.
 
-### TK-3: Planner Cannot Generate Travel-to-Resource Plans
+### TK-6: Belief Acquisition Timeline in Observer Dump
+**Source finding**: Trace Quality — "Belief summary is end-state only"
+**Priority**: P2
+**Crate(s)**: `worldwake-cli` (observer binary), possibly `worldwake-core` (belief event emission)
+**Description**: The belief summary shows only end-state beliefs. A belief trajectory over time would reveal when agents learned about resources, places, or other agents — critical for diagnosing belief staleness (smell 8) and economic stagnation (smell 10). Add timestamped belief acquisition/update events to the dump, or at minimum belief snapshots at the same interval as affordance snapshots.
+**Dependencies**: None
+**FOUNDATIONS alignment**: FND-29 (Debuggability), FND-15 (Knowledge Is Acquired Locally — tracing the knowledge acquisition path requires knowing when beliefs were acquired).
+**Acceptance criteria**: (1) Observer dump includes belief acquisition timeline or periodic snapshots. (2) Staleness analysis can identify when an agent's geographic knowledge stopped growing.
 
-**Source finding**: Finding 2 (Action Loops), Finding 6 (Unaddressed Needs), Finding 10 (Economic Stagnation)
-**Priority**: P1 (blocked by TK-2 -- beliefs must exist first)
-**Crate(s)**: `worldwake-ai` (planner: `candidate_generation.rs`, `search.rs`, `affordance_query.rs`)
-**Description**: Even if TK-2 is fixed and agents form beliefs about remote resources, the planner may still lack the ability to chain `travel -> pick_up -> eat/drink` into a multi-step plan. The observer report shows agents never attempt travel after the initial early-phase movement, even though resources exist 1 hop away.
+### TK-7: Entity State-Change Counts Per Observation in Perception Trace
+**Source finding**: Trace Quality — "Perception trace doesn't include what entity state was observed" + "No entity state-change tracking"
+**Priority**: P3
+**Crate(s)**: `worldwake-systems` (perception), `worldwake-cli` (observer binary)
+**Description**: The perception system creates observation events but doesn't record what changed (or whether anything changed) on the observed entity. Adding a state-generation counter or change-flag to observation events would let the observer distinguish meaningful perceptions from redundant ones, making smell 1 (Redundant Perception) assessable with HIGH confidence instead of MEDIUM.
+**Dependencies**: Complements TK-4 (perception change-detection). TK-7 provides the measurement; TK-4 uses it for optimization.
+**FOUNDATIONS alignment**: FND-29 (Debuggability). Also supports TK-4 — if we can measure redundancy precisely, we can tune the system.
+**Acceptance criteria**: (1) Observation events include a flag or counter indicating whether the observed entity's state changed since last observation. (2) Observer dump reports change-vs-unchanged observation ratios.
 
-Investigate:
-1. Does `generate_candidates` emit Eat/Drink goals when no food/water is at the current location but the agent believes food/water exists elsewhere?
-2. Does `search_plan` find plans that include travel as an enabling step? Check whether travel appears as a valid operator in the GOAP search space.
-3. Does the `get_affordances` output include "travel to Place X" when the agent has beliefs about Place X?
-4. Is there a planner depth limit that prevents 3+ step plans (travel -> harvest/pick_up -> consume)?
-
-**Acceptance criteria**:
-- An agent with beliefs about food at a remote location and critical hunger generates a plan including travel + eat
-- Validated by GT-1
-
-### TK-4: Add Affordance and Failed-Plan Tracing to Observer Binary
-
-**Source finding**: Trace Quality Assessment (observer report limitations)
-**Priority**: P1
-**Crate(s)**: `worldwake-ai` (decision tracing), `worldwake-cli` (observer binary)
-**Description**: The observer report identified a critical blind spot: no affordance trace (what the planner considered and rejected) and no failed-plan trace (what plans were attempted but failed search). These traces would directly explain findings 2, 3, 5, and 6.
-
-Add to the observer dump:
-1. Per-agent affordance summary: which affordances were available at each decision point
-2. Per-agent failed-goal summary: goals that were generated but had no valid plan
-3. Per-agent plan-rejection summary: plans that failed search and why (no operators, precondition failure, depth limit)
-
-**Acceptance criteria**:
-- Observer dump includes a "Planning Trace" section per agent showing generated goals, attempted plans, and failure reasons
-- Re-running the cli-evaluation scenario produces enough trace data to diagnose the root cause of findings 2, 3, and 6
-
----
+### TK-8: Remove Failed Plan Attempt Truncation in Observer Dump
+**Source finding**: Trace Quality — "Section 7 shows 'first 20 of N' failed plan attempts — truncation may hide important late-game failures"
+**Priority**: P3
+**Crate(s)**: `worldwake-cli` (observer binary)
+**Description**: Section 7 truncates failed plan attempts to the first 20. Late-game failures (after resource exhaustion) may reveal different planning bottlenecks than early-game failures. Either remove the truncation or add a summary of late-game failures (last 20) alongside the early ones.
+**Dependencies**: None
+**FOUNDATIONS alignment**: FND-29 (Debuggability) — truncated data hides causal chains.
+**Acceptance criteria**: (1) Observer dump shows all failed plan attempts, or at minimum first-20 + last-20 with a count of omitted entries.
 
 ## Findings Deferred or Not Requiring Independent Remediation
 
 | Finding | Severity | Reason for Deferral |
 |---------|----------|---------------------|
-| 1. Redundant Perception | MEDIUM | Architecturally expected (perception fires on events, not state changes). Optimization candidate but not a correctness issue. Revisit after core belief/planning fixes land. |
-| 4. Failed Action Spirals | LOW | Theron's 21->4 investigate ratio is concentrated in ticks 0-99 during early patrol phase. Likely target-availability issues during rapid-fire attempts. Not pathological -- revisit if pattern persists after TK-1 fix. |
-| 5. Sustained Critical Needs | CRITICAL | Downstream symptom of Finding 8 (no resource beliefs) and Finding 2 (no travel-to-resource plans). Deferred to TK-2 + TK-3. |
-| 6. Unaddressed Needs | CRITICAL | Downstream symptom of Finding 8. Vara never eats/drinks because the planner has no beliefs about food/water locations. Deferred to TK-2 + TK-3. |
-| 7. Impossible Knowledge | NONE | No issues found. |
-| 9. Social Isolation | HIGH | Lina's complete lack of social actions may indicate a profile configuration issue (missing tell affordance). However, the broader social absence is likely secondary to the resource crisis -- agents stuck in survival loops don't socialize. Revisit after TK-1/TK-2/TK-3. |
-| 10. Economic Stagnation | CRITICAL | Downstream of Finding 8 (no resource beliefs) and Finding 2 (no travel). The economy cannot function if agents never travel to production sites. Deferred to TK-2 + TK-3. |
-
----
+| Finding 2: Action Loops | MEDIUM | Downstream symptom of Finding 5 + Finding 10 (resource starvation cascade). Once agents can plan AcquireCommodity (TK-2) and have correct affordances (TK-1), the sleep+relieve loop should break naturally. Covered by GT-1. |
+| Finding 3: Stuck Agents (Kael, Vara short stucks) | MEDIUM | Short 27-34 tick idle periods are likely normal inter-action gaps. Only Theron's 1019-tick stuck is pathological, and that's caused by death (deferred to TK-1 + TK-3). |
+| Finding 4: Failed Action Spirals | LOW | Localized early-game failures (staff_market, tell) that don't repeat. Not true spirals. Monitor after TK-1/TK-2 fixes. |
+| Finding 7: Impossible Knowledge | NONE | No evidence of violation. No remediation needed. |
+| Finding 9: Social Isolation | LOW | Partial social behavior exists. Absence of trade is downstream of economic stagnation (Finding 10). Once production/trade chains work (TK-2), social economic interaction should emerge. |
 
 ## Summary
 
 | Type | Count | Severity Breakdown |
 |------|-------|--------------------|
-| Golden Tests | 4 | 2 CRITICAL, 2 HIGH |
-| Spec Changes | 0 | -- |
-| Tickets | 4 | 2 P0, 2 P1 |
-| Deferred | 6 | 3 CRITICAL (downstream), 1 HIGH, 1 MEDIUM, 1 NONE |
+| Golden Tests | 3 | 3 CRITICAL |
+| Spec Changes | 2 | 1 CRITICAL (SC-2), 1 MEDIUM (SC-1) |
+| Tickets | 8 | 2 P0, 1 P2 behavioral, 1 P3 behavioral, 3 P2 trace-quality, 1 P3 trace-quality |
+| Deferred | 5 | 1 MEDIUM, 2 LOW, 1 NONE, 1 partial-MEDIUM |
 
 ### Root Cause Chain
 
-The simulation's failures trace to a single causal chain:
+```
+TK-1 (Missing affordances)  ──┐
+                               ├──> Finding 6 (Unaddressed Needs)
+                               │         │
+TK-2 (Budget exhaustion)  ────┤         ├──> Finding 5 (Sustained Critical Needs)
+                               │         │         │
+                               │         │         ├──> Finding 3 (Theron death / stuck agents)
+                               │         │         │         │
+                               │         │         │         └──> TK-3 (Death cause logging)
+                               │         │         │
+                               │         │         └──> Finding 2 (Action loops)
+                               │         │
+                               └─────────┴──> Finding 10 (Economic stagnation)
+                                                    │
+SC-1 (Exploration drive)  ──> Finding 8 (Belief staleness / geographic trap)
+                                    │
+                                    └──> Finding 9 (Social isolation — no trade)
 
-1. **Perception does not form beliefs about resource sources or places** (TK-2) -- this is the root cause
-2. **Without resource/place beliefs, the planner cannot generate travel-to-resource plans** (TK-3)
-3. **Without travel-to-resource plans, agents collapse into sleep+relieve loops** (GT-1, GT-4)
-4. **A separate planner deadlock causes complete agent shutdown** (TK-1, GT-2)
+Finding 1 (Redundant perception) ──> TK-4 (independent, low priority)
+Finding 4 (Failed action spirals) ──> deferred (monitor)
 
-Fix TK-2 first, then TK-3, then validate with GT-1 through GT-4. TK-4 (tracing) can proceed in parallel to aid debugging.
+Trace Quality (FND-29):
+  TK-5 (affordance snapshots) ──> improves future smell 6/8 diagnosis
+  TK-6 (belief timeline) ──> improves future smell 8/10 diagnosis
+  TK-7 (state-change counts) ──> improves future smell 1 diagnosis, feeds TK-4
+  TK-8 (truncation removal) ──> improves future smell 5/10 diagnosis
+```
+
+**Implementation order**:
+1. **First (parallel)**: TK-1 + TK-2 — these are the two root causes. TK-1 investigates why affordances are missing; TK-2 investigates why plan search exhausts. Both are independent investigations.
+2. **After TK-1/TK-2**: GT-1, GT-2, GT-3 — write golden tests once the root causes are understood (tests may need to encode the fix).
+3. **After golden tests pass**: SC-1 (exploration spec) — this is a design-level enhancement that addresses the geographic trap. It should be specced after the mechanical bugs are fixed so the spec doesn't conflate bug fixes with new features.
+4. **After SC-1**: SC-2 (budget scaling spec) — may be informed by TK-2 findings. If TK-2 reveals the budget just needs a profile parameter tweak, SC-2 may be unnecessary. If it reveals a structural search problem, SC-2 becomes the design solution.
+5. **Independent, low priority**: TK-3 (death cause logging), TK-4 (perception redundancy).
+6. **Wave 3 (independent, low priority)**: TK-5 through TK-8 (trace-quality improvements). These are independent of behavioral fixes and can proceed in parallel. They improve future observer runs and align with FND-29.
 
 ### FOUNDATIONS Alignment
 
-- **Principle 7 (Locality)**: The simulation correctly enforces information locality -- agents don't cheat. But the perception system isn't providing enough *local* information for agents to reason about the world. Locality without perception is blindness.
-- **Principle 14 (World State Is Not Belief State)**: Correctly enforced. The problem is that belief state is too impoverished, not that agents access world state.
-- **Principle 20 (Resource-Bounded Practical Reasoning)**: The planner should generate multi-step plans (travel -> acquire -> consume) when local solutions don't exist. Currently it appears limited to single-location plans.
-- **Principle 22 (Agent Diversity)**: Violated -- all agents collapse into identical behavior patterns despite different profiles.
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| FND-01 (Maximal Emergence) | VIOLATED | Economic stagnation means emergence never bootstraps. Agents converge and stagnate rather than producing emergent supply chains, trade, or social behavior. |
+| FND-02 (No Ungrounded Triggers) | OK | No evidence of ungrounded triggers. Plan search budget may be a magic number (see SC-2) but it's a computational bound, not a drama lever. |
+| FND-06 (World Runs Without Observers) | VIOLATED | The world "runs" but degenerates into stasis by tick 500. The simulation advances but produces no meaningful change for 62% of its duration. |
+| FND-07 (Locality of Motion) | OK | Agents only act on co-located or perceived information. |
+| FND-08 (Preconditions, Duration, Cost) | OK | Actions have proper preconditions. The issue is that the planner can't find paths through them, not that they're missing. |
+| FND-10 (Outcomes Leave Aftermath) | PARTIAL | Death occurs but cause is not explicitly logged (TK-3). |
+| FND-14 (World State Is Not Belief State) | OK | Agents plan from beliefs. The problem is beliefs are too limited (Finding 8), not that they bypass belief state. |
+| FND-15 (Knowledge Acquired Locally) | OK but INCOMPLETE | Knowledge acquisition works but there's no mechanism for agents to seek knowledge about unknown places (SC-1). |
+| FND-20 (Resource-Bounded Practical Reasoning) | VIOLATED | The resource bounds (search budget) are so tight that agents can't reason about multi-step plans at all. The principle says agents should reason under bounded resources — but the bound should still permit basic survival planning. |
+| FND-22 (Agent Diversity) | NOT TESTED | All 4 agents collapsed into identical behavior. Diversity cannot manifest when all agents are trapped in the same survival failure mode. |
+| FND-29 (Debuggability) | PARTIAL — addressed by TK-3, TK-5, TK-6, TK-7, TK-8 | Decision traces and action traces are excellent. Missing: death cause logging (TK-3), affordance snapshots over time (TK-5), belief acquisition timeline (TK-6), perception state-change tracking (TK-7), untruncated failed plan attempts (TK-8). |
+
+None of the proposed remediations introduce new FOUNDATIONS violations. GT-1/GT-2/GT-3 enforce existing principles. SC-1 extends the system to better serve FND-01/FND-15/FND-20. SC-2 tunes computational bounds to serve FND-20. TK-1/TK-2 fix bugs that prevent existing principles from functioning. TK-3/TK-4 improve debuggability (FND-29). TK-5 through TK-8 systematically address the FND-29 gaps identified in the observer report's Trace Quality Assessment — affordance snapshots (TK-5), belief timeline (TK-6), perception state-change tracking (TK-7), and untruncated plan failure data (TK-8).
 
 ## Outcome
 
 - Completion date: 2026-04-09
-- What actually changed: Archived this remediation proposal set after its findings were exploited into downstream ticketing and follow-up planning.
-- Deviations from original plan: None. The report remains as historical proposal context rather than active remediation tracking.
-- Verification results: Confirmed the report was marked completed before archival and moved into `archive/reports/`.
+- What changed: Archived this remediation report from `reports/` to `archive/reports/` because it is now exploited.
+- Deviations from original plan: None.
+- Verification results: Archival metadata added, file moved to `archive/reports/`, and source path removed from `reports/`.

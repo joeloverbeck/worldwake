@@ -511,6 +511,18 @@ pub fn build_harvest_grain_recipe() -> RecipeDefinition {
     }
 }
 
+pub fn build_harvest_water_recipe() -> RecipeDefinition {
+    RecipeDefinition {
+        name: "Harvest Water".to_string(),
+        inputs: vec![],
+        outputs: vec![(CommodityKind::Water, Quantity(2))],
+        work_ticks: nz(3),
+        required_workstation_tag: Some(WorkstationTag::Well),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
+    }
+}
+
 pub fn build_bake_bread_recipe() -> RecipeDefinition {
     RecipeDefinition {
         name: "Bake Bread".to_string(),
@@ -533,6 +545,7 @@ pub fn build_multi_recipe_registry() -> RecipeRegistry {
     let mut recipes = RecipeRegistry::new();
     recipes.register(build_harvest_apple_recipe());
     recipes.register(build_harvest_grain_recipe());
+    recipes.register(build_harvest_water_recipe());
     recipes.register(build_bake_bread_recipe());
     recipes
 }
@@ -2051,7 +2064,10 @@ mod tests {
                 entity: incumbent,
                 component_kind: ComponentKind::DeadAt,
                 before: None,
-                after: ComponentValue::DeadAt(worldwake_core::DeadAt(death_tick)),
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt {
+                    tick: death_tick,
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                }),
             })],
         );
         let vacancy_relation = RelationValue::OfficeHolder {
@@ -2082,12 +2098,15 @@ mod tests {
         );
 
         let matched_death = first_tagged_event_id_matching(&log, EventTag::Combat, |_, record| {
-            event_sets_component(
-                record,
-                incumbent,
-                ComponentKind::DeadAt,
-                |after| matches!(after, ComponentValue::DeadAt(worldwake_core::DeadAt(tick)) if *tick == death_tick),
-            )
+            event_sets_component(record, incumbent, ComponentKind::DeadAt, |after| {
+                matches!(
+                    after,
+                    ComponentValue::DeadAt(worldwake_core::DeadAt {
+                        tick,
+                        cause: worldwake_core::DeathCause::CombatWounds,
+                    }) if *tick == death_tick
+                )
+            })
         });
         let matched_vacancy =
             first_tagged_event_id_matching(&log, EventTag::Political, |_, record| {
@@ -2119,7 +2138,10 @@ mod tests {
                 entity,
                 component_kind: ComponentKind::DeadAt,
                 before: None,
-                after: ComponentValue::DeadAt(worldwake_core::DeadAt(Tick(1))),
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt {
+                    tick: Tick(1),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                }),
             })],
         );
         let later = emit_test_event(&mut log, 2, &[EventTag::Political], Vec::new());

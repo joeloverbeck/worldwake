@@ -20,6 +20,7 @@ use crate::{
     execution_budget::ExecutionBudget,
     expectation::{ExpectationStore, LastSeenMemory},
     experience::{PreferenceProfile, RouteExperience, SourceReliability},
+    exploration::ExplorationProfile,
     factions::FactionData,
     institutional::RecordData,
     intention::ActiveGoal,
@@ -352,7 +353,13 @@ mod tests {
         );
         tables.insert_wound_list(entity(9), sample_roundtrip_wound_list());
         tables.insert_combat_profile(entity(18), sample_roundtrip_combat_profile());
-        tables.insert_dead_at(entity(19), DeadAt(Tick(14)));
+        tables.insert_dead_at(
+            entity(19),
+            DeadAt {
+                tick: Tick(14),
+                cause: crate::DeathCause::CombatWounds,
+            },
+        );
         tables.insert_utility_profile(entity(20), sample_utility_profile());
         tables.insert_blocked_intent_memory(entity(21), sample_blocked_intent_memory());
         tables.insert_agent_belief_store(entity(22), sample_roundtrip_belief_store());
@@ -556,7 +563,10 @@ mod tests {
     fn insert_and_get_dead_at() {
         let mut tables = ComponentTables::default();
         let id = entity(20);
-        let dead_at = DeadAt(Tick(33));
+        let dead_at = DeadAt {
+            tick: Tick(33),
+            cause: crate::DeathCause::CombatWounds,
+        };
 
         assert_eq!(tables.insert_dead_at(id, dead_at), None);
         assert_eq!(tables.get_dead_at(id), Some(&dead_at));

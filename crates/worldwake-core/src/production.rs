@@ -13,18 +13,20 @@ pub enum WorkstationTag {
     Mill,
     ChoppingBlock,
     WashBasin,
+    Well,
     OrchardRow,
     FieldPlot,
     GravePlot,
 }
 
 impl WorkstationTag {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Forge,
         Self::Loom,
         Self::Mill,
         Self::ChoppingBlock,
         Self::WashBasin,
+        Self::Well,
         Self::OrchardRow,
         Self::FieldPlot,
         Self::GravePlot,
@@ -207,6 +209,7 @@ mod tests {
                 WorkstationTag::Mill,
                 WorkstationTag::ChoppingBlock,
                 WorkstationTag::WashBasin,
+                WorkstationTag::Well,
                 WorkstationTag::OrchardRow,
                 WorkstationTag::FieldPlot,
                 WorkstationTag::GravePlot,

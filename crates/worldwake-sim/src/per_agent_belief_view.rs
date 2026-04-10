@@ -472,6 +472,12 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn exploration_profile(&self, agent: EntityId) -> Option<worldwake_core::ExplorationProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_exploration_profile(agent).copied())
+            .flatten()
+    }
+
     fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_preference_profile(agent).copied())
@@ -1509,10 +1515,10 @@ mod tests {
         BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CombatProfile, CommodityKind,
         ControlSource, EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog,
         ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, OfficeData, PerceptionProfile, Permille, Place, PlaceTag,
-        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, OfficeData, PerceptionProfile, Permille, Place,
+        PlaceTag, PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
         ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
         ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
         WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
@@ -2384,6 +2390,65 @@ mod tests {
         assert_eq!(
             GoalBeliefView::preference_profile(&view, agent),
             Some(profile)
+        );
+    }
+
+    #[test]
+    fn exploration_profile_returns_actor_profile_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = ExplorationProfile {
+            curiosity_weight: Permille::new(275).unwrap(),
+            need_activation_threshold: Permille::new(350).unwrap(),
+            max_consecutive_explorations: 5,
+            visit_lookback_ticks: 17,
+            consecutive_exploration_count: 1,
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_exploration_profile(agent, profile)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::exploration_profile(&view, agent),
+            Some(profile)
+        );
+        assert_eq!(
+            GoalBeliefView::exploration_profile(&view, agent),
+            Some(profile)
+        );
+    }
+
+    #[test]
+    fn exploration_profile_returns_default_for_live_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::exploration_profile(&view, agent),
+            Some(ExplorationProfile::default())
+        );
+        assert_eq!(
+            GoalBeliefView::exploration_profile(&view, agent),
+            Some(ExplorationProfile::default())
         );
     }
 

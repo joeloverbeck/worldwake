@@ -10,6 +10,8 @@
 //   (S56 PlaceVisibilityProfile coverage). Added remaining PlaceTag variants (Gate,
 //   Crossroads, Camp, Barracks). Added remaining WorkstationTag variants (WashBasin,
 //   Loom, GravePlot).
+// Updated 2026-04-09: S79RESSOUCON-004 — Added canonical Well facility coverage and
+//   attached Thornwall Village water source to the named Village Well.
 // Updated 2026-04-06: TK-1 — Added Water resource source at Thornwall Village and
 //   Water items at Eldergrove Forest to fix universal dehydration (simulation-remediation).
 // Updated 2026-04-06: S54 schema drift — renamed memory_capacity to entity_memory_capacity
@@ -192,6 +194,7 @@
             name: "Forager Lina",
             location: "Eldergrove Forest",
             control: Ai,
+            known_recipes: ["Harvest Apples"],
             needs: (
                 hunger: 200,
                 thirst: 600,
@@ -381,15 +384,16 @@
     facilities: [
         (workstation: Mill, location: "Thornwall Village"),
         (workstation: Loom, location: "Thornwall Village"),
+        (name: "Village Well", workstation: Well, location: "Thornwall Village"),
         (workstation: Forge, location: "Hearthstone Inn"),
         (workstation: WashBasin, location: "Hearthstone Inn"),
         (workstation: ChoppingBlock, location: "Eldergrove Forest"),
         (workstation: FieldPlot, location: "Golden Fields"),
         (workstation: GravePlot, location: "Golden Fields"),
-        (workstation: OrchardRow, location: "Eldergrove Forest"),
+        (name: "Eldergrove Orchard", workstation: OrchardRow, location: "Eldergrove Forest"),
     ],
     resource_sources: [
-        (commodity: Apple, location: "Eldergrove Forest", regeneration_ticks_per_unit: 2, capacity: 20),
-        (commodity: Water, location: "Thornwall Village", regeneration_ticks_per_unit: 3, capacity: 15),
+        (commodity: Apple, location: "Eldergrove Forest", facility: "Eldergrove Orchard", regeneration_ticks_per_unit: 2, capacity: 20),
+        (commodity: Water, location: "Thornwall Village", facility: "Village Well", regeneration_ticks_per_unit: 3, capacity: 15),
     ],
 )

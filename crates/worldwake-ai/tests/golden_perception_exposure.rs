@@ -153,7 +153,7 @@ fn run_perception_forms_resource_source_beliefs(seed: Seed) -> ResourceSourceBel
         &mut h.world,
         &mut h.event_log,
         ORCHARD_FARM,
-        WorkstationTag::FieldPlot,
+        WorkstationTag::Well,
         ResourceSource {
             commodity: CommodityKind::Water,
             available_quantity: Quantity(4),

@@ -2,7 +2,8 @@
 
 use crate::{
     ArtifactPostingContext, BountyTerms, CommodityKind, CommunicationClass, EntityId,
-    ExpectationId, NoticeTopic, PunishmentKind, RecipeId, RecordEntryId, TellTopic, ViolationId,
+    ExpectationId, HomeostaticNeedId, NoticeTopic, PunishmentKind, RecipeId, RecordEntryId,
+    TellTopic, ViolationId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -108,6 +109,10 @@ pub enum GoalKind {
     },
     Patrol {
         place: EntityId,
+    },
+    ExploreLocation {
+        target_place: EntityId,
+        motivating_need: HomeostaticNeedId,
     },
     StealItem {
         target_item: EntityId,
@@ -218,6 +223,7 @@ impl From<GoalKind> for GoalKey {
             GoalKind::InvestigateViolation { place, .. } | GoalKind::Patrol { place } => {
                 (None, None, Some(place))
             }
+            GoalKind::ExploreLocation { target_place, .. } => (None, None, Some(target_place)),
         };
 
         Self {
@@ -243,8 +249,8 @@ mod tests {
     };
     use crate::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
-        ExpectationId, NoticeTopic, ProofRequirement, PunishmentKind, Quantity, RecipeId,
-        RewardSource, test_utils::entity_id,
+        ExpectationId, HomeostaticNeedId, NoticeTopic, ProofRequirement, PunishmentKind, Quantity,
+        RecipeId, RewardSource, test_utils::entity_id,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
@@ -718,6 +724,32 @@ mod tests {
     fn patrol_goal_roundtrips_through_bincode() {
         let goal = GoalKind::Patrol {
             place: entity_id(23, 2),
+        };
+
+        let bytes = bincode::serialize(&goal).unwrap();
+        let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn goal_key_extracts_target_place_for_explore_location() {
+        let target_place = entity_id(23, 3);
+        let key = GoalKey::from(GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: HomeostaticNeedId::Thirst,
+        });
+
+        assert_eq!(key.commodity, None);
+        assert_eq!(key.entity, None);
+        assert_eq!(key.place, Some(target_place));
+    }
+
+    #[test]
+    fn explore_location_goal_roundtrips_through_bincode() {
+        let goal = GoalKind::ExploreLocation {
+            target_place: entity_id(23, 4),
+            motivating_need: HomeostaticNeedId::Hunger,
         };
 
         let bytes = bincode::serialize(&goal).unwrap();

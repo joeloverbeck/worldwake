@@ -7,14 +7,14 @@ use crate::{
     ComponentValue, Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
     ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DriveThresholds, EntityAllocator,
     EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
-    ExpectationStore, FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
-    IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastSeenMemory, LoadUnits,
-    LotOperation, MerchandiseProfile, MetabolismProfile, Name, NoticeContent, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag,
-    PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
-    ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, RecordData,
-    RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence, SourceReliability,
-    StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    ExpectationStore, ExplorationProfile, FactionData, HomeostaticNeeds, InTransitOnEdge,
+    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
+    LastSeenMemory, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+    NoticeContent, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute,
+    PerceptionProfile, PlaceTag, PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile,
+    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
+    RecordData, RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence,
+    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
     TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
     UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
     WoundList, component_schema::with_component_schema_entries,
@@ -162,6 +162,7 @@ impl World {
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
+            world.insert_component_exploration_profile(entity, ExplorationProfile::default())?;
             world.insert_component_execution_budget(entity, ExecutionBudget::default())?;
             world.insert_component_epistemic_disposition_profile(
                 entity,
@@ -821,7 +822,10 @@ mod tests {
     }
 
     fn sample_dead_at() -> DeadAt {
-        DeadAt(Tick(21))
+        DeadAt {
+            tick: Tick(21),
+            cause: crate::DeathCause::CombatWounds,
+        }
     }
 
     fn sample_homeostatic_needs() -> HomeostaticNeeds {

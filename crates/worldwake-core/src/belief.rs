@@ -5645,7 +5645,13 @@ mod tests {
 
         world.set_ground_location(dead, place).unwrap();
         world
-            .insert_component_dead_at(dead, DeadAt(Tick(5)))
+            .insert_component_dead_at(
+                dead,
+                DeadAt {
+                    tick: Tick(5),
+                    cause: crate::DeathCause::CombatWounds,
+                },
+            )
             .unwrap();
 
         let dead_snapshot = build_believed_entity_state(

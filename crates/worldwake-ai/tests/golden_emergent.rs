@@ -1142,7 +1142,14 @@ fn run_loot_corpse_self_care_chain(seed: Seed) -> (StateHash, StateHash) {
     );
     {
         let mut txn = new_txn(&mut h.world, 0);
-        txn.set_component_dead_at(corpse, DeadAt(Tick(0))).unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         commit_txn(txn, &mut h.event_log);
     }
     give_commodity(
@@ -1387,7 +1394,7 @@ fn run_combat_death_force_succession(seed: Seed) -> (StateHash, StateHash) {
         .get_component_dead_at(incumbent)
         .copied()
         .expect("incumbent death should be authoritative")
-        .0;
+        .tick;
 
     let action_sink = h
         .action_trace_sink()

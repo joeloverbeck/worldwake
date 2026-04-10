@@ -76,7 +76,7 @@ When the same technique or surface list appears at multiple workflow phases with
 
 ### Step 3: Topic Regrouping
 
-Identify instructions about the same topic that are scattered across multiple sections. A topic is fragmented when a reader must jump between 3+ sections to get the full picture.
+Identify instructions about the same topic that are scattered across multiple sections. A topic is fragmented when a reader must jump between multiple sections to get the full picture — typically 3+, but 2 sections suffice when one location is clearly the wrong home.
 
 For each fragmented topic:
 1. **Collect all instructions** related to that topic from all sections
@@ -131,6 +131,8 @@ For non-redundant instructions (those surviving Steps 2-5), tighten prose:
 ---
 
 ### Step 7: Rewrite
+
+Before writing, briefly summarize planned changes in the conversation so the user sees what will change before the file is overwritten.
 
 Write the consolidated SKILL.md in-place at `<skill-path>/SKILL.md`.
 

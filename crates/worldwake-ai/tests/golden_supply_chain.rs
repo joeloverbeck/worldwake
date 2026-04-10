@@ -27,12 +27,13 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     BeliefConfidencePolicy, BodyCostPerTick, CommodityKind, DemandMemory, DemandObservation,
-    DemandObservationReason, EpistemicDispositionProfile, ExecutionBudget, GoalKey, GoalKind,
-    HomeostaticNeeds, KnownRecipes, MerchandiseProfile, MetabolismProfile, PerceptionProfile,
-    PerceptionSource, PrototypePlace, Quantity, ResourceSource, Seed, StateHash, Tick,
-    TradeDispositionProfile, UtilityProfile, WorkstationTag, build_believed_entity_state,
-    hash_event_log, hash_world, prototype_place_entity, total_authoritative_commodity_quantity,
-    total_live_lot_quantity, verify_authoritative_conservation, verify_live_lot_conservation,
+    DemandObservationReason, EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile,
+    GoalKey, GoalKind, HomeostaticNeeds, KnownRecipes, MerchandiseProfile, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, PrototypePlace, Quantity, ResourceSource, Seed,
+    StateHash, Tick, TradeDispositionProfile, UtilityProfile, WorkstationTag,
+    build_believed_entity_state, hash_event_log, hash_world, prototype_place_entity,
+    total_authoritative_commodity_quantity, total_live_lot_quantity,
+    verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::{ActionTraceDetail, ActionTraceKind, RecipeDefinition, RecipeRegistry};
 
@@ -1774,6 +1775,14 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
             .unwrap();
         txn.set_component_trade_disposition_profile(consumer, default_trade_disposition())
             .unwrap();
+        txn.set_component_exploration_profile(
+            consumer,
+            ExplorationProfile {
+                curiosity_weight: pm(0),
+                ..ExplorationProfile::default()
+            },
+        )
+        .unwrap();
         txn.set_component_demand_memory(
             merchant,
             DemandMemory {
@@ -1968,7 +1977,10 @@ fn run_full_supply_chain(seed: Seed) -> (StateHash, StateHash) {
 //
 // Setup: enterprise-focused merchant at GeneralStore with a real home facility,
 // remembered unmet apple demand, and zero stock. Hungry consumer at the same
-// store holds coins. Orchard Farm has an apple source.
+// store holds coins. Consumer exploration is explicitly disabled so this
+// scenario isolates the supply-chain restock -> negotiated trade contract
+// rather than the unrelated exploration fallback. Orchard Farm has an apple
+// source.
 //
 // Proves: merchant restocks into home-facility custody, consumer then discovers
 // the returned stock, negotiates a lawful price greater than one coin, and eats

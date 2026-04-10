@@ -18,7 +18,8 @@ use std::{
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
     CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, GoalKey, GoalKind, HomeostaticNeeds,
+    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind,
+    HomeostaticNeedId, HomeostaticNeeds,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
     OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey,
     TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
@@ -341,6 +342,7 @@ struct RankingContext<'a> {
     utility: &'a UtilityProfile,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
+    exploration_profile: Option<ExplorationProfile>,
     has_clotted_wounds: bool,
     danger_assessment: crate::DangerAssessment,
     danger_pressure: Permille,
@@ -365,6 +367,7 @@ impl<'a> RankingContext<'a> {
             utility,
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
+            exploration_profile: view.exploration_profile(agent),
             has_clotted_wounds: has_clotted_wounds(view, agent),
             danger_pressure: danger_assessment.pressure,
             danger_assessment,
@@ -458,6 +461,7 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
         | GoalKind::ShareBelief { .. }
         | GoalKind::InvestigateViolation { .. }
         | GoalKind::Patrol { .. }
+        | GoalKind::ExploreLocation { .. }
         | GoalKind::StealItem { .. }
         | GoalKind::Accuse { .. }
         | GoalKind::PunishAccused { .. } => GoalPriorityClass::Low,
@@ -658,6 +662,9 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             score_product(context.utility.care_weight, subject_pain) / 4
         }
         GoalKind::Patrol { .. } => patrol_motive(context),
+        GoalKind::ExploreLocation {
+            motivating_need, ..
+        } => exploration_motive(context, motivating_need),
         GoalKind::StealItem { .. } => theft_motive(context),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
         GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
@@ -667,6 +674,31 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             .map_or(0, |loyalty| {
                 score_product(context.utility.social_weight, loyalty)
             }),
+    }
+}
+
+fn exploration_motive(
+    context: &RankingContext<'_>,
+    motivating_need: HomeostaticNeedId,
+) -> u32 {
+    let Some(needs) = context.needs else {
+        return 0;
+    };
+    let Some(profile) = context.exploration_profile else {
+        return 0;
+    };
+    u32::from(profile.curiosity_weight.value())
+        .saturating_mul(u32::from(need_pressure_for_id(needs, motivating_need).value()))
+        / 1000
+}
+
+fn need_pressure_for_id(needs: HomeostaticNeeds, need_id: HomeostaticNeedId) -> Permille {
+    match need_id {
+        HomeostaticNeedId::Hunger => needs.hunger,
+        HomeostaticNeedId::Thirst => needs.thirst,
+        HomeostaticNeedId::Fatigue => needs.fatigue,
+        HomeostaticNeedId::Bladder => needs.bladder,
+        HomeostaticNeedId::Dirtiness => needs.dirtiness,
     }
 }
 
@@ -1541,6 +1573,7 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::ReportMissing { .. } => 29,
         GoalKind::EscortToSafety { .. } => 30,
         GoalKind::ReportFound { .. } => 31,
+        GoalKind::ExploreLocation { .. } => 32,
     }
 }
 
@@ -1589,6 +1622,7 @@ mod tests {
         place_entities: BTreeMap<EntityId, Vec<EntityId>>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
+        exploration_profiles: BTreeMap<EntityId, worldwake_core::ExplorationProfile>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         courage: BTreeMap<EntityId, Permille>,
@@ -1678,6 +1712,12 @@ mod tests {
         }
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             None
+        }
+        fn exploration_profile(
+            &self,
+            agent: EntityId,
+        ) -> Option<worldwake_core::ExplorationProfile> {
+            self.exploration_profiles.get(&agent).copied()
         }
         fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
             self.preference_profiles.get(&agent).copied()
@@ -5750,5 +5790,83 @@ mod tests {
             comparison.decisive_dimension,
             super::RankedGoalComparisonDimension::PriorityClass
         );
+    }
+
+    #[test]
+    fn explore_location_ranks_as_low_priority() {
+        let agent = entity(1);
+        let target_place = entity(10);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new(650).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        );
+        view.exploration_profiles.insert(
+            agent,
+            worldwake_core::ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                ..worldwake_core::ExplorationProfile::default()
+            },
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::ExploreLocation {
+                target_place,
+                motivating_need: worldwake_core::HomeostaticNeedId::Hunger,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+    }
+
+    #[test]
+    fn explore_location_motive_uses_need_pressure_times_curiosity() {
+        let agent = entity(1);
+        let target_place = entity(10);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new(700).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        );
+        view.exploration_profiles.insert(
+            agent,
+            worldwake_core::ExplorationProfile {
+                curiosity_weight: Permille::new(600).unwrap(),
+                ..worldwake_core::ExplorationProfile::default()
+            },
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::ExploreLocation {
+                target_place,
+                motivating_need: worldwake_core::HomeostaticNeedId::Hunger,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].motive_score, 420);
     }
 }

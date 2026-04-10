@@ -555,6 +555,15 @@ pub(super) fn search_candidates_from_affordance(
     let Some(def) = registry.get(affordance.def_id) else {
         return vec![base];
     };
+    if matches!(
+        def.payload,
+        ActionPayload::Harvest(_) | ActionPayload::Craft(_)
+    ) && !matches!(
+        affordance.contention_status,
+        ContentionStatus::Unmanaged | ContentionStatus::Granted
+    ) {
+        return Vec::new();
+    }
     if matches!(def.name.as_str(), "loot" | "bury" | "heal")
         && !matches!(
             affordance.contention_status,

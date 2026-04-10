@@ -15,7 +15,7 @@ pub struct HomeostaticNeeds {
 }
 
 /// Identifies a specific homeostatic need field by name.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum HomeostaticNeedId {
     Hunger,
     Thirst,

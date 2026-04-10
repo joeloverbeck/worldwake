@@ -38,6 +38,7 @@ pub enum GoalDispatchKey {
     SupportCandidateForOffice,
     InvestigateViolation,
     Patrol,
+    ExploreLocation,
     StealItem,
     Accuse,
     PunishFine,
@@ -45,7 +46,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 39] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -80,6 +81,7 @@ impl GoalDispatchKey {
         Self::SupportCandidateForOffice,
         Self::InvestigateViolation,
         Self::Patrol,
+        Self::ExploreLocation,
         Self::StealItem,
         Self::Accuse,
         Self::PunishFine,
@@ -137,6 +139,7 @@ impl GoalDispatchKey {
             GoalKind::SupportCandidateForOffice { .. } => Self::SupportCandidateForOffice,
             GoalKind::InvestigateViolation { .. } => Self::InvestigateViolation,
             GoalKind::Patrol { .. } => Self::Patrol,
+            GoalKind::ExploreLocation { .. } => Self::ExploreLocation,
             GoalKind::StealItem { .. } => Self::StealItem,
             GoalKind::Accuse { .. } => Self::Accuse,
             GoalKind::PunishAccused { punishment, .. } => match punishment {
@@ -470,7 +473,7 @@ mod tests {
     #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 38);
+        assert_eq!(GoalDispatchKey::all().len(), 39);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),

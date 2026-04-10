@@ -162,6 +162,7 @@ const SUPPORT_OFFICE_OPS: &[PlannerOpKind] = &[
 ];
 const INVESTIGATE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Investigate];
 const PATROL_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Patrol];
+const EXPLORE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel];
 const ACCUSE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Accuse];
 const FINE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Fine];
 const EXILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Exile];
@@ -556,6 +557,15 @@ static DECL_PATROL: GoalDispatchDeclaration = GoalDispatchDeclaration {
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: PATROL_BARRIER,
 };
+static DECL_EXPLORE_LOCATION: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "ExploreLocation",
+    provenance_family: None,
+    relevant_ops: EXPLORE_OPS,
+    invalidation_strategy: InvalidationStrategy::NoOpinion,
+    feasibility_strategy: FeasibilityStrategy::PlaceMatch,
+    family_policy: SELF_CARE_POLICY,
+    progress_barrier_ops: NO_BARRIER,
+};
 static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "StealItem",
     provenance_family: None,
@@ -631,6 +641,7 @@ impl GoalDispatchKey {
             Self::SupportCandidateForOffice => &DECL_SUPPORT_CANDIDATE_FOR_OFFICE,
             Self::InvestigateViolation => &DECL_INVESTIGATE_VIOLATION,
             Self::Patrol => &DECL_PATROL,
+            Self::ExploreLocation => &DECL_EXPLORE_LOCATION,
             Self::StealItem => &DECL_STEAL_ITEM,
             Self::Accuse => &DECL_ACCUSE,
             Self::PunishFine => &DECL_PUNISH_FINE,
@@ -642,6 +653,7 @@ impl GoalDispatchKey {
 #[cfg(test)]
 mod tests {
     use super::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
+    use crate::goal_policy::SuppressionRule;
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
     use worldwake_core::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommodityPurpose,
@@ -684,6 +696,7 @@ mod tests {
         GoalDispatchKey::SupportCandidateForOffice,
         GoalDispatchKey::InvestigateViolation,
         GoalDispatchKey::Patrol,
+        GoalDispatchKey::ExploreLocation,
         GoalDispatchKey::StealItem,
         GoalDispatchKey::Accuse,
         GoalDispatchKey::PunishFine,
@@ -827,6 +840,10 @@ mod tests {
                 place: destination,
             },
             GoalDispatchKey::Patrol => GoalKind::Patrol { place: destination },
+            GoalDispatchKey::ExploreLocation => GoalKind::ExploreLocation {
+                target_place: destination,
+                motivating_need: HomeostaticNeedId::Hunger,
+            },
             GoalDispatchKey::StealItem => GoalKind::StealItem {
                 target_item: target,
             },
@@ -857,7 +874,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 38);
+        assert_eq!(ALL_KEYS.len(), 39);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();
@@ -1175,6 +1192,18 @@ mod tests {
             free_interrupt_variants.len(),
             3,
             "expected all FreeInterruptRole variants represented"
+        );
+    }
+
+    #[test]
+    fn explore_location_uses_self_care_policy() {
+        assert_eq!(
+            GoalDispatchKey::ExploreLocation
+                .declaration()
+                .family_policy
+                .suppression,
+            SuppressionRule::Never,
+            "ExploreLocation is a self-care fallback and must remain available under self-care stress"
         );
     }
 

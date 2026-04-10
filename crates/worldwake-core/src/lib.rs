@@ -54,6 +54,7 @@ pub mod evidence;
 pub mod execution_budget;
 pub mod expectation;
 pub mod experience;
+pub mod exploration;
 pub mod factions;
 pub mod goal;
 pub mod ids;
@@ -115,7 +116,7 @@ pub use canonical::{
 };
 pub use cause::CauseRef;
 pub use cognitive_profile::CognitiveProfile;
-pub use combat::{CombatProfile, CombatStance, DeadAt};
+pub use combat::{CombatProfile, CombatStance, DeadAt, DeathCause};
 pub use communication::{CommunicationClass, CommunicationProfile, classify_communication};
 pub use component_tables::ComponentTables;
 pub use components::{AgentData, Name};
@@ -155,6 +156,7 @@ pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
     SourceReliability, danger_ratio_permille, failure_ratio_permille,
 };
+pub use exploration::ExplorationProfile;
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};

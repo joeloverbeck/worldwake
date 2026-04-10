@@ -429,6 +429,16 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::Patrol { place } => {
             format!("Patrol({})", entity_display_name(world, *place))
         }
+        GoalKind::ExploreLocation {
+            target_place,
+            motivating_need,
+        } => {
+            format!(
+                "ExploreLocation({:?} at {})",
+                motivating_need,
+                entity_display_name(world, *target_place)
+            )
+        }
         GoalKind::StealItem { target_item } => {
             format!("StealItem({})", entity_display_name(world, *target_item))
         }
@@ -706,6 +716,7 @@ mod tests {
                 last_seen_memory: None,
                 drive_thresholds: None,
                 metabolism_profile: None,
+                exploration_profile: None,
                 carry_capacity: None,
                 theft_disposition: None,
                 justice_disposition: None,
@@ -716,6 +727,7 @@ mod tests {
                 contention_disposition: None,
                 commodity_valuation: None,
                 substitute_preferences: None,
+                known_recipes: None,
             }],
             items: vec![],
             facilities: vec![],
@@ -809,6 +821,7 @@ mod tests {
                     last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
+                    exploration_profile: None,
                     carry_capacity: None,
                     theft_disposition: None,
                     justice_disposition: None,
@@ -819,6 +832,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
                 AgentDef {
                     name: "Astrid".into(),
@@ -841,6 +855,7 @@ mod tests {
                     last_seen_memory: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
+                    exploration_profile: None,
                     carry_capacity: None,
                     theft_disposition: None,
                     justice_disposition: None,
@@ -851,6 +866,7 @@ mod tests {
                     contention_disposition: None,
                     commodity_valuation: None,
                     substitute_preferences: None,
+                    known_recipes: None,
                 },
             ],
             items: vec![],

@@ -802,7 +802,12 @@ fn conformance_craft_noop_coverage_gap() {
     // Craft uses GoalModelFallback with no state change — known coverage gap.
     let recipes = build_multi_recipe_registry();
     let mut ch = ConformanceHarness::with_recipes(recipes);
-    // Agent must know the craft recipe (RecipeId(2) = bake_bread).
+    let bake_bread_recipe =
+        ch.h.recipes
+            .recipe_by_name("Bake Bread")
+            .map(|(id, _)| id)
+            .expect("multi-recipe registry should include Bake Bread");
+    // Agent must know the craft recipe.
     let agent = seed_agent_with_recipes(
         &mut ch.h.world,
         &mut ch.h.event_log,
@@ -814,7 +819,7 @@ fn conformance_craft_noop_coverage_gap() {
         worldwake_core::KnownRecipes::with([
             worldwake_core::RecipeId(0),
             worldwake_core::RecipeId(1),
-            worldwake_core::RecipeId(2),
+            bake_bread_recipe,
         ]),
     );
     let mill = place_workstation(
@@ -857,7 +862,7 @@ fn conformance_craft_noop_coverage_gap() {
 
     let snapshot = ch.snapshot_for(agent);
     let goal = grounded(GoalKind::ProduceCommodity {
-        recipe_id: worldwake_core::RecipeId(2),
+        recipe_id: bake_bread_recipe,
     });
     let initial_state = PlanningState::new(&snapshot);
     let mill_ref = PlanningEntityRef::Authoritative(mill);
@@ -1440,8 +1445,14 @@ fn conformance_loot() {
     );
     {
         let mut txn = new_txn(&mut ch.h.world, 0);
-        txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(0)))
-            .unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            worldwake_core::DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         txn.set_component_agent_data(
             corpse,
             AgentData {
@@ -1708,8 +1719,14 @@ fn conformance_bury() {
     );
     {
         let mut txn = new_txn(&mut ch.h.world, 0);
-        txn.set_component_dead_at(corpse, worldwake_core::DeadAt(Tick(0)))
-            .unwrap();
+        txn.set_component_dead_at(
+            corpse,
+            worldwake_core::DeadAt {
+                tick: Tick(0),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
         txn.set_component_agent_data(
             corpse,
             AgentData {

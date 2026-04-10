@@ -3282,7 +3282,14 @@ mod tests {
                 .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
-            txn.set_component_dead_at(target, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(
+                target,
+                DeadAt {
+                    tick: Tick(3),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
             (observer, target)
@@ -4334,7 +4341,14 @@ mod tests {
                 .unwrap();
             txn.set_component_perception_profile(observer, profile(1000))
                 .unwrap();
-            txn.set_component_dead_at(target, DeadAt(Tick(3))).unwrap();
+            txn.set_component_dead_at(
+                target,
+                DeadAt {
+                    tick: Tick(3),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                },
+            )
+            .unwrap();
             let mut log = EventLog::new();
             let _ = txn.commit(&mut log);
             (observer, target)

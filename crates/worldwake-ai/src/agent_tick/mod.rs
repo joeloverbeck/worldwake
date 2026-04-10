@@ -43,8 +43,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, BlockingFact, CognitiveProfile, ContentionIntents, ControlSource, EntityId,
-    ExecutionBudget, IntentionFrame, Tick,
+    ActionDefId, ActiveGoal, BlockingFact, CauseRef, CognitiveProfile, ContentionIntents,
+    ControlSource, EntityId, ExecutionBudget, IntentionFrame, Tick, VisibilitySpec, WitnessData,
+    WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -926,6 +927,14 @@ fn process_agent(
         }
     }
 
+    update_exploration_counter_for_adopted_goal(
+        ctx.world,
+        ctx.event_log,
+        agent,
+        current_active_goal.as_ref(),
+        tick,
+    )?;
+
     // ── Finalize (runs for both paths) ──
     persist_intention_frame(
         ctx.world,
@@ -971,6 +980,45 @@ fn process_agent(
         tick,
         outcome,
     }))
+}
+
+pub(super) fn update_exploration_counter_for_adopted_goal(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    active_goal: Option<&ActiveGoal>,
+    tick: Tick,
+) -> Result<(), TickInputError> {
+    let Some(active_goal) = active_goal.filter(|active_goal| active_goal.adopted_at == tick) else {
+        return Ok(());
+    };
+    let Some(mut profile) = world.get_component_exploration_profile(agent).copied() else {
+        return Ok(());
+    };
+
+    match active_goal.goal_key.kind {
+        worldwake_core::GoalKind::ExploreLocation { .. } => {
+            profile.consecutive_exploration_count =
+                profile.consecutive_exploration_count.saturating_add(1);
+        }
+        _ => {
+            profile.consecutive_exploration_count = 0;
+        }
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.set_component_exploration_profile(agent, profile)
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    let _ = txn.commit(event_log);
+    Ok(())
 }
 
 /// Convert collected frame transitions into a trace, consuming the option.

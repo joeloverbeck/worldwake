@@ -6,11 +6,12 @@ use golden_harness::*;
 use worldwake_ai::GoalTraceStatus;
 use worldwake_core::{
     AgentData, BelievedEntityState, CommodityKind, CommunicationProfile, ControlSource,
-    EntityBeliefAspect, EntityBeliefClaim, EntityId, EventTag, EventView, EvidenceRef, GoalKind,
-    HomeostaticNeeds, MismatchKind, PerceptionProfile, PerceptionSource, Quantity, ResourceSource,
-    Seed, SharedTellState, SocialObservation, SocialObservationDetail, SocialObservationKind,
-    TellMemoryKey, TellProfile, TellTopic, Tick, UtilityProfile, WorkstationTag, belief_confidence,
-    build_believed_entity_state, hash_event_log, hash_world, verify_authoritative_conservation,
+    EntityBeliefAspect, EntityBeliefClaim, EntityId, EventTag, EventView, EvidenceRef,
+    ExplorationProfile, GoalKind, HomeostaticNeeds, MismatchKind, PerceptionProfile,
+    PerceptionSource, Quantity, ResourceSource, Seed, SharedTellState, SocialObservation,
+    SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, Tick,
+    UtilityProfile, WorkstationTag, belief_confidence, build_believed_entity_state,
+    hash_event_log, hash_world, verify_authoritative_conservation,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionTraceKind, CommitTraceData, InputKind,
@@ -1028,6 +1029,16 @@ fn run_skeptical_listener_scenario(
         listener,
         keen_perception_profile(),
     );
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_exploration_profile(
+        listener,
+        ExplorationProfile {
+            curiosity_weight: pm(0),
+            ..ExplorationProfile::default()
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
     seed_belief_from_world(
         &mut h.world,
         &mut h.event_log,

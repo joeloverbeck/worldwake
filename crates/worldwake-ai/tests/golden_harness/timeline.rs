@@ -368,7 +368,10 @@ mod tests {
                 entity: office,
                 component_kind: ComponentKind::DeadAt,
                 before: None,
-                after: ComponentValue::DeadAt(worldwake_core::DeadAt(Tick(3))),
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt {
+                    tick: Tick(3),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                }),
             }),
         ));
 
@@ -403,7 +406,10 @@ mod tests {
                 entity: entity(9),
                 component_kind: ComponentKind::DeadAt,
                 before: None,
-                after: ComponentValue::DeadAt(worldwake_core::DeadAt(Tick(1))),
+                after: ComponentValue::DeadAt(worldwake_core::DeadAt {
+                    tick: Tick(1),
+                    cause: worldwake_core::DeathCause::CombatWounds,
+                }),
             }),
         ));
 

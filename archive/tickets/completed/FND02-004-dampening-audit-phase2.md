@@ -12,7 +12,7 @@ No systematic audit has been performed on Phase 2 systems for amplifying feedbac
 
 ## Assumption Reassessment (2026-03-14)
 
-1. `docs/dampening-audit-phase2.md` does not exist — confirmed, must be created.
+1. `archive/docs/dampening-audit-phase2.md` does not exist — confirmed, must be created.
 2. The core Phase 2 domains are present, but the AI-side enterprise dampening logic is not isolated to `enterprise.rs`. The effective enterprise/goal-spiral surface spans `enterprise.rs`, `candidate_generation.rs`, `ranking.rs`, `budget.rs`, and `failure_handling.rs`.
 3. All systems use `Permille` and integer types (no floats) — confirmed.
 4. `DemandMemory` has aging mechanism (`TradeDispositionProfile.demand_memory_retention_ticks`) — confirmed, this is a potential dampener for trade loops.
@@ -76,7 +76,7 @@ Investigate:
 
 ### 6. Document findings
 
-Create `docs/dampening-audit-phase2.md` with:
+Create `archive/docs/dampening-audit-phase2.md` with:
 - Per-system section listing all identified amplifying loops.
 - For each simulation loop: the physical dampener mechanism (not numerical clamps).
 - A short planner-guardrails section where applicable, clearly marked as non-physical safeguards.
@@ -89,7 +89,7 @@ If the audit reveals loops with no physical dampener (only numerical clamps), ad
 
 ## Files to Touch
 
-- `docs/dampening-audit-phase2.md` (new — audit document)
+- `archive/docs/dampening-audit-phase2.md` (new — audit document)
 - `tickets/FND02-004-dampening-audit-phase2.md` (update assumptions/scope before implementation)
 - `crates/worldwake-systems/src/needs.rs` (read for audit; modify only if undamped loop found)
 - `crates/worldwake-systems/src/needs_actions.rs` (read for audit)
@@ -116,7 +116,7 @@ If the audit reveals loops with no physical dampener (only numerical clamps), ad
 
 ### Tests That Must Pass
 
-1. `docs/dampening-audit-phase2.md` exists and covers all five Phase 2 system domains.
+1. `archive/docs/dampening-audit-phase2.md` exists and covers all five Phase 2 system domains.
 2. Each identified amplifying loop has a documented physical dampener (not a numerical clamp).
 3. No undamped loops remain after any code fixes.
 4. Relevant system and golden test suites covering needs, production, trade, combat, and AI decision logic are run and pass.
@@ -150,7 +150,7 @@ If the audit reveals loops with no physical dampener (only numerical clamps), ad
 - Completed: 2026-03-14
 - What actually changed:
   - Reassessed and corrected the ticket’s assumptions before implementation.
-  - Added [docs/dampening-audit-phase2.md](/home/joeloverbeck/projects/worldwake/docs/dampening-audit-phase2.md) documenting the implemented Phase 2 feedback loops and their dampeners.
+  - Added [archive/docs/dampening-audit-phase2.md](/home/joeloverbeck/projects/worldwake/archive/docs/dampening-audit-phase2.md) documenting the implemented Phase 2 feedback loops and their dampeners.
   - Expanded the AI enterprise audit scope to include `candidate_generation.rs`, `ranking.rs`, `budget.rs`, and `failure_handling.rs`, because the implemented dampening/guardrail architecture is distributed across those modules.
 - Deviations from original plan:
   - No engine code changes were made, because the audit did not find an undamped implemented simulation loop that justified architectural churn.
