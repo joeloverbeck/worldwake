@@ -9,9 +9,9 @@ use serde::Deserialize;
 use worldwake_core::{
     CarryCapacity, CognitiveProfile, CombatProfile, CommodityValuationProfile,
     CommunicationProfile, ContentionDispositionProfile, ControlSource, DriveThresholds,
-    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, ExplorationProfile,
-    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory,
-    MetabolismProfile, PatrolProfile, PerceptionProfile, PlaceVisibilityProfile, PreferenceProfile,
+    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, MetabolismProfile,
+    PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile,
     PursuitProfile, Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile,
     TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
     items::CommodityKind, topology::PlaceTag,
@@ -103,7 +103,7 @@ pub struct AgentDef {
     #[serde(default)]
     pub metabolism_profile: Option<MetabolismProfile>,
     #[serde(default)]
-    pub exploration_profile: Option<ExplorationProfile>,
+    pub exploration_profile: Option<ExplorationProfileDef>,
     #[serde(default)]
     pub carry_capacity: Option<CarryCapacity>,
     #[serde(default)]
@@ -150,6 +150,20 @@ pub struct PatrolRouteDef {
     pub assigned_places: Vec<String>,
 }
 
+/// Scenario-facing exploration disposition.
+///
+/// `ExplorationProfile` in core also contains the runtime-only
+/// `consecutive_exploration_count`, which must always start at `0` during
+/// scenario bootstrap and therefore is not directly authorable in RON.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ExplorationProfileDef {
+    pub curiosity_weight: Permille,
+    pub need_activation_threshold: Permille,
+    pub max_consecutive_explorations: u8,
+    pub visit_lookback_ticks: u32,
+}
+
 /// An item lot to place in the world.
 #[derive(Clone, Debug, Deserialize)]
 pub struct ItemDef {
@@ -187,7 +201,6 @@ fn default_true() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worldwake_core::Permille;
 
     /// Deserialize with RON extensions that the scenario loader will use.
     fn from_ron_str<'de, T: serde::Deserialize<'de>>(s: &'de str) -> T {
@@ -322,7 +335,6 @@ mod tests {
                         need_activation_threshold: 350,
                         max_consecutive_explorations: 5,
                         visit_lookback_ticks: 17,
-                        consecutive_exploration_count: 1,
                     ),
                     theft_disposition: (
                         steal_duration_ticks: 6,
@@ -402,12 +414,11 @@ mod tests {
         assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
         assert_eq!(
             bob.exploration_profile,
-            Some(ExplorationProfile {
+            Some(ExplorationProfileDef {
                 curiosity_weight: Permille::new(275).unwrap(),
                 need_activation_threshold: Permille::new(350).unwrap(),
                 max_consecutive_explorations: 5,
                 visit_lookback_ticks: 17,
-                consecutive_exploration_count: 1,
             })
         );
         assert!(bob.theft_disposition.is_some());
@@ -457,6 +468,44 @@ mod tests {
             Some(PlaceVisibilityProfile {
                 base_concealment: Permille::new(400).unwrap(),
             })
+        );
+    }
+
+    #[test]
+    fn test_exploration_profile_def_rejects_runtime_counter_field() {
+        let ron_str = r#"(
+            seed: 7,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (
+                    name: "Scout",
+                    location: "Village",
+                    control: Ai,
+                    exploration_profile: (
+                        curiosity_weight: 275,
+                        need_activation_threshold: 350,
+                        max_consecutive_explorations: 5,
+                        visit_lookback_ticks: 17,
+                        consecutive_exploration_count: 1,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let options = ron::Options::default()
+            .with_default_extension(ron::extensions::Extensions::UNWRAP_NEWTYPES)
+            .with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
+        let error = options
+            .from_str::<ScenarioDef>(ron_str)
+            .expect_err("runtime-only exploration counter should not deserialize");
+
+        assert!(
+            error
+                .to_string()
+                .contains("Unexpected field named `consecutive_exploration_count`"),
+            "unexpected error: {error}"
         );
     }
 

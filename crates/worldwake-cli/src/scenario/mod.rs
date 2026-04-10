@@ -11,9 +11,9 @@ use std::path::Path;
 use types::ScenarioDef;
 use worldwake_core::{
     CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
-    KnownRecipes, LoadUnits, MerchandiseProfile, PatrolRoute, Place, ResourceSource, Seed, Tick,
-    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
-    WorldTxn, hash_world,
+    ExplorationProfile, KnownRecipes, LoadUnits, MerchandiseProfile, PatrolRoute, Place,
+    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
+    WorkstationMarker, World, WorldTxn, hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -329,7 +329,16 @@ fn spawn_agent(
     txn.set_component_drive_thresholds(agent_id, thresholds)?;
     let metabolism = agent_def.metabolism_profile.unwrap_or_default();
     txn.set_component_metabolism_profile(agent_id, metabolism)?;
-    let exploration = agent_def.exploration_profile.unwrap_or_default();
+    let exploration =
+        agent_def
+            .exploration_profile
+            .map_or_else(ExplorationProfile::default, |profile| ExplorationProfile {
+                curiosity_weight: profile.curiosity_weight,
+                need_activation_threshold: profile.need_activation_threshold,
+                max_consecutive_explorations: profile.max_consecutive_explorations,
+                visit_lookback_ticks: profile.visit_lookback_ticks,
+                consecutive_exploration_count: 0,
+            });
     txn.set_component_exploration_profile(agent_id, exploration)?;
     let carry = agent_def
         .carry_capacity
@@ -547,11 +556,11 @@ mod tests {
         BeliefConfidencePolicy, CarryCapacity, CognitiveProfile, CommodityKind,
         CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
         ControlSource, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-        ExpectationStore, ExplorationProfile, HomeostaticNeeds, IntentionDispositionProfile,
-        JusticeDispositionProfile, LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute,
-        PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
-        Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
-        TradeCategory, ViolationDispositionProfile, WorkstationTag,
+        ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+        LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
+        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
+        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -1377,7 +1386,7 @@ mod tests {
         );
         assert_eq!(
             world.get_component_exploration_profile(agent),
-            Some(&ExplorationProfile::default())
+            Some(&worldwake_core::ExplorationProfile::default())
         );
         assert_eq!(
             world.get_component_last_seen_memory(agent),
@@ -1440,12 +1449,11 @@ mod tests {
             consultation_speed_factor: Permille::new(650).unwrap(),
             contradiction_tolerance: Permille::new(125).unwrap(),
         };
-        let custom_exploration = ExplorationProfile {
+        let custom_exploration = ExplorationProfileDef {
             curiosity_weight: Permille::new(275).unwrap(),
             need_activation_threshold: Permille::new(350).unwrap(),
             max_consecutive_explorations: 5,
             visit_lookback_ticks: 17,
-            consecutive_exploration_count: 1,
         };
         let custom_thresholds = DriveThresholds::new(
             ThresholdBand::new(
@@ -1536,7 +1544,13 @@ mod tests {
         );
         assert_eq!(
             world.get_component_exploration_profile(agent),
-            Some(&custom_exploration)
+            Some(&worldwake_core::ExplorationProfile {
+                curiosity_weight: Permille::new(275).unwrap(),
+                need_activation_threshold: Permille::new(350).unwrap(),
+                max_consecutive_explorations: 5,
+                visit_lookback_ticks: 17,
+                consecutive_exploration_count: 0,
+            })
         );
     }
 

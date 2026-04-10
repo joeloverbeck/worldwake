@@ -1,6 +1,6 @@
 # S80EXPDRI-006: Keep exploration counters runtime-only in scenario authoring
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — scenario authoring shape must stop exposing runtime-only exploration counter state
@@ -92,3 +92,21 @@ In `crates/worldwake-cli/src/scenario/mod.rs`, when `spawn_agent()` writes `Expl
 1. `cargo test -p worldwake-cli`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo build --workspace`
+
+## Outcome
+
+Completed on 2026-04-10.
+
+- Replaced direct scenario authoring of `ExplorationProfile` with a dedicated `ExplorationProfileDef` in `crates/worldwake-cli/src/scenario/types.rs` so RON can author only the disposition fields and cannot provide the runtime-only `consecutive_exploration_count`.
+- Added `#[serde(deny_unknown_fields)]` coverage for the scenario-facing exploration shape and a focused test proving `consecutive_exploration_count` is rejected during deserialization.
+- Updated `spawn_agent()` in `crates/worldwake-cli/src/scenario/mod.rs` to convert the authored disposition into an authoritative `worldwake_core::ExplorationProfile` while always forcing `consecutive_exploration_count` to `0`.
+- Updated the focused CLI bootstrap tests so authored exploration values survive spawn unchanged except for the runtime-owned counter reset.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli test_exploration_profile_def_rejects_runtime_counter_field`
+- Passed `cargo test -p worldwake-cli test_spawn_agents_receive_default_universal_profiles`
+- Passed `cargo test -p worldwake-cli test_spawn_agent_with_profile_overrides`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo build --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
