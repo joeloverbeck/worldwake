@@ -115,7 +115,7 @@ Double-check severity counts against findings before presenting. If a correction
   2. **Cross-references valid**:
      - (a) **Numbering continuity** — step, phase, and section numbers are sequential with no gaps or duplicates. For files with many numbered references, use pattern search (e.g., grep for `Step [0-9]`, `### [0-9]`) to confirm; for smaller files, a visual scan suffices. Adapt grep patterns to the target skill's convention (numbered items, lettered sub-steps, or markdown headers).
      - (b) **File paths valid** — all referenced file paths still exist and point to correct targets.
-     - (c) **New cross-references** — references introduced by new text point to content that actually exists.
+     - (c) **New cross-references** — references introduced by new text point to content that actually exists. When the target skill uses nested numbering (sub-steps within steps), verify that cross-references disambiguate between levels (e.g., "Step 1, sub-step 5" vs. "Step 5").
      - (d) **Overview diagrams** — high-level overviews that become slightly inaccurate due to new branching logic are acceptable if the detailed step text handles the nuance. Note the discrepancy but do not force-update overview text that would become harder to scan.
   3. **Sequential flow coherent** — the skill reads coherently end-to-end after all edits
   4. **Contextual consistency** — numbering, terminology, and cross-references are consistent with adjacent unchanged text

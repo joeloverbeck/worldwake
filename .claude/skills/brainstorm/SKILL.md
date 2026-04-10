@@ -43,6 +43,8 @@ Write design doc to docs/plans/
 Next-steps menu (user chooses)
 ```
 
+**In plan mode**: design doc writes to the plan file instead of `docs/plans/`, and `ExitPlanMode` replaces the next-steps menu.
+
 ## Step 1: Read Context
 
 1. **Reference file**: If `reference_path` is provided, read the entire file. Extract key claims, proposals, and open questions from it. Summarize what it contains in 2-3 sentences before proceeding.
@@ -51,9 +53,11 @@ Next-steps menu (user chooses)
 
 3. **If implementation-related OR if the topic directly concerns FOUNDATIONS.md principles**: Read `docs/FOUNDATIONS.md`. You will need it in Steps 3 and 4 to validate proposed approaches against architectural principles.
 
-4. **Confidence calibration from reference file**: If the reference file provides a comprehensive design (rationale, decisions, structure, adaptation notes), set initial confidence based on how much of the problem space it covers. A thorough reference file may start confidence at 70-85%, reducing the interview to closing operational gaps (naming, cleanup, customization preferences).
+4. **Confidence calibration from reference material and request**: If the reference file provides a comprehensive design (rationale, decisions, structure, adaptation notes), set initial confidence based on how much of the problem space it covers. A thorough reference file may start confidence at 70-85%, reducing the interview to closing operational gaps (naming, cleanup, customization preferences). The same calibration applies to the user's initial request text — if the request includes detailed problem analysis, specific evidence, root cause identification, and a clear ask, calibrate initial confidence from the request itself, not just from reference files. Research findings (sub-step 5 below) also contribute to confidence by narrowing the solution space before the interview begins.
 
-5. **Project context**: Explore existing implementations relevant to the topic before starting the interview — this context informs better questions. For tooling/process topics, examine existing instances of the thing being designed (e.g., existing skills, configs, workflows — their structure, size, patterns). For codebase topics, check relevant files, specs, and tickets. Launch Explore agents for broad surveys when needed. Keep exploration targeted to what informs the interview.
+5. **External research**: If the topic requires domain knowledge beyond the codebase (academic algorithms, industry best practices, competing architectures, scaling solutions), launch research agents BEFORE the interview. The user's request may explicitly call for research ("research this online", "look for solutions") or the problem may implicitly require it (novel algorithms, scaling problems, unfamiliar domains). Summarize findings for the user before asking interview questions. Research findings inform both the confidence calibration (what solution space exists) and the approach proposal (what concrete options are available).
+
+6. **Project context**: Explore existing implementations relevant to the topic before starting the interview — this context informs better questions. For tooling/process topics, examine existing instances of the thing being designed (e.g., existing skills, configs, workflows — their structure, size, patterns). For codebase topics, check relevant files, specs, and tickets. Launch Explore agents for broad surveys when needed. Keep exploration targeted to what informs the interview.
 
 ## Step 2: Confidence-Driven Interview
 
@@ -85,6 +89,8 @@ Keep asking questions until confidence reaches 95%. Then announce: "I'm at 95% c
 7. **Respect user expertise.** If the user gives a clear, well-reasoned answer, don't re-ask the same thing in different words. Advance.
 
 ### Confidence Scoring Guide
+
+Confidence increases from **both user answers AND research findings**. If external research (Step 1, sub-step 5) narrows the solution space before or during the interview, factor that into the confidence score and note which gaps were closed by research vs. which require user input.
 
 | Range | Meaning | Action |
 |-------|---------|--------|
@@ -131,7 +137,7 @@ Section names are suggestions. Rename or combine sections to match the topic's n
 
 **After each section**, ask: "Does this section look right?" Wait for confirmation before presenting the next section. If the user pushes back, revise that section before continuing.
 
-**If plan mode is active**: Per-section approval is replaced by whole-plan approval via `ExitPlanMode`. Present the key design decisions inline in the conversation before writing the plan file, so the user can course-correct before the plan is finalized.
+**If plan mode is active**: Per-section approval is replaced by whole-plan approval via `ExitPlanMode`. Present the key design decisions inline in the conversation before writing the plan file, so the user can course-correct before the plan is finalized. For complex designs, present in 1-2 messages, grouping related sections. Pause after the first message to check for course corrections before continuing. The goal is conversation-level checkpoints, not per-section gates.
 
 ## Step 5: Write Design Doc
 
@@ -140,6 +146,7 @@ After design approval, do NOT apply changes or implement the design until the us
 **Deliverable classification**:
 - If the brainstorm topic is itself a skill design, the deliverable is the skill file (written to the appropriate skills directory, e.g., `.claude/skills/<name>/SKILL.md`). Skip the `docs/plans/` design doc — the skill file IS the design. Adjust the Step 6 menu to reflect this (omit "create a spec" option, replace with "run skill-audit on the new skill").
 - If the brainstorm topic is modifying or reconciling existing skill files, the deliverable is the modified skill file(s) themselves. Skip the `docs/plans/` design doc — the edits ARE the design. If merging multiple skills, the deliverable includes the new unified skill file, deletion of superseded skill directories, and updating any cross-references in other skills or configuration files.
+- If the brainstorm topic produces a system spec (architectural change, new subsystem, planner modification, or any change requiring formal spec-drafting-rules compliance), the deliverable is the spec file in `specs/`. Skip the `docs/plans/` design doc — the spec IS the design. Adjust the Step 6 menu accordingly (omit "create a spec" option, replace with "reassess spec" or "decompose into tickets").
 
 Once all sections are approved, write the complete design:
 
