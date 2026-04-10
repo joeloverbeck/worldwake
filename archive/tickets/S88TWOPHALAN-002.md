@@ -1,6 +1,6 @@
 # S88TWOPHALAN-002: Add `preferred_operator_boost` to ExecutionBudget
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — extends existing component with new field
@@ -52,31 +52,29 @@ Add `assert_eq!(budget.preferred_operator_boost, 2);` to `execution_budget_defau
 
 Add `preferred_operator_boost: 4` to the test fixture in `execution_budget_roundtrips_through_bincode`.
 
-### 5. Update all struct literal construction sites
+### 5. Update explicit struct literal construction sites
 
-Every `ExecutionBudget { ... }` literal across 9 files must include the new field. Files:
+Only full `ExecutionBudget { ... }` literals require edits. Call sites that use
+`..ExecutionBudget::default()` pick up the new field automatically. The required
+explicit constructor fallout is:
 
-- `crates/worldwake-core/src/execution_budget.rs` (tests: lines 49, 66)
-- `crates/worldwake-core/src/delta.rs` (line 577)
-- `crates/worldwake-cli/src/handlers/persistence.rs` (line 191)
-- `crates/worldwake-ai/src/agent_tick/planning.rs` (lines 1272–1273)
-- `crates/worldwake-ai/src/agent_tick/tests.rs` (lines 112–113)
-- `crates/worldwake-ai/src/goal_model.rs` (lines 2377–2378)
-- `crates/worldwake-ai/src/search/tests.rs` (lines 63–64)
-- `crates/worldwake-ai/tests/conformance_execution_budget.rs` (lines 252, 280, 287)
-- `crates/worldwake-ai/tests/golden_offices.rs` (lines 465, 725)
+- `crates/worldwake-core/src/execution_budget.rs` (roundtrip fixture)
+- `crates/worldwake-core/src/delta.rs`
+- `crates/worldwake-ai/src/agent_tick/planning.rs`
+- `crates/worldwake-ai/src/agent_tick/tests.rs`
+- `crates/worldwake-ai/src/goal_model.rs`
+- `crates/worldwake-ai/src/search/tests.rs`
+- `crates/worldwake-ai/tests/conformance_execution_budget.rs` (minimum-bundle case)
 
 ## Files to Touch
 
 - `crates/worldwake-core/src/execution_budget.rs` (modify)
 - `crates/worldwake-core/src/delta.rs` (modify)
-- `crates/worldwake-cli/src/handlers/persistence.rs` (modify)
 - `crates/worldwake-ai/src/agent_tick/planning.rs` (modify)
 - `crates/worldwake-ai/src/agent_tick/tests.rs` (modify)
 - `crates/worldwake-ai/src/goal_model.rs` (modify)
 - `crates/worldwake-ai/src/search/tests.rs` (modify)
 - `crates/worldwake-ai/tests/conformance_execution_budget.rs` (modify)
-- `crates/worldwake-ai/tests/golden_offices.rs` (modify)
 
 ## Out of Scope
 
@@ -110,3 +108,21 @@ Every `ExecutionBudget { ... }` literal across 9 files must include the new fiel
 
 1. `cargo test -p worldwake-core -- execution_budget`
 2. `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-11.
+
+- Added `preferred_operator_boost: u8` to `ExecutionBudget` with default `2`
+  and updated the core default/roundtrip coverage accordingly.
+- Updated every full `ExecutionBudget` struct literal that would otherwise have
+  gone stale after the shared-type extension.
+- Reassessment initially overestimated constructor fallout: call sites using
+  `..ExecutionBudget::default()` required no edits because the new field is
+  inherited automatically.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core -- execution_budget`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

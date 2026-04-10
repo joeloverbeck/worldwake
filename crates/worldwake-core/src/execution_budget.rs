@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 pub struct ExecutionBudget {
     pub beam_width: u8,
     pub max_prerequisite_locations: u8,
+    /// Number of consecutive preferred-operator expansions before alternating
+    /// to the regular queue. Higher values focus search more aggressively on
+    /// landmark-derived actions. 0 = no boosting (dual queue alternates 1:1).
+    pub preferred_operator_boost: u8,
 }
 
 impl Default for ExecutionBudget {
@@ -13,6 +17,7 @@ impl Default for ExecutionBudget {
         Self {
             beam_width: 8,
             max_prerequisite_locations: 3,
+            preferred_operator_boost: 2,
         }
     }
 }
@@ -42,6 +47,7 @@ mod tests {
 
         assert_eq!(budget.beam_width, 8);
         assert_eq!(budget.max_prerequisite_locations, 3);
+        assert_eq!(budget.preferred_operator_boost, 2);
     }
 
     #[test]
@@ -49,6 +55,7 @@ mod tests {
         let budget = ExecutionBudget {
             beam_width: 11,
             max_prerequisite_locations: 4,
+            preferred_operator_boost: 4,
         };
 
         let bytes = bincode::serialize(&budget).unwrap();

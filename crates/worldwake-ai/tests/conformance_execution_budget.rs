@@ -252,6 +252,7 @@ fn conformance_minimum_bundle_preserves_immediate_local_consume_sequence() {
         ExecutionBudget {
             beam_width: 3,
             max_prerequisite_locations: 1,
+            preferred_operator_boost: 0,
         },
     );
 

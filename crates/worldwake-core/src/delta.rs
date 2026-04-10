@@ -578,6 +578,7 @@ mod tests {
             ComponentValue::ExecutionBudget(ExecutionBudget {
                 beam_width: 11,
                 max_prerequisite_locations: 4,
+                preferred_operator_boost: 3,
             }),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(

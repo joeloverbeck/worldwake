@@ -114,6 +114,7 @@ fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
     ExecutionBudget {
         beam_width: reasoning.beam_width,
         max_prerequisite_locations: reasoning.max_prerequisite_locations,
+        preferred_operator_boost: ExecutionBudget::default().preferred_operator_boost,
     }
 }
 
