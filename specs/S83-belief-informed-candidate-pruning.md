@@ -14,7 +14,8 @@ Draft
 
 ## Crates
 
-- `worldwake-ai` (candidate generation, CognitiveProfile extension)
+- `worldwake-ai` (candidate generation, diagnostics)
+- `worldwake-sim` (GoalBeliefView trait extension, RuntimeBeliefView impl)
 - `worldwake-core` (CognitiveProfile field addition)
 
 ## Dependencies
@@ -47,7 +48,8 @@ Draft
 | FND-15 (Knowledge Local) | Agents only consider places they have knowledge about — knowledge acquired through perception, testimony, or exploration |
 | FND-20 (Resource-Bounded Reasoning) | Planner budget is spent on belief-informed candidates, not wasted on blind enumeration of all reachable places |
 | FND-22 (Agent Diversity) | `speculative_acquisition` profile parameter creates behavioral diversity: cautious agents only go where they're sure, optimistic agents try places they've heard rumors about |
-| FND-26 (Systems Through State) | Belief store provides the filtering data; candidate generation reads it. No direct system-to-system coupling |
+| FND-26 (Systems Through State) | Belief store provides the filtering data; candidate generation reads it via GoalBeliefView. No direct system-to-system coupling |
+| FND-29 (Debuggability) | Diagnostic counters (`places_reachable`, `places_after_belief_filter`) surface the filtering ratio in decision traces, making belief pruning observable and debuggable |
 
 ## Deliverables
 
@@ -57,7 +59,8 @@ In `crates/worldwake-ai/src/candidate_generation.rs`:
 
 ```rust
 /// Filter reachable places to only those where the agent believes
-/// the target commodity exists (via resource sources or inventory).
+/// the target commodity exists (via resource sources or the agent's
+/// own controlled inventory at that place).
 fn belief_gated_places(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -65,6 +68,16 @@ fn belief_gated_places(
     commodity: CommodityKind,
     include_speculative: bool,
 ) -> Vec<EntityId> {
+    // For the speculative path, build the set of places the agent
+    // has any beliefs about (visited or heard of). Reuses the existing
+    // known_place_observations() helper (line ~4147) which derives this
+    // from the agent's belief store.
+    let known_places = if include_speculative {
+        Some(known_place_observations(view, agent))
+    } else {
+        None
+    };
+
     reachable
         .iter()
         .copied()
@@ -73,18 +86,21 @@ fn belief_gated_places(
             if view.effective_place(agent) == Some(place) {
                 return true;
             }
-            // Check believed resource sources at this place
-            if !view.resource_sources_at(agent, place, commodity).is_empty() {
+            // Check believed resource sources at this place (e.g., orchards,
+            // mines, wells — entities the agent believes produce this commodity)
+            if !view.resource_sources_at(place, commodity).is_empty() {
                 return true;
             }
-            // Check believed commodity inventory at this place (sellers, stockpiles)
+            // Check agent's own controlled commodity quantity at this place
+            // (the agent's own remote stockpiles, not other entities' inventory)
             if view.controlled_commodity_quantity_at_place(agent, place, commodity).0 > 0 {
                 return true;
             }
-            // Speculative: include places the agent has visited but doesn't
-            // currently believe have the resource (might have been depleted)
-            if include_speculative {
-                if view.agent_has_visited_place(agent, place) {
+            // Speculative: include places the agent has any beliefs about
+            // (visited or heard of) even if no current resource evidence exists.
+            // The resource may have been depleted since last observation.
+            if let Some(ref known) = known_places {
+                if known.contains_key(&place) {
                     return true;
                 }
             }
@@ -95,60 +111,86 @@ fn belief_gated_places(
 ```
 
 The function uses existing belief view methods:
-- `resource_sources_at()` (defined in `per_agent_belief_view.rs`) — checks believed resource sources
-- `controlled_commodity_quantity_at_place()` — checks believed commodity quantities
-- `agent_has_visited_place()` — checks if agent has a belief record about the place (for speculative mode)
+- `resource_sources_at(place, commodity)` (defined in `per_agent_belief_view.rs`, trait at `belief_view.rs:184`) — checks believed resource sources. Note: no `agent` parameter; the belief view is already agent-scoped.
+- `controlled_commodity_quantity_at_place(agent, place, commodity)` — checks the agent's own controlled commodity quantities at the place (returns `Quantity`, a newtype over `u32`)
+- `known_place_observations(view, agent)` (existing helper at `candidate_generation.rs:4147`) — returns `BTreeMap<EntityId, Tick>` of places the agent has beliefs about, derived from the agent's belief store
 
-If `agent_has_visited_place()` does not exist on the belief view trait, it must be added. The information is derivable from the agent's belief store: a place the agent has claims about has been visited or heard about.
+### 2. GoalBeliefView Accessor for CognitiveProfile
 
-### 2. Integration into AcquireCommodity Candidate Generation
+In `crates/worldwake-sim/src/belief_view.rs`, add to the `GoalBeliefView` trait (following the pattern of `exploration_profile` at line 198 and `disposal_profile` at line 194):
 
-In `crates/worldwake-ai/src/candidate_generation.rs`, modify `acquisition_path_opportunities_inner()` (around line 4007):
-
-**Before** (current):
 ```rust
-let reachable = reachable_places_within_horizon(view, origin, travel_horizon);
-for candidate_place in &reachable {
-    // ... generate candidates at every place
+fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
+    let _ = agent;
+    None
 }
+```
+
+Add the corresponding `RuntimeBeliefView` impl that reads `CognitiveProfile` from the world's component table, and the `GoalBeliefView` blanket-impl forwarding in the `ProfileBeliefView` block. This follows the exact pattern used for `ExplorationProfile` and `DisposalProfile`.
+
+Update `TestBeliefView` in `candidate_generation.rs` tests to support the new method (add a `cognitive_profiles: BTreeMap<EntityId, CognitiveProfile>` field).
+
+### 3. Integration into AcquireCommodity Candidate Generation
+
+In `crates/worldwake-ai/src/candidate_generation.rs`, modify `acquisition_path_opportunities_inner()` (line ~4058).
+
+**Before** (current code at lines 4071-4085):
+```rust
+reachable_places_within_horizon(view, origin, travel_horizon)
+    .into_iter()
+    .filter_map(|candidate_place| {
+        acquisition_path_evidence_at_place(
+            view, agent, candidate_place, commodity,
+            recipes, travel_horizon, options,
+        )
+        .map(|(evidence, trace)| (candidate_place, evidence, trace))
+    })
+    .collect()
 ```
 
 **After**:
 ```rust
-let reachable = reachable_places_within_horizon(view, origin, travel_horizon);
 let cognitive = view.cognitive_profile(agent);
 let include_speculative = cognitive
     .map(|p| p.speculative_acquisition)
     .unwrap_or(false);
+let reachable = reachable_places_within_horizon(view, origin, travel_horizon);
 let belief_filtered = belief_gated_places(
     view, agent, &reachable, commodity, include_speculative,
 );
-for candidate_place in &belief_filtered {
-    // ... generate candidates only at belief-supported places
-}
+belief_filtered
+    .into_iter()
+    .filter_map(|candidate_place| {
+        acquisition_path_evidence_at_place(
+            view, agent, candidate_place, commodity,
+            recipes, travel_horizon, options,
+        )
+        .map(|(evidence, trace)| (candidate_place, evidence, trace))
+    })
+    .collect()
 ```
 
-### 3. CognitiveProfile Extension
+### 4. CognitiveProfile Extension
 
 In `crates/worldwake-core/src/cognitive_profile.rs`:
 
 ```rust
 /// Whether this agent generates acquisition candidates at places they've
-/// visited but don't currently believe have the target resource.
+/// heard of but don't currently believe have the target resource.
 /// Creates behavioral diversity: cautious agents (false) only go where
-/// they're sure; optimistic agents (true) try previously-visited places.
+/// they're sure; optimistic agents (true) try previously-known places.
 pub speculative_acquisition: bool,
 ```
 
-Default: `false`. Added to the `Default` impl. This means agents by default only consider places with positive belief evidence.
+Default: `false`. Added to the existing `Default` impl (lines 21-38). This means agents by default only consider places with positive belief evidence.
 
-### 4. AgentDef Integration
+The `bool` type satisfies all existing derives on `CognitiveProfile` (`Clone`, `Copy`, `Debug`, `Eq`, `PartialEq`, `Ord`, `PartialOrd`, `Serialize`, `Deserialize`).
 
-In `crates/worldwake-cli/src/scenario/types.rs`, add `speculative_acquisition` to `CognitiveProfileDef` (if the field is scenario-definable) or ensure it propagates through the existing `CognitiveProfile` scenario path.
+No separate `CognitiveProfileDef` type is needed — `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs` uses `Option<CognitiveProfile>` directly (line 86), and `spawn_agent()` in `crates/worldwake-cli/src/scenario/mod.rs` maps it via `unwrap_or_default()` (line 368). Scenario `.ron` files can set `speculative_acquisition: true` directly in the `cognitive_profile` block. The existing `cognitive_profile_roundtrips_through_bincode` test (cognitive_profile.rs:81) should be verified to cover the new field.
 
 ### 5. Diagnostic Tracing
 
-In `crates/worldwake-ai/src/candidate_generation.rs`, add a diagnostic trace to `CandidateGenerationDiagnostics`:
+In `crates/worldwake-ai/src/candidate_generation.rs`, add fields to `CandidateGenerationDiagnostics` (line ~159, currently 6 fields: `omitted_political`, `omitted_bandit`, `omitted_social`, `omitted_violation_detection`, `evidence`, `fully_blocked_desires`):
 
 ```rust
 /// Number of reachable places before belief filtering.
@@ -157,14 +199,18 @@ pub places_reachable: u32,
 pub places_after_belief_filter: u32,
 ```
 
-This allows the observer and decision traces to surface the filtering ratio (e.g., "1200 reachable → 3 belief-supported"), directly supporting FND-29 (Debuggability).
+These `u32` fields default to `0` via the struct's `#[derive(Default)]`.
+
+**Integration point**: The diagnostic counters should be recorded at the call sites in `emit_self_consume_candidates` (line ~2284), which already has `&mut diagnostics` access. The counters are set after `reachable_places_within_horizon` returns (for `places_reachable`) and after `belief_gated_places` returns (for `places_after_belief_filter`). This may require `acquisition_path_opportunities_inner` to return the counts alongside its current `Vec` result, or the counters can be recorded by a wrapper at the `acquisition_path_opportunities` / `direct_acquisition_path_opportunities` level.
+
+This allows the observer and decision traces to surface the filtering ratio (e.g., "1200 reachable -> 3 belief-supported"), directly supporting FND-29 (Debuggability).
 
 ## Section H: Causal Hooks (FND-01)
 
 ### H1. Information-Path Analysis
 
-- **Trigger**: Agent has unmet need → candidate generation fires → `AcquireCommodity` candidates generated.
-- **Path**: Authoritative resource sources → perception → belief claims about places and their resources → `belief_gated_places()` filters reachable places → candidates emitted only for belief-supported places.
+- **Trigger**: Agent has unmet need -> candidate generation fires -> `AcquireCommodity` candidates generated.
+- **Path**: Authoritative resource sources -> perception -> belief claims about places and their resources -> `belief_gated_places()` filters reachable places -> candidates emitted only for belief-supported places.
 - Agents who have never perceived or been told about a remote resource generate zero remote candidates. They rely on S80 (`ExploreLocation`) to discover new places.
 
 ### H2. Positive-Feedback Analysis
@@ -178,7 +224,7 @@ This allows the observer and decision traces to surface the filtering ratio (e.g
 ### H4. Stored State vs. Derived
 
 - **Stored**: `CognitiveProfile.speculative_acquisition` (per-agent parameter), belief claims (existing).
-- **Derived**: `belief_gated_places()` output (computed from beliefs at generation time, never stored). Diagnostic counters (transient per-planning-cycle).
+- **Derived**: `belief_gated_places()` output (computed from beliefs at generation time, never stored). `known_place_observations()` output (derived from belief store, transient). Diagnostic counters (transient per-planning-cycle).
 
 ## SystemFn Integration
 
@@ -187,15 +233,16 @@ No new SystemFn required. The change is entirely within candidate generation, wh
 ## Component Registration
 
 - `CognitiveProfile` already registered. The new `speculative_acquisition` field is added to the existing component.
+- GoalBeliefView gains a `cognitive_profile()` accessor (Deliverable 2), following the existing profile accessor pattern.
 
 ## Cross-System Interactions
 
-- **Perception → Candidate generation** (via belief state): Agents acquire beliefs about place resources through perception. Candidate generation reads these beliefs to filter places.
-- **S80 Exploration → Candidate generation** (via belief state): When an agent has no belief-supported places, zero remote acquisition candidates are generated. The planner then falls through to `ExploreLocation` (from S80), which sends the agent to discover new places. After exploration, new beliefs are formed, enabling future acquisition candidates.
-- **S73 Snapshot filtering → Candidate generation** (complementary): S73 filters entities within the planning snapshot. This spec filters places before candidate emission. The two are orthogonal and compose naturally.
+- **Perception -> Candidate generation** (via belief state): Agents acquire beliefs about place resources through perception. Candidate generation reads these beliefs to filter places.
+- **S80 Exploration -> Candidate generation** (via belief state): When an agent has no belief-supported places, zero remote acquisition candidates are generated. The planner then falls through to `ExploreLocation` (from S80), which sends the agent to discover new places. After exploration, new beliefs are formed, enabling future acquisition candidates.
+- **S73 Snapshot filtering -> Candidate generation** (complementary): S73 filters entities within the planning snapshot. This spec filters places before candidate emission. The two are orthogonal and compose naturally.
 
 ## Profile-Driven Parameters
 
 | Parameter | Type | Default | Purpose |
 |-----------|------|---------|---------|
-| `speculative_acquisition` | `bool` | `false` | Whether to include visited-but-no-current-evidence places in acquisition candidates |
+| `speculative_acquisition` | `bool` | `false` | Whether to include known-but-no-current-evidence places in acquisition candidates |

@@ -38,6 +38,7 @@ If plan mode is active:
 - **Pre-Apply Verification** runs after ExitPlanMode approval, before Step 7.
 - If there are no questions, proceed from the Step 6 findings report directly to writing the plan file and calling ExitPlanMode.
 - If the ExitPlanMode result contains user comments, treat them as binding modifications.
+- **Delegated resolution in plan mode**: When a question is resolved via delegation (user says "you decide" or "decide based on FOUNDATIONS"), include the resolution rationale in the plan file alongside the resulting change. The ExitPlanMode approval then covers both the resolution and the change.
 
 **Plan file structure**:
 - **Context**: Which spec, why it's being reassessed
@@ -119,6 +120,8 @@ Grep for each function. Confirm signature, module location, and export status. C
 - **New function parameter sufficiency**: Validate that proposed parameters provide sufficient data at every call site. Flag if a parameter type lacks needed context.
 - **Proposed modifications to existing functions**: Verify the function's parameters and local scope include variables the proposed code references. Flag out-of-scope variable usage as an Issue.
 - **Symbol partitioning** (splitting traits/enums): Verify the partition is complete (all symbols accounted for) and disjoint (no symbol in two categories). Verify stated counts match listed names. Use automated scripts for large sets (>20 symbols).
+- **Code example fidelity**: If the spec includes Before/After code snippets, verify they match the actual code's control flow structure (e.g., imperative loops vs. iterator chains, match arms vs. if-let chains). Style mismatches in code examples mislead implementers.
+- **Reuse opportunities**: For each new function or trait method the spec proposes to create, grep the codebase for existing functions serving the same purpose. A proposed new method that duplicates existing functionality should be flagged as an Issue (prefer reuse) or Improvement (note the existing alternative).
 
 #### 3.4 Dependencies (specs/tickets)
 
@@ -126,7 +129,7 @@ Verify each dependency lives in `specs/`, `archive/specs/`, `tickets/`, or `arch
 
 #### 3.5 Component Fields and ECS Registrations
 
-Skip sub-steps 5a-5g if the spec does not add fields to components, create new components, or extend discriminator enums.
+Skip sub-steps 5a-5g if the spec does not add fields to components, create new components, or extend discriminator enums. Note: 5h (Trait accessor propagation) is NOT covered by this skip — it applies whenever the spec reads any profile or component through GoalBeliefView, even if no new fields are added.
 
 - **5a. Shape validation**: Grep component structs in `worldwake-core`, verify fields/types. Check `component_schema.rs` for registration.
 - **5b. Trait bounds**: Check derive macros and trait bounds on types/enums the spec extends. Record constraints new additions must satisfy (`Copy`, `Serialize`, `Ord`).
@@ -185,6 +188,8 @@ Guidelines:
 - Spot-check agent claims with direct Grep/Read before including in findings — agent results are leads, not facts. Especially spot-check when an agent reports a referenced type as "does not exist" or "needs to be created" — verify whether the spec used a wrong name for an existing type before accepting the agent's conclusion.
 - In plan mode, Explore agents are inherently compatible (read-only).
 - For structural refactor specs (type c), direct agents toward discrepancy checking (counts, symbol existence, blast radius) rather than broad exploration.
+
+After Explore agents return, a Plan agent may be used to organize and classify findings, cross-reference agent results against the spec's type assumptions, and identify gaps the Explore agents missed. This is optional and most useful when findings are numerous (>5) or span multiple domains.
 
 Do not present findings yet. Collect everything for Step 4.
 

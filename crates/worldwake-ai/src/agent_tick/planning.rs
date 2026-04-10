@@ -1265,6 +1265,7 @@ mod tests {
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
                 .max_snapshot_entities_per_place,
+            speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
         }
     }
 

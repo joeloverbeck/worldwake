@@ -16,6 +16,9 @@ pub struct CognitiveProfile {
     pub initial_cooldown_ticks: u32,
     pub max_cooldown_ticks: u32,
     pub max_snapshot_entities_per_place: u16,
+    /// Whether this agent considers known places even without current positive
+    /// resource evidence when generating acquisition candidates.
+    pub speculative_acquisition: bool,
 }
 
 impl Default for CognitiveProfile {
@@ -33,6 +36,7 @@ impl Default for CognitiveProfile {
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,
             max_snapshot_entities_per_place: 50,
+            speculative_acquisition: false,
         }
     }
 }
@@ -75,6 +79,7 @@ mod tests {
         assert_eq!(profile.initial_cooldown_ticks, 4);
         assert_eq!(profile.max_cooldown_ticks, 64);
         assert_eq!(profile.max_snapshot_entities_per_place, 50);
+        assert!(!profile.speculative_acquisition);
     }
 
     #[test]
@@ -92,6 +97,7 @@ mod tests {
             initial_cooldown_ticks: 6,
             max_cooldown_ticks: 72,
             max_snapshot_entities_per_place: 75,
+            speculative_acquisition: true,
         };
 
         let bytes = bincode::serialize(&profile).unwrap();
