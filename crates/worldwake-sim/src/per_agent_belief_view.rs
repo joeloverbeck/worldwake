@@ -10,12 +10,11 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
     CarryCapacity, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityValuationProfile, ContentionGrant, ControlSource, DemandObservation,
-    DisposalProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, Permille, PlaceTag, PreferenceProfile,
-    Quantity, RecipeId,
+    CommodityValuationProfile, ContentionGrant, ControlSource, DemandObservation, DisposalProfile,
+    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds,
+    InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
     RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
     SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
     TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
@@ -2423,7 +2422,10 @@ mod tests {
             ProfileBeliefView::disposal_profile(&view, agent),
             Some(profile)
         );
-        assert_eq!(GoalBeliefView::disposal_profile(&view, agent), Some(profile));
+        assert_eq!(
+            GoalBeliefView::disposal_profile(&view, agent),
+            Some(profile)
+        );
     }
 
     #[test]

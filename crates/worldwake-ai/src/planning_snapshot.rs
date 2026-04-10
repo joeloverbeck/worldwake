@@ -4,14 +4,14 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
     BelievedInstitutionalClaim, BlockedIntentMemory, BlockingFact, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DriveThresholds,
-    EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille,
-    PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation, ResourceSource, SocialObservation,
-    StockStoragePolicy, SuccessionLaw, TellMemoryKey, TellProfile, TheftDispositionProfile, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    ViolationDispositionProfile, WorkstationTag, Wound,
+    CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DisposalProfile,
+    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
+    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
+    PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation,
+    ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
+    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -186,6 +186,7 @@ pub(crate) struct SnapshotProfiles {
     pub(crate) homeostatic_needs: Option<HomeostaticNeeds>,
     pub(crate) drive_thresholds: Option<DriveThresholds>,
     pub(crate) metabolism_profile: Option<MetabolismProfile>,
+    pub(crate) disposal_profile: Option<DisposalProfile>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -278,6 +279,7 @@ impl Default for SnapshotEntity {
                 homeostatic_needs: None,
                 drive_thresholds: None,
                 metabolism_profile: None,
+                disposal_profile: None,
             },
             facility: SnapshotFacility {
                 workstation_tag: None,
@@ -858,6 +860,7 @@ fn build_snapshot_entity(
     let homeostatic_needs = view.homeostatic_needs(entity);
     let drive_thresholds = view.drive_thresholds(entity);
     let metabolism_profile = view.metabolism_profile(entity);
+    let disposal_profile = view.disposal_profile(entity);
     let theft_disposition_profile = view.theft_disposition_profile(entity);
     let trade_disposition_profile = view.trade_disposition_profile(entity);
     let justice_disposition_profile = view.justice_disposition_profile(entity);
@@ -929,6 +932,7 @@ fn build_snapshot_entity(
             homeostatic_needs,
             drive_thresholds,
             metabolism_profile,
+            disposal_profile,
         },
         facility: SnapshotFacility {
             workstation_tag,
@@ -1192,7 +1196,7 @@ mod tests {
     use worldwake_core::{
         ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BlockedIntentMemory,
         CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
-        DemandObservation, DriveThresholds, EligibilityRule, EntityId, EntityKind,
+        DemandObservation, DisposalProfile, DriveThresholds, EligibilityRule, EntityId, EntityKind,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
         MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Quantity, RecipeId,
         ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange,
@@ -1228,6 +1232,7 @@ mod tests {
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, ContentionGrant>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
+        disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
@@ -1257,6 +1262,7 @@ mod tests {
                 facility_queue_positions: BTreeMap::new(),
                 facility_grants: BTreeMap::new(),
                 tell_profiles: BTreeMap::new(),
+                disposal_profiles: BTreeMap::new(),
                 told_beliefs: BTreeMap::new(),
                 confidence_policies: BTreeMap::new(),
                 patrol_routes: BTreeMap::new(),
@@ -1314,6 +1320,10 @@ mod tests {
 
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             None
+        }
+
+        fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
+            self.disposal_profiles.get(&agent).copied()
         }
     }
 

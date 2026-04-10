@@ -2402,7 +2402,10 @@ mod tests {
             .find(|def| def.name == "drop_item")
             .expect("drop_item action must exist")
             .id;
-        let candidate_ids = candidates.iter().map(|candidate| candidate.def_id).collect::<Vec<_>>();
+        let candidate_ids = candidates
+            .iter()
+            .map(|candidate| candidate.def_id)
+            .collect::<Vec<_>>();
         assert!(candidate_ids.contains(&put_down));
         assert!(candidate_ids.contains(&drop_item));
     }

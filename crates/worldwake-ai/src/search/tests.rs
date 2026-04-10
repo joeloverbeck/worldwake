@@ -3028,7 +3028,10 @@ fn search_adds_put_down_candidate_for_directly_possessed_hypothetical_lot() {
     }
     let put_down = registry.iter().find(|def| def.name == "put_down").unwrap();
     let drop_item = registry.iter().find(|def| def.name == "drop_item").unwrap();
-    let candidate_ids = candidates.iter().map(|candidate| candidate.def_id).collect::<Vec<_>>();
+    let candidate_ids = candidates
+        .iter()
+        .map(|candidate| candidate.def_id)
+        .collect::<Vec<_>>();
     assert!(candidate_ids.contains(&put_down.id));
     assert!(candidate_ids.contains(&drop_item.id));
 }

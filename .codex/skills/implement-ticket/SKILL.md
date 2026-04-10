@@ -43,6 +43,8 @@ Verify the ticket against the current codebase, not stale architectural memory. 
 
 For cross-crate accessor, trait-surface, or API-surface tickets, verify the real downstream caller-facing boundary before coding, not just the immediate trait or type named in the ticket. If live callers consume the data through a broader wrapper, supertrait, blanket impl, or facade surface, correct the ticket to that owned boundary before editing code.
 
+For planner-visible belief, profile, or snapshot-completeness tickets, verify the full carriage path before coding: runtime belief view -> snapshot builder -> snapshot storage -> `PlanningState`/planner-facing view surface. Do not stop at the final accessor if planner-visible data can be dropped earlier in the pipeline.
+
 Load `references/reassessment-checks.md`.
 
 ### 3. Handle mismatches explicitly
@@ -50,6 +52,8 @@ Load `references/reassessment-checks.md`.
 Load `references/mismatch-handling.md`.
 
 When reassessment shows that part of the ticket's claimed substrate is already present in live code, update the ticket before coding so it describes only the remaining owned delta. Reflect that narrowed scope in the ticket's `Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria` sections instead of leaving stale "add X" language in place.
+
+After narrowing a ticket because substrate is already live, re-sweep the adjacent fallout that commonly remains owned by the current ticket: declaration/dispatch tables, snapshot/state carriers, local test stubs/helpers, synthetic candidate/root helpers, and the broadened verification selectors that should now prove only the remaining live delta.
 
 If focused proof added during implementation reveals a production contradiction that reassessment did not yet expose, stop and correct the ticket before proceeding further. Update the same sections (`Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria`) so the ticket no longer claims "tests only" or `Engine Changes: None` when the live invariant actually requires production changes.
 
