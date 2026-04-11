@@ -6,7 +6,7 @@ use golden_harness::*;
 use std::num::NonZeroU32;
 use worldwake_ai::{
     DecisionOutcome, GoalKind, PlannerOpKind, PlanningEntityRef, PlanningState,
-    apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
+    PlanSearchOutcome, apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
     generate_candidates, search_plan,
 };
 use worldwake_core::{
@@ -439,6 +439,54 @@ fn assert_remote_care_tick_zero_plan(
             .iter()
             .any(|step| step.op_kind == PlannerOpKind::QueueForFacilityUse),
         "remote care selected plan should include a queue step after medicine pickup"
+    );
+    let successful_attempt = tick_0_planning
+        .planning
+        .attempts
+        .iter()
+        .find(|attempt| matches!(attempt.outcome, PlanSearchOutcome::Found { .. }))
+        .expect("remote care tick 0 planning should include a successful plan-search attempt");
+    let strategic_plan = successful_attempt
+        .strategic_plan
+        .as_ref()
+        .expect("remote care should record a strategic itinerary in the successful search attempt");
+    assert_eq!(
+        strategic_plan
+            .first()
+            .expect("remote care strategic plan should contain at least one step")
+            .destination,
+        ORCHARD_FARM,
+        "remote care strategic plan should first route to Orchard Farm for medicine"
+    );
+    assert!(
+        strategic_plan[0].sub_goal.contains("Medicine"),
+        "remote care strategic plan should describe medicine acquisition: {strategic_plan:?}"
+    );
+    assert!(
+        successful_attempt.landmarks_extracted > 0,
+        "remote care tick 0 planning should extract landmarks"
+    );
+    assert!(
+        successful_attempt
+            .expansion_summaries
+            .iter()
+            .all(|summary| summary.candidates_generated < 100),
+        "two-phase remote care should keep per-expansion tactical branching below 100 candidates: {:?}",
+        successful_attempt.expansion_summaries
+    );
+    assert!(
+        successful_attempt
+            .expansion_summaries
+            .iter()
+            .any(|summary| summary.preferred_candidates > 0),
+        "remote care should record preferred-operator guidance in at least one expansion"
+    );
+    assert!(
+        successful_attempt
+            .expansion_summaries
+            .iter()
+            .any(|summary| summary.landmark_heuristic > 0),
+        "remote care should record a non-zero landmark heuristic in at least one expansion"
     );
 
     tick_0_trace

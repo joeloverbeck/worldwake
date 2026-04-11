@@ -128,6 +128,35 @@ fn run_search_depth_hashes(seed: Seed) -> (StateHash, StateHash, StateHash, Stat
     )
 }
 
+fn run_landmark_depth_hashes(seed: Seed) -> (StateHash, StateHash, StateHash, StateHash) {
+    let zero_landmarks = CognitiveProfile {
+        landmark_extraction_depth: 0,
+        ..CognitiveProfile::default()
+    };
+    let (mut zero_h, _zero_agent) =
+        setup_search_depth_harness(seed, zero_landmarks, ExecutionBudget::default());
+    let (mut default_h, _default_agent) = setup_search_depth_harness(
+        seed,
+        CognitiveProfile::default(),
+        ExecutionBudget::default(),
+    );
+
+    zero_h.step_once();
+    default_h.step_once();
+
+    for _ in 0..12 {
+        zero_h.step_once();
+        default_h.step_once();
+    }
+
+    (
+        hash_world(&zero_h.world).unwrap(),
+        hash_event_log(&zero_h.event_log).unwrap(),
+        hash_world(&default_h.world).unwrap(),
+        hash_event_log(&default_h.event_log).unwrap(),
+    )
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct UtilityProfileDiversityObservation {
     selected_goals: Vec<String>,
@@ -352,6 +381,147 @@ fn search_depth_divergence_replays_deterministically() {
     assert_eq!(
         first, second,
         "search-depth divergence scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 141: Landmark Depth Changes Two-Phase Trace Shape Without Breaking Planning
+// ---------------------------------------------------------------------------
+//
+// Systems: Production, AI, Travel
+// GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+// ActionDomains: Production, Travel, Needs
+// Places: VillageSquare, OrchardFarm
+// Principles: 20, 22
+//
+// Setup: Two isolated harness runs share the same baker, recipe registry,
+//   remote firewood input, beliefs, and RNG seed. The only difference is
+//   `CognitiveProfile.landmark_extraction_depth`: disabled `0` versus default.
+//
+// Proves: Landmark-depth diversity changes two-phase planner guidance and trace
+//   metadata without breaking the live remote-input craft plan. The default run
+//   extracts landmarks and preferred candidates; the zero-depth run degrades
+//   gracefully to zero landmark counts while still selecting the lawful remote
+//   pickup -> return -> craft plan.
+//
+// Chain: Shared initial state -> same remote production need -> depth-driven
+//   landmark extraction difference -> divergent planner trace guidance ->
+//   both runs still produce the same lawful remote craft plan family.
+
+#[test]
+fn landmark_depth_divergence() {
+    let zero_landmarks = CognitiveProfile {
+        landmark_extraction_depth: 0,
+        ..CognitiveProfile::default()
+    };
+    let (mut zero_h, zero_agent) =
+        setup_search_depth_harness(Seed([141; 32]), zero_landmarks, ExecutionBudget::default());
+    let (mut default_h, default_agent) = setup_search_depth_harness(
+        Seed([141; 32]),
+        CognitiveProfile::default(),
+        ExecutionBudget::default(),
+    );
+
+    zero_h.step_once();
+    default_h.step_once();
+
+    let zero_planning = planning_trace_at(&zero_h, zero_agent, Tick(0));
+    let default_planning = planning_trace_at(&default_h, default_agent, Tick(0));
+
+    for planning in [zero_planning, default_planning] {
+        assert_eq!(
+            planning.selection.selected_plan_source,
+            Some(SelectedPlanSource::SearchSelection),
+            "landmark-depth variation should still select a fresh searched plan"
+        );
+        let plan = planning
+            .selection
+            .selected_plan
+            .as_ref()
+            .expect("landmark-depth variation should preserve the remote craft plan");
+        assert!(
+            plan.steps.iter().any(
+                |step| step.op_kind == PlannerOpKind::Travel && step.targets == vec![ORCHARD_FARM]
+            ),
+            "plan should still travel to Orchard Farm for the remote firewood"
+        );
+        assert!(
+            plan.steps
+                .iter()
+                .any(|step| step.op_kind == PlannerOpKind::MoveCargo),
+            "plan should still include remote firewood pickup"
+        );
+        assert!(
+            plan.steps
+                .iter()
+                .any(|step| step.op_kind == PlannerOpKind::Craft),
+            "plan should still include the bake step"
+        );
+    }
+
+    let zero_attempt = zero_planning
+        .planning
+        .attempts
+        .iter()
+        .find(|attempt| matches!(attempt.outcome, worldwake_ai::PlanSearchOutcome::Found { .. }))
+        .expect("zero-depth run should include a successful search attempt");
+    let default_attempt = default_planning
+        .planning
+        .attempts
+        .iter()
+        .find(|attempt| matches!(attempt.outcome, worldwake_ai::PlanSearchOutcome::Found { .. }))
+        .expect("default-depth run should include a successful search attempt");
+
+    assert_eq!(
+        zero_attempt.landmarks_extracted, 0,
+        "zero landmark depth should disable landmark extraction"
+    );
+    assert_eq!(
+        zero_attempt.landmark_orderings, 0,
+        "zero landmark depth should disable landmark ordering extraction"
+    );
+    assert!(
+        zero_attempt
+            .expansion_summaries
+            .iter()
+            .all(|summary| summary.preferred_candidates == 0),
+        "zero landmark depth should not mark preferred candidates"
+    );
+    assert!(
+        zero_attempt
+            .expansion_summaries
+            .iter()
+            .all(|summary| summary.landmark_heuristic == 0),
+        "zero landmark depth should degrade to zero landmark heuristic"
+    );
+
+    assert!(
+        default_attempt.landmarks_extracted > 0,
+        "default landmark depth should extract at least one landmark"
+    );
+    assert!(
+        default_attempt
+            .expansion_summaries
+            .iter()
+            .any(|summary| summary.preferred_candidates > 0),
+        "default landmark depth should expose preferred candidates"
+    );
+    assert!(
+        default_attempt
+            .expansion_summaries
+            .iter()
+            .any(|summary| summary.landmark_heuristic > 0),
+        "default landmark depth should expose a positive landmark heuristic"
+    );
+}
+
+#[test]
+fn landmark_depth_divergence_replays_deterministically() {
+    let first = run_landmark_depth_hashes(Seed([141; 32]));
+    let second = run_landmark_depth_hashes(Seed([141; 32]));
+    assert_eq!(
+        first, second,
+        "landmark-depth divergence scenario should replay deterministically"
     );
 }
 

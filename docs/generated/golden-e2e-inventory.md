@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 26
 - Files contributing `golden_*` tests: 26
-- Total `golden_*` tests: 342
+- Total `golden_*` tests: 348
 
 ## Per-File Inventory
 
@@ -28,9 +28,9 @@ Do not hand-edit it.
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
 | `golden_perception_exposure.rs` | 6 |
-| `golden_production.rs` | 30 |
+| `golden_production.rs` | 34 |
 | `golden_pursuit.rs` | 6 |
-| `golden_reasoning_diversity.rs` | 4 |
+| `golden_reasoning_diversity.rs` | 6 |
 | `golden_resilience.rs` | 2 |
 | `golden_simulation_gaps.rs` | 10 |
 | `golden_soak.rs` | 1 |
@@ -355,6 +355,10 @@ Do not hand-edit it.
 - `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
 - `golden_goal_switch_clears_contention_queue_entry`
 - `golden_goal_switch_clears_contention_queue_entry_replays_deterministically`
+- `golden_waste_disposal_cycle`
+- `golden_waste_disposal_cycle_replays_deterministically`
+- `golden_waste_disposal_exact_full_threshold_cycle`
+- `golden_waste_disposal_exact_full_threshold_cycle_replays_deterministically`
 
 ### `golden_pursuit.rs`
 
@@ -369,6 +373,8 @@ Do not hand-edit it.
 
 - `search_depth_divergence`
 - `search_depth_divergence_replays_deterministically`
+- `landmark_depth_divergence`
+- `landmark_depth_divergence_replays_deterministically`
 - `golden_utility_profile_diversity`
 - `golden_utility_profile_diversity_replays_deterministically`
 

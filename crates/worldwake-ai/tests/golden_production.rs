@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use golden_harness::*;
 use worldwake_ai::{
     CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey,
-    PlannerOpKind, RankedGoalComparisonDimension, SelectedPlanSource,
+    PlanSearchOutcome, PlannerOpKind, RankedGoalComparisonDimension, SelectedPlanSource,
 };
 use worldwake_core::{
     AgentData, BlockingFact, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
@@ -341,6 +341,56 @@ fn assert_remote_recipe_input_tick_zero_plan(
             .iter()
             .any(|step| step.op_kind == PlannerOpKind::Craft),
         "selected plan should include a craft step after remote firewood pickup"
+    );
+    let successful_attempt = tick_0_planning
+        .planning
+        .attempts
+        .iter()
+        .find(|attempt| matches!(attempt.outcome, PlanSearchOutcome::Found { .. }))
+        .expect("remote recipe-input tick 0 planning should include a successful plan-search attempt");
+    let strategic_plan = successful_attempt
+        .strategic_plan
+        .as_ref()
+        .expect(
+            "remote recipe-input scenario should record a strategic itinerary in the successful search attempt",
+        );
+    assert_eq!(
+        strategic_plan
+            .first()
+            .expect("remote recipe-input strategic plan should contain at least one step")
+            .destination,
+        ORCHARD_FARM,
+        "remote recipe-input strategic plan should first route to Orchard Farm for firewood"
+    );
+    assert!(
+        strategic_plan[0].sub_goal.contains("Firewood"),
+        "remote recipe-input strategic plan should describe firewood acquisition: {strategic_plan:?}"
+    );
+    assert!(
+        successful_attempt.landmarks_extracted > 0,
+        "remote recipe-input tick 0 planning should extract landmarks"
+    );
+    assert!(
+        successful_attempt
+            .expansion_summaries
+            .iter()
+            .all(|summary| summary.candidates_generated < 100),
+        "two-phase remote production should keep per-expansion tactical branching below 100 candidates: {:?}",
+        successful_attempt.expansion_summaries
+    );
+    assert!(
+        successful_attempt
+            .expansion_summaries
+            .iter()
+            .any(|summary| summary.preferred_candidates > 0),
+        "remote recipe-input should record preferred-operator guidance in at least one expansion"
+    );
+    assert!(
+        successful_attempt
+            .expansion_summaries
+            .iter()
+            .any(|summary| summary.landmark_heuristic > 0),
+        "remote recipe-input should record a non-zero landmark heuristic in at least one expansion"
     );
 
     tick_0_trace

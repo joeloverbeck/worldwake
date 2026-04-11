@@ -138,11 +138,11 @@ the actual codebase and `docs/FOUNDATIONS.md`. S83's belief-gated acquisition fi
 Root cause: flat A* forward search with 1400+ branching factor is architecturally unsound.
 
 ```text
-S88 (independent, supersedes S86 + S87)
+S88 ✅ archived (independent, supersedes S86 + S87)
 ```
 
 **Wave**:
-- **S88**: Two-Phase Landmark-Guided Planning — replaces flat A* with belief-driven strategic planner (location sequencing) + locality-scoped tactical planner with landmark-based preferred operators. Supersedes S86 (heuristic candidate scoring) and S87 (observer diagnostic gaps; observer tooling may be reconsidered as a future spec)
+- **S88**: ✅ COMPLETED — Two-Phase Landmark-Guided Planning — archived at [archive/specs/S88-two-phase-landmark-planning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S88-two-phase-landmark-planning.md). Landed the belief-backed strategic planner, landmark-guided tactical planning substrate, dual-frontier search, live two-phase integration for remote `TreatWounds` and `ProduceCommodity`, decision-trace enrichment, and golden coverage for two-phase planner behavior and landmark-depth diversity. Superseded S86 (heuristic candidate scoring) and S87 (observer diagnostic gaps; observer tooling may be reconsidered as a future spec).
 
 ### Phase 7 Gate
 

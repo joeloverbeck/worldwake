@@ -1,5 +1,7 @@
 # Skill Merge Guide: detect-missing-abstractions + recover-architectural-abstractions
 
+**Status**: ✅ COMPLETED
+
 **Date**: 2026-04-10
 **Purpose**: Reference document for merging two abstraction-detection skills into one unified skill in a different repository. Feed this to a brainstorm skill in the target repo to guide the merge while preserving language/architecture-specific adaptations.
 
@@ -195,3 +197,10 @@ The brainstorm skill should:
 3. Identify which Rust-specific mechanisms map to Lens A vs Lens B
 4. Preserve all Rust-specific heuristics while restructuring the pipeline
 5. Produce a unified skill with the same quality bar
+
+## Outcome
+
+- **Completion date**: 2026-04-10
+- **What changed**: Produced a language-agnostic merge guide for unifying detect-missing-abstractions and recover-architectural-abstractions into a single two-lens skill. Documented the unified pipeline, cross-lens reinforcement design, severity ranking, and Rust adaptation notes.
+- **Deviations**: None.
+- **Verification**: Guide has been exploited — the unified `detect-architectural-debt` skill was created in this repo using this document as the design reference.

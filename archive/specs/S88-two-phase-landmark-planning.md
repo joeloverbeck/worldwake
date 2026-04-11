@@ -9,7 +9,7 @@ The current planner generates 1400–2600 search candidates per expansion (carte
 This spec supersedes S86 (Planner Pre-Expansion Candidate Heuristics) and S87 (Observer Diagnostic Gaps). S86's pre-expansion scoring is a heuristic patch on the symptom; this spec eliminates the architectural root cause. S87's observer diagnostics are independent tooling that may be reconsidered as a separate future spec.
 
 **Phase**: 7 (Adjunct — Simulation Remediation Phase 3)
-**Status**: Draft
+**Status**: COMPLETED
 **Crates**: `worldwake-ai`, `worldwake-core`
 **Dependencies**: None (operates on existing planner infrastructure from E13, S53, S73, S83)
 **Supersedes**: S86, S87
@@ -118,6 +118,22 @@ No amplifying loops introduced. The strategic planner runs once per planning cal
 | `StrategicPlan` | Transient derived | Computed per planning call from beliefs. Not stored as component. Does not survive save/load. |
 | `LandmarkSet` | Transient derived | Computed per tactical planning call from believed operators. Not stored. Does not survive save/load. |
 | `landmark_extraction_depth` on `CognitiveProfile` | Authoritative stored | Per-agent cognitive parameter. Scenario-definable. |
+
+## Outcome
+
+Completion date: 2026-04-11
+
+Implemented through `S88TWOPHALAN-001` through `S88TWOPHALAN-010`. The landed work adds per-agent `landmark_extraction_depth` and `preferred_operator_boost`, planner-internal landmark extraction and heuristic support, a dual-frontier tactical search substrate, a belief-backed strategic planner, live two-phase integration for the remote `TreatWounds` and `ProduceCommodity` goal families, enriched decision-trace metadata for strategic plans and landmark guidance, and additive golden coverage for the resulting planner behavior and landmark-depth diversity.
+
+Deviations from original plan:
+- The rollout landed in staged ticket slices rather than one spec-sized patch, with unused planner substrate allowed where appropriate until later tickets integrated it.
+- The initial broad two-phase integration plan was narrowed during `S88TWOPHALAN-007` to the safe remote-`TreatWounds` slice after broadened proof exposed that `ProduceCommodity` still needed its own family-specific activation step; that remaining slice landed in `S88TWOPHALAN-010`.
+- Observer-diagnostic follow-up described in the superseded S87 discussion was not revived as part of S88; the delivered traceability surface stayed on canonical decision traces and generated golden docs.
+- Live remote-production landmark proof showed that landmark extraction can be non-zero without requiring non-zero `landmark_orderings`, so the final golden contract proves extraction and preferred-operator guidance rather than forcing positive ordering counts in every scenario.
+
+Verification results:
+- Ticket-level verification passed for every slice, culminating in live planner integration, trace enrichment, and golden coverage.
+- Final S88 golden handoff passed via `cargo test -p worldwake-ai --test golden_care golden_healer_acquires_remote_ground_medicine_for_patient`, `cargo test -p worldwake-ai --test golden_production golden_remote_acquire_commodity_recipe_input`, `cargo test -p worldwake-ai --test golden_reasoning_diversity`, `cargo test -p worldwake-ai`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `python3 scripts/golden_inventory.py --write --check-docs`.
 | `preferred_operator_boost` on `ExecutionBudget` | Authoritative stored | Per-agent search parameter. Scenario-definable. |
 | Decision trace entries | Diagnostic | Debug-only output. Not authoritative state. |
 
