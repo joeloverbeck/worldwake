@@ -104,12 +104,10 @@ impl TacticalGoal {
                     destination: step.destination,
                 })
             }
-            strategic::TacticalSubGoal::Explore => exploration_supports_tactical_barrier(
-                &goal.key.kind,
-            )
-            .then_some(Self::Explore {
+            strategic::TacticalSubGoal::ExploreWithBarrier => Some(Self::Explore {
                 destination: evidence_directed_destination(goal, step, snapshot),
             }),
+            strategic::TacticalSubGoal::ExploreFallback => None,
             strategic::TacticalSubGoal::SocialQuery(commodity) => Some(Self::SocialQuery {
                 commodity,
                 destination: step.destination,
@@ -171,12 +169,12 @@ fn evidence_directed_destination(
         .map_or(step.destination, |(_, place)| place)
 }
 
-fn exploration_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> bool {
-    matches!(
-        goal,
-        worldwake_core::GoalKind::AcquireCommodity { .. }
-            | worldwake_core::GoalKind::SearchForMissing { .. }
-    )
+fn should_fail_fast_for_missing_tactical_goal(
+    step: Option<&strategic::StrategicStep>,
+    tactical_goal: Option<&TacticalGoal>,
+) -> bool {
+    step.is_some_and(|step| matches!(step.sub_goal, strategic::TacticalSubGoal::ExploreWithBarrier))
+        && tactical_goal.is_none()
 }
 
 fn travel_to_goal_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> bool {
@@ -291,12 +289,17 @@ pub(crate) fn search_plan_with_trace_metadata(
             .cloned(),
         ..SearchTraceMetadata::default()
     };
-    let tactical_goal = TacticalGoal::from_strategic_step(
-        goal,
-        strategic_plan.as_ref().and_then(|plan| plan.steps.first()),
-        snapshot,
-    );
+    let first_strategic_step = strategic_plan.as_ref().and_then(|plan| plan.steps.first());
+    let tactical_goal = TacticalGoal::from_strategic_step(goal, first_strategic_step, snapshot);
     trace_state.tactical_goal = tactical_goal.as_ref().map(|tg| format!("{tg:?}"));
+    if should_fail_fast_for_missing_tactical_goal(first_strategic_step, tactical_goal.as_ref()) {
+        if let Some(ref mut meta) = trace_metadata {
+            **meta = trace_state;
+        }
+        return PlanSearchResult::FrontierExhausted {
+            expansions_used: 0,
+        };
+    }
     let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);
     frontier.push_regular(FrontierEntry::new(root_node_for_tactical(
         snapshot,

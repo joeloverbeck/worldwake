@@ -20,11 +20,12 @@ pub(crate) struct StrategicStep {
     pub estimated_travel_ticks: u32,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum TacticalSubGoal {
     SatisfyGoal,
     AcquirePrerequisite(CommodityKind),
-    Explore,
+    ExploreWithBarrier,
+    ExploreFallback,
     SocialQuery(CommodityKind),
 }
 
@@ -95,7 +96,7 @@ pub(crate) fn plan(
         if goal_places.contains(&actor_place) {
             return Some(StrategicPlan { steps: Vec::new() });
         }
-        return exploration_plan(snapshot, actor_place)
+        return exploration_plan(snapshot, actor_place, &goal.key.kind)
             .or_else(|| social_query_plan(snapshot, actor_place, query_commodity));
     }
 
@@ -339,7 +340,12 @@ fn matches_local_goal_stage(stages: &[StrategicStage], current_place: EntityId) 
     })
 }
 
-fn exploration_plan(snapshot: &PlanningSnapshot, actor_place: EntityId) -> Option<StrategicPlan> {
+fn exploration_plan(
+    snapshot: &PlanningSnapshot,
+    actor_place: EntityId,
+    goal_kind: &GoalKind,
+) -> Option<StrategicPlan> {
+    let sub_goal = explore_sub_goal_for(goal_kind);
     let step = snapshot
         .places
         .get(&actor_place)?
@@ -351,12 +357,21 @@ fn exploration_plan(snapshot: &PlanningSnapshot, actor_place: EntityId) -> Optio
                 .unwrap_or_else(|| ticks.get());
             StrategicStep {
                 destination: *destination,
-                sub_goal: TacticalSubGoal::Explore,
+                sub_goal,
                 estimated_travel_ticks,
             }
         })
         .min_by_key(|step| (step.estimated_travel_ticks, step.destination))?;
     Some(StrategicPlan { steps: vec![step] })
+}
+
+fn explore_sub_goal_for(goal_kind: &GoalKind) -> TacticalSubGoal {
+    match goal_kind {
+        GoalKind::AcquireCommodity { .. } | GoalKind::SearchForMissing { .. } => {
+            TacticalSubGoal::ExploreWithBarrier
+        }
+        _ => TacticalSubGoal::ExploreFallback,
+    }
 }
 
 fn social_query_plan(
@@ -995,7 +1010,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_beliefs_exploration_fallback_chooses_single_nearest_probe() {
+    fn test_empty_beliefs_exploration_fallback_uses_barrier_required_variant_for_supported_goal() {
         let actor = entity(1);
         let place_a = entity(10);
         let place_b = entity(11);
@@ -1020,7 +1035,34 @@ mod tests {
 
         assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.steps[0].destination, place_b);
-        assert_eq!(plan.steps[0].sub_goal, TacticalSubGoal::Explore);
+        assert_eq!(plan.steps[0].sub_goal, TacticalSubGoal::ExploreWithBarrier);
+        assert_eq!(plan.steps[0].estimated_travel_ticks, 2);
+    }
+
+    #[test]
+    fn test_empty_beliefs_exploration_fallback_uses_generic_variant_for_unsupported_goal() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let place_c = entity(12);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place_a);
+        connect(&mut view, place_a, place_b, 2);
+        connect(&mut view, place_a, place_c, 5);
+
+        let snapshot = snapshot(&view, actor, 1);
+        let goal = crate::GroundedGoal {
+            key: worldwake_core::GoalKey::from(GoalKind::Sleep),
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        };
+
+        let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
+
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].destination, place_b);
+        assert_eq!(plan.steps[0].sub_goal, TacticalSubGoal::ExploreFallback);
         assert_eq!(plan.steps[0].estimated_travel_ticks, 2);
     }
 

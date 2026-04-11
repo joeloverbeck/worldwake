@@ -159,9 +159,15 @@ Preserve the `exploration_supports_tactical_barrier` function as the live goal-f
 
 **Safety note**: The live branch still has goal families beyond `AcquireCommodity` / `SearchForMissing` that can reach `exploration_plan()` without owning a lawful exploration barrier target. D1 should therefore keep the tactical-goal constructor guard and only change how supported exploration chooses its destination when evidence places exist.
 
-### D2: Mandatory Tactical Goal for Multi-Location Goals
+### D2: Barrier-Required Explore Classification And Fail-Fast
 
-**File**: `crates/worldwake-ai/src/search/mod.rs`
+**Files**: `crates/worldwake-ai/src/search/strategic.rs`, `crates/worldwake-ai/src/search/mod.rs`
+
+First, split the overloaded strategic `Explore` meaning into two explicit variants:
+- barrier-required exploration for goal families that lawfully use a tactical explore barrier
+- generic fallback exploration for goal families that may continue without a tactical barrier
+
+`strategic::exploration_plan()` should emit the barrier-required variant only for the currently supported families (`AcquireCommodity`, `SearchForMissing`). All other fallback exploration should emit the generic variant.
 
 After the `TacticalGoal::from_strategic_step()` call (line 267-270), add a fail-fast guard:
 
@@ -176,7 +182,8 @@ let tactical_goal = TacticalGoal::from_strategic_step(
 // the search would run unscoped with explosive candidate counts. Return immediately.
 if strategic_plan
     .as_ref()
-    .is_some_and(|plan| !plan.steps.is_empty())
+    .and_then(|plan| plan.steps.first())
+    .is_some_and(|step| matches!(step.sub_goal, strategic::TacticalSubGoal::<BARRIER_VARIANT>))
     && tactical_goal.is_none()
 {
     return PlanSearchResult::FrontierExhausted {
@@ -185,9 +192,7 @@ if strategic_plan
 }
 ```
 
-This ensures that if a future code change introduces a new `TacticalSubGoal` variant that `from_strategic_step` doesn't handle, the search fails fast rather than running unscoped.
-
-Local goals (strategic plan with empty steps or `None`) are exempt — they run unscoped as before because their candidate counts are bounded by local affordances.
+This ensures that barrier-required exploration cannot silently degrade into unscoped search, while lawful generic exploration fallback remains available for other goal families.
 
 ### D3: Candidate Count Safety Valve
 

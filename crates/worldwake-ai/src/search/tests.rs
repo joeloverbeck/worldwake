@@ -8308,6 +8308,88 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
 }
 
 #[test]
+fn search_fail_fast_when_barrier_required_explore_has_no_tactical_goal() {
+    let step = super::strategic::StrategicStep {
+        destination: entity(11),
+        sub_goal: super::strategic::TacticalSubGoal::ExploreWithBarrier,
+        estimated_travel_ticks: 2,
+    };
+
+    assert!(super::should_fail_fast_for_missing_tactical_goal(
+        Some(&step),
+        None
+    ));
+    assert!(!super::should_fail_fast_for_missing_tactical_goal(
+        Some(&step),
+        Some(&super::TacticalGoal::Explore {
+            destination: entity(11),
+        })
+    ));
+}
+
+#[test]
+fn search_generic_explore_without_tactical_goal_still_finds_plan() {
+    let (mut view, actor, _origin, destination) = build_two_place_travel_view();
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(300), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::Sleep),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([destination]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        Some(&mut trace_metadata),
+    );
+
+    assert!(
+        result.is_found(),
+        "generic exploration fallback should still search without a tactical barrier"
+    );
+    assert_eq!(trace_metadata.tactical_goal, None);
+    assert!(
+        trace_metadata
+            .strategic_plan
+            .as_ref()
+            .and_then(|plan| plan.steps.first())
+            .is_some_and(|step| {
+                step.destination == destination
+                    && matches!(
+                        step.sub_goal,
+                        super::strategic::TacticalSubGoal::ExploreFallback
+                    )
+            }),
+        "Sleep should now use the generic exploration fallback variant"
+    );
+}
+
+#[test]
 fn search_explore_tactical_goal_produced_despite_nonempty_evidence() {
     let (view, actor, origin, destination) = build_two_place_travel_view();
     let goal = GroundedGoal {
@@ -8328,7 +8410,7 @@ fn search_explore_tactical_goal_produced_despite_nonempty_evidence() {
     );
     let step = super::strategic::StrategicStep {
         destination: origin,
-        sub_goal: super::strategic::TacticalSubGoal::Explore,
+        sub_goal: super::strategic::TacticalSubGoal::ExploreWithBarrier,
         estimated_travel_ticks: 1,
     };
 
@@ -8393,7 +8475,7 @@ fn search_evidence_directed_exploration_prefers_evidence_place() {
     );
     let step = super::strategic::StrategicStep {
         destination: fallback_place,
-        sub_goal: super::strategic::TacticalSubGoal::Explore,
+        sub_goal: super::strategic::TacticalSubGoal::ExploreWithBarrier,
         estimated_travel_ticks: 3,
     };
 
@@ -8439,6 +8521,89 @@ fn search_accuse_satisfy_goal_does_not_install_travel_barrier() {
     assert_eq!(
         tactical_goal, None,
         "Accuse should not treat a strategic satisfy step as a travel barrier because the action is register-bound, not destination-bound"
+    );
+}
+
+#[test]
+fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
+    let (mut view, actor, origin, town) = build_two_place_travel_view();
+    let accused = entity(2);
+    let crime_register = entity(12);
+
+    view.alive.extend([accused, crime_register]);
+    view.kinds.insert(accused, EntityKind::Agent);
+    view.kinds.insert(crime_register, EntityKind::Record);
+    view.effective_places.insert(accused, origin);
+    view.effective_places.insert(crime_register, town);
+    view.entities_at.entry(origin).or_default().push(accused);
+    view.entities_at.entry(town).or_default().push(crime_register);
+    view.record_data.insert(
+        crime_register,
+        worldwake_core::RecordData {
+            record_kind: worldwake_core::RecordKind::CrimeRegister,
+            home_place: town,
+            issuer: actor,
+            consultation_ticks: 1,
+            max_entries_per_consult: 4,
+            entries: Vec::new(),
+            next_entry_id: 1,
+        },
+    );
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(accused),
+        key: GoalKey::from(GoalKind::Accuse {
+            crime_register,
+            accused,
+            violation_id: worldwake_core::ViolationId(1),
+        }),
+        evidence_entities: BTreeSet::from([accused, crime_register]),
+        evidence_places: BTreeSet::from([town]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+
+    let plan = search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        Some(&mut trace_metadata),
+    )
+    .into_plan()
+    .expect("Accuse should still plan without a tactical travel barrier");
+
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(town)]
+    );
+    assert_eq!(plan.steps.last().map(|step| step.op_kind), Some(PlannerOpKind::Accuse));
+    assert_eq!(trace_metadata.tactical_goal, None);
+    assert!(
+        trace_metadata
+            .strategic_plan
+            .as_ref()
+            .and_then(|plan| plan.steps.first())
+            .is_some_and(|step| {
+                step.destination == town
+                    && matches!(step.sub_goal, super::strategic::TacticalSubGoal::SatisfyGoal)
+            }),
+        "Accuse should keep its lawful register-bound strategic step"
     );
 }
 

@@ -52,7 +52,7 @@ When the ticket was authored by `/spec-to-tickets` in the current session from a
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
-Before trusting the ticket as executable, cross-check its internal sections for contradictions. Reconcile conflicts between `Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, `Acceptance Criteria`, `Verification Layers`, and any explicit in/out-of-scope notes before coding. If those sections disagree about ownership, proof surface, or whether production changes are required, update the ticket first instead of carrying the contradiction into implementation.
+Before trusting the ticket as executable, cross-check its internal sections for contradictions. Reconcile conflicts between `Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, `Acceptance Criteria`, `Verification Layers`, and any explicit in/out-of-scope notes before coding. Treat `Out of Scope` and any explicit "no new variants", "tests only", or "Engine Changes: None" claims as first-class contradiction surfaces during reassessment. If those sections disagree about ownership, proof surface, or whether production changes are required, update the ticket first instead of carrying the contradiction into implementation.
 
 For cross-crate accessor, trait-surface, or API-surface tickets, verify the real downstream caller-facing boundary before coding, not just the immediate trait or type named in the ticket. If live callers consume the data through a broader wrapper, supertrait, blanket impl, or facade surface, correct the ticket to that owned boundary before editing code.
 When a ticket adds internal diagnostic, trace, or metadata carriage, preserve existing public/external call signatures unless the ticket explicitly owns that API change; prefer an internal helper, wrapper, or traced variant for the new carrier rather than widening public fallout by default.
@@ -95,6 +95,8 @@ If focused proof instead falsifies the suspected production contradiction and sh
 
 When reassessment or focused proof changes the real edit surface, update `Files to Touch` and any file- or symbol-level scope notes immediately instead of leaving them stale until closeout. The ticket should keep reflecting the current owned boundary as implementation proceeds.
 
+When reassessment changes the owned contract relative to a cited active spec, update that parent spec in the same pass unless the work is intentionally deferred behind a named follow-up ticket. Do not leave the ticket corrected while the live parent spec still describes the disproven contract.
+
 When broadened verification later exposes fallout that crosses the original ticket seam or touches adjacent tickets in the same numbered family, re-run the sibling-ticket ownership check before silently broadening scope. If the new fallout is still part of the current ticket's lawful contract, update the ticket to reflect that expanded owned surface; if it belongs to an adjacent ticket, stop and use 1-3-1 rather than absorbing it implicitly.
 
 ### 4. Extract the implementation scope
@@ -128,7 +130,7 @@ After each fallout fix, rerun the same broadened verification target that expose
 
 Load `references/closeout.md`.
 
-Before finalizing closeout, compare the landed diff and verification evidence against the ticket's final `What to Change`, `Files to Touch`, and verification sections. If reassessment or implementation drift changed the actual owned surface, update the ticket so the recorded scope, touched files/symbols, deviations, and proof set match the work that really landed.
+Before finalizing closeout, compare the landed diff and verification evidence against the ticket's final `What to Change`, `Files to Touch`, `Out of Scope`, and verification sections. If reassessment or implementation drift changed the actual owned surface, update the ticket so the recorded scope, touched files/symbols, deviations, stale exclusions, and proof set match the work that really landed.
 
 ### 8. Close the loop on the ticket
 
