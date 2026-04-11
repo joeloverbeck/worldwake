@@ -54,6 +54,7 @@ Consequently, `AcquireCommodity(Water)` generates candidates for every known ent
 | FND-14 (Belief-Only Planning) | The filter reads commodity kinds from `PlanningState` / belief views, never from authoritative world state. |
 | FND-26 (Systems Through State) | The filter reads existing state (commodity profiles, facility resource sources, trade payloads) without cross-system coupling. |
 | FND-28 (No Backward Compat) | No compatibility shims for unfiltered candidate paths. The filter applies unconditionally when a goal has a target commodity. |
+| FND-29 (Debuggability) | D3 adds `CommodityIrrelevant` variant to decision traces, making filtered candidates visible for inspection. Emergence without introspection is indistinguishable from bugs. |
 
 ## Deliverables
 
@@ -65,10 +66,12 @@ Add a method to `GoalKindPlannerExt` in `goal_model.rs`:
 /// Returns the primary commodity this goal is trying to acquire, produce, or use
 /// as a prerequisite. Returns `None` for goals with no commodity focus (Sleep,
 /// Combat, etc.), which bypasses commodity-relevance filtering.
-fn target_commodity(&self) -> Option<CommodityKind>;
+fn target_commodity(&self, recipes: &RecipeRegistry) -> Option<CommodityKind>;
 ```
 
-Implementation follows the established pattern in `strategic.rs:225-231` and `goal_model.rs:694-699`:
+Implementation follows the established pattern in `relevant_observed_commodities(&self, recipes: &RecipeRegistry)` (same trait), `strategic.rs:225-231`, and `goal_model.rs:694-699`:
+
+**Reuse note**: `social_query_commodity()` in `strategic.rs:221-233` performs an overlapping goal-to-commodity mapping for the strategic social-query fallback subset. Once `target_commodity()` lands, `social_query_commodity()` should reuse it for that overlapping subset while preserving the existing `ProduceCommodity => missing_commodities.first()` behavior and keeping non-social-query goals out of fallback scope.
 
 | GoalKind | target_commodity |
 |----------|-----------------|
@@ -96,6 +99,7 @@ fn apply_commodity_relevance_filter(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    recipes: &RecipeRegistry,
 );
 ```
 
@@ -115,7 +119,7 @@ Filter rules per `PlannerOpKind`:
 
 **Bypass condition**: If `goal.key.kind.target_commodity()` returns `None`, skip the filter entirely. Non-commodity goals are unaffected.
 
-**Integration point**: Call `apply_commodity_relevance_filter` at the end of `search_candidates()` (candidates.rs), after the existing blocked-facility / binding / place-blocker filters but before returning the filtered vec. The tactical filter in `search/mod.rs` runs later during the expansion loop.
+**Integration point**: Call `apply_commodity_relevance_filter` in `search_plan_with_trace_metadata()` (`search/mod.rs`, between lines 363-374), after `search_candidates()` returns and before the tactical candidate filter runs. This avoids widening `search_candidates()`'s already-large parameter list (11 parameters). `RecipeRegistry` is already available at this call site (`search/mod.rs:135`).
 
 ### D3: Decision trace integration
 
@@ -214,3 +218,5 @@ No new authoritative stored state.
 3. `cargo clippy --workspace --all-targets -- -D warnings` — clean
 4. Candidate counts in rewritten tests should show significant reduction from S93 baselines
 5. Decision traces for affected goals should show `CommodityIrrelevant` filter entries
+
+**Note**: Register S94 in `specs/IMPLEMENTATION-ORDER.md` with dependencies on S90 and S93 (both completed) during finalization.

@@ -13,7 +13,9 @@ How to verify implementation at the right boundary (Step 6).
 - When the change touches multiple proof surfaces in one crate, run each focused selector needed.
 - If a canonical interface is realized through a forwarding layer, prove both the consumer-facing call and the forwarding path.
 - Check that focused selectors actually match new/changed test names.
+- Check that focused selectors isolate the owned proof surface closely enough for the ticket. Substring filters may lawfully run extra tests; when exactness matters, prefer the narrowest truthful selector rather than treating any nonzero match as precise proof.
 - Prefer separate `cargo test` invocations per selector over combining exact test names in one command.
+- For Rust tickets, format the owned files before final broad verification. Prefer formatting only the owned files; if a broader formatter is necessary in a dirty worktree, inspect formatter spillover immediately and restore unrelated files.
 - Run multiple `cargo test` or `cargo clippy` commands sequentially when they share the same build profile -- lock contention makes parallel same-profile runs unreliable. Different profiles (e.g., `cargo test` vs `cargo clippy`) are logically safe to overlap, but the shared target directory can still serialize them; prefer parallel runs only when the extra waiting is acceptable.
 - When a broad verification run dies by `SIGKILL` or another likely environment/resource kill after focused suites are green, rerun the named interrupted/failing suite in isolation before repeating the full broad run.
 - When a broader verification command is intentionally waived after user direction, record the exact completed command set plus the waived command in the ticket `Outcome`.
@@ -22,7 +24,6 @@ How to verify implementation at the right boundary (Step 6).
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
 - When CI/compile fallout follows a shared context-field change, sweep manual struct literals as well as direct function call sites.
 - When a migration reshapes a common API surface, expect lint fallout as well as compile fallout. Satisfy trait expectations like `Default` instead of suppressing lints.
-- Prefer formatting only the owned files. If you must run a broader formatter in a dirty worktree, inspect formatter spillover immediately and restore unrelated files.
 - When long-running verification commands are in flight, reuse those sessions rather than spawning duplicates.
 - When new registered actions or systems cause broad failures, triage for catalog-order drift, completeness assertions, and registry-expansion fallout before assuming the feature's runtime logic is broken.
 - If a focused failing proof exposes a real production contradiction in a ticket marked test-only, update the ticket sections that define scope before continuing.

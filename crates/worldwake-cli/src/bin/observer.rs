@@ -180,8 +180,7 @@ fn collect_inventory(world: &worldwake_core::World, agent_id: EntityId) -> BTree
     let mut result: BTreeMap<String, u64> = BTreeMap::new();
     for entity in world.possessions_of(agent_id) {
         if let Some(lot) = world.get_component_item_lot(entity) {
-            *result.entry(format!("{:?}", lot.commodity)).or_insert(0) +=
-                u64::from(lot.quantity.0);
+            *result.entry(format!("{:?}", lot.commodity)).or_insert(0) += u64::from(lot.quantity.0);
         } else {
             let name = entity_display_name(world, entity);
             *result.entry(name).or_insert(0) += 1;
@@ -191,10 +190,7 @@ fn collect_inventory(world: &worldwake_core::World, agent_id: EntityId) -> BTree
 }
 
 /// Collect place contents as a list of display strings.
-fn collect_place_contents(
-    world: &worldwake_core::World,
-    place_id: EntityId,
-) -> Vec<String> {
+fn collect_place_contents(world: &worldwake_core::World, place_id: EntityId) -> Vec<String> {
     let ground = world.ground_entities_at(place_id);
     let mut commodity_totals: BTreeMap<String, u64> = BTreeMap::new();
     let mut non_item_entries: Vec<String> = Vec::new();
@@ -240,9 +236,10 @@ fn collect_beliefs(
     let known_count = store.known_entities.len();
     let mut by_place: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (known_id, state) in &store.known_entities {
-        let place_label = state
-            .last_known_place
-            .map_or_else(|| "(unknown)".to_string(), |pid| entity_display_name(world, pid));
+        let place_label = state.last_known_place.map_or_else(
+            || "(unknown)".to_string(),
+            |pid| entity_display_name(world, pid),
+        );
         let entity_label = entity_display_name(world, *known_id);
         by_place.entry(place_label).or_default().push(entity_label);
     }
@@ -260,7 +257,10 @@ fn goal_kind_dedup_key(goal_debug: &str) -> String {
         // Try to extract commodity
         if let Some(comm_start) = goal_debug.find("commodity: ") {
             let after = &goal_debug[comm_start + 11..];
-            let end = after.find(',').or_else(|| after.find('}')).unwrap_or(after.len());
+            let end = after
+                .find(',')
+                .or_else(|| after.find('}'))
+                .unwrap_or(after.len());
             let commodity = after[..end].trim();
             return format!("{kind}({commodity})");
         }
@@ -274,7 +274,9 @@ fn goal_kind_dedup_key(goal_debug: &str) -> String {
 }
 
 /// Compute total candidates and max depth from expansion summaries.
-fn compute_search_metrics(summaries: &[worldwake_ai::decision_trace::SearchExpansionSummary]) -> (u32, u8) {
+fn compute_search_metrics(
+    summaries: &[worldwake_ai::decision_trace::SearchExpansionSummary],
+) -> (u32, u8) {
     let mut total_candidates: u32 = 0;
     let mut max_depth: u8 = 0;
     for s in summaries {
@@ -286,10 +288,7 @@ fn compute_search_metrics(summaries: &[worldwake_ai::decision_trace::SearchExpan
     (total_candidates, max_depth)
 }
 
-fn format_budget_exhaustion_snapshots(
-    out: &mut String,
-    snapshots: &[BudgetExhaustionSnapshot],
-) {
+fn format_budget_exhaustion_snapshots(out: &mut String, snapshots: &[BudgetExhaustionSnapshot]) {
     writeln!(out, "## Section 8 — Budget Exhaustion Snapshots\n").unwrap();
     if snapshots.is_empty() {
         writeln!(out, "No budget exhaustion events detected.\n").unwrap();
@@ -326,17 +325,17 @@ fn format_budget_exhaustion_snapshots(
         writeln!(out, "**Search metrics**:").unwrap();
         writeln!(out, "- Expansions used: {}", snap.expansions_used).unwrap();
         writeln!(out, "- Max depth reached: {}", snap.max_depth_reached).unwrap();
-        writeln!(out, "- Total candidates generated: {}", snap.total_candidates).unwrap();
+        writeln!(
+            out,
+            "- Total candidates generated: {}",
+            snap.total_candidates
+        )
+        .unwrap();
         writeln!(out).unwrap();
 
         // Cognitive/execution profile
         writeln!(out, "**Planner configuration**:").unwrap();
-        writeln!(
-            out,
-            "- max_node_expansions: {}",
-            snap.max_node_expansions
-        )
-        .unwrap();
+        writeln!(out, "- max_node_expansions: {}", snap.max_node_expansions).unwrap();
         writeln!(out, "- max_plan_depth: {}", snap.max_plan_depth).unwrap();
         if snap.max_candidates_per_expansion > 0 {
             writeln!(
@@ -2066,17 +2065,14 @@ fn main() {
                     continue;
                 };
                 for attempt in &planning.planning.attempts {
-                    if let PlanSearchOutcome::BudgetExhausted { expansions_used } =
-                        &attempt.outcome
+                    if let PlanSearchOutcome::BudgetExhausted { expansions_used } = &attempt.outcome
                     {
                         let goal_debug = format!("{:?}", attempt.goal.kind);
                         let goal_kind = goal_kind_dedup_key(&goal_debug);
-                        let location = world
-                            .effective_place(*agent_id)
-                            .unwrap_or(EntityId {
-                                slot: u32::MAX,
-                                generation: u32::MAX,
-                            });
+                        let location = world.effective_place(*agent_id).unwrap_or(EntityId {
+                            slot: u32::MAX,
+                            generation: u32::MAX,
+                        });
                         let key = BudgetExhaustionKey {
                             agent_id: *agent_id,
                             goal_kind,
@@ -2087,34 +2083,30 @@ fn main() {
                         }
                         budget_exhaustion_seen.insert(key);
 
-                        let needs = world
-                            .get_component_homeostatic_needs(*agent_id)
-                            .map_or(
-                                NeedsSample {
-                                    hunger: 0,
-                                    thirst: 0,
-                                    fatigue: 0,
-                                    bladder: 0,
-                                    dirtiness: 0,
-                                },
-                                |n| NeedsSample {
-                                    hunger: n.hunger.value(),
-                                    thirst: n.thirst.value(),
-                                    fatigue: n.fatigue.value(),
-                                    bladder: n.bladder.value(),
-                                    dirtiness: n.dirtiness.value(),
-                                },
-                            );
+                        let needs = world.get_component_homeostatic_needs(*agent_id).map_or(
+                            NeedsSample {
+                                hunger: 0,
+                                thirst: 0,
+                                fatigue: 0,
+                                bladder: 0,
+                                dirtiness: 0,
+                            },
+                            |n| NeedsSample {
+                                hunger: n.hunger.value(),
+                                thirst: n.thirst.value(),
+                                fatigue: n.fatigue.value(),
+                                bladder: n.bladder.value(),
+                                dirtiness: n.dirtiness.value(),
+                            },
+                        );
 
                         let location_name = entity_display_name(world, location);
                         let inventory = collect_inventory(world, *agent_id);
-                        let (known_entity_count, beliefs) =
-                            collect_beliefs(world, *agent_id);
+                        let (known_entity_count, beliefs) = collect_beliefs(world, *agent_id);
                         let place_contents = collect_place_contents(world, location);
 
                         // Collect adjacent place contents
-                        let mut adjacent_contents: BTreeMap<String, Vec<String>> =
-                            BTreeMap::new();
+                        let mut adjacent_contents: BTreeMap<String, Vec<String>> = BTreeMap::new();
                         for neighbor in world.topology().neighbors(location) {
                             let neighbor_name = entity_display_name(world, neighbor);
                             let contents = collect_place_contents(world, neighbor);
@@ -2142,8 +2134,7 @@ fn main() {
                             known_entity_count,
                             place_contents,
                             adjacent_contents,
-                            max_node_expansions: cognitive
-                                .map_or(224, |c| c.max_node_expansions),
+                            max_node_expansions: cognitive.map_or(224, |c| c.max_node_expansions),
                             max_plan_depth: cognitive.map_or(10, |c| c.max_plan_depth),
                             max_candidates_per_expansion: cognitive
                                 .map_or(0, |c| c.max_candidates_per_expansion),

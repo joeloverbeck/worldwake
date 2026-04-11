@@ -80,14 +80,8 @@ pub(crate) fn plan(
     let actor = snapshot.actor();
     let actor_place = state.effective_place(actor)?;
     let goal_places = goal_places(goal, &state, recipes);
-    let missing_commodities = missing_commodities(
-        goal,
-        &state,
-        recipes,
-        actor_place,
-        &goal_places,
-    );
-    let query_commodity = social_query_commodity(goal, &missing_commodities);
+    let missing_commodities = missing_commodities(goal, &state, recipes, actor_place, &goal_places);
+    let query_commodity = social_query_commodity(goal, &missing_commodities, recipes);
     let mut stages = build_stages(
         &state,
         snapshot,
@@ -193,12 +187,13 @@ fn missing_commodities(
 ) -> Vec<CommodityKind> {
     let actor = state.snapshot().actor();
     let mut commodities = match goal.key.kind {
-        GoalKind::AcquireCommodity { commodity, .. } => (state.commodity_quantity(actor, commodity)
-            == Quantity(0)
-            && !goal_places.contains(&actor_place))
-        .then_some(commodity)
-        .into_iter()
-        .collect(),
+        GoalKind::AcquireCommodity { commodity, .. } => {
+            (state.commodity_quantity(actor, commodity) == Quantity(0)
+                && !goal_places.contains(&actor_place))
+            .then_some(commodity)
+            .into_iter()
+            .collect()
+        }
         GoalKind::TreatWounds { .. } => (state.commodity_quantity(actor, CommodityKind::Medicine)
             == Quantity(0))
         .then_some(CommodityKind::Medicine)
@@ -221,12 +216,13 @@ fn missing_commodities(
 fn social_query_commodity(
     goal: &GroundedGoal,
     missing_commodities: &[CommodityKind],
+    recipes: &RecipeRegistry,
 ) -> Option<CommodityKind> {
     match goal.key.kind {
-        GoalKind::ConsumeOwnedCommodity { commodity }
-        | GoalKind::AcquireCommodity { commodity, .. }
-        | GoalKind::RestockCommodity { commodity } => Some(commodity),
-        GoalKind::TreatWounds { .. } => Some(CommodityKind::Medicine),
+        GoalKind::ConsumeOwnedCommodity { .. }
+        | GoalKind::AcquireCommodity { .. }
+        | GoalKind::RestockCommodity { .. }
+        | GoalKind::TreatWounds { .. } => goal.key.kind.target_commodity(recipes),
         GoalKind::ProduceCommodity { .. } => missing_commodities.first().copied(),
         _ => None,
     }
@@ -1272,6 +1268,31 @@ mod tests {
         assert_eq!(
             plan.steps[0].sub_goal,
             TacticalSubGoal::SocialQuery(CommodityKind::Grain)
+        );
+    }
+
+    #[test]
+    fn test_sell_goal_does_not_gain_social_query_fallback_from_target_commodity() {
+        let actor = entity(1);
+        let listener = entity(2);
+        let place = entity(10);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place);
+        register_agent(&mut view, listener, place);
+
+        let snapshot = snapshot(&view, actor, 0);
+        let goal = crate::GroundedGoal {
+            key: worldwake_core::GoalKey::from(GoalKind::SellCommodity {
+                commodity: CommodityKind::Water,
+            }),
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        };
+
+        assert!(
+            plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).is_none(),
+            "SellCommodity should keep the pre-existing strategic contract and avoid social-query fallback"
         );
     }
 }

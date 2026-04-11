@@ -346,9 +346,8 @@ fn synthesized_planning_targets(
     match (&goal.key.kind, semantics.op_kind) {
         // Accusation payload binds to the accused entity, but the lawful
         // execution location is the crime register's home place.
-        (GoalKind::Accuse { crime_register, .. }, PlannerOpKind::Accuse) => state
-            .record_data(*crime_register)
-            .map_or_else(
+        (GoalKind::Accuse { crime_register, .. }, PlannerOpKind::Accuse) => {
+            state.record_data(*crime_register).map_or_else(
                 || {
                     authoritative_targets
                         .into_iter()
@@ -356,7 +355,8 @@ fn synthesized_planning_targets(
                         .collect()
                 },
                 |record| vec![PlanningEntityRef::Authoritative(record.home_place)],
-            ),
+            )
+        }
         _ => authoritative_targets
             .into_iter()
             .map(PlanningEntityRef::Authoritative)
@@ -589,9 +589,8 @@ pub(super) fn search_candidates_from_affordance(
     let planning_targets = match (&goal.key.kind, def.name.as_str()) {
         // Accusation payload binds to the accused entity, but the lawful
         // execution location is the crime register's home place.
-        (GoalKind::Accuse { crime_register, .. }, "accuse") => state
-            .record_data(*crime_register)
-            .map_or_else(
+        (GoalKind::Accuse { crime_register, .. }, "accuse") => {
+            state.record_data(*crime_register).map_or_else(
                 || {
                     affordance
                         .bound_targets
@@ -601,7 +600,8 @@ pub(super) fn search_candidates_from_affordance(
                         .collect()
                 },
                 |record| vec![PlanningEntityRef::Authoritative(record.home_place)],
-            ),
+            )
+        }
         _ => affordance
             .bound_targets
             .iter()

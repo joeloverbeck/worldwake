@@ -18,7 +18,7 @@ Grep for each type. Confirm existence and current shape (fields, members). Check
 
 ## 3.3 Functions and Methods
 
-Grep for each function. Confirm signature, module location, and export status. Check for:
+Grep for each function. Confirm signature, module location, and export status. Line-number references in specs are informational aids, not authoritative. Verify they point to the claimed content. If accurate, leave them — they help implementers navigate. If drifted, either correct them or replace with function/type names that are grep-stable. Check for:
 
 - **Signature differences** from what the spec assumes.
 - **New function parameter sufficiency**: Validate that proposed parameters provide sufficient data at every call site. Flag if a parameter type lacks needed context.

@@ -6,9 +6,9 @@ use std::num::NonZeroU32;
 use worldwake_ai::{DecisionOutcome, GoalKind, PlanSearchOutcome, PlannerOpKind};
 use worldwake_core::{
     CarryCapacity, CombatProfile, CommodityKind, DisposalProfile, DriveThresholds, EntityId,
-    EventLog, ExplorationProfile, HomeostaticNeeds, IntentionDomainTag,
-    IntentionDispositionProfile, LastSeenMemory, LoadUnits, MetabolismProfile, PatrolProfile,
-    PatrolRoute, PerceptionProfile, Place, PlaceTag, PreferenceProfile, PursuitProfile, Quantity,
+    EventLog, ExplorationProfile, HomeostaticNeeds, IntentionDispositionProfile,
+    IntentionDomainTag, LastSeenMemory, LoadUnits, MetabolismProfile, PatrolProfile, PatrolRoute,
+    PerceptionProfile, Place, PlaceTag, PreferenceProfile, PursuitProfile, Quantity,
     ResourceSource, Seed, TheftDispositionProfile, Tick, Topology, TravelEdge, TravelEdgeId,
     UtilityProfile, ViolationDispositionProfile, WorkstationMarker, WorkstationTag, World,
 };
@@ -51,7 +51,12 @@ fn build_cli_evaluation_topology() -> Topology {
             THORNWALL_VILLAGE,
             place(
                 "Thornwall Village",
-                &[PlaceTag::Village, PlaceTag::Store, PlaceTag::Hall, PlaceTag::Gate],
+                &[
+                    PlaceTag::Village,
+                    PlaceTag::Store,
+                    PlaceTag::Hall,
+                    PlaceTag::Gate,
+                ],
             ),
         )
         .unwrap();
@@ -64,7 +69,10 @@ fn build_cli_evaluation_topology() -> Topology {
     topology
         .add_place(
             DUSTY_TRAIL,
-            place("Dusty Trail", &[PlaceTag::Trail, PlaceTag::Road, PlaceTag::Crossroads]),
+            place(
+                "Dusty Trail",
+                &[PlaceTag::Trail, PlaceTag::Road, PlaceTag::Crossroads],
+            ),
         )
         .unwrap();
     topology
@@ -88,34 +96,19 @@ fn build_cli_evaluation_topology() -> Topology {
     connect(&mut topology, 820, THORNWALL_VILLAGE, HEARTHSTONE_INN, 4);
     connect(&mut topology, 830, THORNWALL_VILLAGE, GOLDEN_FIELDS, 5);
     topology
-        .add_edge(TravelEdge::new(
-            TravelEdgeId(840),
-            ELDERGROVE_FOREST,
-            DUSTY_TRAIL,
-            2,
-            None,
+        .add_edge(
+            TravelEdge::new(TravelEdgeId(840), ELDERGROVE_FOREST, DUSTY_TRAIL, 2, None).unwrap(),
         )
-        .unwrap())
         .unwrap();
     topology
-        .add_edge(TravelEdge::new(
-            TravelEdgeId(850),
-            HEARTHSTONE_INN,
-            GOLDEN_FIELDS,
-            8,
-            None,
+        .add_edge(
+            TravelEdge::new(TravelEdgeId(850), HEARTHSTONE_INN, GOLDEN_FIELDS, 8, None).unwrap(),
         )
-        .unwrap())
         .unwrap();
     topology
-        .add_edge(TravelEdge::new(
-            TravelEdgeId(851),
-            GOLDEN_FIELDS,
-            HEARTHSTONE_INN,
-            8,
-            None,
+        .add_edge(
+            TravelEdge::new(TravelEdgeId(851), GOLDEN_FIELDS, HEARTHSTONE_INN, 8, None).unwrap(),
         )
-        .unwrap())
         .unwrap();
     topology
 }
@@ -206,14 +199,16 @@ fn seed_guard_theron(h: &mut GoldenHarness) -> EntityId {
         worldwake_core::KnownRecipes::with([water_recipe]),
     );
 
-    set_agent_perception_profile(&mut h.world, &mut h.event_log, agent, guard_perception_profile());
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        guard_perception_profile(),
+    );
 
     let mut txn = new_txn(&mut h.world, 0);
-    txn.set_component_drive_thresholds(
-        agent,
-        DriveThresholds::default(),
-    )
-    .unwrap();
+    txn.set_component_drive_thresholds(agent, DriveThresholds::default())
+        .unwrap();
     txn.set_component_combat_profile(
         agent,
         CombatProfile::new(
@@ -360,20 +355,16 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
     txn.set_component_drive_thresholds(
         lina,
         DriveThresholds {
-            hunger: worldwake_core::ThresholdBand::new(pm(250), pm(500), pm(750), pm(900))
-                .unwrap(),
-            thirst: worldwake_core::ThresholdBand::new(pm(100), pm(300), pm(550), pm(750))
-                .unwrap(),
+            hunger: worldwake_core::ThresholdBand::new(pm(250), pm(500), pm(750), pm(900)).unwrap(),
+            thirst: worldwake_core::ThresholdBand::new(pm(100), pm(300), pm(550), pm(750)).unwrap(),
             fatigue: worldwake_core::ThresholdBand::new(pm(300), pm(550), pm(800), pm(920))
                 .unwrap(),
             bladder: worldwake_core::ThresholdBand::new(pm(350), pm(600), pm(800), pm(930))
                 .unwrap(),
             dirtiness: worldwake_core::ThresholdBand::new(pm(400), pm(650), pm(850), pm(950))
                 .unwrap(),
-            pain: worldwake_core::ThresholdBand::new(pm(150), pm(350), pm(600), pm(850))
-                .unwrap(),
-            danger: worldwake_core::ThresholdBand::new(pm(100), pm(300), pm(550), pm(800))
-                .unwrap(),
+            pain: worldwake_core::ThresholdBand::new(pm(150), pm(350), pm(600), pm(850)).unwrap(),
+            danger: worldwake_core::ThresholdBand::new(pm(100), pm(300), pm(550), pm(800)).unwrap(),
         },
     )
     .unwrap();
@@ -421,8 +412,11 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
     let chopping_block = txn.create_entity(worldwake_core::EntityKind::Facility);
     txn.set_ground_location(chopping_block, ELDERGROVE_FOREST)
         .unwrap();
-    txn.set_component_workstation_marker(chopping_block, WorkstationMarker(WorkstationTag::ChoppingBlock))
-        .unwrap();
+    txn.set_component_workstation_marker(
+        chopping_block,
+        WorkstationMarker(WorkstationTag::ChoppingBlock),
+    )
+    .unwrap();
     commit_txn(txn, &mut h.event_log);
 
     place_ground_commodity(

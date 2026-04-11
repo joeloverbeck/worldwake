@@ -38,6 +38,7 @@ pub enum RankedGoalProvenanceFamily {
 pub trait GoalKindPlannerExt {
     fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily>;
     fn relevant_op_kinds(&self) -> &'static [PlannerOpKind];
+    fn target_commodity(&self, recipes: &RecipeRegistry) -> Option<CommodityKind>;
     fn relevant_observed_commodities(
         &self,
         recipes: &RecipeRegistry,
@@ -556,6 +557,47 @@ impl GoalKindPlannerExt for GoalKind {
         GoalDispatchKey::from_goal_kind(self)
             .declaration()
             .relevant_ops
+    }
+
+    fn target_commodity(&self, recipes: &RecipeRegistry) -> Option<CommodityKind> {
+        match self {
+            GoalKind::ConsumeOwnedCommodity { commodity }
+            | GoalKind::AcquireCommodity { commodity, .. }
+            | GoalKind::SellCommodity { commodity }
+            | GoalKind::RestockCommodity { commodity }
+            | GoalKind::MoveCargo { commodity, .. } => Some(*commodity),
+            GoalKind::TreatWounds { .. } => Some(CommodityKind::Medicine),
+            GoalKind::ProduceCommodity { recipe_id } => recipes
+                .get(*recipe_id)
+                .and_then(|recipe| recipe.outputs.first().map(|(commodity, _)| *commodity)),
+            GoalKind::FreeCarryCapacity => Some(CommodityKind::Waste),
+            GoalKind::Sleep
+            | GoalKind::Relieve
+            | GoalKind::Wash
+            | GoalKind::EngageHostile { .. }
+            | GoalKind::RaidTarget { .. }
+            | GoalKind::ReduceDanger
+            | GoalKind::RegroupWithFaction { .. }
+            | GoalKind::EstablishBanditCamp { .. }
+            | GoalKind::SearchForMissing { .. }
+            | GoalKind::ReportMissing { .. }
+            | GoalKind::EscortToSafety { .. }
+            | GoalKind::LootCorpse { .. }
+            | GoalKind::BuryCorpse { .. }
+            | GoalKind::FulfillBounty { .. }
+            | GoalKind::PostBounty { .. }
+            | GoalKind::PostNotice { .. }
+            | GoalKind::ShareBelief { .. }
+            | GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. }
+            | GoalKind::InvestigateViolation { .. }
+            | GoalKind::Patrol { .. }
+            | GoalKind::ExploreLocation { .. }
+            | GoalKind::StealItem { .. }
+            | GoalKind::Accuse { .. }
+            | GoalKind::PunishAccused { .. }
+            | GoalKind::ReportFound { .. } => None,
+        }
     }
 
     fn relevant_observed_commodities(
@@ -1348,9 +1390,11 @@ impl GoalKindPlannerExt for GoalKind {
                 let contract = FreeCarryCapacityContract::new(
                     current_load,
                     carry_capacity,
-                    state.disposal_profile(actor).map_or(Permille::new_unchecked(800), |profile| {
-                        profile.capacity_strain_threshold
-                    }),
+                    state
+                        .disposal_profile(actor)
+                        .map_or(Permille::new_unchecked(800), |profile| {
+                            profile.capacity_strain_threshold
+                        }),
                     !free_carry_capacity_drop_targets(state).is_empty(),
                 );
                 let root_baseline_state = PlanningState::new(state.snapshot());
@@ -2469,8 +2513,7 @@ mod tests {
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
             max_candidates_to_plan: reasoning.max_candidates_to_plan,
-            max_candidates_per_expansion: CognitiveProfile::default()
-                .max_candidates_per_expansion,
+            max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
@@ -2900,6 +2943,92 @@ mod tests {
             }
             .relevant_observed_commodities(&recipes),
             Some(BTreeSet::from([CommodityKind::Bread]))
+        );
+    }
+
+    #[test]
+    fn target_commodity_maps_supported_goal_rows() {
+        let mut recipes = worldwake_sim::RecipeRegistry::new();
+        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: None,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(1).unwrap(),
+            ),
+        });
+        let patient = entity_id(8, 0);
+        let destination = entity_id(9, 0);
+
+        assert_eq!(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Water)
+        );
+        assert_eq!(
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Bread)
+        );
+        assert_eq!(
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Apple)
+        );
+        assert_eq!(
+            GoalKind::SellCommodity {
+                commodity: CommodityKind::Medicine,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Medicine)
+        );
+        assert_eq!(
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Coin,
+                destination,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Coin)
+        );
+        assert_eq!(
+            GoalKind::TreatWounds { patient }.target_commodity(&recipes),
+            Some(CommodityKind::Medicine)
+        );
+        assert_eq!(
+            GoalKind::ProduceCommodity { recipe_id }.target_commodity(&recipes),
+            Some(CommodityKind::Bread)
+        );
+        assert_eq!(
+            GoalKind::FreeCarryCapacity.target_commodity(&recipes),
+            Some(CommodityKind::Waste)
+        );
+        assert_eq!(GoalKind::Sleep.target_commodity(&recipes), None);
+    }
+
+    #[test]
+    fn target_commodity_returns_none_for_missing_produce_recipe() {
+        let recipes = worldwake_sim::RecipeRegistry::new();
+
+        assert_eq!(
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(999),
+            }
+            .target_commodity(&recipes),
+            None
         );
     }
 
@@ -5511,11 +5640,7 @@ mod tests {
             actor,
             vec![(
                 accused,
-                believed_entity_state_at(
-                    theft_place,
-                    Tick(0),
-                    None,
-                ),
+                believed_entity_state_at(theft_place, Tick(0), None),
             )],
         );
 
@@ -9670,7 +9795,9 @@ mod tests {
         };
 
         let mut remote_view = TestBeliefView::default();
-        remote_view.alive.extend([actor, accused, register, square, hall]);
+        remote_view
+            .alive
+            .extend([actor, accused, register, square, hall]);
         remote_view.kinds.insert(actor, EntityKind::Agent);
         remote_view.kinds.insert(accused, EntityKind::Agent);
         remote_view.kinds.insert(register, EntityKind::Record);

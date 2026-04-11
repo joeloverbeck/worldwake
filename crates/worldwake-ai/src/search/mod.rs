@@ -91,13 +91,12 @@ impl TacticalGoal {
     ) -> Option<Self> {
         let step = step?;
         match step.sub_goal {
-            strategic::TacticalSubGoal::SatisfyGoal => {
-                travel_to_goal_supports_tactical_barrier(&goal.key.kind).then_some(
-                    Self::TravelToGoal {
-                        destination: step.destination,
-                    },
-                )
-            }
+            strategic::TacticalSubGoal::SatisfyGoal => travel_to_goal_supports_tactical_barrier(
+                &goal.key.kind,
+            )
+            .then_some(Self::TravelToGoal {
+                destination: step.destination,
+            }),
             strategic::TacticalSubGoal::AcquirePrerequisite(commodity) => {
                 Some(Self::AcquirePrerequisite {
                     commodity,
@@ -173,8 +172,12 @@ fn should_fail_fast_for_missing_tactical_goal(
     step: Option<&strategic::StrategicStep>,
     tactical_goal: Option<&TacticalGoal>,
 ) -> bool {
-    step.is_some_and(|step| matches!(step.sub_goal, strategic::TacticalSubGoal::ExploreWithBarrier))
-        && tactical_goal.is_none()
+    step.is_some_and(|step| {
+        matches!(
+            step.sub_goal,
+            strategic::TacticalSubGoal::ExploreWithBarrier
+        )
+    }) && tactical_goal.is_none()
 }
 
 fn travel_to_goal_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> bool {
@@ -296,9 +299,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         if let Some(ref mut meta) = trace_metadata {
             **meta = trace_state;
         }
-        return PlanSearchResult::FrontierExhausted {
-            expansions_used: 0,
-        };
+        return PlanSearchResult::FrontierExhausted { expansions_used: 0 };
     }
     let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);
     frontier.push_regular(FrontierEntry::new(root_node_for_tactical(

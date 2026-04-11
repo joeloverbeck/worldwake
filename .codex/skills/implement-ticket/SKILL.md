@@ -18,7 +18,7 @@ Before running the full workflow, classify the ticket:
 2. Confirm the dependency path and the exact owned symbol/file boundary.
 3. Run a narrow constructor/usage sweep for the changed shape: confirm the named symbols and accessors exist, search local callers/render sites, check obvious constructor or test-helper fallout, and identify the narrowest real proof entry point.
 4. Implement the owned change with focused proof first.
-5. Run the affected crate's tests as the normal broadened proof for the ticket. For Rust tickets, if the ticket's Test Plan or repo norms call for CI-matching clippy, run `cargo clippy --workspace --all-targets -- -D warnings` as part of normal broadened verification; use compile/lint fallout to catch remaining shared-shape literals/helpers and local cleanup.
+5. Run the affected crate's tests as the normal broadened proof for the ticket. For Rust tickets, format the owned files before final broad verification. If the ticket's Test Plan or repo norms call for CI-matching clippy, run `cargo clippy --workspace --all-targets -- -D warnings` as part of normal broadened verification; use compile/lint fallout to catch remaining shared-shape literals/helpers and local cleanup.
 6. Close out the ticket with the actual verification set and tracked-vs-untracked note. This normally includes updating the ticket file itself with completion metadata such as `Status`, `Outcome`, `Deviations` when needed, and `Verification Result`, not just reporting those details in the conversation.
 
 For CLI/tooling-only tickets, if the owned logic can be factored into local helpers, prefer bin-local `#[cfg(test)]` coverage over command-only validation.
@@ -158,7 +158,7 @@ Covered in `references/closeout.md` (Step 8 section).
 - Name exact files, symbols, layers, and invariants for non-trivial claims.
 - Treat tests, traces, event logs, and authoritative state as different proof surfaces.
 - Architectural contradictions: solve or escalate with 1-3-1 (see mismatch-handling.md, Escalation decision tree). Do not patch around them.
-- For new integration test files, verify that the focused command actually runs the intended tests. A selector matching only the binary/file stem can compile the target while executing zero tests; when the owned proof surface is the integration-test binary, prefer `cargo test -p <crate> --test <file_stem>` over a loose name filter.
+- For focused test commands, verify that the selector actually proves the owned surface. Substring filters can run extra tests or, for integration-test binaries, compile the target while executing zero tests. When exactness matters, prefer the narrowest truthful selector such as an exact unit-test name or `cargo test -p <crate> --test <file_stem>` for integration-test binaries instead of a loose name filter.
 
 ## Example Usage
 

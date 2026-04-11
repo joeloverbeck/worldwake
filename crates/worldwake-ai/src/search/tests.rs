@@ -25,14 +25,13 @@ use worldwake_core::{
     DemandObservationReason, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
     EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget, HomeostaticNeedId,
     HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, NoticeTopic, PerceptionSource, Permille, Place, PlaceTag, ProofRequirement,
-    PatrolProfile, PatrolRoute, PrototypePlace, Quantity, RecipeId, RecordedViolation,
+    MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute, PerceptionSource, Permille, Place,
+    PlaceTag, ProofRequirement, PrototypePlace, Quantity, RecipeId, RecordedViolation,
     ResourceSource, RewardSource, TheftDispositionProfile, Tick, TickRange, Topology,
-    TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
-    ViolationDispositionProfile, ViolationId, ViolationKind, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-    build_believed_entity_state, build_prototype_world, prototype_place_entity,
-    test_utils::sample_trade_disposition_profile,
+    TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, ViolationDispositionProfile,
+    ViolationId, ViolationKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+    World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
+    build_prototype_world, prototype_place_entity, test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, CombatBeliefView, ControlBeliefView,
@@ -46,8 +45,7 @@ use worldwake_systems::build_full_action_registries;
 fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
     CognitiveProfile {
         max_candidates_to_plan: reasoning.max_candidates_to_plan,
-        max_candidates_per_expansion: CognitiveProfile::default()
-            .max_candidates_per_expansion,
+        max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
         max_plan_depth: reasoning.max_plan_depth,
         snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
         max_node_expansions: reasoning.max_node_expansions,
@@ -6522,8 +6520,15 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     };
 
     let mut view = TestBeliefView::default();
-    view.alive
-        .extend([actor, accused, punish_accused, town, outpost, crime_register, faction]);
+    view.alive.extend([
+        actor,
+        accused,
+        punish_accused,
+        town,
+        outpost,
+        crime_register,
+        faction,
+    ]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(accused, EntityKind::Agent);
     view.kinds.insert(punish_accused, EntityKind::Agent);
@@ -6535,7 +6540,8 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     view.effective_places.insert(accused, outpost);
     view.effective_places.insert(punish_accused, town);
     view.effective_places.insert(crime_register, town);
-    view.entities_at.insert(town, vec![actor, punish_accused, crime_register]);
+    view.entities_at
+        .insert(town, vec![actor, punish_accused, crime_register]);
     view.entities_at.insert(outpost, vec![accused]);
     view.record_data.insert(
         crime_register,
@@ -6667,7 +6673,8 @@ fn build_successor_keeps_accuse_step_target_bound_to_accused() {
     let crime_register = entity(12);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, accused, town, outpost, crime_register]);
+    view.alive
+        .extend([actor, accused, town, outpost, crime_register]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(accused, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
@@ -6727,13 +6734,7 @@ fn build_successor_keeps_accuse_step_target_bound_to_accused() {
     };
 
     let (terminal, successor) = build_successor(
-        &goal,
-        &semantics,
-        &registry,
-        &node,
-        &candidate,
-        &recipes,
-        &reasoning,
+        &goal, &semantics, &registry, &node, &candidate, &recipes, &reasoning,
     )
     .expect("accuse successor should build");
 
@@ -7710,7 +7711,8 @@ fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
     let seller_lot = entity(21);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, seller, town, market, bread, seller_lot]);
+    view.alive
+        .extend([actor, seller, town, market, bread, seller_lot]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(seller, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
@@ -7721,7 +7723,8 @@ fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
     view.effective_places.insert(seller, town);
     view.effective_places.insert(bread, market);
     view.effective_places.insert(seller_lot, town);
-    view.entities_at.insert(town, vec![actor, seller, seller_lot]);
+    view.entities_at
+        .insert(town, vec![actor, seller, seller_lot]);
     view.entities_at.insert(market, vec![bread]);
     view.adjacent
         .insert(town, vec![(market, NonZeroU32::new(2).unwrap())]);
@@ -8425,10 +8428,8 @@ fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_s
     assert_eq!(
         trace_metadata.tactical_goal.as_deref(),
         Some(
-            format!(
-                "AcquirePrerequisite {{ commodity: Apple, destination: {orchard_farm:?} }}"
-            )
-            .as_str()
+            format!("AcquirePrerequisite {{ commodity: Apple, destination: {orchard_farm:?} }}")
+                .as_str()
         )
     );
     let strategic_plan = trace_metadata
@@ -8492,7 +8493,10 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
         Some(&mut trace_metadata),
     );
 
-    assert!(result.is_found(), "local sleep planning should still succeed");
+    assert!(
+        result.is_found(),
+        "local sleep planning should still succeed"
+    );
     assert_eq!(trace_metadata.tactical_goal, None);
 }
 
@@ -8637,14 +8641,10 @@ fn search_evidence_directed_exploration_prefers_evidence_place() {
             (fallback_place, NonZeroU32::new(3).unwrap()),
         ],
     );
-    view.adjacent.insert(
-        evidence_place,
-        vec![(origin, NonZeroU32::new(1).unwrap())],
-    );
-    view.adjacent.insert(
-        fallback_place,
-        vec![(origin, NonZeroU32::new(3).unwrap())],
-    );
+    view.adjacent
+        .insert(evidence_place, vec![(origin, NonZeroU32::new(1).unwrap())]);
+    view.adjacent
+        .insert(fallback_place, vec![(origin, NonZeroU32::new(3).unwrap())]);
 
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::None,
@@ -8725,7 +8725,10 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
     view.effective_places.insert(accused, origin);
     view.effective_places.insert(crime_register, town);
     view.entities_at.entry(origin).or_default().push(accused);
-    view.entities_at.entry(town).or_default().push(crime_register);
+    view.entities_at
+        .entry(town)
+        .or_default()
+        .push(crime_register);
     view.record_data.insert(
         crime_register,
         worldwake_core::RecordData {
@@ -8781,7 +8784,10 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
         plan.steps[0].targets,
         vec![PlanningEntityRef::Authoritative(town)]
     );
-    assert_eq!(plan.steps.last().map(|step| step.op_kind), Some(PlannerOpKind::Accuse));
+    assert_eq!(
+        plan.steps.last().map(|step| step.op_kind),
+        Some(PlannerOpKind::Accuse)
+    );
     assert_eq!(trace_metadata.tactical_goal, None);
     assert!(
         trace_metadata
@@ -8790,7 +8796,10 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
             .and_then(|plan| plan.steps.first())
             .is_some_and(|step| {
                 step.destination == town
-                    && matches!(step.sub_goal, super::strategic::TacticalSubGoal::SatisfyGoal)
+                    && matches!(
+                        step.sub_goal,
+                        super::strategic::TacticalSubGoal::SatisfyGoal
+                    )
             }),
         "Accuse should keep its lawful register-bound strategic step"
     );
@@ -8879,7 +8888,9 @@ fn search_patrol_uses_travel_to_goal_for_remote_place() {
     );
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::Place(patrol_place),
-        key: GoalKey::from(GoalKind::Patrol { place: patrol_place }),
+        key: GoalKey::from(GoalKind::Patrol {
+            place: patrol_place,
+        }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([patrol_place]),
     };
@@ -9008,7 +9019,8 @@ fn search_investigate_allows_local_scene_investigation_despite_stale_remote_evid
     let remote_place = entity(11);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, stale_subject, violation_place, remote_place]);
+    view.alive
+        .extend([actor, stale_subject, violation_place, remote_place]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(stale_subject, EntityKind::ItemLot);
     view.kinds.insert(violation_place, EntityKind::Place);
@@ -9171,10 +9183,20 @@ fn search_travel_to_goal_candidate_filter() {
     );
 
     assert_eq!(candidates.len(), 2);
-    assert!(candidates.iter().any(|candidate| candidate.def_id == travel_id));
-    assert!(candidates.iter().any(|candidate| candidate.def_id == patrol_id));
     assert!(
-        candidates.iter().all(|candidate| candidate.def_id != harvest_id),
+        candidates
+            .iter()
+            .any(|candidate| candidate.def_id == travel_id)
+    );
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.def_id == patrol_id)
+    );
+    assert!(
+        candidates
+            .iter()
+            .all(|candidate| candidate.def_id != harvest_id),
         "irrelevant non-travel setup should be removed before departure"
     );
 }

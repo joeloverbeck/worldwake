@@ -14,12 +14,12 @@ use crate::{
         EnterpriseSignals, analyze_candidate_enterprise, merchant_home_facility,
         merchant_home_place, restock_gap_at_destination,
     },
+    goal_model::free_carry_capacity_contract_from_view,
     institutional_queries::consulted_office_holder_read_for_record_data,
     knowledge_path::{
         BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
         SelfKnowledgeProvenance,
     },
-    goal_model::free_carry_capacity_contract_from_view,
     pressure::is_bandit_raid_deterred_by_wounds,
     route_threat::strongest_threat_warning_place,
     theft::assess_theft_deterrence,
@@ -6090,7 +6090,8 @@ mod tests {
         view.effective_places.insert(remote_waste_lot, place);
         view.entities_at
             .insert(place, vec![agent, carried_waste_lot, remote_waste_lot]);
-        view.direct_possessions.insert(agent, vec![carried_waste_lot]);
+        view.direct_possessions
+            .insert(agent, vec![carried_waste_lot]);
         view.carry_capacities.insert(agent, LoadUnits(10));
         view.entity_loads.insert(
             carried_waste_lot,

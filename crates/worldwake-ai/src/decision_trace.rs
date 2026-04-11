@@ -673,6 +673,10 @@ pub enum RootCandidateFilterReason {
     BindingMismatch {
         required_target: Option<EntityId>,
     },
+    CommodityIrrelevant {
+        candidate_commodity: Option<CommodityKind>,
+        goal_commodity: CommodityKind,
+    },
     GoalUnavailable,
     BlockedFacilityUse {
         facility: EntityId,

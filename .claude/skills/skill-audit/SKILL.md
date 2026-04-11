@@ -95,6 +95,8 @@ Output this structure to the conversation (do not write to a file):
 
 Double-check severity counts against findings before presenting. If a correction is needed after presenting, strike the incorrect line and restate.
 
+If a finding's conclusion is that no change is needed (the current behavior is sufficient, or the gap is too minor to act on), append "— no change needed" to the Suggestion line. This marks the finding as informational and excludes it from "implement all/recommended" scope during follow-up implementation.
+
 ## Guardrails
 
 - **Report only** — Never modify the target skill file. Output the report to the conversation only.

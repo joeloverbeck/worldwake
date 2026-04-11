@@ -5,18 +5,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU8;
 use std::num::NonZeroU32;
 use worldwake_ai::{
-    CommodityPurpose, GoalKind, PlanSearchResult, build_planning_snapshot,
-    build_semantics_table, generate_candidates, search_plan,
+    CommodityPurpose, GoalKind, PlanSearchResult, build_planning_snapshot, build_semantics_table,
+    generate_candidates, search_plan,
 };
 use worldwake_core::{
-    BelievedEntityState, CarryCapacity, CognitiveProfile, CommodityKind,
-    CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile, EntityId,
-    EpistemicDispositionProfile, ExecutionBudget, GoalKey, HomeostaticNeeds,
-    IntentionDispositionProfile, IntentionDomainTag, JusticeDispositionProfile, KnownRecipes,
-    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, PatrolProfile, PatrolRoute,
-    PerceptionSource, Quantity, PursuitProfile, ResourceSource, SubstitutePreferences, TellProfile,
-    ThresholdBand, Tick, TradeCategory, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag, build_believed_entity_state,
+    BelievedEntityState, CarryCapacity, CognitiveProfile, CommodityKind, CommodityValuationProfile,
+    CommunicationProfile, ContentionDispositionProfile, EntityId, EpistemicDispositionProfile,
+    ExecutionBudget, GoalKey, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomainTag,
+    JusticeDispositionProfile, KnownRecipes, LastSeenMemory, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, PatrolProfile, PatrolRoute, PerceptionSource, PursuitProfile, Quantity,
+    ResourceSource, SubstitutePreferences, TellProfile, ThresholdBand, Tick, TradeCategory,
+    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    build_believed_entity_state,
 };
 use worldwake_sim::PerAgentBeliefView;
 
@@ -101,7 +101,10 @@ fn build_cli_evaluation_topology() -> worldwake_core::Topology {
     topology
         .add_place(
             DUSTY_TRAIL,
-            place("Dusty Trail", &[PlaceTag::Trail, PlaceTag::Road, PlaceTag::Crossroads]),
+            place(
+                "Dusty Trail",
+                &[PlaceTag::Trail, PlaceTag::Road, PlaceTag::Crossroads],
+            ),
         )
         .unwrap();
     topology
@@ -690,7 +693,9 @@ struct CliScenarioAgents {
     guard_theron: EntityId,
 }
 
-fn setup_cli_evaluation_scenario_until_tick(target_tick: u32) -> (GoldenHarness, CliScenarioAgents) {
+fn setup_cli_evaluation_scenario_until_tick(
+    target_tick: u32,
+) -> (GoldenHarness, CliScenarioAgents) {
     let mut h = build_pathology_harness(cli_scenario_seed(7777));
 
     let kael = seed_kael_cli_agent(
@@ -727,7 +732,12 @@ fn setup_cli_evaluation_scenario_until_tick(target_tick: u32) -> (GoldenHarness,
         Quantity(5),
     );
     place_ground_commodity(&mut h, ELDERGROVE_FOREST, CommodityKind::Water, Quantity(5));
-    place_ground_commodity(&mut h, THORNWALL_VILLAGE, CommodityKind::Grain, Quantity(10));
+    place_ground_commodity(
+        &mut h,
+        THORNWALL_VILLAGE,
+        CommodityKind::Grain,
+        Quantity(10),
+    );
     place_ground_commodity(&mut h, THORNWALL_VILLAGE, CommodityKind::Bread, Quantity(5));
     place_ground_commodity(&mut h, ELDERGROVE_FOREST, CommodityKind::Apple, Quantity(8));
     give_commodity(
@@ -738,8 +748,18 @@ fn setup_cli_evaluation_scenario_until_tick(target_tick: u32) -> (GoldenHarness,
         CommodityKind::Sword,
         Quantity(1),
     );
-    place_ground_commodity(&mut h, HEARTHSTONE_INN, CommodityKind::Firewood, Quantity(3));
-    place_ground_commodity(&mut h, HEARTHSTONE_INN, CommodityKind::Medicine, Quantity(2));
+    place_ground_commodity(
+        &mut h,
+        HEARTHSTONE_INN,
+        CommodityKind::Firewood,
+        Quantity(3),
+    );
+    place_ground_commodity(
+        &mut h,
+        HEARTHSTONE_INN,
+        CommodityKind::Medicine,
+        Quantity(2),
+    );
     give_commodity(
         &mut h.world,
         &mut h.event_log,
@@ -1074,11 +1094,7 @@ fn search_treat_wounds(
     )
 }
 
-fn assert_budget_exhausted(
-    result: PlanSearchResult,
-    minimum_expansions: u16,
-    context: &str,
-) {
+fn assert_budget_exhausted(result: PlanSearchResult, minimum_expansions: u16, context: &str) {
     match result {
         PlanSearchResult::BudgetExhausted { expansions_used } => {
             assert!(
@@ -1139,7 +1155,8 @@ fn setup_merchant_vara_treat_wounds_snapshot() -> (GoldenHarness, EntityId) {
     let _sword = place_ground_commodity(&mut h, DUSTY_TRAIL, CommodityKind::Sword, Quantity(1));
     let waste = place_many_ground_commodities(&mut h, DUSTY_TRAIL, CommodityKind::Waste, 15);
 
-    let _coin = place_ground_commodity(&mut h, THORNWALL_VILLAGE, CommodityKind::Coin, Quantity(20));
+    let _coin =
+        place_ground_commodity(&mut h, THORNWALL_VILLAGE, CommodityKind::Coin, Quantity(20));
     let _mill = place_workstation(
         &mut h.world,
         &mut h.event_log,
@@ -1169,7 +1186,12 @@ fn setup_merchant_vara_treat_wounds_snapshot() -> (GoldenHarness, EntityId) {
         ProductionOutputOwner::Actor,
     );
 
-    let _medicine = place_ground_commodity(&mut h, HEARTHSTONE_INN, CommodityKind::Medicine, Quantity(2));
+    let _medicine = place_ground_commodity(
+        &mut h,
+        HEARTHSTONE_INN,
+        CommodityKind::Medicine,
+        Quantity(2),
+    );
 
     seed_custom_belief(
         &mut h,
@@ -1252,7 +1274,8 @@ fn setup_merchant_vara_apple_at_dusty_trail_snapshot() -> (GoldenHarness, Entity
     let _water = place_many_ground_commodities(&mut h, DUSTY_TRAIL, CommodityKind::Water, 3);
     let waste = place_many_ground_commodities(&mut h, DUSTY_TRAIL, CommodityKind::Waste, 4);
     let bow = place_ground_commodity(&mut h, THORNWALL_VILLAGE, CommodityKind::Bow, Quantity(1));
-    let sword = place_ground_commodity(&mut h, THORNWALL_VILLAGE, CommodityKind::Sword, Quantity(1));
+    let sword =
+        place_ground_commodity(&mut h, THORNWALL_VILLAGE, CommodityKind::Sword, Quantity(1));
     let mill = place_workstation(
         &mut h.world,
         &mut h.event_log,
@@ -1585,7 +1608,12 @@ fn setup_kael_treats_vara_snapshot() -> (GoldenHarness, EntityId, EntityId) {
         },
         ProductionOutputOwner::Actor,
     );
-    let _medicine = place_ground_commodity(&mut h, HEARTHSTONE_INN, CommodityKind::Medicine, Quantity(2));
+    let _medicine = place_ground_commodity(
+        &mut h,
+        HEARTHSTONE_INN,
+        CommodityKind::Medicine,
+        Quantity(2),
+    );
 
     seed_belief_from_world(
         &mut h.world,
