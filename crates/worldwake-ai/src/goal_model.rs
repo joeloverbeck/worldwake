@@ -463,10 +463,10 @@ fn believed_bounty_artifact_state(
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FreeCarryCapacityContract {
-    current_load: LoadUnits,
-    carry_capacity: LoadUnits,
-    disposal_threshold: Permille,
-    has_waste_targets: bool,
+    pub(crate) current_load: LoadUnits,
+    pub(crate) carry_capacity: LoadUnits,
+    pub(crate) disposal_threshold: Permille,
+    pub(crate) has_waste_targets: bool,
 }
 
 impl FreeCarryCapacityContract {
@@ -505,6 +505,47 @@ impl FreeCarryCapacityContract {
             self.current_load.0 < baseline_load.0 && self.is_below_threshold()
         })
     }
+}
+
+pub(crate) fn free_carry_capacity_contract_from_view(
+    view: &dyn worldwake_sim::GoalBeliefView,
+    agent: EntityId,
+) -> Option<FreeCarryCapacityContract> {
+    let carry_capacity = view.carry_capacity(agent)?;
+    let current_load = LoadUnits(
+        CommodityKind::ALL
+            .iter()
+            .copied()
+            .map(|kind| {
+                view.commodity_quantity(agent, kind)
+                    .0
+                    .saturating_mul(worldwake_core::load_per_unit(kind).0)
+            })
+            .fold(0u32, u32::saturating_add),
+    );
+    let disposal_threshold = view
+        .disposal_profile(agent)
+        .map_or(Permille::new_unchecked(800), |profile| {
+            profile.capacity_strain_threshold
+        });
+    let has_waste_targets = view
+        .known_entity_beliefs(agent)
+        .into_iter()
+        .any(|(item, belief)| {
+            belief.believed_kind == Some(worldwake_core::EntityKind::ItemLot)
+                && view.direct_possessor(item) == Some(agent)
+                && belief
+                    .last_known_inventory
+                    .get(&CommodityKind::Waste)
+                    .is_some_and(|quantity| *quantity > Quantity(0))
+        });
+
+    Some(FreeCarryCapacityContract::new(
+        current_load,
+        carry_capacity,
+        disposal_threshold,
+        has_waste_targets,
+    ))
 }
 
 impl GoalKindPlannerExt for GoalKind {

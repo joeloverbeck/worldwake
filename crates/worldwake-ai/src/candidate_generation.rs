@@ -19,6 +19,7 @@ use crate::{
         BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
         SelfKnowledgeProvenance,
     },
+    goal_model::free_carry_capacity_contract_from_view,
     pressure::is_bandit_raid_deterred_by_wounds,
     route_threat::strongest_threat_warning_place,
     theft::assess_theft_deterrence,
@@ -30,7 +31,7 @@ use worldwake_core::{
     EntityId, EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState, GoalKey,
     GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, ProofRequirement, PunishmentFineSelectionTrace,
+    OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
     PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
     RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
     UtilityProfile, ViolationId, ViolationKind, ViolationMemory, classify_communication,
@@ -3099,36 +3100,10 @@ fn emit_disposal_candidates(
     _diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
-    let threshold = ctx
-        .view
-        .disposal_profile(ctx.agent)
-        .map_or(Permille::new_unchecked(800), |p| {
-            p.capacity_strain_threshold
-        });
-    let Some(carry_capacity) = ctx.view.carry_capacity(ctx.agent) else {
+    let Some(contract) = free_carry_capacity_contract_from_view(ctx.view, ctx.agent) else {
         return;
     };
-
-    let current_load = CommodityKind::ALL
-        .iter()
-        .copied()
-        .map(|kind| {
-            ctx.view
-                .commodity_quantity(ctx.agent, kind)
-                .0
-                .saturating_mul(load_per_unit(kind).0)
-        })
-        .fold(0u32, u32::saturating_add);
-
-    if current_load.saturating_mul(1000)
-        < carry_capacity
-            .0
-            .saturating_mul(u32::from(threshold.value()))
-    {
-        return;
-    }
-
-    if ctx.view.commodity_quantity(ctx.agent, CommodityKind::Waste) == Quantity(0) {
+    if !contract.is_actionable() {
         return;
     }
 
@@ -3136,9 +3111,10 @@ fn emit_disposal_candidates(
         if state.believed_kind != Some(EntityKind::ItemLot) {
             continue;
         }
-        if !state
+        if state
             .last_known_inventory
-            .contains_key(&CommodityKind::Waste)
+            .get(&CommodityKind::Waste)
+            .is_none_or(|quantity| *quantity <= Quantity(0))
         {
             continue;
         }

@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: `S92FRECARCAP-001`, `S92FRECARCAP-002`, `specs/S92-free-carry-capacity-zero-step-loop-fix.md`
+**Deps**: `archive/tickets/S92FRECARCAP-001.md`, `archive/tickets/S92FRECARCAP-002.md`, `specs/S92-free-carry-capacity-zero-step-loop-fix.md`
 
 ## Problem
 
@@ -12,7 +12,7 @@ The unified `FreeCarryCapacity` contract from tickets 001-002 needs focused pari
 
 ## Assumption Reassessment (2026-04-11)
 
-1. After 001+002, the shared helper is the canonical contract for all three call sites. Tests must exercise the helper's actionability and satisfaction logic through each consumer's code path. No existing focused tests cover cross-layer contract parity for `FreeCarryCapacity`. Confirmed by searching `crates/worldwake-ai/src/` for `#[test]` blocks referencing `FreeCarryCapacity` — none found beyond golden tests.
+1. After 001+002, the shared helper is the canonical contract for all three call sites. Existing focused tests now cover module-local `FreeCarryCapacity` behavior in `goal_model.rs`, `candidate_generation.rs`, and `ranking.rs`, but no explicit cross-layer parity proof yet ties those three consumers to the same root/actionable fixture contract. Corrected 2026-04-11.
 2. `golden_waste_disposal_cycle` in `crates/worldwake-ai/tests/golden_production.rs:4449` covers the happy-path disposal cycle (plan → drop → goal stops) but does not cover the boundary conditions: sub-threshold inactivity, partial-drop still-above-threshold, or emission/ranking zero-score for non-actionable state.
 5. Live `GoalKind`: `FreeCarryCapacity`. Operator: `PlannerOpKind::DropItem`. Tests must construct planning states and belief views that exercise the contract boundaries.
 
@@ -26,8 +26,8 @@ The unified `FreeCarryCapacity` contract from tickets 001-002 needs focused pari
 1. Strained root with actionable waste -> not satisfied -> focused unit test on `is_satisfied()`
 2. Single drop below threshold -> satisfied -> focused unit test on `is_satisfied()` with modified state
 3. Partial drop still above threshold -> not satisfied -> focused unit test
-4. Below-threshold or no-waste -> emission inactive, motive score zero -> focused unit test on emission and ranking paths
-5. Only directly possessed non-empty Waste lots are targets -> focused unit test on emission path
+4. Below-threshold or no-waste -> emission inactive, motive score zero -> existing focused unit tests plus any added parity assertions
+5. Only directly possessed non-empty Waste lots are targets -> existing focused emission test plus any added parity assertions
 6. Single-layer ticket: all tests exercise `worldwake-ai` planner logic only.
 
 ## What to Change

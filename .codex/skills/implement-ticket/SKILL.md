@@ -52,7 +52,7 @@ When the ticket was authored by `/spec-to-tickets` in the current session from a
 
 ### 2. Reassess assumptions before coding
 
-Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
+Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. If a dependency ticket has already been completed and archived, rewrite `Deps` to the live archived path instead of leaving a stale active-ticket reference. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
 When a ticket is motivated by an observer report, golden failure, or named scenario condition, verify the exact motivating substrate before distilling the harness or fixture. Confirm the scenario file, named places/entities, travel graph, and the reported failure location/path still match the ticket's execution narrative, then record what is preserved versus intentionally omitted in the distilled setup. Do not substitute a nearby prototype-world approximation when the ticket's claimed proof depends on a specific scenario/location condition.
 
