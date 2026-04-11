@@ -8,7 +8,7 @@
 
 ## Problem
 
-The universal two-phase planning changes from S89UNITWOPHA-001 and S89UNITWOPHA-002 need dedicated test coverage. Without these tests, regressions to the `TravelToGoal` tactical scoping, barrier satisfaction, and candidate filtering would go undetected. The existing S88 tests cover only `TreatWounds` and `ProduceCommodity` — no focused test yet exercises `TravelToGoal` on representative non-whitelisted remote-goal families or locks in the intentional \"exploration fallback stays unscoped\" boundary.
+The universal two-phase planning changes from S89UNITWOPHA-001 and S89UNITWOPHA-002 need dedicated test coverage. Without these tests, regressions to the `TravelToGoal` tactical scoping, barrier satisfaction, and candidate filtering would go undetected. The existing S88 tests cover only `TreatWounds` and `ProduceCommodity`, and S89UNITWOPHA-004 added focused coverage for the separate exploration fallback contract. No focused test yet exercises `TravelToGoal` on representative non-whitelisted remote-goal families.
 
 ## Assumption Reassessment (2026-04-11)
 

@@ -340,21 +340,23 @@ fn matches_local_goal_stage(stages: &[StrategicStage], current_place: EntityId) 
 }
 
 fn exploration_plan(snapshot: &PlanningSnapshot, actor_place: EntityId) -> Option<StrategicPlan> {
-    let mut steps = snapshot
+    let step = snapshot
         .places
         .get(&actor_place)?
         .adjacent_places_with_travel_ticks
         .iter()
-        .map(|(destination, ticks)| StrategicStep {
-            destination: *destination,
-            sub_goal: TacticalSubGoal::Explore,
-            estimated_travel_ticks: snapshot
+        .map(|(destination, ticks)| {
+            let estimated_travel_ticks = snapshot
                 .direct_perceived_travel_cost(actor_place, *destination)
-                .unwrap_or_else(|| ticks.get()),
+                .unwrap_or_else(|| ticks.get());
+            StrategicStep {
+                destination: *destination,
+                sub_goal: TacticalSubGoal::Explore,
+                estimated_travel_ticks,
+            }
         })
-        .collect::<Vec<_>>();
-    steps.sort_by_key(|step| (step.estimated_travel_ticks, step.destination));
-    (!steps.is_empty()).then_some(StrategicPlan { steps })
+        .min_by_key(|step| (step.estimated_travel_ticks, step.destination))?;
+    Some(StrategicPlan { steps: vec![step] })
 }
 
 fn social_query_plan(
@@ -993,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_beliefs_exploration_fallback() {
+    fn test_empty_beliefs_exploration_fallback_chooses_single_nearest_probe() {
         let actor = entity(1);
         let place_a = entity(10);
         let place_b = entity(11);
@@ -1016,13 +1018,10 @@ mod tests {
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
 
-        assert_eq!(plan.steps.len(), 2);
+        assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.steps[0].destination, place_b);
         assert_eq!(plan.steps[0].sub_goal, TacticalSubGoal::Explore);
         assert_eq!(plan.steps[0].estimated_travel_ticks, 2);
-        assert_eq!(plan.steps[1].destination, place_c);
-        assert_eq!(plan.steps[1].sub_goal, TacticalSubGoal::Explore);
-        assert_eq!(plan.steps[1].estimated_travel_ticks, 5);
     }
 
     #[test]

@@ -9977,3 +9977,76 @@ fn explore_location_search_finds_travel_plan_to_target_place() {
         vec![PlanningEntityRef::Authoritative(target_place)]
     );
 }
+
+#[test]
+fn search_empty_beliefs_exploration_fallback_returns_nearest_travel_barrier() {
+    let actor = entity(1);
+    let actor_place = entity(10);
+    let near_place = entity(11);
+    let far_place = entity(12);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, actor_place, near_place, far_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(actor_place, EntityKind::Place);
+    view.kinds.insert(near_place, EntityKind::Place);
+    view.kinds.insert(far_place, EntityKind::Place);
+    view.effective_places.insert(actor, actor_place);
+    view.entities_at.insert(actor_place, vec![actor]);
+    view.entities_at.entry(near_place).or_default();
+    view.entities_at.entry(far_place).or_default();
+    view.adjacent.insert(
+        actor_place,
+        vec![
+            (near_place, NonZeroU32::new(2).unwrap()),
+            (far_place, NonZeroU32::new(5).unwrap()),
+        ],
+    );
+    view.adjacent
+        .insert(near_place, vec![(actor_place, NonZeroU32::new(2).unwrap())]);
+    view.adjacent
+        .insert(far_place, vec![(actor_place, NonZeroU32::new(5).unwrap())]);
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::new(),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    );
+    let plan = result
+        .into_plan()
+        .expect("exploration fallback should return a nearest travel barrier");
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(near_place)]
+    );
+}

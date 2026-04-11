@@ -195,6 +195,7 @@ pub(super) fn root_node_for_tactical<'snapshot>(
 fn tactical_goal_places(tactical_goal: &TacticalGoal) -> Option<EntityId> {
     match tactical_goal {
         TacticalGoal::AcquirePrerequisite { destination, .. }
+        | TacticalGoal::Explore { destination }
         | TacticalGoal::TravelToGoal { destination } => Some(*destination),
         TacticalGoal::SocialQuery { .. } => None,
     }

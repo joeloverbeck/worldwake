@@ -2,9 +2,9 @@
 
 ## Summary
 
-Remove the `goal_supports_two_phase()` whitelist that restricts the S88 two-phase (strategic + tactical) planner architecture to only `TreatWounds` and `ProduceCommodity` goals. Introduce a `TravelToGoal` tactical goal variant so true strategic `SatisfyGoal` stages across goal families receive destination scoping without preserving the old flat-search whitelist path. Exploration fallback remains unscoped in this spec slice because those `Explore` stages act as probe waypoints rather than stable tactical destinations.
+Remove the `goal_supports_two_phase()` whitelist that restricts the S88 two-phase (strategic + tactical) planner architecture to only `TreatWounds` and `ProduceCommodity` goals. Introduce a `TravelToGoal` tactical goal variant so true strategic `SatisfyGoal` stages across goal families receive destination scoping without preserving the old flat-search whitelist path. Exploration fallback uses a separate contract only for true no-evidence probe cases: choose one deterministic adjacent probe destination, travel there under an `Explore` tactical barrier, and commit that arrival as a planner `ProgressBarrier` before replanning with new beliefs.
 
-The S88 architecture works — strategic planning correctly identifies remote destinations for many goal kinds. But the tactical phase ignored that information outside the whitelist because `goal_supports_two_phase()` gated tactical goal construction, and `TacticalSubGoal::SatisfyGoal` mapped to `tactical_goal = None`. This spec closes those gaps for true destination stages without attempting to scope exploratory fallback waypoints as if they were durable tactical barriers.
+The S88 architecture works — strategic planning correctly identifies remote destinations for many goal kinds. But the tactical phase ignored that information outside the whitelist because `goal_supports_two_phase()` gated tactical goal construction, and `TacticalSubGoal::SatisfyGoal` mapped to `tactical_goal = None`. This spec closes those gaps for true destination stages and gives exploratory fallback its own lawful barrier contract instead of treating adjacent probe lists as if they were durable tactical itineraries.
 
 **Evidence**: Simulation observer report on `cli-evaluation.ron` (seed 7777, 1440 ticks) shows:
 - Guard Theron died at tick 422 from hunger — `AcquireCommodity(Water)` budget-exhausted at 224 expansions, 2085 candidates, depth 6
@@ -72,7 +72,7 @@ None introduced.
 
 ### H.7 — Partial failures, aftermath
 
-Same as S88. If the tactical planner cannot find a plan at the strategic destination, this manifests as `BudgetExhausted` or `FrontierExhausted`. The agent re-plans on the next tick with updated beliefs. If no known location satisfies the goal, the strategic phase falls back to exploration or social query itineraries.
+Same as S88. If the tactical planner cannot find a plan at the strategic destination, this manifests as `BudgetExhausted` or `FrontierExhausted`. The agent re-plans on the next tick with updated beliefs. If no known location satisfies the goal, the strategic phase falls back to either a social query barrier plan or, for the currently supported no-evidence probe families, a single exploration probe destination.
 
 ### H.8 — Positive feedback loops amplified
 
@@ -99,6 +99,7 @@ No amplifying loops introduced. The tactical goal is computed once per planning 
 | Item | Classification | Justification |
 |------|---------------|---------------|
 | `TacticalGoal::TravelToGoal` | Transient derived | Computed per planning call from strategic plan. Not stored as component. Does not survive save/load. |
+| `TacticalGoal::Explore` | Transient derived | Computed per planning call from exploration fallback. Not stored as component. Commits only a planner progress barrier. |
 | `SearchTraceMetadata::tactical_goal` | Diagnostic | Debug trace field. Not authoritative state. |
 
 ## Deliverables
@@ -177,6 +178,14 @@ TacticalGoal::AcquirePrerequisite { destination, .. }
 
 Add `tactical_goal: Option<String>` field to `SearchTraceMetadata`. Record the active tactical goal variant after construction for debuggability (FND-29).
 
+### D5b: Exploration fallback becomes a single barrier destination
+
+**Files**: `crates/worldwake-ai/src/search/strategic.rs`, `crates/worldwake-ai/src/search/mod.rs`, `crates/worldwake-ai/src/search/transition.rs`
+
+- `strategic::exploration_plan()` chooses one deterministic adjacent exploration destination instead of returning an adjacent-place list.
+- `TacticalSubGoal::Explore` maps to a dedicated tactical exploration barrier carrying that destination only for the current no-evidence probe families (`AcquireCommodity`, `SearchForMissing`).
+- Arrival at the exploration destination returns `PlanTerminalKind::ProgressBarrier` so travel-to-probe can commit cleanly and replan after new observations.
+
 ### D6: Tests
 
 **File**: `crates/worldwake-ai/src/search/tests.rs`
@@ -206,11 +215,11 @@ Existing S88 tests must continue to pass unchanged:
 
 ### Local goals are unaffected
 
-Goals with empty `goal_relevant_places()` (Sleep, Relieve, Wash, ReduceDanger, FreeCarryCapacity) produce no strategic stages. The strategic planner returns either `None` or an exploration fallback. In both cases, `tactical_goal` is `None` and the tactical search proceeds as an unscoped local search — identical to current behavior.
+Goals with empty `goal_relevant_places()` (Sleep, Relieve, Wash, ReduceDanger, FreeCarryCapacity) produce no strategic stages. The strategic planner returns either `None` or a fallback barrier. Social-query fallbacks stay local; exploration fallback now selects one adjacent probe destination and returns a travel `ProgressBarrier` on arrival only for the current no-evidence probe families rather than acting as a blanket replacement for all empty-`goal_relevant_places()` goals.
 
 ### Remote goals gain tactical scoping
 
-Any goal family whose strategic plan yields a true remote `SatisfyGoal` destination will receive `TravelToGoal` tactical scoping. This narrows the candidate set to travel-advancing actions, reducing per-expansion candidates from 1400-2600 to ~5-20 (only travel actions toward the destination). Once the actor reaches the destination (barrier satisfied), the tactical goal is consumed and the remaining goal-satisfying search proceeds unscoped over the local action space (~20-50 candidates). Exploratory fallback waypoints remain unscoped until a later spec slice gives them a lawful stable barrier contract.
+Any goal family whose strategic plan yields a true remote `SatisfyGoal` destination will receive `TravelToGoal` tactical scoping. This narrows the candidate set to travel-advancing actions, reducing per-expansion candidates from 1400-2600 to ~5-20 (only travel actions toward the destination). Once the actor reaches the destination (barrier satisfied), the tactical goal is consumed and the remaining goal-satisfying search proceeds unscoped over the local action space (~20-50 candidates). When the planner has no known satisfying destination and no explicit evidence carriers for the grounded goal, the currently supported probe families may choose one deterministic adjacent exploration destination and commit travel to that place as a progress barrier instead of leaving the fallback unscoped.
 
 ### Prerequisites still work
 

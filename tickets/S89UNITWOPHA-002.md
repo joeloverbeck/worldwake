@@ -8,7 +8,7 @@
 
 ## Problem
 
-After S89UNITWOPHA-001, agents receive `TravelToGoal` tactical scoping for strategic `SatisfyGoal` stages across non-whitelisted remote-goal families, while exploration fallback remains intentionally unscoped. But the decision trace does not record which tactical goal was active during search. When debugging why an agent scoped its search to a particular location, the trace shows the strategic plan but not the tactical goal derived from it. This violates FND-29 (Debuggability).
+After S89UNITWOPHA-001 and S89UNITWOPHA-004, agents receive `TravelToGoal` tactical scoping for strategic `SatisfyGoal` stages across non-whitelisted remote-goal families, and supported no-evidence exploration fallback now uses a dedicated `Explore` progress-barrier contract. But the decision trace does not record which tactical goal was active during search. When debugging why an agent scoped its search to a particular location, the trace shows the strategic plan but not the tactical goal derived from it. This violates FND-29 (Debuggability).
 
 ## Assumption Reassessment (2026-04-11)
 

@@ -70,6 +70,9 @@ pub(super) enum TacticalGoal {
         commodity: CommodityKind,
         destination: worldwake_core::EntityId,
     },
+    Explore {
+        destination: worldwake_core::EntityId,
+    },
     SocialQuery {
         commodity: CommodityKind,
         destination: worldwake_core::EntityId,
@@ -80,7 +83,10 @@ pub(super) enum TacticalGoal {
 }
 
 impl TacticalGoal {
-    fn from_strategic_step(step: Option<&strategic::StrategicStep>) -> Option<Self> {
+    fn from_strategic_step(
+        goal: &GroundedGoal,
+        step: Option<&strategic::StrategicStep>,
+    ) -> Option<Self> {
         let step = step?;
         match step.sub_goal {
             strategic::TacticalSubGoal::SatisfyGoal => Some(Self::TravelToGoal {
@@ -92,7 +98,14 @@ impl TacticalGoal {
                     destination: step.destination,
                 })
             }
-            strategic::TacticalSubGoal::Explore => None,
+            strategic::TacticalSubGoal::Explore => {
+                (exploration_supports_tactical_barrier(&goal.key.kind)
+                    && goal.evidence_entities.is_empty()
+                    && goal.evidence_places.is_empty())
+                .then_some(Self::Explore {
+                    destination: step.destination,
+                })
+            }
             strategic::TacticalSubGoal::SocialQuery(commodity) => Some(Self::SocialQuery {
                 commodity,
                 destination: step.destination,
@@ -106,7 +119,7 @@ impl TacticalGoal {
             Self::AcquirePrerequisite { commodity, .. } => {
                 state.commodity_quantity(actor, *commodity) > worldwake_core::Quantity(0)
             }
-            Self::TravelToGoal { destination } => {
+            Self::Explore { destination } | Self::TravelToGoal { destination } => {
                 state.effective_place(actor) == Some(*destination)
             }
             Self::SocialQuery { .. } => false,
@@ -123,7 +136,7 @@ impl TacticalGoal {
             Self::AcquirePrerequisite { commodity, .. } => {
                 std::collections::BTreeSet::from([PlanningFact::HasCommodity(*commodity)])
             }
-            Self::TravelToGoal { destination } => {
+            Self::Explore { destination } | Self::TravelToGoal { destination } => {
                 std::collections::BTreeSet::from([PlanningFact::AtPlace(*destination)])
             }
             Self::SocialQuery { .. } => std::collections::BTreeSet::new(),
@@ -132,6 +145,14 @@ impl TacticalGoal {
         .chain(goal_facts_from_goal(goal, state, recipes))
         .collect()
     }
+}
+
+fn exploration_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> bool {
+    matches!(
+        goal,
+        worldwake_core::GoalKind::AcquireCommodity { .. }
+            | worldwake_core::GoalKind::SearchForMissing { .. }
+    )
 }
 
 /// Outcome of a plan search for one goal.
@@ -243,6 +264,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         ..SearchTraceMetadata::default()
     };
     let tactical_goal = TacticalGoal::from_strategic_step(
+        goal,
         strategic_plan.as_ref().and_then(|plan| plan.steps.first()),
     );
     let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);
@@ -664,6 +686,13 @@ fn apply_tactical_candidate_filter(
                 semantics_table
                     .get(&candidate.def_id)
                     .is_none_or(|semantics| semantics.op_kind != crate::PlannerOpKind::Travel)
+            } else {
+                travel_advances_toward_destination(node, candidate, semantics_table, *destination)
+            }
+        }
+        TacticalGoal::Explore { destination } => {
+            if actor_place == Some(*destination) {
+                false
             } else {
                 travel_advances_toward_destination(node, candidate, semantics_table, *destination)
             }

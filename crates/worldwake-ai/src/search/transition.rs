@@ -227,6 +227,9 @@ pub(super) fn terminal_kind(
     }
     if let Some(tactical_goal) = tactical_goal {
         match tactical_goal {
+            TacticalGoal::Explore { .. } if tactical_goal.progress_barrier_satisfied(state) => {
+                return Some(PlanTerminalKind::ProgressBarrier);
+            }
             TacticalGoal::SocialQuery { .. } if step.op_kind == PlannerOpKind::AskWitness => {
                 return Some(PlanTerminalKind::ProgressBarrier);
             }

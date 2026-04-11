@@ -71,6 +71,10 @@ When a staged planner module or substrate already supports multiple goal familie
 
 For planner-root and tactical-barrier tickets, verify that each planner-produced subgoal is a lawful tactical destination rather than a transient probe, fallback waypoint, or exploration scaffold. Do not assume every emitted subgoal should become a scoped barrier target just because it passes through the planner; if the live search contract treats a subgoal as exploratory carriage rather than a durable destination, keep the ticket scoped to the lawful destination family and record the deviation explicitly.
 
+When a planner ticket changes the shape of strategic output, verify how much of that output the downstream tactical/search layer actually consumes. If the live boundary only reads the first/current strategic step, do not author or implement a multi-step strategic fallback shape as though later steps are planner-visible; correct the ticket to the real consumed contract before coding.
+
+Before making a generic planner fallback live as a tactical barrier, check whether grounded goals with explicit evidence carriers (`evidence_entities`, `evidence_places`, or equivalent exact-bound evidence) should keep their existing evidence-backed search path instead. Do not let a new generic probe barrier override lawful evidence-backed routing or exact-goal operator paths unless the ticket explicitly owns that broader change.
+
 Load `references/reassessment-checks.md`.
 
 ### 3. Handle mismatches explicitly
@@ -110,6 +114,8 @@ If reassessment revealed that additive substrate from an earlier ticket already 
 For additive planner-root tickets, also sweep helpers keyed by shared planner transitions or op-family semantics rather than only declaration tables and enum matches. Typical fallout includes planner-only synthetic candidate builders, search helpers that expand candidates from shared `PlannerTransitionKind` behavior, and exhaustive `PlannerOpKind` matches in non-obvious support modules such as observation/runtime reconciliation, blocker classification, or related-place/related-entity helpers.
 
 For behavior-expanding tickets, expect broadened golden fallout to include stale scenario isolation, not just compile or enum-shape fallout. If an existing golden now reaches a newly lawful branch, tighten the scenario so it still proves its intended invariant using explicit local belief seeding, profile/perception overrides, or other lawful setup constraints rather than silently preserving the old behavior.
+
+When a new fallback contract becomes lawful, re-check nearby planner/search tests and traces that previously asserted failure, suppression, or exhaustion. The honest post-change contract may now be `Found(ProgressBarrier)` or another bounded fallback plan rather than `not found`, and those expectation shifts should be treated as intentional verification fallout, not as automatic regressions.
 
 When broadened verification fails, treat each failure as current-ticket fallout and continue the fix-and-rerun loop until the broadened target passes or you hit a real 1-3-1 blocker. Do not stop after the first full-suite failure if the next step is a straightforward fallout fix within the ticket's live scope.
 
