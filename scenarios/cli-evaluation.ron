@@ -4,6 +4,9 @@
 // 4 agents (1 human, 3 AI) with diverse profiles, items, facilities,
 // and resource sources.  Designed to exercise all CLI commands.
 //
+// Updated 2026-04-11: S88 schema drift — Added landmark_extraction_depth to
+//   Merchant Vara's cognitive_profile and preferred_operator_boost to her
+//   execution_budget (GOAP overhaul added fields to CognitiveProfile and ExecutionBudget).
 // Updated 2026-04-10: S82/S83 schema drift — Added speculative_acquisition to
 //   Merchant Vara's cognitive_profile (S83). Added disposal_profile on Forager
 //   Lina for S82 coverage.
@@ -178,10 +181,12 @@
                 max_cooldown_ticks: 64,
                 max_snapshot_entities_per_place: 50,
                 speculative_acquisition: true,
+                landmark_extraction_depth: 3,
             ),
             execution_budget: (
                 max_prerequisite_locations: 3,
                 beam_width: 10,
+                preferred_operator_boost: 3,
             ),
             commodity_valuation: (
                 recipe_opportunity_depth: 2,
