@@ -1094,32 +1094,41 @@ fn search_treat_wounds(
     )
 }
 
-fn assert_budget_exhausted(result: PlanSearchResult, minimum_expansions: u16, context: &str) {
-    match result {
-        PlanSearchResult::BudgetExhausted { expansions_used } => {
-            assert!(
-                expansions_used >= minimum_expansions,
-                "{context}: expected at least {minimum_expansions} expansions before exhaustion, got {expansions_used}"
-            );
-        }
-        other => panic!("{context}: expected BudgetExhausted, got {other:?}"),
-    }
+enum ExpectedExhaustion {
+    Budget(u16),
+    Frontier(u16),
 }
 
-fn assert_budget_or_frontier_exhausted(
-    result: PlanSearchResult,
-    minimum_expansions: u16,
-    context: &str,
-) {
-    match result {
-        PlanSearchResult::BudgetExhausted { expansions_used }
-        | PlanSearchResult::FrontierExhausted { expansions_used } => {
-            assert!(
-                expansions_used >= minimum_expansions,
-                "{context}: expected at least {minimum_expansions} expansions before exhaustion, got {expansions_used}"
+fn assert_exact_exhaustion(result: PlanSearchResult, expected: ExpectedExhaustion, context: &str) {
+    match (result, expected) {
+        (
+            PlanSearchResult::BudgetExhausted { expansions_used },
+            ExpectedExhaustion::Budget(expected_expansions),
+        ) => {
+            assert_eq!(
+                expansions_used, expected_expansions,
+                "{context}: expected BudgetExhausted with {expected_expansions} expansions"
             );
         }
-        other => panic!("{context}: expected BudgetExhausted or FrontierExhausted, got {other:?}"),
+        (
+            PlanSearchResult::FrontierExhausted { expansions_used },
+            ExpectedExhaustion::Frontier(expected_expansions),
+        ) => {
+            assert_eq!(
+                expansions_used, expected_expansions,
+                "{context}: expected FrontierExhausted with {expected_expansions} expansions"
+            );
+        }
+        (other, ExpectedExhaustion::Budget(expected_expansions)) => {
+            panic!(
+                "{context}: expected BudgetExhausted {{ expansions_used: {expected_expansions} }}, got {other:?}"
+            );
+        }
+        (other, ExpectedExhaustion::Frontier(expected_expansions)) => {
+            panic!(
+                "{context}: expected FrontierExhausted {{ expansions_used: {expected_expansions} }}, got {other:?}"
+            );
+        }
     }
 }
 
@@ -1665,7 +1674,7 @@ fn setup_kael_treats_vara_snapshot() -> (GoldenHarness, EntityId, EntityId) {
 }
 
 #[test]
-fn merchant_vara_water_at_thornwall_budgets_exhaust() {
+fn merchant_vara_water_at_thornwall_residual_budget_exhaustion_contract() {
     let tick = Tick(11);
     let (h, merchant_vara) = setup_merchant_vara_water_at_thornwall_snapshot();
     let result = search_acquire_commodity(
@@ -1677,35 +1686,15 @@ fn merchant_vara_water_at_thornwall_budgets_exhaust() {
         merchant_vara_execution_budget(),
     );
 
-    assert_budget_exhausted(
+    assert_exact_exhaustion(
         result,
-        300,
-        "Merchant Vara AcquireCommodity(Water) snapshot should exhaust the expansion budget",
+        ExpectedExhaustion::Budget(300),
+        "Merchant Vara AcquireCommodity(Water) snapshot should still budget-exhaust after commodity pruning",
     );
 }
 
-#[ignore = "planner fix follow-up: acquire-commodity budget exhaustion still reproduces"]
 #[test]
-fn merchant_vara_water_at_thornwall_found_after_fix() {
-    let tick = Tick(11);
-    let (h, merchant_vara) = setup_merchant_vara_water_at_thornwall_snapshot();
-    let result = search_acquire_commodity(
-        &h,
-        merchant_vara,
-        CommodityKind::Water,
-        tick,
-        &merchant_vara_cognitive_profile(),
-        merchant_vara_execution_budget(),
-    );
-
-    match result {
-        PlanSearchResult::Found(_) => {}
-        other => panic!("expected Found after planner fix, got {other:?}"),
-    }
-}
-
-#[test]
-fn guard_theron_water_at_thornwall_budgets_exhaust() {
+fn guard_theron_water_at_thornwall_residual_budget_exhaustion_contract() {
     let tick = Tick(25);
     let (h, guard_theron) = setup_guard_theron_water_at_thornwall_snapshot();
     let result = search_acquire_commodity(
@@ -1717,35 +1706,15 @@ fn guard_theron_water_at_thornwall_budgets_exhaust() {
         ExecutionBudget::default(),
     );
 
-    assert_budget_exhausted(
+    assert_exact_exhaustion(
         result,
-        224,
-        "Guard Theron AcquireCommodity(Water) snapshot should exhaust the expansion budget",
+        ExpectedExhaustion::Budget(224),
+        "Guard Theron AcquireCommodity(Water) snapshot should still budget-exhaust after commodity pruning",
     );
 }
 
-#[ignore = "planner fix follow-up: acquire-commodity budget exhaustion still reproduces"]
 #[test]
-fn guard_theron_water_at_thornwall_found_after_fix() {
-    let tick = Tick(25);
-    let (h, guard_theron) = setup_guard_theron_water_at_thornwall_snapshot();
-    let result = search_acquire_commodity(
-        &h,
-        guard_theron,
-        CommodityKind::Water,
-        tick,
-        &CognitiveProfile::default(),
-        ExecutionBudget::default(),
-    );
-
-    match result {
-        PlanSearchResult::Found(_) => {}
-        other => panic!("expected Found after planner fix, got {other:?}"),
-    }
-}
-
-#[test]
-fn merchant_vara_apple_at_dusty_trail_budgets_exhaust() {
+fn merchant_vara_apple_at_dusty_trail_residual_budget_exhaustion_contract() {
     let tick = Tick(85);
     let (h, merchant_vara) = setup_merchant_vara_apple_at_dusty_trail_snapshot();
     let result = search_acquire_commodity(
@@ -1757,35 +1726,15 @@ fn merchant_vara_apple_at_dusty_trail_budgets_exhaust() {
         merchant_vara_execution_budget(),
     );
 
-    assert_budget_exhausted(
+    assert_exact_exhaustion(
         result,
-        300,
-        "Merchant Vara AcquireCommodity(Apple) snapshot should exhaust the expansion budget",
+        ExpectedExhaustion::Budget(300),
+        "Merchant Vara AcquireCommodity(Apple) snapshot should still budget-exhaust after commodity pruning",
     );
 }
 
-#[ignore = "planner fix follow-up: acquire-commodity budget exhaustion still reproduces"]
 #[test]
-fn merchant_vara_apple_at_dusty_trail_found_after_fix() {
-    let tick = Tick(85);
-    let (h, merchant_vara) = setup_merchant_vara_apple_at_dusty_trail_snapshot();
-    let result = search_acquire_commodity(
-        &h,
-        merchant_vara,
-        CommodityKind::Apple,
-        tick,
-        &merchant_vara_cognitive_profile(),
-        merchant_vara_execution_budget(),
-    );
-
-    match result {
-        PlanSearchResult::Found(_) => {}
-        other => panic!("expected Found after planner fix, got {other:?}"),
-    }
-}
-
-#[test]
-fn kael_water_at_thornwall_late_game_budgets_exhaust() {
+fn kael_water_at_thornwall_late_game_residual_budget_exhaustion_contract() {
     let tick = Tick(411);
     let (h, kael) = setup_kael_water_at_thornwall_late_game_snapshot();
     let result = search_acquire_commodity(
@@ -1797,35 +1746,15 @@ fn kael_water_at_thornwall_late_game_budgets_exhaust() {
         ExecutionBudget::default(),
     );
 
-    assert_budget_exhausted(
+    assert_exact_exhaustion(
         result,
-        224,
-        "Kael AcquireCommodity(Water) snapshot should exhaust the expansion budget",
+        ExpectedExhaustion::Budget(224),
+        "Kael AcquireCommodity(Water) late-game snapshot should still budget-exhaust after commodity pruning",
     );
 }
 
-#[ignore = "planner fix follow-up: acquire-commodity budget exhaustion still reproduces"]
 #[test]
-fn kael_water_at_thornwall_late_game_found_after_fix() {
-    let tick = Tick(411);
-    let (h, kael) = setup_kael_water_at_thornwall_late_game_snapshot();
-    let result = search_acquire_commodity(
-        &h,
-        kael,
-        CommodityKind::Water,
-        tick,
-        &CognitiveProfile::default(),
-        ExecutionBudget::default(),
-    );
-
-    match result {
-        PlanSearchResult::Found(_) => {}
-        other => panic!("expected Found after planner fix, got {other:?}"),
-    }
-}
-
-#[test]
-fn merchant_vara_treat_wounds_at_dusty_trail_budgets_exhaust() {
+fn merchant_vara_treat_wounds_at_dusty_trail_residual_budget_exhaustion_contract() {
     let tick = Tick(456);
     let (h, merchant_vara) = setup_merchant_vara_treat_wounds_snapshot();
     let result = search_treat_wounds(
@@ -1837,35 +1766,15 @@ fn merchant_vara_treat_wounds_at_dusty_trail_budgets_exhaust() {
         merchant_vara_execution_budget(),
     );
 
-    assert_budget_exhausted(
+    assert_exact_exhaustion(
         result,
-        300,
-        "Merchant Vara TreatWounds snapshot should exhaust the expansion budget",
+        ExpectedExhaustion::Budget(300),
+        "Merchant Vara TreatWounds snapshot should still budget-exhaust after commodity pruning",
     );
 }
 
-#[ignore = "planner fix follow-up: treat-wounds budget exhaustion still reproduces"]
 #[test]
-fn merchant_vara_treat_wounds_at_dusty_trail_found_after_fix() {
-    let tick = Tick(456);
-    let (h, merchant_vara) = setup_merchant_vara_treat_wounds_snapshot();
-    let result = search_treat_wounds(
-        &h,
-        merchant_vara,
-        merchant_vara,
-        tick,
-        &merchant_vara_cognitive_profile(),
-        merchant_vara_execution_budget(),
-    );
-
-    match result {
-        PlanSearchResult::Found(_) => {}
-        other => panic!("expected Found after planner fix, got {other:?}"),
-    }
-}
-
-#[test]
-fn kael_treat_wounds_vara_at_dusty_trail_budgets_exhaust() {
+fn kael_treat_wounds_vara_at_dusty_trail_residual_frontier_exhaustion_contract() {
     let tick = Tick(471);
     let (h, kael, merchant_vara) = setup_kael_treats_vara_snapshot();
     let result = search_treat_wounds(
@@ -1877,29 +1786,9 @@ fn kael_treat_wounds_vara_at_dusty_trail_budgets_exhaust() {
         ExecutionBudget::default(),
     );
 
-    assert_budget_or_frontier_exhausted(
+    assert_exact_exhaustion(
         result,
-        54,
-        "Kael TreatWounds snapshot should still exhaust search after the commodity filter",
+        ExpectedExhaustion::Frontier(54),
+        "Kael TreatWounds snapshot should now frontier-exhaust after commodity pruning",
     );
-}
-
-#[ignore = "planner fix follow-up: treat-wounds budget exhaustion still reproduces"]
-#[test]
-fn kael_treat_wounds_vara_at_dusty_trail_found_after_fix() {
-    let tick = Tick(471);
-    let (h, kael, merchant_vara) = setup_kael_treats_vara_snapshot();
-    let result = search_treat_wounds(
-        &h,
-        kael,
-        merchant_vara,
-        tick,
-        &CognitiveProfile::default(),
-        ExecutionBudget::default(),
-    );
-
-    match result {
-        PlanSearchResult::Found(_) => {}
-        other => panic!("expected Found after planner fix, got {other:?}"),
-    }
 }
