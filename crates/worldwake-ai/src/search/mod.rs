@@ -511,7 +511,10 @@ pub fn search_plan(
 }
 
 fn goal_supports_two_phase(goal: &GroundedGoal) -> bool {
-    matches!(goal.key.kind, GoalKind::TreatWounds { .. })
+    matches!(
+        goal.key.kind,
+        GoalKind::TreatWounds { .. } | GoalKind::ProduceCommodity { .. }
+    )
 }
 
 fn social_query_candidates(

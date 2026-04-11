@@ -689,6 +689,18 @@ fn harvest_apple_recipe_variant(name: &str, output_quantity: u32) -> RecipeDefin
     }
 }
 
+fn bake_bread_recipe() -> RecipeDefinition {
+    RecipeDefinition {
+        name: "Bake Bread".to_string(),
+        inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+        outputs: vec![(CommodityKind::Bread, Quantity(1))],
+        work_ticks: NonZeroU32::new(4).unwrap(),
+        required_workstation_tag: Some(WorkstationTag::Mill),
+        required_tool_kinds: vec![],
+        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(4), pm(0), pm(1)),
+    }
+}
+
 fn named_place(name: &str, tags: &[PlaceTag]) -> Place {
     Place {
         name: name.to_string(),
@@ -3321,6 +3333,77 @@ fn first_travel_destination(plan: &crate::PlannedPlan) -> Option<EntityId> {
                 PlanningEntityRef::Hypothetical(_) => None,
             })
     })
+}
+
+struct RemoteProduceCommodityFixture {
+    world: World,
+    actor: EntityId,
+    mill: EntityId,
+    firewood: EntityId,
+    recipe_id: RecipeId,
+    recipes: RecipeRegistry,
+    registry: ActionDefRegistry,
+    handlers: worldwake_sim::ActionHandlerRegistry,
+    semantics: BTreeMap<ActionDefId, PlannerOpSemantics>,
+}
+
+fn build_remote_produce_commodity_fixture() -> RemoteProduceCommodityFixture {
+    let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
+    let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+    let mut recipes = RecipeRegistry::new();
+    let recipe_id = recipes.register(bake_bread_recipe());
+    let (registry, handlers) = build_registry_with_recipes(&recipes);
+    let semantics = build_semantics_table(&registry);
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, mill, firewood) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Baker", ControlSource::Ai).unwrap();
+        let mill = txn.create_entity(EntityKind::Facility);
+        let firewood = txn
+            .create_item_lot(CommodityKind::Firewood, Quantity(1))
+            .expect("firewood lot should be creatable");
+        txn.set_ground_location(actor, village_square).unwrap();
+        txn.set_ground_location(mill, village_square).unwrap();
+        txn.set_ground_location(firewood, orchard_farm).unwrap();
+        txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+            .unwrap();
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+            .unwrap();
+        txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+            .unwrap();
+        txn.set_component_known_recipes(actor, KnownRecipes::with([recipe_id]))
+            .unwrap();
+        txn.set_component_workstation_marker(mill, WorkstationMarker(WorkstationTag::Mill))
+            .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, mill, firewood)
+    };
+    sync_all_beliefs(&mut world, actor, Tick(1));
+
+    RemoteProduceCommodityFixture {
+        world,
+        actor,
+        mill,
+        firewood,
+        recipe_id,
+        recipes,
+        registry,
+        handlers,
+        semantics,
+    }
 }
 
 #[test]
@@ -7891,6 +7974,153 @@ fn search_treat_wounds_with_zero_landmarks_preserves_two_phase_plan_shape() {
     assert!(
         ops.contains(&PlannerOpKind::Heal),
         "zero-landmark mode should still finish healing: {ops:?}"
+    );
+}
+
+#[test]
+fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
+    let fixture = build_remote_produce_commodity_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: fixture.recipe_id,
+        }),
+        evidence_entities: BTreeSet::from([fixture.mill, fixture.firewood]),
+        evidence_places: BTreeSet::from([
+            prototype_place_entity(PrototypePlace::VillageSquare),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+        ]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &ProfileFixture::default(),
+        &fixture.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("two-phase search should find a remote production plan");
+
+    let ops = plan.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+    let pick_up_index = ops
+        .iter()
+        .position(|op| *op == PlannerOpKind::MoveCargo)
+        .expect("plan should include remote firewood pickup");
+    let craft_index = ops
+        .iter()
+        .position(|op| *op == PlannerOpKind::Craft)
+        .expect("plan should include craft after prerequisite acquisition");
+
+    assert!(
+        ops[..pick_up_index]
+            .iter()
+            .all(|op| *op == PlannerOpKind::Travel),
+        "two-phase production should reach the remote prerequisite via travel before pickup: {ops:?}"
+    );
+    assert_eq!(
+        plan.steps
+            .iter()
+            .filter(|step| step.op_kind == PlannerOpKind::Travel)
+            .map(|step| step.targets.clone())
+            .find(|targets| {
+                *targets
+                    == vec![PlanningEntityRef::Authoritative(
+                        prototype_place_entity(PrototypePlace::OrchardFarm),
+                    )]
+            }),
+        Some(vec![PlanningEntityRef::Authoritative(
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+        )]),
+        "plan should include travel to the remote prerequisite location"
+    );
+    assert!(
+        craft_index > pick_up_index,
+        "craft should remain downstream of remote pickup: {ops:?}"
+    );
+    assert!(
+        ops[pick_up_index + 1..craft_index]
+            .iter()
+            .all(|op| *op == PlannerOpKind::Travel),
+        "production should return after pickup before crafting at the mill: {ops:?}"
+    );
+}
+
+#[test]
+fn search_produce_commodity_with_zero_landmarks_preserves_two_phase_plan_shape() {
+    let fixture = build_remote_produce_commodity_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: fixture.recipe_id,
+        }),
+        evidence_entities: BTreeSet::from([fixture.mill, fixture.firewood]),
+        evidence_places: BTreeSet::from([
+            prototype_place_entity(PrototypePlace::VillageSquare),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+        ]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+    let mut no_landmarks = cognitive(&ProfileFixture::default());
+    no_landmarks.landmark_extraction_depth = 0;
+
+    let plan = super::search_plan(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &no_landmarks,
+        &execution_budget(&ProfileFixture::default()),
+        &fixture.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("zero-landmark mode should still find a remote production plan");
+
+    let ops = plan.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+    let pick_up_index = ops
+        .iter()
+        .position(|op| *op == PlannerOpKind::MoveCargo)
+        .expect("zero-landmark mode should still pick up remote firewood");
+    let craft_index = ops
+        .iter()
+        .position(|op| *op == PlannerOpKind::Craft)
+        .expect("zero-landmark mode should still reach craft");
+
+    assert!(
+        ops[..pick_up_index]
+            .iter()
+            .all(|op| *op == PlannerOpKind::Travel),
+        "zero-landmark mode should still travel to the prerequisite before pickup: {ops:?}"
+    );
+    assert!(
+        craft_index > pick_up_index,
+        "zero-landmark mode should preserve pickup-before-craft ordering: {ops:?}"
     );
 }
 

@@ -1,6 +1,6 @@
 # S88TWOPHALAN-010: Broaden two-phase planner integration beyond remote care
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — expands planner-root two-phase integration in worldwake-ai
@@ -94,3 +94,29 @@ Add or update the narrowest tests that prove the family now benefits from the tw
 1. `cargo test -p worldwake-ai -- search::tests`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace`
+
+## Outcome
+
+Completion date: 2026-04-11
+
+What changed:
+
+- `search_plan()` now activates the existing two-phase planner substrate for `GoalKind::ProduceCommodity` in addition to the previously landed remote-`TreatWounds` slice.
+- Added focused planner-root proof in `crates/worldwake-ai/src/search/tests.rs` for remote recipe-input acquisition, including zero-landmark degradation.
+- Preserved the existing production-family contract: the planner still returns a full remote production path with travel, pickup, return travel, and craft.
+
+Deviations from original plan:
+
+- Reassessment confirmed that `ProduceCommodity` is the only additional family justified by the current conformance and golden ownership. Broader strategic-family rollout remains deferred rather than being folded into this ticket.
+- No `search/transition.rs` or conformance-file changes were needed for the lawful `ProduceCommodity` slice once the planner-root activation gate and focused proof were in place.
+
+Verification results:
+
+- `cargo test -p worldwake-ai -- search::tests::search_produce_commodity_uses_two_phase_pick_up_before_craft` passed
+- `cargo test -p worldwake-ai -- search::tests::search_produce_commodity_with_zero_landmarks_preserves_two_phase_plan_shape` passed
+- `cargo test -p worldwake-ai -- search::tests` passed
+- `cargo test -p worldwake-ai --test conformance_execution_budget` passed
+- `cargo test -p worldwake-ai --test golden_production golden_remote_acquire_commodity_recipe_input` passed
+- `cargo test -p worldwake-ai --test planner_conformance conformance_craft_noop_coverage_gap` passed
+- `cargo clippy --workspace --all-targets -- -D warnings` passed
+- `cargo test --workspace` passed
