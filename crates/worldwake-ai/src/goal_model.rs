@@ -8422,6 +8422,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn free_carry_capacity_is_not_satisfied_after_partial_drop_still_at_threshold() {
+        let (mut view, actor, place, waste_lot) = free_carry_capacity_view();
+        view.disposal_profiles.insert(
+            actor,
+            DisposalProfile {
+                capacity_strain_threshold: pm(800),
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([waste_lot]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let base_state = PlanningState::new(&snapshot);
+
+        let progressed = base_state
+            .with_commodity_quantity(actor, CommodityKind::Waste, Quantity(8))
+            .with_commodity_quantity(waste_lot, CommodityKind::Waste, Quantity(8));
+
+        assert!(
+            !GoalKind::FreeCarryCapacity.is_satisfied(&progressed),
+            "FreeCarryCapacity should remain unsatisfied after partial progress that still leaves the actor at or above the active threshold with lawful waste drop targets"
+        );
+    }
+
     // ── E16DPOLPLAN-006: Integration tests — planner finds Bribe/Threaten plans ──
 
     fn build_registry() -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry) {

@@ -8,14 +8,14 @@
 
 ## Problem
 
-Scenario 143 (`degenerate_zero_step_loop_blocks_actionable_goals`) currently proves the bug: repeated zero-step `FreeCarryCapacity` plans, no late `eat` commit, rising hunger. After tickets 001-002 fix the contract, this golden must flip from failure proof to fix proof, demonstrating that Lina breaks the loop and recovers self-care behavior.
+Scenario 143 (`degenerate_zero_step_loop_blocks_actionable_goals`) currently proves the bug: repeated zero-step `FreeCarryCapacity` plans, no late `eat` commit, rising hunger. After tickets 001-003 establish the unified contract and its focused proof surface, this golden must flip from failure proof to fix proof, demonstrating that Lina breaks the loop and recovers self-care behavior.
 
 ## Assumption Reassessment (2026-04-11)
 
 1. `degenerate_zero_step_loop_blocks_actionable_goals` exists at `crates/worldwake-ai/tests/golden_planner_pathology.rs:618`. Current assertions (lines 680-699): `window_selected >= 100` (FreeCarryCapacity dominates), `window_zero_step >= 100` (repeated 0-step plans), `!late_eat_commit` (no eat recovery), `hunger_after > hunger_at_window_start` (hunger rises). These are failure-proof assertions that must become fix-proof assertions. Confirmed 2026-04-11.
 2. Scenario substrate: `scenarios/cli-evaluation.ron`, seed `7777`, Eldergrove Forest, Forager Lina with `disposal_profile: (capacity_strain_threshold: 700)`. Confirmed 2026-04-11.
 3. `scripts/golden_inventory.py` exists and accepts `--write --check-docs` flags. Confirmed 2026-04-11.
-5. Live `GoalKind`: `FreeCarryCapacity`. After tickets 001-002, the planner should produce executable `PlannerOpKind::DropItem` steps when disposal is actionable, or switch to another goal. The zero-step loop should be impossible.
+5. Live `GoalKind`: `FreeCarryCapacity`. After tickets 001-003, the planner should produce executable `PlannerOpKind::DropItem` steps when disposal is actionable, or switch to another goal. The zero-step loop should be impossible.
 
 ## Architecture Check
 
@@ -64,7 +64,7 @@ Commit any changes under `docs/generated/golden-*` caused by the updated Scenari
 
 ## Out of Scope
 
-- Modifying the shared helper, satisfaction, emission, or ranking logic — done in 001-002
+- Modifying the shared helper, satisfaction, emission, or ranking logic — done in 001-003
 - Changing the scenario substrate (seed, scenario file, agent setup)
 - Changing unrelated S91 pathologies (`budget_exhaustion_blocks_cross_location_water_acquisition` or `role_agent_generates_survival_goals_under_critical_needs`)
 - Rebalancing hunger, metabolism, or utility weights
