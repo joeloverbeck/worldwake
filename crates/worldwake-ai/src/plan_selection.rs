@@ -12,6 +12,7 @@ use worldwake_core::{IntentionFrame, OpportunityKey, Permille};
 pub struct SelectionCandidatePlan {
     pub searched_opportunity: OpportunityKey,
     pub found_plan: Option<PlannedPlan>,
+    pub perceived_cost: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,6 +54,7 @@ pub fn select_best_plan(
             Some((
                 priority_class,
                 motive_score,
+                selection_plan.perceived_cost.unwrap_or(plan.total_estimated_ticks),
                 build_plan_value(
                     plan.clone(),
                     priority_class,
@@ -64,7 +66,7 @@ pub fn select_best_plan(
         })
         .collect::<Vec<_>>();
     available.sort_by(compare_ranked_plans);
-    let best_plan = available.first()?.2.plan.clone();
+    let best_plan = available.first()?.3.plan.clone();
     let has_current_goal_plan = active_goal.is_some_and(|goal| {
         plans
             .iter()
@@ -80,7 +82,7 @@ pub fn select_best_plan(
         return Some(best_plan);
     };
 
-    for (challenger_class, challenger_motive, challenger_value) in available {
+    for (challenger_class, challenger_motive, _challenger_cost, challenger_value) in available {
         let challenger_plan = challenger_value.plan.clone();
         let relation = classify_frame_plan_relation(jc, &challenger_plan);
         if relation == FramePlanRelation::RefreshesFrame
@@ -113,22 +115,23 @@ pub fn select_best_plan(
 }
 
 fn compare_ranked_plans(
-    left: &(GoalPriorityClass, u32, PlanValue),
-    right: &(GoalPriorityClass, u32, PlanValue),
+    left: &(GoalPriorityClass, u32, u32, PlanValue),
+    right: &(GoalPriorityClass, u32, u32, PlanValue),
 ) -> Ordering {
     right
         .0
         .cmp(&left.0)
         .then_with(|| right.1.cmp(&left.1))
-        .then_with(|| right.2.total_value.cmp(&left.2.total_value))
+        .then_with(|| right.3.total_value.cmp(&left.3.total_value))
+        .then_with(|| left.2.cmp(&right.2))
         .then_with(|| {
-            left.2
+            left.3
                 .plan
                 .total_estimated_ticks
-                .cmp(&right.2.plan.total_estimated_ticks)
+                .cmp(&right.3.plan.total_estimated_ticks)
         })
-        .then_with(|| left.2.plan.steps.cmp(&right.2.plan.steps))
-        .then_with(|| left.2.plan.goal.cmp(&right.2.plan.goal))
+        .then_with(|| left.3.plan.steps.cmp(&right.3.plan.steps))
+        .then_with(|| left.3.plan.goal.cmp(&right.3.plan.goal))
 }
 
 #[cfg(test)]
@@ -241,6 +244,7 @@ mod tests {
     fn selection_plan(goal: GoalKey, plan: Option<PlannedPlan>) -> SelectionCandidatePlan {
         SelectionCandidatePlan {
             searched_opportunity: opportunity(goal),
+            perceived_cost: plan.as_ref().map(|plan| plan.total_estimated_ticks),
             found_plan: plan,
         }
     }
@@ -255,6 +259,23 @@ mod tests {
                 goal_key: goal,
                 anchor,
             },
+            perceived_cost: plan.as_ref().map(|plan| plan.total_estimated_ticks),
+            found_plan: plan,
+        }
+    }
+
+    fn selection_plan_at_with_perceived_cost(
+        goal: GoalKey,
+        anchor: worldwake_core::OpportunityAnchor,
+        plan: Option<PlannedPlan>,
+        perceived_cost: Option<u32>,
+    ) -> SelectionCandidatePlan {
+        SelectionCandidatePlan {
+            searched_opportunity: worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor,
+            },
+            perceived_cost,
             found_plan: plan,
         }
     }
@@ -354,6 +375,72 @@ mod tests {
         .unwrap();
 
         assert_eq!(selected.opportunity.anchor, remote_anchor);
+    }
+
+    #[test]
+    fn same_goal_sibling_selection_prefers_lower_perceived_cost_over_shorter_raw_duration() {
+        let goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let dangerous_anchor = OpportunityAnchor::Place(entity(40));
+        let safe_anchor = OpportunityAnchor::Place(entity(41));
+        let candidates = vec![
+            RankedGoal {
+                grounded: GroundedGoal {
+                    anchor: dangerous_anchor,
+                    key: goal,
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::Critical,
+                motive_score: 900,
+                provenance: None,
+                source_reliability_discount: None,
+                competition_discount: None,
+                feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            },
+            RankedGoal {
+                grounded: GroundedGoal {
+                    anchor: safe_anchor,
+                    key: goal,
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::Critical,
+                motive_score: 900,
+                provenance: None,
+                source_reliability_discount: None,
+                competition_discount: None,
+                feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            },
+        ];
+        let plans = vec![
+            selection_plan_at_with_perceived_cost(
+                goal,
+                dangerous_anchor,
+                Some(plan_at(goal, dangerous_anchor, 1, 2)),
+                Some(4),
+            ),
+            selection_plan_at_with_perceived_cost(
+                goal,
+                safe_anchor,
+                Some(plan_at(goal, safe_anchor, 2, 3)),
+                Some(3),
+            ),
+        ];
+
+        let selected = select_best_plan(
+            &candidates,
+            &plans,
+            None,
+            &AgentDecisionRuntime::default(),
+            None,
+            selection_policy(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.opportunity.anchor, safe_anchor);
     }
 
     #[test]

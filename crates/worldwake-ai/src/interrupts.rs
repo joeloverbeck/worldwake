@@ -332,6 +332,7 @@ mod tests {
     fn selection_plan(goal: GoalKey, plan: Option<PlannedPlan>) -> SelectionCandidatePlan {
         SelectionCandidatePlan {
             searched_opportunity: opportunity(goal),
+            perceived_cost: plan.as_ref().map(|plan| plan.total_estimated_ticks),
             found_plan: plan,
         }
     }

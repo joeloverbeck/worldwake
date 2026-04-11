@@ -87,26 +87,29 @@ impl TacticalGoal {
     fn from_strategic_step(
         goal: &GroundedGoal,
         step: Option<&strategic::StrategicStep>,
+        snapshot: &PlanningSnapshot,
     ) -> Option<Self> {
         let step = step?;
         match step.sub_goal {
-            strategic::TacticalSubGoal::SatisfyGoal => Some(Self::TravelToGoal {
-                destination: step.destination,
-            }),
+            strategic::TacticalSubGoal::SatisfyGoal => {
+                travel_to_goal_supports_tactical_barrier(&goal.key.kind).then_some(
+                    Self::TravelToGoal {
+                        destination: step.destination,
+                    },
+                )
+            }
             strategic::TacticalSubGoal::AcquirePrerequisite(commodity) => {
                 Some(Self::AcquirePrerequisite {
                     commodity,
                     destination: step.destination,
                 })
             }
-            strategic::TacticalSubGoal::Explore => {
-                (exploration_supports_tactical_barrier(&goal.key.kind)
-                    && goal.evidence_entities.is_empty()
-                    && goal.evidence_places.is_empty())
-                .then_some(Self::Explore {
-                    destination: step.destination,
-                })
-            }
+            strategic::TacticalSubGoal::Explore => exploration_supports_tactical_barrier(
+                &goal.key.kind,
+            )
+            .then_some(Self::Explore {
+                destination: evidence_directed_destination(goal, step, snapshot),
+            }),
             strategic::TacticalSubGoal::SocialQuery(commodity) => Some(Self::SocialQuery {
                 commodity,
                 destination: step.destination,
@@ -148,12 +151,36 @@ impl TacticalGoal {
     }
 }
 
+fn evidence_directed_destination(
+    goal: &GroundedGoal,
+    step: &strategic::StrategicStep,
+    snapshot: &PlanningSnapshot,
+) -> worldwake_core::EntityId {
+    let state = PlanningState::new(snapshot);
+    let actor_place = state.effective_place(snapshot.actor());
+    actor_place
+        .into_iter()
+        .flat_map(|current_place| {
+            goal.evidence_places.iter().filter_map(move |place| {
+                snapshot
+                    .min_perceived_travel_cost_to_any(current_place, &[*place])
+                    .map(|cost| (cost, *place))
+            })
+        })
+        .min_by_key(|(cost, place)| (*cost, *place))
+        .map_or(step.destination, |(_, place)| place)
+}
+
 fn exploration_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> bool {
     matches!(
         goal,
         worldwake_core::GoalKind::AcquireCommodity { .. }
             | worldwake_core::GoalKind::SearchForMissing { .. }
     )
+}
+
+fn travel_to_goal_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> bool {
+    !matches!(goal, worldwake_core::GoalKind::Accuse { .. })
 }
 
 /// Outcome of a plan search for one goal.
@@ -267,6 +294,7 @@ pub(crate) fn search_plan_with_trace_metadata(
     let tactical_goal = TacticalGoal::from_strategic_step(
         goal,
         strategic_plan.as_ref().and_then(|plan| plan.steps.first()),
+        snapshot,
     );
     trace_state.tactical_goal = tactical_goal.as_ref().map(|tg| format!("{tg:?}"));
     let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);

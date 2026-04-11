@@ -33,6 +33,7 @@ use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
 pub(crate) struct CandidatePlanSearch {
     pub opportunity: OpportunityKey,
     pub result: PlanSearchResult,
+    pub perceived_cost: Option<u32>,
     pub trace_metadata: SearchTraceMetadata,
     pub binding_rejections: Vec<BindingRejection>,
     pub expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
@@ -52,8 +53,43 @@ impl CandidatePlanSearch {
         SelectionCandidatePlan {
             searched_opportunity: self.opportunity,
             found_plan: self.selected_plan().cloned(),
+            perceived_cost: self.perceived_cost,
         }
     }
+}
+
+fn found_plan_blocks_later_goals(plan: &PlannedPlan) -> bool {
+    match plan.terminal_kind {
+        crate::PlanTerminalKind::GoalSatisfied | crate::PlanTerminalKind::CombatCommitment => true,
+        crate::PlanTerminalKind::ProgressBarrier => {
+            !matches!(plan.goal.kind, GoalKind::InvestigateViolation { .. })
+        }
+    }
+}
+
+fn perceived_selection_cost(
+    snapshot: &crate::PlanningSnapshot,
+    plan: &PlannedPlan,
+) -> Option<u32> {
+    let state = crate::PlanningState::new(snapshot);
+    let mut current_place = SpatialBeliefView::effective_place(&state, snapshot.actor())?;
+    let mut total = 0u32;
+
+    for step in &plan.steps {
+        let step_cost = if step.op_kind == crate::PlannerOpKind::Travel {
+            let destination = step.targets.first().copied().and_then(crate::authoritative_target)?;
+            let cost = snapshot
+                .direct_perceived_travel_cost(current_place, destination)
+                .unwrap_or(step.estimated_ticks);
+            current_place = destination;
+            cost
+        } else {
+            step.estimated_ticks
+        };
+        total = total.checked_add(step_cost)?;
+    }
+
+    Some(total)
 }
 
 /// Build a `PlannedStepSummary` from a `PlannedStep` for trace output.
@@ -322,15 +358,27 @@ pub(super) fn build_candidate_plans(
             },
             Some(&mut trace_metadata),
         );
-        let found = result.is_found();
+        let found_blocks_later_goals = match &result {
+            PlanSearchResult::Found(plan) => found_plan_blocks_later_goals(plan),
+            PlanSearchResult::Unsupported
+            | PlanSearchResult::BudgetExhausted { .. }
+            | PlanSearchResult::FrontierExhausted { .. } => false,
+        };
+        let perceived_cost = match &result {
+            PlanSearchResult::Found(plan) => perceived_selection_cost(&snapshot, plan),
+            PlanSearchResult::Unsupported
+            | PlanSearchResult::BudgetExhausted { .. }
+            | PlanSearchResult::FrontierExhausted { .. } => None,
+        };
         results.push(CandidatePlanSearch {
             opportunity,
             result,
+            perceived_cost,
             trace_metadata,
             binding_rejections: rejections,
             expansion_summaries: expansions,
         });
-        if found {
+        if found_blocks_later_goals {
             continue_same_goal_after_found = Some(opportunity.goal_key);
         }
     }
@@ -1208,9 +1256,10 @@ fn goal_target_entity(goal: GoalKind) -> Option<EntityId> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidatePlanSearch, has_pending_budget_retry, plan_search_result_to_trace,
-        planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
-        summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
+        CandidatePlanSearch, found_plan_blocks_later_goals, has_pending_budget_retry,
+        plan_search_result_to_trace, planning_time_target_belief_presence,
+        record_exhausted_goals, selected_plan_value, summarize_ranked_goal,
+        summarize_selected_plan, summarize_snapshot_continuation,
     };
     use crate::{
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
@@ -1320,6 +1369,7 @@ mod tests {
         CandidatePlanSearch {
             opportunity,
             result,
+            perceived_cost: None,
             trace_metadata: SearchTraceMetadata::default(),
             binding_rejections: Vec::new(),
             expansion_summaries: Vec::new(),
@@ -2049,8 +2099,8 @@ mod tests {
             OpportunityAnchor::Place(market)
         );
         assert!(
-            !plans[0].result.is_found(),
-            "the first sibling opportunity should fail with its own isolated evidence"
+            plans[0].result.is_found(),
+            "the first sibling opportunity should now search successfully with evidence-directed exploration"
         );
         assert_eq!(
             plans[1].opportunity.anchor,
@@ -2323,6 +2373,56 @@ mod tests {
     }
 
     #[test]
+    fn investigate_progress_barrier_found_plan_does_not_block_later_goals() {
+        let goal = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id: worldwake_core::ViolationId(9),
+            place: entity(10),
+        });
+        let barrier_plan = PlannedPlan::new(
+            opportunity(goal),
+            goal,
+            Vec::new(),
+            PlanTerminalKind::ProgressBarrier,
+        );
+
+        assert!(!found_plan_blocks_later_goals(&barrier_plan));
+    }
+
+    #[test]
+    fn produce_progress_barrier_found_plan_blocks_later_goals() {
+        let goal = GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: worldwake_core::RecipeId(3),
+        });
+        let barrier_plan = PlannedPlan::new(
+            opportunity(goal),
+            goal,
+            Vec::new(),
+            PlanTerminalKind::ProgressBarrier,
+        );
+
+        assert!(found_plan_blocks_later_goals(&barrier_plan));
+    }
+
+    #[test]
+    fn satisfied_and_combat_found_plans_block_later_goals() {
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let satisfied_plan =
+            PlannedPlan::new(opportunity(goal), goal, Vec::new(), PlanTerminalKind::GoalSatisfied);
+        let combat_plan = PlannedPlan::new(
+            opportunity(goal),
+            goal,
+            Vec::new(),
+            PlanTerminalKind::CombatCommitment,
+        );
+
+        assert!(found_plan_blocks_later_goals(&satisfied_plan));
+        assert!(found_plan_blocks_later_goals(&combat_plan));
+    }
+
+    #[test]
     fn traced_planning_records_same_goal_opportunity_attempt_order() {
         let origin = entity(41);
         let market = entity(42);
@@ -2416,11 +2516,11 @@ mod tests {
             OpportunityAnchor::Place(origin)
         );
         assert!(
-            !matches!(
+            matches!(
                 attempts[0].outcome,
                 crate::decision_trace::PlanSearchOutcome::Found { .. }
             ),
-            "the first same-goal opportunity should be traced as a failed search attempt"
+            "the first same-goal opportunity should now be traced as the found search attempt"
         );
         assert!(
             !matches!(
@@ -2432,7 +2532,13 @@ mod tests {
         assert_eq!(
             plan_search_trace.same_goal_trace,
             Some(crate::SameGoalPlanningTrace {
-                continuation_trigger: None,
+                continuation_trigger: Some(OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                    }),
+                    anchor: OpportunityAnchor::Place(market),
+                }),
                 stop_reason: crate::SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities,
             })
         );
@@ -2600,7 +2706,13 @@ mod tests {
                 &plans,
             ),
             Some(crate::SameGoalPlanningTrace {
-                continuation_trigger: None,
+                continuation_trigger: Some(OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                    }),
+                    anchor: OpportunityAnchor::Place(market),
+                }),
                 stop_reason: crate::SameGoalPlanningStopReason::ReachedCandidatePlanCap,
             })
         );

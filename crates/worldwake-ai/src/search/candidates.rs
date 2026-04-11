@@ -1,6 +1,6 @@
 use crate::goal_model::{
-    RootCandidateSynthesis, grounded_goal_epistemic_subjects,
-    grounded_goal_matches_epistemic_barrier,
+    RootCandidateSynthesis, grounded_goal_allows_local_epistemic_resolution,
+    grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
 };
 use crate::planner_ops::{PlannerOpKind, planner_only_candidates};
 use crate::{
@@ -152,6 +152,11 @@ pub(super) fn search_candidates(
                             semantics.op_kind,
                             &candidate.authoritative_targets,
                             candidate.payload_override.as_ref(),
+                        )
+                        || grounded_goal_allows_local_epistemic_resolution(
+                            goal,
+                            semantics.op_kind,
+                            &candidate.authoritative_targets,
                         )
                 })
         })
@@ -314,10 +319,12 @@ fn goal_synthesized_candidates(
                 RootCandidateSynthesis::Targets(authoritative_targets) => Some(SearchCandidate {
                     def_id: *def_id,
                     authoritative_targets: authoritative_targets.clone(),
-                    planning_targets: authoritative_targets
-                        .into_iter()
-                        .map(PlanningEntityRef::Authoritative)
-                        .collect(),
+                    planning_targets: synthesized_planning_targets(
+                        goal,
+                        state,
+                        *semantics,
+                        authoritative_targets,
+                    ),
                     payload_override: None,
                     planner_only: false,
                     trace_index: None,
@@ -328,6 +335,33 @@ fn goal_synthesized_candidates(
             }
         })
         .collect()
+}
+
+fn synthesized_planning_targets(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    semantics: PlannerOpSemantics,
+    authoritative_targets: Vec<EntityId>,
+) -> Vec<PlanningEntityRef> {
+    match (&goal.key.kind, semantics.op_kind) {
+        // Accusation payload binds to the accused entity, but the lawful
+        // execution location is the crime register's home place.
+        (GoalKind::Accuse { crime_register, .. }, PlannerOpKind::Accuse) => state
+            .record_data(*crime_register)
+            .map_or_else(
+                || {
+                    authoritative_targets
+                        .into_iter()
+                        .map(PlanningEntityRef::Authoritative)
+                        .collect()
+                },
+                |record| vec![PlanningEntityRef::Authoritative(record.home_place)],
+            ),
+        _ => authoritative_targets
+            .into_iter()
+            .map(PlanningEntityRef::Authoritative)
+            .collect(),
+    }
 }
 
 fn record_root_operator_omissions(
@@ -537,12 +571,44 @@ pub(super) fn search_candidates_from_affordance(
     if !affordance_matches_grounded_opportunity(goal, affordance) {
         return Vec::new();
     }
-    let planning_targets = affordance
-        .bound_targets
-        .iter()
-        .copied()
-        .map(PlanningEntityRef::Authoritative)
-        .collect::<Vec<_>>();
+    let Some(def) = registry.get(affordance.def_id) else {
+        return vec![SearchCandidate {
+            def_id: affordance.def_id,
+            authoritative_targets: affordance.bound_targets.clone(),
+            planning_targets: affordance
+                .bound_targets
+                .iter()
+                .copied()
+                .map(PlanningEntityRef::Authoritative)
+                .collect(),
+            payload_override: affordance.payload_override.clone(),
+            planner_only: false,
+            trace_index: None,
+        }];
+    };
+    let planning_targets = match (&goal.key.kind, def.name.as_str()) {
+        // Accusation payload binds to the accused entity, but the lawful
+        // execution location is the crime register's home place.
+        (GoalKind::Accuse { crime_register, .. }, "accuse") => state
+            .record_data(*crime_register)
+            .map_or_else(
+                || {
+                    affordance
+                        .bound_targets
+                        .iter()
+                        .copied()
+                        .map(PlanningEntityRef::Authoritative)
+                        .collect()
+                },
+                |record| vec![PlanningEntityRef::Authoritative(record.home_place)],
+            ),
+        _ => affordance
+            .bound_targets
+            .iter()
+            .copied()
+            .map(PlanningEntityRef::Authoritative)
+            .collect(),
+    };
     let base = SearchCandidate {
         def_id: affordance.def_id,
         authoritative_targets: affordance.bound_targets.clone(),
@@ -550,10 +616,6 @@ pub(super) fn search_candidates_from_affordance(
         payload_override: affordance.payload_override.clone(),
         planner_only: false,
         trace_index: None,
-    };
-
-    let Some(def) = registry.get(affordance.def_id) else {
-        return vec![base];
     };
     if matches!(
         def.payload,

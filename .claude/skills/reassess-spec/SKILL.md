@@ -53,6 +53,8 @@ Before beginning Steps 2-3, classify the spec:
   - Step 4 applies; 4.4 applies if any proposed fix touches action preconditions.
   - Section H updates only if the fix changes causal hooks.
 
+**Deliverable removal**: If validation reveals a deliverable should be removed entirely, skip remaining sub-steps for that deliverable and record the removal as a finding. Continue validation for surviving deliverables.
+
 **Hybrid specs**: Apply the union of applicable steps — use the most rigorous classification's checklist for shared steps.
 
 **Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and not externally modified, Steps 2-3 may scope to only references affected by the triggering change. Step 1 still applies.
@@ -81,7 +83,7 @@ Extract every concrete codebase reference from the spec:
 - **Other specs or tickets** in Dependencies
 - **Code examples** (inline code blocks showing API usage, precondition lists, struct definitions) — extract for fidelity checking against actual source
 
-Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
+Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked. For investigation/bugfix specs (type e), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist.
 
 ### Step 3: Codebase Validation
 
@@ -97,7 +99,7 @@ Load `references/foundations-alignment.md`. Check spec alignment against all app
 
 Load `references/findings-and-questions.md`. Classify all findings from Steps 3-4, then present to the user.
 
-Wait for user response before proceeding to Step 7. (In plan mode, this wait is replaced by ExitPlanMode approval.)
+Wait for user response before proceeding to Step 7. (In plan mode: after question resolution, write the plan file per `references/plan-mode.md`, then call ExitPlanMode. Steps 7-8 execute after approval.)
 
 ### Step 7: Write the Updated Spec
 

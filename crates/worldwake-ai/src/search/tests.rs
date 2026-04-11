@@ -6441,24 +6441,64 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
 fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     let actor = entity(1);
     let accused = entity(2);
+    let punish_accused = entity(3);
     let town = entity(10);
+    let outpost = entity(11);
+    let crime_register = entity(12);
     let faction = entity(20);
+    let accusation_entry = worldwake_core::RecordEntryId(1);
+    let claim = worldwake_core::InstitutionalClaim::Accusation {
+        accuser: actor,
+        accused,
+        violation_id: worldwake_core::ViolationId(1),
+        theft: worldwake_core::TheftFacts {
+            missing_entity: entity(30),
+            expected_place: town,
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(1),
+        },
+        effective_tick: Tick(1),
+    };
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, accused, town]);
+    view.alive
+        .extend([actor, accused, punish_accused, town, outpost, crime_register, faction]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(accused, EntityKind::Agent);
+    view.kinds.insert(punish_accused, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(outpost, EntityKind::Place);
+    view.kinds.insert(crime_register, EntityKind::Record);
     view.kinds.insert(faction, EntityKind::Faction);
     view.effective_places.insert(actor, town);
-    view.effective_places.insert(accused, town);
-    view.entities_at.insert(town, vec![actor, accused]);
+    view.effective_places.insert(accused, outpost);
+    view.effective_places.insert(punish_accused, town);
+    view.effective_places.insert(crime_register, town);
+    view.entities_at.insert(town, vec![actor, punish_accused, crime_register]);
+    view.entities_at.insert(outpost, vec![accused]);
+    view.record_data.insert(
+        crime_register,
+        worldwake_core::RecordData {
+            record_kind: worldwake_core::RecordKind::CrimeRegister,
+            home_place: town,
+            issuer: actor,
+            consultation_ticks: 1,
+            max_entries_per_consult: 4,
+            entries: vec![worldwake_core::InstitutionalRecordEntry {
+                entry_id: accusation_entry,
+                claim,
+                recorded_tick: Tick(1),
+                supersedes: None,
+            }],
+            next_entry_id: 2,
+        },
+    );
 
     let snapshot = build_planning_snapshot(
         &view,
         actor,
-        &BTreeSet::from([accused]),
-        &BTreeSet::from([town]),
+        &BTreeSet::from([accused, punish_accused, crime_register, faction]),
+        &BTreeSet::from([town, outpost]),
         1,
     );
     let (registry, handlers) = build_registry();
@@ -6468,24 +6508,24 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     let accuse_goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Accuse {
-            crime_register: town,
+            crime_register,
             accused,
             violation_id: worldwake_core::ViolationId(1),
         }),
-        evidence_entities: BTreeSet::from([accused]),
+        evidence_entities: BTreeSet::from([accused, crime_register]),
         evidence_places: BTreeSet::from([town]),
     };
     let punish_goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::PunishAccused {
             office: faction,
-            accused,
+            accused: punish_accused,
             accusation_entry: worldwake_core::RecordEntryId(1),
             punishment: worldwake_core::PunishmentKind::Exile {
                 from_faction: faction,
             },
         }),
-        evidence_entities: BTreeSet::from([accused]),
+        evidence_entities: BTreeSet::from([punish_accused]),
         evidence_places: BTreeSet::from([town]),
     };
 
@@ -6527,8 +6567,9 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
                 .get(candidate.def_id)
                 .is_some_and(|def| def.name == "accuse")
                 && candidate.authoritative_targets == vec![accused]
+                && candidate.planning_targets == vec![PlanningEntityRef::Authoritative(town)]
         }),
-        "Accuse goals should surface the exact bound accuse candidate from goal identity once the action exists"
+        "Accuse goals should bind payloads to the accused while planning against the crime register home place"
     );
 
     let punish_node = root_node(&snapshot, &punish_goal, &recipes, &budget);
@@ -6550,9 +6591,96 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
             registry
                 .get(candidate.def_id)
                 .is_some_and(|def| def.name == "exile")
-                && candidate.authoritative_targets == vec![accused]
+                && candidate.authoritative_targets == vec![punish_accused]
         }),
         "PunishAccused goals should surface the exact bound punishment candidate from goal identity once the action exists"
+    );
+}
+
+#[test]
+fn build_successor_keeps_accuse_step_target_bound_to_accused() {
+    let actor = entity(1);
+    let accused = entity(2);
+    let town = entity(10);
+    let outpost = entity(11);
+    let crime_register = entity(12);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, accused, town, outpost, crime_register]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(accused, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(outpost, EntityKind::Place);
+    view.kinds.insert(crime_register, EntityKind::Record);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(accused, outpost);
+    view.effective_places.insert(crime_register, town);
+    view.entities_at.insert(town, vec![actor, crime_register]);
+    view.entities_at.insert(outpost, vec![accused]);
+    view.record_data.insert(
+        crime_register,
+        worldwake_core::RecordData {
+            record_kind: worldwake_core::RecordKind::CrimeRegister,
+            home_place: town,
+            issuer: actor,
+            consultation_ticks: 1,
+            max_entries_per_consult: 4,
+            entries: Vec::new(),
+            next_entry_id: 1,
+        },
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([accused, crime_register]),
+        &BTreeSet::from([town, outpost]),
+        1,
+    );
+    let (registry, _handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let reasoning = ProfileFixture::default();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(accused),
+        key: GoalKey::from(GoalKind::Accuse {
+            crime_register,
+            accused,
+            violation_id: worldwake_core::ViolationId(1),
+        }),
+        evidence_entities: BTreeSet::from([accused, crime_register]),
+        evidence_places: BTreeSet::from([town]),
+    };
+    let node = root_node(&snapshot, &goal, &recipes, &reasoning);
+    let accuse_def = registry
+        .iter()
+        .find(|def| def.name == "accuse")
+        .expect("accuse action should be registered");
+    let candidate = SearchCandidate {
+        def_id: accuse_def.id,
+        authoritative_targets: vec![accused],
+        planning_targets: vec![PlanningEntityRef::Authoritative(town)],
+        payload_override: None,
+        planner_only: false,
+        trace_index: None,
+    };
+
+    let (terminal, successor) = build_successor(
+        &goal,
+        &semantics,
+        &registry,
+        &node,
+        &candidate,
+        &recipes,
+        &reasoning,
+    )
+    .expect("accuse successor should build");
+
+    assert_eq!(terminal, Some(PlanTerminalKind::ProgressBarrier));
+    assert_eq!(
+        successor.steps.as_slice()[0].targets,
+        vec![PlanningEntityRef::Authoritative(accused)],
+        "Accuse should preserve the accused as the executable step target even when search routes via the register place"
     );
 }
 
@@ -8180,6 +8308,141 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
 }
 
 #[test]
+fn search_explore_tactical_goal_produced_despite_nonempty_evidence() {
+    let (view, actor, origin, destination) = build_two_place_travel_view();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([destination]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let step = super::strategic::StrategicStep {
+        destination: origin,
+        sub_goal: super::strategic::TacticalSubGoal::Explore,
+        estimated_travel_ticks: 1,
+    };
+
+    let tactical_goal = super::TacticalGoal::from_strategic_step(&goal, Some(&step), &snapshot);
+
+    assert_eq!(
+        tactical_goal,
+        Some(super::TacticalGoal::Explore { destination }),
+        "non-empty evidence places must no longer suppress AcquireCommodity exploration"
+    );
+}
+
+#[test]
+fn search_evidence_directed_exploration_prefers_evidence_place() {
+    let actor = entity(1);
+    let origin = entity(10);
+    let evidence_place = entity(11);
+    let fallback_place = entity(12);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, origin, evidence_place, fallback_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(evidence_place, EntityKind::Place);
+    view.kinds.insert(fallback_place, EntityKind::Place);
+    view.effective_places.insert(actor, origin);
+    view.entities_at.insert(origin, vec![actor]);
+    view.entities_at.insert(evidence_place, Vec::new());
+    view.entities_at.insert(fallback_place, Vec::new());
+    view.adjacent.insert(
+        origin,
+        vec![
+            (evidence_place, NonZeroU32::new(1).unwrap()),
+            (fallback_place, NonZeroU32::new(3).unwrap()),
+        ],
+    );
+    view.adjacent.insert(
+        evidence_place,
+        vec![(origin, NonZeroU32::new(1).unwrap())],
+    );
+    view.adjacent.insert(
+        fallback_place,
+        vec![(origin, NonZeroU32::new(3).unwrap())],
+    );
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([evidence_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        2,
+    );
+    let step = super::strategic::StrategicStep {
+        destination: fallback_place,
+        sub_goal: super::strategic::TacticalSubGoal::Explore,
+        estimated_travel_ticks: 3,
+    };
+
+    let tactical_goal = super::TacticalGoal::from_strategic_step(&goal, Some(&step), &snapshot);
+
+    assert_eq!(
+        tactical_goal,
+        Some(super::TacticalGoal::Explore {
+            destination: evidence_place,
+        }),
+        "exploration should target the nearest evidence place instead of the strategic fallback destination"
+    );
+}
+
+#[test]
+fn search_accuse_satisfy_goal_does_not_install_travel_barrier() {
+    let (view, actor, origin, destination) = build_two_place_travel_view();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Entity(entity(99)),
+        key: GoalKey::from(GoalKind::Accuse {
+            crime_register: entity(98),
+            accused: entity(99),
+            violation_id: worldwake_core::ViolationId(7),
+        }),
+        evidence_entities: BTreeSet::from([entity(98), entity(99)]),
+        evidence_places: BTreeSet::from([destination]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let step = super::strategic::StrategicStep {
+        destination: origin,
+        sub_goal: super::strategic::TacticalSubGoal::SatisfyGoal,
+        estimated_travel_ticks: 1,
+    };
+
+    let tactical_goal = super::TacticalGoal::from_strategic_step(&goal, Some(&step), &snapshot);
+
+    assert_eq!(
+        tactical_goal, None,
+        "Accuse should not treat a strategic satisfy step as a travel barrier because the action is register-bound, not destination-bound"
+    );
+}
+
+#[test]
 fn search_acquire_commodity_uses_travel_to_goal() {
     let (mut view, actor, _origin, market) = build_two_place_travel_view();
     let bread = entity(20);
@@ -8380,6 +8643,97 @@ fn search_investigate_uses_travel_to_goal() {
     assert_eq!(
         trace_metadata.tactical_goal.as_deref(),
         Some(format!("TravelToGoal {{ destination: {violation_place:?} }}").as_str())
+    );
+}
+
+#[test]
+fn search_investigate_allows_local_scene_investigation_despite_stale_remote_evidence() {
+    let actor = entity(1);
+    let stale_subject = entity(2);
+    let violation_place = entity(10);
+    let remote_place = entity(11);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, stale_subject, violation_place, remote_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(stale_subject, EntityKind::ItemLot);
+    view.kinds.insert(violation_place, EntityKind::Place);
+    view.kinds.insert(remote_place, EntityKind::Place);
+    view.current_tick = Tick(50);
+    view.effective_places.insert(actor, violation_place);
+    view.effective_places.insert(stale_subject, remote_place);
+    view.entities_at.insert(violation_place, vec![actor]);
+    view.entities_at.insert(remote_place, vec![stale_subject]);
+    view.epistemic_profiles.insert(actor, epistemic_profile());
+    view.violation_profiles.insert(
+        actor,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: NonZeroU32::new(3).unwrap(),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(500),
+            ownership_motive_bonus: pm(200),
+        },
+    );
+    view.active_violation_records.insert(
+        actor,
+        vec![RecordedViolation {
+            id: ViolationId(1),
+            kind: ViolationKind::SupplyDepleted {
+                commodity: CommodityKind::Bread,
+                source: stale_subject,
+                place: violation_place,
+            },
+            observed_tick: Tick(0),
+            resolved_tick: None,
+            expires_tick: Tick(50),
+        }],
+    );
+    view.known_entity_beliefs.insert(
+        actor,
+        vec![(
+            stale_subject,
+            believed_entity_state_at(remote_place, Tick(0), None),
+        )],
+    );
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(violation_place),
+        key: GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id: ViolationId(1),
+            place: violation_place,
+        }),
+        evidence_entities: BTreeSet::from([stale_subject]),
+        evidence_places: BTreeSet::from([violation_place, remote_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        2,
+    );
+    let (registry, handlers) = build_registry();
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("local investigation should proceed instead of bouncing toward stale remote evidence");
+
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Investigate);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(violation_place)]
     );
 }
 

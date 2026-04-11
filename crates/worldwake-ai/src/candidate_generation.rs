@@ -2154,6 +2154,12 @@ fn emit_remote_raid_targets(
         if ctx.view.entity_kind(target) != Some(EntityKind::Agent) {
             continue;
         }
+        // Remote pursuit cannot remain lawful once the target is already
+        // known dead in the current belief view, even if an older location
+        // belief is still present.
+        if ctx.view.is_dead(target) || !ctx.view.is_alive(target) {
+            continue;
+        }
         // Must not be in a bandit faction shared with the actor.
         let target_in_bandit_faction = ctx
             .view
@@ -15085,6 +15091,57 @@ mod tests {
         assert!(
             !contains_goal(&candidates, GoalKind::RaidTarget { target }),
             "Remote RaidTarget should NOT be emitted when target place is unknown"
+        );
+    }
+
+    #[test]
+    fn remote_raid_target_omitted_when_target_is_known_dead_despite_stale_location_belief() {
+        let agent = entity(1);
+        let target = entity(2);
+        let faction = entity(30);
+        let agent_place = entity(10);
+        let remote_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.dead.insert(target);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, agent_place);
+        view.entities_at.insert(agent_place, vec![agent]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+        view.beliefs.insert(
+            agent,
+            vec![(target, belief_at_place(remote_place, Tick(100)))],
+        );
+        view.pursuit_profiles.insert(
+            agent,
+            worldwake_core::PursuitProfile {
+                min_location_confidence: Permille::new(500).unwrap(),
+                max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
+            },
+        );
+        view.adjacent_places.insert(agent_place, vec![remote_place]);
+        view.adjacent_places.insert(remote_place, vec![agent_place]);
+
+        let candidates = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(100),
+            6,
+            false,
+        )
+        .candidates;
+
+        assert!(
+            !contains_goal(&candidates, GoalKind::RaidTarget { target }),
+            "Remote RaidTarget should NOT be emitted when the current belief view already knows the target is dead"
         );
     }
 

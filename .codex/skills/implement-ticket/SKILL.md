@@ -95,6 +95,8 @@ If focused proof instead falsifies the suspected production contradiction and sh
 
 When reassessment or focused proof changes the real edit surface, update `Files to Touch` and any file- or symbol-level scope notes immediately instead of leaving them stale until closeout. The ticket should keep reflecting the current owned boundary as implementation proceeds.
 
+When broadened verification later exposes fallout that crosses the original ticket seam or touches adjacent tickets in the same numbered family, re-run the sibling-ticket ownership check before silently broadening scope. If the new fallout is still part of the current ticket's lawful contract, update the ticket to reflect that expanded owned surface; if it belongs to an adjacent ticket, stop and use 1-3-1 rather than absorbing it implicitly.
+
 ### 4. Extract the implementation scope
 
 Load `references/scope-extraction.md`.
@@ -120,6 +122,7 @@ For behavior-expanding tickets, expect broadened golden fallout to include stale
 When a new fallback contract becomes lawful, re-check nearby planner/search tests and traces that previously asserted failure, suppression, or exhaustion. The honest post-change contract may now be `Found(ProgressBarrier)` or another bounded fallback plan rather than `not found`, and those expectation shifts should be treated as intentional verification fallout, not as automatic regressions.
 
 When broadened verification fails, treat each failure as current-ticket fallout and continue the fix-and-rerun loop until the broadened target passes or you hit a real 1-3-1 blocker. Do not stop after the first full-suite failure if the next step is a straightforward fallout fix within the ticket's live scope.
+After each fallout fix, rerun the same broadened verification target that exposed the failure before treating the branch as green. Do not rely on focused follow-up checks alone when the broader package or suite has not yet been rerun clean.
 
 ### 7. Close out the ticket honestly
 

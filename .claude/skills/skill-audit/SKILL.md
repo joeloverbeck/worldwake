@@ -112,7 +112,7 @@ Double-check severity counts against findings before presenting. If a correction
 
   **Post-implementation summary**: After all edits, present a summary table or list showing the status of each finding: "implemented", "superseded by finding N", or "skipped (reason)". This gives the user a clear per-finding status rather than requiring them to infer outcomes from the edit sequence.
 
-  **Post-edit verification**: After all edits are applied, re-read the full skill file and verify as a single pass:
+  **Post-edit verification**: After all edits are applied, re-read all edited files (the main SKILL.md and any reference files that were modified) and verify as a single pass:
   1. **No overlap or contradiction** — edits don't conflict with each other
   2. **Cross-references valid**:
      - (a) **Numbering continuity** — step, phase, and section numbers are sequential with no gaps or duplicates. For files with many numbered references, use pattern search (e.g., grep for `Step [0-9]`, `### [0-9]`) to confirm; for smaller files, a visual scan suffices. Adapt grep patterns to the target skill's convention (numbered items, lettered sub-steps, or markdown headers).

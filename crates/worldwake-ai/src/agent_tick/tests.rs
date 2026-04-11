@@ -4137,10 +4137,12 @@ fn determine_selected_plan_source_distinguishes_search_selection_from_retention(
                 SelectionCandidatePlan {
                     searched_opportunity: default_opportunity(current_goal),
                     found_plan: Some(current_plan.clone()),
+                    perceived_cost: Some(current_plan.total_estimated_ticks),
                 },
                 SelectionCandidatePlan {
                     searched_opportunity: default_opportunity(challenger_goal),
-                    found_plan: Some(challenger_plan),
+                    found_plan: Some(challenger_plan.clone()),
+                    perceived_cost: Some(challenger_plan.total_estimated_ticks),
                 }
             ],
         ),
@@ -4153,6 +4155,7 @@ fn determine_selected_plan_source_distinguishes_search_selection_from_retention(
             &[SelectionCandidatePlan {
                 searched_opportunity: default_opportunity(challenger_goal),
                 found_plan: None,
+                perceived_cost: None,
             }],
         ),
         crate::SelectedPlanSource::RetainedCurrentPlan

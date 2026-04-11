@@ -2,9 +2,9 @@
 
 ## Summary
 
-Fix three compounding failures in the S88/S89 two-phase planning pipeline that silently bypass tactical scoping, causing the search to devolve to pre-S88 flat A* with 2000-2600 candidates per expansion. The root bug is an evidence guard on the `Explore` tactical goal (`mod.rs:103-105`) that blocks tactical scoping when the candidate generator has populated `evidence_places` — which it does via a broader belief query than the strategic planner uses. Without a tactical goal, the candidate filter returns immediately, travel pruning is a no-op, and landmark extraction has no facts. The search explodes.
+Fix three compounding failures in the S88/S89 two-phase planning pipeline that silently bypass tactical scoping, causing the search to devolve to pre-S88 flat A* with 2000-2600 candidates per expansion. The root bug is an evidence guard on the `Explore` tactical goal (`mod.rs:102-108`) that blocks tactical scoping when the candidate generator has populated `evidence_places` — which it does via a broader belief query than the strategic planner uses. Without a tactical goal, the candidate filter returns immediately, travel pruning is a no-op, and landmark extraction has no facts. The search explodes.
 
-This spec introduces four changes: (1) remove the evidence guard and replace it with evidence-directed exploration, (2) fail-fast when the strategic planner produces steps but no tactical goal can be constructed, (3) add a per-agent candidate count safety valve that prevents any search from running with an explosive candidate set, and (4) align the strategic planner's belief query with the candidate generator's so the strategic planner finds the same commodity places and produces proper `SatisfyGoal`/`AcquirePrerequisite` stages instead of falling through to Explore.
+This spec introduces three changes: (1) remove the evidence guard and replace it with evidence-directed exploration, (2) fail-fast when the strategic planner produces steps but no tactical goal can be constructed, and (3) add a per-agent candidate count safety valve that prevents any search from running with an explosive candidate set.
 
 **Evidence**: Simulation observer report on `cli-evaluation.ron` (seed 7777, 1440 ticks, post-S89) shows:
 - Guard Theron died at tick 422 from hunger — `AcquireCommodity(Water)` budget-exhausted at 224 expansions, 2085 candidates, depth 6
@@ -23,7 +23,6 @@ This spec introduces four changes: (1) remove the evidence guard and replace it 
 - Eliminate the silent bypass path where `tactical_goal = None` disables all S88/S89 protections
 - Ensure every multi-location search either has a tactical goal scoping its candidates or fails fast
 - Add a structural safety valve preventing any search from running with an explosive candidate count, regardless of how it got there
-- Align the strategic planner's commodity-place discovery with the candidate generator's so the two-phase architecture activates for all reachable commodity sources, not just those with explicit `resource_source` beliefs
 
 ## Non-Goals
 
@@ -32,6 +31,7 @@ This spec introduces four changes: (1) remove the evidence guard and replace it 
 - Fixing the perception-to-belief pipeline for facility resource sources (why Kael never formed beliefs about the Well at Thornwall Village despite visiting twice) — separate investigation
 - Raising `max_node_expansions` as a mitigation
 - Modifying landmark extraction or dual frontier algorithms
+- Aligning the strategic planner's commodity-place discovery with the candidate generator's — needs runtime traces to diagnose the actual divergence point between `goal_relevant_places` (via `places_with_resource_source` + `places_with_sellers` in `goal_model.rs`) and the candidate generator's `place_has_direct_acquisition_support`. Deferred to a follow-up investigation ticket.
 
 ## FOUNDATIONS Alignment
 
@@ -39,18 +39,18 @@ This spec introduces four changes: (1) remove the evidence guard and replace it 
 |-----------|----------------------------|
 | FND-20 (Bounded Reasoning) | D2 and D3 enforce that bounded lookahead actually stays bounded. The pre-fix bypass allowed unbounded candidate explosion despite the two-phase architecture being designed to prevent it. D3 adds a structural bound that no future code path can bypass. |
 | FND-22 (Agent Diversity) | `max_candidates_per_expansion` is a per-agent field on `CognitiveProfile`, allowing different agents to have different explosion thresholds. |
-| FND-12 (Perf Compresses Computation) | D3's safety valve compresses computation without changing what plans are reachable — fail-fast means the plan wasn't findable within budget anyway. D4 aligns belief queries so more plans are findable, expanding reachability. |
+| FND-12 (Perf Compresses Computation) | D3's safety valve compresses computation without changing what plans are reachable — fail-fast means the plan wasn't findable within budget anyway. |
 | FND-14 (Belief-Only Planning) | All changes operate on the belief surface via `PlanningState`/`PlanningSnapshot`. No omniscient queries introduced. |
 | FND-28 (No Backward Compat) | No shims or fallback paths for the old unscoped behavior. The evidence guard is removed, not wrapped. |
-| FND-29 (Debuggability) | Decision trace already records `tactical_goal` (from S89). D3 adds a new `BudgetExhausted` reason distinguishing "candidate explosion" from "search space exhaustion." |
+| FND-29 (Debuggability) | Decision trace already records `tactical_goal` (from S89). D3's early termination is distinguishable by trace context (candidate count at abort time vs. expansion budget at exhaustion time), not by a new variant. |
 
 ## Section H — Causal Hooks Declaration
 
 ### H.1 — Motivating consequence gap
 
-With S88/S89 completed, the two-phase architecture is fully implemented but has a silent bypass: when the strategic planner falls back to `Explore` and the candidate generator has populated `evidence_places`, the evidence guard at `mod.rs:103-105` blocks the Explore tactical goal. This produces `tactical_goal = None`, which disables the tactical candidate filter, travel pruning, and landmark extraction. The search runs unscoped with 2000-2600 candidates per expansion — the exact pre-S88 failure mode that S88/S89 were designed to eliminate.
+With S88/S89 completed, the two-phase architecture is fully implemented but has a silent bypass: when the strategic planner falls back to `Explore` and the candidate generator has populated `evidence_places`, the evidence guard at `mod.rs:102-108` blocks the Explore tactical goal. This produces `tactical_goal = None`, which disables the tactical candidate filter, travel pruning, and landmark extraction. The search runs unscoped with 2000-2600 candidates per expansion — the exact pre-S88 failure mode that S88/S89 were designed to eliminate.
 
-The bypass is not a rare edge case. It activates for every `AcquireCommodity` goal where (a) the candidate generator finds a remote opportunity via `acquisition_path_search_inner` but (b) the strategic planner's narrower `places_with_resource_source` fails to find the same place. This covers the primary survival scenario: agents needing food or water at locations where the resource source requires a facility queue (e.g., Well → `queue_for_facility_use` → drink).
+The bypass is not a rare edge case. It activates for every `AcquireCommodity` goal where (a) the candidate generator finds a remote opportunity via `acquisition_path_search_inner` but (b) the strategic planner's `goal_relevant_places` (via `places_with_resource_source` + `places_with_sellers` in `goal_model.rs`) fails to find the same place. This covers the primary survival scenario: agents needing food or water at locations where the resource source requires a facility queue (e.g., Well → `queue_for_facility_use` → drink).
 
 ### H.2 — Entities, relations, records introduced
 
@@ -62,7 +62,7 @@ None. All changes are planner-internal.
 
 ### H.4 — Information produced, travel, observability
 
-Diagnostic only: `BudgetExhausted` result gains a distinction between candidate-explosion and search-exhaustion in debug traces. Not visible in world state.
+Diagnostic only: `BudgetExhausted` result's trace context distinguishes candidate-explosion (D3 triggers at high candidate count) from search-exhaustion (existing budget check triggers at max expansions). Not visible in world state.
 
 ### H.5 — Conserved quantities
 
@@ -90,11 +90,11 @@ N/A.
 
 ### H.10 — Cross-system interaction
 
-D4 aligns the strategic planner's `place_supports_commodity()` with the candidate generator's `place_has_direct_acquisition_support()`. Both are in `worldwake-ai`. D3 adds a field to `CognitiveProfile` in `worldwake-core` (existing component, new field only). No cross-crate system interactions introduced.
+D3 adds a field to `CognitiveProfile` in `worldwake-core` (existing component, new field only). No cross-crate system interactions introduced.
 
 ## Information-path analysis
 
-No information paths introduced or modified. All changes operate on existing belief state from `PlanningState`/`PlanningSnapshot`. The strategic planner's aligned belief query (D4) reads the same belief store it already reads — it just checks more properties of the entities it finds there.
+No information paths introduced or modified. All changes operate on existing belief state from `PlanningState`/`PlanningSnapshot`. The strategic planner reads the same belief store it already reads.
 
 ## Positive-feedback analysis
 
@@ -139,13 +139,25 @@ TacticalSubGoal::Explore => {
 }
 ```
 
+Update the function signature to pass the snapshot:
+
+```rust
+fn from_strategic_step(
+    goal: &GroundedGoal,
+    step: Option<&strategic::StrategicStep>,
+    snapshot: &PlanningSnapshot,
+) -> Option<Self>
+```
+
+Update the call site at line 267-270 to pass `snapshot`.
+
 Add a helper function `evidence_directed_destination` that:
 1. If `goal.evidence_places` is non-empty, selects the nearest evidence place (by `min_perceived_travel_cost_to_any` from the actor's current place). This directs exploration toward known commodity locations rather than random adjacent places.
 2. If `goal.evidence_places` is empty, uses the strategic step's default destination (the adjacent-place heuristic from `exploration_plan()`).
 
-This requires passing the `PlanningSnapshot` (or the actor's current place and the snapshot's distance matrix) into `from_strategic_step`. Adjust the function signature accordingly.
+Preserve the `exploration_supports_tactical_barrier` function as the live goal-family boundary. D1 removes only the stale evidence-empty suppression; it does not broaden tactical exploration barriers to every goal family that can currently fall through `strategic::exploration_plan()`.
 
-Delete the `exploration_supports_tactical_barrier` function. After D1, all `Explore` sub-goals unconditionally produce tactical goals — the function no longer gates anything. If future goal kinds should NOT explore, they should not produce `TacticalSubGoal::Explore` in the strategic planner, not be filtered here.
+**Safety note**: The live branch still has goal families beyond `AcquireCommodity` / `SearchForMissing` that can reach `exploration_plan()` without owning a lawful exploration barrier target. D1 should therefore keep the tactical-goal constructor guard and only change how supported exploration chooses its destination when evidence places exist.
 
 ### D2: Mandatory Tactical Goal for Multi-Location Goals
 
@@ -177,8 +189,6 @@ This ensures that if a future code change introduces a new `TacticalSubGoal` var
 
 Local goals (strategic plan with empty steps or `None`) are exempt — they run unscoped as before because their candidate counts are bounded by local affordances.
 
-Note: `FrontierExhausted` currently has no fields. If it needs `expansions_used`, add it. Otherwise use the existing variant as-is.
-
 ### D3: Candidate Count Safety Valve
 
 **Files**: `crates/worldwake-ai/src/search/mod.rs`, `crates/worldwake-core/src/cognitive_profile.rs`, `crates/worldwake-cli/src/scenario/types.rs`, `crates/worldwake-cli/src/scenario/mod.rs`
@@ -190,6 +200,9 @@ Add field:
 /// Maximum candidates per expansion before the search aborts.
 /// Prevents degenerate unscoped searches from burning expansion budget
 /// on explosive candidate sets that will never produce a viable plan.
+/// Note: `max_candidates_to_plan` limits total candidates across an entire
+/// plan search; `max_candidates_per_expansion` limits candidates at a single
+/// expansion step.
 pub max_candidates_per_expansion: u16,
 ```
 
@@ -216,45 +229,7 @@ if candidates_generated > cognitive.max_candidates_per_expansion {
 
 This is a fail-fast: the search terminates because the candidate set is too large to be productive. If a progress barrier was already found, return that (same pattern as the existing budget-exhaustion check at line 306-312).
 
-### D4: Align Strategic Planner Belief Query
-
-**File**: `crates/worldwake-ai/src/search/strategic.rs`
-
-Replace `place_supports_commodity()` (lines 294-310) with a function that checks the same sources as the candidate generator's `place_has_direct_acquisition_support()` (`crates/worldwake-ai/src/candidate_generation.rs:4195`):
-
-```rust
-fn place_supports_commodity(
-    state: &PlanningState<'_>,
-    place: EntityId,
-    commodity: CommodityKind,
-) -> bool {
-    // Resource sources with available quantity
-    state.entities_at(place).into_iter().any(|entity| {
-        state.resource_source(entity).is_some_and(|source| {
-            source.commodity == commodity && source.available_quantity > Quantity(0)
-        })
-    })
-    // Merchandise profiles with matching sale kinds
-    || state.entities_at(place).into_iter().any(|entity| {
-        state.merchandise_profile(entity).is_some_and(|profile| {
-            profile.sale_kinds.contains(&commodity)
-        })
-    })
-    // Loose unpossessed commodity lots
-    || state.entities_at(place).into_iter().any(|entity| {
-        state.item_lot_commodity(entity) == Some(commodity)
-            && state.commodity_quantity(entity, commodity) > Quantity(0)
-            && state.direct_possessor(entity).is_none()
-            && state.direct_container(entity).is_none()
-    })
-}
-```
-
-This is functionally identical to `place_has_direct_acquisition_support` from `candidate_generation.rs`, except it doesn't check `corpse_entities_at` (corpse looting is handled by `LootCorpse` goals, not `AcquireCommodity`). If `place_has_direct_acquisition_support` is refactored to be callable from the strategic module in the future, the duplication can be eliminated. For now, alignment by replication is acceptable because the function is small and self-contained.
-
-The key effect: when the candidate generator finds water at Thornwall Village via `listed_sale_lots_at` or `resource_sources_at`, the strategic planner will now find the same place and produce a proper `SatisfyGoal` strategic step → `TravelToGoal` tactical goal. This eliminates the Explore fallback for cases where evidence exists — the Explore fallback is reserved for true no-evidence situations.
-
-### D5: Tests
+### D4: Tests
 
 **File**: `crates/worldwake-ai/src/search/tests.rs`
 
@@ -262,15 +237,13 @@ New tests:
 
 1. **`search_explore_tactical_goal_produced_despite_nonempty_evidence`** — Create a `GroundedGoal` with non-empty `evidence_places`. Mock a strategic plan returning `TacticalSubGoal::Explore`. Assert that `TacticalGoal::from_strategic_step` returns `Some(Explore { .. })`, not `None`.
 
-2. **`search_fail_fast_when_strategic_steps_but_no_tactical_goal`** — Create a strategic plan with non-empty steps. Mock `from_strategic_step` returning `None`. Assert that `search_plan` returns `FrontierExhausted` immediately (0 expansions).
+2. **`search_fail_fast_when_strategic_steps_but_no_tactical_goal`** — Create a strategic plan with non-empty steps. Construct a scenario at the `search_plan` level where the tactical goal is `None` (e.g., by introducing a test-only `TacticalSubGoal` variant or by testing the D2 guard directly with a manually-assembled search state where `from_strategic_step` returns `None`). Assert that `search_plan` returns `FrontierExhausted` immediately (0 expansions).
 
 3. **`search_candidate_safety_valve_triggers_at_threshold`** — Set `max_candidates_per_expansion` to a low value (e.g., 5). Create a scenario with more candidates than the threshold. Assert `BudgetExhausted` is returned.
 
-4. **`strategic_place_supports_commodity_finds_sale_lots`** — Unit test for the aligned `place_supports_commodity`. Create a place with a sale lot for Water. Assert the function returns true.
+4. **`search_evidence_directed_exploration_prefers_evidence_place`** — Create a goal with `evidence_places = {place_B}`. Strategic planner's default exploration picks adjacent place_C. Assert the tactical goal's destination is place_B (the evidence place), not place_C.
 
-5. **`strategic_place_supports_commodity_finds_loose_items`** — Create a place with an unpossessed Water item lot. Assert true.
-
-6. **`search_evidence_directed_exploration_prefers_evidence_place`** — Create a goal with `evidence_places = {place_B}`. Strategic planner's default exploration picks adjacent place_C. Assert the tactical goal's destination is place_B (the evidence place), not place_C.
+5. **`strategic_explore_only_for_acquisition_and_search`** — Exercise the strategic planner with multiple goal kinds. Assert that only `AcquireCommodity` and `SearchForMissing` produce `TacticalSubGoal::Explore` via the `exploration_plan()` fallback. Confirms `exploration_supports_tactical_barrier` deletion safety.
 
 Existing S88/S89 tests must continue to pass unchanged.
 
@@ -290,7 +263,7 @@ D3's `max_candidates_per_expansion` applies regardless of how the search was con
 
 ### Evidence-directed exploration improves search quality
 
-When the candidate generator found evidence at a remote place but the strategic planner (pre-D4) couldn't find it, the old behavior was: Explore randomly → waste ticks → eventually budget-exhaust. The new behavior (D1) is: Explore toward the evidence place → arrive → perceive local entities → replan with updated beliefs that include the resource source → strategic planner finds the place → TravelToGoal tactical scoping → find plan. After D4, the strategic planner finds the place directly, skipping the exploration step entirely.
+When the candidate generator found evidence at a remote place but the strategic planner couldn't find it, the old behavior was: Explore randomly → waste ticks → eventually budget-exhaust. The new behavior (D1) is: Explore toward the evidence place → arrive → perceive local entities → replan with updated beliefs that include the resource source → strategic planner finds the place → TravelToGoal tactical scoping → find plan.
 
 ## Verification
 

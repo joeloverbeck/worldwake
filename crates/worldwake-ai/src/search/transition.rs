@@ -1,7 +1,7 @@
 use super::{SearchCandidate, SearchNode, TacticalGoal};
 use crate::goal_model::{
-    GoalPayloadOverrideError, grounded_goal_epistemic_subjects,
-    grounded_goal_matches_epistemic_barrier,
+    GoalPayloadOverrideError, grounded_goal_allows_local_epistemic_resolution,
+    grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
 };
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
@@ -80,6 +80,11 @@ pub(super) fn build_successor_detailed<'snapshot>(
                 &candidate.authoritative_targets,
                 candidate.payload_override.as_ref(),
             )
+            || grounded_goal_allows_local_epistemic_resolution(
+                goal,
+                semantics.op_kind,
+                &candidate.authoritative_targets,
+            )
     } else {
         goal.key
             .kind
@@ -126,9 +131,20 @@ pub(super) fn build_successor_detailed<'snapshot>(
         payload_override.as_ref(),
     )
     .ok_or(crate::decision_trace::RootCandidateSkipReason::HypotheticalTransitionFailed)?;
+    let step_targets = match semantics.op_kind {
+        // Accusation search may route via the crime register home place, but the
+        // executable step must still target the accused entity.
+        PlannerOpKind::Accuse => candidate
+            .authoritative_targets
+            .iter()
+            .copied()
+            .map(PlanningEntityRef::Authoritative)
+            .collect(),
+        _ => transition.targets.clone(),
+    };
     let step = PlannedStep {
         def_id: candidate.def_id,
-        targets: transition.targets,
+        targets: step_targets,
         payload_override,
         op_kind: semantics.op_kind,
         estimated_ticks,

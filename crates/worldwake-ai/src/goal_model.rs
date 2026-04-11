@@ -129,6 +129,9 @@ pub(crate) fn grounded_goal_epistemic_subjects(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
 ) -> Vec<EpistemicSubject> {
+    if matches!(goal.key.kind, GoalKind::Accuse { .. }) {
+        return Vec::new();
+    }
     let actor = state.snapshot().actor();
     let Some(profile) = state.epistemic_disposition_profile(actor) else {
         return Vec::new();
@@ -183,6 +186,19 @@ pub(crate) fn grounded_goal_matches_epistemic_barrier(
         (PlannerOpKind::AskWitness, Some(ActionPayload::AskWitness(ask))) => subjects
             .iter()
             .any(|subject| ask_witness_payload_matches_subject(ask, *subject)),
+        _ => false,
+    }
+}
+
+pub(crate) fn grounded_goal_allows_local_epistemic_resolution(
+    goal: &GroundedGoal,
+    op_kind: PlannerOpKind,
+    authoritative_targets: &[EntityId],
+) -> bool {
+    match (&goal.key.kind, op_kind) {
+        (GoalKind::InvestigateViolation { place, .. }, PlannerOpKind::Investigate) => {
+            authoritative_targets.contains(place)
+        }
         _ => false,
     }
 }
@@ -1648,6 +1664,12 @@ impl GoalKindPlannerExt for GoalKind {
                         _ => true,
                     },
                 }
+            }
+            (GoalKind::Accuse { crime_register, .. }, PlannerOpKind::Accuse) => {
+                let Some(record) = state.record_data(*crime_register) else {
+                    return false;
+                };
+                state.effective_place(state.snapshot().actor()) == Some(record.home_place)
             }
             _ => true,
         }
@@ -5368,6 +5390,65 @@ mod tests {
                 source,
                 place: remote,
             }]
+        );
+    }
+
+    #[test]
+    fn grounded_goal_epistemic_subjects_skip_accuse_goals() {
+        let actor = entity(1);
+        let accused = entity(2);
+        let register = entity(3);
+        let theft_place = entity(10);
+        let hall = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([actor, accused, register, theft_place, hall]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(accused, EntityKind::Agent);
+        view.kinds.insert(register, EntityKind::Record);
+        view.kinds.insert(theft_place, EntityKind::Place);
+        view.kinds.insert(hall, EntityKind::Place);
+        view.current_tick = Tick(50);
+        view.effective_places.insert(actor, hall);
+        view.effective_places.insert(accused, theft_place);
+        view.effective_places.insert(register, hall);
+        view.entities_at.insert(hall, vec![actor, register]);
+        view.entities_at.insert(theft_place, vec![accused]);
+        view.epistemic_profiles.insert(actor, epistemic_profile());
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                accused,
+                believed_entity_state_at(
+                    theft_place,
+                    Tick(0),
+                    None,
+                ),
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([accused, register]),
+            &BTreeSet::from([theft_place, hall]),
+            2,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GroundedGoal {
+            anchor: worldwake_core::OpportunityAnchor::Entity(accused),
+            key: GoalKey::from(GoalKind::Accuse {
+                crime_register: register,
+                accused,
+                violation_id: ViolationId(7),
+            }),
+            evidence_entities: BTreeSet::from([accused, register]),
+            evidence_places: BTreeSet::from([theft_place, hall]),
+        };
+
+        assert!(
+            grounded_goal_epistemic_subjects(&goal, &state).is_empty(),
+            "Accuse should not inherit stale-evidence travel barriers from witness evidence"
         );
     }
 
@@ -9427,6 +9508,89 @@ mod tests {
             !GoalKind::FreeCarryCapacity
                 .candidate_is_available(&clean_state, PlannerOpKind::DropItem)
         );
+    }
+
+    #[test]
+    fn accuse_candidate_is_available_only_at_crime_register_home_place() {
+        let actor = entity(1);
+        let accused = entity(2);
+        let register = entity(3);
+        let square = entity(4);
+        let hall = entity(5);
+        let accusation_entry = worldwake_core::RecordEntryId(1);
+        let claim = worldwake_core::InstitutionalClaim::Accusation {
+            accuser: actor,
+            accused,
+            violation_id: worldwake_core::ViolationId(7),
+            theft: worldwake_core::TheftFacts {
+                missing_entity: entity(7),
+                expected_place: square,
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(1),
+            },
+            effective_tick: Tick(1),
+        };
+
+        let mut remote_view = TestBeliefView::default();
+        remote_view.alive.extend([actor, accused, register, square, hall]);
+        remote_view.kinds.insert(actor, EntityKind::Agent);
+        remote_view.kinds.insert(accused, EntityKind::Agent);
+        remote_view.kinds.insert(register, EntityKind::Record);
+        remote_view.kinds.insert(square, EntityKind::Place);
+        remote_view.kinds.insert(hall, EntityKind::Place);
+        remote_view.effective_places.insert(actor, square);
+        remote_view.effective_places.insert(accused, square);
+        remote_view.effective_places.insert(register, hall);
+        remote_view.entities_at.insert(square, vec![actor, accused]);
+        remote_view.entities_at.insert(hall, vec![register]);
+        remote_view.record_data.insert(
+            register,
+            worldwake_core::RecordData {
+                record_kind: worldwake_core::RecordKind::CrimeRegister,
+                home_place: hall,
+                issuer: actor,
+                consultation_ticks: 1,
+                max_entries_per_consult: 4,
+                entries: vec![worldwake_core::InstitutionalRecordEntry {
+                    entry_id: accusation_entry,
+                    claim,
+                    recorded_tick: Tick(1),
+                    supersedes: None,
+                }],
+                next_entry_id: 2,
+            },
+        );
+
+        let goal = GoalKind::Accuse {
+            crime_register: register,
+            accused,
+            violation_id: worldwake_core::ViolationId(7),
+        };
+
+        let remote_snapshot = build_planning_snapshot(
+            &remote_view,
+            actor,
+            &BTreeSet::from([accused, register]),
+            &BTreeSet::from([square, hall]),
+            1,
+        );
+        let remote_state = PlanningState::new(&remote_snapshot);
+        assert!(
+            !goal.candidate_is_available(&remote_state, PlannerOpKind::Accuse),
+            "accuse should not be locally available away from the crime register"
+        );
+
+        remote_view.effective_places.insert(actor, hall);
+        remote_view.entities_at.insert(hall, vec![actor, register]);
+        let local_snapshot = build_planning_snapshot(
+            &remote_view,
+            actor,
+            &BTreeSet::from([accused, register]),
+            &BTreeSet::from([square, hall]),
+            1,
+        );
+        let local_state = PlanningState::new(&local_snapshot);
+        assert!(goal.candidate_is_available(&local_state, PlannerOpKind::Accuse));
     }
 
     #[test]
