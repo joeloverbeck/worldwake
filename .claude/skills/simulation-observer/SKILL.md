@@ -18,6 +18,8 @@ Run a scenario headlessly via the observer binary, read the structured dump, per
 First argument: path to a `.ron` scenario file (required).
 Optional `--ticks N` to override the default of 1440 ticks (1 simulated day).
 
+If no scenario path is provided, glob for `scenarios/*.ron` and present the list to the user. If exactly one scenario file exists, confirm it before proceeding. If none exist, stop and report.
+
 ## Process
 
 Follow these steps in order. Do not skip any step.
@@ -48,7 +50,7 @@ cargo run -p worldwake-cli --bin observer -- <scenario_path> --ticks <N> --outpu
 ### Step 3: Read the Dump
 
 1. Read `reports/simulation-observer-dump.md`.
-2. If the file exceeds 500 lines, read Section 1 (Run Metadata) and Section 2 (Per-Agent Summaries) first, then Section 3 (Anomaly Flags), then Sections 4-7 as needed for smell analysis. Section boundaries vary by dump size — use the section headers (`## Section N`) to orient within offset-based reads. Build an entity-name mapping from Section 1 (agents and places tables) — all subsequent sections reference entities by EntityId (e.g., `e5g0`). Use agent and place names (not EntityIds) throughout the report; when quoting raw dump data that uses EntityIds, translate to names in your analysis.
+2. If the file exceeds 500 lines, read Section 1 (Run Metadata) and Section 2 (Per-Agent Summaries) first, then Section 3 (Anomaly Flags), then Sections 4-7 as needed for smell analysis. Section boundaries vary by dump size — use the section headers (`## Section N`) to orient within offset-based reads. Build an entity-name mapping from Section 1 (agents and places tables) — all subsequent sections reference entities by EntityId (e.g., `e5g0`). Use agent and place names (not EntityIds) throughout the report; when quoting raw dump data that uses EntityIds, translate to names in your analysis. Section 1 only maps agents and places. Item EntityIds appearing in failed plan attempts and blocked desires (e.g., `EntityId { slot: 19, generation: 0 }`) cannot be translated — leave them as-is but note they are item/entity references, not agents or places. Do not guess item names from EntityIds.
 
 The dump has 7 sections:
 - Section 1: Run Metadata (scenario, seed, ticks, agents, places)
@@ -63,7 +65,7 @@ The per-agent action timeline in Section 4 shows action counts binned by 100-tic
 
 Section 7 contains per-agent decision summaries from the GOAP planner. For each agent it shows: planning/active/dead tick breakdown, plan search outcomes (found/frontier-exhausted/budget-exhausted), goals selected, a decision timeline in 100-tick bins using `DecisionOutcome::summary()` one-liners, failed plan attempts with the goal that couldn't be planned and why, fully blocked desires (goals generated but all opportunities blocked), and affordances available at the agent's location. This section directly answers "why didn't the agent do X?" — cross-reference failed plan attempts and blocked desires with the sustained/unaddressed need anomalies.
 
-Section 7 lines are extremely dense — individual decision timeline rows or goals-selected lines can exceed 5000 tokens. Sequential offset reads will frequently hit the Read tool's token limit even at 15-20 line slices. **Treat Grep as the primary (often the only viable) reading method for Section 7.** Use offset reads only for short, structured subsections like the tick-breakdown and plan-search-outcomes headers (2-3 lines each). Grep for targeted extraction: `Failed plan attempts`, `Blocked desires`, `Affordances available`, `Goals selected`, `Tick breakdown`, `Plan search outcomes`. For goals selected lines that may be truncated by Grep's line-length limits, use `bash grep` as a fallback.
+Section 7 lines are extremely dense — individual decision timeline rows or goals-selected lines can exceed 5000 tokens. Sequential offset reads will frequently hit the Read tool's token limit (10,000 tokens) even at 15-20 line slices. **Treat Grep as the primary (often the only viable) reading method for Section 7.** For Section 7, never use Read with `limit` > 10 lines. Decision timeline rows routinely exceed 1000 tokens each. Use `limit: 5` for tick-breakdown and plan-search-outcomes headers. For all other Section 7 content — decision timelines, failed plan tables, blocked desires, affordances, goals selected — use Grep exclusively. Grep for targeted extraction: `Failed plan attempts`, `Blocked desires`, `Affordances available`, `Goals selected`, `Tick breakdown`, `Plan search outcomes`. For goals selected lines that may be truncated by Grep's line-length limits, use `bash grep` as a fallback.
 
 The blocked desires subsection may be absent if no desires were fully blocked. If absent, note this in the analysis rather than treating it as an error — check failed plan attempts and affordances instead as alternative evidence.
 
@@ -79,7 +81,7 @@ Analyze the dump for all 10 smell categories. For each, state whether the smell 
 
 1. **Redundant perception** -- Agent observes the same unchanged entity repeatedly. Why might this be happening? Is the perception system firing too broadly? Is the entity genuinely changing state each time?
 
-2. **Action loops** -- Agent repeats the same action sequence (not patrol) without progress. Is this a planning failure? A missing affordance? A belief that never updates? Cross-reference with Section 7's decision timeline to see what the planner was selecting during the loop period. Also look for behavioral collapse — agents settling into a minimal-action pattern (e.g., only sleep+relieve) for extended periods. Section 2 includes pre-computed behavioral transition markers (e.g., "action repertoire narrowed from 4 types to 2 types at tick 500") — use these as starting points, then verify against the action timeline bins in Section 4. If an agent's action repertoire narrows to 1-2 action types after an identifiable transition point, flag it even if the mechanical detector didn't. Cross-reference with smell 10 to determine whether resource starvation is causing the collapse.
+2. **Action loops** -- Agent repeats the same action sequence (not patrol) without progress. Is this a planning failure? A missing affordance? A belief that never updates? Cross-reference with Section 7's decision timeline to see what the planner was selecting during the loop period. Also look for behavioral collapse — agents settling into a minimal-action pattern (e.g., only sleep+relieve) for extended periods. Section 2 includes pre-computed behavioral transition markers (e.g., "action repertoire narrowed from 4 types to 2 types at tick 500") — use these as starting points, then verify against the action timeline bins in Section 4. If an agent's action repertoire narrows to 1-2 action types after an identifiable transition point, flag it even if the mechanical detector didn't. Cross-reference with smell 10 to determine whether resource starvation is causing the collapse. Also watch for planning-level loops: if Section 7 shows the same goal selected repeatedly (e.g., FreeCarryCapacity appearing 50+ times in a 100-tick bin) with plans found but 0 actions executed, this indicates a degenerate plan loop — the planner thinks it found a plan but no action fires. Cross-reference with the action timeline: if plans are "found" but no actions appear, the plan is degenerate (0-step GoalSatisfied or ProgressBarrier with no executable step). This manifests as total action cessation despite continuous planning, and is distinct from smell 3 (stuck agents) where the planner itself fails to find plans.
 
 3. **Stuck agents** -- Agent has no actions for many consecutive ticks. Explainable idle (human-controlled agent with no input, all needs satisfied, no affordances) vs. pathological idle (needs rising but agent does nothing)? Cross-reference with Section 7 to determine if the planner was producing decisions at all during the idle period, and if so, what outcomes it found. Also check whether the planner's candidate count dropped to 0 — the agent may be idle not because plans failed, but because no goal candidates were generated at all (e.g., all goal preconditions unmet, carry capacity full, no affordances producing new goals). This is distinct from frontier/budget exhaustion and may indicate resource saturation or missing affordances rather than planner limitations. If the agent has dead ticks in Section 7, their idle status post-death is expected — focus analysis on the ticks leading to death and the causal chain that produced it.
 
@@ -105,7 +107,7 @@ After analyzing all 10 smells, note any cases where trace data was insufficient 
 
 ### Step 5: Write Report
 
-If `reports/simulation-observer-report.md` already exists from a previous run, rename it to `reports/simulation-observer-report-prev.md` before writing the new report. After writing the new report, if a previous report exists, add a brief "Changes From Previous Run" section at the end comparing total findings, severity counts, and per-agent status. Delete the previous report file after incorporating the comparison.
+If `reports/simulation-observer-report.md` already exists, check `git status` for the file. If it has uncommitted changes, warn the user before overwriting. If it's committed (or untracked), overwrite directly — git history preserves the prior version.
 
 Write `reports/simulation-observer-report.md` with this structure:
 
@@ -138,6 +140,17 @@ Report all 10 categories regardless of severity. NONE findings should be brief (
 
 ## Cross-Cutting Patterns
 [Patterns that span multiple smells or agents -- e.g., "Agent X has both stuck behavior AND ignored needs, suggesting a planning failure"]
+
+## Planner Diagnostics
+[Include this section only when any agent has budget-exhausted > 0 in Section 7's plan search outcomes.]
+
+Per-agent planner summary:
+
+| Agent | Plans Found | Frontier Exhausted | Budget Exhausted | Top Failed Goal | Candidate Count (typical) | Max Depth |
+|-------|------------|-------------------|-----------------|----------------|--------------------------|-----------|
+| ... | ... | ... | ... | ... | ... | ... |
+
+Assessment: [1-2 sentences: Is budget exhaustion structural (design issue — the plan exists but the search space is too large by construction) or parametric (budget too low — raising max_node_expansions would help)?]
 
 ## Summary Statistics
 - Total findings: N (count of categories with severity other than NONE)

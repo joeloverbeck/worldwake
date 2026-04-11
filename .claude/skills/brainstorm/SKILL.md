@@ -100,6 +100,10 @@ Confidence increases from **both user answers AND research findings**. If extern
 | 80-95% | Clear picture, a few edge cases or preferences unknown | Ask targeted questions about specific gaps |
 | 95%+ | Ready to propose | Transition to Step 3 |
 
+### Plan Mode Interview
+
+In plan mode, the confidence block is still required at the transition from interview to approach proposal. Display confidence and gaps at least once — when announcing the move to approaches. Intermediate per-answer confidence blocks may be omitted if the interview is 1-2 questions.
+
 ### Early Exit
 
 If the user says something like "just go" or "that's enough questions", respect it. Announce your current confidence, list remaining gaps as assumptions you'll make, and proceed to Step 3. Mark those assumptions explicitly in the design so the user can correct them.
@@ -153,7 +157,7 @@ After design approval, do NOT apply changes or implement the design until the us
 
 Once all sections are approved, write the complete design:
 
-- **If plan mode is active**: Write the design to the plan file (the only writable file in plan mode). The plan file serves as the design doc. When plan mode is active AND the deliverable is a spec: write the spec to `specs/` as the primary deliverable, then write a condensed implementation plan to the plan file. The plan file references the spec and summarizes the implementation sequence — it is not the design itself.
+- **If plan mode is active**: Write the design to the plan file (the only writable file in plan mode). The plan file serves as the design doc. When plan mode is active AND the deliverable is a spec: the spec cannot be written to `specs/` until after `ExitPlanMode` is called and the plan is approved. Write the plan file first with the spec design (deliverables, FOUNDATIONS alignment, verification). After plan approval, write the spec to `specs/` as the first implementation step. The plan file references the spec and summarizes the implementation sequence — it is not the design itself.
 - **Otherwise**: Write to `docs/plans/YYYY-MM-DD-<topic>-design.md`, where `<topic>` is a kebab-case short name derived from the brainstorm topic.
 
 The design doc should consolidate all approved sections into a clean document. Include a "Brainstorm Context" header at the top noting:
