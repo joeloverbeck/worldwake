@@ -5,11 +5,12 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use worldwake_ai::{DecisionOutcome, GoalKind, PlanSearchOutcome};
 use worldwake_core::{
-    CombatProfile, CommodityKind, DriveThresholds, EntityId, EventLog, HomeostaticNeeds,
-    IntentionDomainTag, IntentionDispositionProfile, LastSeenMemory, MetabolismProfile,
-    PatrolProfile, PatrolRoute, PerceptionProfile, Place, PlaceTag, PursuitProfile, Quantity,
-    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag, World,
+    CarryCapacity, CombatProfile, CommodityKind, DisposalProfile, DriveThresholds, EntityId,
+    EventLog, ExplorationProfile, HomeostaticNeeds, IntentionDomainTag,
+    IntentionDispositionProfile, LastSeenMemory, LoadUnits, MetabolismProfile, PatrolProfile,
+    PatrolRoute, PerceptionProfile, Place, PlaceTag, PreferenceProfile, PursuitProfile, Quantity,
+    ResourceSource, Seed, TheftDispositionProfile, Tick, Topology, TravelEdge, TravelEdgeId,
+    UtilityProfile, ViolationDispositionProfile, WorkstationMarker, WorkstationTag, World,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
 
@@ -128,6 +129,12 @@ fn build_pathology_harness(seed: Seed) -> GoldenHarness {
     h
 }
 
+fn cli_scenario_seed(seed: u64) -> Seed {
+    let mut bytes = [0_u8; 32];
+    bytes[..8].copy_from_slice(&seed.to_le_bytes());
+    Seed(bytes)
+}
+
 fn guard_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
         entity_memory_capacity: 16,
@@ -151,6 +158,19 @@ fn planning_trace_at(
         DecisionOutcome::Planning(planning) => Some(planning),
         _ => None,
     }
+}
+
+fn place_ground_commodity(
+    world: &mut World,
+    event_log: &mut EventLog,
+    place: EntityId,
+    commodity: CommodityKind,
+    quantity: Quantity,
+) {
+    let mut txn = new_txn(world, 0);
+    let lot = txn.create_item_lot(commodity, quantity).unwrap();
+    txn.set_ground_location(lot, place).unwrap();
+    commit_txn(txn, event_log);
 }
 
 fn seed_guard_theron(h: &mut GoldenHarness) -> EntityId {
@@ -265,6 +285,185 @@ fn seed_guard_theron(h: &mut GoldenHarness) -> EntityId {
     commit_txn(txn, &mut h.event_log);
 
     agent
+}
+
+fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
+    let harvest_apples = h
+        .recipes
+        .recipe_by_name("Harvest Apples")
+        .expect("pathology harness should include Harvest Apples")
+        .0;
+    let lina = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Forager Lina",
+        ELDERGROVE_FOREST,
+        HomeostaticNeeds::new(pm(200), pm(600), pm(100), pm(100), pm(100)),
+        MetabolismProfile {
+            hunger_rate: pm(2),
+            thirst_rate: pm(5),
+            fatigue_rate: pm(2),
+            bladder_rate: pm(4),
+            dirtiness_rate: pm(1),
+            rest_efficiency: pm(20),
+            starvation_tolerance_ticks: NonZeroU32::new(480).unwrap(),
+            dehydration_tolerance_ticks: NonZeroU32::new(180).unwrap(),
+            exhaustion_collapse_ticks: NonZeroU32::new(120).unwrap(),
+            bladder_accident_tolerance_ticks: NonZeroU32::new(40).unwrap(),
+            toilet_ticks: NonZeroU32::new(8).unwrap(),
+            wash_ticks: NonZeroU32::new(12).unwrap(),
+            travel_fatigue_multiplier: pm(0),
+            travel_thirst_multiplier: pm(0),
+            travel_bladder_multiplier: pm(0),
+            wilderness_relief_dirtiness_penalty: pm(0),
+        },
+        UtilityProfile {
+            hunger_weight: pm(600),
+            thirst_weight: pm(700),
+            fatigue_weight: pm(300),
+            bladder_weight: pm(200),
+            dirtiness_weight: pm(200),
+            pain_weight: pm(500),
+            danger_weight: pm(400),
+            enterprise_weight: pm(400),
+            social_weight: pm(300),
+            activity_awareness_weight: pm(500),
+            side_benefit_weight: pm(500),
+            bounty_posting_weight: pm(0),
+            notice_posting_weight: pm(0),
+            courage: pm(400),
+            care_weight: pm(300),
+        },
+        worldwake_core::KnownRecipes::with([harvest_apples]),
+    );
+
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        lina,
+        PerceptionProfile::default(),
+    );
+    set_agent_cognitive_profile(
+        &mut h.world,
+        &mut h.event_log,
+        lina,
+        worldwake_core::CognitiveProfile::default(),
+    );
+    set_agent_execution_budget(
+        &mut h.world,
+        &mut h.event_log,
+        lina,
+        worldwake_core::ExecutionBudget::default(),
+    );
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_drive_thresholds(
+        lina,
+        DriveThresholds {
+            hunger: worldwake_core::ThresholdBand::new(pm(250), pm(500), pm(750), pm(900))
+                .unwrap(),
+            thirst: worldwake_core::ThresholdBand::new(pm(100), pm(300), pm(550), pm(750))
+                .unwrap(),
+            fatigue: worldwake_core::ThresholdBand::new(pm(300), pm(550), pm(800), pm(920))
+                .unwrap(),
+            bladder: worldwake_core::ThresholdBand::new(pm(350), pm(600), pm(800), pm(930))
+                .unwrap(),
+            dirtiness: worldwake_core::ThresholdBand::new(pm(400), pm(650), pm(850), pm(950))
+                .unwrap(),
+            pain: worldwake_core::ThresholdBand::new(pm(150), pm(350), pm(600), pm(850))
+                .unwrap(),
+            danger: worldwake_core::ThresholdBand::new(pm(100), pm(300), pm(550), pm(800))
+                .unwrap(),
+        },
+    )
+    .unwrap();
+    txn.set_component_preference_profile(
+        lina,
+        PreferenceProfile {
+            route_caution_weight: pm(400),
+            source_trust_weight: pm(300),
+            route_memory_capacity: 24,
+            source_memory_capacity: 18,
+            memory_retention_ticks: 400,
+        },
+    )
+    .unwrap();
+    txn.set_component_theft_disposition_profile(
+        lina,
+        TheftDispositionProfile {
+            steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+            theft_motive_weight: pm(200),
+            witness_risk_penalty: pm(400),
+        },
+    )
+    .unwrap();
+    txn.set_component_exploration_profile(
+        lina,
+        ExplorationProfile {
+            curiosity_weight: pm(650),
+            need_activation_threshold: pm(350),
+            max_consecutive_explorations: 4,
+            visit_lookback_ticks: 150,
+            consecutive_exploration_count: 0,
+        },
+    )
+    .unwrap();
+    txn.set_component_disposal_profile(
+        lina,
+        DisposalProfile {
+            capacity_strain_threshold: pm(700),
+        },
+    )
+    .unwrap();
+    txn.set_component_carry_capacity(lina, CarryCapacity(LoadUnits(20)))
+        .unwrap();
+
+    let chopping_block = txn.create_entity(worldwake_core::EntityKind::Facility);
+    txn.set_ground_location(chopping_block, ELDERGROVE_FOREST)
+        .unwrap();
+    txn.set_component_workstation_marker(chopping_block, WorkstationMarker(WorkstationTag::ChoppingBlock))
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    place_ground_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        ELDERGROVE_FOREST,
+        CommodityKind::Water,
+        Quantity(5),
+    );
+    place_ground_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        ELDERGROVE_FOREST,
+        CommodityKind::Apple,
+        Quantity(8),
+    );
+
+    place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ELDERGROVE_FOREST,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(20),
+            max_quantity: Quantity(20),
+            regeneration_ticks_per_unit: Some(NonZeroU32::new(2).unwrap()),
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        lina,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    lina
 }
 
 // ---------------------------------------------------------------------------
@@ -387,5 +586,115 @@ fn cross_location_water_acquisition_succeeds_without_budget_exhaustion() {
     assert!(
         thirst_after < thirst_before,
         "thirst should fall after the Dusty Trail remote-water plan completes"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
+// ---------------------------------------------------------------------------
+//
+// Systems: Needs, AI, Production
+// GoalKinds: FreeCarryCapacity
+// ActionDomains: Needs, Production
+// Places: EldergroveForest
+// Principles: 3, 7, 20, 21
+//
+// Setup: Rebuild the exact Forager Lina Eldergrove Forest substrate from
+// `scenarios/cli-evaluation.ron` using the live place graph, Lina's scenario
+// profile values, 8 ground Apples, 5 ground Water, and the `Eldergrove Orchard`
+// Apple source. The run uses the scenario seed `7777` and only seeds Lina's
+// local Eldergrove beliefs, matching the observer report's locality boundary.
+//
+// Proves: After the real waste-accumulation phase from the cli-evaluation
+// scenario, Lina enters the observer-reported degenerate loop where
+// `FreeCarryCapacity` dominates selection and repeatedly returns a 0-step found
+// plan, blocking further eating while hunger continues to rise.
+//
+// Chain: Eldergrove harvest/eat/waste accumulation -> carry strain crosses
+// disposal threshold -> FreeCarryCapacity selected -> Found[steps=0] loop ->
+// no further eat commits -> rising hunger.
+
+#[test]
+fn degenerate_zero_step_loop_blocks_actionable_goals() {
+    let mut h = build_pathology_harness(cli_scenario_seed(7777));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let lina = seed_forager_lina_cli_evaluation_slice(&mut h);
+    let observation_start = 780_u32;
+    let observation_end = 900_u32;
+    let mut window_selected = 0_u32;
+    let mut window_zero_step = 0_u32;
+    let mut window_traces = 0_u32;
+    let mut hunger_at_window_start = None;
+
+    for tick in 0..observation_end {
+        h.step_once();
+
+        if tick == observation_start {
+            hunger_at_window_start = Some(h.agent_hunger(lina));
+        }
+
+        if tick < observation_start {
+            continue;
+        }
+
+        let Some(planning) = planning_trace_at(&h, lina, Tick(tick.into())) else {
+            continue;
+        };
+        window_traces += 1;
+
+        if planning
+            .selection
+            .selected_goal()
+            .is_some_and(|goal| goal.kind == GoalKind::FreeCarryCapacity)
+        {
+            window_selected += 1;
+        }
+
+        if planning.planning.attempts.iter().any(|attempt| {
+            attempt.goal.kind == GoalKind::FreeCarryCapacity
+                && matches!(
+                    &attempt.outcome,
+                    PlanSearchOutcome::Found { steps, .. } if steps.is_empty()
+                )
+        }) {
+            window_zero_step += 1;
+        }
+    }
+
+    let hunger_at_window_start =
+        hunger_at_window_start.expect("observation window should capture a starting hunger value");
+    let hunger_after = h.agent_hunger(lina);
+    let late_eat_commit = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for(lina)
+        .iter()
+        .any(|event| {
+            event.tick.0 >= u64::from(observation_start)
+                && event.action_name == "eat"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        });
+
+    assert!(
+        window_traces >= 100,
+        "expected decision traces throughout the late-run pathology window, saw {window_traces}"
+    );
+    assert!(
+        window_selected >= 100,
+        "expected FreeCarryCapacity to dominate late-run goal selection in the cli-evaluation Lina window, saw {window_selected} selections across {window_traces} traced ticks"
+    );
+    assert!(
+        window_zero_step >= 100,
+        "expected repeated 0-step found FreeCarryCapacity plans in the cli-evaluation Lina window, saw {window_zero_step} zero-step attempts across {window_traces} traced ticks"
+    );
+    assert!(
+        !late_eat_commit,
+        "expected no late-run eat commits once the FreeCarryCapacity loop takes over"
+    );
+    assert!(
+        hunger_after > hunger_at_window_start,
+        "expected hunger to continue rising during the late-run loop window; start={hunger_at_window_start:?} end={hunger_after:?}"
     );
 }

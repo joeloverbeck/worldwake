@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 157
+- Scenario blocks: 158
 - Contributing golden test files: 26
-- Associated tests: 334
+- Associated tests: 335
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -1452,7 +1452,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 
-- Source: `golden_planner_pathology.rs:271`
+- Source: `golden_planner_pathology.rs:470`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Production, Needs
@@ -1464,6 +1464,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: The exact Dusty Trail-style cross-location water path now produces a lawful `AcquireCommodity(Water)` plan without budget exhaustion, commits a `drink`, and lowers thirst within the scenario window.
 
 **Cross-system chain**: Dusty Trail thirst pressure -> AcquireCommodity(Water) found plan -> travel to Thornwall Village -> committed drink -> reduced thirst.
+
+### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
+
+- Source: `golden_planner_pathology.rs:593`
+- Systems: Needs, AI, Production
+- GoalKinds: FreeCarryCapacity
+- ActionDomains: Needs, Production
+- Places: EldergroveForest
+- Principles: 3, 7, 20, 21
+
+**Setup**: Rebuild the exact Forager Lina Eldergrove Forest substrate from
+
+**Proves**: After the real waste-accumulation phase from the cli-evaluation
+
+**Cross-system chain**: Eldergrove harvest/eat/waste accumulation -> carry strain crosses
 
 ### Scenario 3: Resource Contention with Conservation
 

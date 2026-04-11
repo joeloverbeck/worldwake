@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 27
 - Files contributing `golden_*` tests: 27
-- Total `golden_*` tests: 349
+- Total `golden_*` tests: 350
 
 ## Per-File Inventory
 
@@ -28,7 +28,7 @@ Do not hand-edit it.
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
 | `golden_perception_exposure.rs` | 6 |
-| `golden_planner_pathology.rs` | 1 |
+| `golden_planner_pathology.rs` | 2 |
 | `golden_production.rs` | 34 |
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 6 |
@@ -327,6 +327,7 @@ Do not hand-edit it.
 ### `golden_planner_pathology.rs`
 
 - `cross_location_water_acquisition_succeeds_without_budget_exhaustion`
+- `degenerate_zero_step_loop_blocks_actionable_goals`
 
 ### `golden_production.rs`
 

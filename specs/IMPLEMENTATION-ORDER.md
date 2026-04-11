@@ -148,6 +148,18 @@ S90 ✅ archived (depends on S88 + S89)
 - **S88**: ✅ COMPLETED — Two-Phase Landmark-Guided Planning — archived at [archive/specs/S88-two-phase-landmark-planning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S88-two-phase-landmark-planning.md). Landed the belief-backed strategic planner, landmark-guided tactical planning substrate, dual-frontier search, live two-phase integration for remote `TreatWounds` and `ProduceCommodity`, decision-trace enrichment, and golden coverage for two-phase planner behavior and landmark-depth diversity. Superseded S86 (heuristic candidate scoring) and S87 (observer diagnostic gaps; observer tooling may be reconsidered as a future spec).
 - **S90**: ✅ COMPLETED — Mandatory Tactical Scoping — archived at [archive/specs/S90-mandatory-tactical-scoping.md](/home/joeloverbeck/projects/worldwake/archive/specs/S90-mandatory-tactical-scoping.md). Landed evidence-directed tactical exploration, barrier-required vs fallback exploration classification, bounded fail-fast for missing tactical goals on the barrier-required slice, and the per-agent candidate-count safety valve plus focused threshold proof.
 
+### Active Adjunct: Planner Pathology Fixes
+
+Derived from the active planner-pathology golden proof surface in `specs/S91-planner-pathology-golden-tests.md`, validated against the live `cli-evaluation.ron` observer substrate and `docs/FOUNDATIONS.md`.
+
+```text
+S91 active (golden proof surface)
+  └── S92 draft (depends on S82 + S91 Test 2)
+```
+
+- **S91**: active — planner-pathology golden proofs for the three observer-derived failures, including Scenario 143's `FreeCarryCapacity` zero-step loop reproduction.
+- **S92**: draft — [specs/S92-free-carry-capacity-zero-step-loop-fix.md](/home/joeloverbeck/projects/worldwake/specs/S92-free-carry-capacity-zero-step-loop-fix.md). Fixes the `FreeCarryCapacity -> GoalSatisfied[steps=0]` contract mismatch and flips Scenario 143 from bug reproduction to fix proof.
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed

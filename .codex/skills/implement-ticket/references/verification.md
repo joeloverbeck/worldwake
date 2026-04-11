@@ -49,6 +49,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - When a golden proves durable learned-state aftermath, assert the semantic contract unless exact tick identity is the owned invariant.
 - If focused implementation shows the corrected ticket still over-claims, narrow the ticket before final verification.
 - When a valid architecture change makes a golden stale, update it to prove the new lawful contract.
+- When `python3 scripts/golden_inventory.py --write --check-docs` is part of the broadened proof, expect generated fallout across multiple `docs/generated/golden-*` artifacts rather than only the scenario inventory/detail pair. Typical expected churn includes `golden-e2e-inventory.md`, `golden-scenario-index.md`, scenario detail pages, and `golden-coverage-matrix.md`. Review the full generated diff and keep it when it matches the landed scenario metadata and inventory semantics.
 - When a golden transport/delivery/claim chain is about durable aftermath, avoid over-specifying intermediate substeps.
 - When a golden still fails after lawful setup, reassess whether it exposed a missing lower-layer contract. Fix the production boundary first.
 - If the architecture change invalidates the old invariant, rewrite the scenario and update its header/comments.

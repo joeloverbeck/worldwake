@@ -70,29 +70,24 @@ Access plan attempts via `planning.planning.attempts` and check each `PlanAttemp
 **Pathology reproduced**: FreeCarryCapacity selected every tick with 0-step GoalSatisfied, blocking urgent eat goal.
 
 **Scenario setup**:
-- 1 place: `Forest` (tags: `[Forest]`)
-- 1 facility: OrchardRow at Forest (`WorkstationTag::OrchardRow`)
-- 1 resource source: Apple at Forest (facility: OrchardRow, `regeneration_ticks_per_unit: 2`, `capacity: 20`)
-- 5 Apple items at Forest (immediately available for eating)
-- 1 AI agent ("Forager") at Forest:
-  - `HomeostaticNeeds { hunger: 700, thirst: 100, fatigue: 100, bladder: 100, dirtiness: 100 }`
-  - `CarryCapacity(20)` — small capacity
-  - 18 Waste items in agent's inventory (near-full carry capacity)
-  - `DisposalProfile { capacity_strain_threshold: Permille(700) }`
-  - `UtilityProfile` with `hunger_weight: 600`
-  - `MetabolismProfile` with `hunger_rate: 3`
-  - `DriveThresholds` with hunger thresholds: `low: 200, medium: 400, high: 600, critical: 800`
-  - `PerceptionProfile` (standard)
-  - `CognitiveProfile` with defaults
-  - `KnownRecipes`: ["Harvest Apples"]
-  - Beliefs seeded: agent knows Forest contents (apples, OrchardRow)
+- use the live `cli-evaluation.ron` Eldergrove Forest slice rather than a synthetic one-place proxy
+- keep Forager Lina at `Eldergrove Forest` with the scenario's exact startup values relevant to the pathology:
+  - `HomeostaticNeeds { hunger: 200, thirst: 600, fatigue: 100, bladder: 100, dirtiness: 100 }`
+  - scenario `UtilityProfile`, `MetabolismProfile`, `DriveThresholds`, `ExplorationProfile`, `DisposalProfile`, `PreferenceProfile`, `carry_capacity: 20`, and `KnownRecipes: ["Harvest Apples"]`
+- keep the scenario-local Eldergrove substrate:
+  - 8 ground Apples
+  - 5 ground Water
+  - `ChoppingBlock`
+  - named orchard `Eldergrove Orchard`
+  - Apple `ResourceSource` at that orchard (`regeneration_ticks_per_unit: 2`, `capacity: 20`)
+- seed only Lina's local Eldergrove beliefs at tick 0, matching the observer report's “knows Eldergrove Forest contents” boundary
 
-**Tick count**: 60 ticks.
+**Tick count**: long-horizon run using the scenario seed `7777`, with assertions evaluated over a late-run observation window after the report's waste-accumulation phase (loop onset observed around tick ~730).
 
 **Phase 1 assertions (bug reproduction — tests pass today)**:
-1. Over the first 50 ticks, count how many ticks select `GoalKind::FreeCarryCapacity` as the selected goal (via `planning.selection.selected_goal()`). Assert count >= 40 (dominant selection).
-2. For at least 30 of those FreeCarryCapacity ticks, the plan attempt outcome is `PlanSearchOutcome::Found { steps, .. }` where `steps.is_empty()` (0-step satisfied plan).
-3. Over 50 ticks, no `eat` action commits (agent never eats despite local apples). Check via event log for absence of consumption events, or via `HomeostaticNeeds.hunger` being higher at tick 50 than at tick 0.
+1. In the late-run observation window after accumulation, `GoalKind::FreeCarryCapacity` dominates selected-goal frequency.
+2. In that same late-run window, repeated `FreeCarryCapacity` attempts have outcome `PlanSearchOutcome::Found { steps, .. }` where `steps.is_empty()` (0-step satisfied plan).
+3. No `eat` action commits once the loop window begins, and `HomeostaticNeeds.hunger` is higher at the end of that window than at its start.
 
 **Phase 2 assertions (fix verification — replace Phase 1 when fix lands)**:
 1. FreeCarryCapacity either produces an executable plan with `steps.len() >= 1` (drop waste action), OR other goals (ConsumeOwnedCommodity/AcquireCommodity for food) are selected when FreeCarryCapacity yields 0-step plans.
