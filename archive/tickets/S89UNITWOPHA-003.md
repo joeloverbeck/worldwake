@@ -1,6 +1,6 @@
 # S89UNITWOPHA-003: Universal two-phase planning tests
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -15,6 +15,8 @@ The universal two-phase planning changes from S89UNITWOPHA-001 and S89UNITWOPHA-
 1. Test file: `crates/worldwake-ai/src/search/tests.rs` exists. S88 golden tests start at line 7882. Test infrastructure for search tests (helper functions for scenario setup, plan result assertions) is available in the same file.
 2. `GoalKind::AcquireCommodity`, `GoalKind::Patrol`, `GoalKind::InvestigateViolation`, `GoalKind::Sleep` are all current variants (34 total, confirmed). Each has `goal_relevant_places()` implementations in `goal_model.rs`.
 3. `TravelToGoal` variant, `progress_barrier_satisfied`, `apply_tactical_candidate_filter` with TravelToGoal arm, and `SearchTraceMetadata.tactical_goal` all exist after 001+002 are implemented.
+4. The local-sleep “planning still succeeds” behavioral surface already exists in `crates/worldwake-ai/src/search/tests.rs::test_binding_flexible_goal_unaffected`, and `S89UNITWOPHA-002` already added the explicit `tactical_goal = None` trace proof in `search_trace_metadata_records_no_tactical_goal_for_local_sleep`. This ticket does not need to duplicate that exact trace surface.
+5. The ticket’s candidate-filter wording is stale. Live `apply_tactical_candidate_filter()` for `TravelToGoal` retains travel-advancing candidates when the actor is not at destination, but it also deliberately preserves goal-relevant root-local non-travel setup on the root node before departure. The focused filter proof must lock in that real contract, not an “only travel survives” simplification.
 
 ## Architecture Check
 
@@ -24,9 +26,9 @@ The universal two-phase planning changes from S89UNITWOPHA-001 and S89UNITWOPHA-
 ## Verification Layers
 
 1. Remote goal receives TravelToGoal scoping → behavioral search tests (tests 1-3): plan found without budget exhaustion, starts with Travel action toward destination
-2. Local goal has no tactical scoping → behavioral search test (test 4): Sleep goal plans succeed, tactical_goal is None or barrier instantly satisfied
-3. TravelToGoal barrier correctness → focused unit test (test 5): barrier true at destination, false elsewhere
-4. TravelToGoal candidate filter correctness → focused unit test (test 6): only travel-advancing candidates retained when not at destination
+2. Local goal remains unaffected → existing behavioral Sleep search test plus the `002` trace proof remain green; no new local-goal trace test is required here
+3. TravelToGoal barrier correctness → focused unit test: barrier true at destination, false elsewhere
+4. TravelToGoal candidate filter correctness → focused unit test: travel-advancing candidates are retained before departure, and lawful goal-relevant root-local setup is still allowed on the root node
 5. S88 regression → existing golden tests pass unchanged
 6. Single-layer ticket (tests only) — no cross-system mapping applicable
 
@@ -44,17 +46,13 @@ Behavioral search test. Setup: Actor at place A, patrol target at place B (conne
 
 Behavioral search test. Setup: Actor at place A, violation at place B (connected by travel). Goal: `InvestigateViolation { violation_id, place: B }`. Assert: plan routes to B. Validates institutional/authority goal kinds that previously budget-exhausted.
 
-### 4. `search_local_sleep_has_no_tactical_goal`
-
-Behavioral search test. Setup: Actor at place with sleep affordance. Goal: `Sleep`. Assert: planning succeeds. Verify that strategic plan is empty or has destination at current place, resulting in `tactical_goal = None` or immediate barrier satisfaction. Validates local-only goals are unaffected by the whitelist removal.
-
-### 5. `search_travel_to_goal_barrier_satisfied_at_destination`
+### 4. `search_travel_to_goal_barrier_satisfied_at_destination`
 
 Focused unit test. Construct `TravelToGoal { destination: X }`, construct `PlanningState` with actor at X. Assert `progress_barrier_satisfied` returns true. Construct state with actor at Y. Assert returns false.
 
-### 6. `search_travel_to_goal_candidate_filter`
+### 5. `search_travel_to_goal_candidate_filter`
 
-Focused unit test. Construct `TravelToGoal { destination: X }` with actor not at X. Provide a candidate set with travel and non-travel candidates. Call `apply_tactical_candidate_filter`. Assert only travel-advancing candidates are retained.
+Focused unit test. Construct `TravelToGoal { destination: X }` with actor not at X. Provide a candidate set with travel candidates plus both goal-relevant and irrelevant non-travel candidates. Call `apply_tactical_candidate_filter`. Assert travel-advancing candidates are retained and that lawful root-local goal setup remains allowed before departure, while irrelevant non-travel options are removed.
 
 ## Files to Touch
 
@@ -74,15 +72,16 @@ Focused unit test. Construct `TravelToGoal { destination: X }` with actor not at
 1. `search_acquire_commodity_uses_travel_to_goal` — plan found, starts with Travel
 2. `search_patrol_uses_travel_to_goal_for_remote_place` — plan found, routes to B
 3. `search_investigate_uses_travel_to_goal` — plan found, routes to B
-4. `search_local_sleep_has_no_tactical_goal` — plan found, no tactical scoping
-5. `search_travel_to_goal_barrier_satisfied_at_destination` — barrier true at destination, false elsewhere
-6. `search_travel_to_goal_candidate_filter` — only travel candidates retained
-7. Existing S88 tests unchanged and passing:
+4. `search_travel_to_goal_barrier_satisfied_at_destination` — barrier true at destination, false elsewhere
+5. `search_travel_to_goal_candidate_filter` — travel candidates retained, irrelevant non-travel candidates removed, and lawful root-local setup preserved
+6. Existing S88 tests unchanged and passing:
    - `search_treat_wounds_uses_two_phase_pick_up_before_heal`
    - `search_treat_wounds_with_zero_landmarks_preserves_two_phase_plan_shape`
    - `search_produce_commodity_uses_two_phase_pick_up_before_craft`
    - `search_produce_commodity_with_zero_landmarks_preserves_two_phase_plan_shape`
    - `search_trace_metadata_records_two_phase_strategic_and_landmark_details`
+7. Existing local-goal guard remains green:
+   - `test_binding_flexible_goal_unaffected`
 8. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
@@ -90,6 +89,7 @@ Focused unit test. Construct `TravelToGoal { destination: X }` with actor not at
 1. No S88 test is modified — all existing assertions remain as-is
 2. New behavioral tests assert plan success (not budget exhaustion) — the contract is that tactical scoping makes multi-location plans tractable
 3. Unit tests for barrier and filter are isolated from full search infrastructure — they test `TravelToGoal` methods directly
+4. This ticket does not duplicate the `tactical_goal = None` trace proof already owned by `S89UNITWOPHA-002`
 
 ## Test Plan
 
@@ -98,17 +98,34 @@ Focused unit test. Construct `TravelToGoal { destination: X }` with actor not at
 1. `crates/worldwake-ai/src/search/tests.rs::search_acquire_commodity_uses_travel_to_goal` — primary regression for budget-exhaustion fix
 2. `crates/worldwake-ai/src/search/tests.rs::search_patrol_uses_travel_to_goal_for_remote_place` — spatial-only goal coverage
 3. `crates/worldwake-ai/src/search/tests.rs::search_investigate_uses_travel_to_goal` — institutional goal coverage
-4. `crates/worldwake-ai/src/search/tests.rs::search_local_sleep_has_no_tactical_goal` — local goal regression guard
-5. `crates/worldwake-ai/src/search/tests.rs::search_travel_to_goal_barrier_satisfied_at_destination` — unit: barrier logic
-6. `crates/worldwake-ai/src/search/tests.rs::search_travel_to_goal_candidate_filter` — unit: candidate filter logic
+4. `crates/worldwake-ai/src/search/tests.rs::search_travel_to_goal_barrier_satisfied_at_destination` — unit: barrier logic
+5. `crates/worldwake-ai/src/search/tests.rs::search_travel_to_goal_candidate_filter` — unit: candidate filter logic including root-local setup allowance
 
 ### Commands
 
 1. `cargo test -p worldwake-ai search_acquire_commodity_uses_travel_to_goal`
-2. `cargo test -p worldwake-ai search_patrol_uses_travel_to_goal`
+2. `cargo test -p worldwake-ai search_patrol_uses_travel_to_goal_for_remote_place`
 3. `cargo test -p worldwake-ai search_investigate_uses_travel_to_goal`
-4. `cargo test -p worldwake-ai search_local_sleep_has_no_tactical_goal`
-5. `cargo test -p worldwake-ai search_travel_to_goal_barrier`
-6. `cargo test -p worldwake-ai search_travel_to_goal_candidate_filter`
-7. `cargo test -p worldwake-ai` — full crate suite including S88 regressions
-8. `cargo clippy --workspace --all-targets -- -D warnings` — no new warnings
+4. `cargo test -p worldwake-ai search_travel_to_goal_barrier_satisfied_at_destination`
+5. `cargo test -p worldwake-ai search_travel_to_goal_candidate_filter`
+6. `cargo test -p worldwake-ai` — full crate suite including S88 regressions
+7. `cargo clippy --workspace --all-targets -- -D warnings` — no new warnings
+
+## Outcome
+
+Completed on 2026-04-11.
+
+- Added representative `TravelToGoal` behavioral coverage for remote `AcquireCommodity`, `Patrol`, and `InvestigateViolation` goals in `crates/worldwake-ai/src/search/tests.rs`.
+- Added focused unit coverage for `TravelToGoal::progress_barrier_satisfied()` and the live candidate-filter contract that preserves lawful root-local goal setup before departure while removing irrelevant non-travel options.
+- Extended the local `TestBeliefView` harness with patrol-route/profile and violation-profile/record carriers so the new representative planner tests exercise the live planner boundary lawfully instead of relying on missing fixture state.
+- Reassessed and narrowed the ticket so it no longer duplicates the existing local `Sleep` no-tactical-goal proof already owned by `S89UNITWOPHA-002`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai search_acquire_commodity_uses_travel_to_goal`
+- Passed `cargo test -p worldwake-ai search_patrol_uses_travel_to_goal_for_remote_place`
+- Passed `cargo test -p worldwake-ai search_investigate_uses_travel_to_goal`
+- Passed `cargo test -p worldwake-ai search_travel_to_goal_barrier_satisfied_at_destination`
+- Passed `cargo test -p worldwake-ai search_travel_to_goal_candidate_filter`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

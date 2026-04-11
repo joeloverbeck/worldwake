@@ -1,5 +1,7 @@
 # Simulation Observer Report
 
+**Status**: ✅ COMPLETED
+
 ## Run Summary
 
 - **Scenario**: `scenarios/cli-evaluation.ron`
@@ -173,3 +175,10 @@ For **Actionable** items:
 **TQ-3**: Recommended addition: For each affordance snapshot, include a "missing affordances" section listing common actions (eat, drink, wash, harvest) that are NOT available and the reason (no target entity, precondition failed, no resource at location). Scope: Observer-binary enhancement (query affordance system for explanations).
 
 **TQ-5**: Recommended addition: Include commodity-awareness beliefs in Section 5 — specifically, which commodities the agent believes exist at which locations. Scope: Observer-binary enhancement (extract from belief store).
+
+## Outcome
+
+- **Completion date**: 2026-04-11
+- **What changed**: Report findings exploited — simulation remediation proposals derived from the 8 findings (3 CRITICAL, 3 HIGH, 2 MEDIUM, 1 LOW). Key patterns identified: Dusty Trail death trap, FreeCarryCapacity deadlock, planner budget exhaustion cascade, Guard Theron death chain.
+- **Deviations from original plan**: None
+- **Verification**: Findings used as input for remediation planning

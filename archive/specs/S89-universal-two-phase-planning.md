@@ -12,7 +12,7 @@ The S88 architecture works — strategic planning correctly identifies remote de
 - 41 budget-exhausted plan searches across all agents, all for non-whitelisted goal kinds
 
 **Phase**: 7 (Adjunct — Simulation Remediation)
-**Status**: DRAFT
+**Status**: COMPLETED
 **Crates**: `worldwake-ai`
 **Dependencies**: S88 (completed)
 **Supersedes**: None (extends S88's scope)
@@ -198,11 +198,11 @@ New tests:
 
 3. **`search_investigate_uses_travel_to_goal`** — Actor at place A, violation at place B. Create `InvestigateViolation { violation_id, place: B }` goal. Assert plan routes to B.
 
-4. **`search_local_sleep_has_no_tactical_goal`** — Actor at place with sleep affordance. Create `Sleep` goal. Verify planning succeeds. Strategic plan should be empty or have destination at current place, resulting in `tactical_goal = None` or immediate barrier satisfaction.
+4. Existing local-goal guard remains covered by prior focused proof rather than a new `003` test: `test_binding_flexible_goal_unaffected` still proves local `Sleep` planning remains unaffected, and `search_trace_metadata_records_no_tactical_goal_for_local_sleep` already records the `tactical_goal = None` trace surface from `S89UNITWOPHA-002`.
 
 5. **`search_travel_to_goal_barrier_satisfied_at_destination`** — Unit test: construct `TravelToGoal { destination: X }`, verify `progress_barrier_satisfied` returns true when actor is at X, false when at Y.
 
-6. **`search_travel_to_goal_candidate_filter`** — Unit test: verify `apply_tactical_candidate_filter` with `TravelToGoal` retains only travel-advancing candidates when actor is not at destination.
+6. **`search_travel_to_goal_candidate_filter`** — Unit test: verify `apply_tactical_candidate_filter` with `TravelToGoal` retains travel-advancing candidates before departure, preserves lawful root-local goal-relevant setup on the root node, and removes irrelevant non-travel options.
 
 Existing S88 tests must continue to pass unchanged:
 - `search_treat_wounds_uses_two_phase_pick_up_before_heal`
@@ -252,3 +252,23 @@ Expected observer improvements:
 - Agents at Dusty Trail successfully plan travel-to-water sequences
 - Guard Theron survives (or at least attempts to address hunger/thirst)
 - Reduced sustained critical need durations across all agents
+
+## Outcome
+
+Completed on 2026-04-11.
+
+- Removed the old `goal_supports_two_phase()` whitelist and landed `TravelToGoal` tactical scoping for true strategic `SatisfyGoal` stages across remote goal families.
+- Added tactical-goal trace recording, representative `TravelToGoal` regression coverage, and the focused barrier/filter tests that prove the live root-local setup contract.
+- Narrowed the exploration side of the original draft into a separate lawful `Explore` barrier contract for true no-evidence probe fallback, using one deterministic adjacent probe destination and `ProgressBarrier` arrival semantics instead of blanket exploration scoping.
+
+## Deviations
+
+- The original draft over-claimed two surfaces that the final implementation corrected:
+  - local `Sleep` did not need a new dedicated `003` test because the existing behavioral and trace proofs already covered the no-tactical-goal contract
+  - `TravelToGoal` candidate filtering does not reduce the root node to “travel only”; it preserves lawful goal-relevant root-local setup before departure
+- Exploration fallback did not remain a generic byproduct of `TravelToGoal`; it required its own narrower `Explore` barrier contract and landed through a dedicated follow-up slice.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

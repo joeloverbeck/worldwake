@@ -26,11 +26,13 @@ use worldwake_core::{
     EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget, HomeostaticNeedId,
     HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile,
     MetabolismProfile, NoticeTopic, PerceptionSource, Permille, Place, PlaceTag, ProofRequirement,
-    PrototypePlace, Quantity, RecipeId, ResourceSource, RewardSource, TheftDispositionProfile,
-    Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
-    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-    WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
-    prototype_place_entity, test_utils::sample_trade_disposition_profile,
+    PatrolProfile, PatrolRoute, PrototypePlace, Quantity, RecipeId, RecordedViolation,
+    ResourceSource, RewardSource, TheftDispositionProfile, Tick, TickRange, Topology,
+    TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
+    ViolationDispositionProfile, ViolationId, ViolationKind, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    build_believed_entity_state, build_prototype_world, prototype_place_entity,
+    test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, CombatBeliefView, ControlBeliefView,
@@ -96,6 +98,38 @@ fn search_plan(
         current_tick,
         binding_rejections,
         expansion_summaries,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_plan_with_trace_metadata(
+    snapshot: &PlanningSnapshot,
+    goal: &GroundedGoal,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &worldwake_sim::ActionHandlerRegistry,
+    reasoning: &ProfileFixture,
+    recipes: &RecipeRegistry,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
+    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
+    trace_metadata: Option<&mut super::SearchTraceMetadata>,
+) -> PlanSearchResult {
+    super::search_plan_with_trace_metadata(
+        snapshot,
+        goal,
+        semantics_table,
+        registry,
+        handlers,
+        &cognitive(reasoning),
+        &execution_budget(reasoning),
+        recipes,
+        blocked,
+        current_tick,
+        binding_rejections,
+        expansion_summaries,
+        trace_metadata,
     )
 }
 
@@ -172,6 +206,10 @@ struct TestBeliefView {
         BTreeMap<EntityId, worldwake_core::InstitutionalBeliefRead<Option<EntityId>>>,
     consultation_speed_factors: BTreeMap<EntityId, Permille>,
     record_data: BTreeMap<EntityId, worldwake_core::RecordData>,
+    patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
+    patrol_routes: BTreeMap<EntityId, PatrolRoute>,
+    violation_profiles: BTreeMap<EntityId, ViolationDispositionProfile>,
+    active_violation_records: BTreeMap<EntityId, Vec<RecordedViolation>>,
     known_entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
     epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
     stock_storage_policies: BTreeMap<EntityId, worldwake_core::StockStoragePolicy>,
@@ -211,6 +249,10 @@ impl Default for TestBeliefView {
             office_holder_beliefs: BTreeMap::new(),
             consultation_speed_factors: BTreeMap::new(),
             record_data: BTreeMap::new(),
+            patrol_profiles: BTreeMap::new(),
+            patrol_routes: BTreeMap::new(),
+            violation_profiles: BTreeMap::new(),
+            active_violation_records: BTreeMap::new(),
             known_entity_beliefs: BTreeMap::new(),
             epistemic_profiles: BTreeMap::new(),
             stock_storage_policies: BTreeMap::new(),
@@ -287,6 +329,9 @@ impl SpatialBeliefView for TestBeliefView {
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
         self.adjacent.get(&place).cloned().unwrap_or_default()
     }
+    fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
+        self.patrol_routes.get(&agent).cloned()
+    }
 }
 
 impl TemporalBeliefView for TestBeliefView {
@@ -355,6 +400,18 @@ impl worldwake_sim::PoliticalBeliefView for TestBeliefView {
             .cloned()
             .unwrap_or(worldwake_core::InstitutionalBeliefRead::Unknown)
     }
+    fn violation_disposition_profile(
+        &self,
+        agent: EntityId,
+    ) -> Option<ViolationDispositionProfile> {
+        self.violation_profiles.get(&agent).cloned()
+    }
+    fn active_violation_records(&self, agent: EntityId) -> Vec<RecordedViolation> {
+        self.active_violation_records
+            .get(&agent)
+            .cloned()
+            .unwrap_or_default()
+    }
 }
 
 impl CombatBeliefView for TestBeliefView {
@@ -389,6 +446,9 @@ impl CombatBeliefView for TestBeliefView {
         self.wounds
             .get(&entity)
             .is_some_and(|wounds| !wounds.is_empty())
+    }
+    fn patrol_profile(&self, agent: EntityId) -> Option<PatrolProfile> {
+        self.patrol_profiles.get(&agent).cloned()
     }
 }
 
@@ -615,6 +675,28 @@ fn build_registry() -> (ActionDefRegistry, worldwake_sim::ActionHandlerRegistry)
     let recipes = RecipeRegistry::new();
     let registries = build_full_action_registries(&recipes).unwrap();
     (registries.defs, registries.handlers)
+}
+
+fn build_two_place_travel_view() -> (TestBeliefView, EntityId, EntityId, EntityId) {
+    let actor = entity(1);
+    let origin = entity(10);
+    let remote = entity(11);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, origin, remote]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(origin, EntityKind::Place);
+    view.kinds.insert(remote, EntityKind::Place);
+    view.effective_places.insert(actor, origin);
+    view.entities_at.insert(origin, vec![actor]);
+    view.entities_at.insert(remote, Vec::new());
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.adjacent
+        .insert(origin, vec![(remote, NonZeroU32::new(2).unwrap())]);
+    view.adjacent
+        .insert(remote, vec![(origin, NonZeroU32::new(2).unwrap())]);
+
+    (view, actor, origin, remote)
 }
 
 fn build_registry_with_recipes(
@@ -8095,6 +8177,298 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
 
     assert!(result.is_found(), "local sleep planning should still succeed");
     assert_eq!(trace_metadata.tactical_goal, None);
+}
+
+#[test]
+fn search_acquire_commodity_uses_travel_to_goal() {
+    let (mut view, actor, _origin, market) = build_two_place_travel_view();
+    let bread = entity(20);
+    view.alive.insert(bread);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(bread, market);
+    view.entities_at.entry(market).or_default().push(bread);
+    view.controllable.insert((actor, bread));
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(10));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(
+        bread,
+        LoadUnits(worldwake_core::load_per_unit(CommodityKind::Bread).0),
+    );
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([market]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+    let plan = search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        Some(&mut trace_metadata),
+    )
+    .into_plan()
+    .expect("remote acquire goal should plan travel to the known commodity place");
+
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(market)]
+    );
+}
+
+#[test]
+fn search_patrol_uses_travel_to_goal_for_remote_place() {
+    let (mut view, actor, _origin, patrol_place) = build_two_place_travel_view();
+    view.patrol_profiles.insert(
+        actor,
+        PatrolProfile {
+            base_dwell_ticks: 8,
+            dwell_vigilance_scale_ticks: 8,
+            vigilance: pm(625),
+            route_adaptation_sensitivity: pm(400),
+            patrol_motive_weight: pm(550),
+        },
+    );
+    view.patrol_routes.insert(
+        actor,
+        PatrolRoute {
+            assigned_places: vec![patrol_place],
+            current_index: 0,
+        },
+    );
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(patrol_place),
+        key: GoalKey::from(GoalKind::Patrol { place: patrol_place }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([patrol_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+    let plan = search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        Some(&mut trace_metadata),
+    )
+    .into_plan()
+    .expect("remote patrol goal should plan travel to the patrol place");
+
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(patrol_place)]
+    );
+    assert_eq!(
+        plan.steps.last().map(|step| step.op_kind),
+        Some(PlannerOpKind::Patrol)
+    );
+    assert_eq!(
+        trace_metadata.tactical_goal.as_deref(),
+        Some(format!("TravelToGoal {{ destination: {patrol_place:?} }}").as_str())
+    );
+}
+
+#[test]
+fn search_investigate_uses_travel_to_goal() {
+    let (mut view, actor, _origin, violation_place) = build_two_place_travel_view();
+    view.violation_profiles.insert(
+        actor,
+        ViolationDispositionProfile {
+            investigation_duration_ticks: NonZeroU32::new(3).unwrap(),
+            violation_memory_retention_ticks: 50,
+            investigation_motive_weight: pm(500),
+            ownership_motive_bonus: pm(200),
+        },
+    );
+    view.active_violation_records.insert(
+        actor,
+        vec![RecordedViolation {
+            id: ViolationId(1),
+            kind: ViolationKind::SupplyDepleted {
+                commodity: CommodityKind::Bread,
+                source: violation_place,
+                place: violation_place,
+            },
+            observed_tick: Tick(0),
+            resolved_tick: None,
+            expires_tick: Tick(50),
+        }],
+    );
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(violation_place),
+        key: GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id: ViolationId(1),
+            place: violation_place,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([violation_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+    let plan = search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        Some(&mut trace_metadata),
+    )
+    .into_plan()
+    .expect("remote investigation goal should plan travel to the violation place");
+
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(violation_place)]
+    );
+    assert_eq!(
+        plan.steps.last().map(|step| step.op_kind),
+        Some(PlannerOpKind::Investigate)
+    );
+    assert_eq!(
+        trace_metadata.tactical_goal.as_deref(),
+        Some(format!("TravelToGoal {{ destination: {violation_place:?} }}").as_str())
+    );
+}
+
+#[test]
+fn search_travel_to_goal_barrier_satisfied_at_destination() {
+    let (view, actor, _origin, destination) = build_two_place_travel_view();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(destination),
+        key: GoalKey::from(GoalKind::Patrol { place: destination }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([destination]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let reached_state = PlanningState::new(&snapshot).move_actor_to(destination);
+    let not_reached_state = PlanningState::new(&snapshot);
+    let tactical_goal = super::TacticalGoal::TravelToGoal { destination };
+
+    assert!(tactical_goal.progress_barrier_satisfied(&reached_state));
+    assert!(!tactical_goal.progress_barrier_satisfied(&not_reached_state));
+}
+
+#[test]
+fn search_travel_to_goal_candidate_filter() {
+    let (view, actor, origin, destination) = build_two_place_travel_view();
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::new(),
+        &BTreeSet::from([destination]),
+        1,
+    );
+    let node = SearchNode {
+        state: PlanningState::new(&snapshot),
+        steps: SharedVec::new(),
+        total_estimated_ticks: 0,
+        search_cost: 0,
+        tactical_barrier_reached: false,
+        heuristic_ticks: 0,
+    };
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(destination),
+        key: GoalKey::from(GoalKind::Patrol { place: destination }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([destination]),
+    };
+    let travel_id = ActionDefId(100);
+    let patrol_id = ActionDefId(101);
+    let harvest_id = ActionDefId(102);
+
+    let mut semantics_table = BTreeMap::new();
+    semantics_table.insert(travel_id, travel_semantics());
+    semantics_table.insert(
+        patrol_id,
+        PlannerOpSemantics {
+            op_kind: PlannerOpKind::Patrol,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        },
+    );
+    semantics_table.insert(harvest_id, harvest_semantics());
+
+    let mut candidates = vec![
+        make_travel_candidate(travel_id, destination),
+        make_non_travel_candidate(patrol_id, origin),
+        make_non_travel_candidate(harvest_id, origin),
+    ];
+
+    super::apply_tactical_candidate_filter(
+        &mut candidates,
+        &goal,
+        &node,
+        &semantics_table,
+        Some(&super::TacticalGoal::TravelToGoal { destination }),
+    );
+
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.iter().any(|candidate| candidate.def_id == travel_id));
+    assert!(candidates.iter().any(|candidate| candidate.def_id == patrol_id));
+    assert!(
+        candidates.iter().all(|candidate| candidate.def_id != harvest_id),
+        "irrelevant non-travel setup should be removed before departure"
+    );
 }
 
 #[test]
