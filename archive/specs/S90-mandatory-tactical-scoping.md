@@ -13,7 +13,7 @@ This spec introduces three changes: (1) remove the evidence guard and replace it
 - All three agents collapsed to sleep+relieve loops; candidate counts are post-tactical-filter, confirming no tactical filtering applied
 
 **Phase**: 7 (Adjunct — Simulation Remediation)
-**Status**: DRAFT
+**Status**: COMPLETED
 **Crates**: `worldwake-ai`, `worldwake-core`, `worldwake-cli`
 **Dependencies**: S88 (completed), S89 (completed)
 **Supersedes**: None (fixes defects in S88/S89 pipeline)
@@ -257,6 +257,25 @@ Existing S88/S89 tests must continue to pass unchanged.
 ### Local goals are unaffected
 
 Goals with empty `goal_relevant_places()` (Sleep, Relieve, Wash, ReduceDanger, FreeCarryCapacity) produce no strategic stages. The strategic planner returns `None` or an empty-steps plan. D2's fail-fast only triggers when steps are non-empty. D3's safety valve only triggers on high candidate counts, which local goals don't produce. Local goals continue to run unscoped as before.
+
+## Outcome
+
+Completion date: 2026-04-11
+
+What actually changed:
+1. D1 landed in `S90MANTACSCO-001`: evidence-backed tactical exploration no longer collapses to `None`, and supported exploration now directs toward the nearest evidence place
+2. D2 landed across `S90MANTACSCO-002`: strategic exploration was split into explicit barrier-required vs generic fallback variants, and fail-fast now applies only to the barrier-required slice
+3. D3 landed across `S90MANTACSCO-003` and `S90MANTACSCO-004`: `CognitiveProfile::max_candidates_per_expansion` now bounds candidate explosion, existing scenario `cognitive_profile` blocks remain deserializable when omitting the new field, and focused planner coverage now proves the threshold boundary
+
+Deviations from the original draft:
+1. D2 could not lawfully be implemented as a blanket fail-fast on any non-empty strategic/no-tactical path; the live branch required explicit strategic classification first so lawful no-barrier paths like `Accuse` remained searchable
+2. D3 required a narrower scenario-contract correction than the draft implied: explicit scenario `cognitive_profile` blocks deserialize the full struct, so a field-level serde default was part of the real production delta
+
+Verification results:
+1. `cargo test -p worldwake-ai`
+2. `cargo test -p worldwake-cli --lib scenario::types::tests::test_scenario_def_cognitive_profile_missing_new_field_uses_default`
+3. `cargo build --workspace`
+4. `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Multi-location goals gain mandatory tactical scoping
 

@@ -1577,6 +1577,65 @@ fn search_returns_none_when_node_expansion_budget_is_exhausted() {
 }
 
 #[test]
+fn search_candidate_safety_valve_triggers_at_threshold() {
+    let actor = entity(1);
+    let town = entity(10);
+    let field = entity(11);
+    let bread = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town, field, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(field, EntityKind::Place);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(bread, field);
+    view.entities_at.insert(town, vec![actor]);
+    view.entities_at.insert(field, vec![bread]);
+    view.controllable.insert((actor, bread));
+    view.adjacent
+        .insert(town, vec![(field, NonZeroU32::new(3).unwrap())]);
+    view.adjacent
+        .insert(field, vec![(town, NonZeroU32::new(3).unwrap())]);
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.consumable_profiles.insert(
+        bread,
+        CommodityKind::Bread.spec().consumable_profile.unwrap(),
+    );
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    let (registry, handlers) = build_registry();
+    let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+    let mut cognitive = cognitive(&ProfileFixture::default());
+    cognitive.max_candidates_per_expansion = 0;
+
+    let result = super::search_plan(
+        &snapshot,
+        &consume_goal(CommodityKind::Bread),
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &cognitive,
+        &execution_budget(&ProfileFixture::default()),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    );
+
+    match result {
+        PlanSearchResult::BudgetExhausted { expansions_used } => {
+            assert_eq!(expansions_used, 1);
+        }
+        other => panic!("expected BudgetExhausted from candidate safety valve, got {other:?}"),
+    }
+}
+
+#[test]
 fn search_beam_width_1_prunes_viable_slower_branch() {
     let actor = entity(1);
     let town = entity(10);

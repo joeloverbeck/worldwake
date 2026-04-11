@@ -15,6 +15,7 @@ Completed Phase 7 specs:
 - `S72: Event Log Epoch Compaction` — periodic World checkpoints on `EventLog` with `state_deltas` stripping for bounded RAM. `CheckpointData`, `compaction_interval` on `EventLog`, `compact_event_log` SystemFn, `ScenarioDef.compaction_interval` (default: 50). Verification adapted for checkpoint-based reconstruction. Archived at [archive/specs/S72-event-log-epoch-compaction.md](/home/joeloverbeck/projects/worldwake/archive/specs/S72-event-log-epoch-compaction.md).
 - `S80: Exploration Drive` — archived at [archive/specs/S80-exploration-drive.md](/home/joeloverbeck/projects/worldwake/archive/specs/S80-exploration-drive.md). Landed `ExplorationProfile`, live `ExploreLocation` goal generation/planning under self-care fallback rules, bounded consecutive exploration tracking, and dedicated golden coverage in `golden_exploration.rs` plus refreshed generated golden docs.
 - `S84: ShareBelief Operator Fix` — archived at [archive/specs/S84-share-belief-operator-fix.md](/home/joeloverbeck/projects/worldwake/archive/specs/S84-share-belief-operator-fix.md). Fixed planning-snapshot evidence-listener place indexing for ShareBelief/Tell affordance search, confirmed root-omission diagnostics already owned the planner traceability slice, and validated the existing ShareBelief golden coverage.
+- `S90: Mandatory Tactical Scoping` — archived at [archive/specs/S90-mandatory-tactical-scoping.md](/home/joeloverbeck/projects/worldwake/archive/specs/S90-mandatory-tactical-scoping.md). Removed the stale evidence-empty exploration suppression, corrected same-goal tactical explore classification/fail-fast boundaries, and added the D3 candidate-count safety valve plus focused threshold coverage.
 
 Completed adjunct specs:
 - `S67: Golden E2E Gaps — S59` archived at [archive/specs/S67-golden-gaps-S59.md](/home/joeloverbeck/projects/worldwake/archive/specs/S67-golden-gaps-S59.md).
@@ -140,10 +141,12 @@ Root cause: flat A* forward search with 1400+ branching factor is architecturall
 
 ```text
 S88 ✅ archived (independent, supersedes S86 + S87)
+S90 ✅ archived (depends on S88 + S89)
 ```
 
 **Wave**:
 - **S88**: ✅ COMPLETED — Two-Phase Landmark-Guided Planning — archived at [archive/specs/S88-two-phase-landmark-planning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S88-two-phase-landmark-planning.md). Landed the belief-backed strategic planner, landmark-guided tactical planning substrate, dual-frontier search, live two-phase integration for remote `TreatWounds` and `ProduceCommodity`, decision-trace enrichment, and golden coverage for two-phase planner behavior and landmark-depth diversity. Superseded S86 (heuristic candidate scoring) and S87 (observer diagnostic gaps; observer tooling may be reconsidered as a future spec).
+- **S90**: ✅ COMPLETED — Mandatory Tactical Scoping — archived at [archive/specs/S90-mandatory-tactical-scoping.md](/home/joeloverbeck/projects/worldwake/archive/specs/S90-mandatory-tactical-scoping.md). Landed evidence-directed tactical exploration, barrier-required vs fallback exploration classification, bounded fail-fast for missing tactical goals on the barrier-required slice, and the per-agent candidate-count safety valve plus focused threshold proof.
 
 ### Phase 7 Gate
 
