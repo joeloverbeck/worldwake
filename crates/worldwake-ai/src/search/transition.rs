@@ -1,4 +1,4 @@
-use super::{SearchCandidate, SearchNode};
+use super::{SearchCandidate, SearchNode, TacticalGoal};
 use crate::goal_model::{
     GoalPayloadOverrideError, grounded_goal_epistemic_subjects,
     grounded_goal_matches_epistemic_barrier,
@@ -8,14 +8,16 @@ use crate::{
     GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind,
     PlannerOpSemantics, PlanningEntityRef, apply_hypothetical_transition,
 };
-use heuristic::{combined_relevant_places, compute_heuristic};
+use heuristic::{combined_relevant_places_for_tactical, compute_heuristic, compute_landmark_heuristic};
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, ExecutionBudget};
 use worldwake_sim::{ActionDefRegistry, RecipeRegistry, TemporalBeliefView};
 
 use super::heuristic;
+use super::landmarks::{LandmarkSet, planning_facts_from_state};
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn build_successor<'snapshot>(
     goal: &GroundedGoal,
@@ -25,6 +27,8 @@ pub(super) fn build_successor<'snapshot>(
     candidate: &SearchCandidate,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
+    tactical_goal: Option<&TacticalGoal>,
+    landmark_set: &LandmarkSet,
 ) -> Option<(Option<PlanTerminalKind>, SearchNode<'snapshot>)> {
     build_successor_detailed(
         goal,
@@ -34,10 +38,13 @@ pub(super) fn build_successor<'snapshot>(
         candidate,
         recipes,
         execution_budget,
+        tactical_goal,
+        landmark_set,
     )
     .ok()
 }
 
+#[allow(clippy::too_many_arguments)]
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn build_successor_detailed<'snapshot>(
     goal: &GroundedGoal,
@@ -47,6 +54,8 @@ pub(super) fn build_successor_detailed<'snapshot>(
     candidate: &SearchCandidate,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
+    tactical_goal: Option<&TacticalGoal>,
+    landmark_set: &LandmarkSet,
 ) -> Result<
     (Option<PlanTerminalKind>, SearchNode<'snapshot>),
     crate::decision_trace::RootCandidateSkipReason,
@@ -59,7 +68,9 @@ pub(super) fn build_successor_detailed<'snapshot>(
         .ok_or(crate::decision_trace::RootCandidateSkipReason::MissingSemantics)?;
     let epistemic_subjects = grounded_goal_epistemic_subjects(goal, &node.state);
     let epistemic_barrier_active = !epistemic_subjects.is_empty();
-    let is_goal_relevant = if epistemic_barrier_active {
+    let is_goal_relevant = if tactical_goal.is_some() {
+        true
+    } else if epistemic_barrier_active {
         semantics.op_kind == PlannerOpKind::Travel
             || grounded_goal_matches_epistemic_barrier(
                 &epistemic_subjects,
@@ -122,7 +133,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
         is_materialization_barrier: semantics.is_materialization_barrier,
         expected_materializations: transition.expected_materializations,
     };
-    let terminal = terminal_kind(goal, &transition.state, &step);
+    let terminal = terminal_kind(goal, &transition.state, &step, tactical_goal);
     if !semantics.may_appear_mid_plan && terminal.is_none() {
         return Err(crate::decision_trace::RootCandidateSkipReason::NonTerminalLeafOnly);
     }
@@ -151,13 +162,21 @@ pub(super) fn build_successor_detailed<'snapshot>(
         .search_cost
         .checked_add(search_step_cost)
         .ok_or(crate::decision_trace::RootCandidateSkipReason::TotalDurationOverflow)?;
-    let combined_places =
-        combined_relevant_places(goal, &transition.state, recipes, execution_budget);
-    let heuristic_ticks = compute_heuristic(
+    let combined_places = combined_relevant_places_for_tactical(
+        goal,
+        &transition.state,
+        recipes,
+        execution_budget,
+        tactical_goal,
+    );
+    let spatial_heuristic = compute_heuristic(
         node.state.snapshot(),
         &transition.state,
         &combined_places.places,
     );
+    let landmark_heuristic =
+        compute_landmark_heuristic(landmark_set, &planning_facts_from_state(&transition.state));
+    let heuristic_ticks = spatial_heuristic.max(landmark_heuristic);
     let mut steps = node.steps.clone();
     steps.push(step);
 
@@ -193,12 +212,21 @@ pub(super) fn terminal_kind(
     goal: &GroundedGoal,
     state: &crate::PlanningState<'_>,
     step: &PlannedStep,
+    tactical_goal: Option<&TacticalGoal>,
 ) -> Option<PlanTerminalKind> {
     if matches!(step.op_kind, PlannerOpKind::Attack | PlannerOpKind::Defend) {
         return Some(PlanTerminalKind::CombatCommitment);
     }
     if goal.key.kind.is_satisfied(state) {
         return Some(PlanTerminalKind::GoalSatisfied);
+    }
+    if let Some(tactical_goal) = tactical_goal {
+        match tactical_goal {
+            TacticalGoal::SocialQuery { .. } if step.op_kind == PlannerOpKind::AskWitness => {
+                return Some(PlanTerminalKind::ProgressBarrier);
+            }
+            _ => {}
+        }
     }
     let epistemic_subjects = grounded_goal_epistemic_subjects(goal, state);
     if grounded_goal_matches_epistemic_barrier(

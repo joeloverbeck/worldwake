@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None — new test file only
-**Deps**: S88TWOPHALAN-007, S88TWOPHALAN-008
+**Deps**: S88TWOPHALAN-007, S88TWOPHALAN-008, S88TWOPHALAN-010
 
 ## Problem
 

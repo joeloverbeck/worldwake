@@ -116,6 +116,8 @@ fn build_successor<'snapshot>(
         candidate,
         recipes,
         &execution_budget(reasoning),
+        None,
+        &super::landmarks::LandmarkSet::empty(),
     )
 }
 
@@ -7790,6 +7792,105 @@ fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds()
     assert!(
         first.travel_pruning.is_some(),
         "root expansion should record travel pruning context"
+    );
+}
+
+#[test]
+fn search_treat_wounds_uses_two_phase_pick_up_before_heal() {
+    let (mut view, actor, patient, _current_place, patient_place, medicine_place) =
+        build_branching_care_view();
+    view.wounds.insert(patient, vec![wound(401)]);
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::TreatWounds { patient }),
+        evidence_entities: BTreeSet::from([patient]),
+        evidence_places: BTreeSet::from([patient_place, medicine_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        2,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("two-phase search should find a full care plan");
+
+    let ops = plan.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    assert!(
+        ops.starts_with(&[PlannerOpKind::Travel, PlannerOpKind::MoveCargo]),
+        "two-phase search should first route to medicine, then pick it up: {ops:?}"
+    );
+    assert!(
+        ops.contains(&PlannerOpKind::Heal),
+        "care plan should still complete healing after the prerequisite stage: {ops:?}"
+    );
+}
+
+#[test]
+fn search_treat_wounds_with_zero_landmarks_preserves_two_phase_plan_shape() {
+    let (mut view, actor, patient, _current_place, patient_place, medicine_place) =
+        build_branching_care_view();
+    view.wounds.insert(patient, vec![wound(402)]);
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::TreatWounds { patient }),
+        evidence_entities: BTreeSet::from([patient]),
+        evidence_places: BTreeSet::from([patient_place, medicine_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        2,
+    );
+    let mut no_landmarks = cognitive(&ProfileFixture::default());
+    no_landmarks.landmark_extraction_depth = 0;
+
+    let result = super::search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &no_landmarks,
+        &execution_budget(&ProfileFixture::default()),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("two-phase strategic search should still find a full care plan");
+
+    let ops = result.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+    assert_eq!(result.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    assert!(
+        ops.starts_with(&[PlannerOpKind::Travel, PlannerOpKind::MoveCargo]),
+        "zero-landmark mode should preserve the prerequisite-first shape: {ops:?}"
+    );
+    assert!(
+        ops.contains(&PlannerOpKind::Heal),
+        "zero-landmark mode should still finish healing: {ops:?}"
     );
 }
 

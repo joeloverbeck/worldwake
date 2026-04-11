@@ -107,9 +107,10 @@ Run these checks before archival to keep the active roadmap accurate:
 
 When a new ticket is warranted:
 1. Create from [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) per [tickets/README.md](../../../tickets/README.md).
-2. Reassess against current code and docs before finalizing.
-3. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
-4. Keep bounded to one coherent concern.
+2. If the new ticket is being exposed by a narrowed implementation or roadmap gap, inspect adjacent active tickets/specs first so the new ticket and any dependency updates are authored together.
+3. Reassess against current code and docs before finalizing.
+4. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
+5. Keep bounded to one coherent concern.
 
 Set fields using evidence, not placeholders:
 - `Priority`: infer from impact and blast radius

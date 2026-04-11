@@ -64,6 +64,8 @@ For planner-visible belief, profile, or snapshot-completeness tickets, verify th
 
 For dedicated goal-root, planner-root, or golden-isolation tickets, verify that the claimed downstream effect is uniquely attributable to the named goal/root rather than already reachable through a more generic operator family. If a generic path can already lawfully produce the same outcome, narrow the ticket and scenario so they prove the dedicated goal's distinct contract instead of over-claiming a broader downstream chain.
 
+When a staged planner module or substrate already supports multiple goal families, verify each proposed live family against existing conformance/golden ownership before integrating them together. If live proof only clearly justifies part of that staged surface, default the ticket to the narrowest goal-family slice that is already supported rather than activating every plausible family at once.
+
 Load `references/reassessment-checks.md`.
 
 ### 3. Handle mismatches explicitly

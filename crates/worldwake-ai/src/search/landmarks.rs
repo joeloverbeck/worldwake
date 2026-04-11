@@ -1,11 +1,13 @@
-#![allow(dead_code)]
-
 use std::collections::{BTreeSet, VecDeque};
 
-use worldwake_core::{CommodityKind, EntityId, HomeostaticNeedId};
+use worldwake_core::{CommodityKind, EntityId, GoalKind, HomeostaticNeedId, Quantity};
+use worldwake_sim::{InventoryBeliefView, ProfileBeliefView, RecipeRegistry};
+
+use crate::{GroundedGoal, PlanningEntityRef, PlanningState};
 
 use super::candidates::SearchCandidate;
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum PlanningFact {
     AtPlace(EntityId),
@@ -32,6 +34,95 @@ pub(super) struct LandmarkSet {
 impl LandmarkSet {
     pub(super) fn empty() -> Self {
         Self::default()
+    }
+}
+
+pub(super) fn planning_facts_from_state(state: &PlanningState<'_>) -> BTreeSet<PlanningFact> {
+    let actor = state.snapshot().actor();
+    let mut facts = BTreeSet::new();
+    if let Some(place) = state.effective_place_ref(PlanningEntityRef::Authoritative(actor)) {
+        facts.insert(PlanningFact::AtPlace(place));
+    }
+    for commodity in CommodityKind::ALL {
+        if state.commodity_quantity(actor, commodity) > Quantity(0) {
+            facts.insert(PlanningFact::HasCommodity(commodity));
+        }
+    }
+    for entity in state.direct_possessions(actor) {
+        facts.insert(PlanningFact::HasEntity(entity));
+    }
+    if let Some(needs) = state.homeostatic_needs(actor)
+        && let Some(thresholds) = state.drive_thresholds(actor)
+    {
+        if needs.hunger < thresholds.hunger.low() {
+            facts.insert(PlanningFact::NeedSatisfied(HomeostaticNeedId::Hunger));
+        }
+        if needs.thirst < thresholds.thirst.low() {
+            facts.insert(PlanningFact::NeedSatisfied(HomeostaticNeedId::Thirst));
+        }
+        if needs.fatigue < thresholds.fatigue.low() {
+            facts.insert(PlanningFact::NeedSatisfied(HomeostaticNeedId::Fatigue));
+        }
+        if needs.bladder < thresholds.bladder.low() {
+            facts.insert(PlanningFact::NeedSatisfied(HomeostaticNeedId::Bladder));
+        }
+        if needs.dirtiness < thresholds.dirtiness.low() {
+            facts.insert(PlanningFact::NeedSatisfied(HomeostaticNeedId::Dirtiness));
+        }
+    }
+    facts
+}
+
+pub(super) fn planning_operator_from_transition(
+    before: &PlanningState<'_>,
+    after: &PlanningState<'_>,
+) -> PlanningOperator {
+    let before_facts = planning_facts_from_state(before);
+    let after_facts = planning_facts_from_state(after);
+    let mut preconditions = BTreeSet::new();
+    if let Some(place) =
+        before.effective_place_ref(PlanningEntityRef::Authoritative(before.snapshot().actor()))
+    {
+        preconditions.insert(PlanningFact::AtPlace(place));
+    }
+    preconditions.extend(before_facts.difference(&after_facts).cloned());
+    PlanningOperator {
+        preconditions,
+        add_effects: after_facts.difference(&before_facts).cloned().collect(),
+        del_effects: before_facts.difference(&after_facts).cloned().collect(),
+    }
+}
+
+pub(super) fn goal_facts_from_goal(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
+) -> BTreeSet<PlanningFact> {
+    match goal.key.kind {
+        GoalKind::AcquireCommodity { commodity, .. }
+        | GoalKind::RestockCommodity { commodity }
+        | GoalKind::ConsumeOwnedCommodity { commodity } => {
+            BTreeSet::from([PlanningFact::HasCommodity(commodity)])
+        }
+        GoalKind::ProduceCommodity { recipe_id } => recipes
+            .get(recipe_id)
+            .map(|recipe| {
+                recipe
+                    .outputs
+                    .iter()
+                    .filter(|(_, quantity)| *quantity > Quantity(0))
+                    .map(|(commodity, _)| PlanningFact::HasCommodity(*commodity))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        GoalKind::ExploreLocation { target_place, .. } => {
+            BTreeSet::from([PlanningFact::AtPlace(target_place)])
+        }
+        GoalKind::TreatWounds { .. } => state
+            .homeostatic_needs(state.snapshot().actor())
+            .map(|_| BTreeSet::from([PlanningFact::HasCommodity(CommodityKind::Medicine)]))
+            .unwrap_or_default(),
+        _ => BTreeSet::new(),
     }
 }
 

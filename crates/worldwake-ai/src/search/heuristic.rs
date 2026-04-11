@@ -8,7 +8,7 @@ use worldwake_core::{ActionDefId, EntityId, ExecutionBudget};
 use worldwake_sim::RecipeRegistry;
 
 use super::{
-    SearchCandidate, SearchNode,
+    SearchCandidate, SearchNode, TacticalGoal,
     landmarks::{LandmarkSet, PlanningFact, actionable_landmarks},
 };
 
@@ -54,6 +54,42 @@ pub(super) fn combined_relevant_places(
     execution_budget: &ExecutionBudget,
 ) -> CombinedRelevantPlaces {
     combined_relevant_places_internal(goal, state, recipes, execution_budget, false)
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+pub(super) fn combined_relevant_places_for_tactical(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
+    execution_budget: &ExecutionBudget,
+    tactical_goal: Option<&TacticalGoal>,
+) -> CombinedRelevantPlaces {
+    tactical_goal.and_then(tactical_goal_places).map_or_else(
+        || combined_relevant_places(goal, state, recipes, execution_budget),
+        |destination| CombinedRelevantPlaces {
+            places: vec![destination],
+            prerequisite_places_count: 0,
+            guidance_trace: None,
+        },
+    )
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+pub(super) fn combined_relevant_places_with_guidance_for_tactical(
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    recipes: &RecipeRegistry,
+    execution_budget: &ExecutionBudget,
+    tactical_goal: Option<&TacticalGoal>,
+) -> CombinedRelevantPlaces {
+    tactical_goal.and_then(tactical_goal_places).map_or_else(
+        || combined_relevant_places_with_guidance(goal, state, recipes, execution_budget),
+        |destination| CombinedRelevantPlaces {
+            places: vec![destination],
+            prerequisite_places_count: 0,
+            guidance_trace: None,
+        },
+    )
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -119,14 +155,32 @@ fn combined_relevant_places_internal(
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
+#[cfg(test)]
 pub(super) fn root_node<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
     goal: &GroundedGoal,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
 ) -> SearchNode<'snapshot> {
+    root_node_for_tactical(snapshot, goal, recipes, execution_budget, None)
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+pub(super) fn root_node_for_tactical<'snapshot>(
+    snapshot: &'snapshot PlanningSnapshot,
+    goal: &GroundedGoal,
+    recipes: &RecipeRegistry,
+    execution_budget: &ExecutionBudget,
+    tactical_goal: Option<&TacticalGoal>,
+) -> SearchNode<'snapshot> {
     let state = PlanningState::new(snapshot);
-    let combined_places = combined_relevant_places(goal, &state, recipes, execution_budget);
+    let combined_places = combined_relevant_places_for_tactical(
+        goal,
+        &state,
+        recipes,
+        execution_budget,
+        tactical_goal,
+    );
     let heuristic_ticks = compute_heuristic(snapshot, &state, &combined_places.places);
     SearchNode {
         state,
@@ -134,6 +188,14 @@ pub(super) fn root_node<'snapshot>(
         total_estimated_ticks: 0,
         search_cost: 0,
         heuristic_ticks,
+    }
+}
+
+fn tactical_goal_places(tactical_goal: &TacticalGoal) -> Option<EntityId> {
+    match tactical_goal {
+        TacticalGoal::AcquirePrerequisite { destination, .. }
+        | TacticalGoal::Explore { destination } => Some(*destination),
+        TacticalGoal::SocialQuery { .. } => None,
     }
 }
 
