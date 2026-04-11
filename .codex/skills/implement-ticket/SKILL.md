@@ -97,6 +97,7 @@ After narrowing a ticket because substrate is already live, re-sweep the adjacen
 If focused proof added during implementation reveals a production contradiction that reassessment did not yet expose, stop and correct the ticket before proceeding further. Update the same sections (`Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria`) so the ticket no longer claims "tests only" or `Engine Changes: None` when the live invariant actually requires production changes.
 
 If focused proof instead falsifies the suspected production contradiction and shows the live fix is narrower (for example, golden-scenario isolation or fixture recalibration), stop and narrow the ticket before proceeding further. Update the same sections (`Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria`) so the ticket no longer claims production ownership when the honest contract is test-only or fixture-only.
+If a focused rerun disproves a newly adopted root-cause hypothesis, update the ticket again immediately: remove the falsified explanation from `Problem`, `Architecture Check`, `What to Change`, and any command/acceptance text that depended on it, and revert any exploratory production change that no longer explains the motivating failure.
 
 When reassessment or focused proof changes the real edit surface, update `Files to Touch` and any file- or symbol-level scope notes immediately instead of leaving them stale until closeout. The ticket should keep reflecting the current owned boundary as implementation proceeds.
 
@@ -135,6 +136,7 @@ When a new fallback contract becomes lawful, re-check nearby planner/search test
 
 When broadened verification fails, treat each failure as current-ticket fallout and continue the fix-and-rerun loop until the broadened target passes or you hit a real 1-3-1 blocker. Do not stop after the first full-suite failure if the next step is a straightforward fallout fix within the ticket's live scope.
 After each fallout fix, rerun the same broadened verification target that exposed the failure before treating the branch as green. Do not rely on focused follow-up checks alone when the broader package or suite has not yet been rerun clean.
+If diagnosis required temporary tracing, debug prints, probe assertions, or similar instrumentation, remove them before broadened verification and before updating the ticket's final outcome/verification text.
 
 ### 7. Close out the ticket honestly
 

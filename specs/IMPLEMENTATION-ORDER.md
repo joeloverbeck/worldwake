@@ -158,7 +158,7 @@ S91 active (golden proof surface)
 ```
 
 - **S91**: active — planner-pathology golden proofs for the three observer-derived failures, including Scenario 143's `FreeCarryCapacity` zero-step loop reproduction.
-- **S92**: draft — [specs/S92-free-carry-capacity-zero-step-loop-fix.md](/home/joeloverbeck/projects/worldwake/specs/S92-free-carry-capacity-zero-step-loop-fix.md). Fixes the `FreeCarryCapacity -> GoalSatisfied[steps=0]` contract mismatch and flips Scenario 143 from bug reproduction to fix proof.
+- **S92**: completed — [archive/specs/S92-free-carry-capacity-zero-step-loop-fix.md](/home/joeloverbeck/projects/worldwake/archive/specs/S92-free-carry-capacity-zero-step-loop-fix.md). Fixes the `FreeCarryCapacity -> GoalSatisfied[steps=0]` contract mismatch and flips Scenario 143 from bug reproduction to fix proof.
 
 ### Phase 7 Gate
 

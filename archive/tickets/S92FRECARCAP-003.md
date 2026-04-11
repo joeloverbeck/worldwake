@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — focused test coverage only
-**Deps**: `archive/tickets/S92FRECARCAP-001.md`, `archive/tickets/S92FRECARCAP-002.md`, `specs/S92-free-carry-capacity-zero-step-loop-fix.md`
+**Deps**: `archive/tickets/S92FRECARCAP-001.md`, `archive/tickets/S92FRECARCAP-002.md`, `archive/specs/S92-free-carry-capacity-zero-step-loop-fix.md`
 
 ## Problem
 

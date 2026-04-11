@@ -512,17 +512,14 @@ pub(crate) fn free_carry_capacity_contract_from_view(
     agent: EntityId,
 ) -> Option<FreeCarryCapacityContract> {
     let carry_capacity = view.carry_capacity(agent)?;
-    let current_load = LoadUnits(
-        CommodityKind::ALL
-            .iter()
-            .copied()
-            .map(|kind| {
-                view.commodity_quantity(agent, kind)
-                    .0
-                    .saturating_mul(worldwake_core::load_per_unit(kind).0)
-            })
-            .fold(0u32, u32::saturating_add),
-    );
+    let current_load = view
+        .direct_possessions(agent)
+        .into_iter()
+        .try_fold(0u32, |total, entity| {
+            view.load_of_entity(entity)
+                .and_then(|load| total.checked_add(load.0))
+        })
+        .map(LoadUnits)?;
     let disposal_threshold = view
         .disposal_profile(agent)
         .map_or(Permille::new_unchecked(800), |profile| {
@@ -3890,6 +3887,7 @@ mod tests {
             .insert((waste_lot, CommodityKind::Waste), Quantity(9));
         view.carry_capacities.insert(actor, LoadUnits(10));
         view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(waste_lot, LoadUnits(9));
         (view, actor, place, waste_lot)
     }
 
@@ -6501,6 +6499,20 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let places = GoalKind::Sleep.goal_relevant_places(&state, &recipes);
         assert!(places.is_empty());
+    }
+
+    #[test]
+    fn free_carry_capacity_contract_from_view_uses_carried_load_not_controlled_inventory_total() {
+        let (mut view, actor, _place, _waste_lot) = free_carry_capacity_view();
+        view.entity_loads.insert(entity(20), LoadUnits(6));
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Waste), Quantity(18));
+
+        let contract = super::free_carry_capacity_contract_from_view(&view, actor)
+            .expect("contract should resolve");
+
+        assert_eq!(contract.current_load, LoadUnits(6));
+        assert!(!contract.is_actionable());
     }
 
     #[test]

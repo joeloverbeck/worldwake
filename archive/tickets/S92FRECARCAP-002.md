@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — candidate emission and ranking for `FreeCarryCapacity`
-**Deps**: `archive/tickets/S92FRECARCAP-001.md`, `specs/S92-free-carry-capacity-zero-step-loop-fix.md`
+**Deps**: `archive/tickets/S92FRECARCAP-001.md`, `archive/specs/S92-free-carry-capacity-zero-step-loop-fix.md`
 
 ## Problem
 

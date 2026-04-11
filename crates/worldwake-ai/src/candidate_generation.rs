@@ -5978,7 +5978,16 @@ mod tests {
         view.effective_places.insert(agent, place);
         view.effective_places.insert(waste_lot, place);
         view.entities_at.insert(place, vec![agent, waste_lot]);
+        view.direct_possessions.insert(agent, vec![waste_lot]);
         view.carry_capacities.insert(agent, LoadUnits(10));
+        view.entity_loads.insert(
+            waste_lot,
+            LoadUnits(
+                Quantity(8)
+                    .0
+                    .saturating_mul(worldwake_core::load_per_unit(CommodityKind::Waste).0),
+            ),
+        );
         view.commodity_quantities
             .insert((agent, CommodityKind::Waste), Quantity(8));
         view.direct_possessors.insert(waste_lot, agent);
@@ -6014,7 +6023,16 @@ mod tests {
         view.effective_places.insert(agent, place);
         view.effective_places.insert(waste_lot, place);
         view.entities_at.insert(place, vec![agent, waste_lot]);
+        view.direct_possessions.insert(agent, vec![waste_lot]);
         view.carry_capacities.insert(agent, LoadUnits(10));
+        view.entity_loads.insert(
+            waste_lot,
+            LoadUnits(
+                Quantity(7)
+                    .0
+                    .saturating_mul(worldwake_core::load_per_unit(CommodityKind::Waste).0),
+            ),
+        );
         view.commodity_quantities
             .insert((agent, CommodityKind::Waste), Quantity(7));
         view.direct_possessors.insert(waste_lot, agent);
@@ -6072,7 +6090,16 @@ mod tests {
         view.effective_places.insert(remote_waste_lot, place);
         view.entities_at
             .insert(place, vec![agent, carried_waste_lot, remote_waste_lot]);
+        view.direct_possessions.insert(agent, vec![carried_waste_lot]);
         view.carry_capacities.insert(agent, LoadUnits(10));
+        view.entity_loads.insert(
+            carried_waste_lot,
+            LoadUnits(
+                Quantity(8)
+                    .0
+                    .saturating_mul(worldwake_core::load_per_unit(CommodityKind::Waste).0),
+            ),
+        );
         view.commodity_quantities
             .insert((agent, CommodityKind::Waste), Quantity(8));
         view.direct_possessors.insert(carried_waste_lot, agent);
@@ -6106,6 +6133,44 @@ mod tests {
             disposal_candidates[0].anchor,
             OpportunityAnchor::Entity(carried_waste_lot)
         );
+    }
+
+    #[test]
+    fn free_carry_capacity_candidate_omitted_when_only_controlled_inventory_exceeds_threshold() {
+        let agent = entity(1);
+        let place = entity(10);
+        let waste_lot = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(waste_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(waste_lot, place);
+        view.entities_at.insert(place, vec![agent, waste_lot]);
+        view.direct_possessions.insert(agent, vec![waste_lot]);
+        view.carry_capacities.insert(agent, LoadUnits(10));
+        view.entity_loads.insert(
+            waste_lot,
+            LoadUnits(
+                Quantity(6)
+                    .0
+                    .saturating_mul(worldwake_core::load_per_unit(CommodityKind::Waste).0),
+            ),
+        );
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(18));
+        view.direct_possessors.insert(waste_lot, agent);
+        let mut waste_belief = belief_at_place(place, Tick(99));
+        waste_belief.believed_kind = Some(EntityKind::ItemLot);
+        waste_belief
+            .last_known_inventory
+            .insert(CommodityKind::Waste, Quantity(1));
+        view.beliefs.insert(agent, vec![(waste_lot, waste_belief)]);
+
+        let candidates = free_carry_capacity_candidates(&view, agent);
+
+        assert!(!contains_goal(&candidates, GoalKind::FreeCarryCapacity));
     }
 
     fn believed_bounty_state(

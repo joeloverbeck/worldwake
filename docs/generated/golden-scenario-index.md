@@ -1474,11 +1474,11 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 - Places: EldergroveForest
 - Principles: 3, 7, 20, 21
 
-**Setup**: Rebuild the exact Forager Lina Eldergrove Forest substrate from
+**Setup**: Rebuild the exact Forager Lina Eldergrove Forest substrate from `scenarios/cli-evaluation.ron` using the live place graph, Lina's scenario profile values, 8 ground Apples, 5 ground Water, and the `Eldergrove Orchard` Apple source. The run uses the scenario seed `7777` and only seeds Lina's local Eldergrove beliefs, matching the observer report's locality boundary.
 
-**Proves**: After the real waste-accumulation phase from the cli-evaluation
+**Proves**: After the real waste-accumulation phase from the cli-evaluation scenario, Lina no longer enters the observer-reported degenerate loop. Late-run planning either switches away from `FreeCarryCapacity` or produces executable disposal work, eating resumes, and hunger falls within the window.
 
-**Cross-system chain**: Eldergrove harvest/eat/waste accumulation -> carry strain crosses
+**Cross-system chain**: Eldergrove harvest/eat/waste accumulation -> carry strain assessed from actual carried load -> no spurious `FreeCarryCapacity` loop -> lawful self-care resumes -> late eat commit -> falling hunger.
 
 ### Scenario 3: Resource Contention with Conservation
 

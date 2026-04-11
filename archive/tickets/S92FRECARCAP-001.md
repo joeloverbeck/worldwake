@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — planner goal satisfaction logic for `FreeCarryCapacity`
-**Deps**: `archive/specs/S82-waste-disposal-inventory-management.md`, `specs/S92-free-carry-capacity-zero-step-loop-fix.md`
+**Deps**: `archive/specs/S82-waste-disposal-inventory-management.md`, `archive/specs/S92-free-carry-capacity-zero-step-loop-fix.md`
 
 ## Problem
 

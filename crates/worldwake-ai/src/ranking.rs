@@ -1746,6 +1746,7 @@ mod tests {
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
         entity_loads: BTreeMap<EntityId, LoadUnits>,
+        direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessors: BTreeMap<EntityId, EntityId>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         listed_sale_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
@@ -2082,8 +2083,11 @@ mod tests {
     }
 
     impl worldwake_sim::InventoryBeliefView for TestBeliefView {
-        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
         }
         fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
             false
@@ -2417,7 +2421,19 @@ mod tests {
         view.entity_kinds.insert(waste_lot, EntityKind::ItemLot);
         view.effective_places.insert(waste_lot, place);
         view.place_entities.entry(place).or_default().push(waste_lot);
+        view.direct_possessions
+            .entry(agent)
+            .or_default()
+            .push(waste_lot);
         view.direct_possessors.insert(waste_lot, agent);
+        view.entity_loads.insert(
+            waste_lot,
+            LoadUnits(
+                quantity
+                    .0
+                    .saturating_mul(worldwake_core::load_per_unit(CommodityKind::Waste).0),
+            ),
+        );
 
         let mut waste_belief = believed_state(9, PerceptionSource::DirectObservation);
         waste_belief.last_known_place = Some(place);
@@ -5459,7 +5475,7 @@ mod tests {
         view.carry_capacities.insert(agent, LoadUnits(10));
         view.commodity_quantities
             .insert((agent, CommodityKind::Waste), Quantity(8));
-        seed_directly_possessed_waste_lot(&mut view, agent, place, waste_lot, Quantity(1));
+        seed_directly_possessed_waste_lot(&mut view, agent, place, waste_lot, Quantity(8));
 
         let ranked = rank(
             &[goal(GoalKind::FreeCarryCapacity)],
@@ -5484,7 +5500,13 @@ mod tests {
         fifty_view
             .commodity_quantities
             .insert((agent, CommodityKind::Waste), Quantity(8));
-        seed_directly_possessed_waste_lot(&mut fifty_view, agent, fifty_place, fifty_lot, Quantity(1));
+        seed_directly_possessed_waste_lot(
+            &mut fifty_view,
+            agent,
+            fifty_place,
+            fifty_lot,
+            Quantity(8),
+        );
 
         let fifty_ranked = rank(
             &[goal(GoalKind::FreeCarryCapacity)],
@@ -5508,7 +5530,7 @@ mod tests {
         full_view
             .commodity_quantities
             .insert((agent, CommodityKind::Waste), Quantity(10));
-        seed_directly_possessed_waste_lot(&mut full_view, agent, full_place, full_lot, Quantity(1));
+        seed_directly_possessed_waste_lot(&mut full_view, agent, full_place, full_lot, Quantity(10));
 
         let full_ranked = rank(
             &[goal(GoalKind::FreeCarryCapacity)],
@@ -5528,16 +5550,15 @@ mod tests {
     }
 
     #[test]
-    fn free_carry_capacity_motive_uses_concrete_carried_commodity_load_not_agent_load_accessor() {
+    fn free_carry_capacity_motive_uses_actor_carried_load_accessor() {
         let agent = entity(1);
         let mut view = base_view(agent);
         let place = view.effective_places[&agent];
         let waste_lot = entity(20);
         view.carry_capacities.insert(agent, LoadUnits(10));
-        view.entity_loads.insert(agent, LoadUnits(0));
         view.commodity_quantities
-            .insert((agent, CommodityKind::Waste), Quantity(8));
-        seed_directly_possessed_waste_lot(&mut view, agent, place, waste_lot, Quantity(1));
+            .insert((agent, CommodityKind::Waste), Quantity(18));
+        seed_directly_possessed_waste_lot(&mut view, agent, place, waste_lot, Quantity(8));
 
         let ranked = rank(
             &[goal(GoalKind::FreeCarryCapacity)],
@@ -5593,7 +5614,7 @@ mod tests {
             agent,
             below_threshold_place,
             entity(20),
-            Quantity(1),
+            Quantity(7),
         );
 
         let below_threshold_outcome = rank(

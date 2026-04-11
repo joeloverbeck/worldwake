@@ -9,7 +9,7 @@ This spec unifies `FreeCarryCapacity` around one lawful disposal contract: if th
 **Evidence**: Scenario 143 (`degenerate_zero_step_loop_blocks_actionable_goals`) uses the exact `scenarios/cli-evaluation.ron` Eldergrove/Forager Lina substrate, seed `7777`, and a late-run observation window after real waste accumulation. The current proof shows repeated `PlanSearchOutcome::Found { steps: [] }` for `FreeCarryCapacity`, no late `eat` commit, and rising hunger during the loop window.
 
 **Phase**: 7 (Adjunct — Planner Pathology Remediation)
-**Status**: Draft
+**Status**: COMPLETED
 **Crates**: `worldwake-ai`
 **Dependencies**:
 - `archive/specs/S82-waste-disposal-inventory-management.md`
@@ -51,7 +51,7 @@ The current live code exposes four separate `FreeCarryCapacity` contracts:
 3. `goal_model::GoalKind::FreeCarryCapacity.is_satisfied()` declares whether the goal is already complete in the planning state.
 4. `search::transition::terminal_kind()` immediately returns `PlanTerminalKind::GoalSatisfied` when `is_satisfied()` is true at the current node.
 
-The divergence is compounded by two distinct load-computation methods: candidate emission (`emit_disposal_candidates`) sums `CommodityKind::ALL` quantities times `load_per_unit()` via `GoalBeliefView`, while `carried_load_of_actor()` in `goal_model.rs` computes `capacity - remaining_carry_capacity` via recursive BFS over directly possessed items in `PlanningState`. These can yield different values when the agent possesses containers or unique items. Lina's scenario-defined `disposal_profile` has `capacity_strain_threshold: 700` (not the default 800), per `scenarios/cli-evaluation.ron:281`.
+The divergence is compounded by two distinct load-computation methods: the shared `GoalBeliefView`-side helper now reconstructs carried load from concrete direct possessions, while `carried_load_of_actor()` in `goal_model.rs` computes `capacity - remaining_carry_capacity` via recursive BFS over directly possessed items in `PlanningState`. Before the final S92 fix, planner snapshot rebuilds could still undercount directly possessed lot quantities by falling back to stale `last_known_inventory` inside `PerAgentBeliefView::commodity_quantity()`, which let the same carried substrate appear materially different across the reasoning pipeline. Lina's scenario-defined `disposal_profile` has `capacity_strain_threshold: 700` (not the default 800), per `scenarios/cli-evaluation.ron:281`.
 
 Scenario 143 proves those contracts diverge badly enough that Lina can be "strained enough to emit and rank disposal" while also being "already satisfied" at the planning root, which yields a 0-step `Found` result and blocks more urgent self-care goals.
 
@@ -273,3 +273,17 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## Expected Outcome
 
 After implementation, Scenario 143 no longer proves a planner no-op loop. Instead, it proves that on the exact `cli-evaluation.ron` observer substrate, `FreeCarryCapacity` either plans real disposal work through `drop_item` or yields to another actionable self-care goal, allowing Lina to break the late-run stall and recover from the starvation trajectory.
+
+## Outcome
+
+- Completion date: 2026-04-11
+- What changed: unified `FreeCarryCapacity` around a shared planner-local contract across satisfaction, candidate emission, and ranking; fixed directly possessed lot quantity reconstruction in `PerAgentBeliefView`; flipped Scenario 143 into a fix-proof golden; refreshed generated golden docs.
+- Deviations from original plan: the final root cause included belief-view quantity undercounting for directly possessed lots, so the completed scope included `worldwake-sim/src/per_agent_belief_view.rs` in addition to the originally named `worldwake-ai` planner surfaces.
+- Verification results:
+  - `cargo test -p worldwake-sim directly_possessed_item_lot_quantity_uses_authoritative_quantity_over_stale_belief -- --nocapture`
+  - `cargo test -p worldwake-ai free_carry_capacity_ -- --nocapture`
+  - `cargo test -p worldwake-ai degenerate_zero_step_loop_blocks_actionable_goals -- --nocapture`
+  - `cargo test -p worldwake-ai golden_waste_disposal_cycle -- --nocapture`
+  - `cargo test -p worldwake-ai`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

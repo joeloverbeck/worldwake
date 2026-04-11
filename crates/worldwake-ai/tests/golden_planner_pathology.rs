@@ -3,7 +3,7 @@ mod golden_harness;
 use golden_harness::*;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
-use worldwake_ai::{DecisionOutcome, GoalKind, PlanSearchOutcome};
+use worldwake_ai::{DecisionOutcome, GoalKind, PlanSearchOutcome, PlannerOpKind};
 use worldwake_core::{
     CarryCapacity, CombatProfile, CommodityKind, DisposalProfile, DriveThresholds, EntityId,
     EventLog, ExplorationProfile, HomeostaticNeeds, IntentionDomainTag,
@@ -599,20 +599,11 @@ fn cross_location_water_acquisition_succeeds_without_budget_exhaustion() {
 // Places: EldergroveForest
 // Principles: 3, 7, 20, 21
 //
-// Setup: Rebuild the exact Forager Lina Eldergrove Forest substrate from
-// `scenarios/cli-evaluation.ron` using the live place graph, Lina's scenario
-// profile values, 8 ground Apples, 5 ground Water, and the `Eldergrove Orchard`
-// Apple source. The run uses the scenario seed `7777` and only seeds Lina's
-// local Eldergrove beliefs, matching the observer report's locality boundary.
+// Setup: Rebuild the exact Forager Lina Eldergrove Forest substrate from `scenarios/cli-evaluation.ron` using the live place graph, Lina's scenario profile values, 8 ground Apples, 5 ground Water, and the `Eldergrove Orchard` Apple source. The run uses the scenario seed `7777` and only seeds Lina's local Eldergrove beliefs, matching the observer report's locality boundary.
 //
-// Proves: After the real waste-accumulation phase from the cli-evaluation
-// scenario, Lina enters the observer-reported degenerate loop where
-// `FreeCarryCapacity` dominates selection and repeatedly returns a 0-step found
-// plan, blocking further eating while hunger continues to rise.
+// Proves: After the real waste-accumulation phase from the cli-evaluation scenario, Lina no longer enters the observer-reported degenerate loop. Late-run planning either switches away from `FreeCarryCapacity` or produces executable disposal work, eating resumes, and hunger falls within the window.
 //
-// Chain: Eldergrove harvest/eat/waste accumulation -> carry strain crosses
-// disposal threshold -> FreeCarryCapacity selected -> Found[steps=0] loop ->
-// no further eat commits -> rising hunger.
+// Chain: Eldergrove harvest/eat/waste accumulation -> carry strain assessed from actual carried load -> no spurious `FreeCarryCapacity` loop -> lawful self-care resumes -> late eat commit -> falling hunger.
 
 #[test]
 fn degenerate_zero_step_loop_blocks_actionable_goals() {
@@ -625,6 +616,7 @@ fn degenerate_zero_step_loop_blocks_actionable_goals() {
     let observation_end = 900_u32;
     let mut window_selected = 0_u32;
     let mut window_zero_step = 0_u32;
+    let mut window_drop_item_plans = 0_u32;
     let mut window_traces = 0_u32;
     let mut hunger_at_window_start = None;
 
@@ -661,6 +653,16 @@ fn degenerate_zero_step_loop_blocks_actionable_goals() {
         }) {
             window_zero_step += 1;
         }
+        if planning.planning.attempts.iter().any(|attempt| {
+            attempt.goal.kind == GoalKind::FreeCarryCapacity
+                && matches!(
+                    &attempt.outcome,
+                    PlanSearchOutcome::Found { steps, .. }
+                        if steps.iter().any(|step| step.op_kind == PlannerOpKind::DropItem)
+                )
+        }) {
+            window_drop_item_plans += 1;
+        }
     }
 
     let hunger_at_window_start =
@@ -678,23 +680,23 @@ fn degenerate_zero_step_loop_blocks_actionable_goals() {
         });
 
     assert!(
-        window_traces >= 100,
+        window_traces >= 80,
         "expected decision traces throughout the late-run pathology window, saw {window_traces}"
     );
     assert!(
-        window_selected >= 100,
-        "expected FreeCarryCapacity to dominate late-run goal selection in the cli-evaluation Lina window, saw {window_selected} selections across {window_traces} traced ticks"
+        window_zero_step == 0,
+        "expected no repeated 0-step FreeCarryCapacity plans in the late-run cli-evaluation Lina window, saw {window_zero_step} zero-step attempts across {window_traces} traced ticks"
     );
     assert!(
-        window_zero_step >= 100,
-        "expected repeated 0-step found FreeCarryCapacity plans in the cli-evaluation Lina window, saw {window_zero_step} zero-step attempts across {window_traces} traced ticks"
+        window_selected == 0 || window_drop_item_plans > 0,
+        "late-run FreeCarryCapacity should either disappear as a selected goal or produce executable DropItem plans; selections={window_selected} drop_item_plans={window_drop_item_plans}"
     );
     assert!(
-        !late_eat_commit,
-        "expected no late-run eat commits once the FreeCarryCapacity loop takes over"
+        late_eat_commit,
+        "expected a late-run eat commit once the FreeCarryCapacity loop is gone"
     );
     assert!(
-        hunger_after > hunger_at_window_start,
-        "expected hunger to continue rising during the late-run loop window; start={hunger_at_window_start:?} end={hunger_after:?}"
+        hunger_after < hunger_at_window_start,
+        "expected hunger to fall during the late-run recovery window; start={hunger_at_window_start:?} end={hunger_after:?}"
     );
 }
