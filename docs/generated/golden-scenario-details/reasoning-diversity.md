@@ -43,7 +43,7 @@ Scenarios: 3
 
 ### Scenario 129: Utility Profiles Diverge Under Identical Self-Care Pressure
 
-- Source: `golden_reasoning_diversity.rs:529`
+- Source: `golden_reasoning_diversity.rs:540`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

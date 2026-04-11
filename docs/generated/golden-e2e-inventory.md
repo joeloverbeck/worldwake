@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 26
-- Files contributing `golden_*` tests: 26
-- Total `golden_*` tests: 348
+- Golden test files: 27
+- Files contributing `golden_*` tests: 27
+- Total `golden_*` tests: 349
 
 ## Per-File Inventory
 
@@ -28,6 +28,7 @@ Do not hand-edit it.
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
 | `golden_perception_exposure.rs` | 6 |
+| `golden_planner_pathology.rs` | 1 |
 | `golden_production.rs` | 34 |
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 6 |
@@ -322,6 +323,10 @@ Do not hand-edit it.
 - `golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity`
 - `golden_perception_forms_resource_source_beliefs`
 - `golden_perception_forms_resource_source_beliefs_replays_deterministically`
+
+### `golden_planner_pathology.rs`
+
+- `cross_location_water_acquisition_succeeds_without_budget_exhaustion`
 
 ### `golden_production.rs`
 

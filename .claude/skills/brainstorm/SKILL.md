@@ -47,7 +47,7 @@ Next-steps menu (user chooses)
 
 ## Step 1: Read Context
 
-1. **Reference file**: If `reference_path` is provided, read the entire file. Extract key claims, proposals, and open questions from it. Summarize what it contains in 2-3 sentences before proceeding.
+1. **Reference file**: If `reference_path` is provided, read the entire file. Extract key claims, proposals, and open questions from it. Summarize what it contains in 2-3 sentences before proceeding. If the user references files inline in their request text (rather than via the `reference_path` argument), treat those files as reference material with the same read-and-summarize treatment. Multiple inline references are common; read all of them.
 
 2. **Topic classification**: Determine whether this brainstorm is **implementation-related** (code changes, architecture, engine modifications, new features, bug fixes) or **non-implementation** (process, tooling config, workflow, strategy, skill design).
 
@@ -102,7 +102,7 @@ Confidence increases from **both user answers AND research findings**. If extern
 
 ### Plan Mode Interview
 
-In plan mode, the confidence block is still required at the transition from interview to approach proposal. Display confidence and gaps at least once — when announcing the move to approaches. Intermediate per-answer confidence blocks may be omitted if the interview is 1-2 questions.
+In plan mode, the confidence block is still required at the transition from interview to approach proposal. Display confidence and gaps at least once — when announcing the move to approaches. The transition announcement may be a prose statement (e.g., "Confidence at 95%, no remaining gaps") rather than the formal block format, provided it clearly states the confidence level and that gaps are resolved. Intermediate per-answer confidence blocks may be omitted if the interview is 1-2 questions.
 
 ### Early Exit
 
@@ -119,7 +119,7 @@ Present **2-3 distinct approaches** with:
 
 **If implementation-related**: For each approach, note which FOUNDATIONS.md principles it aligns with or tensions it creates. Use format: `Foundations: F1 (aligns), F8 (tensions — [reason])`.
 
-**If the problem space is fully constrained** (e.g., a reference document provides a proven design, or requirements eliminate alternatives), state why only one approach exists and present it directly. Do not invent artificial alternatives.
+**If the problem space is fully constrained** (e.g., a reference document provides a proven design, or requirements eliminate alternatives), state why only one approach exists and present it directly. Do not invent artificial alternatives. In plan mode with a single viable approach, the approach rationale may be embedded in the plan file's Context section rather than presented as a separate conversational step.
 
 **Wait for user to choose or ask questions.** Do not proceed until the user picks an approach (or asks you to refine/combine).
 
@@ -153,11 +153,11 @@ After design approval, do NOT apply changes or implement the design until the us
 - If the brainstorm topic is itself a skill design, the deliverable is the skill file (written to the appropriate skills directory, e.g., `.claude/skills/<name>/SKILL.md`). Skip the `docs/plans/` design doc — the skill file IS the design. Adjust the Step 6 menu to reflect this (omit "create a spec" option, replace with "run skill-audit on the new skill").
 - If the brainstorm topic is modifying or reconciling existing skill files, the deliverable is the modified skill file(s) themselves. Skip the `docs/plans/` design doc — the edits ARE the design. If merging multiple skills, the deliverable includes the new unified skill file, deletion of superseded skill directories, and updating any cross-references in other skills or configuration files.
 - If the brainstorm produces a deliverable that **replaces** an existing artifact (skill, spec, config), the replacement plan should include: (a) confirming deletion of the old artifact, (b) checking for cross-references to the old artifact in other skills, CLAUDE.md, or MEMORY.md, (c) noting the replacement in the design doc or plan.
-- If the brainstorm topic produces a system spec (architectural change, new subsystem, planner modification, or any change requiring formal spec-drafting-rules compliance), the deliverable is the spec file in `specs/`. Skip the `docs/plans/` design doc — the spec IS the design. Read `docs/spec-drafting-rules.md` and ensure the spec includes all mandatory sections (Section H causal hooks, information-path analysis, positive-feedback analysis, stored state vs. derived read-model list). Adjust the Step 6 menu accordingly (omit "create a spec" option, replace with "reassess spec" or "decompose into tickets").
+- If the brainstorm topic produces a system spec (architectural change, new subsystem, planner modification, or any change requiring formal spec-drafting-rules compliance), the deliverable is the spec file in `specs/`. Skip the `docs/plans/` design doc — the spec IS the design. Read `docs/spec-drafting-rules.md` and ensure the spec includes all mandatory sections (Section H causal hooks, information-path analysis, positive-feedback analysis, stored state vs. derived read-model list). Adjust the Step 6 menu accordingly (omit "create a spec" option, replace with "reassess spec" or "decompose into tickets"). For spec deliverables, the "Brainstorm Context" header is replaced by the spec's Problem Statement section, which should include the motivation, evidence sources, and key interview decisions that shaped the spec design.
 
 Once all sections are approved, write the complete design:
 
-- **If plan mode is active**: Write the design to the plan file (the only writable file in plan mode). The plan file serves as the design doc. When plan mode is active AND the deliverable is a spec: the spec cannot be written to `specs/` until after `ExitPlanMode` is called and the plan is approved. Write the plan file first with the spec design (deliverables, FOUNDATIONS alignment, verification). After plan approval, write the spec to `specs/` as the first implementation step. The plan file references the spec and summarizes the implementation sequence — it is not the design itself.
+- **If plan mode is active**: Write the design to the plan file (the only writable file in plan mode). The plan file serves as the design doc. When plan mode is active AND the deliverable is a spec: the spec cannot be written to `specs/` until after `ExitPlanMode` is called and the plan is approved. Write the plan file first with the spec design (deliverables, FOUNDATIONS alignment, verification). After plan approval, write the spec to `specs/` as the first implementation step. The plan file references the spec and summarizes the implementation sequence — it is not the design itself. Keep the plan file under 100 lines when the spec is the deliverable; the plan should summarize intent, list deliverables, and describe the implementation sequence without duplicating the full spec content.
 - **Otherwise**: Write to `docs/plans/YYYY-MM-DD-<topic>-design.md`, where `<topic>` is a kebab-case short name derived from the brainstorm topic.
 
 The design doc should consolidate all approved sections into a clean document. Include a "Brainstorm Context" header at the top noting:

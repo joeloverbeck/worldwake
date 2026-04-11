@@ -7696,29 +7696,32 @@ fn test_binding_rejection_trace_populated() {
     );
 }
 
-/// With the deferred `ProgressBarrier` mechanism, a `GoalSatisfied` plan at
-/// depth 2 (`Travel` + `pick_up`) is preferred over a `ProgressBarrier` (`Trade`)
-/// at depth 1.  Before the deferral change, the search would greedily
-/// return the `Trade` `ProgressBarrier` without exploring deeper.
+/// For `AcquireCommodity`, if a current-place acquire opportunity already
+/// exists, search must not be trapped behind a manufactured local prerequisite
+/// stage. The tactical layer should remain free to explore a farther
+/// goal-satisfied branch.
 #[test]
-fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
+fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
     let actor = entity(1);
     let seller = entity(2);
     let town = entity(10);
     let market = entity(11);
     let bread = entity(20);
+    let seller_lot = entity(21);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, seller, town, market, bread]);
+    view.alive.extend([actor, seller, town, market, bread, seller_lot]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(seller, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
     view.kinds.insert(market, EntityKind::Place);
     view.kinds.insert(bread, EntityKind::ItemLot);
+    view.kinds.insert(seller_lot, EntityKind::ItemLot);
     view.effective_places.insert(actor, town);
     view.effective_places.insert(seller, town);
     view.effective_places.insert(bread, market);
-    view.entities_at.insert(town, vec![actor, seller]);
+    view.effective_places.insert(seller_lot, town);
+    view.entities_at.insert(town, vec![actor, seller, seller_lot]);
     view.entities_at.insert(market, vec![bread]);
     view.adjacent
         .insert(town, vec![(market, NonZeroU32::new(2).unwrap())]);
@@ -7738,6 +7741,16 @@ fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
             home_facility: Some(town),
         },
     );
+    view.lot_commodities
+        .insert(seller_lot, CommodityKind::Bread);
+    view.lot_sellers.insert(seller_lot, seller);
+    view.direct_possessors.insert(seller_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .push(seller_lot);
+    view.commodity_quantities
+        .insert((seller_lot, CommodityKind::Bread), Quantity(1));
     view.trade_profiles
         .insert(actor, sample_trade_disposition_profile());
     // Ground bread lot at market.
@@ -7784,17 +7797,15 @@ fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
     .into_plan()
     .expect("should find a plan");
 
-    // The search should prefer GoalSatisfied (Travel + pick_up) over the
-    // deferred Trade ProgressBarrier.
+    // The search is free to chase the remote market lot because the local
+    // seller did not force an `AcquirePrerequisite` stage at the current
+    // place.
     assert_eq!(
         plan.terminal_kind,
         PlanTerminalKind::GoalSatisfied,
-        "deferred barrier should yield to GoalSatisfied at deeper level"
+        "a local acquire opportunity must not force prerequisite staging"
     );
-    assert!(
-        plan.steps.len() >= 2,
-        "plan should include Travel + pick_up"
-    );
+    assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
 }
@@ -8312,6 +8323,123 @@ fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
             .iter()
             .all(|summary| summary.preferred_candidates == 0 && summary.landmark_heuristic == 0),
         "zero-landmark mode should keep preferred-candidate and landmark-heuristic trace fields at zero"
+    );
+}
+
+#[test]
+fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_self_consume() {
+    let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
+    let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+    let mut recipes = RecipeRegistry::new();
+    recipes.register(harvest_apple_recipe());
+    let (registry, handlers) = build_registry_with_recipes(&recipes);
+    let semantics = build_semantics_table(&registry);
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, _orchard_row) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Forager", ControlSource::Ai).unwrap();
+        let orchard_row = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(actor, village_square).unwrap();
+        txn.set_ground_location(orchard_row, orchard_farm).unwrap();
+        txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+            .unwrap();
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+            .unwrap();
+        txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+            .unwrap();
+        txn.set_component_known_recipes(actor, KnownRecipes::with([RecipeId(0)]))
+            .unwrap();
+        txn.set_component_workstation_marker(
+            orchard_row,
+            WorkstationMarker(WorkstationTag::OrchardRow),
+        )
+        .unwrap();
+        txn.set_component_resource_source(
+            orchard_row,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, orchard_row)
+    };
+    sync_all_beliefs(&mut world, actor, Tick(1));
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([orchard_farm]),
+    };
+    let view = PerAgentBeliefView::from_world(actor, &world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &semantics,
+        &registry,
+        &handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &recipes,
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        None,
+        Some(&mut trace_metadata),
+    );
+
+    assert!(
+        result.is_found(),
+        "known remote self-consume acquisition should still produce a plan"
+    );
+    assert_eq!(
+        trace_metadata.tactical_goal.as_deref(),
+        Some(
+            format!(
+                "AcquirePrerequisite {{ commodity: Apple, destination: {orchard_farm:?} }}"
+            )
+            .as_str()
+        )
+    );
+    let strategic_plan = trace_metadata
+        .strategic_plan
+        .as_ref()
+        .expect("known remote acquire should record a strategic plan");
+    assert_eq!(strategic_plan.steps.len(), 2);
+    assert_eq!(strategic_plan.steps[0].destination, orchard_farm);
+    assert_eq!(
+        strategic_plan.steps[0].sub_goal,
+        super::strategic::TacticalSubGoal::AcquirePrerequisite(CommodityKind::Apple)
     );
 }
 
