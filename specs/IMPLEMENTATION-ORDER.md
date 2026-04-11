@@ -159,6 +159,7 @@ S91 ✅ archived
 
 - **S91**: ✅ COMPLETED — archived at [archive/specs/S91-planner-pathology-golden-tests.md](/home/joeloverbeck/projects/worldwake/archive/specs/S91-planner-pathology-golden-tests.md). Landed the planner-pathology golden proof surface in `golden_planner_pathology.rs`; Scenario 142 now proves the remote-water acquisition failure is fixed, Scenario 143 now proves the `FreeCarryCapacity` zero-step loop is fixed, and the third intended Guard Theron pathology was closed as a stale non-reproducible observer claim on the current branch.
 - **S92**: ✅ COMPLETED — [archive/specs/S92-free-carry-capacity-zero-step-loop-fix.md](/home/joeloverbeck/projects/worldwake/archive/specs/S92-free-carry-capacity-zero-step-loop-fix.md). Fixes the `FreeCarryCapacity -> GoalSatisfied[steps=0]` contract mismatch and flips Scenario 143 from bug reproduction to fix proof.
+- **S93**: ✅ COMPLETED — [archive/specs/S93-budget-exhaustion-snapshot-goldens.md](/home/joeloverbeck/projects/worldwake/archive/specs/S93-budget-exhaustion-snapshot-goldens.md). Added the dedicated budget-exhaustion snapshot golden suite in `golden_budget_exhaustion_snapshots.rs`, including the four remaining `AcquireCommodity` observer reproductions, the two `TreatWounds` observer reproductions, and ignored phase-2 `Found` follow-ups. The early Thornwall water cases replay `cli-evaluation.ron` to the observer ticks under seed `7777`; the remaining cases use focused file-local reconstruction on the shared snapshot harness.
 
 ### Phase 7 Gate
 

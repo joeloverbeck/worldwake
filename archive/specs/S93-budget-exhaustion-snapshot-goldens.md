@@ -1,12 +1,14 @@
 # S93 — Budget Exhaustion Snapshot Golden Tests
 
+**Status**: COMPLETED
+
 ## Problem Statement
 
 Despite five specs (S83, S88, S89, S90, S91/S92) addressing GOAP planner budget exhaustion through belief-informed pruning, two-phase strategic/tactical decomposition, mandatory tactical scoping, and prerequisite guidance, the cli-evaluation.ron simulation (seed 7777, 1440 ticks) still produces 96+ budget-exhausted plan attempts across 3 of 4 agents. Guard Theron dies of hunger at tick 422 because `AcquireCommodity(Water)` generates 2085 candidates at depth 5 and exceeds the 224-node expansion budget — at a location where Water is physically present.
 
 S91's golden test `cross_location_water_acquisition_succeeds_without_budget_exhaustion` passes because it seeds clean beliefs with only the relevant entities (well and village). The real simulation has 12–16 known entities (including Waste, weapons, coins, other agents, and facilities) that multiply candidate branches beyond what S91 exercises.
 
-This spec captures the **exact planner input state** at each distinct budget-exhaustion moment from the cli-evaluation simulation and turns each into a golden e2e test. These tests serve as falsification criteria: the planner must handle realistic entity densities, not just clean-room isolation.
+This spec captures the **exact planner input state** at each distinct budget-exhaustion moment from the cli-evaluation simulation and turns each into a golden e2e test. Where a hand-seeded static fixture is sufficient, the test distills the snapshot directly; where early-run accumulated scenario history materially affects the planner surface, the test replays `cli-evaluation.ron` to the recorded tick and asserts on that live tick state. These tests serve as falsification criteria: the planner must handle realistic entity densities, not just clean-room isolation.
 
 **Evidence source**: `reports/simulation-observer-report.md` (observer run with seed 7777, 1440 ticks). Budget exhaustion snapshots captured via Section 8 of the enhanced observer dump.
 
@@ -22,7 +24,7 @@ Each test follows the S91 dual-phase assertion pattern:
 1. **Phase 1 (bug reproduction)**: Assert `search_plan` returns `BudgetExhausted` with the exact snapshot state (reproduces the bug under current code)
 2. **Phase 2 (fix verification)**: After the planner fix lands, flip to assert `Found` and verify the action chain executes (marked `#[ignore]` until fix lands, then un-ignored)
 
-All tests use the cli-evaluation topology: 5 places (Thornwall Village, Eldergrove Forest, Dusty Trail, Hearthstone Inn, Golden Fields) with 6 edges matching `scenarios/cli-evaluation.ron`.
+All tests use the cli-evaluation topology: 5 places (Thornwall Village, Eldergrove Forest, Dusty Trail, Hearthstone Inn, Golden Fields) with 6 edges matching `scenarios/cli-evaluation.ron`. Tests 1 and 2 replay the live scenario from seed `7777` to ticks 11 and 25 before invoking `search_plan`; Tests 3-6 use focused file-local reconstruction on the shared snapshot harness.
 
 ### Test 1: `merchant_vara_water_at_thornwall_budgets_exhaust`
 
@@ -175,15 +177,29 @@ No new stored state introduced. All test assertions read existing planner output
 ## Deliverables
 
 1. `crates/worldwake-ai/tests/golden_budget_exhaustion_snapshots.rs` — 6 golden tests
-2. Each test builds `GoldenHarness` with cli-evaluation topology, seeds exact snapshot state, and asserts `BudgetExhausted` (Phase 1)
+2. Each test builds `GoldenHarness` with cli-evaluation topology and proves the recorded planner state either by replaying the live scenario to the observer tick or by focused file-local snapshot reconstruction, then asserts `BudgetExhausted` (Phase 1)
 3. Phase 2 assertions (`#[ignore]` until fix) flip to `Found` and verify need reduction
 
 ## Verification
 
 ```bash
 # Phase 1: All 6 tests reproduce the budget exhaustion
-cargo test -p worldwake-ai golden_budget_exhaustion_snapshots
+cargo test -p worldwake-ai --test golden_budget_exhaustion_snapshots -- --nocapture
 
 # Phase 2 (after planner fix): Un-ignore and verify
-cargo test -p worldwake-ai golden_budget_exhaustion_snapshots -- --ignored
+cargo test -p worldwake-ai --test golden_budget_exhaustion_snapshots -- --ignored --nocapture
 ```
+
+## Outcome
+
+**Completion date**: 2026-04-11
+
+Implemented the dedicated S93 golden snapshot file at `crates/worldwake-ai/tests/golden_budget_exhaustion_snapshots.rs`, covering all six observer-backed budget-exhaustion scenarios: four `AcquireCommodity` reproductions and two `TreatWounds` reproductions. The file includes ignored phase-2 `Found` follow-ups for each scenario so the planner-fix proof can be activated in place later.
+
+**Deviations from original plan**:
+- The early Thornwall water failures were not faithfully reproducible from static hand-seeded fixtures alone on the current branch. The landed tests therefore use mixed reconstruction: the tick-11 and tick-25 water cases replay `cli-evaluation.ron` from seed `7777` to the recorded observer tick before calling `search_plan`, while the remaining four scenarios use focused file-local snapshot reconstruction.
+
+**Verification results**:
+- `cargo test -p worldwake-ai --test golden_budget_exhaustion_snapshots -- --nocapture`
+- `cargo test -p worldwake-ai`
+- `cargo clippy --workspace --all-targets -- -D warnings`

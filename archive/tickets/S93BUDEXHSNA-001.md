@@ -1,6 +1,6 @@
 # S93BUDEXHSNA-001: AcquireCommodity budget exhaustion snapshot golden tests
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — tests only
@@ -17,6 +17,7 @@ S91's golden test for budget exhaustion passes under clean-room conditions (2-3 
 3. This is a single-layer ticket (AI planner tests only). The shared abstraction boundary is `search_plan` — the function under test. No authoritative/system layer is involved.
 4. N/A — no failing golden motivates this ticket; the simulation observer report motivates it.
 5. Live `GoalKind` under test: `AcquireCommodity { commodity, purpose: SelfConsume }`. The planner routes this through `search_plan` with operators including `pick_up`, `eat`/`drink`, `trade`, `queue_for_facility_use`, `harvest`, `craft`, `move_cargo`. The snapshot data shows 1483-2657 candidates generated from these operators × known entities.
+6. The observer-backed Thornwall water snapshots at ticks 11 and 25 were not faithfully reproducible from a hand-seeded static harness alone. The landed tests therefore reconstruct those two cases from the exact `cli-evaluation.ron` start state, advance the simulation to the observer tick under seed `7777`, and then call `search_plan` on the live belief surface at that tick. The Dusty Trail Apple and late-game Kael water cases remain file-local snapshot reconstructions.
 
 ## Architecture Check
 
@@ -118,6 +119,21 @@ Phase 2 (`#[ignore]`): `search_plan` returns `Found`, thirst decreases.
 
 1. Each test reproduces the exact budget-exhaustion signature from the simulation snapshot (goal, location, cognitive profile match)
 2. Phase 2 `#[ignore]` tests compile but do not run by default
+
+## Outcome
+
+**Completion date**: 2026-04-11
+
+Added the four AcquireCommodity reproductions to `crates/worldwake-ai/tests/golden_budget_exhaustion_snapshots.rs` plus four ignored `Found` follow-ups. The two early Thornwall water cases now rebuild the live `cli-evaluation.ron` scenario substrate and step to ticks 11 and 25 before invoking `search_plan`, which was necessary to reproduce the observer-reported budget exhaustion under the current branch. The Dusty Trail Apple and late-game Kael water cases use focused file-local snapshot setup on the shared S93 harness.
+
+**Deviations from original plan**:
+- The original ticket narrative assumed all four cases could be reproduced from static hand-seeded snapshots. The landed implementation uses mixed reconstruction: two observer-backed Thornwall water cases replay the live scenario to the recorded tick, while the other two cases remain distilled file-local snapshots.
+
+## Verification Result
+
+1. `cargo test -p worldwake-ai --test golden_budget_exhaustion_snapshots -- --nocapture`
+2. `cargo test -p worldwake-ai`
+3. `cargo clippy --workspace --all-targets -- -D warnings`
 
 ## Test Plan
 
