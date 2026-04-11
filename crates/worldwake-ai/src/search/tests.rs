@@ -822,6 +822,7 @@ fn frontier_test_node(
         steps: shared_steps(steps),
         total_estimated_ticks,
         search_cost: total_estimated_ticks,
+        tactical_barrier_reached: false,
         heuristic_ticks: 0,
     }
 }
@@ -885,6 +886,7 @@ fn pickup_node(
             steps: SharedVec::new(),
             total_estimated_ticks: 0,
             search_cost: 0,
+            tactical_barrier_reached: false,
             heuristic_ticks: 0,
         },
         actor,
@@ -2548,6 +2550,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
         search_cost: 0,
+        tactical_barrier_reached: false,
         heuristic_ticks: 0,
     };
 
@@ -2783,6 +2786,7 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
         search_cost: 0,
+        tactical_barrier_reached: false,
         heuristic_ticks: 0,
     };
     let candidate = SearchCandidate {
@@ -2851,6 +2855,7 @@ fn build_successor_preserves_parent_steps_when_appending_child_step() {
         steps: shared_steps(vec![parent_step.clone()]),
         total_estimated_ticks: 2,
         search_cost: 2,
+        tactical_barrier_reached: false,
         heuristic_ticks: 0,
     };
     let candidate = SearchCandidate {
@@ -2936,6 +2941,7 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
         search_cost: 0,
+        tactical_barrier_reached: false,
         heuristic_ticks: 0,
     };
     let candidate = SearchCandidate {
@@ -5530,6 +5536,7 @@ fn compare_search_nodes_orders_by_f_cost() {
         steps: SharedVec::new(),
         total_estimated_ticks: 2,
         search_cost: 2,
+        tactical_barrier_reached: false,
         heuristic_ticks: 1, // f = 3
     };
     let high_f = SearchNode {
@@ -5537,6 +5544,7 @@ fn compare_search_nodes_orders_by_f_cost() {
         steps: SharedVec::new(),
         total_estimated_ticks: 3,
         search_cost: 3,
+        tactical_barrier_reached: false,
         heuristic_ticks: 2, // f = 5
     };
     assert_eq!(compare_search_nodes(&low_f, &high_f), Ordering::Less);
@@ -5559,6 +5567,7 @@ fn compare_search_nodes_equal_f_prefers_lower_g() {
         steps: SharedVec::new(),
         total_estimated_ticks: 2,
         search_cost: 2,
+        tactical_barrier_reached: false,
         heuristic_ticks: 3, // f = 5, g = 2
     };
     let high_g = SearchNode {
@@ -5566,6 +5575,7 @@ fn compare_search_nodes_equal_f_prefers_lower_g() {
         steps: SharedVec::new(),
         total_estimated_ticks: 3,
         search_cost: 3,
+        tactical_barrier_reached: false,
         heuristic_ticks: 2, // f = 5, g = 3
     };
     assert_eq!(compare_search_nodes(&low_g, &high_g), Ordering::Less);
@@ -5588,6 +5598,7 @@ fn search_with_empty_goal_places_degrades_to_uniform_cost() {
         steps: SharedVec::new(),
         total_estimated_ticks: 5,
         search_cost: 5,
+        tactical_barrier_reached: false,
         heuristic_ticks: 0,
     };
     let node_b = SearchNode {
@@ -5595,6 +5606,7 @@ fn search_with_empty_goal_places_degrades_to_uniform_cost() {
         steps: SharedVec::new(),
         total_estimated_ticks: 3,
         search_cost: 3,
+        tactical_barrier_reached: false,
         heuristic_ticks: 0,
     };
     // Pure g-cost: node_b (3) < node_a (5)
@@ -6055,6 +6067,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
         search_cost: 0,
+        tactical_barrier_reached: false,
         heuristic_ticks: 0,
     };
 
@@ -7919,7 +7932,10 @@ fn search_trace_metadata_records_two_phase_strategic_and_landmark_details() {
         Some(&mut trace_metadata),
     );
 
-    assert!(result.is_found(), "two-phase production plan should be found");
+    assert!(
+        result.is_found(),
+        "two-phase production plan should be found"
+    );
     let strategic_plan = trace_metadata
         .strategic_plan
         .as_ref()
@@ -7938,11 +7954,15 @@ fn search_trace_metadata_records_two_phase_strategic_and_landmark_details() {
         "this production fixture currently yields an unordered landmark set"
     );
     assert!(
-        summaries.iter().any(|summary| summary.preferred_candidates > 0),
+        summaries
+            .iter()
+            .any(|summary| summary.preferred_candidates > 0),
         "at least one expansion should report preferred candidates"
     );
     assert!(
-        summaries.iter().any(|summary| summary.landmark_heuristic > 0),
+        summaries
+            .iter()
+            .any(|summary| summary.landmark_heuristic > 0),
         "at least one expansion should report a non-zero landmark heuristic"
     );
 }
@@ -7990,7 +8010,10 @@ fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
         Some(&mut trace_metadata),
     );
 
-    assert!(result.is_found(), "zero-landmark mode should still find a plan");
+    assert!(
+        result.is_found(),
+        "zero-landmark mode should still find a plan"
+    );
     assert_eq!(trace_metadata.landmarks_extracted, 0);
     assert_eq!(trace_metadata.landmark_orderings, 0);
     assert!(
@@ -8037,7 +8060,11 @@ fn search_treat_wounds_uses_two_phase_pick_up_before_heal() {
     .into_plan()
     .expect("two-phase search should find a full care plan");
 
-    let ops = plan.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+    let ops = plan
+        .steps
+        .iter()
+        .map(|step| step.op_kind)
+        .collect::<Vec<_>>();
     assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
     assert!(
         ops.starts_with(&[PlannerOpKind::Travel, PlannerOpKind::MoveCargo]),
@@ -8088,7 +8115,11 @@ fn search_treat_wounds_with_zero_landmarks_preserves_two_phase_plan_shape() {
     .into_plan()
     .expect("two-phase strategic search should still find a full care plan");
 
-    let ops = result.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+    let ops = result
+        .steps
+        .iter()
+        .map(|step| step.op_kind)
+        .collect::<Vec<_>>();
     assert_eq!(result.terminal_kind, PlanTerminalKind::GoalSatisfied);
     assert!(
         ops.starts_with(&[PlannerOpKind::Travel, PlannerOpKind::MoveCargo]),
@@ -8139,7 +8170,11 @@ fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
     .into_plan()
     .expect("two-phase search should find a remote production plan");
 
-    let ops = plan.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+    let ops = plan
+        .steps
+        .iter()
+        .map(|step| step.op_kind)
+        .collect::<Vec<_>>();
     let pick_up_index = ops
         .iter()
         .position(|op| *op == PlannerOpKind::MoveCargo)
@@ -8162,9 +8197,9 @@ fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
             .map(|step| step.targets.clone())
             .find(|targets| {
                 *targets
-                    == vec![PlanningEntityRef::Authoritative(
-                        prototype_place_entity(PrototypePlace::OrchardFarm),
-                    )]
+                    == vec![PlanningEntityRef::Authoritative(prototype_place_entity(
+                        PrototypePlace::OrchardFarm,
+                    ))]
             }),
         Some(vec![PlanningEntityRef::Authoritative(
             prototype_place_entity(PrototypePlace::OrchardFarm),
@@ -8225,7 +8260,11 @@ fn search_produce_commodity_with_zero_landmarks_preserves_two_phase_plan_shape()
     .into_plan()
     .expect("zero-landmark mode should still find a remote production plan");
 
-    let ops = plan.steps.iter().map(|step| step.op_kind).collect::<Vec<_>>();
+    let ops = plan
+        .steps
+        .iter()
+        .map(|step| step.op_kind)
+        .collect::<Vec<_>>();
     let pick_up_index = ops
         .iter()
         .position(|op| *op == PlannerOpKind::MoveCargo)

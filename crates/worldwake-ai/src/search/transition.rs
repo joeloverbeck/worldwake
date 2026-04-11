@@ -8,7 +8,9 @@ use crate::{
     GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind,
     PlannerOpSemantics, PlanningEntityRef, apply_hypothetical_transition,
 };
-use heuristic::{combined_relevant_places_for_tactical, compute_heuristic, compute_landmark_heuristic};
+use heuristic::{
+    combined_relevant_places_for_tactical, compute_heuristic, compute_landmark_heuristic,
+};
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, ExecutionBudget};
 use worldwake_sim::{ActionDefRegistry, RecipeRegistry, TemporalBeliefView};
@@ -177,6 +179,8 @@ pub(super) fn build_successor_detailed<'snapshot>(
     let landmark_heuristic =
         compute_landmark_heuristic(landmark_set, &planning_facts_from_state(&transition.state));
     let heuristic_ticks = spatial_heuristic.max(landmark_heuristic);
+    let tactical_barrier_reached = node.tactical_barrier_reached
+        || tactical_goal.is_some_and(|goal| goal.progress_barrier_satisfied(&transition.state));
     let mut steps = node.steps.clone();
     steps.push(step);
 
@@ -187,6 +191,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
             steps,
             total_estimated_ticks,
             search_cost,
+            tactical_barrier_reached,
             heuristic_ticks,
         },
     ))

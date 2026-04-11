@@ -52,6 +52,8 @@ When the ticket was authored by `/spec-to-tickets` in the current session from a
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
+Before trusting the ticket as executable, cross-check its internal sections for contradictions. Reconcile conflicts between `Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, `Acceptance Criteria`, `Verification Layers`, and any explicit in/out-of-scope notes before coding. If those sections disagree about ownership, proof surface, or whether production changes are required, update the ticket first instead of carrying the contradiction into implementation.
+
 For cross-crate accessor, trait-surface, or API-surface tickets, verify the real downstream caller-facing boundary before coding, not just the immediate trait or type named in the ticket. If live callers consume the data through a broader wrapper, supertrait, blanket impl, or facade surface, correct the ticket to that owned boundary before editing code.
 When a ticket adds internal diagnostic, trace, or metadata carriage, preserve existing public/external call signatures unless the ticket explicitly owns that API change; prefer an internal helper, wrapper, or traced variant for the new carrier rather than widening public fallout by default.
 
@@ -66,6 +68,8 @@ For planner-visible belief, profile, or snapshot-completeness tickets, verify th
 For dedicated goal-root, planner-root, or golden-isolation tickets, verify that the claimed downstream effect is uniquely attributable to the named goal/root rather than already reachable through a more generic operator family. If a generic path can already lawfully produce the same outcome, narrow the ticket and scenario so they prove the dedicated goal's distinct contract instead of over-claiming a broader downstream chain.
 
 When a staged planner module or substrate already supports multiple goal families, verify each proposed live family against existing conformance/golden ownership before integrating them together. If live proof only clearly justifies part of that staged surface, default the ticket to the narrowest goal-family slice that is already supported rather than activating every plausible family at once.
+
+For planner-root and tactical-barrier tickets, verify that each planner-produced subgoal is a lawful tactical destination rather than a transient probe, fallback waypoint, or exploration scaffold. Do not assume every emitted subgoal should become a scoped barrier target just because it passes through the planner; if the live search contract treats a subgoal as exploratory carriage rather than a durable destination, keep the ticket scoped to the lawful destination family and record the deviation explicitly.
 
 Load `references/reassessment-checks.md`.
 
@@ -82,6 +86,8 @@ After narrowing a ticket because substrate is already live, re-sweep the adjacen
 If focused proof added during implementation reveals a production contradiction that reassessment did not yet expose, stop and correct the ticket before proceeding further. Update the same sections (`Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria`) so the ticket no longer claims "tests only" or `Engine Changes: None` when the live invariant actually requires production changes.
 
 If focused proof instead falsifies the suspected production contradiction and shows the live fix is narrower (for example, golden-scenario isolation or fixture recalibration), stop and narrow the ticket before proceeding further. Update the same sections (`Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria`) so the ticket no longer claims production ownership when the honest contract is test-only or fixture-only.
+
+When reassessment or focused proof changes the real edit surface, update `Files to Touch` and any file- or symbol-level scope notes immediately instead of leaving them stale until closeout. The ticket should keep reflecting the current owned boundary as implementation proceeds.
 
 ### 4. Extract the implementation scope
 
@@ -110,6 +116,8 @@ When broadened verification fails, treat each failure as current-ticket fallout 
 ### 7. Close out the ticket honestly
 
 Load `references/closeout.md`.
+
+Before finalizing closeout, compare the landed diff and verification evidence against the ticket's final `What to Change`, `Files to Touch`, and verification sections. If reassessment or implementation drift changed the actual owned surface, update the ticket so the recorded scope, touched files/symbols, deviations, and proof set match the work that really landed.
 
 ### 8. Close the loop on the ticket
 

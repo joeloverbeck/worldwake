@@ -2,9 +2,9 @@
 
 ## Summary
 
-Remove the `goal_supports_two_phase()` whitelist that restricts the S88 two-phase (strategic + tactical) planner architecture to only `TreatWounds` and `ProduceCommodity` goals. Make two-phase planning universal for all 34 GoalKind variants by introducing a `TravelToGoal` tactical goal variant that handles spatial scoping for any goal whose strategic destination is remote. Delete the flat-search fallback path per FND-28.
+Remove the `goal_supports_two_phase()` whitelist that restricts the S88 two-phase (strategic + tactical) planner architecture to only `TreatWounds` and `ProduceCommodity` goals. Introduce a `TravelToGoal` tactical goal variant so true strategic `SatisfyGoal` stages across goal families receive destination scoping without preserving the old flat-search whitelist path. Exploration fallback remains unscoped in this spec slice because those `Explore` stages act as probe waypoints rather than stable tactical destinations.
 
-The S88 architecture works — strategic planning correctly identifies remote destinations for all goal kinds. But the tactical phase ignores that information for 32 of 34 goal kinds because `goal_supports_two_phase()` gates tactical goal construction, and `TacticalSubGoal::SatisfyGoal` maps to `tactical_goal = None`. This spec closes both gaps.
+The S88 architecture works — strategic planning correctly identifies remote destinations for many goal kinds. But the tactical phase ignored that information outside the whitelist because `goal_supports_two_phase()` gated tactical goal construction, and `TacticalSubGoal::SatisfyGoal` mapped to `tactical_goal = None`. This spec closes those gaps for true destination stages without attempting to scope exploratory fallback waypoints as if they were durable tactical barriers.
 
 **Evidence**: Simulation observer report on `cli-evaluation.ron` (seed 7777, 1440 ticks) shows:
 - Guard Theron died at tick 422 from hunger — `AcquireCommodity(Water)` budget-exhausted at 224 expansions, 2085 candidates, depth 6
@@ -19,7 +19,7 @@ The S88 architecture works — strategic planning correctly identifies remote de
 
 ## Design Goals
 
-- Eliminate budget-exhaustion as a structural failure mode for multi-location goals by ensuring all GoalKind variants receive tactical scoping when their goal destination is remote
+- Eliminate budget-exhaustion as a structural failure mode for multi-location goals by ensuring true strategic destination stages receive tactical scoping when their goal destination is remote
 - Remove the `goal_supports_two_phase()` whitelist and flat-search fallback path (FND-28)
 - Preserve graceful behavior for local-only goals (Sleep, Relieve, etc.) — when `goal_relevant_places()` returns empty or points to the current location, no tactical scoping is applied
 - Maintain all S88 guarantees: belief-only planning (FND-14), per-agent cognitive parameters (FND-22), full debuggability (FND-29)
@@ -46,7 +46,7 @@ The S88 architecture works — strategic planning correctly identifies remote de
 
 ### H.1 — Motivating consequence gap
 
-With S88 completed, only `TreatWounds` and `ProduceCommodity` benefit from two-phase decomposition. The remaining 32 GoalKind variants still use flat unscoped tactical search. For any multi-location goal (AcquireCommodity, Patrol, InvestigateViolation, ShareBelief, EscortToSafety, etc.), the planner budget-exhausts because the search space (1400-2600 candidates per expansion, depth 4-9) exceeds the expansion budget (150-300). This produces agent behavioral collapse (sleep-only loops), agent death (hunger/thirst deprivation), and total economic stagnation.
+With S88 completed, only `TreatWounds` and `ProduceCommodity` benefit from destination-scoped two-phase decomposition. Many other multi-location goal families still fall back to flat unscoped tactical search because the whitelist blocks lawful `SatisfyGoal` destination scoping. For remote goals such as `AcquireCommodity`, `Patrol`, and `InvestigateViolation`, the planner budget-exhausts because the search space (1400-2600 candidates per expansion, depth 4-9) exceeds the expansion budget (150-300). This produces agent behavioral collapse (sleep-only loops), agent death (hunger/thirst deprivation), and total economic stagnation.
 
 The S88 two-phase infrastructure already solves this problem — but only for two goal kinds. This spec extends the solution universally.
 
@@ -88,7 +88,7 @@ None. All changes are internal to `worldwake-ai` planner search pipeline.
 
 ## Information-path analysis
 
-No information paths introduced or modified. The `TravelToGoal` tactical goal reads existing belief state from `PlanningSnapshot`. No new information enters the agent's cognitive model.
+No information paths introduced or modified. The `TravelToGoal` tactical goal reads existing belief state from `PlanningState`. No new information enters the agent's cognitive model.
 
 ## Positive-feedback analysis
 
@@ -117,9 +117,9 @@ TravelToGoal {
 
 Implement all trait/match arms:
 
-- **`progress_barrier_satisfied`**: `state.effective_place(actor) == Some(*destination)` — barrier satisfied when actor is at destination. Local goals whose strategic destination matches the current location pass through instantly.
+- **`progress_barrier_satisfied`**: Returns true when the actor's `effective_place` equals `*destination`. Local goals whose strategic destination matches the current location pass through instantly.
 - **`goal_facts`**: `BTreeSet::from([PlanningFact::AtPlace(*destination)])` — enables landmark extraction to recognize travel as a goal fact.
-- **Candidate filter** (`apply_tactical_candidate_filter`): When actor is not at destination, retain only travel candidates advancing toward destination (reuse `travel_advances_toward_destination`). When actor is at destination, retain non-travel candidates (goal-satisfying actions). Identical to the `Explore` / `AcquirePrerequisite` pattern.
+- **Candidate filter** (`apply_tactical_candidate_filter`): When actor is not at destination, retain travel candidates advancing toward destination while still allowing lawful goal-relevant root-local setup before departure. When actor is at destination, retain non-travel candidates (goal-satisfying actions). This mirrors the destination barrier pattern without treating exploration fallback waypoints as equivalent tactical barriers.
 
 ### D2: `SatisfyGoal` maps to `TravelToGoal`
 
@@ -164,11 +164,10 @@ let tactical_goal = TacticalGoal::from_strategic_step(
 
 **File**: `crates/worldwake-ai/src/search/heuristic.rs`
 
-In `tactical_goal_places`, add `TravelToGoal` to the existing pattern:
+In `tactical_goal_places`, add `TravelToGoal` to the destination-scoped pattern:
 
 ```rust
 TacticalGoal::AcquirePrerequisite { destination, .. }
-| TacticalGoal::Explore { destination }
 | TacticalGoal::TravelToGoal { destination } => Some(*destination),
 ```
 
@@ -211,7 +210,7 @@ Goals with empty `goal_relevant_places()` (Sleep, Relieve, Wash, ReduceDanger, F
 
 ### Remote goals gain tactical scoping
 
-Any goal whose `goal_relevant_places()` points to a location other than the actor's current place will receive `TravelToGoal` tactical scoping. This narrows the candidate set to travel-advancing actions, reducing per-expansion candidates from 1400-2600 to ~5-20 (only travel actions toward the destination). Once the actor reaches the destination (barrier satisfied), the tactical goal is consumed and the remaining goal-satisfying search proceeds unscoped over the local action space (~20-50 candidates).
+Any goal family whose strategic plan yields a true remote `SatisfyGoal` destination will receive `TravelToGoal` tactical scoping. This narrows the candidate set to travel-advancing actions, reducing per-expansion candidates from 1400-2600 to ~5-20 (only travel actions toward the destination). Once the actor reaches the destination (barrier satisfied), the tactical goal is consumed and the remaining goal-satisfying search proceeds unscoped over the local action space (~20-50 candidates). Exploratory fallback waypoints remain unscoped until a later spec slice gives them a lawful stable barrier contract.
 
 ### Prerequisites still work
 

@@ -10,22 +10,22 @@ use crate::{
     PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot, PlanningState,
     shared_collections::SharedVec,
 };
+#[cfg(test)]
+use candidates::search_candidate_from_planner;
 use candidates::{
     SearchCandidate, root_candidate_payload_status, search_candidates,
     search_candidates_from_affordance, unsupported_goal,
 };
-#[cfg(test)]
-use candidates::search_candidate_from_planner;
 use frontier::{DualFrontier, FrontierEntry, compare_search_nodes};
+use heuristic::combined_relevant_places_with_guidance;
 #[cfg(test)]
 use heuristic::compute_heuristic;
+#[cfg(test)]
+use heuristic::{combined_relevant_places, root_node};
 use heuristic::{
     combined_relevant_places_for_tactical, combined_relevant_places_with_guidance_for_tactical,
     compute_landmark_heuristic, prune_travel_away_from_goal, root_node_for_tactical,
 };
-#[cfg(test)]
-use heuristic::{combined_relevant_places, root_node};
-use heuristic::combined_relevant_places_with_guidance;
 use landmarks::{
     LandmarkSet, PlanningFact, extract_landmarks, goal_facts_from_goal, planning_facts_from_state,
     planning_operator_from_transition, preferred_operators,
@@ -35,7 +35,7 @@ use std::collections::BTreeMap;
 use transition::build_successor;
 use transition::build_successor_detailed;
 use worldwake_core::{
-    ActionDefId, BlockedIntentMemory, CognitiveProfile, CommodityKind, ExecutionBudget, GoalKind,
+    ActionDefId, BlockedIntentMemory, CognitiveProfile, CommodityKind, ExecutionBudget,
     OpportunityKey, Tick,
 };
 use worldwake_sim::{
@@ -56,6 +56,7 @@ struct SearchNode<'snapshot> {
     steps: SharedVec<PlannedStep>,
     total_estimated_ticks: u32,
     search_cost: u32,
+    tactical_barrier_reached: bool,
     /// A* heuristic: minimum perceived travel cost from the actor's current simulated
     /// position to the nearest goal-relevant place under the actor's perceived
     /// travel-cost model. Zero when already at a goal-relevant place, when no
@@ -69,11 +70,11 @@ pub(super) enum TacticalGoal {
         commodity: CommodityKind,
         destination: worldwake_core::EntityId,
     },
-    Explore {
-        destination: worldwake_core::EntityId,
-    },
     SocialQuery {
         commodity: CommodityKind,
+        destination: worldwake_core::EntityId,
+    },
+    TravelToGoal {
         destination: worldwake_core::EntityId,
     },
 }
@@ -82,16 +83,16 @@ impl TacticalGoal {
     fn from_strategic_step(step: Option<&strategic::StrategicStep>) -> Option<Self> {
         let step = step?;
         match step.sub_goal {
-            strategic::TacticalSubGoal::SatisfyGoal => None,
+            strategic::TacticalSubGoal::SatisfyGoal => Some(Self::TravelToGoal {
+                destination: step.destination,
+            }),
             strategic::TacticalSubGoal::AcquirePrerequisite(commodity) => {
                 Some(Self::AcquirePrerequisite {
                     commodity,
                     destination: step.destination,
                 })
             }
-            strategic::TacticalSubGoal::Explore => Some(Self::Explore {
-                destination: step.destination,
-            }),
+            strategic::TacticalSubGoal::Explore => None,
             strategic::TacticalSubGoal::SocialQuery(commodity) => Some(Self::SocialQuery {
                 commodity,
                 destination: step.destination,
@@ -105,7 +106,9 @@ impl TacticalGoal {
             Self::AcquirePrerequisite { commodity, .. } => {
                 state.commodity_quantity(actor, *commodity) > worldwake_core::Quantity(0)
             }
-            Self::Explore { destination } => state.effective_place(actor) == Some(*destination),
+            Self::TravelToGoal { destination } => {
+                state.effective_place(actor) == Some(*destination)
+            }
             Self::SocialQuery { .. } => false,
         }
     }
@@ -120,7 +123,7 @@ impl TacticalGoal {
             Self::AcquirePrerequisite { commodity, .. } => {
                 std::collections::BTreeSet::from([PlanningFact::HasCommodity(*commodity)])
             }
-            Self::Explore { destination } => {
+            Self::TravelToGoal { destination } => {
                 std::collections::BTreeSet::from([PlanningFact::AtPlace(*destination)])
             }
             Self::SocialQuery { .. } => std::collections::BTreeSet::new(),
@@ -233,13 +236,15 @@ pub(crate) fn search_plan_with_trace_metadata(
 
     let strategic_plan = strategic::plan(snapshot, goal, execution_budget, recipes);
     let mut trace_state = SearchTraceMetadata {
-        strategic_plan: strategic_plan.as_ref().filter(|plan| !plan.steps.is_empty()).cloned(),
+        strategic_plan: strategic_plan
+            .as_ref()
+            .filter(|plan| !plan.steps.is_empty())
+            .cloned(),
         ..SearchTraceMetadata::default()
     };
-    let tactical_goal = goal_supports_two_phase(goal).then(|| {
-        TacticalGoal::from_strategic_step(strategic_plan.as_ref().and_then(|plan| plan.steps.first()))
-    })
-    .flatten();
+    let tactical_goal = TacticalGoal::from_strategic_step(
+        strategic_plan.as_ref().and_then(|plan| plan.steps.first()),
+    );
     let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);
     frontier.push_regular(FrontierEntry::new(root_node_for_tactical(
         snapshot,
@@ -264,9 +269,13 @@ pub(crate) fn search_plan_with_trace_metadata(
                 .into(),
             );
         }
-        let active_tactical_goal = tactical_goal
-            .as_ref()
-            .filter(|goal| !goal.progress_barrier_satisfied(&node.state));
+        let active_tactical_goal = if node.tactical_barrier_reached {
+            None
+        } else {
+            tactical_goal
+                .as_ref()
+                .filter(|goal| !goal.progress_barrier_satisfied(&node.state))
+        };
         if node.steps.len() >= usize::from(cognitive.max_plan_depth) {
             continue;
         }
@@ -309,6 +318,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         }
         apply_tactical_candidate_filter(
             &mut candidates,
+            goal,
             &node,
             semantics_table,
             active_tactical_goal,
@@ -396,8 +406,10 @@ pub(crate) fn search_plan_with_trace_metadata(
                 terminal_successors.push((terminal_kind, successor));
             } else {
                 successor_candidates.push(candidate.clone());
-                successor_operators
-                    .push(planning_operator_from_transition(&node.state, &successor.state));
+                successor_operators.push(planning_operator_from_transition(
+                    &node.state,
+                    &successor.state,
+                ));
                 successors.push((terminal, successor, false));
             }
         }
@@ -433,10 +445,11 @@ pub(crate) fn search_plan_with_trace_metadata(
                                     .map_or(combined_places.places.len() as u16, |summary| {
                                         summary.places.len() as u16
                                     }),
-                                prerequisite_places_count: summary_places.as_ref().map_or(
-                                    combined_places.prerequisite_places_count,
-                                    |summary| summary.prerequisite_places_count,
-                                ),
+                                prerequisite_places_count: summary_places
+                                    .as_ref()
+                                    .map_or(combined_places.prerequisite_places_count, |summary| {
+                                        summary.prerequisite_places_count
+                                    }),
                                 candidates_generated,
                                 candidates_skipped,
                                 terminal_successors: terminal_count,
@@ -521,7 +534,10 @@ pub(crate) fn search_plan_with_trace_metadata(
         successors.truncate(usize::from(execution_budget.beam_width));
 
         let non_terminal_after_beam = successors.len() as u16;
-        let preferred_candidates = successors.iter().filter(|(_, _, preferred)| *preferred).count();
+        let preferred_candidates = successors
+            .iter()
+            .filter(|(_, _, preferred)| *preferred)
+            .count();
         let preferred_candidates = preferred_candidates.min(usize::from(u16::MAX)) as u16;
         let landmark_heuristic = if landmark_set.landmarks.is_empty() {
             0
@@ -538,10 +554,11 @@ pub(crate) fn search_plan_with_trace_metadata(
                     .map_or(combined_places.places.len() as u16, |summary| {
                         summary.places.len() as u16
                     }),
-                prerequisite_places_count: summary_places.as_ref().map_or(
-                    combined_places.prerequisite_places_count,
-                    |summary| summary.prerequisite_places_count,
-                ),
+                prerequisite_places_count: summary_places
+                    .as_ref()
+                    .map_or(combined_places.prerequisite_places_count, |summary| {
+                        summary.prerequisite_places_count
+                    }),
                 candidates_generated,
                 candidates_skipped,
                 terminal_successors: terminal_count,
@@ -594,13 +611,6 @@ pub(crate) fn search_plan_with_trace_metadata(
     }
 }
 
-fn goal_supports_two_phase(goal: &GroundedGoal) -> bool {
-    matches!(
-        goal.key.kind,
-        GoalKind::TreatWounds { .. } | GoalKind::ProduceCommodity { .. }
-    )
-}
-
 fn social_query_candidates(
     goal: &GroundedGoal,
     node: &SearchNode<'_>,
@@ -622,17 +632,24 @@ fn social_query_candidates(
         })
         .collect();
     Some(
-        get_affordances_for_defs(&node.state, node.state.snapshot().actor(), registry, handlers, &ask_witness_defs)
-            .into_iter()
-            .flat_map(|affordance| {
-                search_candidates_from_affordance(goal, &node.state, registry, handlers, &affordance)
-            })
-            .collect(),
+        get_affordances_for_defs(
+            &node.state,
+            node.state.snapshot().actor(),
+            registry,
+            handlers,
+            &ask_witness_defs,
+        )
+        .into_iter()
+        .flat_map(|affordance| {
+            search_candidates_from_affordance(goal, &node.state, registry, handlers, &affordance)
+        })
+        .collect(),
     )
 }
 
 fn apply_tactical_candidate_filter(
     candidates: &mut Vec<SearchCandidate>,
+    goal: &GroundedGoal,
     node: &SearchNode<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     tactical_goal: Option<&TacticalGoal>,
@@ -648,29 +665,38 @@ fn apply_tactical_candidate_filter(
                     .get(&candidate.def_id)
                     .is_none_or(|semantics| semantics.op_kind != crate::PlannerOpKind::Travel)
             } else {
-                travel_advances_toward_destination(
-                    node,
-                    candidate,
-                    semantics_table,
-                    *destination,
-                )
+                travel_advances_toward_destination(node, candidate, semantics_table, *destination)
             }
-        }
-        TacticalGoal::Explore { destination } => {
-            travel_advances_toward_destination(node, candidate, semantics_table, *destination)
         }
         TacticalGoal::SocialQuery { destination, .. } => {
             if actor_place == Some(*destination) {
-                semantics_table.get(&candidate.def_id).is_some_and(|semantics| {
-                    semantics.op_kind == crate::PlannerOpKind::AskWitness
-                })
+                semantics_table
+                    .get(&candidate.def_id)
+                    .is_some_and(|semantics| semantics.op_kind == crate::PlannerOpKind::AskWitness)
             } else {
-                travel_advances_toward_destination(
-                    node,
-                    candidate,
-                    semantics_table,
-                    *destination,
-                )
+                travel_advances_toward_destination(node, candidate, semantics_table, *destination)
+            }
+        }
+        TacticalGoal::TravelToGoal { destination } => {
+            if actor_place == Some(*destination) {
+                semantics_table
+                    .get(&candidate.def_id)
+                    .is_none_or(|semantics| semantics.op_kind != crate::PlannerOpKind::Travel)
+            } else if node.steps.is_empty()
+                && semantics_table
+                    .get(&candidate.def_id)
+                    .is_some_and(|semantics| {
+                        semantics.op_kind != crate::PlannerOpKind::Travel
+                            && goal
+                                .key
+                                .kind
+                                .relevant_op_kinds()
+                                .contains(&semantics.op_kind)
+                    })
+            {
+                true
+            } else {
+                travel_advances_toward_destination(node, candidate, semantics_table, *destination)
             }
         }
     });
@@ -706,7 +732,6 @@ fn travel_advances_toward_destination(
         .unwrap_or(u32::MAX);
     next_remaining < current_remaining
 }
-
 
 #[cfg(test)]
 mod tests;

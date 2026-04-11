@@ -187,6 +187,7 @@ pub(super) fn root_node_for_tactical<'snapshot>(
         steps: SharedVec::new(),
         total_estimated_ticks: 0,
         search_cost: 0,
+        tactical_barrier_reached: false,
         heuristic_ticks,
     }
 }
@@ -194,7 +195,7 @@ pub(super) fn root_node_for_tactical<'snapshot>(
 fn tactical_goal_places(tactical_goal: &TacticalGoal) -> Option<EntityId> {
     match tactical_goal {
         TacticalGoal::AcquirePrerequisite { destination, .. }
-        | TacticalGoal::Explore { destination } => Some(*destination),
+        | TacticalGoal::TravelToGoal { destination } => Some(*destination),
         TacticalGoal::SocialQuery { .. } => None,
     }
 }

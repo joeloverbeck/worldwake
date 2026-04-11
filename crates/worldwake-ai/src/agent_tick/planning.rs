@@ -4,8 +4,8 @@ use crate::decision_trace::{
     PlannedStepSummary, RankedGoalSummary, SameGoalPlanningStopReason, SameGoalPlanningTrace,
     SelectedPlanReplacementKind, SelectedPlanReplacementTrace, SelectedPlanSearchProvenance,
     SelectedPlanSource, SelectedPlanTrace, SelectionTrace, SideBenefitTrace,
-    StrategicStepTrace,
-    SnapshotContinuationOutcome, SnapshotContinuationTrace, TargetBeliefPresence,
+    SnapshotContinuationOutcome, SnapshotContinuationTrace, StrategicStepTrace,
+    TargetBeliefPresence,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::perf_telemetry::record_planning_phase_duration;
@@ -14,8 +14,7 @@ use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trac
 use crate::{
     AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionRetryState, OpportunityKey,
     PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics, RankedGoal, authoritative_target,
-    build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
-    select_best_plan,
+    build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step, select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;

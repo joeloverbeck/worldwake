@@ -440,9 +440,10 @@ fn landmark_depth_divergence() {
             .as_ref()
             .expect("landmark-depth variation should preserve the remote craft plan");
         assert!(
-            plan.steps.iter().any(
-                |step| step.op_kind == PlannerOpKind::Travel && step.targets == vec![ORCHARD_FARM]
-            ),
+            plan.steps
+                .iter()
+                .any(|step| step.op_kind == PlannerOpKind::Travel
+                    && step.targets == vec![ORCHARD_FARM]),
             "plan should still travel to Orchard Farm for the remote firewood"
         );
         assert!(
@@ -463,13 +464,23 @@ fn landmark_depth_divergence() {
         .planning
         .attempts
         .iter()
-        .find(|attempt| matches!(attempt.outcome, worldwake_ai::PlanSearchOutcome::Found { .. }))
+        .find(|attempt| {
+            matches!(
+                attempt.outcome,
+                worldwake_ai::PlanSearchOutcome::Found { .. }
+            )
+        })
         .expect("zero-depth run should include a successful search attempt");
     let default_attempt = default_planning
         .planning
         .attempts
         .iter()
-        .find(|attempt| matches!(attempt.outcome, worldwake_ai::PlanSearchOutcome::Found { .. }))
+        .find(|attempt| {
+            matches!(
+                attempt.outcome,
+                worldwake_ai::PlanSearchOutcome::Found { .. }
+            )
+        })
         .expect("default-depth run should include a successful search attempt");
 
     assert_eq!(

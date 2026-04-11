@@ -29,7 +29,9 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 1. Read the target ticket and confirm its current status.
 2. Confirm `Outcome` and verification notes accurately describe the implemented work.
+   - Compare the ticket's completion notes against the full landed local touched-file set, not just the original planned file list. Include factual compile/lint fallout or local test-fixture updates in `Outcome` when they were part of the real implementation handoff.
 3. Fix factual, unambiguous handoff issues directly: missing/incomplete `Outcome`, inaccurate verification notes, archival mechanics per [docs/archival-workflow.md](../../../docs/archival-workflow.md).
+   - If the completed ticket is untracked, do not rely on ordinary `git diff` output for ticket-body validation. Read the live ticket file directly before archival, then confirm archival state with `git status` plus a direct existence check on the original path after the move.
 4. If unresolved in-scope deliverables remain, stop and report archival as blocked — implementation must resume first.
    - This includes stale source-golden headers, generated scenario docs, or owned proof-surface prose that no longer matches the implemented contract. Treat as incomplete handoff, not a separate follow-up ticket.
    - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up.
@@ -99,7 +101,7 @@ Run these checks before archival to keep the active roadmap accurate:
 - **Delivered work overlap**: When the completed ticket materially resolves assumptions owned by nearby active tickets, update those tickets to remove already-delivered work, stale failure claims, or obsolete roadmap ownership.
 - **Substrate-only slices**: When the completed ticket landed only a shared type surface, reserved enum variant, or other non-live substrate, check nearby active tickets for confusion between "the symbol now exists" and "the behavior is now live." Cite if accurate; update if not.
 - **Scope narrowing**: When the completed ticket was corrected or narrowed during implementation, check whether nearby active tickets still assume the older broader boundary. If the remaining slice is real and no active ticket owns it, create a follow-up and update adjacent `Deps`.
-- **Active spec drift**: When the completed ticket falsifies or narrows a claim in an active spec under `specs/`, classify that as active spec drift. Update the spec factually if in scope for this handoff; otherwise create/update a follow-up ticket that owns bringing the spec into alignment.
+- **Active spec drift**: When the completed ticket falsifies or narrows a claim in an active spec under `specs/`, classify that as active spec drift. This includes narrowed implementations where the draft spec still describes the broader pre-reassessment plan. Update the spec factually if in scope for this handoff; otherwise create/update a follow-up ticket that owns bringing the spec into alignment.
 - **Dependency chain impact**: When a new follow-up ticket changes architectural ordering or prerequisites, also check adjacent active tickets in the same subsystem sequence and update their scope or `Deps` factually.
 - **Broader verification blockers**: When the completed ticket's broader verification surfaced a failure outside the ticket's owned surface, rerun the failing proof in isolation before deciding action. If the failure is real and still outside scope, record it in the archived handoff and create or update a bounded follow-up ticket instead of folding it silently into the completed ticket.
 
@@ -107,10 +109,11 @@ Run these checks before archival to keep the active roadmap accurate:
 
 When a new ticket is warranted:
 1. Create from [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) per [tickets/README.md](../../../tickets/README.md).
-2. If the new ticket is being exposed by a narrowed implementation or roadmap gap, inspect adjacent active tickets/specs first so the new ticket and any dependency updates are authored together.
-3. Reassess against current code and docs before finalizing.
-4. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
-5. Keep bounded to one coherent concern.
+2. Before drafting a new ticket, inspect adjacent active tickets in the same family plus nearby active specs to confirm the concern is not already owned. If a sibling already covers the exact remainder, cite or factually update it instead of duplicating the ticket.
+3. If the new ticket is being exposed by a narrowed implementation or roadmap gap, inspect adjacent active tickets/specs first so the new ticket and any dependency updates are authored together.
+4. Reassess against current code and docs before finalizing.
+5. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
+6. Keep bounded to one coherent concern.
 
 Set fields using evidence, not placeholders:
 - `Priority`: infer from impact and blast radius

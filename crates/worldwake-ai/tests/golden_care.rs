@@ -5,8 +5,8 @@ mod golden_harness;
 use golden_harness::*;
 use std::num::NonZeroU32;
 use worldwake_ai::{
-    DecisionOutcome, GoalKind, PlannerOpKind, PlanningEntityRef, PlanningState,
-    PlanSearchOutcome, apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
+    DecisionOutcome, GoalKind, PlanSearchOutcome, PlannerOpKind, PlanningEntityRef, PlanningState,
+    apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
     generate_candidates, search_plan,
 };
 use worldwake_core::{

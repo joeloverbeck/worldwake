@@ -226,7 +226,9 @@ mod tests {
     use worldwake_core::{ActionDefId, CommodityKind, EntityId, HomeostaticNeedId};
     use worldwake_sim::ActionPayload;
 
-    use super::{LandmarkSet, PlanningFact, PlanningOperator, extract_landmarks, preferred_operators};
+    use super::{
+        LandmarkSet, PlanningFact, PlanningOperator, extract_landmarks, preferred_operators,
+    };
     use crate::PlanningEntityRef;
     use crate::search::candidates::SearchCandidate;
 
@@ -374,7 +376,10 @@ mod tests {
             &LandmarkSet::empty(),
             &BTreeSet::new(),
             &[candidate(1)],
-            &[operator([], [PlanningFact::HasCommodity(CommodityKind::Water)])],
+            &[operator(
+                [],
+                [PlanningFact::HasCommodity(CommodityKind::Water)],
+            )],
         );
 
         assert!(preferred.is_empty());

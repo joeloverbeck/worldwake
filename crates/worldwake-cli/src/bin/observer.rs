@@ -463,8 +463,7 @@ fn committed_travel_ticks(events: &[&ActionTraceEvent]) -> Vec<Tick> {
     events
         .iter()
         .filter(|event| {
-            event.action_name == "travel"
-                && matches!(event.kind, ActionTraceKind::Committed { .. })
+            event.action_name == "travel" && matches!(event.kind, ActionTraceKind::Committed { .. })
         })
         .map(|event| event.tick)
         .collect()
@@ -558,7 +557,11 @@ fn unknown_location_entity_groups(
     let mut unknown_entities = Vec::new();
 
     for entity in entities {
-        match store.known_entities.get(entity).and_then(|state| state.believed_kind) {
+        match store
+            .known_entities
+            .get(entity)
+            .and_then(|state| state.believed_kind)
+        {
             Some(EntityKind::Place) => place_entities.push(*entity),
             _ => unknown_entities.push(*entity),
         }
@@ -1801,25 +1804,24 @@ fn main() {
 mod tests {
     use super::{
         BehavioralTransition, NeedsSample, PlanAttemptTrace, PlanSearchOutcome,
-        behavioral_transitions, committed_travel_ticks, death_summary_line,
-        failed_plan_breakdown, failed_plan_candidates, failed_plan_location,
-        failed_plan_max_depth, failed_plan_outcome_label, failed_plan_target_beliefs,
-        final_affordance_snapshot, format_behavioral_transition, format_death_cause,
-        format_affordance_summary, post_travel_affordance_snapshots,
-        unknown_location_entity_groups,
+        behavioral_transitions, committed_travel_ticks, death_summary_line, failed_plan_breakdown,
+        failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
+        failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
+        format_affordance_summary, format_behavioral_transition, format_death_cause,
+        post_travel_affordance_snapshots, unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
+    use std::collections::BTreeSet;
     use worldwake_ai::decision_trace::{
         AffordanceSummary, AffordanceTrace, SearchExpansionSummary, TargetBeliefPresence,
     };
+    use worldwake_core::PerceptionSource;
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, ControlSource, DeadAt,
         DeathCause, EntityId, EntityKind, EventLog, GoalKey, GoalKind, HomeostaticNeedId,
         OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
         build_prototype_world,
     };
-    use std::collections::BTreeSet;
-    use worldwake_core::PerceptionSource;
     use worldwake_sim::{ActionInstanceId, ActionTraceEvent, ActionTraceKind, CommitOutcome};
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
@@ -1912,7 +1914,10 @@ mod tests {
     }
 
     fn entity(slot: u32) -> EntityId {
-        EntityId { slot, generation: 0 }
+        EntityId {
+            slot,
+            generation: 0,
+        }
     }
 
     fn affordance_trace(place: Option<EntityId>, entries: &[(&str, usize)]) -> AffordanceTrace {
@@ -1930,7 +1935,10 @@ mod tests {
         }
     }
 
-    fn belief_state(kind: Option<EntityKind>, last_known_place: Option<EntityId>) -> BelievedEntityState {
+    fn belief_state(
+        kind: Option<EntityKind>,
+        last_known_place: Option<EntityId>,
+    ) -> BelievedEntityState {
         BelievedEntityState {
             believed_kind: kind,
             last_known_place,
@@ -2230,7 +2238,10 @@ mod tests {
         };
 
         assert_eq!(format_affordance_summary(&no_targets), "sleep");
-        assert_eq!(format_affordance_summary(&with_targets), "harvest (3 targets)");
+        assert_eq!(
+            format_affordance_summary(&with_targets),
+            "harvest (3 targets)"
+        );
     }
 
     #[test]
@@ -2276,7 +2287,10 @@ mod tests {
             .insert(item, belief_state(Some(EntityKind::ItemLot), None));
 
         let groups = unknown_location_entity_groups(&[place, item], &store);
-        let labels = groups.iter().map(|(label, _)| label.clone()).collect::<Vec<_>>();
+        let labels = groups
+            .iter()
+            .map(|(label, _)| label.clone())
+            .collect::<Vec<_>>();
         let grouped_entities = groups
             .iter()
             .map(|(_, ids)| ids.iter().copied().collect::<BTreeSet<_>>())
@@ -2291,10 +2305,7 @@ mod tests {
         );
         assert_eq!(
             grouped_entities,
-            vec![
-                BTreeSet::from([place]),
-                BTreeSet::from([item]),
-            ]
+            vec![BTreeSet::from([place]), BTreeSet::from([item]),]
         );
     }
 

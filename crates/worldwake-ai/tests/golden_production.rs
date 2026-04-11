@@ -347,7 +347,9 @@ fn assert_remote_recipe_input_tick_zero_plan(
         .attempts
         .iter()
         .find(|attempt| matches!(attempt.outcome, PlanSearchOutcome::Found { .. }))
-        .expect("remote recipe-input tick 0 planning should include a successful plan-search attempt");
+        .expect(
+            "remote recipe-input tick 0 planning should include a successful plan-search attempt",
+        );
     let strategic_plan = successful_attempt
         .strategic_plan
         .as_ref()

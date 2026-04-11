@@ -141,7 +141,9 @@ mod tests {
                 VisibilitySpec::SamePlace,
                 WitnessData::default(),
             );
-            let agent = txn.create_agent("Frontier Tester", ControlSource::Ai).unwrap();
+            let agent = txn
+                .create_agent("Frontier Tester", ControlSource::Ai)
+                .unwrap();
             txn.set_ground_location(agent, place).unwrap();
             let mut event_log = worldwake_core::EventLog::new();
             let _ = txn.commit(&mut event_log);
@@ -178,7 +180,10 @@ mod tests {
         node.search_cost = search_cost;
         node.heuristic_ticks = heuristic_ticks;
         node.total_estimated_ticks = total_estimated_ticks;
-        debug_assert_eq!(step_count, 0, "frontier ordering tests do not require steps");
+        debug_assert_eq!(
+            step_count, 0,
+            "frontier ordering tests do not require steps"
+        );
         node
     }
 

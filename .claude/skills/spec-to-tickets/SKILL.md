@@ -110,7 +110,9 @@ After writing all files:
 
 1. **Verify cross-ticket dependency consistency**: For each `Deps` reference, confirm the depended-on ticket actually produces what the dependent ticket needs (types, modules, files). If a dependency is broken (e.g., ticket 005 depends on a type from 003 but 003's scope doesn't define it), flag the inconsistency.
 
-2. List:
+2. **Deliverable coverage mapping**: List each spec deliverable and the ticket that covers it (e.g., `D1→001, D2→001, D3→002`). Verify all spec deliverables are accounted for. If any deliverable is missing, flag it before finalizing.
+
+3. List:
    - All ticket files created
    - The dependency graph (which tickets block which)
    - Suggested implementation order

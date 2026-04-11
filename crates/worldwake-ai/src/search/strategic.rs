@@ -5,8 +5,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{CommodityKind, EntityId, EntityKind, ExecutionBudget, GoalKind, Quantity};
 use worldwake_sim::{
-    EconomicBeliefView, FacilityBeliefView, InventoryBeliefView, RecipeRegistry,
-    SpatialBeliefView,
+    EconomicBeliefView, FacilityBeliefView, InventoryBeliefView, RecipeRegistry, SpatialBeliefView,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -107,7 +106,10 @@ pub(crate) fn plan(
         return Some(StrategicPlan { steps: local_steps });
     }
 
-    let search_budget = usize::max(1, usize::from(execution_budget.max_prerequisite_locations) * 2);
+    let search_budget = usize::max(
+        1,
+        usize::from(execution_budget.max_prerequisite_locations) * 2,
+    );
     let mut frontier = BinaryHeap::new();
     frontier.push(SearchNode {
         stage_index: 0,
@@ -184,9 +186,9 @@ fn missing_commodities(
     let mut commodities = match goal.key.kind {
         GoalKind::TreatWounds { .. } => (state.commodity_quantity(actor, CommodityKind::Medicine)
             == Quantity(0))
-            .then_some(CommodityKind::Medicine)
-            .into_iter()
-            .collect(),
+        .then_some(CommodityKind::Medicine)
+        .into_iter()
+        .collect(),
         GoalKind::ProduceCommodity { recipe_id } => recipes
             .get(recipe_id)
             .into_iter()
@@ -295,12 +297,11 @@ fn place_supports_commodity(
     commodity: CommodityKind,
 ) -> bool {
     state.entities_at(place).into_iter().any(|entity| {
-        state
-            .resource_source(entity)
-            .is_some_and(|source| source.commodity == commodity && source.available_quantity > Quantity(0))
-            || state
-                .merchandise_profile(entity)
-                .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
+        state.resource_source(entity).is_some_and(|source| {
+            source.commodity == commodity && source.available_quantity > Quantity(0)
+        }) || state
+            .merchandise_profile(entity)
+            .is_some_and(|profile| profile.sale_kinds.contains(&commodity))
             || (state.item_lot_commodity(entity) == Some(commodity)
                 && state.commodity_quantity(entity, commodity) > Quantity(0)
                 && state.direct_possessor(entity).is_none()
@@ -333,9 +334,9 @@ fn consume_current_place_prerequisites(
 }
 
 fn matches_local_goal_stage(stages: &[StrategicStage], current_place: EntityId) -> bool {
-    stages
-        .first()
-        .is_some_and(|stage| matches!(stage.kind, StrategicStageKind::Goal) && stage.places.contains(&current_place))
+    stages.first().is_some_and(|stage| {
+        matches!(stage.kind, StrategicStageKind::Goal) && stage.places.contains(&current_place)
+    })
 }
 
 fn exploration_plan(snapshot: &PlanningSnapshot, actor_place: EntityId) -> Option<StrategicPlan> {
@@ -401,11 +402,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick,
-        BodyPart, CommodityKind, DeprivationKind, EntityId, EntityKind, GoalKind,
-        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-        OpportunityAnchor, PatrolRoute, Permille, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, ToldBeliefMemory, Wound, WoundCause, WoundId,
+        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
+        CommodityKind, DeprivationKind, EntityId, EntityKind, GoalKind, InTransitOnEdge,
+        InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, OpportunityAnchor, PatrolRoute,
+        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, ToldBeliefMemory, Wound,
+        WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, EconomicBeliefView,
@@ -508,10 +509,7 @@ mod tests {
             None
         }
 
-        fn disposal_profile(
-            &self,
-            _agent: EntityId,
-        ) -> Option<worldwake_core::DisposalProfile> {
+        fn disposal_profile(&self, _agent: EntityId) -> Option<worldwake_core::DisposalProfile> {
             None
         }
     }
@@ -569,10 +567,7 @@ mod tests {
             None
         }
 
-        fn facility_grant(
-            &self,
-            _facility: EntityId,
-        ) -> Option<&worldwake_core::ContentionGrant> {
+        fn facility_grant(&self, _facility: EntityId) -> Option<&worldwake_core::ContentionGrant> {
             None
         }
 
@@ -668,7 +663,9 @@ mod tests {
         }
 
         fn has_wounds(&self, entity: EntityId) -> bool {
-            self.wounds.get(&entity).is_some_and(|wounds| !wounds.is_empty())
+            self.wounds
+                .get(&entity)
+                .is_some_and(|wounds| !wounds.is_empty())
         }
     }
 
@@ -731,7 +728,11 @@ mod tests {
             false
         }
 
-        fn unique_item_count(&self, _holder: EntityId, _kind: worldwake_core::UniqueItemKind) -> u32 {
+        fn unique_item_count(
+            &self,
+            _holder: EntityId,
+            _kind: worldwake_core::UniqueItemKind,
+        ) -> u32 {
             0
         }
 
@@ -835,12 +836,7 @@ mod tests {
         }
     }
 
-    fn connect(
-        view: &mut StubBeliefView,
-        from: EntityId,
-        to: EntityId,
-        ticks: u32,
-    ) {
+    fn connect(view: &mut StubBeliefView, from: EntityId, to: EntityId, ticks: u32) {
         let ticks = NonZeroU32::new(ticks).unwrap();
         view.adjacent.entry(from).or_default().push((to, ticks));
         view.adjacent.entry(to).or_default().push((from, ticks));
@@ -884,11 +880,7 @@ mod tests {
         );
     }
 
-    fn snapshot(
-        view: &StubBeliefView,
-        actor: EntityId,
-        horizon: u8,
-    ) -> crate::PlanningSnapshot {
+    fn snapshot(view: &StubBeliefView, actor: EntityId, horizon: u8) -> crate::PlanningSnapshot {
         build_planning_snapshot(view, actor, &BTreeSet::new(), &BTreeSet::new(), horizon)
     }
 
@@ -993,7 +985,11 @@ mod tests {
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
 
-        assert!(plan.steps.iter().all(|step| step.destination != unknown_place_c));
+        assert!(
+            plan.steps
+                .iter()
+                .all(|step| step.destination != unknown_place_c)
+        );
     }
 
     #[test]
