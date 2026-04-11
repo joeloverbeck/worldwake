@@ -734,6 +734,52 @@ pub struct RootCandidateTrace {
     pub outcome: RootCandidateOutcome,
 }
 
+/// Final per-expansion status for one candidate after all pre-successor filters.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExpansionCandidateOutcome {
+    Filtered(ExpansionCandidateFilterReason),
+    Skipped(RootCandidateSkipReason),
+    Terminal { terminal_kind: PlanTerminalKind },
+    RetainedNonTerminal { preferred: bool },
+    PrunedByBeam { preferred: bool },
+}
+
+/// Structured candidate provenance for one concrete expansion boundary after
+/// root/tactical/travel filtering has completed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExpansionCandidateTrace {
+    pub def_id: ActionDefId,
+    pub action_name: String,
+    pub op_kind: Option<PlannerOpKind>,
+    pub authoritative_targets: Vec<EntityId>,
+    pub planner_only: bool,
+    pub payload_status: RootCandidatePayloadStatus,
+    pub outcome: ExpansionCandidateOutcome,
+}
+
+/// Why a per-expansion candidate was filtered before successor construction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExpansionCandidateFilterReason {
+    BindingMismatch {
+        required_target: Option<EntityId>,
+    },
+    CommodityIrrelevant {
+        candidate_commodity: Option<CommodityKind>,
+        goal_commodity: CommodityKind,
+    },
+    GoalUnavailable,
+    BlockedFacilityUse {
+        facility: EntityId,
+        intended_action: ActionDefId,
+    },
+    PlaceBlocker {
+        place: Option<EntityId>,
+        blocking_fact: BlockingFact,
+    },
+    TacticalGoalMismatch,
+    TravelPrunedAwayFromGoal,
+}
+
 /// Why a relevant root operator never produced a concrete root candidate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RootOperatorOmissionReason {
@@ -798,6 +844,10 @@ pub struct SearchExpansionSummary {
     /// Concrete goal-relevant / prerequisite guidance surfaces for this
     /// expansion boundary, when any exist.
     pub prerequisite_guidance: Option<PrerequisiteGuidanceTrace>,
+    /// Candidate inventory that reached successor construction at this
+    /// expansion boundary, including terminal, skipped, retained, and beam-pruned
+    /// outcomes after all pre-successor filtering.
+    pub expansion_candidates: Vec<ExpansionCandidateTrace>,
     /// Root candidate inventory and outcomes for this expansion. Populated only
     /// for the root expansion (`depth == 0`).
     pub root_candidates: Vec<RootCandidateTrace>,
@@ -3915,6 +3965,7 @@ mod tests {
                         landmark_heuristic: 2,
                         travel_pruning: None,
                         prerequisite_guidance: None,
+                        expansion_candidates: vec![],
                         root_candidates: vec![RootCandidateTrace {
                             def_id: ActionDefId(9),
                             action_name: "trade".to_string(),
@@ -4095,6 +4146,7 @@ mod tests {
                 }],
             }),
             prerequisite_guidance: None,
+            expansion_candidates: vec![],
             root_candidates: vec![],
             root_omissions: vec![],
         };

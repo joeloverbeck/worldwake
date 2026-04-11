@@ -2939,6 +2939,7 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
         payload_override: None,
         planner_only: true,
         trace_index: None,
+        expansion_trace_index: None,
     };
 
     let (_, successor) = build_successor(
@@ -3008,6 +3009,7 @@ fn build_successor_preserves_parent_steps_when_appending_child_step() {
         payload_override: None,
         planner_only: true,
         trace_index: None,
+        expansion_trace_index: None,
     };
 
     let (terminal, successor) = build_successor(
@@ -3094,6 +3096,7 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
 
     let (_, successor) = build_successor(
@@ -3131,6 +3134,7 @@ fn build_successor_uses_transition_metadata_for_partial_pickup() {
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
     let (_, successor) = build_successor(
         &goal,
@@ -3167,6 +3171,7 @@ fn search_adds_put_down_candidate_for_directly_possessed_hypothetical_lot() {
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
     let (_, successor) = build_successor(
         &goal,
@@ -5826,6 +5831,7 @@ fn make_travel_candidate(def_id: ActionDefId, destination: EntityId) -> SearchCa
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     }
 }
 
@@ -5837,6 +5843,7 @@ fn make_non_travel_candidate(def_id: ActionDefId, target: EntityId) -> SearchCan
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     }
 }
 
@@ -6733,6 +6740,7 @@ fn build_successor_keeps_accuse_step_target_bound_to_accused() {
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
 
     let (terminal, successor) = build_successor(
@@ -9295,6 +9303,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
             })),
             planner_only: false,
             trace_index: Some(0),
+            expansion_trace_index: None,
         },
         SearchCandidate {
             def_id: move_cargo_id,
@@ -9305,6 +9314,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
             })),
             planner_only: false,
             trace_index: Some(1),
+            expansion_trace_index: None,
         },
         SearchCandidate {
             def_id: trade_id,
@@ -9319,6 +9329,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
             })),
             planner_only: false,
             trace_index: Some(2),
+            expansion_trace_index: None,
         },
         SearchCandidate {
             def_id: trade_id,
@@ -9333,6 +9344,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
             })),
             planner_only: false,
             trace_index: Some(3),
+            expansion_trace_index: None,
         },
         SearchCandidate {
             def_id: craft_id,
@@ -9341,6 +9353,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
             payload_override: None,
             planner_only: false,
             trace_index: Some(4),
+            expansion_trace_index: None,
         },
     ];
     let mut root_candidates = candidates
@@ -9480,6 +9493,7 @@ fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft(
             payload_override: None,
             planner_only: false,
             trace_index: None,
+            expansion_trace_index: None,
         },
         SearchCandidate {
             def_id: queue_id,
@@ -9492,6 +9506,7 @@ fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft(
             )),
             planner_only: false,
             trace_index: None,
+            expansion_trace_index: None,
         },
         SearchCandidate {
             def_id: pick_up_id,
@@ -9502,6 +9517,7 @@ fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft(
             })),
             planner_only: false,
             trace_index: None,
+            expansion_trace_index: None,
         },
     ];
 
@@ -9565,6 +9581,7 @@ fn commodity_relevance_filter_bypasses_non_commodity_goals() {
         })),
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
     let mut candidates = vec![original.clone()];
 
@@ -9650,6 +9667,7 @@ fn commodity_relevance_filter_uses_active_prerequisite_commodity_for_produce_goa
             })),
             planner_only: false,
             trace_index: None,
+            expansion_trace_index: None,
         },
         SearchCandidate {
             def_id: pick_up_id,
@@ -9660,6 +9678,7 @@ fn commodity_relevance_filter_uses_active_prerequisite_commodity_for_produce_goa
             })),
             planner_only: false,
             trace_index: None,
+            expansion_trace_index: None,
         },
     ];
     let tactical_goal = TacticalGoal::AcquirePrerequisite {

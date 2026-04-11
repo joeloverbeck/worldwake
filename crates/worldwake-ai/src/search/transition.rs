@@ -43,6 +43,7 @@ pub(super) fn build_successor<'snapshot>(
         tactical_goal,
         landmark_set,
     )
+    .map(|(terminal, successor, _)| (terminal, successor))
     .ok()
 }
 
@@ -59,7 +60,11 @@ pub(super) fn build_successor_detailed<'snapshot>(
     tactical_goal: Option<&TacticalGoal>,
     landmark_set: &LandmarkSet,
 ) -> Result<
-    (Option<PlanTerminalKind>, SearchNode<'snapshot>),
+    (
+        Option<PlanTerminalKind>,
+        SearchNode<'snapshot>,
+        crate::decision_trace::RootCandidatePayloadStatus,
+    ),
     crate::decision_trace::RootCandidateSkipReason,
 > {
     let def = registry
@@ -107,6 +112,10 @@ pub(super) fn build_successor_detailed<'snapshot>(
             semantics,
         )
         .map_err(root_candidate_payload_error)?;
+    let payload_status = crate::search::candidates::root_candidate_payload_status(
+        candidate.payload_override.as_ref(),
+        payload_override.as_ref(),
+    );
     let effective_payload = payload_override.as_ref().unwrap_or(&def.payload);
     let duration = node
         .state
@@ -210,6 +219,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
             tactical_barrier_reached,
             heuristic_ticks,
         },
+        payload_status,
     ))
 }
 

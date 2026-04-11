@@ -2,10 +2,16 @@ mod golden_harness;
 
 use golden_harness::*;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
+use std::fs;
 use std::num::NonZeroU8;
 use std::num::NonZeroU32;
+use std::path::PathBuf;
 use worldwake_ai::{
-    CommodityPurpose, GoalKind, PlanSearchResult, build_planning_snapshot, build_semantics_table,
+    CommodityPurpose, GoalKind, PlanSearchResult, RootCandidateFilterReason, RootCandidateOutcome,
+    RootCandidatePayloadStatus, RootCandidateSkipReason, RootOperatorOmissionTrace,
+    build_planning_snapshot, build_semantics_table,
+    decision_trace::{ExpansionCandidateOutcome, SearchExpansionSummary},
     generate_candidates, search_plan,
 };
 use worldwake_core::{
@@ -1026,6 +1032,52 @@ fn search_acquire_commodity(
     )
 }
 
+fn search_acquire_commodity_with_summaries(
+    h: &GoldenHarness,
+    actor: EntityId,
+    commodity: CommodityKind,
+    tick: Tick,
+    cognitive: &CognitiveProfile,
+    execution_budget: ExecutionBudget,
+) -> (PlanSearchResult, Vec<SearchExpansionSummary>) {
+    let blocked = h
+        .world
+        .get_component_blocked_intent_memory(actor)
+        .cloned()
+        .unwrap_or_default();
+    let grounded = find_acquire_commodity_candidate(h, actor, commodity, tick);
+    let view = PerAgentBeliefView::from_world_at_tick_with_recipes(
+        actor,
+        tick,
+        &h.world,
+        Some(&h.recipes),
+    );
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &grounded.evidence_entities,
+        &grounded.evidence_places,
+        cognitive.snapshot_travel_horizon,
+    );
+    let semantics = build_semantics_table(&h.defs);
+    let mut summaries = Vec::new();
+    let result = search_plan(
+        &snapshot,
+        &grounded,
+        &semantics,
+        &h.defs,
+        &h.handlers,
+        cognitive,
+        &execution_budget,
+        &h.recipes,
+        &blocked,
+        tick,
+        None,
+        Some(&mut summaries),
+    );
+    (result, summaries)
+}
+
 fn find_treat_wounds_candidate(
     h: &GoldenHarness,
     actor: EntityId,
@@ -1092,6 +1144,462 @@ fn search_treat_wounds(
         None,
         None,
     )
+}
+
+fn search_treat_wounds_with_summaries(
+    h: &GoldenHarness,
+    actor: EntityId,
+    patient: EntityId,
+    tick: Tick,
+    cognitive: &CognitiveProfile,
+    execution_budget: ExecutionBudget,
+) -> (PlanSearchResult, Vec<SearchExpansionSummary>) {
+    let blocked = h
+        .world
+        .get_component_blocked_intent_memory(actor)
+        .cloned()
+        .unwrap_or_default();
+    let grounded = find_treat_wounds_candidate(h, actor, patient, tick);
+    let view = PerAgentBeliefView::from_world_at_tick_with_recipes(
+        actor,
+        tick,
+        &h.world,
+        Some(&h.recipes),
+    );
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &grounded.evidence_entities,
+        &grounded.evidence_places,
+        cognitive.snapshot_travel_horizon,
+    );
+    let semantics = build_semantics_table(&h.defs);
+    let mut summaries = Vec::new();
+    let result = search_plan(
+        &snapshot,
+        &grounded,
+        &semantics,
+        &h.defs,
+        &h.handlers,
+        cognitive,
+        &execution_budget,
+        &h.recipes,
+        &blocked,
+        tick,
+        None,
+        Some(&mut summaries),
+    );
+    (result, summaries)
+}
+
+fn entity_label(h: &GoldenHarness, id: EntityId) -> String {
+    if let Some(name) = h.world.get_component_name(id) {
+        return format!("{} [{}:{}]", name.0, id.slot, id.generation);
+    }
+    if let Some(label) = match id {
+        THORNWALL_VILLAGE => Some("Thornwall Village"),
+        DUSTY_TRAIL => Some("Dusty Trail"),
+        ELDERGROVE_FOREST => Some("Eldergrove Forest"),
+        HEARTHSTONE_INN => Some("Hearthstone Inn"),
+        GOLDEN_FIELDS => Some("Golden Fields"),
+        _ => None,
+    } {
+        return format!("{label} [{}:{}]", id.slot, id.generation);
+    }
+    if let Some(lot) = h.world.get_component_item_lot(id) {
+        return format!(
+            "{:?} lot x{} [{}:{}]",
+            lot.commodity, lot.quantity.0, id.slot, id.generation
+        );
+    }
+    if let Some(source) = h.world.get_component_resource_source(id) {
+        return format!(
+            "{:?} source [{}:{}]",
+            source.commodity, id.slot, id.generation
+        );
+    }
+    format!("entity [{}:{}]", id.slot, id.generation)
+}
+
+fn format_search_result(result: &PlanSearchResult) -> String {
+    match result {
+        PlanSearchResult::Found(plan) => format!(
+            "Found(terminal={:?}, steps={})",
+            plan.terminal_kind,
+            plan.steps.len()
+        ),
+        PlanSearchResult::BudgetExhausted { expansions_used } => {
+            format!("BudgetExhausted(expansions_used={expansions_used})")
+        }
+        PlanSearchResult::FrontierExhausted { expansions_used } => {
+            format!("FrontierExhausted(expansions_used={expansions_used})")
+        }
+        PlanSearchResult::Unsupported => "Unsupported".to_string(),
+    }
+}
+
+fn format_payload_status(status: RootCandidatePayloadStatus) -> &'static str {
+    match status {
+        RootCandidatePayloadStatus::None => "None",
+        RootCandidatePayloadStatus::CandidateProvided => "CandidateProvided",
+        RootCandidatePayloadStatus::GoalSynthesized => "GoalSynthesized",
+    }
+}
+
+fn format_skip_reason(reason: RootCandidateSkipReason) -> String {
+    format!("{reason:?}")
+}
+
+fn format_filter_reason(reason: RootCandidateFilterReason) -> String {
+    match reason {
+        RootCandidateFilterReason::BindingMismatch { required_target } => match required_target {
+            Some(target) => format!("BindingMismatch(required_target={target:?})"),
+            None => "BindingMismatch(required_target=None)".to_string(),
+        },
+        RootCandidateFilterReason::CommodityIrrelevant {
+            candidate_commodity,
+            goal_commodity,
+        } => format!(
+            "CommodityIrrelevant(candidate_commodity={candidate_commodity:?}, goal_commodity={goal_commodity:?})"
+        ),
+        RootCandidateFilterReason::GoalUnavailable => "GoalUnavailable".to_string(),
+        RootCandidateFilterReason::BlockedFacilityUse {
+            facility,
+            intended_action,
+        } => format!(
+            "BlockedFacilityUse(facility={facility:?}, intended_action={intended_action:?})"
+        ),
+        RootCandidateFilterReason::PlaceBlocker {
+            place,
+            blocking_fact,
+        } => format!("PlaceBlocker(place={place:?}, blocking_fact={blocking_fact:?})"),
+    }
+}
+
+fn format_candidate_outcome(outcome: RootCandidateOutcome) -> String {
+    match outcome {
+        RootCandidateOutcome::Expanded => "Expanded".to_string(),
+        RootCandidateOutcome::Filtered(reason) => {
+            format!("Filtered({})", format_filter_reason(reason))
+        }
+        RootCandidateOutcome::Skipped(reason) => format!("Skipped({})", format_skip_reason(reason)),
+    }
+}
+
+fn format_expansion_candidate_outcome(outcome: ExpansionCandidateOutcome) -> String {
+    match outcome {
+        ExpansionCandidateOutcome::Filtered(reason) => format!("Filtered({reason:?})"),
+        ExpansionCandidateOutcome::Skipped(reason) => {
+            format!("Skipped({})", format_skip_reason(reason))
+        }
+        ExpansionCandidateOutcome::Terminal { terminal_kind } => {
+            format!("Terminal({terminal_kind:?})")
+        }
+        ExpansionCandidateOutcome::RetainedNonTerminal { preferred } => {
+            format!("RetainedNonTerminal(preferred={preferred})")
+        }
+        ExpansionCandidateOutcome::PrunedByBeam { preferred } => {
+            format!("PrunedByBeam(preferred={preferred})")
+        }
+    }
+}
+
+fn append_scenario_report(
+    report: &mut String,
+    h: &GoldenHarness,
+    scenario_name: &str,
+    actor: EntityId,
+    goal: &str,
+    tick: Tick,
+    result: &PlanSearchResult,
+    summaries: &[SearchExpansionSummary],
+) {
+    let root = summaries
+        .iter()
+        .find(|summary| summary.depth == 0)
+        .expect("search should record a root expansion summary");
+    let expanded = root
+        .root_candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.outcome, RootCandidateOutcome::Expanded))
+        .count();
+    let filtered = root
+        .root_candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.outcome, RootCandidateOutcome::Filtered(_)))
+        .count();
+    let skipped = root
+        .root_candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.outcome, RootCandidateOutcome::Skipped(_)))
+        .count();
+
+    let _ = writeln!(report, "## {scenario_name}");
+    let _ = writeln!(report);
+    let _ = writeln!(report, "- Actor: {}", entity_label(h, actor));
+    let _ = writeln!(report, "- Tick: {}", tick.0);
+    let _ = writeln!(report, "- Goal: `{goal}`");
+    let _ = writeln!(
+        report,
+        "- Search result: `{}`",
+        format_search_result(result)
+    );
+    let _ = writeln!(report, "- Expansions recorded: `{}`", summaries.len());
+    let _ = writeln!(
+        report,
+        "- Root summary: `candidates_generated={}`, `expanded={expanded}`, `filtered={filtered}`, `skipped={skipped}`, `root_omissions={}`",
+        root.candidates_generated,
+        root.root_omissions.len()
+    );
+    let _ = writeln!(report);
+    let _ = writeln!(report, "### Root Candidates");
+    let _ = writeln!(report);
+
+    for (idx, candidate) in root.root_candidates.iter().enumerate() {
+        let targets = if candidate.authoritative_targets.is_empty() {
+            "none".to_string()
+        } else {
+            candidate
+                .authoritative_targets
+                .iter()
+                .map(|id| entity_label(h, *id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let op_kind = candidate
+            .op_kind
+            .map(|op| format!("{op:?}"))
+            .unwrap_or_else(|| "None".to_string());
+        let _ = writeln!(
+            report,
+            "{}. `{}` | op=`{}` | targets=`{}` | planner_only=`{}` | payload=`{}` | outcome=`{}`",
+            idx + 1,
+            candidate.action_name,
+            op_kind,
+            targets,
+            candidate.planner_only,
+            format_payload_status(candidate.payload_status),
+            format_candidate_outcome(candidate.outcome)
+        );
+    }
+
+    if !root.root_omissions.is_empty() {
+        let _ = writeln!(report);
+        let _ = writeln!(report, "### Root Operator Omissions");
+        let _ = writeln!(report);
+        for RootOperatorOmissionTrace {
+            op_kind,
+            reason,
+            detail,
+        } in &root.root_omissions
+        {
+            let _ = writeln!(
+                report,
+                "- op=`{op_kind:?}` | reason=`{reason:?}` | detail=`{detail:?}`"
+            );
+        }
+    }
+
+    let _ = writeln!(report);
+
+    let _ = writeln!(report, "### Per-Expansion Candidate Inventory");
+    let _ = writeln!(report);
+
+    for (expansion_idx, summary) in summaries.iter().enumerate() {
+        let _ = writeln!(report, "#### Expansion {}", expansion_idx + 1);
+        let _ = writeln!(report);
+        let _ = writeln!(
+            report,
+            "- depth=`{}` remaining_travel_ticks=`{}` candidates_generated=`{}` candidates_after_filters=`{}` candidates_skipped=`{}` terminal_successors=`{}` non_terminal_before_beam=`{}` non_terminal_after_beam=`{}` preferred_candidates=`{}` landmark_heuristic=`{}`",
+            summary.depth,
+            summary.remaining_travel_ticks,
+            summary.candidates_generated,
+            summary.expansion_candidates.len(),
+            summary.candidates_skipped,
+            summary.terminal_successors,
+            summary.non_terminal_before_beam,
+            summary.non_terminal_after_beam,
+            summary.preferred_candidates,
+            summary.landmark_heuristic
+        );
+        let _ = writeln!(report);
+        for (candidate_idx, candidate) in summary.expansion_candidates.iter().enumerate() {
+            let targets = if candidate.authoritative_targets.is_empty() {
+                "none".to_string()
+            } else {
+                candidate
+                    .authoritative_targets
+                    .iter()
+                    .map(|id| entity_label(h, *id))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let op_kind = candidate
+                .op_kind
+                .map(|op| format!("{op:?}"))
+                .unwrap_or_else(|| "None".to_string());
+            let _ = writeln!(
+                report,
+                "{}. `{}` | op=`{}` | targets=`{}` | planner_only=`{}` | payload=`{}` | outcome=`{}`",
+                candidate_idx + 1,
+                candidate.action_name,
+                op_kind,
+                targets,
+                candidate.planner_only,
+                format_payload_status(candidate.payload_status),
+                format_expansion_candidate_outcome(candidate.outcome)
+            );
+        }
+        let _ = writeln!(report);
+    }
+}
+
+#[test]
+#[ignore = "writes a markdown report under reports/ for manual analysis"]
+fn generate_residual_candidate_report() {
+    let mut report = String::new();
+    let _ = writeln!(report, "# S94 Residual Candidate Inventory");
+    let _ = writeln!(report);
+    let _ = writeln!(
+        report,
+        "Generated from `crates/worldwake-ai/tests/golden_budget_exhaustion_snapshots.rs`."
+    );
+    let _ = writeln!(report);
+    let _ = writeln!(
+        report,
+        "This report captures the full per-expansion candidate inventory for the residual post-S94 regression scenarios that still do not find a successful plan."
+    );
+    let _ = writeln!(report);
+
+    let tick = Tick(11);
+    let (h, merchant_vara) = setup_merchant_vara_water_at_thornwall_snapshot();
+    let (result, summaries) = search_acquire_commodity_with_summaries(
+        &h,
+        merchant_vara,
+        CommodityKind::Water,
+        tick,
+        &merchant_vara_cognitive_profile(),
+        merchant_vara_execution_budget(),
+    );
+    append_scenario_report(
+        &mut report,
+        &h,
+        "merchant_vara_water_at_thornwall",
+        merchant_vara,
+        "AcquireCommodity(Water)",
+        tick,
+        &result,
+        &summaries,
+    );
+
+    let tick = Tick(25);
+    let (h, guard_theron) = setup_guard_theron_water_at_thornwall_snapshot();
+    let (result, summaries) = search_acquire_commodity_with_summaries(
+        &h,
+        guard_theron,
+        CommodityKind::Water,
+        tick,
+        &CognitiveProfile::default(),
+        ExecutionBudget::default(),
+    );
+    append_scenario_report(
+        &mut report,
+        &h,
+        "guard_theron_water_at_thornwall",
+        guard_theron,
+        "AcquireCommodity(Water)",
+        tick,
+        &result,
+        &summaries,
+    );
+
+    let tick = Tick(85);
+    let (h, merchant_vara) = setup_merchant_vara_apple_at_dusty_trail_snapshot();
+    let (result, summaries) = search_acquire_commodity_with_summaries(
+        &h,
+        merchant_vara,
+        CommodityKind::Apple,
+        tick,
+        &merchant_vara_cognitive_profile(),
+        merchant_vara_execution_budget(),
+    );
+    append_scenario_report(
+        &mut report,
+        &h,
+        "merchant_vara_apple_at_dusty_trail",
+        merchant_vara,
+        "AcquireCommodity(Apple)",
+        tick,
+        &result,
+        &summaries,
+    );
+
+    let tick = Tick(411);
+    let (h, kael) = setup_kael_water_at_thornwall_late_game_snapshot();
+    let (result, summaries) = search_acquire_commodity_with_summaries(
+        &h,
+        kael,
+        CommodityKind::Water,
+        tick,
+        &CognitiveProfile::default(),
+        ExecutionBudget::default(),
+    );
+    append_scenario_report(
+        &mut report,
+        &h,
+        "kael_water_at_thornwall_late_game",
+        kael,
+        "AcquireCommodity(Water)",
+        tick,
+        &result,
+        &summaries,
+    );
+
+    let tick = Tick(456);
+    let (h, merchant_vara) = setup_merchant_vara_treat_wounds_snapshot();
+    let (result, summaries) = search_treat_wounds_with_summaries(
+        &h,
+        merchant_vara,
+        merchant_vara,
+        tick,
+        &merchant_vara_cognitive_profile(),
+        merchant_vara_execution_budget(),
+    );
+    append_scenario_report(
+        &mut report,
+        &h,
+        "merchant_vara_treat_wounds_at_dusty_trail",
+        merchant_vara,
+        "TreatWounds(self)",
+        tick,
+        &result,
+        &summaries,
+    );
+
+    let tick = Tick(471);
+    let (h, kael, merchant_vara) = setup_kael_treats_vara_snapshot();
+    let (result, summaries) = search_treat_wounds_with_summaries(
+        &h,
+        kael,
+        merchant_vara,
+        tick,
+        &CognitiveProfile::default(),
+        ExecutionBudget::default(),
+    );
+    append_scenario_report(
+        &mut report,
+        &h,
+        "kael_treat_wounds_vara_at_dusty_trail",
+        kael,
+        "TreatWounds(Merchant Vara)",
+        tick,
+        &result,
+        &summaries,
+    );
+
+    let report_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../reports/s94-residual-candidate-inventory.md");
+    fs::write(&report_path, report).expect("report should write");
 }
 
 enum ExpectedExhaustion {

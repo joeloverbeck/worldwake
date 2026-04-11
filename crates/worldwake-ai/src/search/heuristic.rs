@@ -208,8 +208,27 @@ fn tactical_goal_places(tactical_goal: &TacticalGoal) -> Option<EntityId> {
 /// When the actor is already at one goal-relevant place, pruning continues
 /// against the remaining relevant places so search can leave the current place
 /// without broadening into arbitrary detours.
+#[cfg(test)]
 pub(super) fn prune_travel_away_from_goal(
     candidates: &mut Vec<SearchCandidate>,
+    current_place: EntityId,
+    goal_places: &[EntityId],
+    snapshot: &PlanningSnapshot,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+) -> Option<crate::decision_trace::TravelPruningTrace> {
+    prune_travel_away_from_goal_with_expansion_trace(
+        candidates,
+        None,
+        current_place,
+        goal_places,
+        snapshot,
+        semantics_table,
+    )
+}
+
+pub(super) fn prune_travel_away_from_goal_with_expansion_trace(
+    candidates: &mut Vec<SearchCandidate>,
+    expansion_candidates: Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
     current_place: EntityId,
     goal_places: &[EntityId],
     snapshot: &PlanningSnapshot,
@@ -240,6 +259,7 @@ pub(super) fn prune_travel_away_from_goal(
     let mut retained = Vec::new();
     let mut pruned = Vec::new();
     let mut kept_candidates = Vec::with_capacity(candidates.len());
+    let mut expansion_candidates = expansion_candidates;
 
     for candidate in candidates.drain(..) {
         let Some(semantics) = semantics_table.get(&candidate.def_id) else {
@@ -284,6 +304,13 @@ pub(super) fn prune_travel_away_from_goal(
             retained.push(successor);
             kept_candidates.push(candidate);
         } else {
+            crate::search::candidates::update_expansion_candidate_outcome(
+                &mut expansion_candidates,
+                candidate.expansion_trace_index,
+                crate::decision_trace::ExpansionCandidateOutcome::Filtered(
+                    crate::decision_trace::ExpansionCandidateFilterReason::TravelPrunedAwayFromGoal,
+                ),
+            );
             pruned.push(successor);
         }
     }
