@@ -13,7 +13,7 @@ This spec unifies `FreeCarryCapacity` around one lawful disposal contract: if th
 **Crates**: `worldwake-ai`
 **Dependencies**:
 - `archive/specs/S82-waste-disposal-inventory-management.md`
-- `specs/S91-planner-pathology-golden-tests.md`
+- `archive/specs/S91-planner-pathology-golden-tests.md`
 - `archive/tickets/S91PLAPATGOL-002.md`
 
 ## Design Goals

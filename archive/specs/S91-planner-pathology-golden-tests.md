@@ -1,8 +1,10 @@
 # S91 — Planner Pathology Golden Tests
 
+**Status**: ✅ COMPLETED
+
 ## Problem Statement
 
-The simulation observer report (`reports/simulation-observer-report.md`, seed 7777, scenario `cli-evaluation.ron`) identifies three root-cause planner pathologies that render the simulation non-functional:
+The simulation observer report (`archive/reports/simulation-observer-report.md`, seed 7777, scenario `cli-evaluation.ron`) identifies three root-cause planner pathologies that render the simulation non-functional:
 
 1. **Budget exhaustion on multi-location acquisition (CRITICAL)**: AcquireCommodity{Water} generates 1400–2600+ candidates per expansion, exhausting the 224-node budget at depth 0–1. Agents at resource-poor locations (Dusty Trail) cannot plan travel→acquire→consume chains. Three agents slowly starve. S88/S89/S90 introduced strategic+tactical layering but the combinatorial explosion persists in the tactical phase.
 
@@ -182,3 +184,19 @@ Not applicable — no feedback loops introduced.
 - Location checks, need level reads — read from authoritative world state
 
 No new components, relations, or stored state are introduced by this spec.
+
+## Outcome
+
+- **Completion date**: 2026-04-11
+- **What actually changed**:
+  - landed the planner-pathology golden proof surface in `crates/worldwake-ai/tests/golden_planner_pathology.rs`
+  - Scenario 142 now proves the former Dusty Trail remote-water pathology is fixed
+  - Scenario 143 now proves the former `FreeCarryCapacity` zero-step loop is fixed
+  - reassessment of the third intended pathology showed the original Guard Theron "no survival goals generated" claim is not reproducible on the current branch in the scenario-adjacent slice, so that ticket was closed as stale instead of landing a false golden
+- **Deviations from original plan**:
+  - Deliverable D1 finished with two shipped golden scenarios and one stale-ticket closeout rather than three landed pathologies.
+  - The original Test 3 design was too approximate to the live `cli-evaluation` conditions and, once corrected toward the real scenario boundary, no longer reproduced the reported failure.
+- **Verification results**:
+  - `cargo test -p worldwake-ai --test golden_planner_pathology cross_location_water_acquisition_succeeds_without_budget_exhaustion`
+  - `cargo test -p worldwake-ai --test golden_planner_pathology degenerate_zero_step_loop_blocks_actionable_goals`
+  - `cargo test -p worldwake-ai role_agent_generates_survival_goals_under_critical_needs` used as a reassessment probe and disproved the original pathology on the current branch

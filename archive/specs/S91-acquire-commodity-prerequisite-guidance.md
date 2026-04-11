@@ -16,7 +16,7 @@ Phase 7: Consequence Carriers
 
 ## Dependencies
 
-- `specs/S91-planner-pathology-golden-tests.md`
+- `archive/specs/S91-planner-pathology-golden-tests.md`
 - `archive/tickets/S91PLAPATGOL-001.md`
 - `docs/planner-contracts.md`
 
