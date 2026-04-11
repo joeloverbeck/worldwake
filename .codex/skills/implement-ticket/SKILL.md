@@ -32,6 +32,7 @@ For small/local tickets, load the reference docs only if reassessment exposes am
 For straightforward shared-type additive tickets (new field on an existing struct/component, derive-safe enum payload addition, or similar constructor fallout with no boundary dispute yet visible), start with the ticket, cited spec/docs, `references/reassessment-checks.md`, `references/verification.md`, and `references/closeout.md`. During the constructor fallout sweep, distinguish full manual struct literals from partial literals that already inherit new fields via `..Default::default()` or equivalent helpers before accepting the ticket's cited file list as real edit scope. Load `mismatch-handling.md`, `scope-extraction.md`, or `implementation-discipline.md` only if reassessment exposes a mismatch, ownership ambiguity, or non-mechanical implementation choice.
 
 Single-file planner-root, snapshot-completeness, planner-traceability, or AI carriage-path tickets still use the full workflow when the contract under audit crosses the planner boundary even if the eventual edit surface stays narrow and local.
+If a ticket appears to qualify for the small/local fast path by edit surface but also touches planner-root, snapshot-completeness, planner-traceability, or AI carriage-path contracts, this planner-boundary exception wins and the ticket uses the full workflow.
 Golden E2E tickets motivated by planner failures, observer reports, or scenario-specific regressions also use the full workflow even when the landed edit surface is one test file and the ticket remains test-only.
 
 **All other tickets** — use the full workflow below (Steps 1-8).
@@ -100,6 +101,7 @@ If focused proof instead falsifies the suspected production contradiction and sh
 When reassessment or focused proof changes the real edit surface, update `Files to Touch` and any file- or symbol-level scope notes immediately instead of leaving them stale until closeout. The ticket should keep reflecting the current owned boundary as implementation proceeds.
 
 When `Acceptance Criteria` or the `Test Plan` names a focused test that is already owned by an adjacent active ticket, resolve that ownership during reassessment instead of leaving a split contract implicit. Either absorb the test into the current ticket and update sibling ownership, or remove it from the current ticket's must-pass list and cite the sibling ticket explicitly.
+If the ticket says there are no focused tests in scope but the owned file already contains focused tests that exercise the changed contract, treat those existing tests as the narrow proof surface. Update the ticket's `Verification Layers`, `Test Plan`, and command list to reflect the live proof surface while keeping sibling-ticket ownership explicit about any additional focused coverage that still belongs elsewhere.
 
 When reassessment changes the owned contract relative to a cited active spec, update that parent spec in the same pass unless the work is intentionally deferred behind a named follow-up ticket. Do not leave the ticket corrected while the live parent spec still describes the disproven contract.
 

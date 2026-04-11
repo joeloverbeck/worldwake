@@ -461,6 +461,52 @@ fn believed_bounty_artifact_state(
         .flatten()
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FreeCarryCapacityContract {
+    current_load: LoadUnits,
+    carry_capacity: LoadUnits,
+    disposal_threshold: Permille,
+    has_waste_targets: bool,
+}
+
+impl FreeCarryCapacityContract {
+    pub(crate) fn new(
+        current_load: LoadUnits,
+        carry_capacity: LoadUnits,
+        disposal_threshold: Permille,
+        has_waste_targets: bool,
+    ) -> Self {
+        Self {
+            current_load,
+            carry_capacity,
+            disposal_threshold,
+            has_waste_targets,
+        }
+    }
+
+    fn is_below_threshold(self) -> bool {
+        self.current_load.0.saturating_mul(1_000)
+            < self
+                .carry_capacity
+                .0
+                .saturating_mul(u32::from(self.disposal_threshold.value()))
+    }
+
+    pub(crate) fn is_actionable(self) -> bool {
+        self.has_waste_targets && !self.is_below_threshold()
+    }
+
+    pub(crate) fn is_satisfied(self, root_baseline_load: Option<LoadUnits>) -> bool {
+        if !self.is_actionable() {
+            return true;
+        }
+
+        root_baseline_load.is_some_and(|baseline_load| {
+            self.current_load.0 < baseline_load.0 && self.is_below_threshold()
+        })
+    }
+}
+
 impl GoalKindPlannerExt for GoalKind {
     fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily> {
         GoalDispatchKey::from_goal_kind(self)
@@ -1256,18 +1302,23 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(current_load) = carried_load_of_actor(state, actor) else {
                     return false;
                 };
-                match state.disposal_profile(actor) {
-                    Some(profile) => state
-                        .carry_capacity_ref(PlanningEntityRef::Authoritative(actor))
-                        .is_some_and(|capacity| {
-                            current_load.0.saturating_mul(1_000)
-                                < capacity.0.saturating_mul(u32::from(
-                                    profile.capacity_strain_threshold.value(),
-                                ))
-                        }),
-                    None => carried_load_of_actor(&PlanningState::new(state.snapshot()), actor)
-                        .is_some_and(|baseline_load| current_load.0 < baseline_load.0),
-                }
+                let Some(carry_capacity) =
+                    state.carry_capacity_ref(PlanningEntityRef::Authoritative(actor))
+                else {
+                    return false;
+                };
+                let contract = FreeCarryCapacityContract::new(
+                    current_load,
+                    carry_capacity,
+                    state.disposal_profile(actor).map_or(Permille::new_unchecked(800), |profile| {
+                        profile.capacity_strain_threshold
+                    }),
+                    !free_carry_capacity_drop_targets(state).is_empty(),
+                );
+                let root_baseline_state = PlanningState::new(state.snapshot());
+                let root_baseline_load = carried_load_of_actor(&root_baseline_state, actor);
+
+                contract.is_satisfied(root_baseline_load)
             }
             GoalKind::ProduceCommodity { .. }
             | GoalKind::SearchForMissing { .. }
@@ -8304,7 +8355,7 @@ mod tests {
     }
 
     #[test]
-    fn free_carry_capacity_falls_back_to_load_reduction_without_profile() {
+    fn free_carry_capacity_uses_default_threshold_without_profile() {
         let (view, actor, place, waste_lot) = free_carry_capacity_view();
         let snapshot = build_planning_snapshot(
             &view,
@@ -8324,7 +8375,10 @@ mod tests {
             Quantity(9),
         );
 
-        assert!(GoalKind::FreeCarryCapacity.is_satisfied(&progressed));
+        assert!(
+            GoalKind::FreeCarryCapacity.is_satisfied(&progressed),
+            "without an explicit DisposalProfile, FreeCarryCapacity should use the default threshold and still require disposal progress"
+        );
     }
 
     // ── E16DPOLPLAN-006: Integration tests — planner finds Bribe/Threaten plans ──

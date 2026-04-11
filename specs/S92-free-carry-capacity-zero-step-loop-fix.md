@@ -51,6 +51,8 @@ The current live code exposes four separate `FreeCarryCapacity` contracts:
 3. `goal_model::GoalKind::FreeCarryCapacity.is_satisfied()` declares whether the goal is already complete in the planning state.
 4. `search::transition::terminal_kind()` immediately returns `PlanTerminalKind::GoalSatisfied` when `is_satisfied()` is true at the current node.
 
+The divergence is compounded by two distinct load-computation methods: candidate emission (`emit_disposal_candidates`) sums `CommodityKind::ALL` quantities times `load_per_unit()` via `GoalBeliefView`, while `carried_load_of_actor()` in `goal_model.rs` computes `capacity - remaining_carry_capacity` via recursive BFS over directly possessed items in `PlanningState`. These can yield different values when the agent possesses containers or unique items. Lina's scenario-defined `disposal_profile` has `capacity_strain_threshold: 700` (not the default 800), per `scenarios/cli-evaluation.ron:281`.
+
 Scenario 143 proves those contracts diverge badly enough that Lina can be "strained enough to emit and rank disposal" while also being "already satisfied" at the planning root, which yields a 0-step `Found` result and blocks more urgent self-care goals.
 
 The existing `golden_waste_disposal_cycle` in `crates/worldwake-ai/tests/golden_production.rs` already demonstrates the desired lower-layer contract: when `FreeCarryCapacity` is actually actionable, the selected plan exposes `PlannerOpKind::DropItem`, a `drop_item` action commits, and the goal stops recurring after load is reduced.
@@ -61,14 +63,18 @@ The existing `golden_waste_disposal_cycle` in `crates/worldwake-ai/tests/golden_
 
 **Files**: `crates/worldwake-ai/src/goal_model.rs`, `crates/worldwake-ai/src/candidate_generation.rs`, `crates/worldwake-ai/src/ranking.rs`, or a new shared planner-local helper module under `crates/worldwake-ai/src/`
 
-Create a single helper that computes the full actionable/satisfaction surface for `FreeCarryCapacity` from the planning-state snapshot. At minimum it must derive:
+Create a single helper that encodes the canonical actionable/satisfaction contract for `FreeCarryCapacity`. The helper must accept pre-computed contract values rather than a specific data surface, because the three call sites operate on different trait surfaces: candidate emission and ranking use `GoalBeliefView` (via `GenerationContext.view` / `RankingContext.view`), while goal satisfaction uses `PlanningState`. The helper's inputs are at minimum:
 
-- current carried load from the same lawful load surface used by planning
-- carry capacity
-- the active disposal threshold, including the S82 default behavior when `DisposalProfile` is absent
+- current carried load (`LoadUnits`)
+- carry capacity (`LoadUnits`)
+- active disposal threshold (`Permille`), including the S82 default (800) when `DisposalProfile` is absent
+- whether directly possessed, non-empty Waste lots exist (lawful disposal targets)
+- for the satisfaction path only: the root-baseline carried-load value from the planning snapshot, used to judge disposal progress (see D2)
+
+Each call site is responsible for extracting these values from its available surface. The helper then computes:
+
 - whether the actor is currently strained enough that disposal is actionable
-- directly possessed, non-empty Waste lots that are lawful disposal targets
-- the baseline carried-load value from the planning root snapshot used to judge disposal progress
+- whether the goal is satisfied (for the satisfaction path, requiring progress relative to root baseline)
 
 This helper becomes the canonical contract for candidate emission, ranking, and satisfaction. `FreeCarryCapacity` must no longer have three slightly different interpretations of "needs disposal" or "already solved."
 
@@ -241,6 +247,18 @@ No new SystemFn is expected. This is a `worldwake-ai` planning-contract change t
 ## Component Registration
 
 No new components. No registration changes required.
+
+## Authoritative-to-AI Impact Rule
+
+This spec modifies planner-internal contract logic for an existing goal kind. Checklist:
+
+1. `get_affordances` — N/A (affordance generation not modified)
+2. `generate_candidates` — **affected** (D3 changes `emit_disposal_candidates` emission condition)
+3. `search_plan` — **affected** (D2 changes `is_satisfied` which feeds `terminal_kind`)
+4. `BestEffort` action start — N/A (action start paths unchanged)
+5. `handle_plan_failure` — N/A (failure paths unchanged)
+6. Payload revalidation — N/A (`drop_item` uses affordance-derived payloads, not planner-synthesized)
+7. Golden tests — **affected** (D6 flips Scenario 143; D5 adds focused parity tests; verification runs all `worldwake-ai` tests)
 
 ## Verification
 

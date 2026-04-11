@@ -82,8 +82,14 @@ Extract every concrete codebase reference from the spec:
 - **Test file paths or test names**
 - **Other specs or tickets** in Dependencies
 - **Code examples** (inline code blocks showing API usage, precondition lists, struct definitions) — extract for fidelity checking against actual source
+- **Scenario and test configuration files** referenced by the spec (RON scenarios, test fixtures, seed values) — extract profile/parameter values the spec's claims depend on
 
-Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked. For investigation/bugfix specs (type e), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist.
+Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked. For investigation/bugfix specs (type e), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist. Structured root-cause tracing:
+
+- (a) identify each code path the spec claims participates in the bug
+- (b) read the actual implementation of each path
+- (c) verify the claimed divergence mechanism by comparing inputs, computation methods, and outputs across paths
+- (d) check scenario/test configuration for parameter values that trigger the claimed failure
 
 ### Step 3: Codebase Validation
 
