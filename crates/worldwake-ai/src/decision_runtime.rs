@@ -346,6 +346,8 @@ mod tests {
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
             max_candidates_to_plan: reasoning.max_candidates_to_plan,
+            max_candidates_per_expansion: CognitiveProfile::default()
+                .max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
@@ -359,6 +361,7 @@ mod tests {
             max_snapshot_entities_per_place: CognitiveProfile::default()
                 .max_snapshot_entities_per_place,
             speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
+            landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
         }
     }
 

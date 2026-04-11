@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 88: Full Supply Chain Negotiated Restock To Consumption
 
-- Source: `golden_supply_chain.rs:1970`
+- Source: `golden_supply_chain.rs:1969`
 - Systems: Enterprise, Travel, Production, Trade, Needs, Conservation
 - GoalKinds: RestockCommodity, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Trade, Needs

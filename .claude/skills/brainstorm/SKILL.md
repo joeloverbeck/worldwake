@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: "Confidence-driven brainstorming skill. Interviews the user until 95% confidence about what they actually want, proposes approaches with tradeoffs, produces an approved design doc. Checks FOUNDATIONS.md alignment for implementation topics. Replaces the global superpowers:brainstorming for this repo."
+description: "Use when starting a new feature, design, or architectural decision that needs requirements discovery before implementation. Triggers: vague requests, exploration keywords, uncertainty about what to build, need for external research before designing."
 user-invocable: true
 arguments:
   - name: request
@@ -43,6 +43,8 @@ Write design doc to docs/plans/
 Next-steps menu (user chooses)
 ```
 
+**In plan mode**: design doc writes to the plan file instead of `docs/plans/`, and `ExitPlanMode` replaces the next-steps menu.
+
 ## Step 1: Read Context
 
 1. **Reference file**: If `reference_path` is provided, read the entire file. Extract key claims, proposals, and open questions from it. Summarize what it contains in 2-3 sentences before proceeding.
@@ -51,9 +53,11 @@ Next-steps menu (user chooses)
 
 3. **If implementation-related OR if the topic directly concerns FOUNDATIONS.md principles**: Read `docs/FOUNDATIONS.md`. You will need it in Steps 3 and 4 to validate proposed approaches against architectural principles.
 
-4. **Confidence calibration from reference file**: If the reference file provides a comprehensive design (rationale, decisions, structure, adaptation notes), set initial confidence based on how much of the problem space it covers. A thorough reference file may start confidence at 70-85%, reducing the interview to closing operational gaps (naming, cleanup, customization preferences).
+4. **Confidence calibration from reference material and request**: If the reference file provides a comprehensive design (rationale, decisions, structure, adaptation notes), set initial confidence based on how much of the problem space it covers. A thorough reference file may start confidence at 70-85%, reducing the interview to closing operational gaps (naming, cleanup, customization preferences). The same calibration applies to the user's initial request text — if the request includes detailed problem analysis, specific evidence, root cause identification, and a clear ask, calibrate initial confidence from the request itself, not just from reference files. If the user's request includes root cause analysis, proposed solution, code locations, and FOUNDATIONS justification, set initial confidence to 85-95%. The interview becomes a gap-closing exercise (1-2 targeted questions about scope or edge cases), not a discovery process. Do not ask motivational questions ("what problem does this solve?") when the user has already demonstrated deep understanding of the problem. Research findings (sub-step 5 below) also contribute to confidence by narrowing the solution space before the interview begins.
 
-5. **Project context**: Explore existing implementations relevant to the topic before starting the interview — this context informs better questions. For tooling/process topics, examine existing instances of the thing being designed (e.g., existing skills, configs, workflows — their structure, size, patterns). For codebase topics, check relevant files, specs, and tickets. Launch Explore agents for broad surveys when needed. Keep exploration targeted to what informs the interview.
+5. **External research**: If the topic requires domain knowledge beyond the codebase (academic algorithms, industry best practices, competing architectures, scaling solutions), launch research agents BEFORE the interview. The user's request may explicitly call for research ("research this online", "look for solutions") or the problem may implicitly require it (novel algorithms, scaling problems, unfamiliar domains). Summarize findings for the user before asking interview questions. Research findings inform both the confidence calibration (what solution space exists) and the approach proposal (what concrete options are available).
+
+6. **Project context**: Explore existing implementations relevant to the topic before starting the interview — this context informs better questions. For tooling/process topics, examine existing instances of the thing being designed (e.g., existing skills, configs, workflows — their structure, size, patterns). For codebase topics, check relevant files, specs, and tickets. Launch Explore agents for broad surveys when needed. Keep exploration targeted to what informs the interview.
 
 ## Step 2: Confidence-Driven Interview
 
@@ -73,7 +77,7 @@ Keep asking questions until confidence reaches 95%. Then announce: "I'm at 95% c
 ### Interview Rules
 
 1. **One question per message.** Never ask multiple questions at once.
-2. **Prefer multiple-choice questions** when the answer space is bounded. Open-ended is fine when it isn't. Use `AskUserQuestion` with labeled options for multiple-choice interview questions, approach selection, and section approval prompts.
+2. **Prefer multiple-choice questions** when the answer space is bounded. Open-ended is fine when it isn't. Use `AskUserQuestion` with labeled options for multiple-choice interview questions, approach selection, and section approval prompts. In plan mode, inline numbered options are acceptable since the conversation flow is faster.
 3. **Probe motivations before solutions.** Ask "What problem does this solve?" and "What happens if we don't do this?" before "What do you want built?" The user's first request often describes a solution, not the problem. Your job is to find the problem.
 4. **Challenge premature specificity.** If the user jumps to implementation details early, ask why that specific approach matters. Often the constraint is softer than stated.
 5. **Detect "should want" vs "actually want".** Watch for:
@@ -86,6 +90,8 @@ Keep asking questions until confidence reaches 95%. Then announce: "I'm at 95% c
 
 ### Confidence Scoring Guide
 
+Confidence increases from **both user answers AND research findings**. If external research (Step 1, sub-step 5) narrows the solution space before or during the interview, factor that into the confidence score and note which gaps were closed by research vs. which require user input.
+
 | Range | Meaning | Action |
 |-------|---------|--------|
 | 0-30% | Don't understand the problem yet | Ask about the problem, not the solution |
@@ -93,6 +99,10 @@ Keep asking questions until confidence reaches 95%. Then announce: "I'm at 95% c
 | 60-80% | Understand problem + constraints, unclear on priorities | Ask about tradeoffs, what matters most |
 | 80-95% | Clear picture, a few edge cases or preferences unknown | Ask targeted questions about specific gaps |
 | 95%+ | Ready to propose | Transition to Step 3 |
+
+### Plan Mode Interview
+
+In plan mode, the confidence block is still required at the transition from interview to approach proposal. Display confidence and gaps at least once — when announcing the move to approaches. Intermediate per-answer confidence blocks may be omitted if the interview is 1-2 questions.
 
 ### Early Exit
 
@@ -115,6 +125,8 @@ Present **2-3 distinct approaches** with:
 
 ## Step 4: Present Design
 
+**Plan mode**: Skip per-section gates. Present key decisions in 1-2 messages with conversation-level checkpoints, then write to plan file. See plan-mode details at the end of this section.
+
 Once an approach is chosen, present the design **section by section**. Scale each section to its complexity — a sentence for trivial parts, up to 200 words for nuanced parts.
 
 Sections to cover (skip irrelevant ones):
@@ -131,7 +143,7 @@ Section names are suggestions. Rename or combine sections to match the topic's n
 
 **After each section**, ask: "Does this section look right?" Wait for confirmation before presenting the next section. If the user pushes back, revise that section before continuing.
 
-**If plan mode is active**: Per-section approval is replaced by whole-plan approval via `ExitPlanMode`. Present the key design decisions inline in the conversation before writing the plan file, so the user can course-correct before the plan is finalized.
+**If plan mode is active**: Per-section approval is replaced by whole-plan approval via `ExitPlanMode`. Present the key design decisions inline in the conversation before writing the plan file, so the user can course-correct before the plan is finalized. For complex designs, present in 1-2 messages, grouping related sections. Pause after the first message to check for course corrections before continuing. The goal is conversation-level checkpoints, not per-section gates. In plan mode, the confidence-reached announcement and approach proposal may be folded into the same message as the design presentation when the approach is architecturally constrained (single viable option).
 
 ## Step 5: Write Design Doc
 
@@ -140,10 +152,12 @@ After design approval, do NOT apply changes or implement the design until the us
 **Deliverable classification**:
 - If the brainstorm topic is itself a skill design, the deliverable is the skill file (written to the appropriate skills directory, e.g., `.claude/skills/<name>/SKILL.md`). Skip the `docs/plans/` design doc — the skill file IS the design. Adjust the Step 6 menu to reflect this (omit "create a spec" option, replace with "run skill-audit on the new skill").
 - If the brainstorm topic is modifying or reconciling existing skill files, the deliverable is the modified skill file(s) themselves. Skip the `docs/plans/` design doc — the edits ARE the design. If merging multiple skills, the deliverable includes the new unified skill file, deletion of superseded skill directories, and updating any cross-references in other skills or configuration files.
+- If the brainstorm produces a deliverable that **replaces** an existing artifact (skill, spec, config), the replacement plan should include: (a) confirming deletion of the old artifact, (b) checking for cross-references to the old artifact in other skills, CLAUDE.md, or MEMORY.md, (c) noting the replacement in the design doc or plan.
+- If the brainstorm topic produces a system spec (architectural change, new subsystem, planner modification, or any change requiring formal spec-drafting-rules compliance), the deliverable is the spec file in `specs/`. Skip the `docs/plans/` design doc — the spec IS the design. Read `docs/spec-drafting-rules.md` and ensure the spec includes all mandatory sections (Section H causal hooks, information-path analysis, positive-feedback analysis, stored state vs. derived read-model list). Adjust the Step 6 menu accordingly (omit "create a spec" option, replace with "reassess spec" or "decompose into tickets").
 
 Once all sections are approved, write the complete design:
 
-- **If plan mode is active**: Write the design to the plan file (the only writable file in plan mode). The plan file serves as the design doc.
+- **If plan mode is active**: Write the design to the plan file (the only writable file in plan mode). The plan file serves as the design doc. When plan mode is active AND the deliverable is a spec: the spec cannot be written to `specs/` until after `ExitPlanMode` is called and the plan is approved. Write the plan file first with the spec design (deliverables, FOUNDATIONS alignment, verification). After plan approval, write the spec to `specs/` as the first implementation step. The plan file references the spec and summarizes the implementation sequence — it is not the design itself.
 - **Otherwise**: Write to `docs/plans/YYYY-MM-DD-<topic>-design.md`, where `<topic>` is a kebab-case short name derived from the brainstorm topic.
 
 The design doc should consolidate all approved sections into a clean document. Include a "Brainstorm Context" header at the top noting:

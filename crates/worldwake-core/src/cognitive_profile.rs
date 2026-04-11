@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct CognitiveProfile {
     pub max_candidates_to_plan: u8,
+    #[serde(default = "default_max_candidates_per_expansion")]
+    pub max_candidates_per_expansion: u16,
     pub max_plan_depth: u8,
     pub snapshot_travel_horizon: u8,
     pub max_node_expansions: u16,
@@ -19,12 +21,17 @@ pub struct CognitiveProfile {
     /// Whether this agent considers known places even without current positive
     /// resource evidence when generating acquisition candidates.
     pub speculative_acquisition: bool,
+    /// Maximum depth of landmark chain extraction during tactical planning.
+    /// Higher values produce more landmarks for better search guidance at
+    /// increased extraction cost. 0 disables landmarks.
+    pub landmark_extraction_depth: u8,
 }
 
 impl Default for CognitiveProfile {
     fn default() -> Self {
         Self {
             max_candidates_to_plan: 2,
+            max_candidates_per_expansion: default_max_candidates_per_expansion(),
             max_plan_depth: 8,
             snapshot_travel_horizon: 6,
             max_node_expansions: 224,
@@ -37,11 +44,16 @@ impl Default for CognitiveProfile {
             max_cooldown_ticks: 64,
             max_snapshot_entities_per_place: 50,
             speculative_acquisition: false,
+            landmark_extraction_depth: 4,
         }
     }
 }
 
 impl Component for CognitiveProfile {}
+
+const fn default_max_candidates_per_expansion() -> u16 {
+    200
+}
 
 #[cfg(test)]
 mod tests {
@@ -65,6 +77,7 @@ mod tests {
         let profile = CognitiveProfile::default();
 
         assert_eq!(profile.max_candidates_to_plan, 2);
+        assert_eq!(profile.max_candidates_per_expansion, 200);
         assert_eq!(profile.max_plan_depth, 8);
         assert_eq!(profile.snapshot_travel_horizon, 6);
         assert_eq!(profile.max_node_expansions, 224);
@@ -80,12 +93,14 @@ mod tests {
         assert_eq!(profile.max_cooldown_ticks, 64);
         assert_eq!(profile.max_snapshot_entities_per_place, 50);
         assert!(!profile.speculative_acquisition);
+        assert_eq!(profile.landmark_extraction_depth, 4);
     }
 
     #[test]
     fn cognitive_profile_roundtrips_through_bincode() {
         let profile = CognitiveProfile {
             max_candidates_to_plan: 3,
+            max_candidates_per_expansion: 144,
             max_plan_depth: 10,
             snapshot_travel_horizon: 9,
             max_node_expansions: 512,
@@ -98,6 +113,7 @@ mod tests {
             max_cooldown_ticks: 72,
             max_snapshot_entities_per_place: 75,
             speculative_acquisition: true,
+            landmark_extraction_depth: 5,
         };
 
         let bytes = bincode::serialize(&profile).unwrap();

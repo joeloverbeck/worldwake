@@ -93,6 +93,8 @@ fn patrol_profile(base_dwell_ticks: u32, vigilance: u16, motive: u16) -> PatrolP
 fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
     CognitiveProfile {
         max_candidates_to_plan: reasoning.max_candidates_to_plan,
+        max_candidates_per_expansion: CognitiveProfile::default()
+            .max_candidates_per_expansion,
         max_plan_depth: reasoning.max_plan_depth,
         snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
         max_node_expansions: reasoning.max_node_expansions,
@@ -106,6 +108,7 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         max_snapshot_entities_per_place: CognitiveProfile::default()
             .max_snapshot_entities_per_place,
         speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
+        landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
     }
 }
 
@@ -113,6 +116,7 @@ fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
     ExecutionBudget {
         beam_width: reasoning.beam_width,
         max_prerequisite_locations: reasoning.max_prerequisite_locations,
+        preferred_operator_boost: ExecutionBudget::default().preferred_operator_boost,
     }
 }
 
@@ -4135,10 +4139,12 @@ fn determine_selected_plan_source_distinguishes_search_selection_from_retention(
                 SelectionCandidatePlan {
                     searched_opportunity: default_opportunity(current_goal),
                     found_plan: Some(current_plan.clone()),
+                    perceived_cost: Some(current_plan.total_estimated_ticks),
                 },
                 SelectionCandidatePlan {
                     searched_opportunity: default_opportunity(challenger_goal),
-                    found_plan: Some(challenger_plan),
+                    found_plan: Some(challenger_plan.clone()),
+                    perceived_cost: Some(challenger_plan.total_estimated_ticks),
                 }
             ],
         ),
@@ -4151,6 +4157,7 @@ fn determine_selected_plan_source_distinguishes_search_selection_from_retention(
             &[SelectionCandidatePlan {
                 searched_opportunity: default_opportunity(challenger_goal),
                 found_plan: None,
+                perceived_cost: None,
             }],
         ),
         crate::SelectedPlanSource::RetainedCurrentPlan

@@ -30,7 +30,7 @@ Read ALL of these files before any analysis:
 1. **The spec file** (from argument 1) — read the entire file
 2. **`tickets/_TEMPLATE.md`** — the canonical ticket structure; every ticket you produce must follow this template exactly
 3. **`tickets/README.md`** — the ticket authoring contract; understand the required sections and checks
-4. **`docs/FOUNDATIONS.md`** — architectural commandments; every ticket must align with these principles. Skip if read earlier in this session and not modified since.
+4. **`docs/FOUNDATIONS.md`** — architectural commandments; every ticket must align with these principles. Skip if read earlier in this session and not modified since. If the file exceeds the Read tool's token limit, read the preamble and principle listing (first ~200 lines) using offset/limit, which covers the non-negotiable principles. The summary in `CLAUDE.md` (available via system context) supplements the direct read.
 5. **`docs/precision-rules.md`** — precision rules for technical claims; governs Assumption Reassessment and Verification Layers sections. Skip if read earlier in this session and not modified since.
 
 ### Step 2: Codebase Validation
@@ -41,7 +41,7 @@ Before decomposing, validate the spec's assumptions against the actual codebase:
 - **Grep** for types, functions, and modules the spec references — confirm they are real and current
 - **Flag** any stale assumptions, missing files, or renamed entities
 - If you find discrepancies, present them to the user before proceeding
-- If `/reassess-spec` was run on this spec in the current session and all findings were resolved, Step 2 validation may be abbreviated to a spot-check of key references rather than a full re-validation. An abbreviated spot-check should verify at least: (a) the spec's primary type/function references still exist at the stated paths, (b) if the spec modifies serialized state or save/load paths, `SAVE_FORMAT_VERSION` hasn't changed since reassessment (skip this check for specs that don't touch serialization), (c) no new files in `specs/` reference the same types, and (d) for specs that add fields to existing structs, grep for struct literal construction sites (e.g., `StructName {`) to verify all construction sites are accounted for in the tickets' Files to Touch. If the construction site count is high (>20), note the count in the Step 4 summary table's Effort column justification and consider whether the field-addition ticket should be split by crate. A high construction site count typically elevates effort from Small to Medium. 3-5 targeted greps is sufficient.
+- If `/reassess-spec` was run on this spec in the current session and all findings were resolved, Step 2 validation may be abbreviated to a spot-check of key references rather than a full re-validation. An abbreviated spot-check should verify at least: (a) the spec's primary type/function references still exist at the stated paths, (b) if the spec modifies serialized state or save/load paths, `SAVE_FORMAT_VERSION` hasn't changed since reassessment (skip this check for specs that don't touch serialization), (c) no new files in `specs/` reference the same types, and (d) for specs that add fields to existing structs, grep for struct literal construction sites (e.g., `StructName {`) to verify all construction sites are accounted for in the tickets' Files to Touch. If the construction site count is high (>20), note the count in the Step 4 summary table's Effort column justification and consider whether the field-addition ticket should be split by crate. A high construction site count typically elevates effort from Small to Medium. However, if the new field has a `Default` impl and existing construction sites use `..Default::default()` or `unwrap_or_default()`, the construction site count is informational, not a splitting signal — only sites that explicitly enumerate all fields without spread syntax require manual updates. 3-5 targeted greps is sufficient.
 - If `/reassess-spec` was run but some findings were deferred by the user, treat deferred items as out-of-scope for ticket decomposition. Note them in the Step 6 final summary as "deferred reassessment findings that may warrant separate tickets." Do not silently incorporate deferred findings into ticket scope.
 
 ### Step 3: Decompose the Spec
@@ -52,10 +52,11 @@ Analyze the spec and identify discrete work units:
 - Map **dependencies** between tickets (which must be done before which)
 - Determine **priority ordering** (what to implement first)
 - Ensure **every spec deliverable is covered** — no silent skipping. If a deliverable seems wrong or unnecessary, flag it to the user using the 1-3-1 rule instead of omitting it. Deliverables that explicitly state no changes are needed (e.g., "No new profile", "No new components") do not require tickets. Note their existence in the Step 4 summary if non-obvious
-- Consider natural boundaries: type changes, new modules, test suites, integration points
+- Consider natural boundaries: type changes, new modules, test suites, integration points. When tests exercise multiple deliverables simultaneously and cannot be split per-deliverable, a single test ticket depending on all implementation tickets is a valid decomposition. Note the multi-dependency in the Step 4 summary
 - When multiple spec deliverables share the same file set and cannot compile independently, merge them into a single ticket. Note merged deliverables in the Step 4 summary table notes
 - Use the spec's "What This Does NOT Change" or equivalent non-goals section to populate tickets' Out of Scope fields — these are pre-validated non-goals from reassessment
 - Ensure **workspace builds after each ticket** — if removing types/functions from a shared crate, all consumers must be updated in the same ticket. Splitting a migration across tickets is only valid when intermediate states compile.
+- When all deliverables modify the **same file**, decompose by logical section or feature, not by file boundary. Each ticket targeting a different section of the same file is a valid reviewable diff. Note the shared file in the Step 4 summary rather than repeating it per-ticket.
 - For **mechanical refactoring specs** (trait decomposition, enum splitting, interface migrations), recognize that multiple tickets may share an identical file set. In the summary table (Step 4), note the shared file set once and reference it from each ticket rather than forcing each ticket to independently discover the same list. Individual tickets should list only *additional* files beyond the shared set.
 
 ### Step 4: Present Summary for Approval
@@ -63,14 +64,16 @@ Analyze the spec and identify discrete work units:
 **Before writing any ticket files**, present a numbered summary table:
 
 ```
-| # | Ticket ID | Title | Scope | Effort | Deps | FND |
-|---|-----------|-------|-------|--------|------|-----|
-| 1 | <NS>-001  | ...   | <5-10 word scope> | Small  | None | — |
-| 2 | <NS>-002  | ...   | <5-10 word scope> | Medium | 001  | P12,P27 |
+| # | Ticket ID | Title | Scope | Effort | Deps | FND | Notes |
+|---|-----------|-------|-------|--------|------|-----|-------|
+| 1 | <NS>-001  | ...   | <5-10 word scope> | Small  | None | — | — |
+| 2 | <NS>-002  | ...   | <5-10 word scope> | Medium | 001  | P12,P27 | 34 construction sites |
 | ...
 ```
 
-Include a 1-line description of each ticket's scope. The FND column is optional — populate it only for tickets with notable FOUNDATIONS concerns (e.g., a ticket touching derived views should note P27). Use `—` for tickets with no specific concern.
+Include a 1-line description of each ticket's scope. The FND column is optional — populate it only for tickets with notable FOUNDATIONS concerns (e.g., a ticket touching derived views should note P27). Use `—` for tickets with no specific concern. The Notes column captures construction site counts, merged deliverables, shared file sets, or other decomposition-relevant details that don't fit in other columns.
+
+If all tickets are independent, state this once rather than repeating `None` in every Deps cell. The Step 6 dependency graph can be a single sentence (e.g., "All tickets are independent — implement in any order").
 
 **Wait for user approval or adjustments.** Do not write files until the user confirms.
 
@@ -86,7 +89,7 @@ Every ticket MUST include:
 - **Engine Changes**: None or list of affected areas
 - **Deps**: Other tickets or specs this depends on
 - **Problem**: What user-facing or architecture problem this solves
-- **Assumption Reassessment**: Assumptions validated against current code (use today's date). Include items 1-3 from the template (always required) plus any domain-specific items from items 4-15 that match the ticket's scope. Omit inapplicable items silently — do not pad with "N/A" boilerplate. For pure structural refactoring tickets (no behavioral changes, no new actions/components), items 1-3 may be satisfied concisely by confirming: (a) the symbols being moved exist at stated locations, (b) the impl block count matches the spec's claim, (c) the shared boundary is the trait/struct under edit. Items 4-15 are typically all inapplicable for structural refactors
+- **Assumption Reassessment**: Assumptions validated against current code (use today's date). Include items 1-3 from the template (always required) plus any domain-specific items from items 4-15 that match the ticket's scope. Omit inapplicable items silently — do not pad with "N/A" boilerplate. For pure structural refactoring tickets (no behavioral changes, no new actions/components), items 1-3 may be satisfied concisely by confirming: (a) the symbols being moved exist at stated locations, (b) the impl block count matches the spec's claim, (c) the shared boundary is the trait/struct under edit. Items 4-15 are typically all inapplicable for structural refactors. For observer-only, CLI-only, or tooling-only specs (no engine changes, no simulation state mutations), items 1-3 are typically sufficient — items 4-15 apply only when the ticket touches simulation runtime, planning, or action systems
 - **Architecture Check**: Why this approach is clean, how it preserves agnostic boundaries
 - **Verification Layers**: Map each invariant to its proof surface (for mixed-layer or cross-system tickets: decision trace, action trace, event-log delta, authoritative world state)
 - **What to Change**: Numbered sections with specific implementation details
@@ -103,10 +106,16 @@ Write all ticket files in parallel — ticket file writes are always independent
 
 ### Step 6: Final Summary
 
-After writing all files, list:
-- All ticket files created
-- The dependency graph (which tickets block which)
-- Suggested implementation order
+After writing all files:
+
+1. **Verify cross-ticket dependency consistency**: For each `Deps` reference, confirm the depended-on ticket actually produces what the dependent ticket needs (types, modules, files). If a dependency is broken (e.g., ticket 005 depends on a type from 003 but 003's scope doesn't define it), flag the inconsistency.
+
+2. **Deliverable coverage mapping**: List each spec deliverable and the ticket that covers it (e.g., `D1→001, D2→001, D3→002`). Verify all spec deliverables are accounted for. If any deliverable is missing, flag it before finalizing.
+
+3. List:
+   - All ticket files created
+   - The dependency graph (which tickets block which)
+   - Suggested implementation order
 
 Do NOT commit. Leave files for user review.
 
@@ -118,4 +127,4 @@ Do NOT commit. Leave files for user review.
 - **Codebase truth**: File paths and type references in tickets must be validated against the actual codebase, not assumed from the spec
 - **Reviewable size**: Each ticket should be small enough to review as a single diff. When in doubt, split further
 - **Explicit dependencies**: Use the `Deps` field to declare inter-ticket dependencies; never leave implicit ordering
-- **Performance-optimization specs**: For P12-type specs that compress computation without changing world meaning, tickets should include benchmark acceptance criteria with concrete metric thresholds (e.g., "per-agent-tick planning cost does not exceed X ms at tick 10,080") and regression guard commands (e.g., soak seed runs). Acceptance criteria should distinguish correctness (golden tests pass) from performance (metric thresholds met)
+- **Performance-optimization specs**: For P12-type specs that compress computation without changing world meaning, tickets should include regression guard acceptance criteria with concrete metric thresholds. The metric should match what the spec actually optimizes — e.g., candidate count per expansion, expansion count, branching factor, or wall-clock time — not necessarily wall-clock time alone, which may be non-deterministic or platform-dependent. Include regression guard commands (e.g., soak seed runs, candidate-count assertions in golden tests). Acceptance criteria should distinguish correctness (golden tests pass) from performance (metric thresholds met)

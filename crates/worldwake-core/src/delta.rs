@@ -551,6 +551,7 @@ mod tests {
             }),
             ComponentValue::CognitiveProfile(CognitiveProfile {
                 max_candidates_to_plan: 3,
+                max_candidates_per_expansion: 180,
                 max_plan_depth: 9,
                 snapshot_travel_horizon: 5,
                 max_node_expansions: 320,
@@ -563,6 +564,7 @@ mod tests {
                 max_cooldown_ticks: 90,
                 max_snapshot_entities_per_place: 60,
                 speculative_acquisition: false,
+                landmark_extraction_depth: 3,
             }),
             ComponentValue::ExplorationProfile(ExplorationProfile {
                 curiosity_weight: Permille::new(650).unwrap(),
@@ -577,6 +579,7 @@ mod tests {
             ComponentValue::ExecutionBudget(ExecutionBudget {
                 beam_width: 11,
                 max_prerequisite_locations: 4,
+                preferred_operator_boost: 3,
             }),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(

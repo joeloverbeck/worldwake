@@ -13,15 +13,16 @@ use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
 use worldwake_ai::AgentTickDriver;
 use worldwake_ai::decision_trace::{
-    AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace, PlanSearchOutcome, TargetBeliefPresence,
+    AffordanceSummary, AffordanceTrace, AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace,
+    PlanSearchOutcome, TargetBeliefPresence,
 };
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
-use worldwake_core::{EntityId, EntityKind, EventId, EventView};
+use worldwake_core::{DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView, Tick};
 use worldwake_sim::{
-    ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime, InstitutionalKnowledgeTraceSink,
-    PerceptionTraceSink, PoliticalTraceSink, RequestResolutionTraceSink, TickStepServices,
-    step_tick,
+    ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
+    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink,
+    RequestResolutionTraceSink, TickStepServices, step_tick,
 };
 
 #[derive(Parser)]
@@ -44,12 +45,21 @@ struct ObserverCli {
 // Per-agent statistics
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NeedsSample {
     hunger: u16,
     thirst: u16,
     fatigue: u16,
     bladder: u16,
     dirtiness: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BehavioralTransition {
+    tick: u64,
+    types_before: usize,
+    types_after: usize,
+    needs: NeedsSample,
 }
 
 struct AgentStats {
@@ -413,6 +423,243 @@ fn failed_plan_target_beliefs(attempt: &PlanAttemptTrace) -> &'static str {
     }
 }
 
+fn action_timeline_bins_for_agent<'a>(
+    action_trace: &'a ActionTraceSink,
+    agent_id: EntityId,
+) -> BTreeMap<u64, BTreeMap<&'a str, u32>> {
+    let mut bins: BTreeMap<u64, BTreeMap<&'a str, u32>> = BTreeMap::new();
+    for event in action_trace.events_for(agent_id).iter().filter(|event| {
+        matches!(
+            event.kind,
+            ActionTraceKind::Started { .. } | ActionTraceKind::StartFailed { .. }
+        )
+    }) {
+        let bin = event.tick.0 / 100;
+        *bins
+            .entry(bin)
+            .or_default()
+            .entry(&event.action_name)
+            .or_insert(0) += 1;
+    }
+    bins
+}
+
+fn planning_affordance_snapshots<'a>(
+    traces: &'a [&'a AgentDecisionTrace],
+) -> Vec<(Tick, &'a AffordanceTrace)> {
+    traces
+        .iter()
+        .filter_map(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => planning
+                .affordances
+                .as_ref()
+                .map(|affordances| (trace.tick, affordances)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn committed_travel_ticks(events: &[&ActionTraceEvent]) -> Vec<Tick> {
+    events
+        .iter()
+        .filter(|event| {
+            event.action_name == "travel" && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+        .map(|event| event.tick)
+        .collect()
+}
+
+fn post_travel_affordance_snapshots<'a>(
+    affordance_snapshots: &[(Tick, &'a AffordanceTrace)],
+    travel_commit_ticks: &[Tick],
+) -> Vec<(Tick, &'a AffordanceTrace)> {
+    let mut snapshots = Vec::new();
+    let mut last_recorded_place = None;
+    let mut pending_post_travel = false;
+    let mut travel_index = 0usize;
+
+    for (tick, affordances) in affordance_snapshots {
+        while let Some(travel_tick) = travel_commit_ticks.get(travel_index) {
+            if *travel_tick >= *tick {
+                break;
+            }
+            pending_post_travel = true;
+            travel_index += 1;
+        }
+
+        if pending_post_travel {
+            if affordances.place != last_recorded_place {
+                snapshots.push((*tick, *affordances));
+                last_recorded_place = affordances.place;
+            }
+            pending_post_travel = false;
+        } else {
+            last_recorded_place = affordances.place;
+        }
+    }
+
+    snapshots
+}
+
+fn final_affordance_snapshot<'a>(
+    affordance_snapshots: &[(Tick, &'a AffordanceTrace)],
+) -> Option<(Tick, &'a AffordanceTrace)> {
+    affordance_snapshots.last().copied()
+}
+
+fn format_affordance_summary(summary: &AffordanceSummary) -> String {
+    if summary.target_count == 0 {
+        summary.action_name.clone()
+    } else {
+        format!("{} ({} targets)", summary.action_name, summary.target_count)
+    }
+}
+
+fn write_affordance_list(
+    out: &mut String,
+    heading: &str,
+    affordances: &AffordanceTrace,
+) -> std::fmt::Result {
+    writeln!(out, "{heading}\n")?;
+    for affordance in &affordances.available {
+        writeln!(out, "- {}", format_affordance_summary(affordance))?;
+    }
+    writeln!(out)
+}
+
+fn believed_location_parts(world: &worldwake_core::World, entities: &[EntityId]) -> Vec<String> {
+    let mut commodity_totals: BTreeMap<String, u64> = BTreeMap::new();
+    let mut non_item_names: Vec<String> = Vec::new();
+
+    for id in entities {
+        if let Some(lot) = world.get_component_item_lot(*id) {
+            *commodity_totals
+                .entry(format!("{:?}", lot.commodity))
+                .or_insert(0) += u64::from(lot.quantity.0);
+        } else {
+            non_item_names.push(entity_display_name(world, *id));
+        }
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    parts.extend(non_item_names);
+    for (commodity, total) in &commodity_totals {
+        parts.push(format!("{total}\u{00d7} {commodity}"));
+    }
+    parts
+}
+
+fn unknown_location_entity_groups(
+    entities: &[EntityId],
+    store: &worldwake_core::AgentBeliefStore,
+) -> Vec<(String, Vec<EntityId>)> {
+    let mut place_entities = Vec::new();
+    let mut unknown_entities = Vec::new();
+
+    for entity in entities {
+        match store
+            .known_entities
+            .get(entity)
+            .and_then(|state| state.believed_kind)
+        {
+            Some(EntityKind::Place) => place_entities.push(*entity),
+            _ => unknown_entities.push(*entity),
+        }
+    }
+
+    let mut groups = Vec::new();
+    if !place_entities.is_empty() {
+        groups.push((
+            "(place entity \u{2014} no parent location)".to_string(),
+            place_entities,
+        ));
+    }
+    if !unknown_entities.is_empty() {
+        groups.push(("Unknown location".to_string(), unknown_entities));
+    }
+    groups
+}
+
+fn behavioral_transitions(
+    bins: &BTreeMap<u64, BTreeMap<&str, u32>>,
+    needs_samples: &[NeedsSample],
+) -> Vec<BehavioralTransition> {
+    let mut transitions = Vec::new();
+    let mut previous: Option<(u64, usize)> = None;
+
+    for (bin, action_counts) in bins {
+        let current_types = action_counts.len();
+        if let Some((_, previous_types)) = previous
+            && previous_types > 0
+            && current_types * 2 <= previous_types
+            && !needs_samples.is_empty()
+        {
+            let tick = bin * 100;
+            let needs_index = usize::min(tick as usize, needs_samples.len() - 1);
+            transitions.push(BehavioralTransition {
+                tick,
+                types_before: previous_types,
+                types_after: current_types,
+                needs: needs_samples[needs_index],
+            });
+        }
+        previous = Some((*bin, current_types));
+    }
+
+    transitions
+}
+
+fn format_behavioral_transition(transition: &BehavioralTransition) -> String {
+    format!(
+        "**Behavioral transition** at tick {}: action repertoire narrowed ({} types -> {} types)\n  Needs: hunger={}, thirst={}, fatigue={}, bladder={}, dirtiness={}",
+        transition.tick,
+        transition.types_before,
+        transition.types_after,
+        transition.needs.hunger,
+        transition.needs.thirst,
+        transition.needs.fatigue,
+        transition.needs.bladder,
+        transition.needs.dirtiness
+    )
+}
+
+fn failed_plan_outcome_label(attempt: &PlanAttemptTrace) -> String {
+    match &attempt.outcome {
+        PlanSearchOutcome::FrontierExhausted { expansions_used } => {
+            if *expansions_used <= 1
+                && let Some(summary) = attempt
+                    .expansion_summaries
+                    .iter()
+                    .find(|summary| summary.depth == 0)
+            {
+                let generated = summary.candidates_generated;
+                let skipped = summary.candidates_skipped;
+                let terminal = summary.terminal_successors;
+                let after_beam = summary.non_terminal_after_beam;
+                if generated == 0 {
+                    return "frontier-exhausted at depth 0: 0 candidates generated".to_string();
+                }
+                if skipped == generated {
+                    return format!(
+                        "frontier-exhausted at depth 0: {generated} candidates generated, all skipped (build_successor returned None)"
+                    );
+                }
+                if after_beam == 0 && terminal == 0 {
+                    return format!(
+                        "frontier-exhausted at depth 0: {generated} candidates generated, all pruned by beam"
+                    );
+                }
+                return format!(
+                    "frontier-exhausted at depth 0: {generated} generated, {skipped} skipped, {terminal} terminal, {after_beam} after beam"
+                );
+            }
+            "frontier-exhausted".to_string()
+        }
+        PlanSearchOutcome::BudgetExhausted { .. } => "budget-exhausted".to_string(),
+        PlanSearchOutcome::Found { .. } | PlanSearchOutcome::Unsupported => unreachable!(),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct FailedPlanBreakdown {
     total: u32,
@@ -478,6 +725,25 @@ fn collect_failed_plan_attempts<'a>(
         .collect()
 }
 
+fn format_death_cause(cause: DeathCause) -> String {
+    match cause {
+        DeathCause::NeedDeprivation { need } => format!("NeedDeprivation {{ {need:?} }}"),
+        DeathCause::CombatWounds => "CombatWounds".to_string(),
+    }
+}
+
+fn death_summary_line(world: &worldwake_core::World, agent_id: EntityId) -> Option<String> {
+    world
+        .get_component_dead_at(agent_id)
+        .map(|DeadAt { tick, cause }| {
+            format!(
+                "**Death**: Tick {} (cause: {})",
+                tick.0,
+                format_death_cause(*cause)
+            )
+        })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn format_report(
     scenario_path: &str,
@@ -522,8 +788,12 @@ fn format_report(
 
     // Section 2: Per-Agent Summary
     writeln!(out, "## Section 2 — Per-Agent Summary\n").unwrap();
-    for stats in agent_stats.values() {
+    for (agent_id, stats) in agent_stats {
         writeln!(out, "### {}\n", stats.name).unwrap();
+        if let Some(line) = death_summary_line(world, *agent_id) {
+            writeln!(out, "{line}").unwrap();
+            writeln!(out).unwrap();
+        }
 
         // Action counts
         writeln!(
@@ -631,6 +901,15 @@ fn format_report(
                 "**Ticks above 750‰**: hunger={h_above}, thirst={t_above}, fatigue={f_above}, bladder={b_above}, dirtiness={d_above}\n"
             )
             .unwrap();
+        }
+
+        let transitions = behavioral_transitions(
+            &action_timeline_bins_for_agent(action_trace, *agent_id),
+            &stats.needs_samples,
+        );
+        for transition in &transitions {
+            writeln!(out, "{}", format_behavioral_transition(transition)).unwrap();
+            writeln!(out).unwrap();
         }
 
         // Location time
@@ -757,16 +1036,7 @@ fn format_report(
         writeln!(out, "| Ticks | Actions |").unwrap();
         writeln!(out, "|-------|---------|").unwrap();
 
-        // Group by 100-tick bin
-        let mut bins: BTreeMap<u64, BTreeMap<&str, u32>> = BTreeMap::new();
-        for event in &decision_events {
-            let bin = event.tick.0 / 100;
-            *bins
-                .entry(bin)
-                .or_default()
-                .entry(&event.action_name)
-                .or_insert(0) += 1;
-        }
+        let bins = action_timeline_bins_for_agent(action_trace, *agent_id);
 
         for (bin, action_counts) in &bins {
             let lo = bin * 100;
@@ -896,28 +1166,21 @@ fn format_report(
         if !by_place.is_empty() {
             writeln!(out, "**Believed entity locations**:").unwrap();
             for (place_opt, entities) in &by_place {
-                let place_label = match place_opt {
-                    Some(pid) => entity_display_name(world, *pid),
-                    None => "Unknown location".to_string(),
-                };
-                // Aggregate item lots by commodity, list non-items individually
-                let mut commodity_totals: BTreeMap<String, u64> = BTreeMap::new();
-                let mut non_item_names: Vec<String> = Vec::new();
-                for id in entities {
-                    if let Some(lot) = world.get_component_item_lot(*id) {
-                        *commodity_totals
-                            .entry(format!("{:?}", lot.commodity))
-                            .or_insert(0) += u64::from(lot.quantity.0);
-                    } else {
-                        non_item_names.push(entity_display_name(world, *id));
+                match place_opt {
+                    Some(pid) => {
+                        let place_label = entity_display_name(world, *pid);
+                        let parts = believed_location_parts(world, entities);
+                        writeln!(out, "- {place_label}: {}", parts.join(", ")).unwrap();
+                    }
+                    None => {
+                        for (place_label, grouped_entities) in
+                            unknown_location_entity_groups(entities, store)
+                        {
+                            let parts = believed_location_parts(world, &grouped_entities);
+                            writeln!(out, "- {place_label}: {}", parts.join(", ")).unwrap();
+                        }
                     }
                 }
-                let mut parts: Vec<String> = Vec::new();
-                parts.extend(non_item_names);
-                for (commodity, total) in &commodity_totals {
-                    parts.push(format!("{total}\u{00d7} {commodity}"));
-                }
-                writeln!(out, "- {place_label}: {}", parts.join(", ")).unwrap();
             }
             writeln!(out).unwrap();
         }
@@ -1170,21 +1433,21 @@ fn format_report(
                     if shown >= 20 {
                         break;
                     }
-                    let (outcome_label, expansions) = match &attempt.outcome {
-                        PlanSearchOutcome::FrontierExhausted { expansions_used } => {
-                            ("frontier-exhausted", expansions_used)
-                        }
-                        PlanSearchOutcome::BudgetExhausted { expansions_used } => {
-                            ("budget-exhausted", expansions_used)
-                        }
-                        _ => continue,
+                    let (PlanSearchOutcome::FrontierExhausted {
+                        expansions_used: expansions,
+                    }
+                    | PlanSearchOutcome::BudgetExhausted {
+                        expansions_used: expansions,
+                    }) = &attempt.outcome
+                    else {
+                        continue;
                     };
                     writeln!(
                         out,
                         "| {} | {:?} | {} | {} | {} | {} | {} | {} |",
                         tick,
                         attempt.goal.kind,
-                        outcome_label,
+                        failed_plan_outcome_label(attempt),
                         expansions,
                         failed_plan_max_depth(attempt),
                         failed_plan_candidates(attempt),
@@ -1257,25 +1520,50 @@ fn format_report(
                 writeln!(out).unwrap();
             }
 
+            let affordance_snapshots = planning_affordance_snapshots(&traces);
+            let travel_commit_ticks = committed_travel_ticks(&action_trace.events_for(*agent_id));
+
             // Affordances available (from first planning tick that has them)
-            if let Some(trace) = traces.iter().find(
-                |t| matches!(&t.outcome, DecisionOutcome::Planning(p) if p.affordances.is_some()),
-            ) && let DecisionOutcome::Planning(planning) = &trace.outcome
-                && let Some(affordances) = &planning.affordances
-            {
-                writeln!(
-                    out,
-                    "**Affordances available at tick {}** (at {})\n",
-                    trace.tick.0,
-                    affordances
-                        .place
-                        .map_or_else(|| "unknown".to_string(), |p| p.to_string())
+            if let Some((tick, affordances)) = affordance_snapshots.first().copied() {
+                write_affordance_list(
+                    &mut out,
+                    &format!(
+                        "**Affordances available at tick {}** (at {})",
+                        tick.0,
+                        affordances
+                            .place
+                            .map_or_else(|| "unknown".to_string(), |p| p.to_string())
+                    ),
+                    affordances,
                 )
                 .unwrap();
-                for aff in &affordances.available {
-                    writeln!(out, "- {} ({} targets)", aff.action_name, aff.target_count).unwrap();
-                }
-                writeln!(out).unwrap();
+            }
+
+            for (tick, affordances) in
+                post_travel_affordance_snapshots(&affordance_snapshots, &travel_commit_ticks)
+            {
+                let place_label = affordances.place.map_or_else(
+                    || "unknown".to_string(),
+                    |place| entity_display_name(world, place),
+                );
+                write_affordance_list(
+                    &mut out,
+                    &format!(
+                        "**Affordances after travel** (tick {}, arrived at {})",
+                        tick.0, place_label
+                    ),
+                    affordances,
+                )
+                .unwrap();
+            }
+
+            if let Some((tick, affordances)) = final_affordance_snapshot(&affordance_snapshots) {
+                write_affordance_list(
+                    &mut out,
+                    &format!("**Final affordances** (tick {})", tick.0),
+                    affordances,
+                )
+                .unwrap();
             }
         }
     } else {
@@ -1515,11 +1803,26 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        PlanAttemptTrace, PlanSearchOutcome, failed_plan_breakdown, failed_plan_candidates,
-        failed_plan_location, failed_plan_max_depth, failed_plan_target_beliefs,
+        BehavioralTransition, NeedsSample, PlanAttemptTrace, PlanSearchOutcome,
+        behavioral_transitions, committed_travel_ticks, death_summary_line, failed_plan_breakdown,
+        failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
+        failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
+        format_affordance_summary, format_behavioral_transition, format_death_cause,
+        post_travel_affordance_snapshots, unknown_location_entity_groups,
     };
-    use worldwake_ai::decision_trace::{SearchExpansionSummary, TargetBeliefPresence};
-    use worldwake_core::{EntityId, GoalKey, GoalKind, OpportunityAnchor};
+    use std::collections::BTreeMap;
+    use std::collections::BTreeSet;
+    use worldwake_ai::decision_trace::{
+        AffordanceSummary, AffordanceTrace, SearchExpansionSummary, TargetBeliefPresence,
+    };
+    use worldwake_core::PerceptionSource;
+    use worldwake_core::{
+        ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, ControlSource, DeadAt,
+        DeathCause, EntityId, EntityKind, EventLog, GoalKey, GoalKind, HomeostaticNeedId,
+        OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
+    };
+    use worldwake_sim::{ActionInstanceId, ActionTraceEvent, ActionTraceKind, CommitOutcome};
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
         SearchExpansionSummary {
@@ -1529,10 +1832,39 @@ mod tests {
             prerequisite_places_count: 0,
             candidates_generated,
             candidates_skipped: 0,
+            preferred_candidates: 0,
             terminal_successors: 0,
             non_terminal_before_beam: 0,
             non_terminal_after_beam: 0,
             found_goal_satisfied: false,
+            landmark_heuristic: 0,
+            travel_pruning: None,
+            prerequisite_guidance: None,
+            root_candidates: Vec::new(),
+            root_omissions: Vec::new(),
+        }
+    }
+
+    fn sample_summary_with_counts(
+        depth: u8,
+        candidates_generated: u16,
+        candidates_skipped: u16,
+        terminal_successors: u16,
+        non_terminal_after_beam: u16,
+    ) -> SearchExpansionSummary {
+        SearchExpansionSummary {
+            depth,
+            remaining_travel_ticks: 0,
+            combined_places_count: 0,
+            prerequisite_places_count: 0,
+            candidates_generated,
+            candidates_skipped,
+            preferred_candidates: 0,
+            terminal_successors,
+            non_terminal_before_beam: 0,
+            non_terminal_after_beam,
+            found_goal_satisfied: false,
+            landmark_heuristic: 0,
             travel_pruning: None,
             prerequisite_guidance: None,
             root_candidates: Vec::new(),
@@ -1546,8 +1878,83 @@ mod tests {
             opportunity_anchor: OpportunityAnchor::None,
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 3 },
             target_belief_presence: TargetBeliefPresence::NotApplicable,
+            strategic_plan: None,
+            tactical_goal: None,
+            landmarks_extracted: 0,
+            landmark_orderings: 0,
             binding_rejections: Vec::new(),
             expansion_summaries,
+        }
+    }
+
+    fn need_sample(value: u16) -> NeedsSample {
+        NeedsSample {
+            hunger: value,
+            thirst: value + 1,
+            fatigue: value + 2,
+            bladder: value + 3,
+            dirtiness: value + 4,
+        }
+    }
+
+    fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
+        WorldTxn::new(
+            world,
+            Tick(tick),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        )
+    }
+
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+    }
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn affordance_trace(place: Option<EntityId>, entries: &[(&str, usize)]) -> AffordanceTrace {
+        AffordanceTrace {
+            place,
+            available: entries
+                .iter()
+                .enumerate()
+                .map(|(idx, (action_name, target_count))| AffordanceSummary {
+                    def_id: ActionDefId(idx as u32 + 1),
+                    action_name: (*action_name).to_string(),
+                    target_count: *target_count,
+                })
+                .collect(),
+        }
+    }
+
+    fn belief_state(
+        kind: Option<EntityKind>,
+        last_known_place: Option<EntityId>,
+    ) -> BelievedEntityState {
+        BelievedEntityState {
+            believed_kind: kind,
+            last_known_place,
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(0),
+            source: PerceptionSource::DirectObservation,
         }
     }
 
@@ -1621,5 +2028,335 @@ mod tests {
             failed_plan_target_beliefs(&sample_attempt(Vec::new())),
             "n/a"
         );
+    }
+
+    #[test]
+    fn failed_plan_outcome_label_explains_zero_depth_zero_candidate_frontier_exhaustion() {
+        let attempt = PlanAttemptTrace {
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+            ..sample_attempt(vec![sample_summary_with_counts(0, 0, 0, 0, 0)])
+        };
+
+        assert_eq!(
+            failed_plan_outcome_label(&attempt),
+            "frontier-exhausted at depth 0: 0 candidates generated"
+        );
+    }
+
+    #[test]
+    fn failed_plan_outcome_label_explains_all_pruned_by_beam() {
+        let attempt = PlanAttemptTrace {
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+            ..sample_attempt(vec![sample_summary_with_counts(0, 3, 1, 0, 0)])
+        };
+
+        assert_eq!(
+            failed_plan_outcome_label(&attempt),
+            "frontier-exhausted at depth 0: 3 candidates generated, all pruned by beam"
+        );
+    }
+
+    #[test]
+    fn failed_plan_outcome_label_preserves_skip_specific_reason_before_beam_fallback() {
+        let attempt = PlanAttemptTrace {
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+            ..sample_attempt(vec![sample_summary_with_counts(0, 3, 3, 0, 0)])
+        };
+
+        assert_eq!(
+            failed_plan_outcome_label(&attempt),
+            "frontier-exhausted at depth 0: 3 candidates generated, all skipped (build_successor returned None)"
+        );
+    }
+
+    #[test]
+    fn failed_plan_outcome_label_leaves_non_depth_zero_frontier_exhaustion_unchanged() {
+        let attempt = PlanAttemptTrace {
+            outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 3 },
+            ..sample_attempt(vec![sample_summary_with_counts(1, 4, 0, 0, 0)])
+        };
+
+        assert_eq!(failed_plan_outcome_label(&attempt), "frontier-exhausted");
+    }
+
+    #[test]
+    fn behavioral_transition_detected_when_action_types_drop_by_half() {
+        let bins = BTreeMap::from([
+            (
+                0,
+                BTreeMap::from([
+                    ("eat", 1),
+                    ("drink", 1),
+                    ("sleep", 1),
+                    ("wash", 1),
+                    ("wander", 1),
+                ]),
+            ),
+            (5, BTreeMap::from([("eat", 2), ("drink", 1)])),
+        ]);
+        let needs_samples = (0..600).map(|_| need_sample(750)).collect::<Vec<_>>();
+
+        let transitions = behavioral_transitions(&bins, &needs_samples);
+
+        assert_eq!(
+            transitions,
+            vec![BehavioralTransition {
+                tick: 500,
+                types_before: 5,
+                types_after: 2,
+                needs: need_sample(750),
+            }]
+        );
+        assert_eq!(
+            format_behavioral_transition(&transitions[0]),
+            "**Behavioral transition** at tick 500: action repertoire narrowed (5 types -> 2 types)\n  Needs: hunger=750, thirst=751, fatigue=752, bladder=753, dirtiness=754"
+        );
+    }
+
+    #[test]
+    fn behavioral_transition_not_detected_when_action_types_are_stable() {
+        let bins = BTreeMap::from([
+            (0, BTreeMap::from([("eat", 1), ("drink", 1), ("sleep", 1)])),
+            (5, BTreeMap::from([("eat", 2), ("drink", 1), ("sleep", 1)])),
+        ]);
+        let needs_samples = (0..600).map(|_| need_sample(700)).collect::<Vec<_>>();
+
+        assert!(behavioral_transitions(&bins, &needs_samples).is_empty());
+    }
+
+    #[test]
+    fn behavioral_transition_only_fires_when_threshold_is_crossed() {
+        let bins = BTreeMap::from([
+            (
+                0,
+                BTreeMap::from([
+                    ("eat", 1),
+                    ("drink", 1),
+                    ("sleep", 1),
+                    ("wash", 1),
+                    ("wander", 1),
+                ]),
+            ),
+            (
+                1,
+                BTreeMap::from([("eat", 1), ("drink", 1), ("sleep", 1), ("wash", 1)]),
+            ),
+            (2, BTreeMap::from([("eat", 1), ("drink", 1), ("sleep", 1)])),
+        ]);
+        let needs_samples = (0..300).map(|_| need_sample(600)).collect::<Vec<_>>();
+
+        assert!(behavioral_transitions(&bins, &needs_samples).is_empty());
+    }
+
+    #[test]
+    fn committed_travel_ticks_only_include_committed_travel_events() {
+        let actor = entity(1);
+        let events = [
+            ActionTraceEvent::new(
+                Tick(10),
+                actor,
+                ActionDefId(1),
+                "travel".to_string(),
+                ActionTraceKind::Started { targets: vec![] },
+            ),
+            ActionTraceEvent::new(
+                Tick(20),
+                actor,
+                ActionDefId(1),
+                "travel".to_string(),
+                ActionTraceKind::Committed {
+                    instance_id: ActionInstanceId(7),
+                    outcome: CommitOutcome::empty(),
+                },
+            ),
+            ActionTraceEvent::new(
+                Tick(30),
+                actor,
+                ActionDefId(2),
+                "eat".to_string(),
+                ActionTraceKind::Committed {
+                    instance_id: ActionInstanceId(8),
+                    outcome: CommitOutcome::empty(),
+                },
+            ),
+        ];
+        let event_refs = events.iter().collect::<Vec<_>>();
+
+        assert_eq!(committed_travel_ticks(&event_refs), vec![Tick(20)]);
+    }
+
+    #[test]
+    fn post_travel_affordance_snapshot_uses_first_new_place_after_travel() {
+        let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let after_travel = affordance_trace(Some(entity(20)), &[("harvest", 2), ("sell", 1)]);
+        let later_same_place = affordance_trace(Some(entity(20)), &[("drink", 0)]);
+        let snapshots = vec![
+            (Tick(0), &initial),
+            (Tick(12), &after_travel),
+            (Tick(18), &later_same_place),
+        ];
+
+        let post_travel = post_travel_affordance_snapshots(&snapshots, &[Tick(8)]);
+
+        assert_eq!(post_travel.len(), 1);
+        assert_eq!(post_travel[0].0, Tick(12));
+        assert_eq!(post_travel[0].1.place, Some(entity(20)));
+        assert_eq!(post_travel[0].1.available.len(), 2);
+    }
+
+    #[test]
+    fn final_affordances_use_last_planning_snapshot() {
+        let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let final_trace = affordance_trace(Some(entity(20)), &[("relieve", 0)]);
+        let snapshots = vec![(Tick(0), &initial), (Tick(42), &final_trace)];
+
+        let final_snapshot = final_affordance_snapshot(&snapshots).expect("final affordance");
+        assert_eq!(final_snapshot.0, Tick(42));
+        assert_eq!(final_snapshot.1.place, Some(entity(20)));
+        assert_eq!(final_snapshot.1.available[0].action_name, "relieve");
+    }
+
+    #[test]
+    fn no_post_travel_affordance_snapshot_without_travel_commit() {
+        let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let later = affordance_trace(Some(entity(20)), &[("harvest", 2)]);
+        let snapshots = vec![(Tick(0), &initial), (Tick(12), &later)];
+
+        assert!(post_travel_affordance_snapshots(&snapshots, &[]).is_empty());
+    }
+
+    #[test]
+    fn affordance_summary_omits_target_count_when_zero() {
+        let no_targets = AffordanceSummary {
+            def_id: ActionDefId(1),
+            action_name: "sleep".to_string(),
+            target_count: 0,
+        };
+        let with_targets = AffordanceSummary {
+            def_id: ActionDefId(2),
+            action_name: "harvest".to_string(),
+            target_count: 3,
+        };
+
+        assert_eq!(format_affordance_summary(&no_targets), "sleep");
+        assert_eq!(
+            format_affordance_summary(&with_targets),
+            "harvest (3 targets)"
+        );
+    }
+
+    #[test]
+    fn unknown_location_group_labels_place_entities_separately() {
+        let place = entity(10);
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(place, belief_state(Some(EntityKind::Place), None));
+
+        let groups = unknown_location_entity_groups(&[place], &store);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "(place entity — no parent location)");
+        assert_eq!(groups[0].1, vec![place]);
+    }
+
+    #[test]
+    fn unknown_location_group_keeps_non_place_entities_unknown() {
+        let agent = entity(20);
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(agent, belief_state(Some(EntityKind::Agent), None));
+
+        let groups = unknown_location_entity_groups(&[agent], &store);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "Unknown location");
+        assert_eq!(groups[0].1, vec![agent]);
+    }
+
+    #[test]
+    fn unknown_location_group_splits_place_and_non_place_entities() {
+        let place = entity(30);
+        let item = entity(31);
+        let mut store = AgentBeliefStore::new();
+        store
+            .known_entities
+            .insert(place, belief_state(Some(EntityKind::Place), None));
+        store
+            .known_entities
+            .insert(item, belief_state(Some(EntityKind::ItemLot), None));
+
+        let groups = unknown_location_entity_groups(&[place, item], &store);
+        let labels = groups
+            .iter()
+            .map(|(label, _)| label.clone())
+            .collect::<Vec<_>>();
+        let grouped_entities = groups
+            .iter()
+            .map(|(_, ids)| ids.iter().copied().collect::<BTreeSet<_>>())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec![
+                "(place entity — no parent location)".to_string(),
+                "Unknown location".to_string()
+            ]
+        );
+        assert_eq!(
+            grouped_entities,
+            vec![BTreeSet::from([place]), BTreeSet::from([item]),]
+        );
+    }
+
+    #[test]
+    fn format_death_cause_renders_spec_strings() {
+        assert_eq!(
+            format_death_cause(DeathCause::NeedDeprivation {
+                need: HomeostaticNeedId::Hunger,
+            }),
+            "NeedDeprivation { Hunger }"
+        );
+        assert_eq!(format_death_cause(DeathCause::CombatWounds), "CombatWounds");
+    }
+
+    #[test]
+    fn death_summary_line_includes_tick_and_cause_for_dead_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 42);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_component_dead_at(
+                agent,
+                DeadAt {
+                    tick: Tick(42),
+                    cause: DeathCause::NeedDeprivation {
+                        need: HomeostaticNeedId::Hunger,
+                    },
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        assert_eq!(
+            death_summary_line(&world, agent).as_deref(),
+            Some("**Death**: Tick 42 (cause: NeedDeprivation { Hunger })")
+        );
+    }
+
+    #[test]
+    fn death_summary_line_is_absent_for_alive_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        assert_eq!(death_summary_line(&world, agent), None);
     }
 }

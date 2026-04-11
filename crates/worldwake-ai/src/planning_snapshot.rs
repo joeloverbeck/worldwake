@@ -1229,10 +1229,9 @@ mod tests {
         ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
-        ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
-        ControlBeliefView, DurationExpr, EntityBeliefView, PoliticalBeliefView,
-        ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TemporalBeliefView,
-        get_affordances_for_defs,
+        ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload, ControlBeliefView,
+        DurationExpr, EntityBeliefView, PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView,
+        SpatialBeliefView, TemporalBeliefView, get_affordances_for_defs,
     };
 
     use crate::{PlannerOpKind, PlanningState};
@@ -2116,7 +2115,8 @@ mod tests {
 
         let mut defs = ActionDefRegistry::default();
         let mut handlers = ActionHandlerRegistry::default();
-        let tell_def = worldwake_systems::tell_actions::register_tell_action(&mut defs, &mut handlers);
+        let tell_def =
+            worldwake_systems::tell_actions::register_tell_action(&mut defs, &mut handlers);
         let affordances = get_affordances_for_defs(
             &planning_state,
             actor,

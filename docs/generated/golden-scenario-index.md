@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 155
+- Scenario blocks: 156
 - Contributing golden test files: 25
-- Associated tests: 327
+- Associated tests: 333
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -117,7 +117,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2c-self: Wounded agent self-treats with medicine
 
-- Source: `golden_care.rs:765`
+- Source: `golden_care.rs:813`
 - Systems: AI, Care, Combat
 - GoalKinds: TreatWounds(self)
 - ActionDomains: Care
@@ -132,7 +132,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2c-self-acquire: Wounded agent acquires ground medicine, self-treats
 
-- Source: `golden_care.rs:871`
+- Source: `golden_care.rs:919`
 - Systems: AI, Care, Transport, Combat
 - GoalKinds: TreatWounds(self)
 - ActionDomains: Care, Transport
@@ -146,7 +146,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2c-report: Indirect wound report does NOT trigger care goal
 
-- Source: `golden_care.rs:959`
+- Source: `golden_care.rs:1007`
 - Systems: AI, Care, Perception
 - GoalKinds: TreatWounds(other)
 - ActionDomains: Care
@@ -161,7 +161,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2c-invalidation: Care goal invalidates when patient self-heals
 
-- Source: `golden_care.rs:1066`
+- Source: `golden_care.rs:1114`
 - Systems: AI, Care, Combat
 - GoalKinds: TreatWounds(other), TreatWounds(self)
 - ActionDomains: Care
@@ -684,7 +684,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 133: Ignorance-Driven Frontier Exploration
 
-- Source: `golden_exploration.rs:219`
+- Source: `golden_exploration.rs:211`
 - Systems: AI, Needs, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -699,7 +699,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 134: Known Satisfaction Path Suppresses Exploration
 
-- Source: `golden_exploration.rs:282`
+- Source: `golden_exploration.rs:274`
 - Systems: AI, Needs, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -714,7 +714,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 135: Consecutive Exploration Cap Suppresses Re-Emission
 
-- Source: `golden_exploration.rs:346`
+- Source: `golden_exploration.rs:338`
 - Systems: AI, Needs, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: N/A
@@ -729,7 +729,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 136: Arrival Perception Unlocks Concrete Relief
 
-- Source: `golden_exploration.rs:393`
+- Source: `golden_exploration.rs:385`
 - Systems: AI, Needs, Travel, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -1452,7 +1452,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 3: Resource Contention with Conservation
 
-- Source: `golden_production.rs:2850`
+- Source: `golden_production.rs:2900`
 - Systems: Needs, Production, Travel, Conservation
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -1466,7 +1466,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 3b: Observed Harvest Competition Redirects To Remote Sibling
 
-- Source: `golden_production.rs:3005`
+- Source: `golden_production.rs:3055`
 - Systems: Perception, Production, Travel, AI
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -1481,7 +1481,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 102: Departed Waiter Pruned From Facility Queue
 
-- Source: `golden_production.rs:3152`
+- Source: `golden_production.rs:3202`
 - Systems: Contention, Travel, Production
 - GoalKinds: RestockCommodity
 - ActionDomains: Production, Travel
@@ -1496,7 +1496,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 4: Materialization Barrier Chain
 
-- Source: `golden_production.rs:3289`
+- Source: `golden_production.rs:3339`
 - Systems: Production, Transport, Needs, AI
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Transport, Needs
@@ -1510,7 +1510,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 6b: Multi-Recipe Craft Path
 
-- Source: `golden_production.rs:3493`
+- Source: `golden_production.rs:3543`
 - Systems: Production, Transport, Needs, AI
 - GoalKinds: ProduceCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Transport, Needs
@@ -1524,7 +1524,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 103: Unique-Item Race Rejection Redirects To Local Alternative
 
-- Source: `golden_production.rs:3667`
+- Source: `golden_production.rs:3717`
 - Systems: Transport, Contention, Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Transport, Production
@@ -1539,7 +1539,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 3f: Faction-Owned Production — Member vs Outsider
 
-- Source: `golden_production.rs:3727`
+- Source: `golden_production.rs:3777`
 - Systems: Production, Ownership, Factions, AI, Travel, Needs, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Transport, Needs
@@ -1554,7 +1554,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 123: Goal Switch Clears Contention Queue Entry
 
-- Source: `golden_production.rs:3998`
+- Source: `golden_production.rs:4048`
 - Systems: Contention, Production, Needs, AI, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), Sleep
 - ActionDomains: Production, Needs, Travel
@@ -1614,7 +1614,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 97: Search Depth Drives Multi-Step Plan Divergence
 
-- Source: `golden_reasoning_diversity.rs:259`
+- Source: `golden_reasoning_diversity.rs:288`
 - Systems: Production, AI, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Needs
@@ -1627,9 +1627,24 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: Shared initial state -> same candidates generated -> search budget caps expansion depth -> default run finds remote craft plan -> tight run fails to select the same plan.
 
+### Scenario 141: Landmark Depth Changes Two-Phase Trace Shape Without Breaking Planning
+
+- Source: `golden_reasoning_diversity.rs:388`
+- Systems: Production, AI, Travel
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Production, Travel, Needs
+- Places: VillageSquare, OrchardFarm
+- Principles: 20, 22
+
+**Setup**: Two isolated harness runs share the same baker, recipe registry, remote firewood input, beliefs, and RNG seed. The only difference is `CognitiveProfile.landmark_extraction_depth`: disabled `0` versus default.
+
+**Proves**: Landmark-depth diversity changes two-phase planner guidance and trace metadata without breaking the live remote-input craft plan. The default run extracts landmarks and preferred candidates; the zero-depth run degrades gracefully to zero landmark counts while still selecting the lawful remote pickup -> return -> craft plan.
+
+**Cross-system chain**: Shared initial state -> same remote production need -> depth-driven landmark extraction difference -> divergent planner trace guidance -> both runs still produce the same lawful remote craft plan family.
+
 ### Scenario 129: Utility Profiles Diverge Under Identical Self-Care Pressure
 
-- Source: `golden_reasoning_diversity.rs:359`
+- Source: `golden_reasoning_diversity.rs:529`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -1778,7 +1793,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 88: Full Supply Chain Negotiated Restock To Consumption
 
-- Source: `golden_supply_chain.rs:1970`
+- Source: `golden_supply_chain.rs:1969`
 - Systems: Enterprise, Travel, Production, Trade, Needs, Conservation
 - GoalKinds: RestockCommodity, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Trade, Needs

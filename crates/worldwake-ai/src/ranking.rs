@@ -303,6 +303,9 @@ fn drive_goal_ranking_provenance(
                 .and_then(|assessment| assessment.provenance)
                 .map(RankedGoalProvenance::Drive)
         }
+        GoalKind::LootCorpse { corpse } => corpse_loot_assessment(*corpse, context)
+            .and_then(|assessment| assessment.provenance)
+            .map(RankedGoalProvenance::Drive),
         GoalKind::Sleep => drive_goal_provenance(
             context,
             RankedDriveKind::Fatigue,
@@ -451,8 +454,9 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
                     classify_band(patient_pain, &thresholds.pain)
                 })
         }
+        GoalKind::LootCorpse { corpse } => corpse_loot_assessment(corpse, context)
+            .map_or(GoalPriorityClass::Low, |assessment| assessment.priority_class),
         GoalKind::FreeCarryCapacity
-        | GoalKind::LootCorpse { .. }
         | GoalKind::BuryCorpse { .. }
         | GoalKind::SearchForMissing { .. }
         | GoalKind::ReportMissing { .. }
@@ -661,7 +665,9 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             };
             score_product(context.utility.social_weight, boosted_pressure)
         }
-        GoalKind::LootCorpse { .. } | GoalKind::BuryCorpse { .. } => 1,
+        GoalKind::LootCorpse { corpse } => corpse_loot_assessment(corpse, context)
+            .map_or(1, |assessment| assessment.motive_score.max(1)),
+        GoalKind::BuryCorpse { .. } => 1,
         GoalKind::SearchForMissing { .. }
         | GoalKind::ReportMissing { .. }
         | GoalKind::ReportFound { .. } => expectation_response_motive(&candidate.key.kind, context),
@@ -1331,6 +1337,13 @@ struct RecipeOutputAssessment {
     provenance: Option<RankedDriveGoalProvenance>,
 }
 
+#[derive(Clone, Debug)]
+struct CorpseLootAssessment {
+    priority_class: GoalPriorityClass,
+    motive_score: u32,
+    provenance: Option<RankedDriveGoalProvenance>,
+}
+
 fn best_recipe_output_assessment(
     recipe_id: worldwake_core::RecipeId,
     context: &RankingContext<'_>,
@@ -1364,11 +1377,59 @@ fn best_recipe_output_assessment(
         })
 }
 
+fn corpse_loot_assessment(
+    corpse: EntityId,
+    context: &RankingContext<'_>,
+) -> Option<CorpseLootAssessment> {
+    let direct_lot_quantities = context
+        .view
+        .direct_possessions(corpse)
+        .into_iter()
+        .filter_map(|entity| {
+            let commodity = context.view.item_lot_commodity(entity)?;
+            let quantity = context.view.commodity_quantity(entity, commodity);
+            (quantity > Quantity(0)).then_some((commodity, quantity))
+        });
+    let direct_corpse_quantities = CommodityKind::ALL.iter().copied().filter_map(|commodity| {
+        let quantity = context.view.commodity_quantity(corpse, commodity);
+        (quantity > Quantity(0)).then_some((commodity, quantity))
+    });
+
+    direct_lot_quantities
+        .chain(direct_corpse_quantities)
+        .filter_map(|(commodity, quantity)| {
+            Some({
+                let mut simulated_holdings = context.holdings.clone();
+                *simulated_holdings.entry(commodity).or_insert(0) += quantity.0;
+                let breakdown = commodity_opportunity_score(
+                    context.agent,
+                    commodity,
+                    context.view,
+                    &simulated_holdings,
+                    &context.local_alternatives,
+                );
+                let direct_survival = breakdown.direct_survival_score > 0;
+                let treatment = breakdown.treatment_score > 0;
+                (direct_survival || treatment).then_some(CorpseLootAssessment {
+                    priority_class: commodity_shared_priority(commodity, breakdown, context),
+                    motive_score: commodity_shared_motive_score(commodity, breakdown, context),
+                    provenance: commodity_shared_provenance(commodity, breakdown, context),
+                })
+            })?
+        })
+        .max_by(|left, right| {
+            left.priority_class
+                .cmp(&right.priority_class)
+                .then_with(|| left.motive_score.cmp(&right.motive_score))
+        })
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RankedGoalComparisonDimension {
     PriorityClass,
     Feasibility,
     MotiveScore,
+    GoalSpecificity,
     OpportunityStrength,
     ShareBeliefTopicOrder,
     GoalKindOrder,
@@ -1401,6 +1462,11 @@ fn ranked_goal_ordering(
     let ordering = right.motive_score.cmp(&left.motive_score);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::MotiveScore));
+    }
+
+    let ordering = compare_goal_specificity(&left.grounded.key.kind, &right.grounded.key.kind);
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::GoalSpecificity));
     }
 
     let ordering = opportunity_strength(left)
@@ -1485,6 +1551,26 @@ pub(crate) fn explain_ranked_goal_order(
     })
 }
 
+fn compare_goal_specificity(left: &GoalKind, right: &GoalKind) -> Ordering {
+    match (left, right) {
+        (
+            GoalKind::LootCorpse { .. },
+            GoalKind::AcquireCommodity {
+                purpose: CommodityPurpose::SelfConsume,
+                ..
+            },
+        ) => Ordering::Less,
+        (
+            GoalKind::AcquireCommodity {
+                purpose: CommodityPurpose::SelfConsume,
+                ..
+            },
+            GoalKind::LootCorpse { .. },
+        ) => Ordering::Greater,
+        _ => Ordering::Equal,
+    }
+}
+
 pub(crate) fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ordering {
     ranked_goal_ordering(left, right).0
 }
@@ -1525,7 +1611,8 @@ fn opportunity_strength(goal: &RankedGoal) -> u32 {
                 purpose: CommodityPurpose::RecipeInput(_),
                 ..
             }
-            | GoalKind::ProduceCommodity { .. },
+            | GoalKind::ProduceCommodity { .. }
+            | GoalKind::LootCorpse { .. },
             Some(RankedGoalProvenance::Drive(provenance)),
         ) => provenance
             .motive_inputs
@@ -1606,7 +1693,8 @@ mod tests {
         build_decision_context, rank_candidates,
     };
     use crate::{
-        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveKind, RankedGoalProvenance,
+        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
+        RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
         RankedPriorityAdjustment,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     };
@@ -3982,6 +4070,140 @@ mod tests {
         .into_ranked();
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
         assert_eq!(ranked[0].motive_score, 1);
+    }
+
+    #[test]
+    fn loot_corpse_with_recovery_relevant_food_uses_self_care_priority() {
+        let agent = entity(1);
+        let corpse = entity(3);
+        let mut view = base_view(agent);
+        view.commodity_quantities
+            .insert((corpse, CommodityKind::Apple), Quantity(4));
+        view.needs
+            .insert(agent, HomeostaticNeeds::new(pm(600), pm(0), pm(0), pm(0), pm(0)));
+
+        let ranked = rank(
+            &[goal(GoalKind::LootCorpse { corpse })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert!(
+            ranked[0].priority_class > GoalPriorityClass::Low,
+            "recovery-relevant corpse loot should no longer stay in the fixed low-priority bucket"
+        );
+        assert!(
+            ranked[0].motive_score > 1,
+            "recovery-relevant corpse loot should carry a real motive score"
+        );
+    }
+
+    #[test]
+    fn loot_corpse_drive_provenance_participates_in_opportunity_strength_tiebreak() {
+        let corpse = entity(3);
+        let acquire = RankedGoal {
+            grounded: goal(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            priority_class: GoalPriorityClass::Medium,
+            motive_score: 250_000,
+            provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
+                base_priority_class: GoalPriorityClass::Medium,
+                final_priority_class: GoalPriorityClass::Medium,
+                adjustment: None,
+                motive_inputs: vec![RankedDriveMotiveInput {
+                    drive: RankedDriveKind::Hunger,
+                    pressure: pm(500),
+                    weight: pm(500),
+                    score: 250_000,
+                    relief_per_unit: pm(600),
+                    recovery_relevant: true,
+                }],
+            })),
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+        };
+        let loot = RankedGoal {
+            grounded: goal(GoalKind::LootCorpse { corpse }),
+            priority_class: GoalPriorityClass::Medium,
+            motive_score: 250_000,
+            provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
+                base_priority_class: GoalPriorityClass::Medium,
+                final_priority_class: GoalPriorityClass::Medium,
+                adjustment: None,
+                motive_inputs: vec![RankedDriveMotiveInput {
+                    drive: RankedDriveKind::Hunger,
+                    pressure: pm(500),
+                    weight: pm(500),
+                    score: 250_000,
+                    relief_per_unit: pm(900),
+                    recovery_relevant: true,
+                }],
+            })),
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+        };
+
+        assert_eq!(super::compare_ranked_goals(&loot, &acquire), std::cmp::Ordering::Less);
+    }
+
+    #[test]
+    fn loot_corpse_outranks_generic_self_consume_acquire_when_other_factors_tie() {
+        let corpse = entity(3);
+        let acquire = RankedGoal {
+            grounded: goal(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            priority_class: GoalPriorityClass::Medium,
+            motive_score: 250_000,
+            provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
+                base_priority_class: GoalPriorityClass::Medium,
+                final_priority_class: GoalPriorityClass::Medium,
+                adjustment: None,
+                motive_inputs: vec![RankedDriveMotiveInput {
+                    drive: RankedDriveKind::Hunger,
+                    pressure: pm(500),
+                    weight: pm(500),
+                    score: 250_000,
+                    relief_per_unit: pm(600),
+                    recovery_relevant: true,
+                }],
+            })),
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: crate::feasibility::FeasibilityHint::Likely,
+        };
+        let loot = RankedGoal {
+            grounded: goal(GoalKind::LootCorpse { corpse }),
+            priority_class: GoalPriorityClass::Medium,
+            motive_score: 250_000,
+            provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
+                base_priority_class: GoalPriorityClass::Medium,
+                final_priority_class: GoalPriorityClass::Medium,
+                adjustment: None,
+                motive_inputs: vec![RankedDriveMotiveInput {
+                    drive: RankedDriveKind::Hunger,
+                    pressure: pm(500),
+                    weight: pm(500),
+                    score: 250_000,
+                    relief_per_unit: pm(400),
+                    recovery_relevant: true,
+                }],
+            })),
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: crate::feasibility::FeasibilityHint::Likely,
+        };
+
+        assert_eq!(super::compare_ranked_goals(&loot, &acquire), std::cmp::Ordering::Less);
     }
 
     #[test]
