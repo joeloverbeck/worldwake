@@ -127,6 +127,302 @@ impl AgentStats {
 }
 
 // ---------------------------------------------------------------------------
+// Budget exhaustion snapshots
+// ---------------------------------------------------------------------------
+
+/// Captured world state at the moment a planner search returns
+/// [`BudgetExhausted`]. Deduplicated by (agent, `goal_kind`, location) —
+/// only the first occurrence is kept.
+struct BudgetExhaustionSnapshot {
+    tick: u64,
+    agent_id: EntityId,
+    agent_name: String,
+    goal_debug: String,
+    /// Needs at the tick of exhaustion.
+    needs: NeedsSample,
+    /// Agent location at the tick of exhaustion.
+    location: EntityId,
+    location_name: String,
+    /// Agent inventory grouped by commodity type.
+    inventory: BTreeMap<String, u64>,
+    /// Believed entity locations: place name to list of entity descriptions.
+    beliefs: BTreeMap<String, Vec<String>>,
+    /// Total known entities in belief store.
+    known_entity_count: usize,
+    /// Contents of the agent's current location.
+    place_contents: Vec<String>,
+    /// Contents of adjacent places: place name to contents list.
+    adjacent_contents: BTreeMap<String, Vec<String>>,
+    /// Cognitive profile fields relevant to search budget.
+    max_node_expansions: u16,
+    max_plan_depth: u8,
+    max_candidates_per_expansion: u16,
+    /// Execution budget fields.
+    max_prerequisite_locations: u8,
+    beam_width: u8,
+    preferred_operator_boost: u8,
+    /// Search outcome metrics from the attempt.
+    expansions_used: u16,
+    max_depth_reached: u8,
+    total_candidates: u32,
+}
+
+/// Deduplication key for budget exhaustion snapshots.
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct BudgetExhaustionKey {
+    agent_id: EntityId,
+    goal_kind: String,
+    location: EntityId,
+}
+
+/// Collect inventory as commodity -> count map.
+fn collect_inventory(world: &worldwake_core::World, agent_id: EntityId) -> BTreeMap<String, u64> {
+    let mut result: BTreeMap<String, u64> = BTreeMap::new();
+    for entity in world.possessions_of(agent_id) {
+        if let Some(lot) = world.get_component_item_lot(entity) {
+            *result.entry(format!("{:?}", lot.commodity)).or_insert(0) +=
+                u64::from(lot.quantity.0);
+        } else {
+            let name = entity_display_name(world, entity);
+            *result.entry(name).or_insert(0) += 1;
+        }
+    }
+    result
+}
+
+/// Collect place contents as a list of display strings.
+fn collect_place_contents(
+    world: &worldwake_core::World,
+    place_id: EntityId,
+) -> Vec<String> {
+    let ground = world.ground_entities_at(place_id);
+    let mut commodity_totals: BTreeMap<String, u64> = BTreeMap::new();
+    let mut non_item_entries: Vec<String> = Vec::new();
+    for entity in &ground {
+        if let Some(lot) = world.get_component_item_lot(*entity) {
+            *commodity_totals
+                .entry(format!("{:?}", lot.commodity))
+                .or_insert(0) += u64::from(lot.quantity.0);
+        } else {
+            let name = entity_display_name(world, *entity);
+            let annotation = match world.entity_kind(*entity) {
+                Some(EntityKind::Agent) => " (agent)".to_string(),
+                Some(EntityKind::Facility) => {
+                    if let Some(ws) = world.get_component_workstation_marker(*entity) {
+                        format!(" ({:?})", ws.0)
+                    } else if let Some(rs) = world.get_component_resource_source(*entity) {
+                        format!(" (resource: {:?})", rs.commodity)
+                    } else {
+                        " (facility)".to_string()
+                    }
+                }
+                _ => String::new(),
+            };
+            non_item_entries.push(format!("{name}{annotation}"));
+        }
+    }
+    let mut parts: Vec<String> = Vec::new();
+    parts.extend(non_item_entries);
+    for (commodity, total) in &commodity_totals {
+        parts.push(format!("{total}\u{00d7} {commodity}"));
+    }
+    parts
+}
+
+/// Collect believed entity locations from an agent's belief store.
+fn collect_beliefs(
+    world: &worldwake_core::World,
+    agent_id: EntityId,
+) -> (usize, BTreeMap<String, Vec<String>>) {
+    let Some(store) = world.get_component_agent_belief_store(agent_id) else {
+        return (0, BTreeMap::new());
+    };
+    let known_count = store.known_entities.len();
+    let mut by_place: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (known_id, state) in &store.known_entities {
+        let place_label = state
+            .last_known_place
+            .map_or_else(|| "(unknown)".to_string(), |pid| entity_display_name(world, pid));
+        let entity_label = entity_display_name(world, *known_id);
+        by_place.entry(place_label).or_default().push(entity_label);
+    }
+    (known_count, by_place)
+}
+
+/// Extract a normalized goal kind string for deduplication.
+fn goal_kind_dedup_key(goal_debug: &str) -> String {
+    // Strip entity IDs and specific field values to get a canonical goal kind.
+    // E.g. "AcquireCommodity { commodity: Water, purpose: SelfConsume }" ->
+    //      "AcquireCommodity(Water)"
+    // Simple heuristic: use the first word + commodity if present.
+    if let Some(brace) = goal_debug.find('{') {
+        let kind = goal_debug[..brace].trim();
+        // Try to extract commodity
+        if let Some(comm_start) = goal_debug.find("commodity: ") {
+            let after = &goal_debug[comm_start + 11..];
+            let end = after.find(',').or_else(|| after.find('}')).unwrap_or(after.len());
+            let commodity = after[..end].trim();
+            return format!("{kind}({commodity})");
+        }
+        // Try to extract patient or target
+        if goal_debug.contains("patient: ") {
+            return format!("{kind}(patient)");
+        }
+        return kind.to_string();
+    }
+    goal_debug.to_string()
+}
+
+/// Compute total candidates and max depth from expansion summaries.
+fn compute_search_metrics(summaries: &[worldwake_ai::decision_trace::SearchExpansionSummary]) -> (u32, u8) {
+    let mut total_candidates: u32 = 0;
+    let mut max_depth: u8 = 0;
+    for s in summaries {
+        total_candidates += u32::from(s.candidates_generated);
+        if s.depth > max_depth {
+            max_depth = s.depth;
+        }
+    }
+    (total_candidates, max_depth)
+}
+
+fn format_budget_exhaustion_snapshots(
+    out: &mut String,
+    snapshots: &[BudgetExhaustionSnapshot],
+) {
+    writeln!(out, "## Section 8 — Budget Exhaustion Snapshots\n").unwrap();
+    if snapshots.is_empty() {
+        writeln!(out, "No budget exhaustion events detected.\n").unwrap();
+        return;
+    }
+    writeln!(
+        out,
+        "{} unique budget-exhaustion signatures captured (deduplicated by agent+goal+location).\n",
+        snapshots.len()
+    )
+    .unwrap();
+
+    for (i, snap) in snapshots.iter().enumerate() {
+        writeln!(
+            out,
+            "### Snapshot {} — {} at tick {}\n",
+            i + 1,
+            snap.agent_name,
+            snap.tick
+        )
+        .unwrap();
+
+        writeln!(out, "**Agent**: {} ({})", snap.agent_name, snap.agent_id).unwrap();
+        writeln!(out, "**Goal**: `{}`", snap.goal_debug).unwrap();
+        writeln!(
+            out,
+            "**Location**: {} ({})",
+            snap.location_name, snap.location
+        )
+        .unwrap();
+        writeln!(out).unwrap();
+
+        // Search metrics
+        writeln!(out, "**Search metrics**:").unwrap();
+        writeln!(out, "- Expansions used: {}", snap.expansions_used).unwrap();
+        writeln!(out, "- Max depth reached: {}", snap.max_depth_reached).unwrap();
+        writeln!(out, "- Total candidates generated: {}", snap.total_candidates).unwrap();
+        writeln!(out).unwrap();
+
+        // Cognitive/execution profile
+        writeln!(out, "**Planner configuration**:").unwrap();
+        writeln!(
+            out,
+            "- max_node_expansions: {}",
+            snap.max_node_expansions
+        )
+        .unwrap();
+        writeln!(out, "- max_plan_depth: {}", snap.max_plan_depth).unwrap();
+        if snap.max_candidates_per_expansion > 0 {
+            writeln!(
+                out,
+                "- max_candidates_per_expansion: {}",
+                snap.max_candidates_per_expansion
+            )
+            .unwrap();
+        }
+        writeln!(
+            out,
+            "- max_prerequisite_locations: {}",
+            snap.max_prerequisite_locations
+        )
+        .unwrap();
+        writeln!(out, "- beam_width: {}", snap.beam_width).unwrap();
+        writeln!(
+            out,
+            "- preferred_operator_boost: {}",
+            snap.preferred_operator_boost
+        )
+        .unwrap();
+        writeln!(out).unwrap();
+
+        // Needs
+        writeln!(out, "**Agent needs** (\u{2030}):").unwrap();
+        writeln!(
+            out,
+            "- hunger={}, thirst={}, fatigue={}, bladder={}, dirtiness={}",
+            snap.needs.hunger,
+            snap.needs.thirst,
+            snap.needs.fatigue,
+            snap.needs.bladder,
+            snap.needs.dirtiness
+        )
+        .unwrap();
+        writeln!(out).unwrap();
+
+        // Inventory
+        writeln!(out, "**Agent inventory**:").unwrap();
+        if snap.inventory.is_empty() {
+            writeln!(out, "- (empty)").unwrap();
+        } else {
+            for (item, count) in &snap.inventory {
+                writeln!(out, "- {count}\u{00d7} {item}").unwrap();
+            }
+        }
+        writeln!(out).unwrap();
+
+        // Beliefs
+        writeln!(
+            out,
+            "**Beliefs** ({} known entities):",
+            snap.known_entity_count
+        )
+        .unwrap();
+        for (place, entities) in &snap.beliefs {
+            writeln!(out, "- {place}: {}", entities.join(", ")).unwrap();
+        }
+        writeln!(out).unwrap();
+
+        // Place contents
+        writeln!(out, "**Current place contents**:").unwrap();
+        if snap.place_contents.is_empty() {
+            writeln!(out, "- (empty)").unwrap();
+        } else {
+            for item in &snap.place_contents {
+                writeln!(out, "- {item}").unwrap();
+            }
+        }
+        writeln!(out).unwrap();
+
+        // Adjacent place contents
+        writeln!(out, "**Adjacent place contents**:").unwrap();
+        if snap.adjacent_contents.is_empty() {
+            writeln!(out, "- (none)").unwrap();
+        } else {
+            for (place, contents) in &snap.adjacent_contents {
+                writeln!(out, "- {place}: {}", contents.join(", ")).unwrap();
+            }
+        }
+        writeln!(out).unwrap();
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Anomaly detection
 // ---------------------------------------------------------------------------
 
@@ -758,6 +1054,7 @@ fn format_report(
     perception_trace: &PerceptionTraceSink,
     world: &worldwake_core::World,
     driver: &AgentTickDriver,
+    budget_exhaustion_snapshots: &[BudgetExhaustionSnapshot],
 ) -> String {
     let mut out = String::new();
 
@@ -1570,6 +1867,9 @@ fn format_report(
         writeln!(out, "Decision tracing was not enabled.\n").unwrap();
     }
 
+    // Section 8: Budget Exhaustion Snapshots
+    format_budget_exhaustion_snapshots(&mut out, budget_exhaustion_snapshots);
+
     out
 }
 
@@ -1628,6 +1928,10 @@ fn main() {
             (*id, AgentStats::new(name.clone(), has_patrol))
         })
         .collect();
+
+    // Budget exhaustion snapshot collection
+    let mut budget_exhaustion_snapshots: Vec<BudgetExhaustionSnapshot> = Vec::new();
+    let mut budget_exhaustion_seen: BTreeSet<BudgetExhaustionKey> = BTreeSet::new();
 
     // Create all trace sinks (persistent across all ticks)
     let mut action_trace = ActionTraceSink::new();
@@ -1752,6 +2056,111 @@ fn main() {
             stats.record_idle_tick(had_action);
         }
 
+        // Budget exhaustion snapshot collection
+        if let Some(sink) = driver.trace_sink() {
+            for (agent_id, agent_name) in &agents {
+                let Some(trace) = sink.trace_at(*agent_id, current_tick) else {
+                    continue;
+                };
+                let DecisionOutcome::Planning(planning) = &trace.outcome else {
+                    continue;
+                };
+                for attempt in &planning.planning.attempts {
+                    if let PlanSearchOutcome::BudgetExhausted { expansions_used } =
+                        &attempt.outcome
+                    {
+                        let goal_debug = format!("{:?}", attempt.goal.kind);
+                        let goal_kind = goal_kind_dedup_key(&goal_debug);
+                        let location = world
+                            .effective_place(*agent_id)
+                            .unwrap_or(EntityId {
+                                slot: u32::MAX,
+                                generation: u32::MAX,
+                            });
+                        let key = BudgetExhaustionKey {
+                            agent_id: *agent_id,
+                            goal_kind,
+                            location,
+                        };
+                        if budget_exhaustion_seen.contains(&key) {
+                            continue;
+                        }
+                        budget_exhaustion_seen.insert(key);
+
+                        let needs = world
+                            .get_component_homeostatic_needs(*agent_id)
+                            .map_or(
+                                NeedsSample {
+                                    hunger: 0,
+                                    thirst: 0,
+                                    fatigue: 0,
+                                    bladder: 0,
+                                    dirtiness: 0,
+                                },
+                                |n| NeedsSample {
+                                    hunger: n.hunger.value(),
+                                    thirst: n.thirst.value(),
+                                    fatigue: n.fatigue.value(),
+                                    bladder: n.bladder.value(),
+                                    dirtiness: n.dirtiness.value(),
+                                },
+                            );
+
+                        let location_name = entity_display_name(world, location);
+                        let inventory = collect_inventory(world, *agent_id);
+                        let (known_entity_count, beliefs) =
+                            collect_beliefs(world, *agent_id);
+                        let place_contents = collect_place_contents(world, location);
+
+                        // Collect adjacent place contents
+                        let mut adjacent_contents: BTreeMap<String, Vec<String>> =
+                            BTreeMap::new();
+                        for neighbor in world.topology().neighbors(location) {
+                            let neighbor_name = entity_display_name(world, neighbor);
+                            let contents = collect_place_contents(world, neighbor);
+                            if !contents.is_empty() {
+                                adjacent_contents.insert(neighbor_name, contents);
+                            }
+                        }
+
+                        let cognitive = world.get_component_cognitive_profile(*agent_id);
+                        let exec_budget = world.get_component_execution_budget(*agent_id);
+
+                        let (total_candidates, max_depth_reached) =
+                            compute_search_metrics(&attempt.expansion_summaries);
+
+                        budget_exhaustion_snapshots.push(BudgetExhaustionSnapshot {
+                            tick: current_tick.0,
+                            agent_id: *agent_id,
+                            agent_name: agent_name.clone(),
+                            goal_debug: goal_debug.clone(),
+                            needs,
+                            location,
+                            location_name,
+                            inventory,
+                            beliefs,
+                            known_entity_count,
+                            place_contents,
+                            adjacent_contents,
+                            max_node_expansions: cognitive
+                                .map_or(224, |c| c.max_node_expansions),
+                            max_plan_depth: cognitive.map_or(10, |c| c.max_plan_depth),
+                            max_candidates_per_expansion: cognitive
+                                .map_or(0, |c| c.max_candidates_per_expansion),
+                            max_prerequisite_locations: exec_budget
+                                .map_or(2, |b| b.max_prerequisite_locations),
+                            beam_width: exec_budget.map_or(5, |b| b.beam_width),
+                            preferred_operator_boost: exec_budget
+                                .map_or(0, |b| b.preferred_operator_boost),
+                            expansions_used: *expansions_used,
+                            max_depth_reached,
+                            total_candidates,
+                        });
+                    }
+                }
+            }
+        }
+
         // Progress indicator
         if tick_num > 0 && tick_num % 100 == 0 {
             eprintln!("  tick {tick_num}/{}", cli.ticks);
@@ -1778,6 +2187,7 @@ fn main() {
         &perception_trace,
         sim.world(),
         &driver,
+        &budget_exhaustion_snapshots,
     );
 
     // Ensure parent directory exists

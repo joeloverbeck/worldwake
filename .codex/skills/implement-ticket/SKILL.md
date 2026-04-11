@@ -34,6 +34,7 @@ For straightforward shared-type additive tickets (new field on an existing struc
 Single-file planner-root, snapshot-completeness, planner-traceability, or AI carriage-path tickets still use the full workflow when the contract under audit crosses the planner boundary even if the eventual edit surface stays narrow and local.
 If a ticket appears to qualify for the small/local fast path by edit surface but also touches planner-root, snapshot-completeness, planner-traceability, or AI carriage-path contracts, this planner-boundary exception wins and the ticket uses the full workflow.
 Golden E2E tickets motivated by planner failures, observer reports, or scenario-specific regressions also use the full workflow even when the landed edit surface is one test file and the ticket remains test-only.
+When a golden or planner test-only ticket must create a new integration test file because the cited sibling substrate has not landed yet, the current ticket may absorb only the narrow local scaffolding needed to make its own proof surface real: file-local topology builders, focused setup helpers, and test-local fixture utilities. Do not silently absorb the sibling ticket's substantive scenarios or broader domain coverage. Record the deviation in reassessment and closeout, and keep the remaining sibling ownership explicit.
 
 **All other tickets** — use the full workflow below (Steps 1-8).
 
@@ -53,8 +54,10 @@ When the ticket was authored by `/spec-to-tickets` in the current session from a
 ### 2. Reassess assumptions before coding
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. If a dependency ticket has already been completed and archived, rewrite `Deps` to the live archived path instead of leaving a stale active-ticket reference. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
+If a dependency ticket has not landed and the missing piece is only narrow local substrate required to make the current ticket's owned proof surface executable, you may absorb that substrate without stopping: create the minimal local helper/file scaffolding, keep sibling substantive coverage out of scope, and update the current ticket to record the dependency mismatch and absorbed boundary. If the missing dependency would require adopting the sibling ticket's substantive contract, stop and use 1-3-1 instead.
 
 When a ticket is motivated by an observer report, golden failure, or named scenario condition, verify the exact motivating substrate before distilling the harness or fixture. Confirm the scenario file, named places/entities, travel graph, and the reported failure location/path still match the ticket's execution narrative, then record what is preserved versus intentionally omitted in the distilled setup. Do not substitute a nearby prototype-world approximation when the ticket's claimed proof depends on a specific scenario/location condition.
+When existing lower-layer proof in the same domain already establishes the production contract under audit, cite that proof during reassessment and keep the current ticket scoped to the remaining golden/test-only delta rather than reopening production ownership without evidence.
 
 Before trusting the ticket as executable, cross-check its internal sections for contradictions. Reconcile conflicts between `Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, `Acceptance Criteria`, `Verification Layers`, and any explicit in/out-of-scope notes before coding. Treat `Out of Scope` and any explicit "no new variants", "tests only", or "Engine Changes: None" claims as first-class contradiction surfaces during reassessment. If those sections disagree about ownership, proof surface, or whether production changes are required, update the ticket first instead of carrying the contradiction into implementation.
 
@@ -153,6 +156,7 @@ Covered in `references/closeout.md` (Step 8 section).
 - Name exact files, symbols, layers, and invariants for non-trivial claims.
 - Treat tests, traces, event logs, and authoritative state as different proof surfaces.
 - Architectural contradictions: solve or escalate with 1-3-1 (see mismatch-handling.md, Escalation decision tree). Do not patch around them.
+- For new integration test files, verify that the focused command actually runs the intended tests. A selector matching only the binary/file stem can compile the target while executing zero tests; when the owned proof surface is the integration-test binary, prefer `cargo test -p <crate> --test <file_stem>` over a loose name filter.
 
 ## Example Usage
 
