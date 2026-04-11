@@ -551,6 +551,7 @@ mod tests {
             }),
             ComponentValue::CognitiveProfile(CognitiveProfile {
                 max_candidates_to_plan: 3,
+                max_candidates_per_expansion: 180,
                 max_plan_depth: 9,
                 snapshot_travel_horizon: 5,
                 max_node_expansions: 320,

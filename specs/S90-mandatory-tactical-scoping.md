@@ -213,7 +213,7 @@ pub max_candidates_per_expansion: u16,
 
 Default: `200`. This is well above the ~20-50 candidates expected under tactical scoping, and well below the 2000+ seen in the bypass path.
 
-**Scenario contract**: Add `max_candidates_per_expansion` to `CognitiveProfile` in `AgentDef` (universal, with default via `unwrap_or_default()`). `CognitiveProfile` is already in `AgentDef` and `spawn_agent()` — the new field is covered by the existing `Default` impl.
+**Scenario contract**: Add `max_candidates_per_expansion` to `CognitiveProfile` in `AgentDef` (universal, with default via `unwrap_or_default()`). `CognitiveProfile` is already in `AgentDef` and `spawn_agent()`, but explicit scenario `cognitive_profile` blocks also deserialize the full struct, so the new field must default cleanly for omitted-field RON inputs instead of relying only on runtime `Default`.
 
 **Search change** (`crates/worldwake-ai/src/search/mod.rs`):
 

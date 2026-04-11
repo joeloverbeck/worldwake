@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct CognitiveProfile {
     pub max_candidates_to_plan: u8,
+    #[serde(default = "default_max_candidates_per_expansion")]
+    pub max_candidates_per_expansion: u16,
     pub max_plan_depth: u8,
     pub snapshot_travel_horizon: u8,
     pub max_node_expansions: u16,
@@ -29,6 +31,7 @@ impl Default for CognitiveProfile {
     fn default() -> Self {
         Self {
             max_candidates_to_plan: 2,
+            max_candidates_per_expansion: default_max_candidates_per_expansion(),
             max_plan_depth: 8,
             snapshot_travel_horizon: 6,
             max_node_expansions: 224,
@@ -47,6 +50,10 @@ impl Default for CognitiveProfile {
 }
 
 impl Component for CognitiveProfile {}
+
+const fn default_max_candidates_per_expansion() -> u16 {
+    200
+}
 
 #[cfg(test)]
 mod tests {
@@ -70,6 +77,7 @@ mod tests {
         let profile = CognitiveProfile::default();
 
         assert_eq!(profile.max_candidates_to_plan, 2);
+        assert_eq!(profile.max_candidates_per_expansion, 200);
         assert_eq!(profile.max_plan_depth, 8);
         assert_eq!(profile.snapshot_travel_horizon, 6);
         assert_eq!(profile.max_node_expansions, 224);
@@ -92,6 +100,7 @@ mod tests {
     fn cognitive_profile_roundtrips_through_bincode() {
         let profile = CognitiveProfile {
             max_candidates_to_plan: 3,
+            max_candidates_per_expansion: 144,
             max_plan_depth: 10,
             snapshot_travel_horizon: 9,
             max_node_expansions: 512,

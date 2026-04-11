@@ -415,6 +415,14 @@ pub(crate) fn search_plan_with_trace_metadata(
         }
 
         let candidates_generated = candidates.len() as u16;
+        if candidates_generated > cognitive.max_candidates_per_expansion {
+            if let Some(barrier_plan) = best_barrier {
+                return PlanSearchResult::Found(Box::new(barrier_plan));
+            }
+            return PlanSearchResult::BudgetExhausted {
+                expansions_used: expansions,
+            };
+        }
 
         let mut terminal_successors = Vec::new();
         let mut successor_candidates = Vec::new();

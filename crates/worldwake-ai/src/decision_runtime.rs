@@ -346,6 +346,8 @@ mod tests {
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
             max_candidates_to_plan: reasoning.max_candidates_to_plan,
+            max_candidates_per_expansion: CognitiveProfile::default()
+                .max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,

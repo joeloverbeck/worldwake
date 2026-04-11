@@ -572,6 +572,51 @@ mod tests {
     }
 
     #[test]
+    fn test_scenario_def_cognitive_profile_missing_new_field_uses_default() {
+        let ron_str = r#"(
+            seed: 1,
+            places: [(name: "Nowhere", tags: [])],
+            agents: [
+                (
+                    name: "Planner",
+                    location: "Nowhere",
+                    control: Ai,
+                    cognitive_profile: (
+                        max_candidates_to_plan: 4,
+                        max_plan_depth: 10,
+                        snapshot_travel_horizon: 6,
+                        max_node_expansions: 300,
+                        switch_margin: 100,
+                        planning_switch_margin: 150,
+                        transient_block_ticks: 20,
+                        unknown_block_ticks: 5,
+                        structural_block_ticks: 200,
+                        initial_cooldown_ticks: 4,
+                        max_cooldown_ticks: 64,
+                        max_snapshot_entities_per_place: 50,
+                        speculative_acquisition: true,
+                        landmark_extraction_depth: 3,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let cognitive = def.agents[0]
+            .cognitive_profile
+            .expect("cognitive profile should deserialize");
+
+        assert_eq!(cognitive.max_candidates_to_plan, 4);
+        assert_eq!(
+            cognitive.max_candidates_per_expansion,
+            CognitiveProfile::default().max_candidates_per_expansion
+        );
+        assert_eq!(cognitive.max_plan_depth, 10);
+        assert!(cognitive.speculative_acquisition);
+        assert_eq!(cognitive.landmark_extraction_depth, 3);
+    }
+
+    #[test]
     fn test_patrol_route_def_deserializes_place_names() {
         let route: PatrolRouteDef = from_ron_str(
             r#"(
