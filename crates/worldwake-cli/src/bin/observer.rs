@@ -1879,6 +1879,7 @@ mod tests {
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 3 },
             target_belief_presence: TargetBeliefPresence::NotApplicable,
             strategic_plan: None,
+            tactical_goal: None,
             landmarks_extracted: 0,
             landmark_orderings: 0,
             binding_rejections: Vec::new(),

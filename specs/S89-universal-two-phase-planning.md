@@ -39,7 +39,7 @@ The S88 architecture works — strategic planning correctly identifies remote de
 | FND-28 (No Backward Compat) | Deletes `goal_supports_two_phase()` — the whitelist IS the backward-compatibility layer maintaining the old flat-search path alongside the new two-phase architecture. FND-28 mandates removing it, not maintaining both paths. |
 | FND-14 (Belief-Only Planning) | No change — `TravelToGoal` uses `effective_place()` from `PlanningState`, which reads belief surface only. |
 | FND-22 (Agent Diversity) | No change — per-agent `landmark_extraction_depth` and `preferred_operator_boost` continue to govern search behavior. |
-| FND-29 (Debuggability) | Decision trace records the active tactical goal variant (`TravelToGoal { destination }` or `AcquirePrerequisite { commodity, destination }`), answering "why did the agent scope its search to this location?" |
+| FND-29 (Debuggability) | Decision trace records the active tactical goal variant (`TravelToGoal { destination }`, `AcquirePrerequisite { commodity, destination }`, or the supported `Explore { destination }` fallback barrier), answering "why did the agent scope its search to this location?" |
 | FND-12 (Perf Compresses Computation) | Tactical scoping reduces candidate count from 1400-2600 to ~20-50 for remote goals. All lawfully reachable plans remain reachable — search is guided by travel advancement, not pruned of legal options. |
 
 ## Section H — Causal Hooks Declaration

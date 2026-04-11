@@ -1178,6 +1178,7 @@ pub(super) fn plan_search_result_to_trace(
                 })
                 .collect()
         }),
+        tactical_goal: trace_metadata.tactical_goal.clone(),
         landmarks_extracted: trace_metadata.landmarks_extracted,
         landmark_orderings: trace_metadata.landmark_orderings,
         target_belief_presence,
@@ -1534,6 +1535,10 @@ mod tests {
                         estimated_travel_ticks: 4,
                     }],
                 }),
+                tactical_goal: Some(
+                    "AcquirePrerequisite { commodity: Firewood, destination: EntityId(55) }"
+                        .to_string(),
+                ),
                 landmarks_extracted: 3,
                 landmark_orderings: 2,
             },
@@ -1543,6 +1548,10 @@ mod tests {
 
         assert_eq!(trace.landmarks_extracted, 3);
         assert_eq!(trace.landmark_orderings, 2);
+        assert_eq!(
+            trace.tactical_goal.as_deref(),
+            Some("AcquirePrerequisite { commodity: Firewood, destination: EntityId(55) }")
+        );
         let steps = trace
             .strategic_plan
             .as_ref()

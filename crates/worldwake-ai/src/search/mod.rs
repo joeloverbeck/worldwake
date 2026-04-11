@@ -46,6 +46,7 @@ use worldwake_sim::{
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SearchTraceMetadata {
     pub(crate) strategic_plan: Option<strategic::StrategicPlan>,
+    pub(crate) tactical_goal: Option<String>,
     pub(crate) landmarks_extracted: u16,
     pub(crate) landmark_orderings: u16,
 }
@@ -267,6 +268,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         goal,
         strategic_plan.as_ref().and_then(|plan| plan.steps.first()),
     );
+    trace_state.tactical_goal = tactical_goal.as_ref().map(|tg| format!("{tg:?}"));
     let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);
     frontier.push_regular(FrontierEntry::new(root_node_for_tactical(
         snapshot,

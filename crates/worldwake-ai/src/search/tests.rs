@@ -7945,6 +7945,16 @@ fn search_trace_metadata_records_two_phase_strategic_and_landmark_details() {
         strategic_plan.steps[0].destination,
         prototype_place_entity(PrototypePlace::OrchardFarm)
     );
+    assert_eq!(
+        trace_metadata.tactical_goal.as_deref(),
+        Some(
+            format!(
+                "AcquirePrerequisite {{ commodity: Firewood, destination: {:?} }}",
+                prototype_place_entity(PrototypePlace::OrchardFarm)
+            )
+            .as_str()
+        )
+    );
     assert!(
         trace_metadata.landmarks_extracted > 0,
         "two-phase production should extract landmarks"
@@ -8014,6 +8024,16 @@ fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
         result.is_found(),
         "zero-landmark mode should still find a plan"
     );
+    assert_eq!(
+        trace_metadata.tactical_goal.as_deref(),
+        Some(
+            format!(
+                "AcquirePrerequisite {{ commodity: Firewood, destination: {:?} }}",
+                prototype_place_entity(PrototypePlace::OrchardFarm)
+            )
+            .as_str()
+        )
+    );
     assert_eq!(trace_metadata.landmarks_extracted, 0);
     assert_eq!(trace_metadata.landmark_orderings, 0);
     assert!(
@@ -8022,6 +8042,59 @@ fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
             .all(|summary| summary.preferred_candidates == 0 && summary.landmark_heuristic == 0),
         "zero-landmark mode should keep preferred-candidate and landmark-heuristic trace fields at zero"
     );
+}
+
+#[test]
+fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
+    let actor = entity(1);
+    let town = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.effective_places.insert(actor, town);
+    view.entities_at.insert(town, vec![actor]);
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(300), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::Sleep),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([town]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        0,
+    );
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        Some(&mut trace_metadata),
+    );
+
+    assert!(result.is_found(), "local sleep planning should still succeed");
+    assert_eq!(trace_metadata.tactical_goal, None);
 }
 
 #[test]

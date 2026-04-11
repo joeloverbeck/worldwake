@@ -864,6 +864,8 @@ pub struct PlanAttemptTrace {
     /// Strategic itinerary produced for this search attempt, when the planner
     /// entered the two-phase path and the itinerary had concrete steps.
     pub strategic_plan: Option<Vec<StrategicStepTrace>>,
+    /// Active tactical barrier derived from the current strategic step, when present.
+    pub tactical_goal: Option<String>,
     /// Count of fact landmarks extracted for this attempt.
     pub landmarks_extracted: u16,
     /// Count of landmark orderings extracted for this attempt.
@@ -1600,6 +1602,9 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                             step.destination, step.sub_goal, step.estimated_travel_ticks
                         );
                     }
+                }
+                if let Some(tactical_goal) = &attempt.tactical_goal {
+                    let _ = write!(out, "\n  tactical goal: {tactical_goal}");
                 }
                 for exp in &attempt.expansion_summaries {
                     let satisfied_tag = if exp.found_goal_satisfied {
@@ -3482,6 +3487,7 @@ mod tests {
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 2 },
                     target_belief_presence: TargetBeliefPresence::NotApplicable,
                     strategic_plan: None,
+                    tactical_goal: None,
                     landmarks_extracted: 0,
                     landmark_orderings: 0,
                     binding_rejections: vec![],
@@ -3885,6 +3891,7 @@ mod tests {
                         sub_goal: "AcquirePrerequisite(Firewood)".to_string(),
                         estimated_travel_ticks: 3,
                     }]),
+                    tactical_goal: Some("TravelToGoal { destination: EntityId(8) }".to_string()),
                     landmarks_extracted: 2,
                     landmark_orderings: 1,
                     target_belief_presence: TargetBeliefPresence::Present,
@@ -4034,6 +4041,7 @@ mod tests {
             opportunity_anchor: OpportunityAnchor::Place(entity(9)),
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
             strategic_plan: None,
+            tactical_goal: None,
             landmarks_extracted: 0,
             landmark_orderings: 0,
             target_belief_presence: TargetBeliefPresence::NotApplicable,
