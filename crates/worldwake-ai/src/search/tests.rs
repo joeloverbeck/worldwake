@@ -1,8 +1,10 @@
-use super::candidates::relevant_action_defs;
+use super::candidates::{
+    apply_commodity_relevance_filter, relevant_action_defs, root_candidate_trace_from_candidate,
+};
 use super::{
-    FrontierEntry, SearchCandidate, SearchNode, compare_search_nodes, compute_heuristic,
-    prune_travel_away_from_goal, search_candidate_from_planner, search_candidates,
-    search_candidates_from_affordance,
+    FrontierEntry, SearchCandidate, SearchNode, TacticalGoal, compare_search_nodes,
+    compute_heuristic, prune_travel_away_from_goal, search_candidate_from_planner,
+    search_candidates, search_candidates_from_affordance,
 };
 use crate::goal_model::GoalKindPlannerExt;
 use crate::planner_ops::planner_only_candidates;
@@ -9198,6 +9200,590 @@ fn search_travel_to_goal_candidate_filter() {
             .iter()
             .all(|candidate| candidate.def_id != harvest_id),
         "irrelevant non-travel setup should be removed before departure"
+    );
+}
+
+#[test]
+fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candidates() {
+    let actor = entity(1);
+    let place = entity(10);
+    let bread_lot = entity(20);
+    let waste_lot = entity(21);
+    let workshop = entity(30);
+    let seller = entity(40);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, place, bread_lot, waste_lot, workshop, seller]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(place, EntityKind::Place);
+    view.kinds.insert(bread_lot, EntityKind::ItemLot);
+    view.kinds.insert(waste_lot, EntityKind::ItemLot);
+    view.kinds.insert(workshop, EntityKind::Place);
+    view.kinds.insert(seller, EntityKind::Agent);
+    view.effective_places.insert(actor, place);
+    view.effective_places.insert(bread_lot, place);
+    view.effective_places.insert(waste_lot, place);
+    view.effective_places.insert(workshop, place);
+    view.effective_places.insert(seller, place);
+    view.entities_at
+        .insert(place, vec![actor, bread_lot, waste_lot, workshop, seller]);
+    view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+    view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([place]),
+    };
+    let mut recipes = RecipeRegistry::new();
+    recipes.register(RecipeDefinition {
+        name: "Press Apples".to_string(),
+        inputs: vec![(CommodityKind::Grain, Quantity(1))],
+        outputs: vec![(CommodityKind::Apple, Quantity(1))],
+        work_ticks: NonZeroU32::new(3).unwrap(),
+        required_workstation_tag: Some(WorkstationTag::Mill),
+        required_tool_kinds: Vec::new(),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+    });
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let (registry, _handlers) = build_registry_with_recipes(&recipes);
+    let semantics_table = build_semantics_table(&registry);
+
+    let move_cargo_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let trade_id = registry
+        .iter()
+        .find(|def| def.name == "trade")
+        .map(|def| def.id)
+        .expect("trade action should be registered");
+    let craft_id = registry
+        .iter()
+        .find_map(|def| {
+            def.payload
+                .as_craft()
+                .is_some_and(|payload| {
+                    payload
+                        .outputs
+                        .iter()
+                        .any(|(commodity, _)| *commodity == CommodityKind::Apple)
+                })
+                .then_some(def.id)
+        })
+        .expect("apple craft action should be registered");
+
+    let mut candidates = vec![
+        SearchCandidate {
+            def_id: move_cargo_id,
+            authoritative_targets: vec![bread_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(bread_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(0),
+        },
+        SearchCandidate {
+            def_id: move_cargo_id,
+            authoritative_targets: vec![waste_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(waste_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(1),
+        },
+        SearchCandidate {
+            def_id: trade_id,
+            authoritative_targets: vec![seller],
+            planning_targets: vec![PlanningEntityRef::Authoritative(seller)],
+            payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+                counterparty: seller,
+                sale_lot: bread_lot,
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(2),
+        },
+        SearchCandidate {
+            def_id: trade_id,
+            authoritative_targets: vec![seller],
+            planning_targets: vec![PlanningEntityRef::Authoritative(seller)],
+            payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+                counterparty: seller,
+                sale_lot: waste_lot,
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(3),
+        },
+        SearchCandidate {
+            def_id: craft_id,
+            authoritative_targets: vec![workshop],
+            planning_targets: vec![PlanningEntityRef::Authoritative(workshop)],
+            payload_override: None,
+            planner_only: false,
+            trace_index: Some(4),
+        },
+    ];
+    let mut root_candidates = candidates
+        .iter()
+        .map(|candidate| {
+            root_candidate_trace_from_candidate(candidate, &registry, &semantics_table)
+        })
+        .collect::<Vec<_>>();
+
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        &goal,
+        &state,
+        None,
+        &semantics_table,
+        &registry,
+        &recipes,
+        Some(&mut root_candidates),
+    );
+
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.trace_index)
+            .collect::<Vec<_>>(),
+        vec![Some(0), Some(2)]
+    );
+    assert_eq!(
+        root_candidates[1].outcome,
+        crate::decision_trace::RootCandidateOutcome::Filtered(
+            crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                candidate_commodity: Some(CommodityKind::Waste),
+                goal_commodity: CommodityKind::Bread,
+            },
+        )
+    );
+    assert_eq!(
+        root_candidates[3].outcome,
+        crate::decision_trace::RootCandidateOutcome::Filtered(
+            crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                candidate_commodity: Some(CommodityKind::Waste),
+                goal_commodity: CommodityKind::Bread,
+            },
+        )
+    );
+    assert_eq!(
+        root_candidates[4].outcome,
+        crate::decision_trace::RootCandidateOutcome::Filtered(
+            crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                candidate_commodity: Some(CommodityKind::Apple),
+                goal_commodity: CommodityKind::Bread,
+            },
+        )
+    );
+}
+
+#[test]
+fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft() {
+    let actor = entity(1);
+    let place = entity(10);
+    let unknown_lot = entity(20);
+    let mill = entity(30);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, place, unknown_lot, mill]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(place, EntityKind::Place);
+    view.kinds.insert(unknown_lot, EntityKind::ItemLot);
+    view.kinds.insert(mill, EntityKind::Place);
+    view.effective_places.insert(actor, place);
+    view.effective_places.insert(unknown_lot, place);
+    view.effective_places.insert(mill, place);
+    view.entities_at
+        .insert(place, vec![actor, unknown_lot, mill]);
+
+    let mut recipes = RecipeRegistry::new();
+    let recipe_id = recipes.register(RecipeDefinition {
+        name: "Bake Bread".to_string(),
+        inputs: vec![(CommodityKind::Grain, Quantity(2))],
+        outputs: vec![(CommodityKind::Bread, Quantity(1))],
+        work_ticks: NonZeroU32::new(3).unwrap(),
+        required_workstation_tag: Some(WorkstationTag::Mill),
+        required_tool_kinds: Vec::new(),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+    });
+    let (registry, _handlers) = build_registry_with_recipes(&recipes);
+    let semantics_table = build_semantics_table(&registry);
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+
+    let travel_id = registry
+        .iter()
+        .find(|def| def.name == "travel")
+        .map(|def| def.id)
+        .expect("travel action should be registered");
+    let queue_id = registry
+        .iter()
+        .find(|def| def.name == "queue_for_facility_use")
+        .map(|def| def.id)
+        .expect("queue_for_facility_use action should be registered");
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let matching_craft_id = registry
+        .iter()
+        .find_map(|def| {
+            def.payload.as_craft().and_then(|payload| {
+                (payload
+                    .outputs
+                    .iter()
+                    .any(|(commodity, _)| *commodity == CommodityKind::Bread))
+                .then_some(def.id)
+            })
+        })
+        .expect("bread craft action should be registered");
+
+    let mut candidates = vec![
+        SearchCandidate {
+            def_id: travel_id,
+            authoritative_targets: vec![mill],
+            planning_targets: vec![PlanningEntityRef::Authoritative(mill)],
+            payload_override: None,
+            planner_only: false,
+            trace_index: None,
+        },
+        SearchCandidate {
+            def_id: queue_id,
+            authoritative_targets: vec![mill],
+            planning_targets: vec![PlanningEntityRef::Authoritative(mill)],
+            payload_override: Some(ActionPayload::QueueForFacilityUse(
+                QueueForFacilityUsePayload {
+                    intended_action: matching_craft_id,
+                },
+            )),
+            planner_only: false,
+            trace_index: None,
+        },
+        SearchCandidate {
+            def_id: pick_up_id,
+            authoritative_targets: vec![unknown_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(unknown_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: None,
+        },
+    ];
+
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        &goal,
+        &state,
+        None,
+        &semantics_table,
+        &registry,
+        &recipes,
+        None,
+    );
+
+    assert_eq!(candidates.len(), 3);
+}
+
+#[test]
+fn commodity_relevance_filter_bypasses_non_commodity_goals() {
+    let actor = entity(1);
+    let place = entity(10);
+    let lot = entity(20);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, place, lot]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(place, EntityKind::Place);
+    view.kinds.insert(lot, EntityKind::ItemLot);
+    view.effective_places.insert(actor, place);
+    view.effective_places.insert(lot, place);
+    view.entities_at.insert(place, vec![actor, lot]);
+    view.lot_commodities.insert(lot, CommodityKind::Waste);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::Sleep),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let (registry, _handlers) = build_registry();
+    let semantics_table = build_semantics_table(&registry);
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let original = SearchCandidate {
+        def_id: pick_up_id,
+        authoritative_targets: vec![lot],
+        planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
+        payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+            quantity: Quantity(1),
+        })),
+        planner_only: false,
+        trace_index: None,
+    };
+    let mut candidates = vec![original.clone()];
+
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        &goal,
+        &state,
+        None,
+        &semantics_table,
+        &registry,
+        &RecipeRegistry::new(),
+        None,
+    );
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].def_id, original.def_id);
+    assert_eq!(
+        candidates[0].authoritative_targets,
+        original.authoritative_targets
+    );
+}
+
+#[test]
+fn commodity_relevance_filter_uses_active_prerequisite_commodity_for_produce_goal() {
+    let actor = entity(1);
+    let place = entity(10);
+    let firewood_lot = entity(20);
+    let waste_lot = entity(21);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, place, firewood_lot, waste_lot]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(place, EntityKind::Place);
+    view.kinds.insert(firewood_lot, EntityKind::ItemLot);
+    view.kinds.insert(waste_lot, EntityKind::ItemLot);
+    view.effective_places.insert(actor, place);
+    view.effective_places.insert(firewood_lot, place);
+    view.effective_places.insert(waste_lot, place);
+    view.entities_at
+        .insert(place, vec![actor, firewood_lot, waste_lot]);
+    view.lot_commodities
+        .insert(firewood_lot, CommodityKind::Firewood);
+    view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
+
+    let mut recipes = RecipeRegistry::new();
+    let recipe_id = recipes.register(RecipeDefinition {
+        name: "Bake Bread".to_string(),
+        inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+        outputs: vec![(CommodityKind::Bread, Quantity(1))],
+        work_ticks: NonZeroU32::new(3).unwrap(),
+        required_workstation_tag: Some(WorkstationTag::Mill),
+        required_tool_kinds: Vec::new(),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+    });
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let (registry, _handlers) = build_registry();
+    let semantics_table = build_semantics_table(&registry);
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let mut candidates = vec![
+        SearchCandidate {
+            def_id: pick_up_id,
+            authoritative_targets: vec![firewood_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(firewood_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: None,
+        },
+        SearchCandidate {
+            def_id: pick_up_id,
+            authoritative_targets: vec![waste_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(waste_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: None,
+        },
+    ];
+    let tactical_goal = TacticalGoal::AcquirePrerequisite {
+        commodity: CommodityKind::Firewood,
+        destination: place,
+    };
+
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        &goal,
+        &state,
+        Some(&tactical_goal),
+        &semantics_table,
+        &registry,
+        &recipes,
+        None,
+    );
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].authoritative_targets, vec![firewood_lot]);
+}
+
+#[test]
+fn search_pipeline_records_commodity_irrelevant_root_candidate_filtering() {
+    let actor = entity(1);
+    let seller = entity(2);
+    let market = entity(10);
+    let bread_lot = entity(20);
+    let waste_lot = entity(21);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, seller, market, bread_lot, waste_lot]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(seller, EntityKind::Agent);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(bread_lot, EntityKind::ItemLot);
+    view.kinds.insert(waste_lot, EntityKind::ItemLot);
+    view.effective_places.insert(actor, market);
+    view.effective_places.insert(seller, market);
+    view.effective_places.insert(bread_lot, market);
+    view.effective_places.insert(waste_lot, market);
+    view.entities_at
+        .insert(market, vec![actor, seller, bread_lot, waste_lot]);
+    view.trade_profiles
+        .insert(actor, sample_trade_disposition_profile());
+    view.merchandise_profiles.insert(
+        seller,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Waste]),
+            home_facility: Some(market),
+        },
+    );
+    view.commodity_quantities
+        .insert((actor, CommodityKind::Coin), Quantity(3));
+    view.commodity_quantities
+        .insert((seller, CommodityKind::Bread), Quantity(1));
+    view.commodity_quantities
+        .insert((seller, CommodityKind::Waste), Quantity(1));
+    view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+    view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
+    view.direct_possessors.insert(bread_lot, seller);
+    view.direct_possessors.insert(waste_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .extend([bread_lot, waste_lot]);
+    view.listed_lots
+        .insert((market, CommodityKind::Bread), vec![bread_lot]);
+    view.listed_lots
+        .insert((market, CommodityKind::Waste), vec![waste_lot]);
+    view.lot_sellers.insert(bread_lot, seller);
+    view.lot_sellers.insert(waste_lot, seller);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([market]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let mut expansions = Vec::new();
+
+    let _result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut expansions),
+    );
+
+    let root = expansions
+        .iter()
+        .find(|summary| summary.depth == 0)
+        .expect("root expansion summary should be recorded");
+    assert!(
+        root.root_candidates.iter().any(|candidate| {
+            matches!(
+                candidate.outcome,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                        candidate_commodity: Some(CommodityKind::Waste),
+                        goal_commodity: CommodityKind::Bread,
+                    },
+                )
+            )
+        }),
+        "root trace should record commodity-irrelevant candidate pruning"
     );
 }
 

@@ -13,8 +13,8 @@ use crate::{
 #[cfg(test)]
 use candidates::search_candidate_from_planner;
 use candidates::{
-    SearchCandidate, root_candidate_payload_status, search_candidates,
-    search_candidates_from_affordance, unsupported_goal,
+    SearchCandidate, apply_commodity_relevance_filter, root_candidate_payload_status,
+    search_candidates, search_candidates_from_affordance, unsupported_goal,
 };
 use frontier::{DualFrontier, FrontierEntry, compare_search_nodes};
 use heuristic::combined_relevant_places_with_guidance;
@@ -372,6 +372,16 @@ pub(crate) fn search_plan_with_trace_metadata(
         ) {
             candidates.extend(extra_candidates);
         }
+        apply_commodity_relevance_filter(
+            &mut candidates,
+            goal,
+            &node.state,
+            active_tactical_goal,
+            semantics_table,
+            registry,
+            recipes,
+            record_root_candidates.then_some(&mut root_candidates),
+        );
         apply_tactical_candidate_filter(
             &mut candidates,
             goal,

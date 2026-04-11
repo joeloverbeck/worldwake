@@ -12,7 +12,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, FacilityBeliefView,
-    QueueForFacilityUsePayload, SpatialBeliefView, get_affordances_for_defs,
+    InventoryBeliefView, QueueForFacilityUsePayload, RecipeRegistry, SpatialBeliefView,
+    get_affordances_for_defs,
 };
 
 use super::SearchNode;
@@ -294,6 +295,157 @@ pub(super) fn search_candidates(
         filtered.push(candidate);
     }
     filtered
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn apply_commodity_relevance_filter(
+    candidates: &mut Vec<SearchCandidate>,
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    tactical_goal: Option<&super::TacticalGoal>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    recipes: &RecipeRegistry,
+    root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+) {
+    let Some(goal_commodity) = tactical_goal
+        .and_then(|goal| match goal {
+            super::TacticalGoal::AcquirePrerequisite { commodity, .. }
+            | super::TacticalGoal::SocialQuery { commodity, .. } => Some(*commodity),
+            super::TacticalGoal::Explore { .. } | super::TacticalGoal::TravelToGoal { .. } => None,
+        })
+        .or_else(|| goal.key.kind.target_commodity(recipes))
+    else {
+        return;
+    };
+
+    let mut root_candidates = root_candidates;
+    candidates.retain(|candidate| {
+        let Some(semantics) = semantics_table.get(&candidate.def_id) else {
+            return true;
+        };
+        let (keep, candidate_commodity) = commodity_filter_outcome(
+            candidate,
+            semantics.op_kind,
+            state,
+            registry,
+            goal_commodity,
+        );
+        if !keep {
+            update_root_candidate_outcome(
+                &mut root_candidates,
+                candidate.trace_index,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                        candidate_commodity,
+                        goal_commodity,
+                    },
+                ),
+            );
+        }
+        keep
+    });
+}
+
+fn commodity_filter_outcome(
+    candidate: &SearchCandidate,
+    op_kind: PlannerOpKind,
+    state: &PlanningState<'_>,
+    registry: &ActionDefRegistry,
+    goal_commodity: worldwake_core::CommodityKind,
+) -> (bool, Option<worldwake_core::CommodityKind>) {
+    match op_kind {
+        PlannerOpKind::MoveCargo => match candidate
+            .authoritative_targets
+            .first()
+            .copied()
+            .and_then(|target| state.item_lot_commodity(target))
+        {
+            Some(candidate_commodity) => (
+                candidate_commodity == goal_commodity,
+                Some(candidate_commodity),
+            ),
+            None => (true, None),
+        },
+        PlannerOpKind::Trade => match candidate
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_trade)
+            .and_then(|payload| state.item_lot_commodity(payload.sale_lot))
+        {
+            Some(candidate_commodity) => (
+                candidate_commodity == goal_commodity,
+                Some(candidate_commodity),
+            ),
+            None => (true, None),
+        },
+        PlannerOpKind::QueueForFacilityUse => {
+            let Some(intended_action) = candidate
+                .payload_override
+                .as_ref()
+                .and_then(ActionPayload::as_queue_for_facility_use)
+                .map(|payload| payload.intended_action)
+            else {
+                return (true, None);
+            };
+            let Some(payload) = registry.get(intended_action).map(|def| &def.payload) else {
+                return (true, None);
+            };
+            payload_commodity_filter_outcome(payload, state, candidate, goal_commodity)
+        }
+        PlannerOpKind::Harvest | PlannerOpKind::Craft => {
+            let Some(payload) = candidate
+                .payload_override
+                .as_ref()
+                .or_else(|| registry.get(candidate.def_id).map(|def| &def.payload))
+            else {
+                return (true, None);
+            };
+            payload_commodity_filter_outcome(payload, state, candidate, goal_commodity)
+        }
+        _ => (true, None),
+    }
+}
+
+fn payload_commodity_filter_outcome(
+    payload: &ActionPayload,
+    state: &PlanningState<'_>,
+    candidate: &SearchCandidate,
+    goal_commodity: worldwake_core::CommodityKind,
+) -> (bool, Option<worldwake_core::CommodityKind>) {
+    if let Some(harvest) = payload.as_harvest() {
+        let candidate_commodity = harvest.output_commodity;
+        return (
+            candidate_commodity == goal_commodity,
+            Some(candidate_commodity),
+        );
+    }
+
+    if let Some(craft) = payload.as_craft() {
+        let contains_goal = craft
+            .inputs
+            .iter()
+            .chain(craft.outputs.iter())
+            .any(|(commodity, _)| *commodity == goal_commodity);
+        let candidate_commodity = craft
+            .outputs
+            .first()
+            .or_else(|| craft.inputs.first())
+            .map(|(commodity, _)| *commodity);
+        return (contains_goal, candidate_commodity);
+    }
+
+    if let Some(target) = candidate.authoritative_targets.first().copied()
+        && let Some(candidate_commodity) =
+            state.resource_source(target).map(|source| source.commodity)
+    {
+        return (
+            candidate_commodity == goal_commodity,
+            Some(candidate_commodity),
+        );
+    }
+
+    (true, None)
 }
 
 fn goal_synthesized_candidates(

@@ -98,8 +98,11 @@ fn apply_commodity_relevance_filter(
     candidates: &mut Vec<SearchCandidate>,
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
+    tactical_goal: Option<&TacticalGoal>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
     recipes: &RecipeRegistry,
+    root_candidates: Option<&mut Vec<RootCandidateTrace>>,
 );
 ```
 
@@ -109,17 +112,19 @@ Filter rules per `PlannerOpKind`:
 |--------|-------------|---------------------|
 | Travel | Always pass | N/A — location scoping is tactical filter's job |
 | MoveCargo | Pass if target entity's commodity kind == goal commodity | `state.item_lot_commodity(target)` |
-| Trade | Pass if trade payload's commodity == goal commodity | Payload's `commodity` field |
-| QueueForFacilityUse | Pass if facility's resource source produces goal commodity | `state.resource_source(target).commodity` |
-| Harvest | Pass if resource source yields goal commodity | `state.resource_source(target).commodity` |
-| Craft | Pass if recipe has goal commodity as input or output | Recipe lookup via payload's `recipe_id` |
+| Trade | Pass if the trade payload's `sale_lot` resolves to the goal commodity | `state.item_lot_commodity(payload.sale_lot)` |
+| QueueForFacilityUse | Resolve the queued intended action and apply that action's harvest/craft commodity logic | `ActionDefRegistry` lookup on `QueueForFacilityUsePayload.intended_action` |
+| Harvest | Pass if harvest output commodity matches the active goal commodity; unknown payload falls back conservatively | `HarvestActionPayload.output_commodity` with conservative fallback |
+| Craft | Pass if craft inputs or outputs include the active goal commodity | `CraftActionPayload.inputs` / `outputs` |
 | Heal | Always pass (terminal op for TreatWounds) | N/A |
 | AskWitness | Always pass (epistemic ops serve goal indirectly) | N/A |
 | All others | Always pass (non-acquisition ops are rare in ACQUIRE_OPS context) | N/A |
 
 **Bypass condition**: If `goal.key.kind.target_commodity()` returns `None`, skip the filter entirely. Non-commodity goals are unaffected.
 
-**Integration point**: Call `apply_commodity_relevance_filter` in `search_plan_with_trace_metadata()` (`search/mod.rs`, between lines 363-374), after `search_candidates()` returns and before the tactical candidate filter runs. This avoids widening `search_candidates()`'s already-large parameter list (11 parameters). `RecipeRegistry` is already available at this call site (`search/mod.rs:135`).
+**Active tactical contract note**: when tactical search is currently solving a staged commodity subgoal such as `AcquirePrerequisite(Firewood)` or `SocialQuery(Firewood)`, the filter must use that active tactical commodity instead of the root goal's top-level commodity. Otherwise two-phase `ProduceCommodity` search can incorrectly prune lawful prerequisite acquisition branches.
+
+**Integration point**: Call `apply_commodity_relevance_filter` in `search_plan_with_trace_metadata()` (`search/mod.rs`), after `search_candidates()` returns and any `social_query_candidates()` are appended, and before the tactical candidate filter runs. This keeps root-candidate generation, commodity relevance pruning, and tactical location scoping as separate layers.
 
 ### D3: Decision trace integration
 
@@ -136,13 +141,14 @@ Record filtered candidates in the existing `root_candidates` trace sink so decis
 
 ### D4: Golden test rewrite
 
-After D1-D3 land, the 6 active `_budgets_exhaust` tests should fail (plans now found within budget). Rewrite all 12 tests in `golden_budget_exhaustion_snapshots.rs`:
+After D1-D3 land, the old S93 budget-exhaustion expectations become stale. Rewrite all 12 tests in `golden_budget_exhaustion_snapshots.rs`:
 
-**Phase 1 tests** (currently assert `BudgetExhausted`) — convert to regression guards:
-- Assert `search_plan` returns `Found` (not `BudgetExhausted`)
+**Phase 1 tests** (currently still proving stale exhaustion behavior) — convert to regression guards:
+- Assert `search_plan` returns `Found` where the scenario is now truly solvable within budget
 - Assert expansion count is below a reasonable threshold (e.g., < budget limit)
 - Assert the returned plan contains commodity-relevant actions
 - Keep the exact same snapshot setup (same beliefs, same entities, same cognitive profiles)
+- Where the scenario remains unsolved after pruning, assert the correct post-filter failure mode (`FrontierExhausted` or `BudgetExhausted`) with documentation of the remaining infeasibility or residual search gap
 
 **Phase 2 tests** (currently `#[ignore]`) — un-ignore and verify:
 - Remove `#[ignore = "..."]` attribute

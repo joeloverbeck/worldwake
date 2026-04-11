@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — test-only changes
-**Deps**: archive/tickets/S94COMRELCAN-001.md, S94COMRELCAN-002
+**Deps**: archive/tickets/S94COMRELCAN-001.md, archive/tickets/S94COMRELCAN-002.md
 
 ## Problem
 
@@ -12,8 +12,8 @@ After the commodity-relevance filter lands (tickets 001+002), the 6 active S93 g
 
 ## Assumption Reassessment (2026-04-11)
 
-1. `crates/worldwake-ai/tests/golden_budget_exhaustion_snapshots.rs` exists with 12 tests: 6 active (asserting `BudgetExhausted` via `assert_budget_exhausted()`) and 6 ignored (with `#[ignore = "..."]` attributes asserting `Found` with action chain execution).
-2. Active tests: `merchant_vara_water_at_thornwall_budgets_exhaust`, `guard_theron_water_at_thornwall_budgets_exhaust`, `merchant_vara_apple_at_dusty_trail_budgets_exhaust`, `kael_water_at_thornwall_late_game_budgets_exhaust`, `merchant_vara_treat_wounds_at_dusty_trail_budgets_exhaust`, `kael_treat_wounds_vara_at_dusty_trail_budgets_exhaust`.
+1. `crates/worldwake-ai/tests/golden_budget_exhaustion_snapshots.rs` exists with 12 tests: 6 active stale-exhaustion proofs and 6 ignored `*_found_after_fix` tests. One active test (`kael_treat_wounds_vara_at_dusty_trail_budgets_exhaust`) now already accepts `BudgetExhausted` or `FrontierExhausted` after ticket `002` reduced candidate pressure.
+2. Active tests: `merchant_vara_water_at_thornwall_budgets_exhaust`, `guard_theron_water_at_thornwall_budgets_exhaust`, `merchant_vara_apple_at_dusty_trail_budgets_exhaust`, `kael_water_at_thornwall_late_game_budgets_exhaust`, `merchant_vara_treat_wounds_at_dusty_trail_budgets_exhaust`, `kael_treat_wounds_vara_at_dusty_trail_budgets_exhaust`. Their current expectation surface is no longer uniform pure-`BudgetExhausted`, so this ticket owns normalizing them into honest post-filter regression guards.
 3. Ignored tests: `merchant_vara_water_at_thornwall_found_after_fix`, `guard_theron_water_at_thornwall_found_after_fix`, `merchant_vara_apple_at_dusty_trail_found_after_fix`, `kael_water_at_thornwall_late_game_found_after_fix`, `merchant_vara_treat_wounds_at_dusty_trail_found_after_fix`, `kael_treat_wounds_vara_at_dusty_trail_found_after_fix`.
 4. Test 3 (`merchant_vara_apple_at_dusty_trail`): Apples are at Eldergrove Forest (2 hops away) and the agent doesn't know about Eldergrove. The commodity filter reduces irrelevant candidates but the plan may remain infeasible under belief constraints. Spec allows asserting the correct failure mode if it still budget-exhausts.
 5. S93 candidate count baselines (from spec): 1483, 2085, 2511, 2657, 5739, 4151. Post-filter, candidate counts should be 60-90% lower per spec design goals.
@@ -38,7 +38,7 @@ After the commodity-relevance filter lands (tickets 001+002), the 6 active S93 g
 In `crates/worldwake-ai/tests/golden_budget_exhaustion_snapshots.rs`:
 
 For each of the 6 active tests:
-- Change assertion from `assert_budget_exhausted()` (or equivalent `BudgetExhausted` match) to assert `search_plan` returns `Found`
+- Replace the stale exhaustion assertion with the honest post-filter contract for that scenario: `Found` where the scenario is now solvable, or the correct residual `FrontierExhausted` / `BudgetExhausted` contract where the scenario remains unsolved
 - Add assertion that expansion count is below the budget limit (e.g., `< 224` or `< 300` depending on the agent's cognitive profile)
 - Add assertion that the returned plan contains commodity-relevant actions
 - Keep the exact same snapshot setup unchanged
@@ -74,7 +74,7 @@ If `merchant_vara_apple_at_dusty_trail` still budget-exhausts or frontier-exhaus
 ### Tests That Must Pass
 
 1. All 12 tests in `golden_budget_exhaustion_snapshots.rs` pass with 0 ignored
-2. At least 10 of 12 tests assert `Found` (Test 3 pair may assert correct infeasibility)
+2. At least 10 of 12 tests assert `Found` (the known infeasible pair and any other still-unsolved residual scenario may instead assert the correct post-filter failure mode)
 3. Candidate counts in regression guard tests show significant reduction from S93 baselines
 4. Decision traces for affected goals show `CommodityIrrelevant` filter entries
 5. Existing suite: `cargo test --workspace`

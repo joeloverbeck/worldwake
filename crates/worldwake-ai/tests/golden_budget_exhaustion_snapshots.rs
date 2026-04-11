@@ -1106,6 +1106,23 @@ fn assert_budget_exhausted(result: PlanSearchResult, minimum_expansions: u16, co
     }
 }
 
+fn assert_budget_or_frontier_exhausted(
+    result: PlanSearchResult,
+    minimum_expansions: u16,
+    context: &str,
+) {
+    match result {
+        PlanSearchResult::BudgetExhausted { expansions_used }
+        | PlanSearchResult::FrontierExhausted { expansions_used } => {
+            assert!(
+                expansions_used >= minimum_expansions,
+                "{context}: expected at least {minimum_expansions} expansions before exhaustion, got {expansions_used}"
+            );
+        }
+        other => panic!("{context}: expected BudgetExhausted or FrontierExhausted, got {other:?}"),
+    }
+}
+
 fn setup_merchant_vara_treat_wounds_snapshot() -> (GoldenHarness, EntityId) {
     let tick = Tick(456);
     let mut h = build_pathology_harness(worldwake_core::Seed([145; 32]));
@@ -1860,10 +1877,10 @@ fn kael_treat_wounds_vara_at_dusty_trail_budgets_exhaust() {
         ExecutionBudget::default(),
     );
 
-    assert_budget_exhausted(
+    assert_budget_or_frontier_exhausted(
         result,
-        224,
-        "Kael TreatWounds snapshot should exhaust the expansion budget",
+        54,
+        "Kael TreatWounds snapshot should still exhaust search after the commodity filter",
     );
 }
 
