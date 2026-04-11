@@ -53,6 +53,7 @@ When the ticket was authored by `/spec-to-tickets` in the current session from a
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
 For cross-crate accessor, trait-surface, or API-surface tickets, verify the real downstream caller-facing boundary before coding, not just the immediate trait or type named in the ticket. If live callers consume the data through a broader wrapper, supertrait, blanket impl, or facade surface, correct the ticket to that owned boundary before editing code.
+When a ticket adds internal diagnostic, trace, or metadata carriage, preserve existing public/external call signatures unless the ticket explicitly owns that API change; prefer an internal helper, wrapper, or traced variant for the new carrier rather than widening public fallout by default.
 
 When the ticket includes a proposed function signature, helper sketch, or API snippet, verify that the live helper contract actually supports that shape. If the current branch requires an additional dependency, carrier, or argument to use the cited helper lawfully, correct the signature sketch and matching `What to Change` snippets during reassessment before implementation.
 

@@ -784,6 +784,10 @@ pub struct SearchExpansionSummary {
     /// Whether a `GoalSatisfied` terminal was found at this expansion
     /// (search returns immediately in this case).
     pub found_goal_satisfied: bool,
+    /// Candidates marked as preferred by landmark guidance before beam truncation.
+    pub preferred_candidates: u16,
+    /// Current actionable-landmark count at this expansion boundary.
+    pub landmark_heuristic: u32,
     /// Travel-pruning facts captured before successor construction when the
     /// expansion had spatially guided travel choices.
     pub travel_pruning: Option<TravelPruningTrace>,
@@ -857,12 +861,26 @@ pub struct PlanAttemptTrace {
     pub goal: GoalKey,
     pub opportunity_anchor: OpportunityAnchor,
     pub outcome: PlanSearchOutcome,
+    /// Strategic itinerary produced for this search attempt, when the planner
+    /// entered the two-phase path and the itinerary had concrete steps.
+    pub strategic_plan: Option<Vec<StrategicStepTrace>>,
+    /// Count of fact landmarks extracted for this attempt.
+    pub landmarks_extracted: u16,
+    /// Count of landmark orderings extracted for this attempt.
+    pub landmark_orderings: u16,
     /// Whether the actor had a planning-time belief entry for the goal's
     /// target entity. `NotApplicable` is used for targetless goals.
     pub target_belief_presence: TargetBeliefPresence,
     pub binding_rejections: Vec<BindingRejection>,
     /// Per-expansion summaries. Empty when tracing is disabled.
     pub expansion_summaries: Vec<SearchExpansionSummary>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrategicStepTrace {
+    pub destination: EntityId,
+    pub sub_goal: String,
+    pub estimated_travel_ticks: u32,
 }
 
 /// Outcome of a plan search for one goal.
@@ -1567,6 +1585,22 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                         rej.rejected_targets, rej.required_target
                     );
                 }
+                if let Some(steps) = &attempt.strategic_plan {
+                    let _ = write!(
+                        out,
+                        "\n  strategic plan: {} steps, {} landmarks, {} orderings",
+                        steps.len(),
+                        attempt.landmarks_extracted,
+                        attempt.landmark_orderings
+                    );
+                    for step in steps {
+                        let _ = write!(
+                            out,
+                            "\n    strategic step: dest={:?} sub_goal={} travel={}",
+                            step.destination, step.sub_goal, step.estimated_travel_ticks
+                        );
+                    }
+                }
                 for exp in &attempt.expansion_summaries {
                     let satisfied_tag = if exp.found_goal_satisfied {
                         " satisfied"
@@ -1575,9 +1609,11 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                     };
                     let _ = write!(
                         out,
-                        "\n  search expansion d={}: {} candidates, {} skipped, {} terminal{}, {}→{} beam",
+                        "\n  search expansion d={}: {} candidates, {} preferred, h_landmark={}, {} skipped, {} terminal{}, {}→{} beam",
                         exp.depth,
                         exp.candidates_generated,
+                        exp.preferred_candidates,
+                        exp.landmark_heuristic,
                         exp.candidates_skipped,
                         exp.terminal_successors,
                         satisfied_tag,
@@ -3445,6 +3481,9 @@ mod tests {
                     opportunity_anchor: OpportunityAnchor::Place(entity(42)),
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 2 },
                     target_belief_presence: TargetBeliefPresence::NotApplicable,
+                    strategic_plan: None,
+                    landmarks_extracted: 0,
+                    landmark_orderings: 0,
                     binding_rejections: vec![],
                     expansion_summaries: vec![],
                 }],
@@ -3841,6 +3880,13 @@ mod tests {
                     goal: GoalKey::new(GoalKind::ClaimOffice { office: entity(4) }),
                     opportunity_anchor: OpportunityAnchor::None,
                     outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 1 },
+                    strategic_plan: Some(vec![StrategicStepTrace {
+                        destination: entity(8),
+                        sub_goal: "AcquirePrerequisite(Firewood)".to_string(),
+                        estimated_travel_ticks: 3,
+                    }]),
+                    landmarks_extracted: 2,
+                    landmark_orderings: 1,
                     target_belief_presence: TargetBeliefPresence::Present,
                     binding_rejections: vec![],
                     expansion_summaries: vec![SearchExpansionSummary {
@@ -3854,6 +3900,8 @@ mod tests {
                         non_terminal_before_beam: 0,
                         non_terminal_after_beam: 0,
                         found_goal_satisfied: false,
+                        preferred_candidates: 1,
+                        landmark_heuristic: 2,
                         travel_pruning: None,
                         prerequisite_guidance: None,
                         root_candidates: vec![RootCandidateTrace {
@@ -3931,11 +3979,15 @@ mod tests {
 
         let summary = format_outcome(&outcome, &action_defs);
         assert!(summary.contains("root omission: PressForceClaim -> NoMatchingActionDef"));
+        assert!(summary.contains("strategic plan: 1 steps, 2 landmarks, 1 orderings"));
+        assert!(summary.contains("strategic step: dest="));
         assert!(
             summary.contains(
                 "root candidate: trade op=Trade payload=GoalSynthesized outcome=Skipped(DurationEstimateFailed { dependency: ActorTradeDisposition })"
             )
         );
+        assert!(summary.contains("1 preferred"));
+        assert!(summary.contains("h_landmark=2"));
     }
 
     #[test]
@@ -3981,6 +4033,9 @@ mod tests {
             goal: GoalKey::new(GoalKind::Sleep),
             opportunity_anchor: OpportunityAnchor::Place(entity(9)),
             outcome: PlanSearchOutcome::FrontierExhausted { expansions_used: 5 },
+            strategic_plan: None,
+            landmarks_extracted: 0,
+            landmark_orderings: 0,
             target_belief_presence: TargetBeliefPresence::NotApplicable,
             binding_rejections: rejections,
             expansion_summaries: vec![],
@@ -4003,6 +4058,8 @@ mod tests {
             non_terminal_before_beam: 11,
             non_terminal_after_beam: 8,
             found_goal_satisfied: false,
+            preferred_candidates: 3,
+            landmark_heuristic: 2,
             travel_pruning: Some(TravelPruningTrace {
                 current_place: entity(1),
                 current_remaining_travel_ticks: 4,
@@ -4038,6 +4095,8 @@ mod tests {
         assert_eq!(summary.terminal_successors, 2);
         assert_eq!(summary.non_terminal_before_beam, 11);
         assert_eq!(summary.non_terminal_after_beam, 8);
+        assert_eq!(summary.preferred_candidates, 3);
+        assert_eq!(summary.landmark_heuristic, 2);
         assert!(!summary.found_goal_satisfied);
         assert!(summary.travel_pruning.is_some());
 

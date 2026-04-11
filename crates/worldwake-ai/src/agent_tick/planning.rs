@@ -4,16 +4,17 @@ use crate::decision_trace::{
     PlannedStepSummary, RankedGoalSummary, SameGoalPlanningStopReason, SameGoalPlanningTrace,
     SelectedPlanReplacementKind, SelectedPlanReplacementTrace, SelectedPlanSearchProvenance,
     SelectedPlanSource, SelectedPlanTrace, SelectionTrace, SideBenefitTrace,
+    StrategicStepTrace,
     SnapshotContinuationOutcome, SnapshotContinuationTrace, TargetBeliefPresence,
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
-use crate::search::PlanSearchResult;
+use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata};
 use crate::{
     AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionRetryState, OpportunityKey,
     PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics, RankedGoal, authoritative_target,
-    build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step, search_plan,
+    build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step,
     select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,6 +34,7 @@ use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
 pub(crate) struct CandidatePlanSearch {
     pub opportunity: OpportunityKey,
     pub result: PlanSearchResult,
+    pub trace_metadata: SearchTraceMetadata,
     pub binding_rejections: Vec<BindingRejection>,
     pub expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
 }
@@ -267,6 +269,7 @@ pub(super) fn build_candidate_plans(
         }
         let mut rejections = Vec::new();
         let mut expansions = Vec::new();
+        let mut trace_metadata = SearchTraceMetadata::default();
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,
             agent,
@@ -297,7 +300,7 @@ pub(super) fn build_candidate_plans(
             }
             _ => *cognitive,
         };
-        let result = search_plan(
+        let result = search_plan_with_trace_metadata(
             &snapshot,
             &ranked.grounded,
             semantics_table,
@@ -318,11 +321,13 @@ pub(super) fn build_candidate_plans(
             } else {
                 None
             },
+            Some(&mut trace_metadata),
         );
         let found = result.is_found();
         results.push(CandidatePlanSearch {
             opportunity,
             result,
+            trace_metadata,
             binding_rejections: rejections,
             expansion_summaries: expansions,
         });
@@ -993,6 +998,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                     plan.opportunity.goal_key.kind,
                     &known_entities,
                 ),
+                &plan.trace_metadata,
                 plan.binding_rejections.clone(),
                 plan.expansion_summaries.clone(),
             ));
@@ -1127,12 +1133,14 @@ pub(super) fn plan_and_validate_next_step_traced(
 }
 
 /// Convert a `PlanSearchResult` into a `PlanAttemptTrace` for the trace model.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn plan_search_result_to_trace(
     goal: worldwake_core::GoalKey,
     opportunity_anchor: worldwake_core::OpportunityAnchor,
     result: &PlanSearchResult,
     action_defs: &worldwake_sim::ActionDefRegistry,
     target_belief_presence: TargetBeliefPresence,
+    trace_metadata: &SearchTraceMetadata,
     binding_rejections: Vec<BindingRejection>,
     expansion_summaries: Vec<crate::decision_trace::SearchExpansionSummary>,
 ) -> PlanAttemptTrace {
@@ -1161,6 +1169,18 @@ pub(super) fn plan_search_result_to_trace(
         goal,
         opportunity_anchor,
         outcome,
+        strategic_plan: trace_metadata.strategic_plan.as_ref().map(|plan| {
+            plan.steps
+                .iter()
+                .map(|step| StrategicStepTrace {
+                    destination: step.destination,
+                    sub_goal: format!("{:?}", step.sub_goal),
+                    estimated_travel_ticks: step.estimated_travel_ticks,
+                })
+                .collect()
+        }),
+        landmarks_extracted: trace_metadata.landmarks_extracted,
+        landmark_orderings: trace_metadata.landmark_orderings,
         target_belief_presence,
         binding_rejections,
         expansion_summaries,
@@ -1202,6 +1222,7 @@ mod tests {
             TargetBeliefPresence,
         },
         feasibility::FeasibilityHint,
+        search::SearchTraceMetadata,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
@@ -1299,6 +1320,7 @@ mod tests {
         CandidatePlanSearch {
             opportunity,
             result,
+            trace_metadata: SearchTraceMetadata::default(),
             binding_rejections: Vec::new(),
             expansion_summaries: Vec::new(),
         }
@@ -1484,11 +1506,51 @@ mod tests {
             &PlanSearchResult::FrontierExhausted { expansions_used: 2 },
             &action_defs,
             TargetBeliefPresence::Absent,
+            &SearchTraceMetadata::default(),
             Vec::new(),
             Vec::new(),
         );
 
         assert_eq!(trace.target_belief_presence, TargetBeliefPresence::Absent);
+    }
+
+    #[test]
+    fn plan_search_trace_converts_two_phase_trace_metadata() {
+        let (action_defs, _handlers, _recipes) = build_full_registries();
+        let trace = plan_search_result_to_trace(
+            GoalKey::from(GoalKind::ProduceCommodity {
+                recipe_id: worldwake_core::RecipeId(7),
+            }),
+            OpportunityAnchor::None,
+            &PlanSearchResult::FrontierExhausted { expansions_used: 2 },
+            &action_defs,
+            TargetBeliefPresence::NotApplicable,
+            &SearchTraceMetadata {
+                strategic_plan: Some(crate::search::strategic::StrategicPlan {
+                    steps: vec![crate::search::strategic::StrategicStep {
+                        destination: entity(55),
+                        sub_goal: crate::search::strategic::TacticalSubGoal::AcquirePrerequisite(
+                            worldwake_core::CommodityKind::Firewood,
+                        ),
+                        estimated_travel_ticks: 4,
+                    }],
+                }),
+                landmarks_extracted: 3,
+                landmark_orderings: 2,
+            },
+            Vec::new(),
+            Vec::new(),
+        );
+
+        assert_eq!(trace.landmarks_extracted, 3);
+        assert_eq!(trace.landmark_orderings, 2);
+        let steps = trace
+            .strategic_plan
+            .as_ref()
+            .expect("trace should preserve strategic plan metadata");
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].destination, entity(55));
+        assert_eq!(steps[0].sub_goal, "AcquirePrerequisite(Firewood)");
     }
 
     fn ranked_goal_with_score(
@@ -2193,10 +2255,12 @@ mod tests {
                 prerequisite_places_count: 0,
                 candidates_generated: 1,
                 candidates_skipped: 0,
+                preferred_candidates: 0,
                 terminal_successors: 0,
                 non_terminal_before_beam: 1,
                 non_terminal_after_beam: 1,
                 found_goal_satisfied: true,
+                landmark_heuristic: 0,
                 travel_pruning: None,
                 prerequisite_guidance: None,
                 root_candidates: Vec::new(),
@@ -2228,10 +2292,12 @@ mod tests {
                 prerequisite_places_count: 0,
                 candidates_generated: 1,
                 candidates_skipped: 0,
+                preferred_candidates: 0,
                 terminal_successors: 0,
                 non_terminal_before_beam: 1,
                 non_terminal_after_beam: 1,
                 found_goal_satisfied: true,
+                landmark_heuristic: 0,
                 travel_pruning: None,
                 prerequisite_guidance: None,
                 root_candidates: Vec::new(),

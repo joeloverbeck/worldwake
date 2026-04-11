@@ -1,183 +1,179 @@
 # Simulation Observer Report
 
+**Status**: ✅ COMPLETED
+
 ## Run Summary
 
 - **Scenario**: `scenarios/cli-evaluation.ron`
 - **Seed**: 7777
 - **Ticks simulated**: 1440 (1 simulated day)
-- **Total events**: 9484
-- **Agents**: Kael (e5g0), Merchant Vara (e6g0), Forager Lina (e7g0), Guard Theron (e8g0)
-- **Places**: Thornwall Village (e0g0), Eldergrove Forest (e1g0), Dusty Trail (e2g0), Hearthstone Inn (e3g0), Golden Fields (e4g0)
-- **Note**: Guard Theron has 1 dead tick (died at approximately tick 1439 from starvation/dehydration). Observer was previously crashing at tick 189 due to a missing `ProductionOutputOwnershipPolicy` on facilities, which was fixed during this run.
+- **Total events**: 9876
+- **Agents**: 4 (Kael, Merchant Vara, Forager Lina, Guard Theron)
+- **Places**: 5 (Thornwall Village, Eldergrove Forest, Dusty Trail, Hearthstone Inn, Golden Fields)
+- **Agent death**: Guard Theron died at tick 422 from NeedDeprivation(Hunger)
 
 ## Findings
 
-### 1. Redundant Perception -- LOW
+### 1. Redundant Perception -- MEDIUM
 
-**Agent(s)**: All agents
-**Evidence**: Kael observed itself (e5g0) 112 times, Merchant Vara 105 times; Guard Theron observed itself 112 times. Agents also repeatedly observed co-located agents and places (e.g., Kael observed e6g0 103 times, Theron observed e0g0 63 times).
-**Root cause hypothesis**: The perception system fires on every action event at the agent's location, and self-observations and co-located agent observations trigger each time. Given that agents perform sleep actions every ~10 ticks, each sleep generates events that nearby agents perceive. This is architecturally expected — perception fires broadly on events, not selectively on state changes.
-**Confidence**: HIGH that this is expected behavior, not a bug. The agents' state (needs, inventory) changes continuously, so these observations may carry genuine new information even if the entity identity is the same.
+**Agent(s)**: All four agents
+**Evidence**: Kael observed himself 112 times, Merchant Vara 102 times. Merchant Vara observed Kael 96 times. Guard Theron observed himself 112 times. Forager Lina observed the same OrchardRow entity 14 times. These are entities at the agent's current location that are repeatedly observed on perception ticks regardless of state changes.
+**Root cause hypothesis**: The perception system fires on all co-located entities each time it runs, not just entities whose state has changed since the last observation. Self-observation is particularly wasteful -- agents observe themselves every perception tick. This is a broad systemic pattern rather than an agent-specific issue.
+**Confidence**: HIGH -- the high observation counts with low unique entity counts confirm repeated observation of the same entities. Whether this constitutes a "problem" depends on design intent; if perception is meant to track changing state (e.g., need levels of co-located agents), some redundancy is expected. The self-observation at 112 times is likely unnecessary.
 
 ### 2. Action Loops -- HIGH
 
-**Agent(s)**: Kael, Merchant Vara, Guard Theron
+**Agent(s)**: Kael, Merchant Vara, Guard Theron (post-death behavior aside)
 **Evidence**:
-- **Kael**: From tick ~500 onward, action repertoire collapsed to exclusively `sleep + relieve_wilderness`. The 0-99 bin shows diverse actions (tell×8, drink×2, eat×2, pick_up×1, travel×1), but by 500-599 it's only `sleep×10, relieve_wilderness×1` — a pattern sustained for 900+ ticks.
-- **Merchant Vara**: Mechanical loop detected (sleep→sleep ×3). Similar collapse: diverse actions in 0-99 (tell×18, staff_market×2, eat×1, pick_up×1), but by 900-999 only `sleep×10, relieve_wilderness×1`. Eating stops after tick ~800.
-- **Guard Theron**: Action timeline ends at tick 400-499 (sleep×3). After that, 1019 consecutive idle ticks with no actions at all — complete behavioral shutdown.
+- **Kael**: Behavioral transition at tick 500 from 4 action types to 2 (sleep + relieve_wilderness). From tick 500 onward, the action timeline shows exclusively `sleep×10, relieve_wilderness×1` per 100-tick bin for 940 consecutive ticks. The decision timeline from tick 600+ shows `selected=none, candidates=1, plans_found=0` dominating (78-82 occurrences per 100-tick bin), meaning the planner found only 1 candidate (Sleep) and nothing else viable.
+- **Merchant Vara**: Flagged for a `[sleep -> sleep]` loop repeated 3 times. Similar pattern to Kael -- from tick 900 onward, only sleep + relieve_wilderness. Her eat actions persist longer (through tick 800) because she had Grain to consume, but she eventually runs out and collapses to the same minimal pattern.
+- **Forager Lina**: Active and diverse through tick 700, then completely idle for 708 consecutive ticks. Her action repertoire did not narrow gradually -- it dropped to zero abruptly. Section 7 shows 0 budget-exhausted and 0 frontier-exhausted plans, suggesting the planner stopped finding any candidates at all after resources were depleted.
 
-**Root cause hypothesis**: All three agents migrated to Dusty Trail (e2g0), which has no food, no water, no resource sources, and no production facilities. Once there, the GOAP planner cannot find plans for `AcquireCommodity{Water}` or food acquisition — these plans consistently fail with `budget-exhausted` (e.g., Vara: 300 expansions, max depth 9, 1483 candidates at e0g0; Theron: 224 expansions, max depth 6, 1589 candidates). The plan to acquire water from another location requires a multi-hop chain (travel → find source → harvest/pick_up → consume) that exceeds the planner's expansion budget. With no way to address hunger/thirst, agents fall into survival-mode loops (sleep to reduce fatigue, relieve for bladder) while critical needs spiral.
+**Root cause hypothesis**: Agents at Dusty Trail (Kael, Merchant Vara) lack food/water affordances at their final location. Once owned consumables are depleted, the only plannable goals are Sleep and Relieve. The planner tries AcquireCommodity goals but they budget-exhaust (Kael: 51 budget-exhausted; Merchant Vara: 43 budget-exhausted), meaning multi-step plans to travel-and-acquire are too deep for the expansion budget. This traps agents in a sleep-only loop despite critical hunger/thirst. For Forager Lina, the complete stop at tick ~732 suggests all apples were consumed and the harvest action could no longer produce new ones (or carry capacity was full of Waste preventing new pickups).
+**Confidence**: HIGH -- the decision timeline data directly shows the planner selecting only Sleep/Relieve, with acquisition goals consistently budget-exhausting.
 
-**Confidence**: HIGH — the evidence clearly shows behavioral collapse correlated with relocation to a resource-poor location and planner budget exhaustion on resource acquisition goals.
+### 3. Stuck Agents -- HIGH
 
-### 3. Stuck Agents -- CRITICAL
-
-**Agent(s)**: Guard Theron (1019 consecutive idle ticks), Forager Lina (40 ticks), Kael (34 ticks), Merchant Vara (27 ticks)
+**Agent(s)**: Forager Lina (708 consecutive idle ticks), Guard Theron (1019 consecutive idle ticks, but 1018 are post-death)
 **Evidence**:
-- **Guard Theron**: 1019 consecutive idle ticks (from ~tick 421 to end of simulation). This is pathological — his needs (hunger avg 915‰, thirst avg 943‰) were critically high but he took no actions. His tick breakdown shows 338 planning + 85 active-action + 1 dead over only 424 decision ticks total (not 1440), meaning the planner itself stopped generating decisions for ~1016 ticks. He died at the end of the simulation.
-- **Other agents**: 27-40 tick idle windows are less severe but still indicate periods where the planner found no executable plans.
+- **Forager Lina**: 708 consecutive idle ticks from ~tick 732 to 1440. The action timeline shows her last actions in the 700-799 bin (sleep x4, eat x1, harvest x1, pick_up x1), then nothing. Her plan search outcomes show 1579 plans found with 0 frontier-exhausted and 0 budget-exhausted -- the planner successfully finds plans when candidates exist, but after tick ~732, no actionable candidates remain. Her inventory at end-state is 12x Waste, suggesting carry capacity is completely consumed by waste, preventing new pickups.
+- **Guard Theron**: 1019 consecutive idle ticks, but he died at tick 422. His stuck period is almost entirely post-death (expected behavior). The 1 tick pre-death of idle at the boundary is trivial. His pre-death behavior (ticks 200-422) already showed behavioral collapse to sleep + relieve_wilderness only.
+- **Kael**: 34 consecutive idle ticks (flagged). Minor compared to other agents, likely normal planning gaps between action completions.
+- **Merchant Vara**: 27 consecutive idle ticks (flagged). Same as Kael -- minor.
 
-**Root cause hypothesis**: Guard Theron at Dusty Trail has no affordances for food/water acquisition. His AcquireCommodity{Water} plans consistently budget-exhaust. With no executable goals remaining (patrol/investigation blocked, ShareBelief frontier-exhausted), the planner enters a complete decision stall. The 424 decision ticks vs 1440 simulated ticks suggests the agent stopped being scheduled for decisions after dying or becoming fully incapacitated.
-
-**Confidence**: HIGH for Theron (clearly pathological). MEDIUM for others (shorter idle periods may reflect planner cooldown cycles).
+**Root cause hypothesis**: Forager Lina's stuck behavior is caused by inventory saturation with Waste. She has 12 Waste items and no way to discard them (FreeCarryCapacity goal appears in her goals list but apparently cannot execute or doesn't clear enough space). With full inventory, she cannot pick_up harvested apples, cannot eat, and has no affordances left at Eldergrove Forest that don't require inventory space. Guard Theron's stuck period is expected post-death.
+**Confidence**: HIGH for Forager Lina (inventory data + action timeline clearly show the transition). EXPECTED for Guard Theron (post-death).
 
 ### 4. Failed Action Spirals -- MEDIUM
 
-**Agent(s)**: Forager Lina
-**Evidence**: In ticks 1300-1399, Lina has `pick_up×19` but 27 total StartFailed pick_up attempts across the simulation. The raw trace shows repeated failures: "actor e7g0 has insufficient carry capacity for any Apple" at ticks 1363, 1366, 1368, 1370, 1375, 1381, 1388. She has 20× Waste in inventory consuming all carry capacity (carry_capacity not set, so likely default), preventing further pick_ups.
-**Root cause hypothesis**: Lina harvests apples, eats them (generating Waste), but never drops waste. Her inventory fills with Waste, then pick_up fails on precondition. The planner keeps generating AcquireCommodity{Apple} → pick_up plans because it doesn't model the carry capacity constraint during planning, only at execution time.
-**Confidence**: HIGH — the trace clearly shows repeated capacity failures with 20× Waste in final inventory.
+**Agent(s)**: Merchant Vara (staff_market), Guard Theron (tell, investigate)
+**Evidence**:
+- **Merchant Vara**: 5 StartFailed for `staff_market` (0 committed out of 5 attempts). She has a `SellCommodity{Grain}` goal that plans through StaffMarket, but the action consistently fails to start. The plan shows `feasibility=Unlikely` for SellCommodity, suggesting a known precondition gap.
+- **Guard Theron**: 21 StartFailed for `tell`, 27 started but only 4 committed for `investigate`. The tell failures occurred at Dusty Trail (e2g0) where the agent had targets but something prevented the action from starting. The investigate actions had a 27:4 start:commit ratio -- 23 investigations were interrupted (InterruptForReplan with HigherPriorityGoal or SuperiorSameClassPlan) before they could commit, suggesting the planner kept replacing the current plan mid-execution.
+- **Kael**: 4 StartFailed for `tell`, relatively minor.
+
+**Root cause hypothesis**: Merchant Vara's staff_market failures suggest a missing precondition at Dusty Trail (no market stall registered, or market not established). Guard Theron's investigate interruption cascade is caused by the planner continually finding higher-priority goals (AcquireCommodity for Water) that it cannot actually execute (budget-exhausted), creating a thrashing cycle: investigate -> interrupted for Water acquisition -> Water plan fails -> falls back to investigate -> interrupted again.
+**Confidence**: MEDIUM -- the staff_market failure pattern is clear but the specific precondition is not in the dump. Guard Theron's thrashing hypothesis is well-supported by the decision timeline showing repeated AcquireCommodity interrupts of investigate actions.
 
 ### 5. Sustained Critical Needs -- CRITICAL
 
-**Agent(s)**: All agents
+**Agent(s)**: All four agents
 **Evidence**:
-- **Guard Theron**: hunger above 750‰ for 1215 ticks (225-1439), thirst above 750‰ for 1290 ticks (150-1439) — nearly the entire simulation
-- **Merchant Vara**: thirst above 750‰ for 1257 ticks (183-1439), dirtiness 790 ticks, hunger 265 ticks
-- **Kael**: thirst above 750‰ for 915 ticks (525-1439), dirtiness 790 ticks, hunger 674 ticks
-- **Forager Lina**: dirtiness above 750‰ for 810 ticks (630-1439) — only dirtiness, as she successfully managed hunger/thirst
+- **Guard Theron**: Hunger above 750 for 1215 ticks (225-1439, but died at 422). Thirst above 750 for 1290 ticks (150-1439). His hunger averaged 915 and thirst 943 -- near-maximum throughout his life. He never ate or drank. Death at tick 422 from hunger deprivation.
+- **Kael**: Thirst above 750 for 915 ticks (525-1439). Hunger above 750 for 674 ticks (766-1439). Dirtiness above 750 for 790 ticks (650-1439). He ate 5 times and drank 5 times total -- all in the first 400 ticks. After moving to Dusty Trail at tick ~463, no further consumption.
+- **Merchant Vara**: Thirst above 750 for 1257 ticks (183-1439). Never drank. Hunger above 750 for 265 ticks (1175-1439). Dirtiness above 750 for 790 ticks (650-1439). She ate 10 times (Grain) but thirst was never addressed.
+- **Forager Lina**: Hunger above 750 for 361 ticks, thirst for 584, fatigue for 480, dirtiness for 810, bladder for 226. She actively ate and drank through tick ~700 but all needs escalated after she went idle.
 
-**Root cause hypothesis**: Two distinct causes:
-1. **Hunger/thirst (Kael, Vara, Theron)**: Agents at Dusty Trail cannot plan resource acquisition across locations. AcquireCommodity{Water} repeatedly budget-exhausts with 1000-2000+ candidates at moderate depths (4-9). The search space branches too widely for the planner budget (224-300 expansions).
-2. **Dirtiness (all agents)**: No agent ever performed a `wash` action. Kael had wash(1 target) as an affordance at e0g0 (Thornwall Village) but never used it. At Dusty Trail there is no WashBasin (only at Hearthstone Inn). The planner likely never generates a Wash goal, or the dirtiness_weight (200-500) is too low relative to other pressing needs.
-
-**Confidence**: HIGH
+**Root cause hypothesis**: The core problem is resource scarcity at agent locations combined with planner inability to find multi-step acquisition plans:
+1. **Dusty Trail** (Kael, Merchant Vara, Guard Theron's final location) has no water source and limited food. The Well is in Thornwall Village but the planner cannot build travel-to-village-then-drink plans within the expansion budget.
+2. **Eldergrove Forest** (Forager Lina) has no water source either. She has drink in her tick-0 affordances but this disappears after initial water is consumed.
+3. Dirtiness goes unaddressed because the WashBasin is at Hearthstone Inn -- no agent ever travels there.
+**Confidence**: HIGH -- needs trajectory data, action counts, and budget-exhausted plan failures all converge on the same story.
 
 ### 6. Unaddressed Needs -- CRITICAL
 
 **Agent(s)**: Merchant Vara (thirst), Guard Theron (hunger + thirst)
 **Evidence**:
-- **Merchant Vara**: thirst avg 926‰ but **no drink action was ever attempted**. At tick 0 (e0g0), her affordances don't include `drink` — she had no water in inventory and no pick_up affordance for water at the village. AcquireCommodity{Water} failed 16+ times with budget-exhausted.
-- **Guard Theron**: hunger avg 915‰ and thirst avg 943‰, **no eat or drink actions ever attempted**. At tick 0 (e2g0), his affordances include only: sleep, relieve_wilderness, staff_market, declare_support, travel, put_down, attack, defend, patrol, fine, exile — no eat, no drink, no pick_up for consumables.
+- **Merchant Vara**: Thirst averaged 926 but drink was never attempted across 1440 ticks. Her tick-0 affordances at Thornwall Village did not include `drink` (unlike Kael who had drink at the same location). After traveling to Dusty Trail, drink does not appear in her affordances either. Failed plan attempts show AcquireCommodity{Water} consistently budget-exhausting (300 expansions, depth 9, 1483 candidates at Thornwall; 300 expansions, depth 4, 2611 candidates at Dusty Trail).
+- **Guard Theron**: Hunger averaged 915, thirst 943. No eat or drink actions were ever attempted. His tick-0 affordances at Dusty Trail show no eat or drink actions. His goals list contains no food/thirst goals -- only InvestigateViolation, Patrol, Relieve, ShareBelief, and Sleep. His failed plan attempts show AcquireCommodity{Water} budget-exhausting.
 
-**Root cause hypothesis**: These agents were never in possession of food/water items, and the locations they occupied (Dusty Trail) had no consumable items on the ground. The `drink` and `eat` actions require owning the consumable. The planner's AcquireCommodity goal was the only path to obtaining resources, but it consistently budget-exhausted. Guard Theron's failed plans show AcquireCommodity{Water} at depths 4-6 with 800-2000 candidates — the multi-location acquisition plan is simply too complex for the expansion budget.
-
-**Confidence**: HIGH — the affordance data and failed plan data clearly explain the gap.
+**Root cause hypothesis**:
+- **Merchant Vara**: No drink affordance at her starting location (Thornwall Village) despite having a Well there. This may be a scenario configuration issue (no water commodity available at the Well?) or a missing recipe/harvesting rule connecting the Well to water production. The planner generates AcquireCommodity{Water} goals but cannot find a viable plan.
+- **Guard Theron**: Starting at Dusty Trail with no eat/drink affordances and no food/water items. His role profile (guard) generates investigation and patrol goals that dominated his early ticks, while survival needs were never generated as goals at all. His goals list shows no AcquireCommodity goals for food, suggesting the goal generator doesn't produce eat/drink goals for his profile, or they are ranked below duty goals and never reach planning.
+**Confidence**: HIGH -- the affordance lists and goal selections directly confirm the absence of survival-oriented actions for these agents.
 
 ### 7. Impossible Knowledge -- NONE
 
-No evidence of agents acting on information they never observed. Action targets are consistent with perception traces. Kael's believed locations match entities observed at Dusty Trail. Forager Lina's actions target entities at her location (Eldergrove Forest).
+No evidence of agents acting on information about entities they never perceived. All action targets correspond to entities within the agents' perception traces. Cross-referencing Kael's actions at Dusty Trail with his perception trace shows he only targeted entities he observed. Forager Lina stayed in Eldergrove and only interacted with local entities. Guard Theron's tell targets were Kael and Merchant Vara, both co-located at his locations.
 
 ### 8. Belief Staleness -- MEDIUM
 
-**Agent(s)**: Kael, Merchant Vara, Forager Lina
+**Agent(s)**: Kael, Merchant Vara
 **Evidence**:
-- All agents at Dusty Trail believe the location of Dusty Trail is "Unknown location" — a strange belief given they are physically present there.
-- Kael believes Forager Lina is at Dusty Trail, but Lina spent most of the simulation at Eldergrove Forest (1389 of 1440 ticks) and only arrived at Dusty Trail at tick ~1389. This could be current at end-of-sim.
-- Guard Theron knows 3 agents and 1 place but his believed locations show himself at Dusty Trail, which is correct. However, he believes 12× Waste are at Dusty Trail — this is current (57× Waste at Dusty Trail in Section 6, though the belief count is lower, suggesting stale partial knowledge).
-- Forager Lina believes 8× Waste at Dusty Trail but the actual count is 57×.
+- **Kael**: Knows 16 entities but believes Dusty Trail contains himself, Merchant Vara, and 13 Waste items. He knows only 1 place (Dusty Trail). He previously visited Thornwall Village (ticks 0-64 and briefly at tick 411-463) but his belief summary doesn't mention it. He doesn't know about the Well (water source) at Thornwall Village despite having been there.
+- **Merchant Vara**: Knows only 1 place (Dusty Trail) despite starting at Thornwall Village. Her belief about Dusty Trail contents lists Kael and 10 Waste -- she doesn't believe Guard Theron is there (he is, as a corpse) and doesn't know about Merchant Vara's own items.
+- **Forager Lina**: Knows 0 agents despite being in a world with 3 others. She stayed entirely in Eldergrove Forest and never interacted socially. Her beliefs accurately reflect her local environment (ChoppingBlock, OrchardRow, Apples, Waste).
+- **Guard Theron**: Most complete beliefs (3 agents, 1 place) but still only knows Dusty Trail despite starting there and visiting Thornwall Village.
 
-**Root cause hypothesis**: Belief snapshots are captured at perception time with finite memory capacity (16 entities). As waste accumulates (57× at Dusty Trail by end-state), agents' beliefs about item counts become stale since they can only track a limited number of entities. The "Unknown location: Dusty Trail" belief likely means the place entity itself was observed but its location (being a place, it doesn't have a location in the same sense) is classified as unknown.
-**Confidence**: MEDIUM — the "Unknown location" pattern may be an artifact of how place-entity locations are represented in beliefs rather than genuine staleness.
+**Root cause hypothesis**: Belief formation is tied to perception events, and agents only form beliefs about entities they observe. Since agents spent most of their time at Dusty Trail or Eldergrove, their knowledge is geographically limited. The more concerning issue is that agents who visited Thornwall Village early (Kael, Merchant Vara, Guard Theron) don't retain beliefs about it -- either beliefs about previously-visited places decay, or the belief summary only captures current/recent beliefs. This limits the planner's ability to plan travel-to-resource actions because the agent doesn't "know" a water source exists elsewhere.
+**Confidence**: MEDIUM -- the belief data clearly shows limited knowledge, but whether this represents "staleness" (lost accurate beliefs) vs. "never formed" (perception didn't create place-knowledge beliefs) requires engine-level investigation.
 
 ### 9. Social Isolation -- MEDIUM
 
-**Agent(s)**: All agents (partially)
+**Agent(s)**: Forager Lina (complete isolation), Kael + Merchant Vara (late-game isolation)
 **Evidence**:
-- Kael and Merchant Vara are co-located at Dusty Trail for ~1370 ticks. They performed tell actions early (Kael: 24 started/19 committed, Vara: 20 started/15 committed) but all social activity ceased after tick ~400. From tick 500 onward, both agents are co-located for 900+ ticks with zero social interaction.
-- Guard Theron performed 9 tell actions (all committed) and 27 investigate starts (4 committed), but all activity ceased by tick ~420. He was co-located with Kael/Vara at Dusty Trail for the remainder with no interaction.
-- Forager Lina had zero social observations, zero told beliefs, zero heard beliefs throughout the entire simulation. She was alone at Eldergrove Forest for most of the run.
-- No Trade actions occurred anywhere in the simulation. Merchant Vara attempted `staff_market` 5 times (all StartFailed) and had SellCommodity{Grain} blocked 698 times.
+- **Forager Lina**: Zero social observations, zero told beliefs, zero heard beliefs. She was alone in Eldergrove Forest for all 1440 ticks with no tell, ask_witness, or trade actions. No other agent ever visited her location.
+- **Kael and Merchant Vara**: Co-located at Dusty Trail from tick ~70 onward (1370+ ticks together). Kael told 19 times (with 4 StartFailed) and Merchant Vara told 15 times (with 3 StartFailed). However, all social actions occurred in the first ~400 ticks. From tick 500 onward, despite being co-located, zero social interactions occurred -- both agents collapsed into sleep+relieve loops.
+- **Guard Theron**: Told 9 times and had 21 StartFailed for tell. His social activity was concentrated in ticks 0-200 before behavioral collapse.
 
-**Root cause hypothesis**: Social actions require the planner to find plans, and once survival needs dominate (hunger/thirst critical), the planner prioritizes physiological goals. Since those goals can't be satisfied either (budget-exhausted), agents enter a planning deadlock where no goals succeed. ShareBelief goals are consistently frontier-exhausted (1 expansion, 0 depth, meaning no operators are available for the ShareBelief goal). Merchant Vara's trade was blocked because SellCommodity{Grain} was fully blocked 698 times — likely because no buyer was present or the market wasn't staffed.
-**Confidence**: HIGH for the late-simulation isolation. The early social activity shows the system works when agents have capacity.
+**Root cause hypothesis**: Social actions (tell) are only planned when the planner selects ShareBelief goals. After behavioral collapse (around tick 400-500 for most agents), the planner stops generating ShareBelief goals because survival needs dominate goal ranking but cannot be satisfied, leaving only Sleep/Relieve as viable goals. Social interaction is an "extra" that only happens when basic needs are met or the planner has headroom.
+**Confidence**: HIGH for Forager Lina's isolation (complete geographic separation with no travel capability to reach others). MEDIUM for late-game isolation of co-located agents (expected consequence of behavioral collapse).
 
 ### 10. Economic Stagnation -- CRITICAL
 
-**Agent(s)**: Kael, Merchant Vara, Guard Theron
+**Agent(s)**: All agents
 **Evidence**:
-- **No trade occurred** in 1440 ticks. Merchant Vara's SellCommodity{Grain} was blocked 698 times. Her staff_market action failed 5 times (all StartFailed).
-- **Kael** holds 20× Coin at end-state but never traded. Water was available at Thornwall Village (Well facility, regeneration 3 ticks/unit, capacity 15) but Kael left the village by tick ~67 and never returned.
-- **Guard Theron** never attempted any economic action. He carried Sword and Bow but couldn't eat or drink.
-- **Forager Lina** was the only economically active agent: 24 harvests, 55 eats, 5 drinks, 46 pick_ups — a functioning harvest→eat loop. However, she never traded and accumulated 20× Waste with no way to dispose of it.
-- **Thornwall Village** resources (10× Grain, 5× Bread) were left untouched at end-state. The Village Well resource source was never harvested (water available at e0g0 not visible in end-state items — only facilities remain).
-- **Dusty Trail** accumulated 57× Waste — the most item-rich location by end-state, but all waste.
+- **Dusty Trail** (3 agents end-state): Contains 36 Waste, 20 Coins, 1 Bow, 1 Sword. No food, no water. Kael has 20 Coins but nothing to spend them on. Merchant Vara's inventory is empty despite her merchant role -- she tried staff_market 5 times but all failed.
+- **Eldergrove Forest** (Forager Lina): Contains 2 Apples and 14 Waste. Forager Lina harvested 13 times and ate 32 times, producing 12 Waste. She consumed faster than she produced, and her inventory became saturated with Waste.
+- **Thornwall Village**: Has Mill, Loom, Well -- production facilities that were never used by any agent.
+- **Hearthstone Inn**: Has Forge, WashBasin, 3 Firewood, 2 Medicine -- never visited by any agent.
+- **Golden Fields**: Has FieldPlot, GravePlot -- never visited.
+- **Trade**: Zero trade actions across the entire simulation.
+- **Crafting**: Zero craft actions. Forager Lina harvested but no agent crafted.
+- **Market**: Merchant Vara attempted staff_market 5 times, all StartFailed. No market economy was established.
 
-**Root cause hypothesis**: The fundamental economic failure has three layers:
-1. **Geographic mismatch**: 3 of 4 agents migrated to Dusty Trail (resource-poor) while resources remain at Thornwall Village and Eldergrove Forest.
-2. **Planner budget exhaustion**: Multi-location economic plans (travel → acquire → consume or trade) exceed the GOAP planner's expansion budget. AcquireCommodity goals generate 1000-7000+ candidates but the budget is only 224-300 expansions.
-3. **Missing waste disposal**: No `drop` or waste disposal action appears in affordances, so agents accumulate waste until carry capacity is full (Forager Lina's 27 failed pick_ups).
+**Root cause hypothesis**: Multiple compounding failures:
+1. **Budget-exhausted multi-step plans**: The planner cannot find plans that require traveling to a different location to acquire resources. AcquireCommodity goals consistently budget-exhaust with 300 expansions at depth 4-9, suggesting the action chain travel->pick_up->consume (or travel->harvest->pick_up->consume) branches too widely for the expansion budget.
+2. **No resource distribution**: Agents concentrated at Dusty Trail (a trail, not a resource hub) and Eldergrove Forest. No agent traveled to Thornwall Village (with Well, Mill, Loom) or Hearthstone Inn (with WashBasin, Forge) after the initial ticks.
+3. **Waste accumulation**: Consumption produces Waste that fills inventory, preventing new pickups. Forager Lina's FreeCarryCapacity goal appears in her goal list but apparently couldn't execute effectively.
+4. **Market failure**: Merchant Vara's staff_market precondition failures prevented any market establishment, blocking the entire trade pathway.
 
-**Confidence**: HIGH — the end-state inventory and failed plan data clearly show the economic system is non-functional for multi-location resource chains.
+**Confidence**: HIGH -- comprehensive end-state inventory, zero trade/craft counts, and budget-exhaustion patterns all confirm complete economic failure.
 
 ## Cross-Cutting Patterns
 
-### Pattern 1: Dusty Trail Death Trap
-Three of four agents (Kael, Vara, Theron) migrated to Dusty Trail early in the simulation and became trapped there. Dusty Trail has no food, no water, no production facilities, and no resource sources. Once there, agents' survival needs escalated while the planner could not find resource acquisition plans within its budget. This created a cascading failure: critical needs → planning deadlock → behavioral collapse → starvation/dehydration. Guard Theron died; Kael and Vara were in slow decline at simulation end.
+### Pattern 1: Budget-Exhaustion-Driven Behavioral Collapse
+The dominant pattern across the simulation is a cascading failure: agents cannot plan multi-step resource acquisition (budget exhausts at 300 expansions), so they cannot eat/drink, leading to rising needs that dominate goal ranking, further crowding out any non-survival goals, trapping agents in sleep+relieve loops until death (Guard Theron) or simulation end. This affects Kael, Merchant Vara, and Guard Theron identically. The key bottleneck is the planner's inability to find travel+acquire plans within its expansion budget, with candidate counts of 1400-2600 suggesting the search space branches too widely at each step.
 
-The migration itself was purposeful — Kael traveled there, Vara traveled there (both starting at Thornwall Village which has resources). The planner likely chose travel because ShareBelief or other social goals pointed toward agents at Dusty Trail (Theron's patrol route). But no return-journey plan was generated once the agents arrived and their needs became critical.
+### Pattern 2: Geographic Isolation Prevents Resource Access
+Resources are distributed across 5 places, but agents concentrate at 2 (Dusty Trail and Eldergrove Forest). Thornwall Village (Well, Mill, Loom), Hearthstone Inn (WashBasin, Forge, Firewood, Medicine), and Golden Fields (FieldPlot, GravePlot) are entirely unused after the initial ticks. The planner's budget limitation means agents cannot plan multi-location journeys, making them effectively stranded wherever they settle.
 
-### Pattern 2: Planner Budget vs. Multi-Location Plans
-The core systemic issue is that resource acquisition across locations requires plan chains too deep/wide for the current planner budget. AcquireCommodity{Water} at Dusty Trail generates 1000-7000+ candidates (reflecting all possible multi-hop paths to water sources) but the budget caps at 224-300 expansions. This affects every agent except Forager Lina (who was already at a resource-rich location).
+### Pattern 3: Guard Theron's Death Chain
+Guard Theron died at tick 422 from hunger. The causal chain: started at Dusty Trail with no food affordances -> his guard role profile generated InvestigateViolation and Patrol goals that consumed ticks 0-200 -> AcquireCommodity{Water} goals budget-exhausted repeatedly -> behavioral transition at tick 200 to sleep+relieve only -> hunger hit 1000 by tick ~300 -> died at tick 422. He never generated an AcquireCommodity{food} goal at all -- his goals list shows no hunger-relief goals, suggesting his profile's goal generator doesn't prioritize survival.
 
-### Pattern 3: Forager Lina as Control Case
-Forager Lina demonstrates the system works correctly when an agent is at a resource-rich location. She maintained a functional harvest→pick_up→eat loop for the entire simulation, kept hunger at avg 62‰ and thirst at avg 141‰. Her only issues were: dirtiness (no WashBasin at Eldergrove Forest), carry capacity exhaustion (waste accumulation), and eventually she traveled to Dusty Trail at tick 1389 — potentially the beginning of the same death spiral that trapped the others.
-
-### Pattern 4: Guard Theron Death
-Guard Theron died at approximately tick 1439 (1 dead tick). Contributing factors:
-- Started at Dusty Trail with no food/water items
-- No eat/drink affordances at Dusty Trail
-- AcquireCommodity{Water} budget-exhausted 12+ times (depths 4-6, 800-2000 candidates)
-- Patrol route (Trail↔Village) should have brought him to resources, but patrol completed at tick ~6, then he traveled to Village and back, and after tick ~421 became completely idle
-- Hunger above 750‰ for 1215 ticks, thirst above 750‰ for 1290 ticks
-
-### Pattern 5: Waste Economy
-57× Waste accumulated at Dusty Trail, 1× at Eldergrove Forest. Agents have no waste disposal mechanism. Forager Lina's carry capacity filled entirely with 20× Waste, blocking further pick_ups. This suggests a missing game mechanic (drop/discard action) or a missing planner goal (dispose of waste).
+### Pattern 4: Waste Accumulation Cascade (Forager Lina)
+Forager Lina was the most economically active agent (13 harvests, 32 eats, 26 pickups) but was ultimately defeated by waste accumulation. Each consumption produces Waste, and with no way to discard it, her 12 Waste items filled her carry capacity, making harvest->pickup->eat cycles impossible. Her FreeCarryCapacity goal appeared in her goal list but couldn't resolve the issue, possibly because dropping waste or discarding it has no supporting action/affordance.
 
 ## Summary Statistics
 
 - Total findings: 8 (categories with severity other than NONE)
-- By severity: 3 CRITICAL, 2 HIGH, 2 MEDIUM, 1 LOW
-- Agents with issues: Kael (action loops, stuck, sustained needs, belief staleness, social isolation, economic stagnation), Merchant Vara (action loops, stuck, sustained needs, unaddressed needs, social isolation, economic stagnation), Guard Theron (stuck, sustained needs, unaddressed needs, social isolation, economic stagnation, death), Forager Lina (failed action spirals, sustained dirtiness, social isolation)
+- By severity: 3 CRITICAL, 2 HIGH, 3 MEDIUM
+- Agents with issues: Kael (action loops, sustained needs, belief staleness), Merchant Vara (action loops, unaddressed thirst, failed market, economic stagnation), Forager Lina (stuck, waste saturation, social isolation), Guard Theron (death from unaddressed hunger/thirst)
 - Clean agents: None
 
 ## Trace Quality Assessment
 
 ### Trace Sufficiency
-The dump provides strong quantitative data for all 10 smell categories. Section 7 decision summaries are particularly valuable for diagnosing planner failures. The main limitation is the absence of per-tick need trajectories (only min/max/avg and ticks-above-750 are available), which would help pinpoint exactly when behavioral transitions occur.
+The dump provides good coverage for mechanical smells (1-6) and reasonable data for LLM-only smells (7-10). The decision timeline in Section 7 is particularly valuable for root-cause analysis. The main limitation is the lack of per-tick need values (only min/max/avg and ticks-above-750 are provided), which makes it harder to pinpoint exact transition points.
 
 ### Limitations and Recommended Additions
 
 | ID | Limitation | Classification | Rationale |
 |----|-----------|----------------|-----------|
-| TQ-1 | No per-agent need values at key transition points (e.g., when action repertoire narrows) | Actionable | Would enable precise correlation between need levels and behavioral collapse (smell 2). Currently we can infer timing from action timelines but can't confirm the need values at transition points |
-| TQ-2 | Affordances shown only at tick 0, not at current location after travel | Actionable | Agents that traveled (all 4) have different affordances than shown. This affected confidence in smells 6 and 8 — we can't confirm whether eat/drink affordances exist at Dusty Trail without checking the current state |
-| TQ-3 | No explicit death tick reported in Section 2 or 7 | Actionable | Guard Theron has 1 dead tick but the exact death tick isn't stated. We must infer it from the 424 decision ticks vs 1440 simulated ticks (dies around tick 424 + some offset). This affected the death analysis in Cross-Cutting Pattern 4 |
-| TQ-4 | Waste item type not distinguished in belief summary counts | Acceptable trade-off | Beliefs show "12× Waste" but don't distinguish Waste from useful items. This is a minor clarity issue — we can cross-reference with Section 6 |
-| TQ-5 | No planner budget configuration shown in dump | Acceptable trade-off | We can infer expansion budgets from the failed plan data (224-300) but having the configured values would confirm whether agents have different budgets |
-| TQ-6 | ShareBelief frontier-exhausted plans show 1 expansion, 0 depth — no explanation of why | Actionable | 14 of 20 failed plans for Kael are frontier-exhausted at depth 0, meaning no operators were available. The dump doesn't explain why the tell action operator wasn't applicable (is the listener not co-located? is there a cooldown?). This data would improve diagnosis of social isolation (smell 9) |
+| TQ-1 | No per-agent goal generation log (what goals were considered but not selected) | Acceptable trade-off | Would improve smell 6 analysis (why Guard Theron never generated food goals) but the blocked desires absence + affordance data is sufficient for diagnosis. Adding this would significantly increase dump size. |
+| TQ-2 | Belief summary doesn't distinguish "never formed" vs. "formed and decayed" beliefs | Actionable | Prevented confident assessment of smell 8 -- cannot determine if agents forgot about Thornwall Village resources or never formed those beliefs. This directly affects root-cause analysis for why agents don't travel to resource locations. |
+| TQ-3 | No waste/inventory capacity tracking over time | Actionable | Would materially improve root-cause diagnosis for Forager Lina's stuck behavior (smell 3) and economic stagnation (smell 10). Currently we can only see end-state inventory, not when capacity was reached. |
+| TQ-4 | staff_market StartFailed doesn't include the specific precondition that failed | Actionable | Would directly explain Merchant Vara's market failure (smell 4, smell 10). Currently the failure reason is opaque. |
 
-For **Actionable** items:
+**Actionable item details:**
 
-**TQ-1**: Add a per-agent needs snapshot at detected behavioral transition points (when action type count drops by 50%+ between consecutive bins).
-- **Scope**: Observer-binary enhancement
+- **TQ-2**: Recommended addition: Include a "belief history" subsection showing belief formation and decay events (e.g., "tick 5: formed belief about Well at Thornwall Village", "tick 200: belief decayed"). Scope: Observer-binary enhancement (aggregate belief events from the event log).
+- **TQ-3**: Recommended addition: Track carry capacity utilization per agent over time in 100-tick bins (e.g., "0-99: 2/10 slots, 100-199: 5/10 slots"). Scope: Observer-binary enhancement (compute from inventory events).
+- **TQ-4**: Recommended addition: Include the specific failed precondition in StartFailed action reporting (e.g., "staff_market StartFailed: no MarketStall component at location"). Scope: Observer-binary enhancement (capture the error reason from the action framework's validation response).
 
-**TQ-2**: Capture affordances at end-of-simulation (or at the agent's current location) in addition to tick 0.
-- **Scope**: Observer-binary enhancement
+## Outcome
 
-**TQ-3**: Report the exact death tick in the per-agent summary and Section 7 header.
-- **Scope**: Observer-binary enhancement
-
-**TQ-6**: Include the rejection reason for frontier-exhausted plans (e.g., "no applicable operators: tell requires co-located listener" or "cooldown active").
-- **Scope**: Engine instrumentation (planner would need to record why no operators matched)
+- **Completion date**: 2026-04-10
+- **What changed**: Produced a comprehensive behavioral analysis of the cli-evaluation scenario (seed 7777, 1440 ticks). Identified 8 findings across 10 smell categories (3 CRITICAL, 2 HIGH, 3 MEDIUM). No impossible knowledge detected.
+- **Deviations**: None — report followed the simulation-observer skill methodology.
+- **Verification**: Findings fed into `reports/simulation-remediation.md` which proposed 3 golden tests, 1 spec change, and 8 tickets. Key insights (budget-exhaustion collapse, waste accumulation cascade, guard goal generation gap) have been exploited in subsequent implementation work.

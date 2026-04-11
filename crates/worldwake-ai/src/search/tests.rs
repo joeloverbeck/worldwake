@@ -7879,6 +7879,129 @@ fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds()
 }
 
 #[test]
+fn search_trace_metadata_records_two_phase_strategic_and_landmark_details() {
+    let fixture = build_remote_produce_commodity_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: fixture.recipe_id,
+        }),
+        evidence_entities: BTreeSet::from([fixture.mill, fixture.firewood]),
+        evidence_places: BTreeSet::from([
+            prototype_place_entity(PrototypePlace::VillageSquare),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+        ]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+
+    let mut summaries = Vec::new();
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &fixture.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        Some(&mut summaries),
+        Some(&mut trace_metadata),
+    );
+
+    assert!(result.is_found(), "two-phase production plan should be found");
+    let strategic_plan = trace_metadata
+        .strategic_plan
+        .as_ref()
+        .expect("remote production should record a strategic plan");
+    assert_eq!(strategic_plan.steps.len(), 2);
+    assert_eq!(
+        strategic_plan.steps[0].destination,
+        prototype_place_entity(PrototypePlace::OrchardFarm)
+    );
+    assert!(
+        trace_metadata.landmarks_extracted > 0,
+        "two-phase production should extract landmarks"
+    );
+    assert_eq!(
+        trace_metadata.landmark_orderings, 0,
+        "this production fixture currently yields an unordered landmark set"
+    );
+    assert!(
+        summaries.iter().any(|summary| summary.preferred_candidates > 0),
+        "at least one expansion should report preferred candidates"
+    );
+    assert!(
+        summaries.iter().any(|summary| summary.landmark_heuristic > 0),
+        "at least one expansion should report a non-zero landmark heuristic"
+    );
+}
+
+#[test]
+fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
+    let fixture = build_remote_produce_commodity_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: fixture.recipe_id,
+        }),
+        evidence_entities: BTreeSet::from([fixture.mill, fixture.firewood]),
+        evidence_places: BTreeSet::from([
+            prototype_place_entity(PrototypePlace::VillageSquare),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+        ]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+    let mut no_landmarks = cognitive(&ProfileFixture::default());
+    no_landmarks.landmark_extraction_depth = 0;
+
+    let mut summaries = Vec::new();
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &no_landmarks,
+        &execution_budget(&ProfileFixture::default()),
+        &fixture.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        Some(&mut summaries),
+        Some(&mut trace_metadata),
+    );
+
+    assert!(result.is_found(), "zero-landmark mode should still find a plan");
+    assert_eq!(trace_metadata.landmarks_extracted, 0);
+    assert_eq!(trace_metadata.landmark_orderings, 0);
+    assert!(
+        summaries
+            .iter()
+            .all(|summary| summary.preferred_candidates == 0 && summary.landmark_heuristic == 0),
+        "zero-landmark mode should keep preferred-candidate and landmark-heuristic trace fields at zero"
+    );
+}
+
+#[test]
 fn search_treat_wounds_uses_two_phase_pick_up_before_heal() {
     let (mut view, actor, patient, _current_place, patient_place, medicine_place) =
         build_branching_care_view();

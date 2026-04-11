@@ -21,7 +21,7 @@ use frontier::{DualFrontier, FrontierEntry, compare_search_nodes};
 use heuristic::compute_heuristic;
 use heuristic::{
     combined_relevant_places_for_tactical, combined_relevant_places_with_guidance_for_tactical,
-    prune_travel_away_from_goal, root_node_for_tactical,
+    compute_landmark_heuristic, prune_travel_away_from_goal, root_node_for_tactical,
 };
 #[cfg(test)]
 use heuristic::{combined_relevant_places, root_node};
@@ -42,6 +42,13 @@ use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, InventoryBeliefView, RecipeRegistry,
     SpatialBeliefView, get_affordances_for_defs,
 };
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SearchTraceMetadata {
+    pub(crate) strategic_plan: Option<strategic::StrategicPlan>,
+    pub(crate) landmarks_extracted: u16,
+    pub(crate) landmark_orderings: u16,
+}
 
 #[derive(Clone)]
 struct SearchNode<'snapshot> {
@@ -157,8 +164,48 @@ impl PlanSearchResult {
     }
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref
+)]
 pub fn search_plan(
+    snapshot: &PlanningSnapshot,
+    goal: &GroundedGoal,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    recipes: &RecipeRegistry,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
+    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
+) -> PlanSearchResult {
+    search_plan_with_trace_metadata(
+        snapshot,
+        goal,
+        semantics_table,
+        registry,
+        handlers,
+        cognitive,
+        execution_budget,
+        recipes,
+        blocked,
+        current_tick,
+        binding_rejections,
+        expansion_summaries,
+        None,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref
+)]
+pub(crate) fn search_plan_with_trace_metadata(
     snapshot: &PlanningSnapshot,
     goal: &GroundedGoal,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -171,6 +218,7 @@ pub fn search_plan(
     current_tick: Tick,
     mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
+    mut trace_metadata: Option<&mut SearchTraceMetadata>,
 ) -> PlanSearchResult {
     if unsupported_goal(&goal.key.kind) {
         return PlanSearchResult::Unsupported;
@@ -184,6 +232,10 @@ pub fn search_plan(
     let relevant_defs = candidates::relevant_action_defs(goal, semantics_table);
 
     let strategic_plan = strategic::plan(snapshot, goal, execution_budget, recipes);
+    let mut trace_state = SearchTraceMetadata {
+        strategic_plan: strategic_plan.as_ref().filter(|plan| !plan.steps.is_empty()).cloned(),
+        ..SearchTraceMetadata::default()
+    };
     let tactical_goal = goal_supports_two_phase(goal).then(|| {
         TacticalGoal::from_strategic_step(strategic_plan.as_ref().and_then(|plan| plan.steps.first()))
     })
@@ -365,6 +417,14 @@ pub fn search_plan(
                         found_goal_satisfied =
                             matches!(terminal_kind, PlanTerminalKind::GoalSatisfied);
                         if let Some(ref mut sink) = expansion_summaries {
+                            let landmark_heuristic = if landmark_set.landmarks.is_empty() {
+                                0
+                            } else {
+                                compute_landmark_heuristic(
+                                    &landmark_set,
+                                    &planning_facts_from_state(&node.state),
+                                )
+                            };
                             sink.push(crate::decision_trace::SearchExpansionSummary {
                                 depth,
                                 remaining_travel_ticks: node.heuristic_ticks,
@@ -383,6 +443,8 @@ pub fn search_plan(
                                 non_terminal_before_beam,
                                 non_terminal_after_beam: non_terminal_before_beam, // no truncation happened yet
                                 found_goal_satisfied,
+                                preferred_candidates: 0,
+                                landmark_heuristic,
                                 travel_pruning: travel_pruning.clone(),
                                 prerequisite_guidance: summary_places
                                     .as_ref()
@@ -390,6 +452,9 @@ pub fn search_plan(
                                 root_candidates: root_candidates.clone(),
                                 root_omissions: root_omissions.clone(),
                             });
+                        }
+                        if let Some(ref mut meta) = trace_metadata {
+                            **meta = trace_state.clone();
                         }
                         return PlanSearchResult::Found(
                             PlannedPlan::new(
@@ -432,6 +497,10 @@ pub fn search_plan(
                     &successor_operators,
                     cognitive.landmark_extraction_depth,
                 );
+                trace_state.landmarks_extracted =
+                    landmark_set.landmarks.len().min(usize::from(u16::MAX)) as u16;
+                trace_state.landmark_orderings =
+                    landmark_set.orderings.len().min(usize::from(u16::MAX)) as u16;
             }
         }
 
@@ -452,6 +521,13 @@ pub fn search_plan(
         successors.truncate(usize::from(execution_budget.beam_width));
 
         let non_terminal_after_beam = successors.len() as u16;
+        let preferred_candidates = successors.iter().filter(|(_, _, preferred)| *preferred).count();
+        let preferred_candidates = preferred_candidates.min(usize::from(u16::MAX)) as u16;
+        let landmark_heuristic = if landmark_set.landmarks.is_empty() {
+            0
+        } else {
+            compute_landmark_heuristic(&landmark_set, &planning_facts_from_state(&node.state))
+        };
 
         if let Some(ref mut sink) = expansion_summaries {
             sink.push(crate::decision_trace::SearchExpansionSummary {
@@ -472,6 +548,8 @@ pub fn search_plan(
                 non_terminal_before_beam,
                 non_terminal_after_beam,
                 found_goal_satisfied,
+                preferred_candidates,
+                landmark_heuristic,
                 travel_pruning,
                 prerequisite_guidance: summary_places.and_then(|summary| summary.guidance_trace),
                 root_candidates,
@@ -503,7 +581,13 @@ pub fn search_plan(
     }
 
     if let Some(barrier_plan) = best_barrier {
+        if let Some(ref mut meta) = trace_metadata {
+            **meta = trace_state;
+        }
         return PlanSearchResult::Found(Box::new(barrier_plan));
+    }
+    if let Some(ref mut meta) = trace_metadata {
+        **meta = trace_state;
     }
     PlanSearchResult::FrontierExhausted {
         expansions_used: expansions,
