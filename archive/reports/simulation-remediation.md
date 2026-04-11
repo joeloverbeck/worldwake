@@ -2,7 +2,7 @@
 
 **Status**: ✅ COMPLETED
 
-Source report: `reports/simulation-observer-report.md`
+Source report: `archive/reports/simulation-observer-report-cli-evaluation-seed-7777.md`
 Generated: 2026-04-10
 
 ## Context

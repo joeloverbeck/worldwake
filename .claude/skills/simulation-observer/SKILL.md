@@ -57,7 +57,7 @@ The dump has 7 sections:
 - Section 2: Per-Agent Summary (actions, perception, needs, locations, idle ticks, behavioral transitions, death tick/cause if applicable)
 - Section 3: Anomaly Flags (mechanically detected smells)
 - Section 4: Raw Event Sample (first/last 100 events, per-agent action timeline histograms in 100-tick bins, per-agent perception timeline in 100-tick bins showing pass/fail/entity counts, raw tail traces)
-- Section 5: Per-Agent Belief Summary (known entities, believed locations, social/told/heard/institutional beliefs)
+- Section 5: Per-Agent Belief Summary (known entities, believed locations, social/told/heard/institutional beliefs). Note: Section 5 uses item type names (e.g., "Waste", "Apple") in believed entity locations, not EntityIds — cross-reference with Section 6's place contents for belief staleness analysis (smell 8).
 - Section 6: End-State Inventory & Resources (agent possessions, place contents)
 - Section 7: Per-Agent Decision Summary (planning outcomes, goal selection, failed plans, blocked desires, affordances)
 
@@ -65,7 +65,18 @@ The per-agent action timeline in Section 4 shows action counts binned by 100-tic
 
 Section 7 contains per-agent decision summaries from the GOAP planner. For each agent it shows: planning/active/dead tick breakdown, plan search outcomes (found/frontier-exhausted/budget-exhausted), goals selected, a decision timeline in 100-tick bins using `DecisionOutcome::summary()` one-liners, failed plan attempts with the goal that couldn't be planned and why, fully blocked desires (goals generated but all opportunities blocked), and affordances available at the agent's location. This section directly answers "why didn't the agent do X?" — cross-reference failed plan attempts and blocked desires with the sustained/unaddressed need anomalies.
 
-Section 7 lines are extremely dense — individual decision timeline rows or goals-selected lines can exceed 5000 tokens. Sequential offset reads will frequently hit the Read tool's token limit (10,000 tokens) even at 15-20 line slices. **Treat Grep as the primary (often the only viable) reading method for Section 7.** For Section 7, never use Read with `limit` > 10 lines. Decision timeline rows routinely exceed 1000 tokens each. Use `limit: 5` for tick-breakdown and plan-search-outcomes headers. For all other Section 7 content — decision timelines, failed plan tables, blocked desires, affordances, goals selected — use Grep exclusively. Grep for targeted extraction: `Failed plan attempts`, `Blocked desires`, `Affordances available`, `Goals selected`, `Tick breakdown`, `Plan search outcomes`. For goals selected lines that may be truncated by Grep's line-length limits, use `bash grep` as a fallback.
+Section 7 lines are extremely dense — individual decision timeline rows or goals-selected lines can exceed 5000 tokens. Sequential offset reads will frequently hit the Read tool's token limit (10,000 tokens) even at 15-20 line slices. For Section 7, never use Read with `limit` > 10 lines. Decision timeline rows routinely exceed 1000 tokens each. Use `limit: 5` for tick-breakdown and plan-search-outcomes headers.
+
+**Grep is effective for locating Section 7 subsection headers and extracting shorter lines** (failed plan tables, affordance lists, tick breakdowns, plan search outcomes). However, decision timeline rows will always show as `[Omitted long matching line]` due to Grep's line-length limits — Grep cannot read their content. For goals-selected lines that may also be truncated, use `bash grep` as a fallback. **For decision timeline content, use `bash sed -n 'Xp' <file> | head -c 3000`** to read individual rows with byte truncation. This is the only reliable method for rows that exceed 3000 tokens each. If even `Read` with `limit: 5` hits the token cap, fall back to `bash sed` unconditionally.
+
+**Section 7 Extraction Sequence** — for each agent, extract in this order:
+
+1. Grep `Tick breakdown` and `Plan search outcomes` — establishes planning health baseline
+2. `bash grep 'Goals selected' <dump>` — reveals what goal types the planner considered (too long for Grep tool)
+3. Grep `Failed plan attempts` with `-A 30` — shows planning failures and root causes
+4. Grep `Blocked desires` with `-A 10` — shows goals that couldn't be attempted (subsection may be absent)
+5. Grep `Affordances available`, `Affordances after travel`, and `Final affordances` with `-A 15` — shows what actions were structurally possible
+6. For specific decision timeline rows: `bash sed -n 'Xp' <file> | head -c 3000` where X is the line number from a prior Grep hit
 
 The blocked desires subsection may be absent if no desires were fully blocked. If absent, note this in the analysis rather than treating it as an error — check failed plan attempts and affordances instead as alternative evidence.
 
@@ -81,7 +92,7 @@ Analyze the dump for all 10 smell categories. For each, state whether the smell 
 
 1. **Redundant perception** -- Agent observes the same unchanged entity repeatedly. Why might this be happening? Is the perception system firing too broadly? Is the entity genuinely changing state each time?
 
-2. **Action loops** -- Agent repeats the same action sequence (not patrol) without progress. Is this a planning failure? A missing affordance? A belief that never updates? Cross-reference with Section 7's decision timeline to see what the planner was selecting during the loop period. Also look for behavioral collapse — agents settling into a minimal-action pattern (e.g., only sleep+relieve) for extended periods. Section 2 includes pre-computed behavioral transition markers (e.g., "action repertoire narrowed from 4 types to 2 types at tick 500") — use these as starting points, then verify against the action timeline bins in Section 4. If an agent's action repertoire narrows to 1-2 action types after an identifiable transition point, flag it even if the mechanical detector didn't. Cross-reference with smell 10 to determine whether resource starvation is causing the collapse. Also watch for planning-level loops: if Section 7 shows the same goal selected repeatedly (e.g., FreeCarryCapacity appearing 50+ times in a 100-tick bin) with plans found but 0 actions executed, this indicates a degenerate plan loop — the planner thinks it found a plan but no action fires. Cross-reference with the action timeline: if plans are "found" but no actions appear, the plan is degenerate (0-step GoalSatisfied or ProgressBarrier with no executable step). This manifests as total action cessation despite continuous planning, and is distinct from smell 3 (stuck agents) where the planner itself fails to find plans.
+2. **Action loops** -- Agent repeats the same action sequence (not patrol) without progress. Is this a planning failure? A missing affordance? A belief that never updates? Cross-reference with Section 7's decision timeline to see what the planner was selecting during the loop period. Also look for behavioral collapse — agents settling into a minimal-action pattern (e.g., only sleep+relieve) for extended periods. Section 2 includes pre-computed behavioral transition markers (e.g., "action repertoire narrowed from 4 types to 2 types at tick 500") — use these as starting points, then verify against the action timeline bins in Section 4. If an agent's action repertoire narrows to 1-2 action types after an identifiable transition point, flag it even if the mechanical detector didn't. Cross-reference with smell 10 to determine whether resource starvation is causing the collapse. Also watch for planning-level loops: if Section 7 shows the same goal selected repeatedly (e.g., FreeCarryCapacity appearing 50+ times in a 100-tick bin) with plans found but 0 actions executed, this indicates a degenerate plan loop — the planner thinks it found a plan but no action fires. Cross-reference with the action timeline: if plans are "found" but no actions appear, the plan is degenerate (0-step GoalSatisfied or ProgressBarrier with no executable step). This manifests as total action cessation despite continuous planning, and is distinct from smell 3 (stuck agents) where the planner itself fails to find plans. To detect degenerate plan loops, Grep Section 7 for `GoalSatisfied\[steps=0` — this pattern matches 0-step plans that produce no action. If an agent has hundreds of these across multiple 100-tick bins, it confirms a degenerate plan loop. Also check whether the same goal appears in consecutive bins via `bash grep 'selected=<GoalName>' <dump>` (substitute the suspected goal).
 
 3. **Stuck agents** -- Agent has no actions for many consecutive ticks. Explainable idle (human-controlled agent with no input, all needs satisfied, no affordances) vs. pathological idle (needs rising but agent does nothing)? Cross-reference with Section 7 to determine if the planner was producing decisions at all during the idle period, and if so, what outcomes it found. Also check whether the planner's candidate count dropped to 0 — the agent may be idle not because plans failed, but because no goal candidates were generated at all (e.g., all goal preconditions unmet, carry capacity full, no affordances producing new goals). This is distinct from frontier/budget exhaustion and may indicate resource saturation or missing affordances rather than planner limitations. If the agent has dead ticks in Section 7, their idle status post-death is expected — focus analysis on the ticks leading to death and the causal chain that produced it.
 
@@ -103,6 +114,11 @@ Analyze the dump for all 10 smell categories. For each, state whether the smell 
 
 The per-agent summary also includes a "Ticks above 750‰" line for each need, providing concrete data for smells 5-6 and supporting LLM analysis of smells 8-10.
 
+**Known Pathology Signatures** — recurring patterns from prior runs that speed diagnosis:
+
+- **FreeCarryCapacity degenerate loop**: Agent inventory fills with low-value items (typically Waste from consumption byproducts). FreeCarryCapacity scores highest priority, but GoalSatisfied[steps=0] produces no action. Blocks all other goals indefinitely. Signature: `selected=FreeCarryCapacity ... GoalSatisfied[steps=0]` repeating 50+ times per 100-tick bin, with action timeline showing 0 actions. Cross-reference with Section 6 inventory (full of Waste) and smell 10.
+- **AcquireCommodity budget exhaustion spiral**: Agent needs food/water but the multi-location acquisition plan (travel → pick up → consume) generates 1000-6000+ candidates at depth 5-9, exceeding the planner's expansion budget every time. Manifests as sustained critical needs (smell 5) despite the commodity existing at a reachable location. Signature: repeated `budget-exhausted` entries for `AcquireCommodity` with high candidate counts and depth.
+
 After analyzing all 10 smells, note any cases where trace data was insufficient to reach a confident assessment. Record which specific data gaps affected which smells -- this feeds the Trace Quality Assessment in Step 5.
 
 ### Step 5: Write Report
@@ -116,6 +132,7 @@ Write `reports/simulation-observer-report.md` with this structure:
 
 ## Run Summary
 [Copy run metadata from dump: scenario, seed, ticks, agents, places, total events]
+**Deaths**: [list agent deaths with tick and cause, or "None"]
 
 ## Findings
 
@@ -197,3 +214,4 @@ Delete `reports/simulation-observer-dump.md` -- the dump is an intermediate arti
 - Patrol agents are excluded from action loop detection in the binary, but verify patrol behavior looks reasonable in the raw traces.
 - 1440 ticks = 1 simulated day. For deeper analysis, try 2880 (2 days) or 4320 (3 days).
 - If an agent died, Section 2 includes the death tick and cause (e.g., `**Death**: Tick 422 (cause: NeedDeprivation { Hunger })`). Note this prominently in the Run Summary. Section 7 will also show `dead` ticks > 0. Adjust smell analysis accordingly: a dead agent's "stuck" status post-death is expected, not pathological. Focus analysis on what led to death: trace the unaddressed needs, missing affordances, and failed plans in the ticks before death. Report the approximate death tick and contributing factors in the Cross-Cutting Patterns section.
+- For before/after comparisons (e.g., validating a fix), run the observer twice with different `--output` paths (e.g., `reports/sim-dump-before.md` and `reports/sim-dump-after.md`). Compare Summary Statistics sections and specific smell severities across runs.

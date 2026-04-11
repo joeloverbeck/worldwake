@@ -4,6 +4,8 @@
 // 4 agents (1 human, 3 AI) with diverse profiles, items, facilities,
 // and resource sources.  Designed to exercise all CLI commands.
 //
+// Updated 2026-04-11: S90 coverage — Added max_candidates_per_expansion to
+//   Merchant Vara's cognitive_profile (S90 mantacs scoring added field to CognitiveProfile).
 // Updated 2026-04-11: S88 schema drift — Added landmark_extraction_depth to
 //   Merchant Vara's cognitive_profile and preferred_operator_boost to her
 //   execution_budget (GOAP overhaul added fields to CognitiveProfile and ExecutionBudget).
@@ -169,6 +171,7 @@
             ),
             cognitive_profile: (
                 max_candidates_to_plan: 4,
+                max_candidates_per_expansion: 150,
                 max_plan_depth: 10,
                 snapshot_travel_horizon: 6,
                 max_node_expansions: 300,
