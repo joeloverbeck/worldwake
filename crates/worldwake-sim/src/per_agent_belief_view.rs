@@ -1131,6 +1131,13 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
         if holder == self.agent {
             return self.world.controlled_commodity_quantity(holder, kind);
         }
+        if self.world.possessor_of(holder) == Some(self.agent) {
+            return self
+                .world
+                .get_component_item_lot(holder)
+                .filter(|lot| lot.commodity == kind)
+                .map_or(Quantity(0), |lot| lot.quantity);
+        }
 
         self.believed_entity(holder)
             .and_then(|state| state.last_known_inventory.get(&kind).copied())
@@ -1803,6 +1810,40 @@ mod tests {
             Quantity(7)
         );
         assert_eq!(CombatBeliefView::wounds(&view, other), vec![sample_wound()]);
+    }
+
+    #[test]
+    fn directly_possessed_item_lot_quantity_uses_authoritative_quantity_over_stale_belief() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let lot = txn
+                .create_item_lot(CommodityKind::Waste, Quantity(6))
+                .unwrap();
+            txn.set_ground_location(lot, place).unwrap();
+            txn.set_possessor(lot, agent).unwrap();
+            commit_txn(txn);
+            (agent, lot)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        let mut stale_lot_belief = entity_belief(place, true, 0, 10);
+        stale_lot_belief.believed_kind = Some(EntityKind::ItemLot);
+        stale_lot_belief.last_known_inventory.clear();
+        stale_lot_belief
+            .last_known_inventory
+            .insert(CommodityKind::Waste, Quantity(1));
+        beliefs.update_entity(lot, stale_lot_belief);
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            InventoryBeliefView::commodity_quantity(&view, lot, CommodityKind::Waste),
+            Quantity(6)
+        );
     }
 
     #[test]

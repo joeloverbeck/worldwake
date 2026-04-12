@@ -63,6 +63,7 @@
             name: "Kael",
             location: "Thornwall Village",
             control: Ai,
+            known_recipes: ["Harvest Water", "Harvest Grain"],
             needs: (
                 hunger: 500,
                 thirst: 300,
@@ -122,6 +123,7 @@
             name: "Merchant Vara",
             location: "Thornwall Village",
             control: Ai,
+            known_recipes: ["Harvest Water", "Harvest Grain", "Harvest Apples", "Bake Bread"],
             needs: (
                 hunger: 200,
                 thirst: 200,
@@ -287,6 +289,7 @@
             name: "Guard Theron",
             location: "Dusty Trail",
             control: Ai,
+            known_recipes: ["Harvest Water"],
             needs: (
                 hunger: 300,
                 thirst: 300,

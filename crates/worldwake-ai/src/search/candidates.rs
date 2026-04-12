@@ -12,7 +12,8 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, FacilityBeliefView,
-    QueueForFacilityUsePayload, SpatialBeliefView, get_affordances_for_defs,
+    InventoryBeliefView, QueueForFacilityUsePayload, RecipeRegistry, SpatialBeliefView,
+    get_affordances_for_defs,
 };
 
 use super::SearchNode;
@@ -25,6 +26,7 @@ pub(super) struct SearchCandidate {
     pub(super) payload_override: Option<ActionPayload>,
     pub(super) planner_only: bool,
     pub(super) trace_index: Option<usize>,
+    pub(super) expansion_trace_index: Option<usize>,
 }
 
 pub(super) fn relevant_action_defs(
@@ -48,10 +50,35 @@ pub(super) fn push_root_candidate_trace(
     Some(sink.len() - 1)
 }
 
+pub(super) fn push_expansion_candidate_trace(
+    sink: &mut Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
+    trace: crate::decision_trace::ExpansionCandidateTrace,
+) -> Option<usize> {
+    let sink = sink.as_deref_mut()?;
+    sink.push(trace);
+    Some(sink.len() - 1)
+}
+
 pub(super) fn update_root_candidate_outcome(
     sink: &mut Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
     trace_index: Option<usize>,
     outcome: crate::decision_trace::RootCandidateOutcome,
+) {
+    let Some(trace_index) = trace_index else {
+        return;
+    };
+    let Some(sink) = sink.as_deref_mut() else {
+        return;
+    };
+    if let Some(trace) = sink.get_mut(trace_index) {
+        trace.outcome = outcome;
+    }
+}
+
+pub(super) fn update_expansion_candidate_outcome(
+    sink: &mut Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
+    trace_index: Option<usize>,
+    outcome: crate::decision_trace::ExpansionCandidateOutcome,
 ) {
     let Some(trace_index) = trace_index else {
         return;
@@ -97,7 +124,30 @@ pub(super) fn root_candidate_trace_from_candidate(
     }
 }
 
+pub(super) fn expansion_candidate_trace_from_candidate(
+    candidate: &SearchCandidate,
+    registry: &ActionDefRegistry,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+) -> crate::decision_trace::ExpansionCandidateTrace {
+    crate::decision_trace::ExpansionCandidateTrace {
+        def_id: candidate.def_id,
+        action_name: registry
+            .get(candidate.def_id)
+            .map_or_else(|| "<unknown>".to_string(), |def| def.name.clone()),
+        op_kind: semantics_table
+            .get(&candidate.def_id)
+            .map(|sem| sem.op_kind),
+        authoritative_targets: candidate.authoritative_targets.clone(),
+        planner_only: candidate.planner_only,
+        payload_status: root_candidate_payload_status(candidate.payload_override.as_ref(), None),
+        outcome: crate::decision_trace::ExpansionCandidateOutcome::Skipped(
+            crate::decision_trace::RootCandidateSkipReason::MissingSemantics,
+        ),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(super) fn search_candidates(
     goal: &GroundedGoal,
     node: &SearchNode<'_>,
@@ -107,6 +157,36 @@ pub(super) fn search_candidates(
     blocked: &BlockedIntentMemory,
     current_tick: Tick,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+    root_omissions: Option<&mut Vec<crate::decision_trace::RootOperatorOmissionTrace>>,
+    relevant_defs: &BTreeSet<ActionDefId>,
+) -> Vec<SearchCandidate> {
+    search_candidates_with_expansion_trace(
+        goal,
+        node,
+        semantics_table,
+        registry,
+        handlers,
+        blocked,
+        current_tick,
+        binding_rejections,
+        None,
+        root_candidates,
+        root_omissions,
+        relevant_defs,
+    )
+}
+
+pub(super) fn search_candidates_with_expansion_trace(
+    goal: &GroundedGoal,
+    node: &SearchNode<'_>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    blocked: &BlockedIntentMemory,
+    current_tick: Tick,
+    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    expansion_candidates: Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
     root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
     root_omissions: Option<&mut Vec<crate::decision_trace::RootOperatorOmissionTrace>>,
     relevant_defs: &BTreeSet<ActionDefId>,
@@ -199,10 +279,15 @@ pub(super) fn search_candidates(
         );
     }
     let mut root_candidates = root_candidates;
+    let mut expansion_candidates = expansion_candidates;
     let mut binding_rejections = binding_rejections;
     let mut filtered = Vec::with_capacity(candidates.len());
 
     for mut candidate in candidates {
+        let expansion_trace_index = push_expansion_candidate_trace(
+            &mut expansion_candidates,
+            expansion_candidate_trace_from_candidate(&candidate, registry, semantics_table),
+        );
         let trace_index = push_root_candidate_trace(
             &mut root_candidates,
             root_candidate_trace_from_candidate(&candidate, registry, semantics_table),
@@ -221,11 +306,22 @@ pub(super) fn search_candidates(
                     },
                 ),
             );
+            update_expansion_candidate_outcome(
+                &mut expansion_candidates,
+                expansion_trace_index,
+                crate::decision_trace::ExpansionCandidateOutcome::Filtered(
+                    crate::decision_trace::ExpansionCandidateFilterReason::BlockedFacilityUse {
+                        facility,
+                        intended_action,
+                    },
+                ),
+            );
             continue;
         }
 
         let Some(semantics) = semantics_table.get(&candidate.def_id) else {
             candidate.trace_index = trace_index;
+            candidate.expansion_trace_index = expansion_trace_index;
             filtered.push(candidate);
             continue;
         };
@@ -251,6 +347,15 @@ pub(super) fn search_candidates(
                     },
                 ),
             );
+            update_expansion_candidate_outcome(
+                &mut expansion_candidates,
+                expansion_trace_index,
+                crate::decision_trace::ExpansionCandidateOutcome::Filtered(
+                    crate::decision_trace::ExpansionCandidateFilterReason::BindingMismatch {
+                        required_target,
+                    },
+                ),
+            );
             continue;
         }
 
@@ -264,6 +369,13 @@ pub(super) fn search_candidates(
                 trace_index,
                 crate::decision_trace::RootCandidateOutcome::Filtered(
                     crate::decision_trace::RootCandidateFilterReason::GoalUnavailable,
+                ),
+            );
+            update_expansion_candidate_outcome(
+                &mut expansion_candidates,
+                expansion_trace_index,
+                crate::decision_trace::ExpansionCandidateOutcome::Filtered(
+                    crate::decision_trace::ExpansionCandidateFilterReason::GoalUnavailable,
                 ),
             );
             continue;
@@ -287,13 +399,211 @@ pub(super) fn search_candidates(
                     },
                 ),
             );
+            update_expansion_candidate_outcome(
+                &mut expansion_candidates,
+                expansion_trace_index,
+                crate::decision_trace::ExpansionCandidateOutcome::Filtered(
+                    crate::decision_trace::ExpansionCandidateFilterReason::PlaceBlocker {
+                        place,
+                        blocking_fact,
+                    },
+                ),
+            );
             continue;
         }
 
         candidate.trace_index = trace_index;
+        candidate.expansion_trace_index = expansion_trace_index;
         filtered.push(candidate);
     }
     filtered
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(test)]
+pub(super) fn apply_commodity_relevance_filter(
+    candidates: &mut Vec<SearchCandidate>,
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    tactical_goal: Option<&super::TacticalGoal>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    recipes: &RecipeRegistry,
+    root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+) {
+    apply_commodity_relevance_filter_with_expansion_trace(
+        candidates,
+        goal,
+        state,
+        tactical_goal,
+        semantics_table,
+        registry,
+        recipes,
+        None,
+        root_candidates,
+    );
+}
+
+pub(super) fn apply_commodity_relevance_filter_with_expansion_trace(
+    candidates: &mut Vec<SearchCandidate>,
+    goal: &GroundedGoal,
+    state: &PlanningState<'_>,
+    tactical_goal: Option<&super::TacticalGoal>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    recipes: &RecipeRegistry,
+    expansion_candidates: Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
+    root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+) {
+    let Some(goal_commodity) = tactical_goal
+        .and_then(|goal| match goal {
+            super::TacticalGoal::AcquirePrerequisite { commodity, .. }
+            | super::TacticalGoal::SocialQuery { commodity, .. } => Some(*commodity),
+            super::TacticalGoal::Explore { .. } | super::TacticalGoal::TravelToGoal { .. } => None,
+        })
+        .or_else(|| goal.key.kind.target_commodity(recipes))
+    else {
+        return;
+    };
+
+    let mut root_candidates = root_candidates;
+    let mut expansion_candidates = expansion_candidates;
+    candidates.retain(|candidate| {
+        let Some(semantics) = semantics_table.get(&candidate.def_id) else {
+            return true;
+        };
+        let (keep, candidate_commodity) = commodity_filter_outcome(
+            candidate,
+            semantics.op_kind,
+            state,
+            registry,
+            goal_commodity,
+        );
+        if !keep {
+            update_root_candidate_outcome(
+                &mut root_candidates,
+                candidate.trace_index,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                        candidate_commodity,
+                        goal_commodity,
+                    },
+                ),
+            );
+            update_expansion_candidate_outcome(
+                &mut expansion_candidates,
+                candidate.expansion_trace_index,
+                crate::decision_trace::ExpansionCandidateOutcome::Filtered(
+                    crate::decision_trace::ExpansionCandidateFilterReason::CommodityIrrelevant {
+                        candidate_commodity,
+                        goal_commodity,
+                    },
+                ),
+            );
+        }
+        keep
+    });
+}
+
+fn commodity_filter_outcome(
+    candidate: &SearchCandidate,
+    op_kind: PlannerOpKind,
+    state: &PlanningState<'_>,
+    registry: &ActionDefRegistry,
+    goal_commodity: worldwake_core::CommodityKind,
+) -> (bool, Option<worldwake_core::CommodityKind>) {
+    match op_kind {
+        PlannerOpKind::MoveCargo => match candidate
+            .authoritative_targets
+            .first()
+            .copied()
+            .and_then(|target| state.item_lot_commodity(target))
+        {
+            Some(candidate_commodity) => (
+                candidate_commodity == goal_commodity,
+                Some(candidate_commodity),
+            ),
+            None => (true, None),
+        },
+        PlannerOpKind::Trade => match candidate
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_trade)
+            .and_then(|payload| state.item_lot_commodity(payload.sale_lot))
+        {
+            Some(candidate_commodity) => (
+                candidate_commodity == goal_commodity,
+                Some(candidate_commodity),
+            ),
+            None => (true, None),
+        },
+        PlannerOpKind::QueueForFacilityUse => {
+            let Some(intended_action) = candidate
+                .payload_override
+                .as_ref()
+                .and_then(ActionPayload::as_queue_for_facility_use)
+                .map(|payload| payload.intended_action)
+            else {
+                return (true, None);
+            };
+            let Some(payload) = registry.get(intended_action).map(|def| &def.payload) else {
+                return (true, None);
+            };
+            payload_commodity_filter_outcome(payload, state, candidate, goal_commodity)
+        }
+        PlannerOpKind::Harvest | PlannerOpKind::Craft => {
+            let Some(payload) = candidate
+                .payload_override
+                .as_ref()
+                .or_else(|| registry.get(candidate.def_id).map(|def| &def.payload))
+            else {
+                return (true, None);
+            };
+            payload_commodity_filter_outcome(payload, state, candidate, goal_commodity)
+        }
+        _ => (true, None),
+    }
+}
+
+fn payload_commodity_filter_outcome(
+    payload: &ActionPayload,
+    state: &PlanningState<'_>,
+    candidate: &SearchCandidate,
+    goal_commodity: worldwake_core::CommodityKind,
+) -> (bool, Option<worldwake_core::CommodityKind>) {
+    if let Some(harvest) = payload.as_harvest() {
+        let candidate_commodity = harvest.output_commodity;
+        return (
+            candidate_commodity == goal_commodity,
+            Some(candidate_commodity),
+        );
+    }
+
+    if let Some(craft) = payload.as_craft() {
+        let contains_goal = craft
+            .inputs
+            .iter()
+            .chain(craft.outputs.iter())
+            .any(|(commodity, _)| *commodity == goal_commodity);
+        let candidate_commodity = craft
+            .outputs
+            .first()
+            .or_else(|| craft.inputs.first())
+            .map(|(commodity, _)| *commodity);
+        return (contains_goal, candidate_commodity);
+    }
+
+    if let Some(target) = candidate.authoritative_targets.first().copied()
+        && let Some(candidate_commodity) =
+            state.resource_source(target).map(|source| source.commodity)
+    {
+        return (
+            candidate_commodity == goal_commodity,
+            Some(candidate_commodity),
+        );
+    }
+
+    (true, None)
 }
 
 fn goal_synthesized_candidates(
@@ -328,6 +638,7 @@ fn goal_synthesized_candidates(
                     payload_override: None,
                     planner_only: false,
                     trace_index: None,
+                    expansion_trace_index: None,
                 }),
                 RootCandidateSynthesis::NoSynthesisPath
                 | RootCandidateSynthesis::UnsupportedGoalOp
@@ -346,9 +657,8 @@ fn synthesized_planning_targets(
     match (&goal.key.kind, semantics.op_kind) {
         // Accusation payload binds to the accused entity, but the lawful
         // execution location is the crime register's home place.
-        (GoalKind::Accuse { crime_register, .. }, PlannerOpKind::Accuse) => state
-            .record_data(*crime_register)
-            .map_or_else(
+        (GoalKind::Accuse { crime_register, .. }, PlannerOpKind::Accuse) => {
+            state.record_data(*crime_register).map_or_else(
                 || {
                     authoritative_targets
                         .into_iter()
@@ -356,7 +666,8 @@ fn synthesized_planning_targets(
                         .collect()
                 },
                 |record| vec![PlanningEntityRef::Authoritative(record.home_place)],
-            ),
+            )
+        }
         _ => authoritative_targets
             .into_iter()
             .map(PlanningEntityRef::Authoritative)
@@ -584,14 +895,14 @@ pub(super) fn search_candidates_from_affordance(
             payload_override: affordance.payload_override.clone(),
             planner_only: false,
             trace_index: None,
+            expansion_trace_index: None,
         }];
     };
     let planning_targets = match (&goal.key.kind, def.name.as_str()) {
         // Accusation payload binds to the accused entity, but the lawful
         // execution location is the crime register's home place.
-        (GoalKind::Accuse { crime_register, .. }, "accuse") => state
-            .record_data(*crime_register)
-            .map_or_else(
+        (GoalKind::Accuse { crime_register, .. }, "accuse") => {
+            state.record_data(*crime_register).map_or_else(
                 || {
                     affordance
                         .bound_targets
@@ -601,7 +912,8 @@ pub(super) fn search_candidates_from_affordance(
                         .collect()
                 },
                 |record| vec![PlanningEntityRef::Authoritative(record.home_place)],
-            ),
+            )
+        }
         _ => affordance
             .bound_targets
             .iter()
@@ -616,6 +928,7 @@ pub(super) fn search_candidates_from_affordance(
         payload_override: affordance.payload_override.clone(),
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
     if matches!(
         def.payload,
@@ -785,6 +1098,7 @@ pub(super) fn search_candidate_from_planner(
         payload_override: candidate.payload_override,
         planner_only: true,
         trace_index: None,
+        expansion_trace_index: None,
     }
 }
 

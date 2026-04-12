@@ -18,11 +18,13 @@
             name: "Kael",
             location: "Market Square",
             control: Human,
+            known_recipes: ["Harvest Water"],
         ),
         (
             name: "Merchant Vara",
             location: "Market Square",
             control: Ai,
+            known_recipes: ["Harvest Water", "Harvest Grain", "Harvest Apples", "Bake Bread"],
             merchandise_profile: (
                 sale_kinds: [Grain, Apple],
                 home_market: "Market Square",

@@ -67,17 +67,18 @@ fn found_plan_blocks_later_goals(plan: &PlannedPlan) -> bool {
     }
 }
 
-fn perceived_selection_cost(
-    snapshot: &crate::PlanningSnapshot,
-    plan: &PlannedPlan,
-) -> Option<u32> {
+fn perceived_selection_cost(snapshot: &crate::PlanningSnapshot, plan: &PlannedPlan) -> Option<u32> {
     let state = crate::PlanningState::new(snapshot);
     let mut current_place = SpatialBeliefView::effective_place(&state, snapshot.actor())?;
     let mut total = 0u32;
 
     for step in &plan.steps {
         let step_cost = if step.op_kind == crate::PlannerOpKind::Travel {
-            let destination = step.targets.first().copied().and_then(crate::authoritative_target)?;
+            let destination = step
+                .targets
+                .first()
+                .copied()
+                .and_then(crate::authoritative_target)?;
             let cost = snapshot
                 .direct_perceived_travel_cost(current_place, destination)
                 .unwrap_or(step.estimated_ticks);
@@ -1257,9 +1258,9 @@ fn goal_target_entity(goal: GoalKind) -> Option<EntityId> {
 mod tests {
     use super::{
         CandidatePlanSearch, found_plan_blocks_later_goals, has_pending_budget_retry,
-        plan_search_result_to_trace, planning_time_target_belief_presence,
-        record_exhausted_goals, selected_plan_value, summarize_ranked_goal,
-        summarize_selected_plan, summarize_snapshot_continuation,
+        plan_search_result_to_trace, planning_time_target_belief_presence, record_exhausted_goals,
+        selected_plan_value, summarize_ranked_goal, summarize_selected_plan,
+        summarize_snapshot_continuation,
     };
     use crate::{
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
@@ -1323,8 +1324,7 @@ mod tests {
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
             max_candidates_to_plan: reasoning.max_candidates_to_plan,
-            max_candidates_per_expansion: CognitiveProfile::default()
-                .max_candidates_per_expansion,
+            max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
@@ -2323,6 +2323,7 @@ mod tests {
                 landmark_heuristic: 0,
                 travel_pruning: None,
                 prerequisite_guidance: None,
+                expansion_candidates: Vec::new(),
                 root_candidates: Vec::new(),
                 root_omissions: Vec::new(),
             });
@@ -2360,6 +2361,7 @@ mod tests {
                 landmark_heuristic: 0,
                 travel_pruning: None,
                 prerequisite_guidance: None,
+                expansion_candidates: Vec::new(),
                 root_candidates: Vec::new(),
                 root_omissions: Vec::new(),
             });
@@ -2411,8 +2413,12 @@ mod tests {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
         });
-        let satisfied_plan =
-            PlannedPlan::new(opportunity(goal), goal, Vec::new(), PlanTerminalKind::GoalSatisfied);
+        let satisfied_plan = PlannedPlan::new(
+            opportunity(goal),
+            goal,
+            Vec::new(),
+            PlanTerminalKind::GoalSatisfied,
+        );
         let combat_plan = PlannedPlan::new(
             opportunity(goal),
             goal,

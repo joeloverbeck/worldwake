@@ -6,6 +6,8 @@ Starting from the test file(s), build a list of source modules that the tests ex
 
 **Short-circuit for golden/integration tests**: If the test calls a top-level simulation step function (e.g., `step_once()`, `tick()`, or equivalent) in a loop, all source modules in the referenced crates are exercised. Skip per-symbol tracing and enumerate all `.rs` files in those crates' `src/` directories directly, excluding `lib.rs` barrel files and `mod.rs` files that only contain `mod` declarations.
 
+**Mixed test files**: When a test file contains both direct-API tests (calling specific functions like `search_plan`, `generate_candidates`) and simulation-loop tests (calling `step_once()` in a loop), apply the short-circuit only to the crates referenced by the simulation-loop tests. For direct-API tests, trace symbols per the standard path below. Merge both sets into the final exercised module list.
+
 **Otherwise, trace per-symbol**:
 
 1. If the input is a directory, collect all `.rs` files in it (excluding `mod.rs` files that only contain `mod` declarations). If a single file, use that file.

@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 156
-- Contributing golden test files: 25
-- Associated tests: 333
+- Scenario blocks: 158
+- Contributing golden test files: 26
+- Associated tests: 335
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -1450,9 +1450,39 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: same-place observation -> belief recording -> `enforce_capacity()` eviction -> retained infrastructure beliefs.
 
+### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
+
+- Source: `golden_planner_pathology.rs:464`
+- Systems: Needs, AI, Travel, Production
+- GoalKinds: AcquireCommodity
+- ActionDomains: Travel, Production, Needs
+- Places: DustyTrail, ThornwallVillage
+- Principles: 7, 14, 20
+
+**Setup**: A Dusty Trail guard uses the `cli-evaluation.ron` place graph slice: Thornwall Village with a well 2 ticks away, Dusty Trail as the starting place, and the guard's patrol-style profile boundary. The guard starts thirsty enough for water acquisition to compete immediately.
+
+**Proves**: The exact Dusty Trail-style cross-location water path now produces a lawful `AcquireCommodity(Water)` plan without budget exhaustion, commits a `drink`, and lowers thirst within the scenario window.
+
+**Cross-system chain**: Dusty Trail thirst pressure -> AcquireCommodity(Water) found plan -> travel to Thornwall Village -> committed drink -> reduced thirst.
+
+### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
+
+- Source: `golden_planner_pathology.rs:587`
+- Systems: Needs, AI, Production
+- GoalKinds: FreeCarryCapacity
+- ActionDomains: Needs, Production
+- Places: EldergroveForest
+- Principles: 3, 7, 20, 21
+
+**Setup**: Rebuild the exact Forager Lina Eldergrove Forest substrate from `scenarios/cli-evaluation.ron` using the live place graph, Lina's scenario profile values, 8 ground Apples, 5 ground Water, and the `Eldergrove Orchard` Apple source. The run uses the scenario seed `7777` and only seeds Lina's local Eldergrove beliefs, matching the observer report's locality boundary.
+
+**Proves**: After the real waste-accumulation phase from the cli-evaluation scenario, Lina no longer enters the observer-reported degenerate loop. Late-run planning either switches away from `FreeCarryCapacity` or produces executable disposal work, eating resumes, and hunger falls within the window.
+
+**Cross-system chain**: Eldergrove harvest/eat/waste accumulation -> carry strain assessed from actual carried load -> no spurious `FreeCarryCapacity` loop -> lawful self-care resumes -> late eat commit -> falling hunger.
+
 ### Scenario 3: Resource Contention with Conservation
 
-- Source: `golden_production.rs:2900`
+- Source: `golden_production.rs:2902`
 - Systems: Needs, Production, Travel, Conservation
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -1466,7 +1496,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 3b: Observed Harvest Competition Redirects To Remote Sibling
 
-- Source: `golden_production.rs:3055`
+- Source: `golden_production.rs:3057`
 - Systems: Perception, Production, Travel, AI
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -1481,7 +1511,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 102: Departed Waiter Pruned From Facility Queue
 
-- Source: `golden_production.rs:3202`
+- Source: `golden_production.rs:3204`
 - Systems: Contention, Travel, Production
 - GoalKinds: RestockCommodity
 - ActionDomains: Production, Travel
@@ -1496,7 +1526,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 4: Materialization Barrier Chain
 
-- Source: `golden_production.rs:3339`
+- Source: `golden_production.rs:3341`
 - Systems: Production, Transport, Needs, AI
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Transport, Needs
@@ -1510,7 +1540,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 6b: Multi-Recipe Craft Path
 
-- Source: `golden_production.rs:3543`
+- Source: `golden_production.rs:3545`
 - Systems: Production, Transport, Needs, AI
 - GoalKinds: ProduceCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Transport, Needs
@@ -1524,7 +1554,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 103: Unique-Item Race Rejection Redirects To Local Alternative
 
-- Source: `golden_production.rs:3717`
+- Source: `golden_production.rs:3719`
 - Systems: Transport, Contention, Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Transport, Production
@@ -1539,7 +1569,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 3f: Faction-Owned Production — Member vs Outsider
 
-- Source: `golden_production.rs:3777`
+- Source: `golden_production.rs:3779`
 - Systems: Production, Ownership, Factions, AI, Travel, Needs, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Transport, Needs
@@ -1554,7 +1584,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 123: Goal Switch Clears Contention Queue Entry
 
-- Source: `golden_production.rs:4048`
+- Source: `golden_production.rs:4050`
 - Systems: Contention, Production, Needs, AI, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), Sleep
 - ActionDomains: Production, Needs, Travel
@@ -1644,7 +1674,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 129: Utility Profiles Diverge Under Identical Self-Care Pressure
 
-- Source: `golden_reasoning_diversity.rs:529`
+- Source: `golden_reasoning_diversity.rs:540`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

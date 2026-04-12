@@ -12,19 +12,24 @@ use crate::{
 };
 #[cfg(test)]
 use candidates::search_candidate_from_planner;
+#[cfg(test)]
+use candidates::search_candidates;
 use candidates::{
-    SearchCandidate, root_candidate_payload_status, search_candidates,
-    search_candidates_from_affordance, unsupported_goal,
+    SearchCandidate, apply_commodity_relevance_filter_with_expansion_trace,
+    search_candidates_from_affordance, search_candidates_with_expansion_trace, unsupported_goal,
 };
 use frontier::{DualFrontier, FrontierEntry, compare_search_nodes};
 use heuristic::combined_relevant_places_with_guidance;
 #[cfg(test)]
 use heuristic::compute_heuristic;
 #[cfg(test)]
+use heuristic::prune_travel_away_from_goal;
+#[cfg(test)]
 use heuristic::{combined_relevant_places, root_node};
 use heuristic::{
     combined_relevant_places_for_tactical, combined_relevant_places_with_guidance_for_tactical,
-    compute_landmark_heuristic, prune_travel_away_from_goal, root_node_for_tactical,
+    compute_landmark_heuristic, prune_travel_away_from_goal_with_expansion_trace,
+    root_node_for_tactical,
 };
 use landmarks::{
     LandmarkSet, PlanningFact, extract_landmarks, goal_facts_from_goal, planning_facts_from_state,
@@ -91,13 +96,12 @@ impl TacticalGoal {
     ) -> Option<Self> {
         let step = step?;
         match step.sub_goal {
-            strategic::TacticalSubGoal::SatisfyGoal => {
-                travel_to_goal_supports_tactical_barrier(&goal.key.kind).then_some(
-                    Self::TravelToGoal {
-                        destination: step.destination,
-                    },
-                )
-            }
+            strategic::TacticalSubGoal::SatisfyGoal => travel_to_goal_supports_tactical_barrier(
+                &goal.key.kind,
+            )
+            .then_some(Self::TravelToGoal {
+                destination: step.destination,
+            }),
             strategic::TacticalSubGoal::AcquirePrerequisite(commodity) => {
                 Some(Self::AcquirePrerequisite {
                     commodity,
@@ -173,8 +177,12 @@ fn should_fail_fast_for_missing_tactical_goal(
     step: Option<&strategic::StrategicStep>,
     tactical_goal: Option<&TacticalGoal>,
 ) -> bool {
-    step.is_some_and(|step| matches!(step.sub_goal, strategic::TacticalSubGoal::ExploreWithBarrier))
-        && tactical_goal.is_none()
+    step.is_some_and(|step| {
+        matches!(
+            step.sub_goal,
+            strategic::TacticalSubGoal::ExploreWithBarrier
+        )
+    }) && tactical_goal.is_none()
 }
 
 fn travel_to_goal_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> bool {
@@ -296,9 +304,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         if let Some(ref mut meta) = trace_metadata {
             **meta = trace_state;
         }
-        return PlanSearchResult::FrontierExhausted {
-            expansions_used: 0,
-        };
+        return PlanSearchResult::FrontierExhausted { expansions_used: 0 };
     }
     let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);
     frontier.push_regular(FrontierEntry::new(root_node_for_tactical(
@@ -310,6 +316,7 @@ pub(crate) fn search_plan_with_trace_metadata(
     )));
     let mut landmark_set = LandmarkSet::empty();
     let mut expansions = 0u16;
+    let effective_budget = cognitive.max_node_expansions;
     let mut best_barrier: Option<PlannedPlan> = None;
 
     while let Some(node) = frontier.pop() {
@@ -334,7 +341,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         if node.steps.len() >= usize::from(cognitive.max_plan_depth) {
             continue;
         }
-        if expansions >= cognitive.max_node_expansions {
+        if expansions >= effective_budget {
             if let Some(barrier_plan) = best_barrier {
                 return PlanSearchResult::Found(Box::new(barrier_plan));
             }
@@ -348,7 +355,8 @@ pub(crate) fn search_plan_with_trace_metadata(
         let record_root_candidates = depth == 0 && expansion_summaries.is_some();
         let mut root_candidates = Vec::new();
         let mut root_omissions = Vec::new();
-        let mut candidates = search_candidates(
+        let mut expansion_candidates = Vec::new();
+        let mut candidates = search_candidates_with_expansion_trace(
             goal,
             &node,
             semantics_table,
@@ -357,6 +365,7 @@ pub(crate) fn search_plan_with_trace_metadata(
             blocked,
             current_tick,
             binding_rejections.as_deref_mut(),
+            Some(&mut expansion_candidates),
             record_root_candidates.then_some(&mut root_candidates),
             record_root_candidates.then_some(&mut root_omissions),
             &relevant_defs,
@@ -369,15 +378,44 @@ pub(crate) fn search_plan_with_trace_metadata(
             handlers,
             active_tactical_goal,
         ) {
-            candidates.extend(extra_candidates);
+            candidates.extend(extra_candidates.into_iter().map(|mut candidate| {
+                candidate.expansion_trace_index =
+                    crate::search::candidates::push_expansion_candidate_trace(
+                        &mut Some(&mut expansion_candidates),
+                        crate::search::candidates::expansion_candidate_trace_from_candidate(
+                            &candidate,
+                            registry,
+                            semantics_table,
+                        ),
+                    );
+                candidate
+            }));
         }
-        apply_tactical_candidate_filter(
+        apply_commodity_relevance_filter_with_expansion_trace(
             &mut candidates,
+            goal,
+            &node.state,
+            active_tactical_goal,
+            semantics_table,
+            registry,
+            recipes,
+            Some(&mut expansion_candidates),
+            record_root_candidates.then_some(&mut root_candidates),
+        );
+        apply_tactical_candidate_filter_with_expansion_trace(
+            &mut candidates,
+            Some(&mut expansion_candidates),
             goal,
             &node,
             semantics_table,
             active_tactical_goal,
         );
+        // NOTE: Futile root expansion detection was considered here but
+        // deferred. When only Travel candidates survive at root, the planner
+        // may still find affordances at destination locations (e.g., pick_up
+        // at a remote pantry). Synthesis-level omissions alone cannot
+        // distinguish "will never work" from "works after travel." The
+        // recipe knowledge fix in Task 1 is the primary mitigation.
         let combined_places = if expansion_summaries.is_some() {
             combined_relevant_places_with_guidance_for_tactical(
                 goal,
@@ -405,8 +443,9 @@ pub(crate) fn search_plan_with_trace_metadata(
                     node.state.snapshot().actor(),
                 ))
         {
-            travel_pruning = prune_travel_away_from_goal(
+            travel_pruning = prune_travel_away_from_goal_with_expansion_trace(
                 &mut candidates,
+                Some(&mut expansion_candidates),
                 current_place,
                 &combined_places.places,
                 snapshot,
@@ -430,7 +469,12 @@ pub(crate) fn search_plan_with_trace_metadata(
         let mut successors = Vec::new();
         let mut candidates_skipped = 0u16;
         for candidate in candidates {
-            let (terminal, successor) = match build_successor_detailed(
+            let Some(trace_index) = candidate.expansion_trace_index else {
+                unreachable!(
+                    "expansion candidate trace should exist before successor construction"
+                );
+            };
+            let (terminal, successor, payload_status) = match build_successor_detailed(
                 goal,
                 semantics_table,
                 registry,
@@ -443,6 +487,8 @@ pub(crate) fn search_plan_with_trace_metadata(
             ) {
                 Ok(result) => result,
                 Err(reason) => {
+                    expansion_candidates[trace_index].outcome =
+                        crate::decision_trace::ExpansionCandidateOutcome::Skipped(reason);
                     candidates_skipped += 1;
                     if let Some(trace_index) = candidate.trace_index
                         && let Some(trace) = root_candidates.get_mut(trace_index)
@@ -453,27 +499,23 @@ pub(crate) fn search_plan_with_trace_metadata(
                     continue;
                 }
             };
+            expansion_candidates[trace_index].payload_status = payload_status;
             if let Some(trace_index) = candidate.trace_index
                 && let Some(trace) = root_candidates.get_mut(trace_index)
             {
-                trace.payload_status = root_candidate_payload_status(
-                    candidate.payload_override.as_ref(),
-                    successor
-                        .steps
-                        .as_slice()
-                        .last()
-                        .and_then(|step| step.payload_override.as_ref()),
-                );
+                trace.payload_status = payload_status;
             }
             if let Some(terminal_kind) = terminal {
-                terminal_successors.push((terminal_kind, successor));
+                expansion_candidates[trace_index].outcome =
+                    crate::decision_trace::ExpansionCandidateOutcome::Terminal { terminal_kind };
+                terminal_successors.push((trace_index, terminal_kind, successor));
             } else {
                 successor_candidates.push(candidate.clone());
                 successor_operators.push(planning_operator_from_transition(
                     &node.state,
                     &successor.state,
                 ));
-                successors.push((terminal, successor, false));
+                successors.push((trace_index, terminal, successor, false));
             }
         }
 
@@ -483,9 +525,9 @@ pub(crate) fn search_plan_with_trace_metadata(
         let mut found_goal_satisfied = false;
         if !terminal_successors.is_empty() {
             // Sort by cost so the best candidate of each kind is first.
-            terminal_successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
+            terminal_successors.sort_by(|left, right| compare_search_nodes(&left.2, &right.2));
 
-            for (terminal_kind, successor) in terminal_successors {
+            for (_, terminal_kind, successor) in terminal_successors {
                 match terminal_kind {
                     // GoalSatisfied and CombatCommitment are returned immediately.
                     PlanTerminalKind::GoalSatisfied | PlanTerminalKind::CombatCommitment => {
@@ -525,6 +567,7 @@ pub(crate) fn search_plan_with_trace_metadata(
                                 prerequisite_guidance: summary_places
                                     .as_ref()
                                     .and_then(|summary| summary.guidance_trace.clone()),
+                                expansion_candidates: expansion_candidates.clone(),
                                 root_candidates: root_candidates.clone(),
                                 root_omissions: root_omissions.clone(),
                             });
@@ -588,18 +631,32 @@ pub(crate) fn search_plan_with_trace_metadata(
                 &successor_candidates,
                 &successor_operators,
             );
-            for (index, (_, _, preferred)) in successors.iter_mut().enumerate() {
+            for (index, (_, _, _, preferred)) in successors.iter_mut().enumerate() {
                 *preferred = preferred_indices.contains(&index);
             }
         }
 
-        successors.sort_by(|left, right| compare_search_nodes(&left.1, &right.1));
-        successors.truncate(usize::from(execution_budget.beam_width));
+        successors.sort_by(|left, right| compare_search_nodes(&left.2, &right.2));
+        let retained_len = successors
+            .len()
+            .min(usize::from(execution_budget.beam_width));
+        for (index, (trace_index, _, _, preferred)) in successors.iter().enumerate() {
+            expansion_candidates[*trace_index].outcome = if index < retained_len {
+                crate::decision_trace::ExpansionCandidateOutcome::RetainedNonTerminal {
+                    preferred: *preferred,
+                }
+            } else {
+                crate::decision_trace::ExpansionCandidateOutcome::PrunedByBeam {
+                    preferred: *preferred,
+                }
+            };
+        }
+        successors.truncate(retained_len);
 
         let non_terminal_after_beam = successors.len() as u16;
         let preferred_candidates = successors
             .iter()
-            .filter(|(_, _, preferred)| *preferred)
+            .filter(|(_, _, _, preferred)| *preferred)
             .count();
         let preferred_candidates = preferred_candidates.min(usize::from(u16::MAX)) as u16;
         let landmark_heuristic = if landmark_set.landmarks.is_empty() {
@@ -632,14 +689,15 @@ pub(crate) fn search_plan_with_trace_metadata(
                 landmark_heuristic,
                 travel_pruning,
                 prerequisite_guidance: summary_places.and_then(|summary| summary.guidance_trace),
+                expansion_candidates,
                 root_candidates,
                 root_omissions,
             });
         }
-        if successors.iter().any(|(_, _, preferred)| *preferred) {
+        if successors.iter().any(|(_, _, _, preferred)| *preferred) {
             frontier.trigger_boost();
         }
-        for (terminal, successor, preferred) in successors {
+        for (_, terminal, successor, preferred) in successors {
             if let Some(terminal_kind) = terminal {
                 return PlanSearchResult::Found(
                     PlannedPlan::new(
@@ -710,8 +768,27 @@ fn social_query_candidates(
     )
 }
 
+#[cfg(test)]
 fn apply_tactical_candidate_filter(
     candidates: &mut Vec<SearchCandidate>,
+    goal: &GroundedGoal,
+    node: &SearchNode<'_>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    tactical_goal: Option<&TacticalGoal>,
+) {
+    apply_tactical_candidate_filter_with_expansion_trace(
+        candidates,
+        None,
+        goal,
+        node,
+        semantics_table,
+        tactical_goal,
+    );
+}
+
+fn apply_tactical_candidate_filter_with_expansion_trace(
+    candidates: &mut Vec<SearchCandidate>,
+    expansion_candidates: Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
     goal: &GroundedGoal,
     node: &SearchNode<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -721,54 +798,89 @@ fn apply_tactical_candidate_filter(
         return;
     };
     let actor_place = node.state.effective_place(node.state.snapshot().actor());
-    candidates.retain(|candidate| match tactical_goal {
-        TacticalGoal::AcquirePrerequisite { destination, .. } => {
-            if actor_place == Some(*destination) {
-                semantics_table
-                    .get(&candidate.def_id)
-                    .is_none_or(|semantics| semantics.op_kind != crate::PlannerOpKind::Travel)
-            } else {
-                travel_advances_toward_destination(node, candidate, semantics_table, *destination)
+    let mut expansion_candidates = expansion_candidates;
+    candidates.retain(|candidate| {
+        let keep = match tactical_goal {
+            TacticalGoal::AcquirePrerequisite { destination, .. } => {
+                if actor_place == Some(*destination) {
+                    semantics_table
+                        .get(&candidate.def_id)
+                        .is_none_or(|semantics| semantics.op_kind != crate::PlannerOpKind::Travel)
+                } else {
+                    travel_advances_toward_destination(
+                        node,
+                        candidate,
+                        semantics_table,
+                        *destination,
+                    )
+                }
             }
-        }
-        TacticalGoal::Explore { destination } => {
-            if actor_place == Some(*destination) {
-                false
-            } else {
-                travel_advances_toward_destination(node, candidate, semantics_table, *destination)
+            TacticalGoal::Explore { destination } => {
+                if actor_place == Some(*destination) {
+                    false
+                } else {
+                    travel_advances_toward_destination(
+                        node,
+                        candidate,
+                        semantics_table,
+                        *destination,
+                    )
+                }
             }
-        }
-        TacticalGoal::SocialQuery { destination, .. } => {
-            if actor_place == Some(*destination) {
-                semantics_table
-                    .get(&candidate.def_id)
-                    .is_some_and(|semantics| semantics.op_kind == crate::PlannerOpKind::AskWitness)
-            } else {
-                travel_advances_toward_destination(node, candidate, semantics_table, *destination)
+            TacticalGoal::SocialQuery { destination, .. } => {
+                if actor_place == Some(*destination) {
+                    semantics_table
+                        .get(&candidate.def_id)
+                        .is_some_and(|semantics| {
+                            semantics.op_kind == crate::PlannerOpKind::AskWitness
+                        })
+                } else {
+                    travel_advances_toward_destination(
+                        node,
+                        candidate,
+                        semantics_table,
+                        *destination,
+                    )
+                }
             }
-        }
-        TacticalGoal::TravelToGoal { destination } => {
-            if actor_place == Some(*destination) {
-                semantics_table
-                    .get(&candidate.def_id)
-                    .is_none_or(|semantics| semantics.op_kind != crate::PlannerOpKind::Travel)
-            } else if node.steps.is_empty()
-                && semantics_table
-                    .get(&candidate.def_id)
-                    .is_some_and(|semantics| {
-                        semantics.op_kind != crate::PlannerOpKind::Travel
-                            && goal
-                                .key
-                                .kind
-                                .relevant_op_kinds()
-                                .contains(&semantics.op_kind)
-                    })
-            {
-                true
-            } else {
-                travel_advances_toward_destination(node, candidate, semantics_table, *destination)
+            TacticalGoal::TravelToGoal { destination } => {
+                if actor_place == Some(*destination) {
+                    semantics_table
+                        .get(&candidate.def_id)
+                        .is_none_or(|semantics| semantics.op_kind != crate::PlannerOpKind::Travel)
+                } else if node.steps.is_empty()
+                    && semantics_table
+                        .get(&candidate.def_id)
+                        .is_some_and(|semantics| {
+                            semantics.op_kind != crate::PlannerOpKind::Travel
+                                && goal
+                                    .key
+                                    .kind
+                                    .relevant_op_kinds()
+                                    .contains(&semantics.op_kind)
+                        })
+                {
+                    true
+                } else {
+                    travel_advances_toward_destination(
+                        node,
+                        candidate,
+                        semantics_table,
+                        *destination,
+                    )
+                }
             }
+        };
+        if !keep {
+            crate::search::candidates::update_expansion_candidate_outcome(
+                &mut expansion_candidates,
+                candidate.expansion_trace_index,
+                crate::decision_trace::ExpansionCandidateOutcome::Filtered(
+                    crate::decision_trace::ExpansionCandidateFilterReason::TacticalGoalMismatch,
+                ),
+            );
         }
+        keep
     });
 }
 

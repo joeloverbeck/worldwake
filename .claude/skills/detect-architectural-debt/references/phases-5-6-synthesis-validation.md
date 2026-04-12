@@ -11,21 +11,15 @@ This phase is the core value of the unified skill. Compare findings from both le
 | No cluster | Fracture detected | **Boundary-level fracture** — severity by fracture type |
 | Single signal from either lens | — | **Needs Investigation** |
 
-For each validated finding (from either lens or merged), produce a candidate abstraction:
+For each validated finding (from either lens or merged), populate all fields defined in the report template (`references/report-format.md`). The authoritative field list lives in the report template — do not define a separate field list here. Key fields to populate during synthesis:
 
-- **title**: Descriptive name (e.g., "Goal Dispatch Protocol")
-- **lens_source**: Lens A / Lens B / Merged (both lenses)
-- **kind**: One of: Protocol | Authority boundary | Bounded context | Projection owner | Capability ledger | Workflow coordinator | Translation boundary | Lifecycle carrier
-- **scope**: Which crates/modules it spans
 - **owned_truth**: What state or invariant this abstraction would own (the single most important field — if you can't name this, the candidate is not ready)
-- **invariants**: What must always be true when this abstraction is correctly implemented
-- **owner_boundary**: Which crate/module should own it
-- **modules_affected**: Existing modules that would be absorbed, constrained, or simplified
-- **scenario_families_explained**: Which scenario families from Phase 2 this candidate accounts for
-- **expected_simplification**: What gets simpler — fewer writers, fewer repeated predicates, fewer cross-boundary transitions, fewer co-change edges, clearer ownership
+- **kind**: One of: Protocol | Authority boundary | Bounded context | Projection owner | Capability ledger | Workflow coordinator | Translation boundary | Lifecycle carrier
+- **evidence**: Specific file:line citations from both lenses
+- **counter_evidence**: What would falsify this hypothesis. **MANDATORY** — every candidate must have this field populated.
+- **FOUNDATIONS alignment**: Check against relevant principles (see Phase 6 below)
 - **severity**: Critical / High / Medium / Low (see Severity Ranking below)
 - **confidence**: High / Medium / Low (evidence certainty)
-- **counter_evidence**: What would falsify this hypothesis. **MANDATORY** — every candidate must have this field populated.
 
 ### Severity Ranking
 

@@ -24,4 +24,4 @@ Record each issue with specific Foundation number and conflict.
 
 ## 4.4 Authoritative-to-AI Impact Rule
 
-If the spec modifies action preconditions, `validate_*` functions, affordance generation (`enumerate_*_payloads`), or `can_exercise_control`, verify all 7 CLAUDE.md checklist points: `get_affordances`, `generate_candidates`, `search_plan`, `BestEffort` action start, `handle_plan_failure`, payload revalidation (`with_payload_override_validator`), and golden test pass.
+If the spec modifies action preconditions, `validate_*` functions, affordance generation (`enumerate_*_payloads`), `can_exercise_control`, goal satisfaction (`is_satisfied`), or candidate emission functions (`emit_*_candidates`), verify all 7 CLAUDE.md checklist points: `get_affordances`, `generate_candidates`, `search_plan`, `BestEffort` action start, `handle_plan_failure`, payload revalidation (`with_payload_override_validator`), and golden test pass.

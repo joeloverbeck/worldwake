@@ -40,6 +40,7 @@ cargo run -p worldwake-cli --bin observer -- <scenario_path> --ticks <N> --outpu
 
 - Use the scenario path provided by the user.
 - Use the tick count provided by the user, or default to 1440.
+- The observer may take several minutes to write the dump after the last tick completes (the dump-writing phase is CPU-intensive for large simulations). If using background execution, wait for the process to exit rather than checking for the output file — the file is written atomically at the end.
 - If the binary exits with a non-zero code, diagnose the failure mode:
   - **Scenario parse error** (missing field, wrong type): Stop and report. The scenario needs updating first. If the parse error is schema drift (field renamed or added by a recent spec), note which field and stop.
   - **Runtime tick error** (simulation crashes mid-run, e.g., `PreconditionFailed`, missing component): Diagnose whether it is (a) a scenario data issue (wrong value, missing item) → stop and report, or (b) a code/loader bug (missing component not set during spawn, incorrect precondition) → fix the code, run the affected crate's tests to verify no regressions, rebuild the observer, and re-run. Note the fix in the report's Run Summary section (what was broken, what file was changed, what the fix was).
@@ -118,6 +119,7 @@ The per-agent summary also includes a "Ticks above 750‰" line for each need, p
 
 - **FreeCarryCapacity degenerate loop**: Agent inventory fills with low-value items (typically Waste from consumption byproducts). FreeCarryCapacity scores highest priority, but GoalSatisfied[steps=0] produces no action. Blocks all other goals indefinitely. Signature: `selected=FreeCarryCapacity ... GoalSatisfied[steps=0]` repeating 50+ times per 100-tick bin, with action timeline showing 0 actions. Cross-reference with Section 6 inventory (full of Waste) and smell 10.
 - **AcquireCommodity budget exhaustion spiral**: Agent needs food/water but the multi-location acquisition plan (travel → pick up → consume) generates 1000-6000+ candidates at depth 5-9, exceeding the planner's expansion budget every time. Manifests as sustained critical needs (smell 5) despite the commodity existing at a reachable location. Signature: repeated `budget-exhausted` entries for `AcquireCommodity` with high candidate counts and depth.
+- **Obligation spam loop**: Agent with role obligations (guard, merchant, official) executes a fast-completing obligation action (post_notice, investigate) hundreds of times while survival needs are critical. The obligation goal's drive score overwhelms hunger/thirst/fatigue because the action completes in 1 tick and re-triggers immediately. Signature: a single non-survival action type appearing 50+ times per 100-tick bin in the action timeline, while needs trajectory shows 1000‰ on multiple needs. Cross-reference with Section 7's goal selection — if the obligation goal consistently outranks AcquireCommodity/ConsumeOwnedCommodity despite critical needs, this is a goal-ranking priority failure, not a planning failure (plans succeed, but the wrong goal is chosen). Distinct from both other signatures: plans are found (not budget-exhausted) and actions do execute (not degenerate 0-step plans).
 
 After analyzing all 10 smells, note any cases where trace data was insufficient to reach a confident assessment. Record which specific data gaps affected which smells -- this feeds the Trace Quality Assessment in Step 5.
 
@@ -157,6 +159,8 @@ Report all 10 categories regardless of severity. NONE findings should be brief (
 
 ## Cross-Cutting Patterns
 [Patterns that span multiple smells or agents -- e.g., "Agent X has both stuck behavior AND ignored needs, suggesting a planning failure"]
+
+Check for entity pollution — actions that create persistent world entities (post_notice creating SocialArtifacts, tell creating SocialArtifacts) can flood a location with hundreds of entities, amplifying redundant perception (smell 1), bloating the planner's candidate space (smell 2/10), and obscuring meaningful inventory in Section 6. If a single action type produced 100+ entities at one location, note the pollution source, the affected location, and which smells it compounds.
 
 ## Planner Diagnostics
 [Include this section only when any agent has budget-exhausted > 0 in Section 7's plan search outcomes.]

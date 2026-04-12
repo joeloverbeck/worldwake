@@ -38,6 +38,7 @@ pub enum RankedGoalProvenanceFamily {
 pub trait GoalKindPlannerExt {
     fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily>;
     fn relevant_op_kinds(&self) -> &'static [PlannerOpKind];
+    fn target_commodity(&self, recipes: &RecipeRegistry) -> Option<CommodityKind>;
     fn relevant_observed_commodities(
         &self,
         recipes: &RecipeRegistry,
@@ -461,6 +462,90 @@ fn believed_bounty_artifact_state(
         .flatten()
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FreeCarryCapacityContract {
+    pub(crate) current_load: LoadUnits,
+    pub(crate) carry_capacity: LoadUnits,
+    pub(crate) disposal_threshold: Permille,
+    pub(crate) has_waste_targets: bool,
+}
+
+impl FreeCarryCapacityContract {
+    pub(crate) fn new(
+        current_load: LoadUnits,
+        carry_capacity: LoadUnits,
+        disposal_threshold: Permille,
+        has_waste_targets: bool,
+    ) -> Self {
+        Self {
+            current_load,
+            carry_capacity,
+            disposal_threshold,
+            has_waste_targets,
+        }
+    }
+
+    fn is_below_threshold(self) -> bool {
+        self.current_load.0.saturating_mul(1_000)
+            < self
+                .carry_capacity
+                .0
+                .saturating_mul(u32::from(self.disposal_threshold.value()))
+    }
+
+    pub(crate) fn is_actionable(self) -> bool {
+        self.has_waste_targets && !self.is_below_threshold()
+    }
+
+    pub(crate) fn is_satisfied(self, root_baseline_load: Option<LoadUnits>) -> bool {
+        if !self.is_actionable() {
+            return true;
+        }
+
+        root_baseline_load.is_some_and(|baseline_load| {
+            self.current_load.0 < baseline_load.0 && self.is_below_threshold()
+        })
+    }
+}
+
+pub(crate) fn free_carry_capacity_contract_from_view(
+    view: &dyn worldwake_sim::GoalBeliefView,
+    agent: EntityId,
+) -> Option<FreeCarryCapacityContract> {
+    let carry_capacity = view.carry_capacity(agent)?;
+    let current_load = view
+        .direct_possessions(agent)
+        .into_iter()
+        .try_fold(0u32, |total, entity| {
+            view.load_of_entity(entity)
+                .and_then(|load| total.checked_add(load.0))
+        })
+        .map(LoadUnits)?;
+    let disposal_threshold = view
+        .disposal_profile(agent)
+        .map_or(Permille::new_unchecked(800), |profile| {
+            profile.capacity_strain_threshold
+        });
+    let has_waste_targets = view
+        .known_entity_beliefs(agent)
+        .into_iter()
+        .any(|(item, belief)| {
+            belief.believed_kind == Some(worldwake_core::EntityKind::ItemLot)
+                && view.direct_possessor(item) == Some(agent)
+                && belief
+                    .last_known_inventory
+                    .get(&CommodityKind::Waste)
+                    .is_some_and(|quantity| *quantity > Quantity(0))
+        });
+
+    Some(FreeCarryCapacityContract::new(
+        current_load,
+        carry_capacity,
+        disposal_threshold,
+        has_waste_targets,
+    ))
+}
+
 impl GoalKindPlannerExt for GoalKind {
     fn ranked_goal_provenance_family(&self) -> Option<RankedGoalProvenanceFamily> {
         GoalDispatchKey::from_goal_kind(self)
@@ -472,6 +557,47 @@ impl GoalKindPlannerExt for GoalKind {
         GoalDispatchKey::from_goal_kind(self)
             .declaration()
             .relevant_ops
+    }
+
+    fn target_commodity(&self, recipes: &RecipeRegistry) -> Option<CommodityKind> {
+        match self {
+            GoalKind::ConsumeOwnedCommodity { commodity }
+            | GoalKind::AcquireCommodity { commodity, .. }
+            | GoalKind::SellCommodity { commodity }
+            | GoalKind::RestockCommodity { commodity }
+            | GoalKind::MoveCargo { commodity, .. } => Some(*commodity),
+            GoalKind::TreatWounds { .. } => Some(CommodityKind::Medicine),
+            GoalKind::ProduceCommodity { recipe_id } => recipes
+                .get(*recipe_id)
+                .and_then(|recipe| recipe.outputs.first().map(|(commodity, _)| *commodity)),
+            GoalKind::FreeCarryCapacity => Some(CommodityKind::Waste),
+            GoalKind::Sleep
+            | GoalKind::Relieve
+            | GoalKind::Wash
+            | GoalKind::EngageHostile { .. }
+            | GoalKind::RaidTarget { .. }
+            | GoalKind::ReduceDanger
+            | GoalKind::RegroupWithFaction { .. }
+            | GoalKind::EstablishBanditCamp { .. }
+            | GoalKind::SearchForMissing { .. }
+            | GoalKind::ReportMissing { .. }
+            | GoalKind::EscortToSafety { .. }
+            | GoalKind::LootCorpse { .. }
+            | GoalKind::BuryCorpse { .. }
+            | GoalKind::FulfillBounty { .. }
+            | GoalKind::PostBounty { .. }
+            | GoalKind::PostNotice { .. }
+            | GoalKind::ShareBelief { .. }
+            | GoalKind::ClaimOffice { .. }
+            | GoalKind::SupportCandidateForOffice { .. }
+            | GoalKind::InvestigateViolation { .. }
+            | GoalKind::Patrol { .. }
+            | GoalKind::ExploreLocation { .. }
+            | GoalKind::StealItem { .. }
+            | GoalKind::Accuse { .. }
+            | GoalKind::PunishAccused { .. }
+            | GoalKind::ReportFound { .. } => None,
+        }
     }
 
     fn relevant_observed_commodities(
@@ -1256,18 +1382,25 @@ impl GoalKindPlannerExt for GoalKind {
                 let Some(current_load) = carried_load_of_actor(state, actor) else {
                     return false;
                 };
-                match state.disposal_profile(actor) {
-                    Some(profile) => state
-                        .carry_capacity_ref(PlanningEntityRef::Authoritative(actor))
-                        .is_some_and(|capacity| {
-                            current_load.0.saturating_mul(1_000)
-                                < capacity.0.saturating_mul(u32::from(
-                                    profile.capacity_strain_threshold.value(),
-                                ))
+                let Some(carry_capacity) =
+                    state.carry_capacity_ref(PlanningEntityRef::Authoritative(actor))
+                else {
+                    return false;
+                };
+                let contract = FreeCarryCapacityContract::new(
+                    current_load,
+                    carry_capacity,
+                    state
+                        .disposal_profile(actor)
+                        .map_or(Permille::new_unchecked(800), |profile| {
+                            profile.capacity_strain_threshold
                         }),
-                    None => carried_load_of_actor(&PlanningState::new(state.snapshot()), actor)
-                        .is_some_and(|baseline_load| current_load.0 < baseline_load.0),
-                }
+                    !free_carry_capacity_drop_targets(state).is_empty(),
+                );
+                let root_baseline_state = PlanningState::new(state.snapshot());
+                let root_baseline_load = carried_load_of_actor(&root_baseline_state, actor);
+
+                contract.is_satisfied(root_baseline_load)
             }
             GoalKind::ProduceCommodity { .. }
             | GoalKind::SearchForMissing { .. }
@@ -2380,8 +2513,7 @@ mod tests {
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
             max_candidates_to_plan: reasoning.max_candidates_to_plan,
-            max_candidates_per_expansion: CognitiveProfile::default()
-                .max_candidates_per_expansion,
+            max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
@@ -2811,6 +2943,92 @@ mod tests {
             }
             .relevant_observed_commodities(&recipes),
             Some(BTreeSet::from([CommodityKind::Bread]))
+        );
+    }
+
+    #[test]
+    fn target_commodity_maps_supported_goal_rows() {
+        let mut recipes = worldwake_sim::RecipeRegistry::new();
+        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: None,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(1).unwrap(),
+            ),
+        });
+        let patient = entity_id(8, 0);
+        let destination = entity_id(9, 0);
+
+        assert_eq!(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Water)
+        );
+        assert_eq!(
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Bread,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Bread)
+        );
+        assert_eq!(
+            GoalKind::RestockCommodity {
+                commodity: CommodityKind::Apple,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Apple)
+        );
+        assert_eq!(
+            GoalKind::SellCommodity {
+                commodity: CommodityKind::Medicine,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Medicine)
+        );
+        assert_eq!(
+            GoalKind::MoveCargo {
+                commodity: CommodityKind::Coin,
+                destination,
+            }
+            .target_commodity(&recipes),
+            Some(CommodityKind::Coin)
+        );
+        assert_eq!(
+            GoalKind::TreatWounds { patient }.target_commodity(&recipes),
+            Some(CommodityKind::Medicine)
+        );
+        assert_eq!(
+            GoalKind::ProduceCommodity { recipe_id }.target_commodity(&recipes),
+            Some(CommodityKind::Bread)
+        );
+        assert_eq!(
+            GoalKind::FreeCarryCapacity.target_commodity(&recipes),
+            Some(CommodityKind::Waste)
+        );
+        assert_eq!(GoalKind::Sleep.target_commodity(&recipes), None);
+    }
+
+    #[test]
+    fn target_commodity_returns_none_for_missing_produce_recipe() {
+        let recipes = worldwake_sim::RecipeRegistry::new();
+
+        assert_eq!(
+            GoalKind::ProduceCommodity {
+                recipe_id: RecipeId(999),
+            }
+            .target_commodity(&recipes),
+            None
         );
     }
 
@@ -3798,6 +4016,7 @@ mod tests {
             .insert((waste_lot, CommodityKind::Waste), Quantity(9));
         view.carry_capacities.insert(actor, LoadUnits(10));
         view.entity_loads.insert(actor, LoadUnits(0));
+        view.entity_loads.insert(waste_lot, LoadUnits(9));
         (view, actor, place, waste_lot)
     }
 
@@ -5421,11 +5640,7 @@ mod tests {
             actor,
             vec![(
                 accused,
-                believed_entity_state_at(
-                    theft_place,
-                    Tick(0),
-                    None,
-                ),
+                believed_entity_state_at(theft_place, Tick(0), None),
             )],
         );
 
@@ -6409,6 +6624,20 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let places = GoalKind::Sleep.goal_relevant_places(&state, &recipes);
         assert!(places.is_empty());
+    }
+
+    #[test]
+    fn free_carry_capacity_contract_from_view_uses_carried_load_not_controlled_inventory_total() {
+        let (mut view, actor, _place, _waste_lot) = free_carry_capacity_view();
+        view.entity_loads.insert(entity(20), LoadUnits(6));
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Waste), Quantity(18));
+
+        let contract = super::free_carry_capacity_contract_from_view(&view, actor)
+            .expect("contract should resolve");
+
+        assert_eq!(contract.current_load, LoadUnits(6));
+        assert!(!contract.is_actionable());
     }
 
     #[test]
@@ -8304,7 +8533,7 @@ mod tests {
     }
 
     #[test]
-    fn free_carry_capacity_falls_back_to_load_reduction_without_profile() {
+    fn free_carry_capacity_uses_default_threshold_without_profile() {
         let (view, actor, place, waste_lot) = free_carry_capacity_view();
         let snapshot = build_planning_snapshot(
             &view,
@@ -8324,7 +8553,39 @@ mod tests {
             Quantity(9),
         );
 
-        assert!(GoalKind::FreeCarryCapacity.is_satisfied(&progressed));
+        assert!(
+            GoalKind::FreeCarryCapacity.is_satisfied(&progressed),
+            "without an explicit DisposalProfile, FreeCarryCapacity should use the default threshold and still require disposal progress"
+        );
+    }
+
+    #[test]
+    fn free_carry_capacity_is_not_satisfied_after_partial_drop_still_at_threshold() {
+        let (mut view, actor, place, waste_lot) = free_carry_capacity_view();
+        view.disposal_profiles.insert(
+            actor,
+            DisposalProfile {
+                capacity_strain_threshold: pm(800),
+            },
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([waste_lot]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let base_state = PlanningState::new(&snapshot);
+
+        let progressed = base_state
+            .with_commodity_quantity(actor, CommodityKind::Waste, Quantity(8))
+            .with_commodity_quantity(waste_lot, CommodityKind::Waste, Quantity(8));
+
+        assert!(
+            !GoalKind::FreeCarryCapacity.is_satisfied(&progressed),
+            "FreeCarryCapacity should remain unsatisfied after partial progress that still leaves the actor at or above the active threshold with lawful waste drop targets"
+        );
     }
 
     // ── E16DPOLPLAN-006: Integration tests — planner finds Bribe/Threaten plans ──
@@ -9534,7 +9795,9 @@ mod tests {
         };
 
         let mut remote_view = TestBeliefView::default();
-        remote_view.alive.extend([actor, accused, register, square, hall]);
+        remote_view
+            .alive
+            .extend([actor, accused, register, square, hall]);
         remote_view.kinds.insert(actor, EntityKind::Agent);
         remote_view.kinds.insert(accused, EntityKind::Agent);
         remote_view.kinds.insert(register, EntityKind::Record);

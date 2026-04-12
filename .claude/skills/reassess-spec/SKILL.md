@@ -46,7 +46,7 @@ Before beginning Steps 2-3, classify the spec:
   - Step 4 applies but 4.4 is N/A.
   - Section H updates are N/A unless the test reveals a missing causal hook.
 
-- **(e) Investigation/bugfix** — proposes root cause hypotheses with conditional fixes, no new systems or components.
+- **(e) Investigation/bugfix** — diagnoses a root cause and proposes targeted fixes, no new systems or components. Covers both hypothesis-driven investigations (conditional fixes) and proven-diagnosis specs (single concrete fix confirmed by existing tests). Also covers computation-optimization specs that add new filter/pruning logic without new world-facing state.
   - Steps 3.1-3.4 apply (validate all referenced paths, types, functions, dependencies).
   - Steps 3.5-3.8 apply only to proposed fix deliverables (not to hypothesis text).
   - Step 3.9 applies if claims about runtime behavior are made.
@@ -82,8 +82,16 @@ Extract every concrete codebase reference from the spec:
 - **Test file paths or test names**
 - **Other specs or tickets** in Dependencies
 - **Code examples** (inline code blocks showing API usage, precondition lists, struct definitions) — extract for fidelity checking against actual source
+- **Scenario and test configuration files** referenced by the spec (RON scenarios, test fixtures, seed values) — extract profile/parameter values the spec's claims depend on
 
-Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked. For investigation/bugfix specs (type e), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist.
+Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked. For investigation/bugfix specs (type e), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist. Structured root-cause tracing:
+
+- (a) identify each code path the spec claims participates in the bug
+- (b) read the actual implementation of each path
+- (c) verify the claimed divergence mechanism by comparing inputs, computation methods, and outputs across paths
+- (d) check scenario/test configuration for parameter values that trigger the claimed failure
+
+**Proven-diagnosis scoping**: If the spec's diagnosis is already confirmed by existing tests that demonstrate the specific failure mode (e.g., golden tests asserting `BudgetExhausted` with concrete candidate counts), root-cause tracing may scope to verifying the fix's assumptions — that the proposed remedy targets the right code path and reads the right data — rather than re-proving the diagnosis from scratch. Sub-steps (a-b) still apply; (c-d) may be lighter-weight.
 
 ### Step 3: Codebase Validation
 

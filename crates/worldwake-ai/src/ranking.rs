@@ -7,6 +7,7 @@ use crate::{
     derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression,
+    goal_model::free_carry_capacity_contract_from_view,
     pressure::is_bandit_raid_deterred_by_wounds,
     route_threat::threat_warning_signal_for_place,
     theft::assess_theft_deterrence,
@@ -22,7 +23,7 @@ use worldwake_core::{
     HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
     NoticeTopic, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity,
     RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
-    belief_confidence, failure_ratio_permille, load_per_unit,
+    belief_confidence, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -455,7 +456,9 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
                 })
         }
         GoalKind::LootCorpse { corpse } => corpse_loot_assessment(corpse, context)
-            .map_or(GoalPriorityClass::Low, |assessment| assessment.priority_class),
+            .map_or(GoalPriorityClass::Low, |assessment| {
+                assessment.priority_class
+            }),
         GoalKind::FreeCarryCapacity
         | GoalKind::BuryCorpse { .. }
         | GoalKind::SearchForMissing { .. }
@@ -599,18 +602,20 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             |needs| needs.dirtiness,
             |utility| utility.dirtiness_weight,
         ),
-        GoalKind::FreeCarryCapacity => {
-            context
-                .view
-                .carry_capacity(context.agent)
-                .map_or(0, |carry_capacity| {
-                    let carried_load = carried_commodity_load(context.view, context.agent);
-                    let strain = Permille::new_unchecked(
-                        ((carried_load * 1000) / carry_capacity.0.max(1)).min(1000) as u16,
-                    );
-                    score_product(context.utility.enterprise_weight, strain)
-                })
-        }
+        GoalKind::FreeCarryCapacity => free_carry_capacity_contract_from_view(
+            context.view,
+            context.agent,
+        )
+        .map_or(0, |contract| {
+            if !contract.is_actionable() {
+                return 0;
+            }
+            let strain = Permille::new_unchecked(
+                ((contract.current_load.0 * 1000) / contract.carry_capacity.0.max(1)).min(1000)
+                    as u16,
+            );
+            score_product(context.utility.enterprise_weight, strain)
+        }),
         GoalKind::EngageHostile { .. } | GoalKind::ReduceDanger => {
             score_product(context.utility.danger_weight, context.danger_pressure)
         }
@@ -1205,18 +1210,6 @@ fn reward_signal_from_quantity(quantity: Quantity) -> Permille {
     Permille::new(scaled).unwrap_or_else(|_| Permille::new_unchecked(1000))
 }
 
-fn carried_commodity_load(view: &dyn GoalBeliefView, agent: EntityId) -> u32 {
-    CommodityKind::ALL
-        .iter()
-        .copied()
-        .map(|kind| {
-            view.commodity_quantity(agent, kind)
-                .0
-                .saturating_mul(load_per_unit(kind).0)
-        })
-        .fold(0u32, u32::saturating_add)
-}
-
 fn score_product(weight: Permille, pressure: Permille) -> u32 {
     u32::from(weight.value()) * u32::from(pressure.value())
 }
@@ -1466,7 +1459,10 @@ fn ranked_goal_ordering(
 
     let ordering = compare_goal_specificity(&left.grounded.key.kind, &right.grounded.key.kind);
     if ordering != Ordering::Equal {
-        return (ordering, Some(RankedGoalComparisonDimension::GoalSpecificity));
+        return (
+            ordering,
+            Some(RankedGoalComparisonDimension::GoalSpecificity),
+        );
     }
 
     let ordering = opportunity_strength(left)
@@ -1754,6 +1750,8 @@ mod tests {
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
         entity_loads: BTreeMap<EntityId, LoadUnits>,
+        direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
+        direct_possessors: BTreeMap<EntityId, EntityId>,
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         listed_sale_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         sale_lot_sellers: BTreeMap<EntityId, EntityId>,
@@ -2089,8 +2087,11 @@ mod tests {
     }
 
     impl worldwake_sim::InventoryBeliefView for TestBeliefView {
-        fn direct_possessions(&self, _holder: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
+            self.direct_possessions
+                .get(&holder)
+                .cloned()
+                .unwrap_or_default()
         }
         fn knows_recipe(&self, _actor: EntityId, _recipe: RecipeId) -> bool {
             false
@@ -2116,8 +2117,8 @@ mod tests {
         fn direct_container(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
-        fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
-            None
+        fn direct_possessor(&self, entity: EntityId) -> Option<EntityId> {
+            self.direct_possessors.get(&entity).copied()
         }
         fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits> {
             self.carry_capacities.get(&entity).copied()
@@ -2412,6 +2413,45 @@ mod tests {
         view.confidence_policies
             .insert(agent, BeliefConfidencePolicy::default());
         view
+    }
+
+    fn seed_directly_possessed_waste_lot(
+        view: &mut TestBeliefView,
+        agent: EntityId,
+        place: EntityId,
+        waste_lot: EntityId,
+        quantity: Quantity,
+    ) {
+        view.entity_kinds.insert(waste_lot, EntityKind::ItemLot);
+        view.effective_places.insert(waste_lot, place);
+        view.place_entities
+            .entry(place)
+            .or_default()
+            .push(waste_lot);
+        view.direct_possessions
+            .entry(agent)
+            .or_default()
+            .push(waste_lot);
+        view.direct_possessors.insert(waste_lot, agent);
+        view.entity_loads.insert(
+            waste_lot,
+            LoadUnits(
+                quantity
+                    .0
+                    .saturating_mul(worldwake_core::load_per_unit(CommodityKind::Waste).0),
+            ),
+        );
+
+        let mut waste_belief = believed_state(9, PerceptionSource::DirectObservation);
+        waste_belief.last_known_place = Some(place);
+        waste_belief.believed_kind = Some(EntityKind::ItemLot);
+        waste_belief
+            .last_known_inventory
+            .insert(CommodityKind::Waste, quantity);
+        view.beliefs
+            .entry(agent)
+            .or_default()
+            .push((waste_lot, waste_belief));
     }
 
     fn teach_recipe(
@@ -4079,8 +4119,10 @@ mod tests {
         let mut view = base_view(agent);
         view.commodity_quantities
             .insert((corpse, CommodityKind::Apple), Quantity(4));
-        view.needs
-            .insert(agent, HomeostaticNeeds::new(pm(600), pm(0), pm(0), pm(0), pm(0)));
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(600), pm(0), pm(0), pm(0), pm(0)),
+        );
 
         let ranked = rank(
             &[goal(GoalKind::LootCorpse { corpse })],
@@ -4151,7 +4193,10 @@ mod tests {
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         };
 
-        assert_eq!(super::compare_ranked_goals(&loot, &acquire), std::cmp::Ordering::Less);
+        assert_eq!(
+            super::compare_ranked_goals(&loot, &acquire),
+            std::cmp::Ordering::Less
+        );
     }
 
     #[test]
@@ -4203,7 +4248,10 @@ mod tests {
             feasibility: crate::feasibility::FeasibilityHint::Likely,
         };
 
-        assert_eq!(super::compare_ranked_goals(&loot, &acquire), std::cmp::Ordering::Less);
+        assert_eq!(
+            super::compare_ranked_goals(&loot, &acquire),
+            std::cmp::Ordering::Less
+        );
     }
 
     #[test]
@@ -5440,9 +5488,12 @@ mod tests {
     fn free_carry_capacity_uses_low_priority_class() {
         let agent = entity(1);
         let mut view = base_view(agent);
+        let place = view.effective_places[&agent];
+        let waste_lot = entity(20);
         view.carry_capacities.insert(agent, LoadUnits(10));
         view.commodity_quantities
-            .insert((agent, CommodityKind::Waste), Quantity(1));
+            .insert((agent, CommodityKind::Waste), Quantity(8));
+        seed_directly_possessed_waste_lot(&mut view, agent, place, waste_lot, Quantity(8));
 
         let ranked = rank(
             &[goal(GoalKind::FreeCarryCapacity)],
@@ -5460,11 +5511,20 @@ mod tests {
     #[test]
     fn free_carry_capacity_motive_scales_with_carried_load_strain() {
         let agent = entity(1);
+        let fifty_lot = entity(20);
         let mut fifty_view = base_view(agent);
+        let fifty_place = fifty_view.effective_places[&agent];
         fifty_view.carry_capacities.insert(agent, LoadUnits(10));
         fifty_view
             .commodity_quantities
-            .insert((agent, CommodityKind::Waste), Quantity(5));
+            .insert((agent, CommodityKind::Waste), Quantity(8));
+        seed_directly_possessed_waste_lot(
+            &mut fifty_view,
+            agent,
+            fifty_place,
+            fifty_lot,
+            Quantity(8),
+        );
 
         let fifty_ranked = rank(
             &[goal(GoalKind::FreeCarryCapacity)],
@@ -5478,14 +5538,23 @@ mod tests {
         assert_eq!(fifty_ranked.len(), 1);
         assert_eq!(
             fifty_ranked[0].motive_score,
-            super::score_product(utility().enterprise_weight, pm(500))
+            super::score_product(utility().enterprise_weight, pm(800))
         );
 
+        let full_lot = entity(21);
         let mut full_view = base_view(agent);
+        let full_place = full_view.effective_places[&agent];
         full_view.carry_capacities.insert(agent, LoadUnits(10));
         full_view
             .commodity_quantities
             .insert((agent, CommodityKind::Waste), Quantity(10));
+        seed_directly_possessed_waste_lot(
+            &mut full_view,
+            agent,
+            full_place,
+            full_lot,
+            Quantity(10),
+        );
 
         let full_ranked = rank(
             &[goal(GoalKind::FreeCarryCapacity)],
@@ -5505,13 +5574,15 @@ mod tests {
     }
 
     #[test]
-    fn free_carry_capacity_motive_uses_concrete_carried_commodity_load_not_agent_load_accessor() {
+    fn free_carry_capacity_motive_uses_actor_carried_load_accessor() {
         let agent = entity(1);
         let mut view = base_view(agent);
+        let place = view.effective_places[&agent];
+        let waste_lot = entity(20);
         view.carry_capacities.insert(agent, LoadUnits(10));
-        view.entity_loads.insert(agent, LoadUnits(0));
         view.commodity_quantities
-            .insert((agent, CommodityKind::Waste), Quantity(8));
+            .insert((agent, CommodityKind::Waste), Quantity(18));
+        seed_directly_possessed_waste_lot(&mut view, agent, place, waste_lot, Quantity(8));
 
         let ranked = rank(
             &[goal(GoalKind::FreeCarryCapacity)],
@@ -5547,6 +5618,60 @@ mod tests {
         assert!(outcome.ranked.is_empty());
         assert_eq!(
             outcome.zero_motive,
+            vec![GoalKey::from(GoalKind::FreeCarryCapacity)]
+        );
+    }
+
+    #[test]
+    fn free_carry_capacity_motive_is_zero_when_disposal_is_not_actionable() {
+        let agent = entity(1);
+        let mut below_threshold_view = base_view(agent);
+        let below_threshold_place = below_threshold_view.effective_places[&agent];
+        below_threshold_view
+            .carry_capacities
+            .insert(agent, LoadUnits(10));
+        below_threshold_view
+            .commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(7));
+        seed_directly_possessed_waste_lot(
+            &mut below_threshold_view,
+            agent,
+            below_threshold_place,
+            entity(20),
+            Quantity(7),
+        );
+
+        let below_threshold_outcome = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &below_threshold_view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(below_threshold_outcome.ranked.is_empty());
+        assert_eq!(
+            below_threshold_outcome.zero_motive,
+            vec![GoalKey::from(GoalKind::FreeCarryCapacity)]
+        );
+
+        let mut no_target_view = base_view(agent);
+        no_target_view.carry_capacities.insert(agent, LoadUnits(10));
+        no_target_view
+            .commodity_quantities
+            .insert((agent, CommodityKind::Waste), Quantity(9));
+
+        let no_target_outcome = rank(
+            &[goal(GoalKind::FreeCarryCapacity)],
+            &no_target_view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(no_target_outcome.ranked.is_empty());
+        assert_eq!(
+            no_target_outcome.zero_motive,
             vec![GoalKey::from(GoalKind::FreeCarryCapacity)]
         );
     }

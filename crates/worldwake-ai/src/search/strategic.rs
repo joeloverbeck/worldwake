@@ -80,8 +80,8 @@ pub(crate) fn plan(
     let actor = snapshot.actor();
     let actor_place = state.effective_place(actor)?;
     let goal_places = goal_places(goal, &state, recipes);
-    let missing_commodities = missing_commodities(goal, &state, recipes);
-    let query_commodity = social_query_commodity(goal, &missing_commodities);
+    let missing_commodities = missing_commodities(goal, &state, recipes, actor_place, &goal_places);
+    let query_commodity = social_query_commodity(goal, &missing_commodities, recipes);
     let mut stages = build_stages(
         &state,
         snapshot,
@@ -182,9 +182,18 @@ fn missing_commodities(
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
+    actor_place: EntityId,
+    goal_places: &[EntityId],
 ) -> Vec<CommodityKind> {
     let actor = state.snapshot().actor();
     let mut commodities = match goal.key.kind {
+        GoalKind::AcquireCommodity { commodity, .. } => {
+            (state.commodity_quantity(actor, commodity) == Quantity(0)
+                && !goal_places.contains(&actor_place))
+            .then_some(commodity)
+            .into_iter()
+            .collect()
+        }
         GoalKind::TreatWounds { .. } => (state.commodity_quantity(actor, CommodityKind::Medicine)
             == Quantity(0))
         .then_some(CommodityKind::Medicine)
@@ -207,12 +216,13 @@ fn missing_commodities(
 fn social_query_commodity(
     goal: &GroundedGoal,
     missing_commodities: &[CommodityKind],
+    recipes: &RecipeRegistry,
 ) -> Option<CommodityKind> {
     match goal.key.kind {
-        GoalKind::ConsumeOwnedCommodity { commodity }
-        | GoalKind::AcquireCommodity { commodity, .. }
-        | GoalKind::RestockCommodity { commodity } => Some(commodity),
-        GoalKind::TreatWounds { .. } => Some(CommodityKind::Medicine),
+        GoalKind::ConsumeOwnedCommodity { .. }
+        | GoalKind::AcquireCommodity { .. }
+        | GoalKind::RestockCommodity { .. }
+        | GoalKind::TreatWounds { .. } => goal.key.kind.target_commodity(recipes),
         GoalKind::ProduceCommodity { .. } => missing_commodities.first().copied(),
         _ => None,
     }
@@ -1154,10 +1164,75 @@ mod tests {
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
 
-        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps.len(), 2);
         assert_eq!(plan.steps[0].destination, place_b);
         assert_eq!(plan.steps[0].estimated_travel_ticks, 7);
-        assert_eq!(plan.steps[0].sub_goal, TacticalSubGoal::SatisfyGoal);
+        assert_eq!(
+            plan.steps[0].sub_goal,
+            TacticalSubGoal::AcquirePrerequisite(CommodityKind::Water)
+        );
+        assert_eq!(plan.steps[1].destination, place_b);
+        assert_eq!(plan.steps[1].estimated_travel_ticks, 0);
+        assert_eq!(plan.steps[1].sub_goal, TacticalSubGoal::SatisfyGoal);
+    }
+
+    #[test]
+    fn test_local_acquire_goal_does_not_force_remote_prerequisite_guidance() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let local_seller = entity(20);
+        let remote_source = entity(21);
+        let local_lot = entity(22);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place_a);
+        register_agent(&mut view, local_seller, place_a);
+        register_facility(
+            &mut view,
+            remote_source,
+            place_b,
+            ResourceSource {
+                commodity: CommodityKind::Bread,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        view.kinds.insert(local_lot, EntityKind::ItemLot);
+        view.alive.insert(local_lot, true);
+        view.effective_places.insert(local_lot, place_a);
+        view.entities_at.entry(place_a).or_default().push(local_lot);
+        view.item_lot_commodities
+            .insert(local_lot, CommodityKind::Bread);
+        view.commodity_quantities
+            .insert((local_lot, CommodityKind::Bread), Quantity(1));
+        view.merchandise_profiles.insert(
+            local_seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(place_a),
+            },
+        );
+        connect(&mut view, place_a, place_b, 7);
+
+        let snapshot = snapshot(&view, actor, 1);
+        let goal = crate::GroundedGoal {
+            key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            }),
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::from([local_seller, remote_source]),
+            evidence_places: BTreeSet::from([place_a, place_b]),
+        };
+
+        let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
+
+        assert!(
+            plan.steps.is_empty(),
+            "local acquire opportunities should remain a direct tactical problem instead of forcing prerequisite travel staging"
+        );
     }
 
     #[test]
@@ -1193,6 +1268,31 @@ mod tests {
         assert_eq!(
             plan.steps[0].sub_goal,
             TacticalSubGoal::SocialQuery(CommodityKind::Grain)
+        );
+    }
+
+    #[test]
+    fn test_sell_goal_does_not_gain_social_query_fallback_from_target_commodity() {
+        let actor = entity(1);
+        let listener = entity(2);
+        let place = entity(10);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place);
+        register_agent(&mut view, listener, place);
+
+        let snapshot = snapshot(&view, actor, 0);
+        let goal = crate::GroundedGoal {
+            key: worldwake_core::GoalKey::from(GoalKind::SellCommodity {
+                commodity: CommodityKind::Water,
+            }),
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+        };
+
+        assert!(
+            plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).is_none(),
+            "SellCommodity should keep the pre-existing strategic contract and avoid social-query fallback"
         );
     }
 }

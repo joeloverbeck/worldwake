@@ -5,15 +5,16 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 26
-- Files contributing `golden_*` tests: 26
-- Total `golden_*` tests: 348
+- Golden test files: 28
+- Files contributing `golden_*` tests: 28
+- Total `golden_*` tests: 356
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
 | `golden_ai_decisions.rs` | 19 |
+| `golden_budget_exhaustion_snapshots.rs` | 6 |
 | `golden_care.rs` | 18 |
 | `golden_combat.rs` | 27 |
 | `golden_commodity_opportunity.rs` | 3 |
@@ -28,6 +29,7 @@ Do not hand-edit it.
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
 | `golden_perception_exposure.rs` | 6 |
+| `golden_planner_pathology.rs` | 2 |
 | `golden_production.rs` | 34 |
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 6 |
@@ -61,6 +63,15 @@ Do not hand-edit it.
 - `golden_utility_weight_diversity_in_need_selection`
 - `golden_trace_enabled_scenario`
 - `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
+
+### `golden_budget_exhaustion_snapshots.rs`
+
+- `merchant_vara_water_at_thornwall_residual_budget_exhaustion_contract`
+- `guard_theron_water_at_thornwall_residual_budget_exhaustion_contract`
+- `merchant_vara_apple_at_dusty_trail_residual_budget_exhaustion_contract`
+- `kael_water_at_thornwall_late_game_residual_budget_exhaustion_contract`
+- `merchant_vara_treat_wounds_at_dusty_trail_residual_budget_exhaustion_contract`
+- `kael_treat_wounds_vara_at_dusty_trail_residual_frontier_exhaustion_contract`
 
 ### `golden_care.rs`
 
@@ -322,6 +333,11 @@ Do not hand-edit it.
 - `golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity`
 - `golden_perception_forms_resource_source_beliefs`
 - `golden_perception_forms_resource_source_beliefs_replays_deterministically`
+
+### `golden_planner_pathology.rs`
+
+- `cross_location_water_acquisition_succeeds_without_budget_exhaustion`
+- `degenerate_zero_step_loop_blocks_actionable_goals`
 
 ### `golden_production.rs`
 

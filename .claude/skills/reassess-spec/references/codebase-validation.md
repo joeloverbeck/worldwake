@@ -18,10 +18,11 @@ Grep for each type. Confirm existence and current shape (fields, members). Check
 
 ## 3.3 Functions and Methods
 
-Grep for each function. Confirm signature, module location, and export status. Check for:
+Grep for each function. Confirm signature, module location, and export status. Line-number references in specs are informational aids, not authoritative. Verify they point to the claimed content. If accurate, leave them — they help implementers navigate. If drifted, either correct them or replace with function/type names that are grep-stable. Check for:
 
 - **Signature differences** from what the spec assumes.
 - **New function parameter sufficiency**: Validate that proposed parameters provide sufficient data at every call site. Flag if a parameter type lacks needed context.
+- **Data-surface compatibility**: For proposed shared helpers or unified abstractions, verify that the input type (e.g., `PlanningState`, `GoalBeliefView`, `GenerationContext`) is accessible at ALL intended call sites. Different pipeline stages may use different trait surfaces for the same underlying data. Flag when a helper's proposed data surface is not available at one or more call sites.
 - **Proposed modifications to existing functions**: Verify the function's parameters and local scope include variables the proposed code references. Flag out-of-scope variable usage as an Issue.
 - **Symbol partitioning** (splitting traits/enums): Verify the partition is complete (all symbols accounted for) and disjoint (no symbol in two categories). Verify stated counts match listed names. Use automated scripts for large sets (>20 symbols).
 - **Code example fidelity**: If the spec includes Before/After code snippets, verify they match the actual code's control flow structure (e.g., imperative loops vs. iterator chains, match arms vs. if-let chains). Style mismatches in code examples mislead implementers.

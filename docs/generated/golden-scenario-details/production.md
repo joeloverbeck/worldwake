@@ -7,7 +7,7 @@ Scenarios: 8
 
 ### Scenario 3: Resource Contention with Conservation
 
-- Source: `golden_production.rs:2900`
+- Source: `golden_production.rs:2902`
 - Systems: Needs, Production, Travel, Conservation
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -24,7 +24,7 @@ Scenarios: 8
 
 ### Scenario 3b: Observed Harvest Competition Redirects To Remote Sibling
 
-- Source: `golden_production.rs:3055`
+- Source: `golden_production.rs:3057`
 - Systems: Perception, Production, Travel, AI
 - GoalKinds: ProduceCommodity
 - ActionDomains: Production, Travel
@@ -42,7 +42,7 @@ Scenarios: 8
 
 ### Scenario 102: Departed Waiter Pruned From Facility Queue
 
-- Source: `golden_production.rs:3202`
+- Source: `golden_production.rs:3204`
 - Systems: Contention, Travel, Production
 - GoalKinds: RestockCommodity
 - ActionDomains: Production, Travel
@@ -60,7 +60,7 @@ Scenarios: 8
 
 ### Scenario 4: Materialization Barrier Chain
 
-- Source: `golden_production.rs:3339`
+- Source: `golden_production.rs:3341`
 - Systems: Production, Transport, Needs, AI
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Transport, Needs
@@ -77,7 +77,7 @@ Scenarios: 8
 
 ### Scenario 6b: Multi-Recipe Craft Path
 
-- Source: `golden_production.rs:3543`
+- Source: `golden_production.rs:3545`
 - Systems: Production, Transport, Needs, AI
 - GoalKinds: ProduceCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Transport, Needs
@@ -94,7 +94,7 @@ Scenarios: 8
 
 ### Scenario 103: Unique-Item Race Rejection Redirects To Local Alternative
 
-- Source: `golden_production.rs:3717`
+- Source: `golden_production.rs:3719`
 - Systems: Transport, Contention, Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Transport, Production
@@ -112,7 +112,7 @@ Scenarios: 8
 
 ### Scenario 3f: Faction-Owned Production — Member vs Outsider
 
-- Source: `golden_production.rs:3777`
+- Source: `golden_production.rs:3779`
 - Systems: Production, Ownership, Factions, AI, Travel, Needs, Conservation
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Transport, Needs
@@ -130,7 +130,7 @@ Scenarios: 8
 
 ### Scenario 123: Goal Switch Clears Contention Queue Entry
 
-- Source: `golden_production.rs:4048`
+- Source: `golden_production.rs:4050`
 - Systems: Contention, Production, Needs, AI, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), Sleep
 - ActionDomains: Production, Needs, Travel

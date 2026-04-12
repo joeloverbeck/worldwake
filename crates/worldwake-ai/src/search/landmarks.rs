@@ -262,6 +262,7 @@ mod tests {
             payload_override: Option::<ActionPayload>::None,
             planner_only: false,
             trace_index: None,
+            expansion_trace_index: None,
         }
     }
 

@@ -54,7 +54,9 @@ pub fn select_best_plan(
             Some((
                 priority_class,
                 motive_score,
-                selection_plan.perceived_cost.unwrap_or(plan.total_estimated_ticks),
+                selection_plan
+                    .perceived_cost
+                    .unwrap_or(plan.total_estimated_ticks),
                 build_plan_value(
                     plan.clone(),
                     priority_class,

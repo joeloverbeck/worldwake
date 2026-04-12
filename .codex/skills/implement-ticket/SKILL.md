@@ -18,7 +18,7 @@ Before running the full workflow, classify the ticket:
 2. Confirm the dependency path and the exact owned symbol/file boundary.
 3. Run a narrow constructor/usage sweep for the changed shape: confirm the named symbols and accessors exist, search local callers/render sites, check obvious constructor or test-helper fallout, and identify the narrowest real proof entry point.
 4. Implement the owned change with focused proof first.
-5. Run the affected crate's tests as the normal broadened proof for the ticket. For Rust tickets, if the ticket's Test Plan or repo norms call for CI-matching clippy, run `cargo clippy --workspace --all-targets -- -D warnings` as part of normal broadened verification; use compile/lint fallout to catch remaining shared-shape literals/helpers and local cleanup.
+5. Run the affected crate's tests as the normal broadened proof for the ticket. For Rust tickets, format the owned files before final broad verification. If the ticket's Test Plan or repo norms call for CI-matching clippy, run `cargo clippy --workspace --all-targets -- -D warnings` as part of normal broadened verification; use compile/lint fallout to catch remaining shared-shape literals/helpers and local cleanup.
 6. Close out the ticket with the actual verification set and tracked-vs-untracked note. This normally includes updating the ticket file itself with completion metadata such as `Status`, `Outcome`, `Deviations` when needed, and `Verification Result`, not just reporting those details in the conversation.
 
 For CLI/tooling-only tickets, if the owned logic can be factored into local helpers, prefer bin-local `#[cfg(test)]` coverage over command-only validation.
@@ -32,6 +32,10 @@ For small/local tickets, load the reference docs only if reassessment exposes am
 For straightforward shared-type additive tickets (new field on an existing struct/component, derive-safe enum payload addition, or similar constructor fallout with no boundary dispute yet visible), start with the ticket, cited spec/docs, `references/reassessment-checks.md`, `references/verification.md`, and `references/closeout.md`. During the constructor fallout sweep, distinguish full manual struct literals from partial literals that already inherit new fields via `..Default::default()` or equivalent helpers before accepting the ticket's cited file list as real edit scope. Load `mismatch-handling.md`, `scope-extraction.md`, or `implementation-discipline.md` only if reassessment exposes a mismatch, ownership ambiguity, or non-mechanical implementation choice.
 
 Single-file planner-root, snapshot-completeness, planner-traceability, or AI carriage-path tickets still use the full workflow when the contract under audit crosses the planner boundary even if the eventual edit surface stays narrow and local.
+If a ticket appears to qualify for the small/local fast path by edit surface but also touches planner-root, snapshot-completeness, planner-traceability, or AI carriage-path contracts, this planner-boundary exception wins and the ticket uses the full workflow.
+Golden E2E tickets motivated by planner failures, observer reports, or scenario-specific regressions also use the full workflow even when the landed edit surface is one test file and the ticket remains test-only.
+When a golden or planner test-only ticket must create a new integration test file because the cited sibling substrate has not landed yet, the current ticket may absorb only the narrow local scaffolding needed to make its own proof surface real: file-local topology builders, focused setup helpers, and test-local fixture utilities. Do not silently absorb the sibling ticket's substantive scenarios or broader domain coverage. Record the deviation in reassessment and closeout, and keep the remaining sibling ownership explicit.
+Within one golden/planner ticket, different scenarios may lawfully use different reconstruction strategies when the proof needs differ. A single file can mix static distilled fixtures with replayed scenario-to-tick reconstruction, as long as each case states why that path is necessary and the proof boundary remains the named planner/search contract rather than broad simulation behavior.
 
 **All other tickets** — use the full workflow below (Steps 1-8).
 
@@ -50,7 +54,12 @@ When the ticket was authored by `/spec-to-tickets` in the current session from a
 
 ### 2. Reassess assumptions before coding
 
-Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
+Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. If a dependency ticket has already been completed and archived, rewrite `Deps` to the live archived path instead of leaving a stale active-ticket reference. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
+If a dependency ticket has not landed and the missing piece is only narrow local substrate required to make the current ticket's owned proof surface executable, you may absorb that substrate without stopping: create the minimal local helper/file scaffolding, keep sibling substantive coverage out of scope, and update the current ticket to record the dependency mismatch and absorbed boundary. If the missing dependency would require adopting the sibling ticket's substantive contract, stop and use 1-3-1 instead.
+
+When a ticket is motivated by an observer report, golden failure, or named scenario condition, verify the exact motivating substrate before distilling the harness or fixture. Confirm the scenario file, named places/entities, travel graph, and the reported failure location/path still match the ticket's execution narrative, then record what is preserved versus intentionally omitted in the distilled setup. Do not substitute a nearby prototype-world approximation when the ticket's claimed proof depends on a specific scenario/location condition.
+If a supposedly exact static reconstruction still yields a simpler lawful result than the observer-reported failure after you have matched the named scenario substrate, belief surface, and relevant actor profiles/components, stop escalating the hand-built approximation. Rebuild the live scenario substrate at the cited seed, advance to the observer tick, and prove the planner/search contract on that live tick state instead of continuing to guess at hidden accumulated history.
+When existing lower-layer proof in the same domain already establishes the production contract under audit, cite that proof during reassessment and keep the current ticket scoped to the remaining golden/test-only delta rather than reopening production ownership without evidence.
 
 Before trusting the ticket as executable, cross-check its internal sections for contradictions. Reconcile conflicts between `Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, `Acceptance Criteria`, `Verification Layers`, and any explicit in/out-of-scope notes before coding. Treat `Out of Scope` and any explicit "no new variants", "tests only", or "Engine Changes: None" claims as first-class contradiction surfaces during reassessment. If those sections disagree about ownership, proof surface, or whether production changes are required, update the ticket first instead of carrying the contradiction into implementation.
 
@@ -75,6 +84,7 @@ When a staged planner module or substrate already supports multiple goal familie
 For planner-root and tactical-barrier tickets, verify that each planner-produced subgoal is a lawful tactical destination rather than a transient probe, fallback waypoint, or exploration scaffold. Do not assume every emitted subgoal should become a scoped barrier target just because it passes through the planner; if the live search contract treats a subgoal as exploratory carriage rather than a durable destination, keep the ticket scoped to the lawful destination family and record the deviation explicitly.
 
 When a planner ticket changes the shape of strategic output, verify how much of that output the downstream tactical/search layer actually consumes. If the live boundary only reads the first/current strategic step, do not author or implement a multi-step strategic fallback shape as though later steps are planner-visible; correct the ticket to the real consumed contract before coding.
+When a planner-side filter, selector, or helper derives scope from a goal-level value, also verify whether the live tactical/search boundary sometimes operates on an active subgoal or stage-local contract instead of the root goal alone. If tactical search is currently solving a staged prerequisite, social-query, or other intermediate commodity/path contract, keep the implementation aligned with that active tactical contract rather than pruning or routing solely from the root goal's top-level shape.
 
 Before making a generic planner fallback live as a tactical barrier, check whether grounded goals with explicit evidence carriers (`evidence_entities`, `evidence_places`, or equivalent exact-bound evidence) should keep their existing evidence-backed search path instead. Do not let a new generic probe barrier override lawful evidence-backed routing or exact-goal operator paths unless the ticket explicitly owns that broader change.
 
@@ -93,10 +103,12 @@ After narrowing a ticket because substrate is already live, re-sweep the adjacen
 If focused proof added during implementation reveals a production contradiction that reassessment did not yet expose, stop and correct the ticket before proceeding further. Update the same sections (`Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria`) so the ticket no longer claims "tests only" or `Engine Changes: None` when the live invariant actually requires production changes.
 
 If focused proof instead falsifies the suspected production contradiction and shows the live fix is narrower (for example, golden-scenario isolation or fixture recalibration), stop and narrow the ticket before proceeding further. Update the same sections (`Problem`, `Engine Changes`, `What to Change`, `Files to Touch`, and `Acceptance Criteria`) so the ticket no longer claims production ownership when the honest contract is test-only or fixture-only.
+If a focused rerun disproves a newly adopted root-cause hypothesis, update the ticket again immediately: remove the falsified explanation from `Problem`, `Architecture Check`, `What to Change`, and any command/acceptance text that depended on it, and revert any exploratory production change that no longer explains the motivating failure.
 
 When reassessment or focused proof changes the real edit surface, update `Files to Touch` and any file- or symbol-level scope notes immediately instead of leaving them stale until closeout. The ticket should keep reflecting the current owned boundary as implementation proceeds.
 
 When `Acceptance Criteria` or the `Test Plan` names a focused test that is already owned by an adjacent active ticket, resolve that ownership during reassessment instead of leaving a split contract implicit. Either absorb the test into the current ticket and update sibling ownership, or remove it from the current ticket's must-pass list and cite the sibling ticket explicitly.
+If the ticket says there are no focused tests in scope but the owned file already contains focused tests that exercise the changed contract, treat those existing tests as the narrow proof surface. Update the ticket's `Verification Layers`, `Test Plan`, and command list to reflect the live proof surface while keeping sibling-ticket ownership explicit about any additional focused coverage that still belongs elsewhere.
 
 When reassessment changes the owned contract relative to a cited active spec, update that parent spec in the same pass unless the work is intentionally deferred behind a named follow-up ticket. Do not leave the ticket corrected while the live parent spec still describes the disproven contract.
 
@@ -118,6 +130,8 @@ Run the narrowest correct verification first, then broaden.
 
 Load `references/verification.md`.
 
+When the ticket adds, renames, or materially re-scopes a `golden_*.rs` file or scenario block, run the repository's golden inventory/doc refresh as part of broadened verification and treat the generated docs as expected fallout to review and keep aligned with the landed scenario metadata.
+
 If reassessment revealed that additive substrate from an earlier ticket already landed, include repository-wide live-contract fallout in the broadened verification sweep, not just the ticket's newly edited file set. Typical fallout includes stale `ALL` lists, exhaustiveness fixtures, representative-goal inventories, explicit length assertions that still reflect the pre-addition shape, and adjacent registry/declaration surfaces such as feasibility or invalidation strategies, provenance-family mappings, and other dispatch-table contracts that must now treat the additive shape as live behavior rather than inert scaffolding.
 
 For additive planner-root tickets, also sweep helpers keyed by shared planner transitions or op-family semantics rather than only declaration tables and enum matches. Typical fallout includes planner-only synthetic candidate builders, search helpers that expand candidates from shared `PlannerTransitionKind` behavior, and exhaustive `PlannerOpKind` matches in non-obvious support modules such as observation/runtime reconciliation, blocker classification, or related-place/related-entity helpers.
@@ -128,6 +142,7 @@ When a new fallback contract becomes lawful, re-check nearby planner/search test
 
 When broadened verification fails, treat each failure as current-ticket fallout and continue the fix-and-rerun loop until the broadened target passes or you hit a real 1-3-1 blocker. Do not stop after the first full-suite failure if the next step is a straightforward fallout fix within the ticket's live scope.
 After each fallout fix, rerun the same broadened verification target that exposed the failure before treating the branch as green. Do not rely on focused follow-up checks alone when the broader package or suite has not yet been rerun clean.
+If diagnosis required temporary tracing, debug prints, probe assertions, or similar instrumentation, remove them before broadened verification and before updating the ticket's final outcome/verification text.
 
 ### 7. Close out the ticket honestly
 
@@ -144,6 +159,7 @@ Covered in `references/closeout.md` (Step 8 section).
 - Name exact files, symbols, layers, and invariants for non-trivial claims.
 - Treat tests, traces, event logs, and authoritative state as different proof surfaces.
 - Architectural contradictions: solve or escalate with 1-3-1 (see mismatch-handling.md, Escalation decision tree). Do not patch around them.
+- For focused test commands, verify that the selector actually proves the owned surface. Substring filters can run extra tests or, for integration-test binaries, compile the target while executing zero tests. When exactness matters, prefer the narrowest truthful selector such as an exact unit-test name or `cargo test -p <crate> --test <file_stem>` for integration-test binaries instead of a loose name filter.
 
 ## Example Usage
 

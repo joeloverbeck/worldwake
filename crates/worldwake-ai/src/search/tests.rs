@@ -1,8 +1,10 @@
-use super::candidates::relevant_action_defs;
+use super::candidates::{
+    apply_commodity_relevance_filter, relevant_action_defs, root_candidate_trace_from_candidate,
+};
 use super::{
-    FrontierEntry, SearchCandidate, SearchNode, compare_search_nodes, compute_heuristic,
-    prune_travel_away_from_goal, search_candidate_from_planner, search_candidates,
-    search_candidates_from_affordance,
+    FrontierEntry, SearchCandidate, SearchNode, TacticalGoal, compare_search_nodes,
+    compute_heuristic, prune_travel_away_from_goal, search_candidate_from_planner,
+    search_candidates, search_candidates_from_affordance,
 };
 use crate::goal_model::GoalKindPlannerExt;
 use crate::planner_ops::planner_only_candidates;
@@ -25,14 +27,13 @@ use worldwake_core::{
     DemandObservationReason, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
     EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget, HomeostaticNeedId,
     HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, NoticeTopic, PerceptionSource, Permille, Place, PlaceTag, ProofRequirement,
-    PatrolProfile, PatrolRoute, PrototypePlace, Quantity, RecipeId, RecordedViolation,
+    MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute, PerceptionSource, Permille, Place,
+    PlaceTag, ProofRequirement, PrototypePlace, Quantity, RecipeId, RecordedViolation,
     ResourceSource, RewardSource, TheftDispositionProfile, Tick, TickRange, Topology,
-    TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
-    ViolationDispositionProfile, ViolationId, ViolationKind, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-    build_believed_entity_state, build_prototype_world, prototype_place_entity,
-    test_utils::sample_trade_disposition_profile,
+    TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, ViolationDispositionProfile,
+    ViolationId, ViolationKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+    World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
+    build_prototype_world, prototype_place_entity, test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, CombatBeliefView, ControlBeliefView,
@@ -46,8 +47,7 @@ use worldwake_systems::build_full_action_registries;
 fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
     CognitiveProfile {
         max_candidates_to_plan: reasoning.max_candidates_to_plan,
-        max_candidates_per_expansion: CognitiveProfile::default()
-            .max_candidates_per_expansion,
+        max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
         max_plan_depth: reasoning.max_plan_depth,
         snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
         max_node_expansions: reasoning.max_node_expansions,
@@ -2939,6 +2939,7 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
         payload_override: None,
         planner_only: true,
         trace_index: None,
+        expansion_trace_index: None,
     };
 
     let (_, successor) = build_successor(
@@ -3008,6 +3009,7 @@ fn build_successor_preserves_parent_steps_when_appending_child_step() {
         payload_override: None,
         planner_only: true,
         trace_index: None,
+        expansion_trace_index: None,
     };
 
     let (terminal, successor) = build_successor(
@@ -3094,6 +3096,7 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
 
     let (_, successor) = build_successor(
@@ -3131,6 +3134,7 @@ fn build_successor_uses_transition_metadata_for_partial_pickup() {
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
     let (_, successor) = build_successor(
         &goal,
@@ -3167,6 +3171,7 @@ fn search_adds_put_down_candidate_for_directly_possessed_hypothetical_lot() {
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
     let (_, successor) = build_successor(
         &goal,
@@ -5826,6 +5831,7 @@ fn make_travel_candidate(def_id: ActionDefId, destination: EntityId) -> SearchCa
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     }
 }
 
@@ -5837,6 +5843,7 @@ fn make_non_travel_candidate(def_id: ActionDefId, target: EntityId) -> SearchCan
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     }
 }
 
@@ -6522,8 +6529,15 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     };
 
     let mut view = TestBeliefView::default();
-    view.alive
-        .extend([actor, accused, punish_accused, town, outpost, crime_register, faction]);
+    view.alive.extend([
+        actor,
+        accused,
+        punish_accused,
+        town,
+        outpost,
+        crime_register,
+        faction,
+    ]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(accused, EntityKind::Agent);
     view.kinds.insert(punish_accused, EntityKind::Agent);
@@ -6535,7 +6549,8 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     view.effective_places.insert(accused, outpost);
     view.effective_places.insert(punish_accused, town);
     view.effective_places.insert(crime_register, town);
-    view.entities_at.insert(town, vec![actor, punish_accused, crime_register]);
+    view.entities_at
+        .insert(town, vec![actor, punish_accused, crime_register]);
     view.entities_at.insert(outpost, vec![accused]);
     view.record_data.insert(
         crime_register,
@@ -6667,7 +6682,8 @@ fn build_successor_keeps_accuse_step_target_bound_to_accused() {
     let crime_register = entity(12);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, accused, town, outpost, crime_register]);
+    view.alive
+        .extend([actor, accused, town, outpost, crime_register]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(accused, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
@@ -6724,16 +6740,11 @@ fn build_successor_keeps_accuse_step_target_bound_to_accused() {
         payload_override: None,
         planner_only: false,
         trace_index: None,
+        expansion_trace_index: None,
     };
 
     let (terminal, successor) = build_successor(
-        &goal,
-        &semantics,
-        &registry,
-        &node,
-        &candidate,
-        &recipes,
-        &reasoning,
+        &goal, &semantics, &registry, &node, &candidate, &recipes, &reasoning,
     )
     .expect("accuse successor should build");
 
@@ -7696,29 +7707,34 @@ fn test_binding_rejection_trace_populated() {
     );
 }
 
-/// With the deferred `ProgressBarrier` mechanism, a `GoalSatisfied` plan at
-/// depth 2 (`Travel` + `pick_up`) is preferred over a `ProgressBarrier` (`Trade`)
-/// at depth 1.  Before the deferral change, the search would greedily
-/// return the `Trade` `ProgressBarrier` without exploring deeper.
+/// For `AcquireCommodity`, if a current-place acquire opportunity already
+/// exists, search must not be trapped behind a manufactured local prerequisite
+/// stage. The tactical layer should remain free to explore a farther
+/// goal-satisfied branch.
 #[test]
-fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
+fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
     let actor = entity(1);
     let seller = entity(2);
     let town = entity(10);
     let market = entity(11);
     let bread = entity(20);
+    let seller_lot = entity(21);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, seller, town, market, bread]);
+    view.alive
+        .extend([actor, seller, town, market, bread, seller_lot]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(seller, EntityKind::Agent);
     view.kinds.insert(town, EntityKind::Place);
     view.kinds.insert(market, EntityKind::Place);
     view.kinds.insert(bread, EntityKind::ItemLot);
+    view.kinds.insert(seller_lot, EntityKind::ItemLot);
     view.effective_places.insert(actor, town);
     view.effective_places.insert(seller, town);
     view.effective_places.insert(bread, market);
-    view.entities_at.insert(town, vec![actor, seller]);
+    view.effective_places.insert(seller_lot, town);
+    view.entities_at
+        .insert(town, vec![actor, seller, seller_lot]);
     view.entities_at.insert(market, vec![bread]);
     view.adjacent
         .insert(town, vec![(market, NonZeroU32::new(2).unwrap())]);
@@ -7738,6 +7754,16 @@ fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
             home_facility: Some(town),
         },
     );
+    view.lot_commodities
+        .insert(seller_lot, CommodityKind::Bread);
+    view.lot_sellers.insert(seller_lot, seller);
+    view.direct_possessors.insert(seller_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .push(seller_lot);
+    view.commodity_quantities
+        .insert((seller_lot, CommodityKind::Bread), Quantity(1));
     view.trade_profiles
         .insert(actor, sample_trade_disposition_profile());
     // Ground bread lot at market.
@@ -7784,17 +7810,15 @@ fn search_defers_progress_barrier_and_prefers_goal_satisfied_at_deeper_level() {
     .into_plan()
     .expect("should find a plan");
 
-    // The search should prefer GoalSatisfied (Travel + pick_up) over the
-    // deferred Trade ProgressBarrier.
+    // The search is free to chase the remote market lot because the local
+    // seller did not force an `AcquirePrerequisite` stage at the current
+    // place.
     assert_eq!(
         plan.terminal_kind,
         PlanTerminalKind::GoalSatisfied,
-        "deferred barrier should yield to GoalSatisfied at deeper level"
+        "a local acquire opportunity must not force prerequisite staging"
     );
-    assert!(
-        plan.steps.len() >= 2,
-        "plan should include Travel + pick_up"
-    );
+    assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
     assert_eq!(plan.steps[1].op_kind, PlannerOpKind::MoveCargo);
 }
@@ -8316,6 +8340,121 @@ fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
 }
 
 #[test]
+fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_self_consume() {
+    let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
+    let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+    let mut recipes = RecipeRegistry::new();
+    recipes.register(harvest_apple_recipe());
+    let (registry, handlers) = build_registry_with_recipes(&recipes);
+    let semantics = build_semantics_table(&registry);
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, _orchard_row) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Forager", ControlSource::Ai).unwrap();
+        let orchard_row = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(actor, village_square).unwrap();
+        txn.set_ground_location(orchard_row, orchard_farm).unwrap();
+        txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::default())
+            .unwrap();
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+            .unwrap();
+        txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+            .unwrap();
+        txn.set_component_known_recipes(actor, KnownRecipes::with([RecipeId(0)]))
+            .unwrap();
+        txn.set_component_workstation_marker(
+            orchard_row,
+            WorkstationMarker(WorkstationTag::OrchardRow),
+        )
+        .unwrap();
+        txn.set_component_resource_source(
+            orchard_row,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, orchard_row)
+    };
+    sync_all_beliefs(&mut world, actor, Tick(1));
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([orchard_farm]),
+    };
+    let view = PerAgentBeliefView::from_world(actor, &world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &semantics,
+        &registry,
+        &handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &recipes,
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        None,
+        Some(&mut trace_metadata),
+    );
+
+    assert!(
+        result.is_found(),
+        "known remote self-consume acquisition should still produce a plan"
+    );
+    assert_eq!(
+        trace_metadata.tactical_goal.as_deref(),
+        Some(
+            format!("AcquirePrerequisite {{ commodity: Apple, destination: {orchard_farm:?} }}")
+                .as_str()
+        )
+    );
+    let strategic_plan = trace_metadata
+        .strategic_plan
+        .as_ref()
+        .expect("known remote acquire should record a strategic plan");
+    assert_eq!(strategic_plan.steps.len(), 2);
+    assert_eq!(strategic_plan.steps[0].destination, orchard_farm);
+    assert_eq!(
+        strategic_plan.steps[0].sub_goal,
+        super::strategic::TacticalSubGoal::AcquirePrerequisite(CommodityKind::Apple)
+    );
+}
+
+#[test]
 fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
     let actor = entity(1);
     let town = entity(10);
@@ -8364,7 +8503,10 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
         Some(&mut trace_metadata),
     );
 
-    assert!(result.is_found(), "local sleep planning should still succeed");
+    assert!(
+        result.is_found(),
+        "local sleep planning should still succeed"
+    );
     assert_eq!(trace_metadata.tactical_goal, None);
 }
 
@@ -8509,14 +8651,10 @@ fn search_evidence_directed_exploration_prefers_evidence_place() {
             (fallback_place, NonZeroU32::new(3).unwrap()),
         ],
     );
-    view.adjacent.insert(
-        evidence_place,
-        vec![(origin, NonZeroU32::new(1).unwrap())],
-    );
-    view.adjacent.insert(
-        fallback_place,
-        vec![(origin, NonZeroU32::new(3).unwrap())],
-    );
+    view.adjacent
+        .insert(evidence_place, vec![(origin, NonZeroU32::new(1).unwrap())]);
+    view.adjacent
+        .insert(fallback_place, vec![(origin, NonZeroU32::new(3).unwrap())]);
 
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::None,
@@ -8597,7 +8735,10 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
     view.effective_places.insert(accused, origin);
     view.effective_places.insert(crime_register, town);
     view.entities_at.entry(origin).or_default().push(accused);
-    view.entities_at.entry(town).or_default().push(crime_register);
+    view.entities_at
+        .entry(town)
+        .or_default()
+        .push(crime_register);
     view.record_data.insert(
         crime_register,
         worldwake_core::RecordData {
@@ -8653,7 +8794,10 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
         plan.steps[0].targets,
         vec![PlanningEntityRef::Authoritative(town)]
     );
-    assert_eq!(plan.steps.last().map(|step| step.op_kind), Some(PlannerOpKind::Accuse));
+    assert_eq!(
+        plan.steps.last().map(|step| step.op_kind),
+        Some(PlannerOpKind::Accuse)
+    );
     assert_eq!(trace_metadata.tactical_goal, None);
     assert!(
         trace_metadata
@@ -8662,7 +8806,10 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
             .and_then(|plan| plan.steps.first())
             .is_some_and(|step| {
                 step.destination == town
-                    && matches!(step.sub_goal, super::strategic::TacticalSubGoal::SatisfyGoal)
+                    && matches!(
+                        step.sub_goal,
+                        super::strategic::TacticalSubGoal::SatisfyGoal
+                    )
             }),
         "Accuse should keep its lawful register-bound strategic step"
     );
@@ -8751,7 +8898,9 @@ fn search_patrol_uses_travel_to_goal_for_remote_place() {
     );
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::Place(patrol_place),
-        key: GoalKey::from(GoalKind::Patrol { place: patrol_place }),
+        key: GoalKey::from(GoalKind::Patrol {
+            place: patrol_place,
+        }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([patrol_place]),
     };
@@ -8880,7 +9029,8 @@ fn search_investigate_allows_local_scene_investigation_despite_stale_remote_evid
     let remote_place = entity(11);
 
     let mut view = TestBeliefView::default();
-    view.alive.extend([actor, stale_subject, violation_place, remote_place]);
+    view.alive
+        .extend([actor, stale_subject, violation_place, remote_place]);
     view.kinds.insert(actor, EntityKind::Agent);
     view.kinds.insert(stale_subject, EntityKind::ItemLot);
     view.kinds.insert(violation_place, EntityKind::Place);
@@ -9043,11 +9193,616 @@ fn search_travel_to_goal_candidate_filter() {
     );
 
     assert_eq!(candidates.len(), 2);
-    assert!(candidates.iter().any(|candidate| candidate.def_id == travel_id));
-    assert!(candidates.iter().any(|candidate| candidate.def_id == patrol_id));
     assert!(
-        candidates.iter().all(|candidate| candidate.def_id != harvest_id),
+        candidates
+            .iter()
+            .any(|candidate| candidate.def_id == travel_id)
+    );
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.def_id == patrol_id)
+    );
+    assert!(
+        candidates
+            .iter()
+            .all(|candidate| candidate.def_id != harvest_id),
         "irrelevant non-travel setup should be removed before departure"
+    );
+}
+
+#[test]
+fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candidates() {
+    let actor = entity(1);
+    let place = entity(10);
+    let bread_lot = entity(20);
+    let waste_lot = entity(21);
+    let workshop = entity(30);
+    let seller = entity(40);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, place, bread_lot, waste_lot, workshop, seller]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(place, EntityKind::Place);
+    view.kinds.insert(bread_lot, EntityKind::ItemLot);
+    view.kinds.insert(waste_lot, EntityKind::ItemLot);
+    view.kinds.insert(workshop, EntityKind::Place);
+    view.kinds.insert(seller, EntityKind::Agent);
+    view.effective_places.insert(actor, place);
+    view.effective_places.insert(bread_lot, place);
+    view.effective_places.insert(waste_lot, place);
+    view.effective_places.insert(workshop, place);
+    view.effective_places.insert(seller, place);
+    view.entities_at
+        .insert(place, vec![actor, bread_lot, waste_lot, workshop, seller]);
+    view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+    view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([place]),
+    };
+    let mut recipes = RecipeRegistry::new();
+    recipes.register(RecipeDefinition {
+        name: "Press Apples".to_string(),
+        inputs: vec![(CommodityKind::Grain, Quantity(1))],
+        outputs: vec![(CommodityKind::Apple, Quantity(1))],
+        work_ticks: NonZeroU32::new(3).unwrap(),
+        required_workstation_tag: Some(WorkstationTag::Mill),
+        required_tool_kinds: Vec::new(),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+    });
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let (registry, _handlers) = build_registry_with_recipes(&recipes);
+    let semantics_table = build_semantics_table(&registry);
+
+    let move_cargo_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let trade_id = registry
+        .iter()
+        .find(|def| def.name == "trade")
+        .map(|def| def.id)
+        .expect("trade action should be registered");
+    let craft_id = registry
+        .iter()
+        .find_map(|def| {
+            def.payload
+                .as_craft()
+                .is_some_and(|payload| {
+                    payload
+                        .outputs
+                        .iter()
+                        .any(|(commodity, _)| *commodity == CommodityKind::Apple)
+                })
+                .then_some(def.id)
+        })
+        .expect("apple craft action should be registered");
+
+    let mut candidates = vec![
+        SearchCandidate {
+            def_id: move_cargo_id,
+            authoritative_targets: vec![bread_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(bread_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(0),
+            expansion_trace_index: None,
+        },
+        SearchCandidate {
+            def_id: move_cargo_id,
+            authoritative_targets: vec![waste_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(waste_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(1),
+            expansion_trace_index: None,
+        },
+        SearchCandidate {
+            def_id: trade_id,
+            authoritative_targets: vec![seller],
+            planning_targets: vec![PlanningEntityRef::Authoritative(seller)],
+            payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+                counterparty: seller,
+                sale_lot: bread_lot,
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(2),
+            expansion_trace_index: None,
+        },
+        SearchCandidate {
+            def_id: trade_id,
+            authoritative_targets: vec![seller],
+            planning_targets: vec![PlanningEntityRef::Authoritative(seller)],
+            payload_override: Some(ActionPayload::Trade(TradeActionPayload {
+                counterparty: seller,
+                sale_lot: waste_lot,
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: Some(3),
+            expansion_trace_index: None,
+        },
+        SearchCandidate {
+            def_id: craft_id,
+            authoritative_targets: vec![workshop],
+            planning_targets: vec![PlanningEntityRef::Authoritative(workshop)],
+            payload_override: None,
+            planner_only: false,
+            trace_index: Some(4),
+            expansion_trace_index: None,
+        },
+    ];
+    let mut root_candidates = candidates
+        .iter()
+        .map(|candidate| {
+            root_candidate_trace_from_candidate(candidate, &registry, &semantics_table)
+        })
+        .collect::<Vec<_>>();
+
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        &goal,
+        &state,
+        None,
+        &semantics_table,
+        &registry,
+        &recipes,
+        Some(&mut root_candidates),
+    );
+
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.trace_index)
+            .collect::<Vec<_>>(),
+        vec![Some(0), Some(2)]
+    );
+    assert_eq!(
+        root_candidates[1].outcome,
+        crate::decision_trace::RootCandidateOutcome::Filtered(
+            crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                candidate_commodity: Some(CommodityKind::Waste),
+                goal_commodity: CommodityKind::Bread,
+            },
+        )
+    );
+    assert_eq!(
+        root_candidates[3].outcome,
+        crate::decision_trace::RootCandidateOutcome::Filtered(
+            crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                candidate_commodity: Some(CommodityKind::Waste),
+                goal_commodity: CommodityKind::Bread,
+            },
+        )
+    );
+    assert_eq!(
+        root_candidates[4].outcome,
+        crate::decision_trace::RootCandidateOutcome::Filtered(
+            crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                candidate_commodity: Some(CommodityKind::Apple),
+                goal_commodity: CommodityKind::Bread,
+            },
+        )
+    );
+}
+
+#[test]
+fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft() {
+    let actor = entity(1);
+    let place = entity(10);
+    let unknown_lot = entity(20);
+    let mill = entity(30);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, place, unknown_lot, mill]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(place, EntityKind::Place);
+    view.kinds.insert(unknown_lot, EntityKind::ItemLot);
+    view.kinds.insert(mill, EntityKind::Place);
+    view.effective_places.insert(actor, place);
+    view.effective_places.insert(unknown_lot, place);
+    view.effective_places.insert(mill, place);
+    view.entities_at
+        .insert(place, vec![actor, unknown_lot, mill]);
+
+    let mut recipes = RecipeRegistry::new();
+    let recipe_id = recipes.register(RecipeDefinition {
+        name: "Bake Bread".to_string(),
+        inputs: vec![(CommodityKind::Grain, Quantity(2))],
+        outputs: vec![(CommodityKind::Bread, Quantity(1))],
+        work_ticks: NonZeroU32::new(3).unwrap(),
+        required_workstation_tag: Some(WorkstationTag::Mill),
+        required_tool_kinds: Vec::new(),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+    });
+    let (registry, _handlers) = build_registry_with_recipes(&recipes);
+    let semantics_table = build_semantics_table(&registry);
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+
+    let travel_id = registry
+        .iter()
+        .find(|def| def.name == "travel")
+        .map(|def| def.id)
+        .expect("travel action should be registered");
+    let queue_id = registry
+        .iter()
+        .find(|def| def.name == "queue_for_facility_use")
+        .map(|def| def.id)
+        .expect("queue_for_facility_use action should be registered");
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let matching_craft_id = registry
+        .iter()
+        .find_map(|def| {
+            def.payload.as_craft().and_then(|payload| {
+                (payload
+                    .outputs
+                    .iter()
+                    .any(|(commodity, _)| *commodity == CommodityKind::Bread))
+                .then_some(def.id)
+            })
+        })
+        .expect("bread craft action should be registered");
+
+    let mut candidates = vec![
+        SearchCandidate {
+            def_id: travel_id,
+            authoritative_targets: vec![mill],
+            planning_targets: vec![PlanningEntityRef::Authoritative(mill)],
+            payload_override: None,
+            planner_only: false,
+            trace_index: None,
+            expansion_trace_index: None,
+        },
+        SearchCandidate {
+            def_id: queue_id,
+            authoritative_targets: vec![mill],
+            planning_targets: vec![PlanningEntityRef::Authoritative(mill)],
+            payload_override: Some(ActionPayload::QueueForFacilityUse(
+                QueueForFacilityUsePayload {
+                    intended_action: matching_craft_id,
+                },
+            )),
+            planner_only: false,
+            trace_index: None,
+            expansion_trace_index: None,
+        },
+        SearchCandidate {
+            def_id: pick_up_id,
+            authoritative_targets: vec![unknown_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(unknown_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: None,
+            expansion_trace_index: None,
+        },
+    ];
+
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        &goal,
+        &state,
+        None,
+        &semantics_table,
+        &registry,
+        &recipes,
+        None,
+    );
+
+    assert_eq!(candidates.len(), 3);
+}
+
+#[test]
+fn commodity_relevance_filter_bypasses_non_commodity_goals() {
+    let actor = entity(1);
+    let place = entity(10);
+    let lot = entity(20);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, place, lot]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(place, EntityKind::Place);
+    view.kinds.insert(lot, EntityKind::ItemLot);
+    view.effective_places.insert(actor, place);
+    view.effective_places.insert(lot, place);
+    view.entities_at.insert(place, vec![actor, lot]);
+    view.lot_commodities.insert(lot, CommodityKind::Waste);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::Sleep),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let (registry, _handlers) = build_registry();
+    let semantics_table = build_semantics_table(&registry);
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let original = SearchCandidate {
+        def_id: pick_up_id,
+        authoritative_targets: vec![lot],
+        planning_targets: vec![PlanningEntityRef::Authoritative(lot)],
+        payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+            quantity: Quantity(1),
+        })),
+        planner_only: false,
+        trace_index: None,
+        expansion_trace_index: None,
+    };
+    let mut candidates = vec![original.clone()];
+
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        &goal,
+        &state,
+        None,
+        &semantics_table,
+        &registry,
+        &RecipeRegistry::new(),
+        None,
+    );
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].def_id, original.def_id);
+    assert_eq!(
+        candidates[0].authoritative_targets,
+        original.authoritative_targets
+    );
+}
+
+#[test]
+fn commodity_relevance_filter_uses_active_prerequisite_commodity_for_produce_goal() {
+    let actor = entity(1);
+    let place = entity(10);
+    let firewood_lot = entity(20);
+    let waste_lot = entity(21);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, place, firewood_lot, waste_lot]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(place, EntityKind::Place);
+    view.kinds.insert(firewood_lot, EntityKind::ItemLot);
+    view.kinds.insert(waste_lot, EntityKind::ItemLot);
+    view.effective_places.insert(actor, place);
+    view.effective_places.insert(firewood_lot, place);
+    view.effective_places.insert(waste_lot, place);
+    view.entities_at
+        .insert(place, vec![actor, firewood_lot, waste_lot]);
+    view.lot_commodities
+        .insert(firewood_lot, CommodityKind::Firewood);
+    view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
+
+    let mut recipes = RecipeRegistry::new();
+    let recipe_id = recipes.register(RecipeDefinition {
+        name: "Bake Bread".to_string(),
+        inputs: vec![(CommodityKind::Firewood, Quantity(1))],
+        outputs: vec![(CommodityKind::Bread, Quantity(1))],
+        work_ticks: NonZeroU32::new(3).unwrap(),
+        required_workstation_tag: Some(WorkstationTag::Mill),
+        required_tool_kinds: Vec::new(),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+    });
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let state = PlanningState::new(&snapshot);
+    let (registry, _handlers) = build_registry();
+    let semantics_table = build_semantics_table(&registry);
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let mut candidates = vec![
+        SearchCandidate {
+            def_id: pick_up_id,
+            authoritative_targets: vec![firewood_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(firewood_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: None,
+            expansion_trace_index: None,
+        },
+        SearchCandidate {
+            def_id: pick_up_id,
+            authoritative_targets: vec![waste_lot],
+            planning_targets: vec![PlanningEntityRef::Authoritative(waste_lot)],
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(1),
+            })),
+            planner_only: false,
+            trace_index: None,
+            expansion_trace_index: None,
+        },
+    ];
+    let tactical_goal = TacticalGoal::AcquirePrerequisite {
+        commodity: CommodityKind::Firewood,
+        destination: place,
+    };
+
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        &goal,
+        &state,
+        Some(&tactical_goal),
+        &semantics_table,
+        &registry,
+        &recipes,
+        None,
+    );
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].authoritative_targets, vec![firewood_lot]);
+}
+
+#[test]
+fn search_pipeline_records_commodity_irrelevant_root_candidate_filtering() {
+    let actor = entity(1);
+    let seller = entity(2);
+    let market = entity(10);
+    let bread_lot = entity(20);
+    let waste_lot = entity(21);
+
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, seller, market, bread_lot, waste_lot]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(seller, EntityKind::Agent);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(bread_lot, EntityKind::ItemLot);
+    view.kinds.insert(waste_lot, EntityKind::ItemLot);
+    view.effective_places.insert(actor, market);
+    view.effective_places.insert(seller, market);
+    view.effective_places.insert(bread_lot, market);
+    view.effective_places.insert(waste_lot, market);
+    view.entities_at
+        .insert(market, vec![actor, seller, bread_lot, waste_lot]);
+    view.trade_profiles
+        .insert(actor, sample_trade_disposition_profile());
+    view.merchandise_profiles.insert(
+        seller,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread, CommodityKind::Waste]),
+            home_facility: Some(market),
+        },
+    );
+    view.commodity_quantities
+        .insert((actor, CommodityKind::Coin), Quantity(3));
+    view.commodity_quantities
+        .insert((seller, CommodityKind::Bread), Quantity(1));
+    view.commodity_quantities
+        .insert((seller, CommodityKind::Waste), Quantity(1));
+    view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+    view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
+    view.direct_possessors.insert(bread_lot, seller);
+    view.direct_possessors.insert(waste_lot, seller);
+    view.direct_possessions
+        .entry(seller)
+        .or_default()
+        .extend([bread_lot, waste_lot]);
+    view.listed_lots
+        .insert((market, CommodityKind::Bread), vec![bread_lot]);
+    view.listed_lots
+        .insert((market, CommodityKind::Waste), vec![waste_lot]);
+    view.lot_sellers.insert(bread_lot, seller);
+    view.lot_sellers.insert(waste_lot, seller);
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([market]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let mut expansions = Vec::new();
+
+    let _result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut expansions),
+    );
+
+    let root = expansions
+        .iter()
+        .find(|summary| summary.depth == 0)
+        .expect("root expansion summary should be recorded");
+    assert!(
+        root.root_candidates.iter().any(|candidate| {
+            matches!(
+                candidate.outcome,
+                crate::decision_trace::RootCandidateOutcome::Filtered(
+                    crate::decision_trace::RootCandidateFilterReason::CommodityIrrelevant {
+                        candidate_commodity: Some(CommodityKind::Waste),
+                        goal_commodity: CommodityKind::Bread,
+                    },
+                )
+            )
+        }),
+        "root trace should record commodity-irrelevant candidate pruning"
     );
 }
 
