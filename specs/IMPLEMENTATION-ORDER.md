@@ -179,6 +179,25 @@ S95 ✅ archived
 **Wave**:
 - **S95**: ✅ COMPLETED — archived at [archive/specs/S95-relaxed-plan-heuristic.md](/home/joeloverbeck/projects/worldwake/archive/specs/S95-relaxed-plan-heuristic.md). Landed the FF-style relaxed-plan heuristic substrate (`compute_ff_heuristic` / `RelaxedPlanResult`), per-agent `use_ff_heuristic` toggle, live tactical-search `h_ff` and helpful-action integration, decision-trace enrichment, and truthful golden E2E proof at the remote-care planning trace boundary.
 
+### Adjunct Wave: Simulation Remediation Phase 4
+
+Derived from 2026-04-12 post-S95 simulation observer re-run (`reports/simulation-remediation.md`) validated
+against the actual codebase and `docs/FOUNDATIONS.md`. Of 11 proposals (4 golden tests, 2 spec changes,
+5 tickets), 2 accepted, 2 scoped down, 8 rejected as already addressed by S76-S95 or deferred.
+Remaining pathologies: obligation spam loop (undamped PostNotice), artifact TTL not provisioned
+by planner, and observer affordance-change diagnostic gap.
+
+```text
+S96 (independent)
+S97 (independent)
+S98 (independent)
+```
+
+**Wave** (parallel, no deps):
+- **S96**: Obligation Satiation — `ObligationSatiationProfile`, drive-score dampening after repeated execution, golden test proving survival needs override saturated obligations
+- **S97**: PostNotice Artifact TTL Provisioning — `ArtifactPostingProfile`, planner/candidate-generation sets `expires_at` from profile instead of `None`, golden test proving artifact expiry bounds entity count
+- **S98**: Observer Affordance-Change Detection — affordance-set change detection in observer binary, emission on action-type appearance/disappearance
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed

@@ -40,10 +40,9 @@ Read `reports/simulation-observer-report.md`.
 1. Read `docs/FOUNDATIONS.md` -- needed to evaluate whether findings violate foundational principles. If the file exceeds read limits, prioritize sections III (Knowledge, Belief, and Evidence) and IV (Agents, Institutions, and Social Order) as these are most commonly implicated by behavioral smells.
 2. List the `specs/` directory to know which specs exist.
 3. List the `tickets/` directory to check for existing related tickets.
-4. Glob `crates/worldwake-ai/tests/golden_*.rs` to identify existing test files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern. Batch all keyword searches into a single operation (e.g., delegate to an Explore agent with all finding-related keywords) rather than grepping per-finding sequentially. The agent prompt should list all finding-related keywords grouped by observer report finding number, request test function names and key assertions for each match, and ask for a structured report grouped by keyword category.
-5. Read `docs/spec-drafting-rules.md` -- only if any spec changes will be proposed. Skip if all findings map to golden tests or tickets.
-6. If `reports/simulation-remediation.md` already exists (from a prior run), read it and note which prior proposals recurred in the current observer report. Flag recurring issues by appending `RECURRING` to the severity field in the output template (e.g., `**Severity**: CRITICAL RECURRING`).
-7. Note the Trace Quality Assessment section of the observer report for processing in Step 3b.
+4. Glob `crates/worldwake-ai/tests/golden_*.rs` to identify existing test files. Then, after reading the observer report findings, grep these files for keywords related to each finding (e.g., test function names, assertion patterns, key terms like `idle`, `travel`, `belief`, `resource`) to avoid proposing duplicate tests and to reference the `GoldenHarness` setup pattern. Batch all keyword searches into a single operation (e.g., delegate to an Explore agent with all finding-related keywords) rather than grepping per-finding sequentially. The agent prompt should list all finding-related keywords grouped by observer report finding number, request test function names and key assertions for each match, and ask for a structured report grouped by keyword category. After reviewing the agent's report, run targeted `grep` calls to confirm or deny specific duplicate-coverage questions that the batch report left ambiguous. Focus greps on exact test function names, assertion patterns, or action names relevant to each proposed golden test.
+5. If `reports/simulation-remediation.md` already exists (from a prior run), read it and note which prior proposals recurred in the current observer report. Flag recurring issues by appending `RECURRING` to the severity field in the output template (e.g., `**Severity**: CRITICAL RECURRING`).
+6. Note the Trace Quality Assessment section of the observer report for processing in Step 3b.
 
 ### Step 3: Classify Each Finding
 
@@ -62,7 +61,14 @@ For each finding in the observer report (each smell with severity above NONE), d
 - What the change should accomplish
 - FOUNDATIONS alignment (which principle(s) the change serves)
 
-**Symptom of another finding** -- If a finding is a downstream symptom of a higher-severity finding (e.g., sleep loops caused by dehydration), note it as "deferred to [root finding]" rather than proposing independent remediation. Include these in a "Findings Not Requiring Remediation" table at the end of the report with the reason for deferral. Revisit after the root cause is fixed. A deferred finding may still warrant a regression-guard golden test if the behavioral invariant it describes should be independently monitored. In this case, propose the golden test AND list the finding as deferred, noting that the test is a regression guard, not a root-cause fix.
+**Symptom of another finding** -- If a finding is a downstream symptom of a higher-severity finding (e.g., sleep loops caused by dehydration), note it as "deferred to [root finding]" rather than proposing independent remediation. Include these in a "Findings Not Requiring Remediation" table at the end of the report with the reason for deferral. Revisit after the root cause is fixed. A deferred finding may still warrant a regression-guard golden test if the behavioral invariant it describes should be independently monitored. In this case, propose the golden test in the "Proposed Golden Tests" section with a note that it is a regression guard (not a root-cause fix), AND list the finding in the deferral table referencing the golden test by ID (e.g., "Regression guard: GT-2").
+
+**Scenario Change** -- Use when the finding is caused by a scenario profile misconfiguration (e.g., missing social weight, wrong initial inventory, absent travel motivation) rather than an engine defect. Propose:
+- Which scenario file needs updating (path in `scenarios/`)
+- Which agent profile and what parameter to change
+- Why the current value produces the observed pathology
+- Expected behavioral change after the fix
+Scenario changes are lower-priority than engine tickets and do not require spec-level design work. Use the Ticket format with `**Crate(s)**: worldwake-cli (scenario definition)` and priority P2-P3.
 
 **Ticket** -- Use when the finding points to a concrete bug or missing feature that doesn't require spec-level design work. Propose:
 - A ticket title and description
@@ -90,7 +96,9 @@ Tickets and spec changes from trace-quality items use the same format as behavio
 
 ### Step 4: Write Proposals
 
-If invoked in plan mode, draft the report content in the plan file. After plan mode exits, read the plan file and write its content verbatim to `reports/simulation-remediation.md` -- do not re-analyze or regenerate the proposals.
+If any spec changes were proposed in Step 3, read `docs/spec-drafting-rules.md` before writing the proposals to ensure spec change proposals follow project conventions.
+
+If invoked in plan mode, draft the report content in the plan file. After plan mode exits, read the plan file and write its content verbatim to `reports/simulation-remediation.md` -- do not re-analyze or regenerate the proposals. If not in plan mode, write directly to `reports/simulation-remediation.md`.
 
 Write `reports/simulation-remediation.md` with this structure:
 

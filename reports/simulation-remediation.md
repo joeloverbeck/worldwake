@@ -1,0 +1,199 @@
+# Simulation Remediation Proposals
+
+Source report: `reports/simulation-observer-report.md`
+Generated: 2026-04-12
+
+## Context
+
+Four agents (Kael, Merchant Vara, Forager Lina, Guard Theron) were simulated across 5 places for 1440 ticks (seed 7777). The dominant failure mode is **mass starvation caused by planner budget exhaustion on multi-hop food acquisition plans**. Three of four agents were stuck at Dusty Trail — a location with zero food production. The planner's 300-expansion budget cannot discover the depth-9, 693-705 candidate plans required to travel to a food source, harvest, and consume. This structural planning bottleneck is the root cause behind action loops (Finding 2), sustained critical needs (Finding 5), unaddressed needs (Finding 6), and economic stagnation (Finding 10). A secondary independent pathology — Guard Theron's obligation spam loop (PostNotice score 808200 overwhelming survival needs) — caused Theron's death at tick 1342. SocialArtifact pollution (500+ never-expiring artifacts at Dusty Trail) amplified redundant perception and crowded out useful beliefs. The only functional agent was Forager Lina, who had local food access but remained completely socially isolated.
+
+## Proposed Golden Tests
+
+### GT-1: Obligation does not starve critical survival needs
+**Source finding**: Finding 2 (Action Loops — Guard Theron obligation spam)
+**Severity**: CRITICAL
+**File**: `crates/worldwake-ai/tests/golden_planner_pathology.rs`
+**Setup**: One guard agent at a location with food and water available. Agent has an active danger belief triggering PostNotice goals. Set hunger and thirst to critical levels (>750 permille). Run for 200 ticks.
+**Assertion**: Agent must perform at least one `eat` and one `drink` action despite active PostNotice obligations. PostNotice executions must not exceed 80% of total actions. Agent must not die from NeedDeprivation.
+**Rationale**: Protects the invariant that survival needs cannot be permanently starved by obligation goals. The observer report showed Theron executing 487 PostNotice actions while starving to death — the goal ranking must have a survival override.
+**Existing coverage**: `golden_integration.rs` tests PostNotice selection and commitment but does not test the interaction between PostNotice and competing survival needs. `golden_ai_decisions.rs::golden_fallback_to_addressable_need` tests fallback when top need is unsatisfiable, but not when a non-survival goal outranks survival.
+
+### GT-2: Multi-agent scenario does not collapse to sleep+relieve within 600 ticks
+**Source finding**: Finding 2 (Action Loops — Kael/Vara behavioral collapse)
+**Severity**: CRITICAL
+**File**: `crates/worldwake-ai/tests/golden_planner_pathology.rs`
+**Setup**: Two agents at a location without local food but with a reachable food source (2-3 edge ticks away). Agents have `CognitiveProfile` with `max_node_expansions: 300` (current default). Hunger starts at 500 permille. Run for 600 ticks.
+**Assertion**: Each agent's action repertoire across any 200-tick window must include at least 3 distinct action types. If action repertoire collapses to <=2 types for >100 consecutive ticks, fail.
+**Rationale**: Regression guard for behavioral collapse. Even if the budget exhaustion root cause is fixed, this test ensures action diversity is maintained. The observer report showed Kael/Vara collapsing to exactly sleep+relieve for 840+ ticks.
+**Existing coverage**: `golden_simulation_gaps.rs::run_remote_travel_when_local_supply_exhausted` tests that an agent travels to remote food, but uses a single agent with a simpler topology. This test exercises multi-agent budget pressure with the CLI evaluation topology's deeper plan chains.
+
+### GT-3: Merchant agent executes at least one trade within 500 ticks of co-location with buyer
+**Source finding**: Finding 9 (Social Isolation) + Finding 10 (Economic Stagnation)
+**Severity**: HIGH
+**File**: `crates/worldwake-ai/tests/golden_supply_chain.rs`
+**Setup**: Merchant agent with `MerchandiseProfile` and inventory of tradeable goods. Buyer agent co-located with merchant, buyer has coins and critical hunger. Merchant facility (market stall) present at location. Run for 500 ticks.
+**Assertion**: At least one `staff_market` action by the merchant AND at least one trade transaction between the two agents. Buyer's hunger must decrease.
+**Rationale**: The observer report showed Merchant Vara never staffing a market or trading despite co-location with Kael (who held 20 coins). The golden_supply_chain tests use `max_node_expansions: 1024` — this test should verify trade works at the default 300 budget too.
+**Existing coverage**: `golden_supply_chain.rs::golden_full_supply_chain_negotiated_restock_to_consumption` tests the full supply chain but with elevated `CognitiveProfile` settings (`max_node_expansions: 1024`). `golden_trade.rs` tests trade mechanics but may not test the goal-selection path from survival pressure to trade execution under default cognitive budgets.
+
+### GT-4: Agent at food desert travels to known food source within 200 ticks
+**Source finding**: Finding 6 (Unaddressed Needs — Vara never ate) + Finding 10 (Economic Stagnation)
+**Severity**: CRITICAL
+**File**: `crates/worldwake-ai/tests/golden_simulation_gaps.rs`
+**Setup**: Agent at a location with no food. Agent has a belief about a food source at a reachable location (2-3 edge ticks). Hunger at 900 permille. `CognitiveProfile` with `max_node_expansions: 300`. Run for 200 ticks.
+**Assertion**: Agent departs for the food-source location within 100 ticks AND eats within 200 ticks total.
+**Rationale**: Regression guard. `golden_remote_travel_when_local_supply_exhausted` exists but may use a more favorable cognitive profile. This test specifically exercises the default budget with a belief-driven (not affordance-discovered) remote food source, matching the observer report scenario where agents knew about resources but couldn't plan to reach them.
+**Existing coverage**: `golden_simulation_gaps.rs::run_remote_travel_when_local_supply_exhausted` — similar but needs verification that it uses `max_node_expansions: 300`. If it does, this test may be a duplicate; check before implementing.
+
+## Proposed Spec Changes
+
+### SC-1: SocialArtifact TTL and decay for post_notice artifacts
+**Source finding**: Cross-Cutting Pattern 3 (SocialArtifact Entity Pollution)
+**Severity**: HIGH (amplifies CRITICAL findings 2, 5, 10)
+**Spec**: New spec required — no existing spec covers SocialArtifact TTL/decay. `archive/specs/S45-unified-social-artifact-model.md` defined the artifact model but did not include automatic expiry for post_notice artifacts. `crates/worldwake-systems/src/artifact_lifecycle.rs` already supports `expires_at` but post_notice artifacts are created without it.
+**Section**: New spec section: "Artifact Decay and Automatic Expiry"
+**Change**: Define per-artifact-type TTL defaults. `post_notice(ThreatWarning)` artifacts should have a finite TTL (e.g., profile-driven, per the agent's or institution's posting conventions). When a notice expires, it transitions to an inactive lifecycle state (already supported by FND-25A) rather than being deleted — preserving history while removing it from active perception and affordance generation. This directly addresses the snowballing perception volume (500+ artifacts at Dusty Trail) and the candidate bloat that may contribute to budget exhaustion.
+**FOUNDATIONS alignment**: FND-25A (Artifact Lifecycle — "Every artifact class must declare its lifecycle states, transitions, timestamps, invalidators"), FND-11 (Feedback Dampening — SocialArtifact accumulation is an undamped positive feedback loop: more notices → more perception load → more planning overhead), FND-8 (Every Action Has Cost — posting a notice that persists forever has no cost).
+
+### SC-2: Perception change-detection or throttling for static co-located entities
+**Source finding**: Finding 1 (Redundant Perception)
+**Severity**: HIGH
+**Spec**: New spec required. No existing spec addresses perception throttling or change-detection for unchanged entities.
+**Section**: New spec: "Perception Efficiency — Change-Detection for Co-Located Entities"
+**Change**: Agents should not re-observe unchanged entities every tick. Options: (a) skip perception for entities whose observable state hash has not changed since last observation, (b) reduce perception frequency for long-co-located entities (diminishing returns on re-observation), (c) profile-driven perception bandwidth cap limiting how many entities an agent can observe per tick. This must be profile-driven per FND-22 (Agent Diversity) — perceptive agents observe more, distracted or fatigued agents observe less.
+**FOUNDATIONS alignment**: FND-12 (Performance May Compress Computation, Never Causality — this is a valid optimization because re-observing an unchanged entity produces no new causal information), FND-22 (Agent Diversity — perception bandwidth varies per agent), FND-8 (Perception has cost — currently it's free and unlimited, violating this principle).
+
+## Proposed Tickets
+
+### TK-1: Planner heuristic guidance for multi-hop resource acquisition
+**Source finding**: Finding 10 (Economic Stagnation) + Finding 6 (Unaddressed Needs) + Finding 2 (Action Loops — Kael/Vara)
+**Priority**: P0
+**Crate(s)**: `worldwake-ai`
+**Description**: The planner's 300-expansion budget cannot discover multi-location food acquisition plans (travel → harvest → pick_up → consume) which generate 693-705 candidates at depth 9. This is the root cause of mass starvation, behavioral collapse, and economic stagnation in the observer report. The planner needs heuristic guidance or goal decomposition to handle multi-hop resource acquisition within its budget. Options include: (a) prerequisite-guided search that prioritizes travel-to-source candidates when the goal commodity is not locally available, (b) hierarchical goal decomposition (AcquireCommodity decomposes into Travel + Harvest + Consume subgoals with smaller candidate sets), (c) candidate pruning that eliminates clearly irrelevant candidates before expansion. Note: `golden_planner_pathology.rs::cross_location_water_acquisition_succeeds_without_budget_exhaustion` suggests a "prerequisite-guidance fix" already exists for water — verify whether it applies to food acquisition and if not, extend it.
+**Dependencies**: none
+**FOUNDATIONS alignment**: FND-20 (Resource-Bounded Practical Reasoning — "Plans exist to make reasoning tractable under limited time and limited knowledge"), FND-1 (Maximal Emergence — starvation due to planner budget is an engine limitation, not an emergent outcome)
+**Acceptance criteria**:
+- `AcquireCommodity(food)` plans from Dusty Trail to Eldergrove Forest succeed within 300 expansions
+- `golden_budget_exhaustion_snapshots.rs` tests updated to reflect new planning behavior
+- No regression in `cargo test -p worldwake-ai`
+
+### TK-2: Obligation goal satiation — repeated PostNotice should reduce drive score
+**Source finding**: Finding 2 (Action Loops — Guard Theron obligation spam)
+**Priority**: P1
+**Crate(s)**: `worldwake-ai`
+**Description**: PostNotice(ThreatWarning) has a drive score of 808200 that never diminishes despite repeated execution (487 times in the observer run). The obligation goal lacks a satiation mechanic — completing the action should reduce the drive score or introduce a cooldown. The planner finds a valid 1-step plan every tick, the action completes in 1 tick, and it immediately retriggers. This starves survival goals of execution time. The fix should apply generally to all obligation-class goals, not just PostNotice: after fulfilling an obligation N times within a time window, the drive score should decay or the goal should enter a cooldown period. This must be profile-driven (some agents are more dutiful than others).
+**Dependencies**: none
+**FOUNDATIONS alignment**: FND-11 (Every Positive Feedback Loop Needs a Physical Dampener — "a concrete limiting mechanism must exist in the world: resource exhaustion, fatigue, competition"), FND-8 (Every Action Has Cost — repeated posting should have cumulative fatigue or attention cost)
+**Acceptance criteria**:
+- PostNotice drive score decays after repeated execution within a configurable time window
+- Guard agent with active ThreatWarning belief still eats/drinks when needs are critical
+- GT-1 golden test passes
+- No regression in `cargo test -p worldwake-ai`
+
+### TK-3: post_notice artifacts should set expires_at TTL
+**Source finding**: Cross-Cutting Pattern 3 (SocialArtifact Pollution)
+**Priority**: P1
+**Crate(s)**: `worldwake-systems`
+**Description**: `post_notice` actions create SocialArtifact entities with no `expires_at` value, causing them to persist indefinitely. The observer report shows 500+ artifacts accumulated at Dusty Trail, causing perception snowball and candidate bloat. The `artifact_lifecycle.rs` system already supports `expires_at`-based expiry. The fix is to set a finite TTL when creating post_notice artifacts. The TTL should be profile-driven (configurable per notice type or per posting agent/institution). If SC-1 spec is written first, implement per that spec. If implementing before the spec, use a reasonable default TTL (e.g., 48 ticks for ThreatWarning notices) and mark it as provisional pending spec finalization.
+**Dependencies**: Ideally blocked by SC-1 (spec for artifact TTL), but can proceed with provisional defaults
+**FOUNDATIONS alignment**: FND-25A (Artifact Lifecycle — expiry is a declared lifecycle transition), FND-11 (Feedback Dampening — limits the artifact accumulation loop)
+**Acceptance criteria**:
+- `post_notice` artifacts have a non-None `expires_at` value
+- After TTL expires, artifacts transition to inactive lifecycle state
+- Perception system no longer re-observes expired artifacts every tick
+- SocialArtifact count at any location stays bounded over long runs
+- No regression in `cargo test -p worldwake-ai`
+
+### TK-4: Forager Lina has no travel or social motivation — isolated agent never leaves
+**Source finding**: Finding 9 (Social Isolation — Lina complete isolation)
+**Priority**: P2
+**Crate(s)**: `worldwake-cli` (scenario definition)
+**Description**: Forager Lina spent all 1440 ticks at Eldergrove Forest with 0 social observations and 0 interactions. She has no social goals and no travel motivation since her needs are met locally. This is a scenario design issue — Lina's profile should include non-zero `social_weight` in her `UtilityProfile` and/or a `curiosity_weight` or travel disposition that motivates exploration. This ticket addresses the scenario profile, not engine code. The underlying goal systems already support social goals; Lina's profile simply doesn't activate them.
+**Dependencies**: none
+**FOUNDATIONS alignment**: FND-22 (Agent Diversity — agents in different roles should differ in concrete parameters), FND-6 (World Runs Without Observers — isolated agents that never interact reduce emergence)
+**Acceptance criteria**:
+- `scenarios/cli-evaluation.ron` updated: Forager Lina has `social_weight > 0` and/or travel motivation in her profile
+- Re-running the observer shows Lina interacting with at least one other agent within 1440 ticks
+
+### TK-5: Observer binary: emit affordance snapshot on affordance-set change
+**Source finding**: TQ-3 (No affordance snapshot between tick 823 and tick 1342)
+**Priority**: P1
+**Crate(s)**: `worldwake-cli` (observer binary)
+**Description**: The observer binary currently emits affordance snapshots only at specific intervals or events, not when the affordance set changes. The Trace Quality Assessment identified a gap: no affordance snapshot exists between tick 823 (when post_notice was available) and tick 1342 (when it was absent), making it impossible to determine when the affordance disappeared and whether this changed Theron's behavior. Enhancement: emit an affordance snapshot whenever an action type that was previously available disappears from (or is newly added to) an agent's affordance set. This is a diagnostic enhancement to the observer binary, not an engine change.
+**Dependencies**: none
+**FOUNDATIONS alignment**: FND-29 (Debuggability Is a Product Feature — "The simulation must support questions such as: Why did this agent do that?")
+**Acceptance criteria**:
+- Observer binary detects affordance-set changes per agent per tick
+- When an action type appears or disappears, a snapshot is emitted with the full affordance set and the tick number
+- No performance regression on the 1440-tick CLI evaluation scenario (observer overhead < 10% increase)
+
+## Findings Deferred or Not Requiring Independent Remediation
+
+| Finding | Severity | Reason for Deferral |
+|---------|----------|---------------------|
+| Finding 2 — Kael/Vara action loops | CRITICAL | Downstream symptom of Finding 10 (budget exhaustion prevents food plans, leaving only sleep+relieve). Deferred to TK-1. Regression guard: GT-2. |
+| Finding 3 — Stuck Agents (Kael) | MEDIUM | Borderline normal — 22 idle ticks aligns with sleep cycle gap. Theron's 97-tick idle is expected post-death behavior (died tick 1342, 98 ticks remaining). |
+| Finding 4 — Failed Action Spirals | LOW | Benign goal pruning. ShareBelief goals correctly rejected at depth 0 when listener already knows the belief. Not pathological. |
+| Finding 5 — Sustained Critical Needs | CRITICAL | Downstream symptom: Kael/Vara caused by budget exhaustion (deferred to TK-1), Theron caused by obligation spam (deferred to TK-2). Regression guard: GT-1 protects against obligation starvation. |
+| Finding 6 — Unaddressed Needs (Vara) | CRITICAL | Downstream symptom of Finding 10 (no local food + budget exhaustion). Deferred to TK-1. Regression guard: GT-4. |
+| Finding 8 — Belief Staleness | MEDIUM | Downstream symptom of Pattern 3 (SocialArtifact pollution crowding out useful beliefs) + Finding 1 (perception bandwidth wasted on redundant observations). Deferred to TK-3 (artifact TTL) and SC-2 (perception efficiency). |
+| TQ-1 | N/A | Acceptable trade-off per observer report — per-tick need dumps not worth the output bloat |
+| TQ-2 | N/A | Acceptable trade-off per observer report — action-to-artifact provenance tracking not worth overhead |
+| TQ-4 | N/A | Acceptable trade-off per observer report — motive score comparison extractable from raw data |
+| TQ-5 | N/A | Acceptable trade-off per observer report — belief snapshot adequate with perception traces |
+
+## Summary
+
+| Type | Count | Severity Breakdown |
+|------|-------|--------------------|
+| Golden Tests | 4 | 3 CRITICAL, 1 HIGH |
+| Spec Changes | 2 | 2 HIGH (amplifying CRITICAL findings) |
+| Tickets | 5 | 1 P0, 3 P1, 1 P2 |
+| Deferred | 7 behavioral + 4 TQ | 3 CRITICAL (deferred to root-cause tickets), 2 MEDIUM, 1 LOW, 1 expected |
+
+### Root Cause Chain
+
+```
+Finding 10 (Economic Stagnation) ← ROOT CAUSE #1
+  ├── Finding 2/Kael+Vara (Action Loops: sleep+relieve collapse)
+  ├── Finding 5/Kael+Vara (Sustained Critical Needs: starvation)
+  ├── Finding 6 (Unaddressed Needs: Vara never ate)
+  └── Partially: Finding 8 (Belief Staleness: no food-source knowledge)
+       └── Remediation: TK-1 (planner heuristic for multi-hop acquisition)
+
+Finding 2/Theron (Obligation Spam Loop) ← ROOT CAUSE #2
+  ├── Finding 5/Theron (Sustained Critical Needs: starved while posting)
+  └── Cross-Cutting Pattern 3 (SocialArtifact Pollution: 487 post_notices)
+       └── Remediation: TK-2 (obligation satiation) + TK-3 (artifact TTL)
+
+Finding 1 (Redundant Perception) ← INDEPENDENT, AMPLIFIER
+  └── Amplified by Pattern 3 (more artifacts = more redundant perception)
+       └── Remediation: SC-2 (perception change-detection) + TK-3 (artifact TTL)
+
+Finding 9 (Social Isolation) ← INDEPENDENT
+  ├── Lina: scenario profile issue → TK-4
+  └── Trio: trade non-functional → blocked by TK-1 (survival dominates, trade deprioritized)
+```
+
+**Implementation order:**
+1. **TK-1** (P0) — Fix planner multi-hop acquisition. This is the highest-leverage fix: unblocks food acquisition for 3/4 agents, which in turn unblocks trade, reduces idle loops, and addresses sustained needs.
+2. **TK-2** (P1) — Obligation satiation. Independent of TK-1. Can proceed in parallel.
+3. **TK-3** (P1) — Artifact TTL. Independent. Can proceed in parallel with TK-1 and TK-2.
+4. **TK-5** (P1) — Observer affordance-change snapshots. Independent. Can proceed in parallel.
+5. **TK-4** (P2) — Lina scenario profile. Independent, low-effort.
+6. **SC-1** — SocialArtifact TTL spec. Should be written before or alongside TK-3 implementation.
+7. **SC-2** — Perception efficiency spec. Can be deferred until after TK-1/TK-2/TK-3 are implemented, then re-evaluated with a new observer run.
+
+### FOUNDATIONS Alignment
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| FND-1 (Maximal Emergence) | **VIOLATED** | Mass starvation from planner budget is an engine limitation, not emergent behavior. TK-1 addresses this. |
+| FND-8 (Every Action Has Preconditions, Duration, Cost) | **VIOLATED** | PostNotice has no cumulative cost or cooldown — infinite repetition is free. TK-2 addresses this. Perception has no bandwidth cost — unlimited free observation. SC-2 addresses this. |
+| FND-11 (Feedback Dampening) | **VIOLATED** | Two undamped loops: (1) obligation spam (PostNotice never satiates), (2) SocialArtifact accumulation (monotonically growing entity count). TK-2 and TK-3 address these. |
+| FND-14 (World State Is Not Belief State) | **CORRECTLY ENFORCED** | Finding 7 (Impossible Knowledge) found no violations. Agents act only on observed/believed information. |
+| FND-15 (Knowledge Acquired Locally) | **CORRECTLY ENFORCED** | All agent actions trace to perceived entities. |
+| FND-20 (Resource-Bounded Practical Reasoning) | **VIOLATED** | Budget exhaustion prevents agents from reasoning about reachable but multi-hop goals. The planner is too bounded to be practical for cross-location plans. TK-1 addresses this. |
+| FND-22 (Agent Diversity) | **PARTIALLY VIOLATED** | Forager Lina's profile lacks social/travel dimensions, making her functionally a single-purpose automaton. TK-4 addresses this. |
+| FND-25A (Artifact Lifecycle) | **VIOLATED** | post_notice artifacts lack declared lifecycle transitions (no TTL, no expiry). SC-1 and TK-3 address this. |
+| FND-29 (Debuggability) | **PARTIALLY VIOLATED** | Observer lacks affordance-change snapshots, obscuring behavioral transitions. TK-5 addresses this. |
