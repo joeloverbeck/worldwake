@@ -318,7 +318,8 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         println!("  ExecutionBudget:");
         println!(
             "    beam_width={}, max_prerequisite_locations={}",
-            execution_budget.beam_width, execution_budget.max_prerequisite_locations
+            execution_budget.beam_width(),
+            execution_budget.max_prerequisite_locations()
         );
     }
     if let Some(bim) = world.get_component_blocked_intent_memory(entity) {

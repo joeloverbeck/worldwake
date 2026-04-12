@@ -5,7 +5,7 @@ description: "Implement or reassess a Worldwake ticket. Use when asked to work f
 
 # Worldwake Ticket Implementation
 
-Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase. Do not stop at intermediate reassessment or partial fallout; continue until the ticket is completed, fully verified, or blocked by a user decision that requires 1-3-1.
+Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. If that doc does not cover the exact planner boundary under audit, record the gap and fall back to the landed implementation/spec/ticket chain instead of treating the contract as unknowable. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase. Do not stop at intermediate reassessment or partial fallout; continue until the ticket is completed, fully verified, or blocked by a user decision that requires 1-3-1.
 
 ## Workflow
 
@@ -18,7 +18,7 @@ Before running the full workflow, classify the ticket:
 2. Confirm the dependency path and the exact owned symbol/file boundary.
 3. Run a narrow constructor/usage sweep for the changed shape: confirm the named symbols and accessors exist, search local callers/render sites, check obvious constructor or test-helper fallout, and identify the narrowest real proof entry point.
 4. Implement the owned change with focused proof first.
-5. Run the affected crate's tests as the normal broadened proof for the ticket. For Rust tickets, format the owned files before final broad verification. If the ticket's Test Plan or repo norms call for CI-matching clippy, run `cargo clippy --workspace --all-targets -- -D warnings` as part of normal broadened verification; use compile/lint fallout to catch remaining shared-shape literals/helpers and local cleanup.
+5. Run the affected crate's tests as the normal broadened proof for the ticket. For Rust tickets, format the owned files before final broad verification. If the ticket's Test Plan or repo norms call for CI-matching clippy, run `cargo clippy --workspace --all-targets -- -D warnings` as part of normal broadened verification; use compile/lint fallout to catch remaining shared-shape literals/helpers and local cleanup. That broadened lint surface can also lawfully expose adjacent same-crate `tests/`, bin, or report-helper fallout that the ticket should absorb when it is still part of making the owned verification target pass.
 6. Close out the ticket with the actual verification set and tracked-vs-untracked note. This normally includes updating the ticket file itself with completion metadata such as `Status`, `Outcome`, `Deviations` when needed, and `Verification Result`, not just reporting those details in the conversation.
 
 For CLI/tooling-only tickets, if the owned logic can be factored into local helpers, prefer bin-local `#[cfg(test)]` coverage over command-only validation.
@@ -31,8 +31,11 @@ For small/local tickets, load the reference docs only if reassessment exposes am
 
 For straightforward shared-type additive tickets (new field on an existing struct/component, derive-safe enum payload addition, or similar constructor fallout with no boundary dispute yet visible), start with the ticket, cited spec/docs, `references/reassessment-checks.md`, `references/verification.md`, and `references/closeout.md`. During the constructor fallout sweep, distinguish full manual struct literals from partial literals that already inherit new fields via `..Default::default()` or equivalent helpers before accepting the ticket's cited file list as real edit scope. Load `mismatch-handling.md`, `scope-extraction.md`, or `implementation-discipline.md` only if reassessment exposes a mismatch, ownership ambiguity, or non-mechanical implementation choice.
 
+For shared-type validation or API-hardening tickets (for example: constructor validation, private-field migration, accessor introduction, serde validity enforcement, or other invariant-tightening on a type consumed across crates), do not treat the work as small/local just because the first edit lands in one file. Start with the ticket, cited spec/docs, `references/reassessment-checks.md`, `references/verification.md`, and `references/closeout.md`, then sweep construction paths, direct field readers, deserialization paths, and manual struct literals across the real downstream consumer boundary before finalizing scope.
+
 Single-file planner-root, snapshot-completeness, planner-traceability, or AI carriage-path tickets still use the full workflow when the contract under audit crosses the planner boundary even if the eventual edit surface stays narrow and local.
 If a ticket appears to qualify for the small/local fast path by edit surface but also touches planner-root, snapshot-completeness, planner-traceability, or AI carriage-path contracts, this planner-boundary exception wins and the ticket uses the full workflow.
+If full reassessment then proves the owned delta is validation-only or doc-and-proof only with no production behavior change, you may keep the planner-boundary reassessment but shrink the implementation and verification path back to the narrowest honest local proof and closeout surface.
 Golden E2E tickets motivated by planner failures, observer reports, or scenario-specific regressions also use the full workflow even when the landed edit surface is one test file and the ticket remains test-only.
 When a golden or planner test-only ticket must create a new integration test file because the cited sibling substrate has not landed yet, the current ticket may absorb only the narrow local scaffolding needed to make its own proof surface real: file-local topology builders, focused setup helpers, and test-local fixture utilities. Do not silently absorb the sibling ticket's substantive scenarios or broader domain coverage. Record the deviation in reassessment and closeout, and keep the remaining sibling ownership explicit.
 Within one golden/planner ticket, different scenarios may lawfully use different reconstruction strategies when the proof needs differ. A single file can mix static distilled fixtures with replayed scenario-to-tick reconstruction, as long as each case states why that path is necessary and the proof boundary remains the named planner/search contract rather than broad simulation behavior.
@@ -55,6 +58,7 @@ When the ticket was authored by `/spec-to-tickets` in the current session from a
 ### 2. Reassess assumptions before coding
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. If a dependency ticket has already been completed and archived, rewrite `Deps` to the live archived path instead of leaving a stale active-ticket reference. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
+When the ticket's core question is whether an existing invariant is intentional or an oversight, inspect the introducing commit and archived spec/ticket closeout early in reassessment before broadening implementation scope.
 If a dependency ticket has not landed and the missing piece is only narrow local substrate required to make the current ticket's owned proof surface executable, you may absorb that substrate without stopping: create the minimal local helper/file scaffolding, keep sibling substantive coverage out of scope, and update the current ticket to record the dependency mismatch and absorbed boundary. If the missing dependency would require adopting the sibling ticket's substantive contract, stop and use 1-3-1 instead.
 
 When a ticket is motivated by an observer report, golden failure, or named scenario condition, verify the exact motivating substrate before distilling the harness or fixture. Confirm the scenario file, named places/entities, travel graph, and the reported failure location/path still match the ticket's execution narrative, then record what is preserved versus intentionally omitted in the distilled setup. Do not substitute a nearby prototype-world approximation when the ticket's claimed proof depends on a specific scenario/location condition.
@@ -106,6 +110,7 @@ If focused proof instead falsifies the suspected production contradiction and sh
 If a focused rerun disproves a newly adopted root-cause hypothesis, update the ticket again immediately: remove the falsified explanation from `Problem`, `Architecture Check`, `What to Change`, and any command/acceptance text that depended on it, and revert any exploratory production change that no longer explains the motivating failure.
 
 When reassessment or focused proof changes the real edit surface, update `Files to Touch` and any file- or symbol-level scope notes immediately instead of leaving them stale until closeout. The ticket should keep reflecting the current owned boundary as implementation proceeds.
+If the required verification command stays red after an initial fix but the blocking file, symbol, or lint root cause changes, update the ticket's reassessment and `Problem` text to reflect that new live blocker instead of only widening `Files to Touch`.
 
 When `Acceptance Criteria` or the `Test Plan` names a focused test that is already owned by an adjacent active ticket, resolve that ownership during reassessment instead of leaving a split contract implicit. Either absorb the test into the current ticket and update sibling ownership, or remove it from the current ticket's must-pass list and cite the sibling ticket explicitly.
 If the ticket says there are no focused tests in scope but the owned file already contains focused tests that exercise the changed contract, treat those existing tests as the narrow proof surface. Update the ticket's `Verification Layers`, `Test Plan`, and command list to reflect the live proof surface while keeping sibling-ticket ownership explicit about any additional focused coverage that still belongs elsewhere.
@@ -130,6 +135,8 @@ Run the narrowest correct verification first, then broaden.
 
 Load `references/verification.md`.
 
+Before running a ticket-named focused command, verify that the selector actually proves the owned surface. If a substring filter would compile a target while running zero tests, or would run a broader unrelated surface than the ticket claims, correct the command immediately and update the ticket's command list during reassessment/closeout.
+
 When the ticket adds, renames, or materially re-scopes a `golden_*.rs` file or scenario block, run the repository's golden inventory/doc refresh as part of broadened verification and treat the generated docs as expected fallout to review and keep aligned with the landed scenario metadata.
 
 If reassessment revealed that additive substrate from an earlier ticket already landed, include repository-wide live-contract fallout in the broadened verification sweep, not just the ticket's newly edited file set. Typical fallout includes stale `ALL` lists, exhaustiveness fixtures, representative-goal inventories, explicit length assertions that still reflect the pre-addition shape, and adjacent registry/declaration surfaces such as feasibility or invalidation strategies, provenance-family mappings, and other dispatch-table contracts that must now treat the additive shape as live behavior rather than inert scaffolding.
@@ -142,6 +149,7 @@ When a new fallback contract becomes lawful, re-check nearby planner/search test
 
 When broadened verification fails, treat each failure as current-ticket fallout and continue the fix-and-rerun loop until the broadened target passes or you hit a real 1-3-1 blocker. Do not stop after the first full-suite failure if the next step is a straightforward fallout fix within the ticket's live scope.
 After each fallout fix, rerun the same broadened verification target that exposed the failure before treating the branch as green. Do not rely on focused follow-up checks alone when the broader package or suite has not yet been rerun clean.
+If the final post-verification edit is isolated to a bin, integration test, or other target surfaced only by broadened lint/CI fallout, rerun the narrowest honest proof for that exact target (for example `cargo test -p <crate> --bin <name> --no-run`) before closeout so the last change is not left unproved.
 If diagnosis required temporary tracing, debug prints, probe assertions, or similar instrumentation, remove them before broadened verification and before updating the ticket's final outcome/verification text.
 
 ### 7. Close out the ticket honestly
@@ -149,6 +157,7 @@ If diagnosis required temporary tracing, debug prints, probe assertions, or simi
 Load `references/closeout.md`.
 
 Before finalizing closeout, compare the landed diff and verification evidence against the ticket's final `What to Change`, `Files to Touch`, `Out of Scope`, and verification sections. If reassessment or implementation drift changed the actual owned surface, update the ticket so the recorded scope, touched files/symbols, deviations, stale exclusions, and proof set match the work that really landed.
+If the verification command that motivated the ticket remained the same but the final blocking culprit shifted during implementation, make sure the ticket's recorded reassessment/outcome explains that progression rather than implying the original blocker remained the only live cause throughout.
 
 ### 8. Close the loop on the ticket
 

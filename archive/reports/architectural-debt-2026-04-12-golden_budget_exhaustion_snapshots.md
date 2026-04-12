@@ -1,5 +1,7 @@
 # Architectural Debt Analysis: golden_budget_exhaustion_snapshots
 
+**Status**: COMPLETED
+
 **Date**: 2026-04-12
 **Input**: `crates/worldwake-ai/tests/golden_budget_exhaustion_snapshots.rs`
 **Source modules analyzed**: ~166 (48 ai + 70 core + 48 sim)
@@ -156,3 +158,11 @@ No Critical or High severity findings — no proposals generated.
 - **Effective centralization of trace vocabulary**: All decision trace types live in a single module (`decision_trace.rs`), providing a uniform observability surface. The test file's `append_scenario_report` function demonstrates that the trace API is expressive enough to produce detailed human-readable diagnostics.
 
 - **Deterministic exhaustion contracts**: The test suite pins exact expansion counts (`BudgetExhausted(300)`, `FrontierExhausted(54)`), which serves as a regression guard against search behavior changes. This is a particularly strong testing pattern for GOAP planner correctness.
+
+## Outcome
+
+Completed on 2026-04-12.
+
+- The report's actionable `ExecutionBudget` boundary concern was implemented by `EXECBUDVAL-001`, which added validated construction, private fields, accessor-based consumers, and deserialize-time invariant enforcement.
+- No separate follow-up ticket was needed from this report after that implementation landed.
+- Verification results for the exploited concern were recorded on the completed ticket and included focused core tests, focused AI tests, workspace tests, and CI-matching clippy.

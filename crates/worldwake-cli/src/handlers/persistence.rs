@@ -188,10 +188,11 @@ mod tests {
             switch_margin: worldwake_core::Permille::new(175).unwrap(),
             ..CognitiveProfile::default()
         };
-        let execution_budget = ExecutionBudget {
-            beam_width: 16,
-            ..ExecutionBudget::default()
-        };
+        let execution_budget = ExecutionBudget::new(
+            16,
+            ExecutionBudget::default().max_prerequisite_locations(),
+            ExecutionBudget::default().preferred_operator_boost(),
+        );
         let sim = build_test_sim_with_profiles(Some(cognitive_profile), Some(execution_budget));
         let agent = sim
             .controller_state()

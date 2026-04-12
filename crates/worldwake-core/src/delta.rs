@@ -576,11 +576,7 @@ mod tests {
             ComponentValue::DisposalProfile(DisposalProfile {
                 capacity_strain_threshold: Permille::new(850).unwrap(),
             }),
-            ComponentValue::ExecutionBudget(ExecutionBudget {
-                beam_width: 11,
-                max_prerequisite_locations: 4,
-                preferred_operator_boost: 3,
-            }),
+            ComponentValue::ExecutionBudget(ExecutionBudget::new(11, 4, 3)),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
                 Permille::new(100).unwrap(),

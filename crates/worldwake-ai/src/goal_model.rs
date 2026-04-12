@@ -1581,7 +1581,7 @@ impl GoalKindPlannerExt for GoalKind {
                         state,
                         actor,
                         CommodityKind::Medicine,
-                        execution_budget.max_prerequisite_locations,
+                        execution_budget.max_prerequisite_locations(),
                     )
                 }
             }
@@ -1593,7 +1593,7 @@ impl GoalKindPlannerExt for GoalKind {
                     state,
                     actor,
                     std::iter::once(recipe),
-                    execution_budget.max_prerequisite_locations,
+                    execution_budget.max_prerequisite_locations(),
                 )
             }
             GoalKind::RestockCommodity { commodity } => prerequisite_places_for_recipe_inputs(
@@ -1608,7 +1608,7 @@ impl GoalKindPlannerExt for GoalKind {
                             .any(|(output, _)| *output == *commodity)
                     })
                     .map(|(_, recipe)| recipe),
-                execution_budget.max_prerequisite_locations,
+                execution_budget.max_prerequisite_locations(),
             ),
             GoalKind::ClaimOffice { office }
             | GoalKind::SupportCandidateForOffice { office, .. } => {
@@ -2532,11 +2532,11 @@ mod tests {
     }
 
     fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
-        ExecutionBudget {
-            beam_width: reasoning.beam_width,
-            max_prerequisite_locations: reasoning.max_prerequisite_locations,
-            preferred_operator_boost: ExecutionBudget::default().preferred_operator_boost,
-        }
+        ExecutionBudget::new(
+            reasoning.beam_width,
+            reasoning.max_prerequisite_locations,
+            ExecutionBudget::default().preferred_operator_boost(),
+        )
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -15,6 +15,7 @@ use candidates::search_candidate_from_planner;
 #[cfg(test)]
 use candidates::search_candidates;
 use candidates::{
+    CandidateFilterTraceSinks, CandidateSearchContext, CandidateTraceSinks, CommodityFilterContext,
     SearchCandidate, apply_commodity_relevance_filter_with_expansion_trace,
     search_candidates_from_affordance, search_candidates_with_expansion_trace, unsupported_goal,
 };
@@ -306,7 +307,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         }
         return PlanSearchResult::FrontierExhausted { expansions_used: 0 };
     }
-    let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);
+    let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost());
     frontier.push_regular(FrontierEntry::new(root_node_for_tactical(
         snapshot,
         goal,
@@ -359,16 +360,20 @@ pub(crate) fn search_plan_with_trace_metadata(
         let mut candidates = search_candidates_with_expansion_trace(
             goal,
             &node,
-            semantics_table,
-            registry,
-            handlers,
-            blocked,
-            current_tick,
-            binding_rejections.as_deref_mut(),
-            Some(&mut expansion_candidates),
-            record_root_candidates.then_some(&mut root_candidates),
-            record_root_candidates.then_some(&mut root_omissions),
-            &relevant_defs,
+            CandidateSearchContext {
+                semantics_table,
+                registry,
+                handlers,
+                blocked,
+                current_tick,
+                relevant_defs: &relevant_defs,
+            },
+            CandidateTraceSinks {
+                binding_rejections: binding_rejections.as_deref_mut(),
+                expansion_candidates: Some(&mut expansion_candidates),
+                root_candidates: record_root_candidates.then_some(&mut root_candidates),
+                root_omissions: record_root_candidates.then_some(&mut root_omissions),
+            },
         );
         if let Some(extra_candidates) = social_query_candidates(
             goal,
@@ -395,12 +400,16 @@ pub(crate) fn search_plan_with_trace_metadata(
             &mut candidates,
             goal,
             &node.state,
-            active_tactical_goal,
-            semantics_table,
-            registry,
-            recipes,
-            Some(&mut expansion_candidates),
-            record_root_candidates.then_some(&mut root_candidates),
+            CommodityFilterContext {
+                tactical_goal: active_tactical_goal,
+                semantics_table,
+                registry,
+                recipes,
+            },
+            CandidateFilterTraceSinks {
+                expansion_candidates: Some(&mut expansion_candidates),
+                root_candidates: record_root_candidates.then_some(&mut root_candidates),
+            },
         );
         apply_tactical_candidate_filter_with_expansion_trace(
             &mut candidates,
@@ -639,7 +648,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         successors.sort_by(|left, right| compare_search_nodes(&left.2, &right.2));
         let retained_len = successors
             .len()
-            .min(usize::from(execution_budget.beam_width));
+            .min(usize::from(execution_budget.beam_width()));
         for (index, (trace_index, _, _, preferred)) in successors.iter().enumerate() {
             expansion_candidates[*trace_index].outcome = if index < retained_len {
                 crate::decision_trace::ExpansionCandidateOutcome::RetainedNonTerminal {

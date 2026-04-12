@@ -249,11 +249,7 @@ fn conformance_minimum_bundle_preserves_immediate_local_consume_sequence() {
     let (mut minimum, minimum_agent) = setup_local_consume_harness(
         seed,
         minimum_bundle_cognitive(),
-        ExecutionBudget {
-            beam_width: 3,
-            max_prerequisite_locations: 1,
-            preferred_operator_boost: 0,
-        },
+        ExecutionBudget::new(3, 1, 0),
     );
 
     let baseline_sequence = selected_goal_sequence(&mut baseline, baseline_agent, 3);
@@ -278,17 +274,19 @@ fn conformance_beam_width_and_prerequisite_limit_preserve_bounded_multistep_sele
     let cases = [
         (
             "beam_width",
-            ExecutionBudget {
-                beam_width: 3,
-                ..ExecutionBudget::default()
-            },
+            ExecutionBudget::new(
+                3,
+                ExecutionBudget::default().max_prerequisite_locations(),
+                ExecutionBudget::default().preferred_operator_boost(),
+            ),
         ),
         (
             "max_prerequisite_locations",
-            ExecutionBudget {
-                max_prerequisite_locations: 1,
-                ..ExecutionBudget::default()
-            },
+            ExecutionBudget::new(
+                ExecutionBudget::default().beam_width(),
+                1,
+                ExecutionBudget::default().preferred_operator_boost(),
+            ),
         ),
     ];
 

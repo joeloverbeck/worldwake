@@ -1,5 +1,6 @@
 use super::candidates::{
-    apply_commodity_relevance_filter, relevant_action_defs, root_candidate_trace_from_candidate,
+    CandidateSearchContext, CommodityFilterContext, apply_commodity_relevance_filter,
+    relevant_action_defs, root_candidate_trace_from_candidate,
 };
 use super::{
     FrontierEntry, SearchCandidate, SearchNode, TacticalGoal, compare_search_nodes,
@@ -66,10 +67,42 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
 }
 
 fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
-    ExecutionBudget {
-        beam_width: reasoning.beam_width,
-        max_prerequisite_locations: reasoning.max_prerequisite_locations,
-        preferred_operator_boost: ExecutionBudget::default().preferred_operator_boost,
+    ExecutionBudget::new(
+        reasoning.beam_width,
+        reasoning.max_prerequisite_locations,
+        ExecutionBudget::default().preferred_operator_boost(),
+    )
+}
+
+fn candidate_search_context<'a>(
+    semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &'a ActionDefRegistry,
+    handlers: &'a worldwake_sim::ActionHandlerRegistry,
+    blocked: &'a BlockedIntentMemory,
+    current_tick: Tick,
+    relevant_defs: &'a BTreeSet<ActionDefId>,
+) -> CandidateSearchContext<'a> {
+    CandidateSearchContext {
+        semantics_table,
+        registry,
+        handlers,
+        blocked,
+        current_tick,
+        relevant_defs,
+    }
+}
+
+fn commodity_filter_context<'a>(
+    tactical_goal: Option<&'a TacticalGoal>,
+    semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &'a ActionDefRegistry,
+    recipes: &'a RecipeRegistry,
+) -> CommodityFilterContext<'a> {
+    CommodityFilterContext {
+        tactical_goal,
+        semantics_table,
+        registry,
+        recipes,
     }
 }
 
@@ -2701,15 +2734,17 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
     let initial_candidates = search_candidates(
         &goal,
         &node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
     let pick_up = initial_candidates
         .iter()
@@ -2743,15 +2778,17 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
     let follow_up_candidates = search_candidates(
         &goal,
         &after_pick_up,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
     let travel = follow_up_candidates
         .iter()
@@ -4216,15 +4253,17 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
             &RecipeRegistry::new(),
             &ProfileFixture::default(),
         ),
-        &fixture.semantics,
-        &fixture.registry,
-        &fixture.handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &fixture.semantics,
+            &fixture.registry,
+            &fixture.handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
 
     assert!(!candidates.iter().any(|candidate| {
@@ -4287,15 +4326,17 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
             &RecipeRegistry::new(),
             &ProfileFixture::default(),
         ),
-        &fixture.semantics,
-        &fixture.registry,
-        &fixture.handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &fixture.semantics,
+            &fixture.registry,
+            &fixture.handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
 
     assert!(!candidates.iter().any(|candidate| {
@@ -6225,15 +6266,17 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
     let pick_up = search_candidates(
         &goal,
         &node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     )
     .into_iter()
     .find(|candidate| {
@@ -6398,15 +6441,17 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
     let candidates = search_candidates(
         &goal,
         &node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
 
     assert!(
@@ -6484,15 +6529,17 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
     let candidates = search_candidates(
         &goal,
         &node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
     assert!(
         candidates.iter().any(|candidate| {
@@ -6627,15 +6674,17 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     let candidates = search_candidates(
         &accuse_goal,
         &node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &accuse_defs,
+        ),
         None,
         None,
         None,
-        &accuse_defs,
     );
     assert!(
         candidates.iter().any(|candidate| {
@@ -6652,15 +6701,17 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     let punish_candidates = search_candidates(
         &punish_goal,
         &punish_node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &punish_defs,
+        ),
         None,
         None,
         None,
-        &punish_defs,
     );
     assert!(
         punish_candidates.iter().any(|candidate| {
@@ -6840,15 +6891,17 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
     let candidates = search_candidates(
         &goal,
         &node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
     assert!(
         candidates.iter().any(|candidate| {
@@ -7112,15 +7165,17 @@ fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_dea
     let candidates = search_candidates(
         &goal,
         &node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
 
     assert!(
@@ -7246,15 +7301,17 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
     let candidates = search_candidates(
         &goal,
         &node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
 
     assert!(
@@ -7381,15 +7438,17 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
     let candidates = search_candidates(
         &goal,
         &node,
-        &semantics,
-        &registry,
-        &handlers,
-        &BlockedIntentMemory::default(),
-        Tick(0),
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &rel_defs,
+        ),
         None,
         None,
         None,
-        &rel_defs,
     );
 
     assert!(
@@ -9367,10 +9426,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
         &mut candidates,
         &goal,
         &state,
-        None,
-        &semantics_table,
-        &registry,
-        &recipes,
+        commodity_filter_context(None, &semantics_table, &registry, &recipes),
         Some(&mut root_candidates),
     );
 
@@ -9525,10 +9581,7 @@ fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft(
         &mut candidates,
         &goal,
         &state,
-        None,
-        &semantics_table,
-        &registry,
-        &recipes,
+        commodity_filter_context(None, &semantics_table, &registry, &recipes),
         None,
     );
 
@@ -9589,10 +9642,7 @@ fn commodity_relevance_filter_bypasses_non_commodity_goals() {
         &mut candidates,
         &goal,
         &state,
-        None,
-        &semantics_table,
-        &registry,
-        &RecipeRegistry::new(),
+        commodity_filter_context(None, &semantics_table, &registry, &RecipeRegistry::new()),
         None,
     );
 
@@ -9690,10 +9740,7 @@ fn commodity_relevance_filter_uses_active_prerequisite_commodity_for_produce_goa
         &mut candidates,
         &goal,
         &state,
-        Some(&tactical_goal),
-        &semantics_table,
-        &registry,
-        &recipes,
+        commodity_filter_context(Some(&tactical_goal), &semantics_table, &registry, &recipes),
         None,
     );
 

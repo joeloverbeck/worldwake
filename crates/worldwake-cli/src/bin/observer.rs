@@ -2138,11 +2138,16 @@ fn main() {
                             max_plan_depth: cognitive.map_or(10, |c| c.max_plan_depth),
                             max_candidates_per_expansion: cognitive
                                 .map_or(0, |c| c.max_candidates_per_expansion),
-                            max_prerequisite_locations: exec_budget
-                                .map_or(2, |b| b.max_prerequisite_locations),
-                            beam_width: exec_budget.map_or(5, |b| b.beam_width),
-                            preferred_operator_boost: exec_budget
-                                .map_or(0, |b| b.preferred_operator_boost),
+                            max_prerequisite_locations: exec_budget.map_or(
+                                2,
+                                worldwake_core::ExecutionBudget::max_prerequisite_locations,
+                            ),
+                            beam_width: exec_budget
+                                .map_or(5, worldwake_core::ExecutionBudget::beam_width),
+                            preferred_operator_boost: exec_budget.map_or(
+                                0,
+                                worldwake_core::ExecutionBudget::preferred_operator_boost,
+                            ),
                             expansions_used: *expansions_used,
                             max_depth_reached,
                             total_candidates,
