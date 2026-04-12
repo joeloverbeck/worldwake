@@ -10,7 +10,7 @@ Phase 7: Consequence Carriers (Adjunct — Planner Infrastructure)
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -208,4 +208,18 @@ None. The RPG is entirely planner-internal. It reads `PlanningFact`s derived fro
 
 ### Golden Test Extensions
 
-10. **Existing water-acquisition golden tests**: Assert `ff_heuristic` is populated and `helpful_action_count > 0` in expansion summaries for the `AcquireCommodity(Water)` scenarios that exercise multi-step tactical search.
+10. **Existing remote-care golden trace**: Assert `ff_heuristic` is populated and `helpful_action_count > 0` in expansion summaries for `golden_healer_acquires_remote_ground_medicine_for_patient`, whose tick-0 remote-care planning trace already exposes the truthful positive FF surface.
+
+## Outcome
+
+Completed: 2026-04-12.
+
+What changed: Added `use_ff_heuristic` to `CognitiveProfile` with a serde default of `true`, extended `SearchExpansionSummary` and the canonical decision-trace formatter with `ff_heuristic` / `helpful_action_count`, landed deterministic relaxed-planning-graph `compute_ff_heuristic` substrate plus `RelaxedPlanResult` in `search/landmarks.rs`, and integrated FF heuristic rewriting plus helpful-action preferred-candidate selection into the live tactical search loop. Golden E2E proof landed by extending the existing remote-care planning trace helper to assert positive FF fields at the truthful golden boundary.
+
+Deviations: The original golden-proof plan was narrowed during implementation. The remote-water pathology golden, landmark-depth divergence golden, and remote recipe-input golden are all lawful planner scenarios, but none currently emits positive FF fields at the golden boundary. The final golden assertion owner is `golden_healer_acquires_remote_ground_medicine_for_patient`, and the spec's golden section was corrected to match that live contract.
+
+Verification results:
+1. `cargo test -p worldwake-core`
+2. `cargo test -p worldwake-ai`
+3. `cargo test --workspace`
+4. `cargo clippy --workspace --all-targets -- -D warnings`

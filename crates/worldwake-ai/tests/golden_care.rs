@@ -488,6 +488,22 @@ fn assert_remote_care_tick_zero_plan(
             .any(|summary| summary.landmark_heuristic > 0),
         "remote care should record a non-zero landmark heuristic in at least one expansion"
     );
+    // This scenario is a trace-level FF regression sentinel. The FF fields are
+    // the contract; exact expansion counts remain intentionally unspecified.
+    assert!(
+        successful_attempt
+            .expansion_summaries
+            .iter()
+            .any(|summary| summary.ff_heuristic.is_some()),
+        "remote care should record a live FF heuristic in at least one expansion"
+    );
+    assert!(
+        successful_attempt
+            .expansion_summaries
+            .iter()
+            .any(|summary| summary.helpful_action_count > 0),
+        "remote care should record helpful actions from the FF relaxed plan in at least one expansion"
+    );
 
     tick_0_trace
 }

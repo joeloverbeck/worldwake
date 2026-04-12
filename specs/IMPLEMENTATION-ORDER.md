@@ -173,11 +173,11 @@ the actual codebase and `docs/FOUNDATIONS.md`. Of 7 proposals, 6 were rejected a
 for better tactical search guidance.
 
 ```text
-S95 (independent — planner-internal, no system deps)
+S95 ✅ archived
 ```
 
 **Wave**:
-- **S95**: Relaxed-Plan Heuristic (FF-Style) — RPG-based `h_ff` heuristic + helpful-action pruning for tactical A* search, per-agent `use_ff_heuristic` toggle, decision-trace enrichment
+- **S95**: ✅ COMPLETED — archived at [archive/specs/S95-relaxed-plan-heuristic.md](/home/joeloverbeck/projects/worldwake/archive/specs/S95-relaxed-plan-heuristic.md). Landed the FF-style relaxed-plan heuristic substrate (`compute_ff_heuristic` / `RelaxedPlanResult`), per-agent `use_ff_heuristic` toggle, live tactical-search `h_ff` and helpful-action integration, decision-trace enrichment, and truthful golden E2E proof at the remote-care planning trace boundary.
 
 ### Phase 7 Gate
 
