@@ -8,18 +8,19 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
-    CarryCapacity, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityValuationProfile, ContentionGrant, ControlSource, DemandObservation, DisposalProfile,
-    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, Permille, PlaceTag,
-    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
-    ResourceSource, RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
-    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, World, Wound,
-    danger_ratio_permille, is_incapacitated, load_of_entity,
+    AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy, BelievedEntityState,
+    BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile, CombatProfile,
+    CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ContentionGrant,
+    ControlSource, DemandObservation, DisposalProfile, DriveThresholds, EffectiveRight, EntityId,
+    EntityKind, ExpectationStore, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
+    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
+    ObligationSatiationProfile, OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity,
+    RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
+    load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -475,6 +476,16 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
     fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_disposal_profile(agent).copied())
+            .flatten()
+    }
+
+    fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_artifact_posting_profile(agent)
+                    .cloned()
+            })
             .flatten()
     }
 
@@ -1552,14 +1563,15 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
-        BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CognitiveProfile, CombatProfile,
-        CommodityKind, ControlSource, DisposalProfile, EdgeExperience, EffectiveRight, EntityId,
-        EntityKind, EventLog, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
-        ExpectationStore, ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, ObligationExecutionTracker, ObligationSatiationProfile,
-        OfficeData, PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
+        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BanditFactionPolicy,
+        BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
+        CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
+        EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, ExpectationBasis,
+        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+        FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
+        PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
         RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
         RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
         TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
@@ -2517,6 +2529,38 @@ mod tests {
 
         assert_eq!(ProfileBeliefView::disposal_profile(&view, other), None);
         assert_eq!(GoalBeliefView::disposal_profile(&view, other), None);
+    }
+
+    #[test]
+    fn artifact_posting_profile_returns_actor_profile_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = ArtifactPostingProfile {
+            threat_warning_ttl: 36,
+            office_vacancy_ttl: 72,
+            bounty_ttl: 108,
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_artifact_posting_profile(agent, profile.clone())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::artifact_posting_profile(&view, agent),
+            Some(profile.clone())
+        );
+        assert_eq!(
+            GoalBeliefView::artifact_posting_profile(&view, agent),
+            Some(profile)
+        );
     }
 
     #[test]

@@ -6,19 +6,19 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
-    BelievedInstitutionalClaim, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
-    CommodityKind, CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant,
-    DemandObservation, DisposalProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
-    ExpectationStore, ExplorationProfile, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
-    Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, RouteExperience,
-    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
+    ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
+    BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim, CognitiveProfile,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
+    CommodityValuationProfile, ContentionGrant, DemandObservation, DisposalProfile,
+    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
+    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
+    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 pub trait GoalSpatialBeliefView {
@@ -325,6 +325,10 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
+        let _ = agent;
+        None
+    }
     fn wounds(&self, agent: EntityId) -> Vec<Wound>;
     fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId>;
     fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId>;
@@ -468,6 +472,10 @@ pub trait ProfileBeliefView {
         None
     }
     fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
+        let _ = agent;
+        None
+    }
+    fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
         let _ = agent;
         None
     }
@@ -1434,6 +1442,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::UtilityProfile> {
         ProfileBeliefView::utility_profile(self, agent)
+    }
+
+    fn artifact_posting_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::ArtifactPostingProfile> {
+        ProfileBeliefView::artifact_posting_profile(self, agent)
     }
 
     fn wounds(&self, agent: worldwake_core::EntityId) -> Vec<worldwake_core::Wound> {

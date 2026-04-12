@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — candidate generation sets `expires_at` from profile
-**Deps**: S97POSNOTART-002
+**Deps**: archive/tickets/S97POSNOTART-002.md
 
 ## Problem
 

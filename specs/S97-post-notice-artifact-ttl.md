@@ -87,9 +87,9 @@ fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingPro
 }
 ```
 
-Implement in `RuntimeBeliefView` to read the component from the snapshot. Forward through the `impl_goal_belief_view!` macro.
+Implement the authoritative self-profile read in `PerAgentBeliefView` via `ProfileBeliefView`, forward it through the blanket `GoalBeliefView` impl in `belief_view.rs`, and carry the field through `PlanningSnapshot` / `PlanningState` so the planner-visible surface can read it lawfully.
 
-This follows the established pattern for profile components read by the AI crate (same as `drive_thresholds`, `cognitive_profile`, `utility_profile`).
+This follows the established pattern for profile components read by the AI crate: authoritative runtime read on the per-agent belief view, explicit planner snapshot carriage, and planner-facing access through the shared belief-view surface.
 
 ### D3: Runtime candidate generation sets `expires_at` from profile
 

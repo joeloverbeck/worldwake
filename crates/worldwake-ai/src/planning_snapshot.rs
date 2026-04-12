@@ -2,15 +2,15 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
-    BelievedInstitutionalClaim, BlockedIntentMemory, BlockingFact, CombatProfile,
-    CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation, DisposalProfile,
-    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, ExpectationStore,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile,
-    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
-    PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation,
-    ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
-    TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+    ActionDefId, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
+    BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory, BlockingFact,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
+    DisposalProfile, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+    ExpectationStore, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData,
+    RecordedViolation, ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw,
+    TellMemoryKey, TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
     TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
@@ -187,6 +187,7 @@ pub(crate) struct SnapshotProfiles {
     pub(crate) drive_thresholds: Option<DriveThresholds>,
     pub(crate) metabolism_profile: Option<MetabolismProfile>,
     pub(crate) disposal_profile: Option<DisposalProfile>,
+    pub(crate) artifact_posting_profile: Option<ArtifactPostingProfile>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -280,6 +281,7 @@ impl Default for SnapshotEntity {
                 drive_thresholds: None,
                 metabolism_profile: None,
                 disposal_profile: None,
+                artifact_posting_profile: None,
             },
             facility: SnapshotFacility {
                 workstation_tag: None,
@@ -887,6 +889,7 @@ fn build_snapshot_entity(
     let drive_thresholds = view.drive_thresholds(entity);
     let metabolism_profile = view.metabolism_profile(entity);
     let disposal_profile = view.disposal_profile(entity);
+    let artifact_posting_profile = view.artifact_posting_profile(entity);
     let theft_disposition_profile = view.theft_disposition_profile(entity);
     let trade_disposition_profile = view.trade_disposition_profile(entity);
     let justice_disposition_profile = view.justice_disposition_profile(entity);
@@ -959,6 +962,7 @@ fn build_snapshot_entity(
             drive_thresholds,
             metabolism_profile,
             disposal_profile,
+            artifact_posting_profile,
         },
         facility: SnapshotFacility {
             workstation_tag,
@@ -1220,13 +1224,14 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BeliefConfidencePolicy, BelievedEntityState, BlockedIntentMemory,
-        CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
-        DemandObservation, DisposalProfile, DriveThresholds, EligibilityRule, EntityId, EntityKind,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Quantity, RecipeId,
-        ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile, Tick, TickRange,
-        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        ActionDefId, ArtifactPostingProfile, BeliefConfidencePolicy, BelievedEntityState,
+        BlockedIntentMemory, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        ContentionGrant, DemandObservation, DisposalProfile, DriveThresholds, EligibilityRule,
+        EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute,
+        Quantity, RecipeId, ResourceSource, SuccessionLaw, TellMemoryKey, TellProfile, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, WorkstationTag,
+        Wound,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload, ControlBeliefView,
@@ -1259,6 +1264,7 @@ mod tests {
         facility_grants: BTreeMap<EntityId, ContentionGrant>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
         disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
+        artifact_posting_profiles: BTreeMap<EntityId, ArtifactPostingProfile>,
         told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
@@ -1289,6 +1295,7 @@ mod tests {
                 facility_grants: BTreeMap::new(),
                 tell_profiles: BTreeMap::new(),
                 disposal_profiles: BTreeMap::new(),
+                artifact_posting_profiles: BTreeMap::new(),
                 told_beliefs: BTreeMap::new(),
                 confidence_policies: BTreeMap::new(),
                 patrol_routes: BTreeMap::new(),
@@ -1350,6 +1357,10 @@ mod tests {
 
         fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
             self.disposal_profiles.get(&agent).copied()
+        }
+
+        fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
+            self.artifact_posting_profiles.get(&agent).cloned()
         }
     }
 

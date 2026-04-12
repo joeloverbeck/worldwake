@@ -5,15 +5,15 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use worldwake_core::{
-    ActionDefId, ActionDomain, BelievedEntityState, BelievedInstitutionalClaim, CombatProfile,
-    CommodityKind, ContentionGrant, DemandObservation, DisposalProfile, DriveThresholds, EntityId,
-    EntityKind, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-    JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData, PatrolProfile,
-    PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-    ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey, TellProfile,
-    TellTopic, TheftDispositionProfile, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound, load_per_unit,
-    to_shared_belief_snapshot,
+    ActionDefId, ActionDomain, ArtifactPostingProfile, BelievedEntityState,
+    BelievedInstitutionalClaim, CombatProfile, CommodityKind, ContentionGrant, DemandObservation,
+    DisposalProfile, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
+    PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus,
+    RecordData, ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey,
+    TellProfile, TellTopic, TheftDispositionProfile, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    load_per_unit, to_shared_belief_snapshot,
 };
 use worldwake_sim::{
     ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -1209,6 +1209,13 @@ impl ProfileBeliefView for PlanningState<'_> {
             .get(&agent)
             .and_then(|snapshot| snapshot.profiles.disposal_profile)
     }
+
+    fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
+        self.snapshot
+            .entities
+            .get(&agent)
+            .and_then(|snapshot| snapshot.profiles.artifact_posting_profile.clone())
+    }
 }
 
 impl SpatialBeliefView for PlanningState<'_> {
@@ -2154,16 +2161,16 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::ActionDomain;
     use worldwake_core::{
-        ActionDefId, BelievedActivity, BelievedEntityState, BodyCostPerTick, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
-        DemandObservationReason, DisposalProfile, DriveThresholds, EntityId, EntityKind,
-        EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-        JusticeDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData,
-        PatrolProfile, PatrolRoute, Permille, Quantity, RecipeId, RecipientKnowledgeStatus,
-        RecordData, RecordKind, ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey,
-        TellProfile, TellTopic, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag,
-        Wound, WoundCause, WoundId,
+        ActionDefId, ArtifactPostingProfile, BelievedActivity, BelievedEntityState,
+        BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
+        DemandObservation, DemandObservationReason, DisposalProfile, DriveThresholds, EntityId,
+        EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, Quantity, RecipeId,
+        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SharedTellState,
+        SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
@@ -2197,6 +2204,7 @@ mod tests {
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         metabolism_profiles: BTreeMap<EntityId, MetabolismProfile>,
         disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
+        artifact_posting_profiles: BTreeMap<EntityId, ArtifactPostingProfile>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         patrol_profiles: BTreeMap<EntityId, PatrolProfile>,
         patrol_routes: BTreeMap<EntityId, PatrolRoute>,
@@ -2252,6 +2260,7 @@ mod tests {
                 thresholds: BTreeMap::new(),
                 metabolism_profiles: BTreeMap::new(),
                 disposal_profiles: BTreeMap::new(),
+                artifact_posting_profiles: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
                 patrol_profiles: BTreeMap::new(),
                 patrol_routes: BTreeMap::new(),
@@ -2349,6 +2358,10 @@ mod tests {
 
         fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
             self.disposal_profiles.get(&agent).copied()
+        }
+
+        fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
+            self.artifact_posting_profiles.get(&agent).cloned()
         }
     }
 
@@ -4385,6 +4398,14 @@ mod tests {
                 pm(0),
             ),
         );
+        view.artifact_posting_profiles.insert(
+            actor,
+            ArtifactPostingProfile {
+                threat_warning_ttl: 36,
+                office_vacancy_ttl: 72,
+                bounty_ttl: 108,
+            },
+        );
         view.trade_profiles.insert(
             actor,
             TradeDispositionProfile {
@@ -4536,6 +4557,10 @@ mod tests {
             ProfileBeliefView::disposal_profile(&state, actor),
             view.disposal_profiles.get(&actor).copied()
         );
+        assert_eq!(
+            ProfileBeliefView::artifact_posting_profile(&state, actor),
+            view.artifact_posting_profiles.get(&actor).cloned()
+        );
 
         for dependency in PlannerDurationDependency::all() {
             let (duration, targets, payload) = match dependency {
@@ -4631,6 +4656,63 @@ mod tests {
                 dependency.label()
             );
         }
+    }
+
+    #[test]
+    fn planning_state_artifact_posting_profile_is_none_when_absent() {
+        let actor = entity(1);
+        let town = entity(10);
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::from([town]), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            ProfileBeliefView::artifact_posting_profile(&state, actor),
+            None
+        );
+        assert_eq!(
+            GoalBeliefView::artifact_posting_profile(&state, actor),
+            None
+        );
+    }
+
+    #[test]
+    fn planning_state_artifact_posting_profile_round_trips_through_snapshot() {
+        let actor = entity(1);
+        let town = entity(10);
+        let profile = ArtifactPostingProfile {
+            threat_warning_ttl: 36,
+            office_vacancy_ttl: 72,
+            bounty_ttl: 108,
+        };
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+        view.artifact_posting_profiles
+            .insert(actor, profile.clone());
+
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::from([town]), 1);
+        let state = PlanningState::new(&snapshot);
+
+        assert_eq!(
+            ProfileBeliefView::artifact_posting_profile(&state, actor),
+            Some(profile.clone())
+        );
+        assert_eq!(
+            GoalBeliefView::artifact_posting_profile(&state, actor),
+            Some(profile)
+        );
     }
 
     #[test]
