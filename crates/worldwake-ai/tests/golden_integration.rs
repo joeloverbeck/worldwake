@@ -5184,7 +5184,12 @@ fn run_s97_autonomous_notice_expiry_bounds_active_population(seed: Seed) -> (Sta
         office_vacancy_ttl: 96,
         bounty_ttl: 144,
     };
-    set_agent_artifact_posting_profile(&mut h.world, &mut h.event_log, issuer, posting_profile.clone());
+    set_agent_artifact_posting_profile(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        posting_profile.clone(),
+    );
 
     let hostile = seed_agent(
         &mut h.world,
@@ -5302,8 +5307,11 @@ fn run_s97_autonomous_notice_expiry_bounds_active_population(seed: Seed) -> (Sta
     let expired_notice_expirations = notices
         .iter()
         .filter_map(|(_entity, header)| {
-            (header.state == ArtifactState::Expired)
-                .then_some(header.expires_at.expect("expired notices should retain expiry ticks"))
+            (header.state == ArtifactState::Expired).then_some(
+                header
+                    .expires_at
+                    .expect("expired notices should retain expiry ticks"),
+            )
         })
         .collect::<Vec<_>>();
     assert!(

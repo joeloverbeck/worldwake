@@ -802,6 +802,60 @@ fn final_affordance_snapshot<'a>(
     affordance_snapshots.last().copied()
 }
 
+struct AffordanceChangeEvent<'a> {
+    tick: Tick,
+    affordances: &'a AffordanceTrace,
+    appeared: Vec<String>,
+    disappeared: Vec<String>,
+    place_changed: bool,
+}
+
+fn affordance_change_snapshots<'a>(
+    affordance_snapshots: &[(Tick, &'a AffordanceTrace)],
+) -> Vec<AffordanceChangeEvent<'a>> {
+    let mut changes = Vec::new();
+
+    for snapshots in affordance_snapshots.windows(2) {
+        let (previous_tick, previous) = snapshots[0];
+        let (current_tick, current) = snapshots[1];
+        debug_assert!(current_tick >= previous_tick);
+
+        let previous_names: BTreeSet<&str> = previous
+            .available
+            .iter()
+            .map(|summary| summary.action_name.as_str())
+            .collect();
+        let current_names: BTreeSet<&str> = current
+            .available
+            .iter()
+            .map(|summary| summary.action_name.as_str())
+            .collect();
+
+        let appeared: Vec<String> = current_names
+            .difference(&previous_names)
+            .map(|name| (*name).to_string())
+            .collect();
+        let disappeared: Vec<String> = previous_names
+            .difference(&current_names)
+            .map(|name| (*name).to_string())
+            .collect();
+
+        if appeared.is_empty() && disappeared.is_empty() {
+            continue;
+        }
+
+        changes.push(AffordanceChangeEvent {
+            tick: current_tick,
+            affordances: current,
+            appeared,
+            disappeared,
+            place_changed: previous.place != current.place,
+        });
+    }
+
+    changes
+}
+
 fn format_affordance_summary(summary: &AffordanceSummary) -> String {
     if summary.target_count == 0 {
         summary.action_name.clone()
@@ -1853,6 +1907,30 @@ fn format_report(
                 .unwrap();
             }
 
+            for event in affordance_change_snapshots(&affordance_snapshots) {
+                let mut parts = Vec::new();
+                for name in &event.appeared {
+                    parts.push(format!("+{name}"));
+                }
+                for name in &event.disappeared {
+                    parts.push(format!("-{name}"));
+                }
+                let hint = if event.place_changed {
+                    event.affordances.place.map_or_else(String::new, |place| {
+                        format!(" (at {})", entity_display_name(world, place))
+                    })
+                } else {
+                    String::new()
+                };
+                writeln!(
+                    out,
+                    "**Affordance changes** (tick {}): {}{hint}",
+                    event.tick.0,
+                    parts.join(", ")
+                )
+                .unwrap();
+            }
+
             if let Some((tick, affordances)) = final_affordance_snapshot(&affordance_snapshots) {
                 write_affordance_list(
                     &mut out,
@@ -2209,18 +2287,22 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        BehavioralTransition, NeedsSample, PlanAttemptTrace, PlanSearchOutcome,
-        behavioral_transitions, committed_travel_ticks, death_summary_line, failed_plan_breakdown,
-        failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
-        failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
-        format_affordance_summary, format_behavioral_transition, format_death_cause,
-        post_travel_affordance_snapshots, unknown_location_entity_groups,
+        AgentStats, BehavioralTransition, NeedsSample, PlanAttemptTrace, PlanSearchOutcome,
+        affordance_change_snapshots, behavioral_transitions, committed_travel_ticks,
+        death_summary_line, failed_plan_breakdown, failed_plan_candidates, failed_plan_location,
+        failed_plan_max_depth, failed_plan_outcome_label, failed_plan_target_beliefs,
+        final_affordance_snapshot, format_affordance_summary, format_behavioral_transition,
+        format_death_cause, format_report, post_travel_affordance_snapshots,
+        unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
     use worldwake_ai::decision_trace::{
-        AffordanceSummary, AffordanceTrace, SearchExpansionSummary, TargetBeliefPresence,
+        AffordanceSummary, AffordanceTrace, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
+        ExecutionTrace, PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace,
+        SearchExpansionSummary, SelectionTrace, TargetBeliefPresence,
     };
+    use worldwake_ai::{AgentTickDriver, DirtySet};
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, ControlSource, DeadAt,
@@ -2228,7 +2310,10 @@ mod tests {
         OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
         build_prototype_world,
     };
-    use worldwake_sim::{ActionInstanceId, ActionTraceEvent, ActionTraceKind, CommitOutcome};
+    use worldwake_sim::{
+        ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
+        PerceptionTraceSink,
+    };
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
         SearchExpansionSummary {
@@ -2345,6 +2430,62 @@ mod tests {
                     target_count: *target_count,
                 })
                 .collect(),
+        }
+    }
+
+    fn planning_affordance_trace(
+        agent: EntityId,
+        tick: u64,
+        affordances: AffordanceTrace,
+    ) -> AgentDecisionTrace {
+        AgentDecisionTrace {
+            agent,
+            tick: Tick(tick),
+            outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                affordances: Some(affordances),
+                dirty: DirtySet::default(),
+                plan_continued: false,
+                candidates: CandidateTrace {
+                    generated: Vec::new(),
+                    evidence: Vec::new(),
+                    fully_blocked_desires: Vec::new(),
+                    places_reachable: 0,
+                    places_after_belief_filter: 0,
+                    ranked: Vec::new(),
+                    top_ranked_comparison: None,
+                    suppressed: Vec::new(),
+                    zero_motive: Vec::new(),
+                    omitted_political: Vec::new(),
+                    omitted_bandit: Vec::new(),
+                    omitted_social: Vec::new(),
+                    omitted_violation_detection: Vec::new(),
+                },
+                planning: PlanSearchTrace {
+                    attempts: Vec::new(),
+                    same_goal_trace: None,
+                },
+                selection: SelectionTrace {
+                    selected_opportunity: None,
+                    selected_plan: None,
+                    selected_plan_source: None,
+                    goal_switch: None,
+                    previous_goal: None,
+                    plan_replacement: None,
+                    snapshot_continuation: None,
+                },
+                execution: ExecutionTrace {
+                    enqueued_step: None,
+                    revalidation_passed: None,
+                    failure: None,
+                },
+                action_start_failures: Vec::new(),
+                unknown_blockers: Vec::new(),
+                exhaustion_snapshot: Vec::new(),
+                frame_transition: None,
+                patrol_route: PatrolRouteSnapshotTrace::default(),
+                selected_patrol_anchor: None,
+                pursuit_invalidation: None,
+            })),
         }
     }
 
@@ -2654,6 +2795,104 @@ mod tests {
         assert_eq!(
             format_affordance_summary(&with_targets),
             "harvest (3 targets)"
+        );
+    }
+
+    #[test]
+    fn affordance_change_detects_appeared_action() {
+        let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let next_snapshot = affordance_trace(Some(entity(10)), &[("eat", 1), ("sleep", 0)]);
+        let snapshots = vec![(Tick(0), &initial), (Tick(5), &next_snapshot)];
+
+        let events = affordance_change_snapshots(&snapshots);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].tick, Tick(5));
+        assert_eq!(events[0].appeared, vec!["eat".to_string()]);
+        assert!(events[0].disappeared.is_empty());
+        assert!(!events[0].place_changed);
+    }
+
+    #[test]
+    fn affordance_change_detects_disappeared_action() {
+        let initial = affordance_trace(Some(entity(10)), &[("eat", 1), ("sleep", 0)]);
+        let next_snapshot = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let snapshots = vec![(Tick(0), &initial), (Tick(5), &next_snapshot)];
+
+        let events = affordance_change_snapshots(&snapshots);
+
+        assert_eq!(events.len(), 1);
+        assert!(events[0].appeared.is_empty());
+        assert_eq!(events[0].disappeared, vec!["eat".to_string()]);
+    }
+
+    #[test]
+    fn affordance_change_ignores_target_count_changes() {
+        let initial = affordance_trace(Some(entity(10)), &[("harvest", 1)]);
+        let changed = affordance_trace(Some(entity(10)), &[("harvest", 3)]);
+        let snapshots = vec![(Tick(0), &initial), (Tick(5), &changed)];
+
+        assert!(affordance_change_snapshots(&snapshots).is_empty());
+    }
+
+    #[test]
+    fn affordance_change_detects_place_change() {
+        let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let next_snapshot = affordance_trace(Some(entity(20)), &[("harvest", 2)]);
+        let snapshots = vec![(Tick(0), &initial), (Tick(5), &next_snapshot)];
+
+        let events = affordance_change_snapshots(&snapshots);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].appeared, vec!["harvest".to_string()]);
+        assert_eq!(events[0].disappeared, vec!["sleep".to_string()]);
+        assert!(events[0].place_changed);
+    }
+
+    #[test]
+    fn no_affordance_change_when_sets_identical() {
+        let initial = affordance_trace(Some(entity(10)), &[("eat", 1), ("sleep", 0)]);
+        let changed = affordance_trace(Some(entity(10)), &[("eat", 2), ("sleep", 3)]);
+        let snapshots = vec![(Tick(0), &initial), (Tick(5), &changed)];
+
+        assert!(affordance_change_snapshots(&snapshots).is_empty());
+    }
+
+    #[test]
+    fn format_report_includes_affordance_change_lines() {
+        let mut driver = AgentTickDriver::new();
+        driver.enable_tracing();
+        let agent = entity(1);
+        let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
+        let changed = affordance_trace(Some(entity(20)), &[("harvest", 2)]);
+        driver
+            .trace_sink_mut()
+            .expect("trace sink")
+            .record(planning_affordance_trace(agent, 0, initial));
+        driver
+            .trace_sink_mut()
+            .expect("trace sink")
+            .record(planning_affordance_trace(agent, 5, changed));
+
+        let world = World::new(build_prototype_world()).expect("world");
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &world,
+            &driver,
+            &[],
+        );
+
+        assert!(
+            report.contains("**Affordance changes** (tick 5): +harvest, -sleep (at Unknown#20)")
         );
     }
 

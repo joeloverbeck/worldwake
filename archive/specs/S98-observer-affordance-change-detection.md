@@ -6,7 +6,7 @@ Enhances the observer binary to emit affordance snapshots whenever an agent's av
 
 ## Phase and Status
 
-Phase 7 adjunct. Status: Draft.
+Phase 7 adjunct. Status: COMPLETED.
 
 ## Crates
 
@@ -32,8 +32,8 @@ Phase 7 adjunct. Status: Draft.
 
 | Principle | How Satisfied |
 |-----------|---------------|
-| FND-29 (Debuggability) | Directly addresses: "Why did this agent stop doing X?" The observer can now show when an action type appeared or disappeared from the affordance set. |
-| FND-12 (Performance May Compress Computation) | Observer-only analysis does not change simulation causality. Affordance-change detection is a derived view over existing decision traces. |
+| FND-29 (Debuggability Is a Product Feature) | Directly addresses: "Why did this agent stop doing X?" The observer can now show when an action type appeared or disappeared from the affordance set. |
+| FND-12 (Performance May Compress Computation, Never Causality) | Observer-only analysis does not change simulation causality. Affordance-change detection is a derived view over existing decision traces. |
 
 ## Deliverables
 
@@ -54,23 +54,27 @@ struct AffordanceChangeEvent<'a> {
     affordances: &'a AffordanceTrace,
     appeared: Vec<String>,    // action types newly available
     disappeared: Vec<String>, // action types no longer available
+    place_changed: bool,      // true if AffordanceTrace.place differs from previous snapshot
 }
 ```
 
 The function iterates consecutive `(Tick, &AffordanceTrace)` pairs from `planning_affordance_snapshots`. For each pair, it computes the symmetric difference of action-type sets. If the difference is non-empty, it records an `AffordanceChangeEvent`.
 
+**Action-type comparison**: Comparison uses `AffordanceSummary::action_name` as the set element. Multiple affordances with the same `action_name` but different `target_count` are deduplicated — the diagnostic concern is whether an action *type* is available, not how many targets it has. The `appeared` and `disappeared` vectors contain cloned `action_name` strings from the respective `AffordanceSummary` entries.
+
+The `place_changed` field is set by comparing `AffordanceTrace.place` between consecutive snapshots. This allows D2's formatting to include a place-change hint without separate detection logic.
+
 ### D2: Observer report formatting
 
-Add an "Affordance Changes" section to the per-agent observer report, between the existing post-travel snapshots and final snapshot:
+Add affordance-change entries to the per-agent Section 7 (Decision Summary) output, between the existing post-travel affordance snapshots and the final affordance snapshot, using the same `**bold label**` formatting convention:
 
 ```
-=== Affordance Changes ===
-Tick 450: +harvest_resource (arrived at Eldergrove Forest)
-Tick 823: -post_notice (no longer at posting place)
-Tick 1342: +post_notice (returned to posting place)
+**Affordance changes** (tick 450): +harvest_resource (arrived at Eldergrove Forest)
+**Affordance changes** (tick 823): -post_notice (no longer at posting place)
+**Affordance changes** (tick 1342): +post_notice (returned to posting place)
 ```
 
-Each entry shows the tick, the action types that appeared (+) or disappeared (-), and optionally a parenthetical hint derived from the affordance trace's place field (if the change coincides with a place change).
+Each entry shows the tick, the action types that appeared (+) or disappeared (-), and optionally a parenthetical hint when `AffordanceChangeEvent.place_changed` is true — derived from the affordance trace's place field.
 
 ### D3: Integration with existing snapshot pipeline
 
@@ -105,3 +109,17 @@ None. The observer binary reads simulation traces after the run completes. No in
 ## Profile-Driven Parameters
 
 None. This is diagnostic tooling, not agent behavior.
+
+## Outcome
+
+Completed on 2026-04-12.
+
+- Added local `AffordanceChangeEvent` analysis in `crates/worldwake-cli/src/bin/observer.rs` to compare consecutive planning affordance snapshots by `action_name`, ignore `target_count` churn, and record whether the believed place changed.
+- Inserted `**Affordance changes**` lines into Section 7 of the observer report between post-travel affordances and final affordances, including `+`/`-` markers and a place hint when the affordance snapshot moved.
+- Added focused observer-bin unit coverage for appeared/disappeared detection, target-count-only stability, place-change detection, identical-set suppression, and final report rendering.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --bin observer -- affordance_change`
+- Passed `cargo test -p worldwake-cli --bin observer`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

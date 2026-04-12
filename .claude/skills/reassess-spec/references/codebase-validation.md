@@ -34,6 +34,10 @@ Grep for each function. Confirm signature, module location, and export status. L
 - **Reuse opportunities**: For each new function or trait method the spec proposes to create, grep the codebase for existing functions serving the same purpose. A proposed new method that duplicates existing functionality should be flagged as an Issue (prefer reuse) or Improvement (note the existing alternative).
 - **Existing behavior overlap**: For deliverables that propose modifying existing functions, verify the proposed change isn't already implemented. If the current code already exhibits the described behavior (e.g., locality scoping via a trait implementation the spec doesn't acknowledge), flag as an Issue — the deliverable should either be eliminated, merged into a sibling deliverable, or rewritten as an explanatory note about existing behavior. This requires reading beyond the function signature into the implementation and its call chain. For proposed changes to functions called from multiple code paths, trace which paths are actually active for the spec's scenario. A function may exist and match the spec's description but never be reached in the described failure mode.
 
+## 3.3A Output Format Fidelity
+
+For specs that propose new output or report sections in existing tooling (observer binary, CLI, diagnostic tools), verify the proposed format (section headers, delimiters, label conventions) matches the target file's existing formatting patterns. Grep for existing section markers and formatting conventions in the target file. Flag mismatches as Issues.
+
 ## 3.4 Dependencies (specs/tickets)
 
 Verify each dependency lives in `specs/`, `archive/specs/`, `tickets/`, or `archive/tickets/`. Record correct paths. Note dependencies listed as incomplete but since implemented.
