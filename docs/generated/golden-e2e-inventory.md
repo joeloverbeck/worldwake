@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 28
 - Files contributing `golden_*` tests: 28
-- Total `golden_*` tests: 359
+- Total `golden_*` tests: 361
 
 ## Per-File Inventory
 
@@ -23,7 +23,7 @@ Do not hand-edit it.
 | `golden_expectation.rs` | 10 |
 | `golden_experience_preferences.rs` | 6 |
 | `golden_exploration.rs` | 4 |
-| `golden_integration.rs` | 26 |
+| `golden_integration.rs` | 28 |
 | `golden_long_scenarios.rs` | 4 |
 | `golden_merchant_selling.rs` | 20 |
 | `golden_offices.rs` | 24 |
@@ -255,6 +255,8 @@ Do not hand-edit it.
 - `golden_s51_autonomous_bounty_posting_replays_deterministically`
 - `golden_s58_autonomous_notice_reroutes_later_travel`
 - `golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically`
+- `golden_s97_autonomous_notice_expiry_bounds_active_population`
+- `golden_s97_autonomous_notice_expiry_bounds_active_population_replays_deterministically`
 - `golden_s52_theft_evidence_discovery`
 - `golden_s52_theft_evidence_discovery_replays_deterministically`
 

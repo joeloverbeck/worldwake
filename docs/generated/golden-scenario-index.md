@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 159
+- Scenario blocks: 160
 - Contributing golden test files: 26
-- Associated tests: 337
+- Associated tests: 339
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -759,7 +759,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 27: Controlled Agent Death
 
-- Source: `golden_integration.rs:1041`
+- Source: `golden_integration.rs:1053`
 - Systems: Combat, AI, Needs
 - GoalKinds: EngageHostile
 - ActionDomains: Combat
@@ -774,7 +774,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 28: Pursuit Across Information Boundary
 
-- Source: `golden_integration.rs:1304`
+- Source: `golden_integration.rs:1316`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social (≥ 2 required)
@@ -789,7 +789,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
 
-- Source: `golden_integration.rs:2872`
+- Source: `golden_integration.rs:2884`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
 - GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Generic, Travel, Social, Production
@@ -804,7 +804,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 105: Social artifact bounty lifecycle closes canonically
 
-- Source: `golden_integration.rs:5148`
+- Source: `golden_integration.rs:5335`
 - Systems: Social artifact actions, Perception, AI, Travel, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel, Combat
@@ -819,7 +819,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 106: Expired bounty stays visible but no longer generates pursuit
 
-- Source: `golden_integration.rs:5186`
+- Source: `golden_integration.rs:5373`
 - Systems: Social artifact actions, pre-action artifact lifecycle, Perception, AI
 - GoalKinds: FulfillBounty
 - ActionDomains: Social
@@ -834,7 +834,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 108: Delivery bounty closes through cargo movement and later claim
 
-- Source: `golden_integration.rs:5223`
+- Source: `golden_integration.rs:5410`
 - Systems: Social artifact actions, Perception, AI, Travel, Transport
 - GoalKinds: FulfillBounty, MoveCargo
 - ActionDomains: Social, Travel, Transport
@@ -849,7 +849,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 107: Threat-warning notice flips the next route choice
 
-- Source: `golden_integration.rs:5263`
+- Source: `golden_integration.rs:5450`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production
@@ -864,7 +864,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 112: Autonomous institutional bounty posts from consulted accusation
 
-- Source: `golden_integration.rs:5301`
+- Source: `golden_integration.rs:5488`
 - Systems: Social artifact actions, Beliefs, AI, Offices
 - GoalKinds: PostBounty
 - ActionDomains: Social
@@ -879,7 +879,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 113: Autonomous threat-warning notice reroutes later travel
 
-- Source: `golden_integration.rs:5340`
+- Source: `golden_integration.rs:5527`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production
@@ -892,9 +892,24 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: remembered danger belief -> AI selects PostNotice -> post_notice commits at Market -> traveler locally perceives believed_artifact warning -> AI resumes with same orchard knowledge -> apple-acquisition planning reroutes from Warned Road to Safe Route.
 
+### Scenario 137: Autonomous threat-warning expiry bounds active notice population
+
+- Source: `golden_integration.rs:5568`
+- Systems: Social artifact actions, artifact lifecycle, Beliefs, AI
+- GoalKinds: PostNotice
+- ActionDomains: Social
+- Places: S45 Market, S45 Warned Road
+- Principles: 7, 11, 14, 25
+
+**Setup**: AI issuer at Market has non-zero `notice_posting_weight`, a persistent hostile belief at Warned Road, and an explicit short `ArtifactPostingProfile` override so the warning TTL is only 4 ticks.
+
+**Proves**: TTL-backed autonomous notice posting closes the remaining bounded- population loop end to end. Repeated `post_notice` commits materialize expiring notice artifacts with non-`None` expiries, earlier notices age into `ArtifactState::Expired`, and the active notice population at the posting place stays bounded by the short TTL instead of growing forever.
+
+**Cross-system chain**: persistent danger belief -> repeated AI `PostNotice` selection -> `post_notice` commits with expiry -> lifecycle flips earlier notices to `Expired` -> later notices reappear after expiry while active count stays bounded over time.
+
 ### Scenario 114: Theft evidence persists, is perceived locally, and decays
 
-- Source: `golden_integration.rs:5381`
+- Source: `golden_integration.rs:5608`
 - Systems: Transport, Perception, Evidence decay, AI
 - GoalKinds: InvestigateViolation
 - ActionDomains: Transport, Travel, Generic

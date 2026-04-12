@@ -1,12 +1,14 @@
 # S97: PostNotice Artifact TTL Provisioning
 
+**Status**: COMPLETED
+
 ## Summary
 
 Makes the planner and goal dispatch provide profile-driven `expires_at` values for PostNotice (and PostBounty) artifacts, so that posted notices expire via the existing `artifact_lifecycle_system` instead of persisting indefinitely. Addresses the SocialArtifact pollution identified in the simulation observer report (500+ never-expiring artifacts at Dusty Trail).
 
 ## Phase and Status
 
-Phase 7 adjunct. Status: Draft.
+Phase 7 adjunct. Status: Completed.
 
 ## Crates
 
@@ -142,11 +144,11 @@ These represent what agents *observe* about existing artifacts. Once artifacts a
 
 ### D6: Golden test — artifact expiry bounds entity count
 
-File: `crates/worldwake-ai/tests/golden_planner_pathology.rs` (or `golden_integration.rs`)
+File: `crates/worldwake-ai/tests/golden_integration.rs`
 
-**Setup**: Agent with `notice_posting_weight: 900` at a location with a persistent threat belief. `ArtifactPostingProfile { threat_warning_ttl: 12, .. }`. Run for 100 ticks.
+**Setup**: AI issuer at Market with non-zero `notice_posting_weight`, a persistent hostile belief at Warned Road, and an explicit short `ArtifactPostingProfile` override so `threat_warning_ttl` is 4. Run long enough to prove repeated post → expire → re-post loops while sampling authoritative artifact state.
 
-**Assertion**: Agent posts multiple ThreatWarning notices. All posted notices have `expires_at` set. After `threat_warning_ttl` ticks, earlier notices transition to `ArtifactState::Expired`. Total active (non-expired) notice count at the location never exceeds a bounded ceiling (e.g., `ceil(100 / threat_warning_ttl) + 1` at most).
+**Assertion**: Agent posts multiple ThreatWarning notices. All posted notices have `expires_at` set. Earlier notices transition to `ArtifactState::Expired`. Total active (non-expired) notice count at the posting place stays bounded by the TTL-driven lifecycle cadence under the live tick ordering.
 
 **Emergence justification**: Tests the interaction between goal-driven posting and artifact lifecycle — the posting system creates artifacts, the lifecycle system bounds them, and their interplay determines the artifact population trajectory.
 
@@ -185,3 +187,30 @@ All TTL values are in `ArtifactPostingProfile`:
 - `bounty_ttl`: Ticks before bounty postings expire
 
 Scenario authors configure per-agent posting behavior in `AgentDef`. Guard Theron (institutional poster) might have `threat_warning_ttl: 72` (longer warnings). A panicky civilian might have `threat_warning_ttl: 24` (short-lived warnings).
+
+## Outcome
+
+- Completion date: 2026-04-12
+- Added `ArtifactPostingProfile` as a universal agent component in `worldwake-core`, including default seeding, schema registration, crate export, and exact bootstrap delta proof updates.
+- Added lawful planner-visible carriage for `ArtifactPostingProfile` through `PerAgentBeliefView`, `PlanningSnapshot`, and `PlanningState`.
+- Updated runtime candidate generation so autonomous `PostBounty` and `PostNotice` goals provision `expires_at` from the agent profile instead of emitting `None`.
+- Added CLI scenario support via `AgentDef.artifact_posting_profile` plus default and override proof.
+- Landed `golden_s97_autonomous_notice_expiry_bounds_active_population` in `crates/worldwake-ai/tests/golden_integration.rs` and regenerated the golden inventory/docs under `docs/generated/`.
+
+## Deviations
+
+1. The implementation shipped as five reviewable tickets (`S97POSNOTART-001` through `005`) instead of one monolithic pass.
+2. The final bounded-population golden landed in `golden_integration.rs`, not `golden_planner_pathology.rs`, because the integration suite already owned the strongest artifact lifecycle and autonomous posting surface.
+3. The active-count bound is proven by TTL-driven lifecycle expiry under the live tick ordering, not by duplicate-suppression logic.
+
+## Verification Result
+
+1. `cargo test -p worldwake-core artifact_posting`
+2. `cargo test -p worldwake-sim artifact_posting_profile`
+3. `cargo test -p worldwake-ai artifact_posting_profile`
+4. `cargo test -p worldwake-cli test_spawn_agents_receive_default_universal_profiles`
+5. `cargo test -p worldwake-ai golden_s97_autonomous_notice_expiry_bounds_active_population`
+6. `cargo test -p worldwake-ai`
+7. `cargo clippy --workspace --all-targets -- -D warnings`
+8. `cargo test --workspace`
+9. `python3 scripts/golden_inventory.py --write --check-docs`

@@ -185,18 +185,17 @@ S95 ✅ archived
 Derived from 2026-04-12 post-S95 simulation observer re-run (`reports/simulation-remediation.md`) validated
 against the actual codebase and `docs/FOUNDATIONS.md`. Of 11 proposals (4 golden tests, 2 spec changes,
 5 tickets), 2 accepted, 2 scoped down, 8 rejected as already addressed by S76-S95 or deferred.
-Remaining pathologies: obligation spam loop (undamped PostNotice), artifact TTL not provisioned
-by planner, and observer affordance-change diagnostic gap.
+Remaining pathologies: observer affordance-change diagnostic gap.
 
 ```text
 S96 ✅ archived
-S97 (independent)
+S97 ✅ archived
 S98 (independent)
 ```
 
 **Wave** (parallel, no deps):
 - **S96**: ✅ COMPLETED — archived at [archive/specs/S96-obligation-satiation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S96-obligation-satiation.md). Landed `ObligationSatiationProfile` / `ObligationExecutionTracker`, runtime and scenario carriage, obligation-action tracker updates, satiation-aware ranking, and Scenario 144 golden proof that survival needs override saturated notice posting.
-- **S97**: PostNotice Artifact TTL Provisioning — `ArtifactPostingProfile`, planner/candidate-generation sets `expires_at` from profile instead of `None`, golden test proving artifact expiry bounds entity count
+- **S97**: ✅ COMPLETED — archived at [archive/specs/S97-post-notice-artifact-ttl.md](/home/joeloverbeck/projects/worldwake/archive/specs/S97-post-notice-artifact-ttl.md). Landed `ArtifactPostingProfile` as a universal agent component, planner-visible profile carriage, runtime candidate-generation TTL provisioning for `PostBounty` / `PostNotice`, CLI scenario support, and the `golden_integration.rs` bounded-population expiry proof with regenerated golden docs.
 - **S98**: Observer Affordance-Change Detection — affordance-set change detection in observer binary, emission on action-type appearance/disappearance
 
 ### Phase 7 Gate
