@@ -157,7 +157,7 @@ pub helpful_action_count: u16,
 
 These parallel the existing `landmark_heuristic: u32` and `preferred_candidates: u16` fields.
 
-The observer binary (`crates/worldwake-cli/src/bin/observer.rs`) should format `ff_heuristic` alongside existing landmark diagnostics when present.
+The canonical decision-trace formatter in `crates/worldwake-ai/src/decision_trace.rs` should format `ff_heuristic` alongside existing landmark diagnostics when present. `crates/worldwake-cli/src/bin/observer.rs` only needs constructor/test fallout updates for this slice.
 
 ## FND-01 Section H: Causal Hooks
 

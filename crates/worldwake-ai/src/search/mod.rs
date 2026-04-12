@@ -572,6 +572,8 @@ pub(crate) fn search_plan_with_trace_metadata(
                                 found_goal_satisfied,
                                 preferred_candidates: 0,
                                 landmark_heuristic,
+                                ff_heuristic: None,
+                                helpful_action_count: 0,
                                 travel_pruning: travel_pruning.clone(),
                                 prerequisite_guidance: summary_places
                                     .as_ref()
@@ -696,6 +698,8 @@ pub(crate) fn search_plan_with_trace_metadata(
                 found_goal_satisfied,
                 preferred_candidates,
                 landmark_heuristic,
+                ff_heuristic: None,
+                helpful_action_count: 0,
                 travel_pruning,
                 prerequisite_guidance: summary_places.and_then(|summary| summary.guidance_trace),
                 expansion_candidates,
