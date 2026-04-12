@@ -17,6 +17,7 @@ Completed Phase 7 specs:
 - `S84: ShareBelief Operator Fix` — archived at [archive/specs/S84-share-belief-operator-fix.md](/home/joeloverbeck/projects/worldwake/archive/specs/S84-share-belief-operator-fix.md). Fixed planning-snapshot evidence-listener place indexing for ShareBelief/Tell affordance search, confirmed root-omission diagnostics already owned the planner traceability slice, and validated the existing ShareBelief golden coverage.
 - `S90: Mandatory Tactical Scoping` — archived at [archive/specs/S90-mandatory-tactical-scoping.md](/home/joeloverbeck/projects/worldwake/archive/specs/S90-mandatory-tactical-scoping.md). Removed the stale evidence-empty exploration suppression, corrected same-goal tactical explore classification/fail-fast boundaries, and added the D3 candidate-count safety valve plus focused threshold coverage.
 - `S94: Commodity-Relevance Candidate Pruning` — archived at [archive/specs/S94-commodity-relevance-candidate-pruning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S94-commodity-relevance-candidate-pruning.md). Added planner-level target-commodity extraction, root candidate pruning against the active commodity contract, `CommodityIrrelevant` decision-trace surfacing, and rewrote the budget-exhaustion golden family into zero-ignored honest post-filter regressions.
+- `S96: Obligation Satiation` — archived at [archive/specs/S96-obligation-satiation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S96-obligation-satiation.md). Landed `ObligationSatiationProfile` / `ObligationExecutionTracker`, runtime and scenario carriage, commit-time tracker updates for obligation actions, satiation-aware ranking dampening, and Scenario 144 golden coverage proving survival needs override saturated notice posting.
 
 Completed adjunct specs:
 - `S67: Golden E2E Gaps — S59` archived at [archive/specs/S67-golden-gaps-S59.md](/home/joeloverbeck/projects/worldwake/archive/specs/S67-golden-gaps-S59.md).
@@ -188,13 +189,13 @@ Remaining pathologies: obligation spam loop (undamped PostNotice), artifact TTL 
 by planner, and observer affordance-change diagnostic gap.
 
 ```text
-S96 (independent)
+S96 ✅ archived
 S97 (independent)
 S98 (independent)
 ```
 
 **Wave** (parallel, no deps):
-- **S96**: Obligation Satiation — `ObligationSatiationProfile`, drive-score dampening after repeated execution, golden test proving survival needs override saturated obligations
+- **S96**: ✅ COMPLETED — archived at [archive/specs/S96-obligation-satiation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S96-obligation-satiation.md). Landed `ObligationSatiationProfile` / `ObligationExecutionTracker`, runtime and scenario carriage, obligation-action tracker updates, satiation-aware ranking, and Scenario 144 golden proof that survival needs override saturated notice posting.
 - **S97**: PostNotice Artifact TTL Provisioning — `ArtifactPostingProfile`, planner/candidate-generation sets `expires_at` from profile instead of `None`, golden test proving artifact expiry bounds entity count
 - **S98**: Observer Affordance-Change Detection — affordance-set change detection in observer binary, emission on action-type appearance/disappearance
 

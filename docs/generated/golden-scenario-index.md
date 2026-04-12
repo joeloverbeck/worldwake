@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 158
+- Scenario blocks: 159
 - Contributing golden test files: 26
-- Associated tests: 335
+- Associated tests: 337
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -117,7 +117,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2c-self: Wounded agent self-treats with medicine
 
-- Source: `golden_care.rs:813`
+- Source: `golden_care.rs:829`
 - Systems: AI, Care, Combat
 - GoalKinds: TreatWounds(self)
 - ActionDomains: Care
@@ -132,7 +132,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2c-self-acquire: Wounded agent acquires ground medicine, self-treats
 
-- Source: `golden_care.rs:919`
+- Source: `golden_care.rs:935`
 - Systems: AI, Care, Transport, Combat
 - GoalKinds: TreatWounds(self)
 - ActionDomains: Care, Transport
@@ -146,7 +146,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2c-report: Indirect wound report does NOT trigger care goal
 
-- Source: `golden_care.rs:1007`
+- Source: `golden_care.rs:1023`
 - Systems: AI, Care, Perception
 - GoalKinds: TreatWounds(other)
 - ActionDomains: Care
@@ -161,7 +161,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2c-invalidation: Care goal invalidates when patient self-heals
 
-- Source: `golden_care.rs:1114`
+- Source: `golden_care.rs:1130`
 - Systems: AI, Care, Combat
 - GoalKinds: TreatWounds(other), TreatWounds(self)
 - ActionDomains: Care
@@ -1137,7 +1137,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:664`
+- Source: `golden_offices.rs:665`
 - Systems: Threaten, Succession, AI
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1152,7 +1152,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:964`
+- Source: `golden_offices.rs:966`
 - Systems: Travel, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1167,7 +1167,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:1077`
+- Source: `golden_offices.rs:1079`
 - Systems: AI, Travel, Succession, Political actions, Perception
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1182,7 +1182,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 73: Remote Record Travel + Consultation + Political Action
 
-- Source: `golden_offices.rs:1293`
+- Source: `golden_offices.rs:1295`
 - Systems: AI, Travel, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1197,7 +1197,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 34: Knowledge Asymmetry Race
 
-- Source: `golden_offices.rs:1593`
+- Source: `golden_offices.rs:1595`
 - Systems: AI, ConsultRecord, Succession, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1212,7 +1212,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1957`
+- Source: `golden_offices.rs:1959`
 - Systems: Needs, AI, Succession, Political actions
 - GoalKinds: ClaimOffice, ConsumeOwnedCommodity
 - ActionDomains: Needs, Generic
@@ -1227,7 +1227,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:2159`
+- Source: `golden_offices.rs:2161`
 - Systems: Factions, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1242,7 +1242,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
 
-- Source: `golden_offices.rs:2320`
+- Source: `golden_offices.rs:2322`
 - Systems: AI, Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1257,7 +1257,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 71: Contested Force Claim Resolves Only After Yield
 
-- Source: `golden_offices.rs:2705`
+- Source: `golden_offices.rs:2707`
 - Systems: Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1272,7 +1272,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
-- Source: `golden_offices.rs:2970`
+- Source: `golden_offices.rs:2972`
 - Systems: Force-control succession, Tell, Perception
 - GoalKinds: ClaimOffice, ShareBelief
 - ActionDomains: Generic, Social
@@ -1287,7 +1287,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 109: Vacancy notice unlocks political action without record consult
 
-- Source: `golden_offices.rs:3270`
+- Source: `golden_offices.rs:3272`
 - Systems: Social artifact actions, Perception, Institutional beliefs, AI, Political actions, Succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Social, Generic
@@ -1452,7 +1452,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 
-- Source: `golden_planner_pathology.rs:464`
+- Source: `golden_planner_pathology.rs:671`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Production, Needs
@@ -1467,7 +1467,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
 
-- Source: `golden_planner_pathology.rs:587`
+- Source: `golden_planner_pathology.rs:794`
 - Systems: Needs, AI, Production
 - GoalKinds: FreeCarryCapacity
 - ActionDomains: Needs, Production
@@ -1479,6 +1479,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: After the real waste-accumulation phase from the cli-evaluation scenario, Lina no longer enters the observer-reported degenerate loop. Late-run planning either switches away from `FreeCarryCapacity` or produces executable disposal work, eating resumes, and hunger falls within the window.
 
 **Cross-system chain**: Eldergrove harvest/eat/waste accumulation -> carry strain assessed from actual carried load -> no spurious `FreeCarryCapacity` loop -> lawful self-care resumes -> late eat commit -> falling hunger.
+
+### Scenario 144: Obligation satiation allows survival needs to override posting
+
+- Source: `golden_planner_pathology.rs:906`
+- Systems: Social artifact actions, Needs, AI, Perception
+- GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
+- ActionDomains: Social, Needs
+- Places: DustyTrail, HearthstoneInn
+- Principles: 3, 7, 11, 22, 26
+
+**Setup**: A guard first directly observes a hostile at Dusty Trail, then starts the scenario window at Hearthstone Inn with local Bread and Water, critical hunger/thirst, `notice_posting_weight=900`, and the default obligation satiation profile. The remembered combat belief keeps a remote `ThreatWarning` notice branch lawful without reintroducing co-located combat as a competing explanation.
+
+**Proves**: Repeated `PostNotice` still happens enough for satiation to matter, but the guard also commits both `eat` and `drink`, survives the window, and does not let notice posting dominate the committed action mix indefinitely.
+
+**Cross-system chain**: remembered hostile belief -> repeated PostNotice commits append obligation tracker state -> ranking dampens saturated notice motive -> self-care commits become competitive -> guard survives.
 
 ### Scenario 3: Resource Contention with Conservation
 

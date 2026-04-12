@@ -1,12 +1,14 @@
 # S96: Obligation Satiation
 
+**Status**: COMPLETED
+
 ## Summary
 
 Introduces a profile-driven satiation mechanism for obligation-class goals (PostNotice, PostBounty) so that repeated execution within a time window decays the drive score, preventing infinite obligation spam loops. Includes a golden test proving that obligation satiation allows survival needs to override saturated obligations.
 
 ## Phase and Status
 
-Phase 7 adjunct. Status: Draft.
+Phase 7 adjunct. Status: Completed.
 
 ## Crates
 
@@ -231,3 +233,20 @@ All satiation parameters are in `ObligationSatiationProfile`:
 - `satiation_floor`: Minimum score multiplier (prevents total suppression)
 
 Scenario authors configure per-agent satiation behavior in `AgentDef`. Guard Theron (highly dutiful) might have `satiation_threshold: 3, decay_per_execution: 150` (slow decay). A panicky civilian might have `satiation_threshold: 1, decay_per_execution: 300` (fast decay).
+
+## Outcome
+
+- Completion date: 2026-04-12
+- Landed `ObligationSatiationProfile` and `ObligationExecutionTracker` in `worldwake-core`, runtime/belief-view accessors in `worldwake-sim`, scenario authoring support in `worldwake-cli`, commit-time tracker updates in `worldwake-systems`, and satiation-aware ranking in `worldwake-ai`.
+- Added Scenario 144 plus deterministic replay coverage in `crates/worldwake-ai/tests/golden_planner_pathology.rs`, then refreshed generated golden inventory/index/details/matrix docs.
+- Deviations from plan:
+  - The canonical runtime accessor override landed on `PerAgentBeliefView` with forwarding through the belief-view facade, not directly on the marker `RuntimeBeliefView`.
+  - The golden proof uses a remembered remote threat with a later self-care window at `HearthstoneInn` rather than a co-located live hostile, so combat does not become a competing explanation.
+  - The honest golden invariant is that self-care reappears after a sustained `post_notice` streak; the landed scenario does not require `PostNotice` to win the first committed action.
+- Verification results:
+  - Passed focused crate tests for `worldwake-core`, `worldwake-sim`, `worldwake-cli`, `worldwake-systems`, and `worldwake-ai` across tickets `S96OBLSAT-001` through `S96OBLSAT-006`
+  - Passed `cargo test -p worldwake-ai --test golden_planner_pathology`
+  - Passed `cargo test -p worldwake-ai`
+  - Passed `python3 scripts/golden_inventory.py --write --check-docs`
+  - Passed `cargo build --workspace`
+  - Passed `cargo clippy --workspace --all-targets -- -D warnings`

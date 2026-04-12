@@ -14,10 +14,11 @@ use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey};
 use worldwake_core::{
-    AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
-    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
-    CommunicationProfile, ComponentDelta, ComponentKind, ComponentValue,
-    ContentionDispositionProfile, ContentionPolicy, ContentionQueue, ControlSource,
+    build_believed_entity_state, build_prototype_world, hash_serializable, prototype_place_entity,
+    to_shared_belief_snapshot, AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim,
+    BlockedIntentMemory, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile,
+    CombatStance, CommodityKind, CommunicationProfile, ComponentDelta, ComponentKind,
+    ComponentValue, ContentionDispositionProfile, ContentionPolicy, ContentionQueue, ControlSource,
     DeprivationExposure, DriveThresholds, EligibilityRule, EntityId, EntityKind, EventId, EventLog,
     EventRecord, EventTag, EventView, FactionData, FactionPurpose, HomeostaticNeeds,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
@@ -26,15 +27,14 @@ use worldwake_core::{
     RecordKind, RelationDelta, RelationValue, ResourceSource, Seed, SharedTellState, StateDelta,
     SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, VisibilitySpec,
     WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-    WoundList, build_believed_entity_state, build_prototype_world, hash_serializable,
-    prototype_place_entity, to_shared_belief_snapshot,
+    WoundList,
 };
 use worldwake_sim::{
-    ActionDefRegistry, ActionHandlerRegistry, ActionTraceSink, AutonomousControllerRuntime,
-    ControllerState, DeterministicRng, InstitutionalKnowledgeTraceSink, PerceptionTraceSink,
-    PoliticalTraceSink, RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState,
-    RequestResolutionTraceSink, SaveableRuntime, Scheduler, SimulationState, SystemManifest,
-    TickStepResult, TickStepServices, load_from_bytes, save_to_bytes, step_tick,
+    load_from_bytes, save_to_bytes, step_tick, ActionDefRegistry, ActionHandlerRegistry,
+    ActionTraceSink, AutonomousControllerRuntime, ControllerState, DeterministicRng,
+    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeDefinition,
+    RecipeRegistry, ReplayRecordingConfig, ReplayState, RequestResolutionTraceSink,
+    SaveableRuntime, Scheduler, SimulationState, SystemManifest, TickStepResult, TickStepServices,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 

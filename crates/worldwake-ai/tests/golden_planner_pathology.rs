@@ -5,12 +5,13 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use worldwake_ai::{DecisionOutcome, GoalKind, PlanSearchOutcome, PlannerOpKind};
 use worldwake_core::{
-    CarryCapacity, CombatProfile, CommodityKind, DisposalProfile, DriveThresholds, EntityId,
-    EventLog, ExplorationProfile, HomeostaticNeeds, IntentionDispositionProfile,
-    IntentionDomainTag, LastSeenMemory, LoadUnits, MetabolismProfile, PatrolProfile, PatrolRoute,
-    PerceptionProfile, Place, PlaceTag, PreferenceProfile, PursuitProfile, Quantity,
-    ResourceSource, Seed, TheftDispositionProfile, Tick, Topology, TravelEdge, TravelEdgeId,
-    UtilityProfile, ViolationDispositionProfile, WorkstationMarker, WorkstationTag, World,
+    hash_event_log, hash_world, AgentData, BelievedActivity, CarryCapacity, CombatProfile,
+    CommodityKind, ControlSource, DisposalProfile, DriveThresholds, EntityId, EventLog,
+    ExplorationProfile, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomainTag,
+    LastSeenMemory, LoadUnits, MetabolismProfile, PatrolProfile, PatrolRoute, PerceptionProfile,
+    Place, PlaceTag, PreferenceProfile, PursuitProfile, Quantity, ResourceSource, Seed,
+    TheftDispositionProfile, Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile,
+    ViolationDispositionProfile, WorkstationMarker, WorkstationTag, World,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
 
@@ -120,6 +121,18 @@ fn build_pathology_harness(seed: Seed) -> GoldenHarness {
     h.scheduler = Scheduler::new(SystemManifest::canonical());
     h.controller = ControllerState::new();
     h
+}
+
+fn set_control_source(
+    h: &mut GoldenHarness,
+    agent: EntityId,
+    control_source: ControlSource,
+    tick: u64,
+) {
+    let mut txn = new_txn(&mut h.world, tick);
+    txn.set_component_agent_data(agent, AgentData { control_source })
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
 }
 
 fn cli_scenario_seed(seed: u64) -> Seed {
@@ -460,6 +473,200 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
     lina
 }
 
+fn run_obligation_satiation_allows_survival(
+    seed: Seed,
+) -> (worldwake_core::StateHash, worldwake_core::StateHash) {
+    let mut h = build_pathology_harness(seed);
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let guard = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S96 Guard",
+        DUSTY_TRAIL,
+        HomeostaticNeeds::new(pm(850), pm(850), pm(100), pm(100), pm(100)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            hunger_weight: pm(500),
+            thirst_weight: pm(500),
+            fatigue_weight: pm(200),
+            bladder_weight: pm(100),
+            dirtiness_weight: pm(100),
+            pain_weight: pm(300),
+            danger_weight: pm(600),
+            enterprise_weight: pm(0),
+            social_weight: pm(0),
+            activity_awareness_weight: pm(200),
+            side_benefit_weight: pm(100),
+            bounty_posting_weight: pm(0),
+            notice_posting_weight: pm(900),
+            courage: pm(700),
+            care_weight: pm(200),
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        guard,
+        guard_perception_profile(),
+    );
+
+    let hostile = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S96 Roadside Hostile",
+        DUSTY_TRAIL,
+        HomeostaticNeeds::default(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, hostile, ControlSource::None, 0);
+
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        guard,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    {
+        let mut belief = seed_belief_from_world(
+            &mut h.world,
+            &mut h.event_log,
+            guard,
+            hostile,
+            Tick(0),
+            worldwake_core::PerceptionSource::DirectObservation,
+        );
+        belief.believed_activity = Some(BelievedActivity {
+            action_domain: worldwake_core::ActionDomain::Combat,
+            target: Some(guard),
+            observed_tick: Tick(0),
+        });
+        seed_belief(&mut h.world, &mut h.event_log, guard, hostile, belief);
+    }
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_ground_location(guard, HEARTHSTONE_INN).unwrap();
+        txn.set_component_obligation_satiation_profile(
+            guard,
+            worldwake_core::ObligationSatiationProfile::default(),
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    place_ground_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        HEARTHSTONE_INN,
+        CommodityKind::Bread,
+        Quantity(12),
+    );
+    place_ground_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        HEARTHSTONE_INN,
+        CommodityKind::Water,
+        Quantity(12),
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        guard,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    for _ in 0..200_u32 {
+        h.step_once();
+    }
+
+    let guard_events = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for(guard);
+    let committed_events = guard_events
+        .iter()
+        .filter(|event| matches!(event.kind, ActionTraceKind::Committed { .. }))
+        .collect::<Vec<_>>();
+    let post_notice_commits = committed_events
+        .iter()
+        .filter(|event| event.action_name == "post_notice")
+        .count();
+    let eat_commits = committed_events
+        .iter()
+        .filter(|event| event.action_name == "eat")
+        .count();
+    let drink_commits = committed_events
+        .iter()
+        .filter(|event| event.action_name == "drink")
+        .count();
+    let first_notice_commit = committed_events.iter().find_map(|event| {
+        (event.action_name == "post_notice").then_some((event.tick, event.sequence_in_tick))
+    });
+    let first_self_care_after_notice = committed_events.iter().find_map(|event| {
+        (matches!(event.action_name.as_str(), "eat" | "drink")
+            && first_notice_commit
+                .is_some_and(|first_notice| (event.tick, event.sequence_in_tick) > first_notice))
+        .then_some((event.tick, event.sequence_in_tick))
+    });
+    let notice_commits_before_recovery = committed_events
+        .iter()
+        .filter(|event| event.action_name == "post_notice")
+        .take_while(|event| {
+            first_self_care_after_notice
+                .is_none_or(|recovery| (event.tick, event.sequence_in_tick) < recovery)
+        })
+        .count();
+
+    assert!(
+        post_notice_commits > 2,
+        "expected repeated post_notice commits so satiation actually matters; saw {post_notice_commits}"
+    );
+    assert!(
+        eat_commits > 0,
+        "guard should commit eat despite repeated notice pressure"
+    );
+    assert!(
+        drink_commits > 0,
+        "guard should commit drink despite repeated notice pressure"
+    );
+    assert!(
+        first_notice_commit.is_some(),
+        "expected at least one committed post_notice"
+    );
+    assert!(
+        first_self_care_after_notice.is_some(),
+        "expected self-care to reappear after the notice streak instead of obligation posting dominating indefinitely; actions={:?}",
+        committed_events
+            .iter()
+            .map(|event| event.summary())
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        notice_commits_before_recovery > 2,
+        "expected a sustained notice streak before self-care recovered; notice_commits_before_recovery={notice_commits_before_recovery}"
+    );
+    assert!(
+        post_notice_commits * 100 <= committed_events.len() * 80,
+        "post_notice should not dominate more than 80% of committed actions; notice_commits={post_notice_commits} total_commits={}",
+        committed_events.len()
+    );
+    assert!(
+        !h.agent_is_dead(guard),
+        "guard should survive the scenario instead of dying from need deprivation"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 // ---------------------------------------------------------------------------
@@ -692,5 +899,45 @@ fn degenerate_zero_step_loop_blocks_actionable_goals() {
     assert!(
         hunger_after < hunger_at_window_start,
         "expected hunger to fall during the late-run recovery window; start={hunger_at_window_start:?} end={hunger_after:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 144: Obligation satiation allows survival needs to override posting
+// ---------------------------------------------------------------------------
+//
+// Systems: Social artifact actions, Needs, AI, Perception
+// GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
+// ActionDomains: Social, Needs
+// Places: DustyTrail, HearthstoneInn
+// Principles: 3, 7, 11, 22, 26
+//
+// Setup: A guard first directly observes a hostile at Dusty Trail, then starts
+//   the scenario window at Hearthstone Inn with local Bread and Water, critical
+//   hunger/thirst, `notice_posting_weight=900`, and the default obligation
+//   satiation profile. The remembered combat belief keeps a remote
+//   `ThreatWarning` notice branch lawful without reintroducing co-located combat
+//   as a competing explanation.
+//
+// Proves: Repeated `PostNotice` still happens enough for satiation to matter,
+//   but the guard also commits both `eat` and `drink`, survives the window, and
+//   does not let notice posting dominate the committed action mix indefinitely.
+//
+// Chain: remembered hostile belief -> repeated PostNotice commits append
+//   obligation tracker state -> ranking dampens saturated notice motive ->
+//   self-care commits become competitive -> guard survives.
+
+#[test]
+fn obligation_satiation_allows_survival_needs_to_override_posting() {
+    let _ = run_obligation_satiation_allows_survival(Seed([144; 32]));
+}
+
+#[test]
+fn obligation_satiation_allows_survival_needs_to_override_posting_replays_deterministically() {
+    let first = run_obligation_satiation_allows_survival(Seed([145; 32]));
+    let second = run_obligation_satiation_allows_survival(Seed([145; 32]));
+    assert_eq!(
+        first, second,
+        "obligation satiation survival scenario should replay deterministically"
     );
 }
