@@ -67,6 +67,7 @@ pub mod items;
 pub mod load;
 pub mod needs;
 pub mod numerics;
+pub mod obligation;
 pub mod observation_context;
 pub mod offices;
 pub mod patrol;
@@ -187,6 +188,7 @@ pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
 pub use numerics::{LoadUnits, Permille, Quantity};
+pub use obligation::{ObligationExecutionTracker, ObligationSatiationProfile};
 pub use observation_context::{ObservationContext, PlaceVisibilityProfile};
 pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,

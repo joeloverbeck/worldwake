@@ -1978,10 +1978,11 @@ mod tests {
         BlockedIntentMemory, CognitiveProfile, CommunicationProfile, DemandMemory, DisposalProfile,
         EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-        InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
-        OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-        PerceptionSource, PreferenceProfile, RecordData, RecordEntryId, RecordKind,
-        SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile, UtilityProfile,
+        InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile,
+        ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState,
+        PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, PreferenceProfile,
+        RecordData, RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
+        TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2439,6 +2440,14 @@ mod tests {
                     component_kind: ComponentKind::ExplorationProfile,
                     before: None,
                     after: ComponentValue::ExplorationProfile(ExplorationProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::ObligationSatiationProfile,
+                    before: None,
+                    after: ComponentValue::ObligationSatiationProfile(
+                        ObligationSatiationProfile::default(),
+                    ),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

@@ -80,6 +80,10 @@ Verify proposed functions' parameter/return types are accessible from the target
 
 Grep active specs in `specs/` for references to this spec's deliverables. Note affected specs.
 
+## 3.8A Cross-System and SystemFn Section Validation
+
+For specs that include Cross-System Interactions or SystemFn Integration sections, verify each crate attribution: confirm the described behavior (commit handler, system function, ranking logic, etc.) actually resides in the named crate and module. Flag misattributed crates as Issues — these are prose claims about responsibility that drift when code moves between crates.
+
 ## 3.9 Behavioral Claim Validation
 
 For each claim about who reads/writes a type at runtime, grep all call sites and classify as runtime vs. test-only (`#[cfg(test)]`). Flag contradictions as CRITICAL. If technically wrong but safe (e.g., caller only reads current-tick data), note both the correction and safety argument.

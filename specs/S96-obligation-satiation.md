@@ -10,7 +10,9 @@ Phase 7 adjunct. Status: Draft.
 
 ## Crates
 
-- `worldwake-core` — new `ObligationSatiationProfile` component
+- `worldwake-core` — new `ObligationSatiationProfile` and `ObligationExecutionTracker` components
+- `worldwake-sim` — `GoalBeliefView` / `BeliefView` accessor methods for new components
+- `worldwake-systems` — tracker update in PostNotice/PostBounty commit handlers
 - `worldwake-ai` — satiation tracking and score dampening in ranking, golden test
 
 ## Dependencies
@@ -34,11 +36,11 @@ Phase 7 adjunct. Status: Draft.
 
 | Principle | How Satisfied |
 |-----------|---------------|
-| FND-1 (Maximal Emergence) | Obligation spam is an engine limitation, not emergence. Satiation restores emergent behavior by letting survival compete. |
-| FND-8 (Every Action Has Cost) | Repeated posting now has cumulative attention/fatigue cost expressed as satiation decay. |
-| FND-11 (Feedback Dampening) | Direct fix: the undamped obligation loop (post → retrigger → post) now has a concrete dampener (satiation decay per execution within a time window). |
-| FND-22 (Agent Diversity) | Satiation parameters are per-agent profile fields. Dutiful agents satiate slowly; impulsive agents satiate quickly. |
-| FND-26 (Systems Interact Through State) | Satiation state is a component read by ranking, not a cross-system call. |
+| FND-1 (Maximal Emergence Through Local Causality) | Obligation spam is an engine limitation, not emergence. Satiation restores emergent behavior by letting survival compete. |
+| FND-8 (Every Action Has Preconditions, Duration, Cost, and Occupancy) | Repeated posting now has cumulative attention/fatigue cost expressed as satiation decay. |
+| FND-11 (Every Positive Feedback Loop Needs a Physical Dampener) | Direct fix: the undamped obligation loop (post → retrigger → post) now has a concrete dampener (satiation decay per execution within a time window). |
+| FND-22 (Agent Diversity Through Concrete Variation) | Satiation parameters are per-agent profile fields. Dutiful agents satiate slowly; impulsive agents satiate quickly. |
+| FND-26 (Systems Interact Through State, Not Through Each Other) | Satiation state is a component read by ranking, not a cross-system call. |
 
 ## Deliverables
 
@@ -122,7 +124,8 @@ fn apply_obligation_satiation(context: &RankingContext<'_>, raw_score: u32) -> u
     let profile = context.satiation_profile; // &ObligationSatiationProfile
     let tracker = context.obligation_tracker;  // &ObligationExecutionTracker
     let current_tick = context.current_tick;
-    let window_start = current_tick.0.saturating_sub(profile.window_ticks);
+    // Permille::value() returns u16; window_ticks is u32; Tick.0 is u64.
+    let window_start = current_tick.0.saturating_sub(u64::from(profile.window_ticks));
     let recent_count = tracker.completion_ticks.iter()
         .filter(|t| t.0 >= window_start)
         .count() as u32;
@@ -141,11 +144,11 @@ The same `apply_obligation_satiation` is also applied to `post_bounty_motive`.
 
 ### D4: Tracker update on obligation action commit
 
-When a PostNotice or PostBounty action commits successfully, append the current tick to the agent's `ObligationExecutionTracker.completion_ticks`. This happens in the existing action commit path. The tracker is pruned of stale entries (older than `window_ticks`) during goal ranking to keep the Vec bounded.
+When a PostNotice or PostBounty action commits successfully, append the current tick to the agent's `ObligationExecutionTracker.completion_ticks`. This happens in the existing commit handlers (`commit_post_notice` and `commit_post_bounty` in `crates/worldwake-systems/src/artifact_actions.rs`). The tracker is pruned of stale entries (older than `window_ticks`) during goal ranking to keep the Vec bounded.
 
 ### D5: `RankingContext` extension
 
-Add `satiation_profile: &ObligationSatiationProfile` and `obligation_tracker: &ObligationExecutionTracker` to `RankingContext`. These are populated from the agent's components when constructing the ranking context.
+Add `satiation_profile: ObligationSatiationProfile` and `obligation_tracker: ObligationExecutionTracker` to `RankingContext`. These are populated from the agent's components via `GoalBeliefView` when constructing the ranking context in `RankingContext::new`, following the same pattern as `needs`, `thresholds`, and `exploration_profile`.
 
 ### D6: Golden test — obligation does not starve survival needs
 
@@ -159,7 +162,41 @@ File: `crates/worldwake-ai/tests/golden_planner_pathology.rs`
 
 **Emergence justification**: Tests the interaction between obligation satiation and survival need ranking — neither system alone produces this behavior; their interplay determines whether the agent lives or dies.
 
-**Why not a duplicate**: `golden_integration.rs` tests PostNotice selection and commitment but does not test the interaction with competing survival needs under satiation. `golden_ai_decisions.rs::golden_fallback_to_addressable_need` tests fallback when top need is unsatisfiable, but not when a non-survival goal outranks survival.
+**Why not a duplicate**: `golden_integration.rs` tests PostNotice selection and commitment but does not test the interaction with competing survival needs under satiation. `golden_ai_decisions.rs::golden_fallback_to_addressable_need_when_top_need_unsatisfiable` tests fallback when top need is unsatisfiable, but not when a non-survival goal outranks survival.
+
+### D7: `GoalBeliefView` / `BeliefView` accessor methods
+
+Add accessor methods to the belief view traits in `crates/worldwake-sim/src/belief_view.rs`:
+
+```rust
+// On GoalBeliefView trait — default returns Default (universal component)
+fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
+    let _ = agent;
+    ObligationSatiationProfile::default()
+}
+
+fn obligation_execution_tracker(&self, agent: EntityId) -> ObligationExecutionTracker {
+    let _ = agent;
+    ObligationExecutionTracker::default()
+}
+```
+
+Add corresponding methods to `BeliefView` trait and implement on `RuntimeBeliefView` to read from the world store, following the existing pattern used by `homeostatic_needs`, `drive_thresholds`, and `exploration_profile`.
+
+### D8: Scenario contract — `AgentDef` and `spawn_agent()` integration
+
+Add `obligation_satiation_profile: Option<ObligationSatiationProfile>` field to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs`.
+
+In `spawn_agent()` (`crates/worldwake-cli/src/scenario/mod.rs`), apply as a universal component:
+
+```rust
+txn.set_component_obligation_satiation_profile(
+    agent_id,
+    agent_def.obligation_satiation_profile.clone().unwrap_or_default(),
+);
+```
+
+This follows spec-drafting-rules.md section 5: universal components always applied with `unwrap_or_default()`.
 
 ## FND-01 Section H: Causal Hooks
 
@@ -182,8 +219,8 @@ No new SystemFn. The satiation logic runs inline within `rank_goals` (already a 
 
 ## Cross-System Interactions
 
-- **Action commit system** (worldwake-sim): Writes completion tick to `ObligationExecutionTracker` when PostNotice/PostBounty commits. State-mediated, not a direct call to ranking.
-- **Goal ranking** (worldwake-ai): Reads `ObligationSatiationProfile` and `ObligationExecutionTracker` to compute dampened scores. Pure state read.
+- **Action commit system** (worldwake-systems): Writes completion tick to `ObligationExecutionTracker` when PostNotice/PostBounty commits. State-mediated, not a direct call to ranking.
+- **Goal ranking** (worldwake-ai): Reads `ObligationSatiationProfile` and `ObligationExecutionTracker` to compute dampened scores. Pure state read via `GoalBeliefView` accessors.
 
 ## Profile-Driven Parameters
 

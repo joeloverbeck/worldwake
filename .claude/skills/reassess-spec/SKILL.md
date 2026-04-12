@@ -100,7 +100,7 @@ For computation-optimization specs (type e, optimization subtype), skip root-cau
 
 ### Step 3: Codebase Validation
 
-Load `references/codebase-validation.md`. Validate every reference from Step 2.
+Load `references/codebase-validation.md` and `references/worldwake-validation-patterns.md`. Validate every reference from Step 2. Apply the pattern-specific checklists from `worldwake-validation-patterns.md` when a spec matches a trigger (new GoalKind variant, new component on Agent, new component read by AI crate, new action type, new cross-crate enum variant).
 
 Do not present findings yet. Collect everything for Step 4.
 

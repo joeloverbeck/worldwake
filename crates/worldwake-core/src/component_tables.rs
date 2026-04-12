@@ -29,6 +29,7 @@ use crate::{
     intention_frame::IntentionFrame,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
+    obligation::{ObligationExecutionTracker, ObligationSatiationProfile},
     observation_context::PlaceVisibilityProfile,
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     patrol::{PatrolProfile, PatrolRoute},
