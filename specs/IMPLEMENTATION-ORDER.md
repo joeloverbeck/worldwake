@@ -19,6 +19,7 @@ Completed Phase 7 specs:
 - `S94: Commodity-Relevance Candidate Pruning` — archived at [archive/specs/S94-commodity-relevance-candidate-pruning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S94-commodity-relevance-candidate-pruning.md). Added planner-level target-commodity extraction, root candidate pruning against the active commodity contract, `CommodityIrrelevant` decision-trace surfacing, and rewrote the budget-exhaustion golden family into zero-ignored honest post-filter regressions.
 - `S96: Obligation Satiation` — archived at [archive/specs/S96-obligation-satiation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S96-obligation-satiation.md). Landed `ObligationSatiationProfile` / `ObligationExecutionTracker`, runtime and scenario carriage, commit-time tracker updates for obligation actions, satiation-aware ranking dampening, and Scenario 144 golden coverage proving survival needs override saturated notice posting.
 - `S98: Observer Affordance-Change Detection` — archived at [archive/specs/S98-observer-affordance-change-detection.md](/home/joeloverbeck/projects/worldwake/archive/specs/S98-observer-affordance-change-detection.md). Added observer-only affordance-set change detection between consecutive planning snapshots, Section 7 report emission for affordance appearance/disappearance, and focused observer-bin coverage for the helper and render path.
+- `S99: Commodity Validation Helper Extraction` — archived at [archive/specs/S99-commodity-validation-helpers.md](/home/joeloverbeck/projects/worldwake/archive/specs/S99-commodity-validation-helpers.md). Consolidated duplicated `ensure_accessible_quantity` and `resolve_controlled_lots` helpers into shared internal `commodity_support` helpers in `worldwake-systems` without changing behavior.
 
 Completed adjunct specs:
 - `S67: Golden E2E Gaps — S59` archived at [archive/specs/S67-golden-gaps-S59.md](/home/joeloverbeck/projects/worldwake/archive/specs/S67-golden-gaps-S59.md).
@@ -196,6 +197,19 @@ S98 ✅ archived
 - **S96**: ✅ COMPLETED — archived at [archive/specs/S96-obligation-satiation.md](/home/joeloverbeck/projects/worldwake/archive/specs/S96-obligation-satiation.md). Landed `ObligationSatiationProfile` / `ObligationExecutionTracker`, runtime and scenario carriage, obligation-action tracker updates, satiation-aware ranking, and Scenario 144 golden proof that survival needs override saturated notice posting.
 - **S97**: ✅ COMPLETED — archived at [archive/specs/S97-post-notice-artifact-ttl.md](/home/joeloverbeck/projects/worldwake/archive/specs/S97-post-notice-artifact-ttl.md). Landed `ArtifactPostingProfile` as a universal agent component, planner-visible profile carriage, runtime candidate-generation TTL provisioning for `PostBounty` / `PostNotice`, CLI scenario support, and the `golden_integration.rs` bounded-population expiry proof with regenerated golden docs.
 - **S98**: ✅ COMPLETED — archived at [archive/specs/S98-observer-affordance-change-detection.md](/home/joeloverbeck/projects/worldwake/archive/specs/S98-observer-affordance-change-detection.md). Landed observer-only affordance-set change detection between planning snapshots, Section 7 report emission for affordance appearance/disappearance, and focused observer-bin proof of both helper behavior and final report output.
+
+### Adjunct Wave: Architectural Debt Remediation
+
+Derived from architectural debt analysis (`reports/architectural-debt-2026-04-12-golden_resilience.md`) validated against
+the actual codebase and `docs/FOUNDATIONS.md`. Single confirmed finding: commodity validation helper duplication
+across 4 action handler modules in `worldwake-systems`.
+
+```text
+S99 ✅ archived
+```
+
+**Completed wave**:
+- **S99**: ✅ COMPLETED — archived at [archive/specs/S99-commodity-validation-helpers.md](/home/joeloverbeck/projects/worldwake/archive/specs/S99-commodity-validation-helpers.md). Consolidated duplicated `ensure_accessible_quantity` (4 copies) and `resolve_controlled_lots` (3 copies) into shared internal `commodity_support` helpers in `worldwake-systems` while preserving behavior and caller-specific underflow messaging.
 
 ### Phase 7 Gate
 

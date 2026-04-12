@@ -2,6 +2,7 @@ use crate::offices::candidate_is_eligible;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
+use crate::commodity_support::{ensure_accessible_quantity, resolve_controlled_lots};
 use worldwake_core::{
     ActionDefId, BelievedInstitutionalClaim, BodyCostPerTick, CombatProfile, CommodityKind,
     EligibilityRule, EntityId, EntityKind, EventTag, InstitutionalBeliefKey,
@@ -1127,83 +1128,17 @@ fn transfer_controlled_commodity(
     place: EntityId,
 ) -> Result<(), ActionError> {
     ensure_accessible_quantity(txn, holder, commodity, quantity)?;
-    for (lot_id, moved_quantity) in
-        resolve_controlled_lots(txn, holder, commodity, quantity, place)?
-    {
+    for (lot_id, moved_quantity) in resolve_controlled_lots(
+        txn,
+        holder,
+        commodity,
+        quantity,
+        place,
+        "controlled lot accounting underflowed",
+    )? {
         transfer_lot(txn, lot_id, new_holder, place, moved_quantity)?;
     }
     Ok(())
-}
-
-fn ensure_accessible_quantity(
-    txn: &WorldTxn<'_>,
-    holder: EntityId,
-    commodity: CommodityKind,
-    quantity: Quantity,
-) -> Result<(), ActionError> {
-    let available = txn.controlled_commodity_quantity(holder, commodity);
-    if available < quantity {
-        return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
-                holder,
-                commodity,
-                quantity,
-            },
-        ));
-    }
-    Ok(())
-}
-
-fn resolve_controlled_lots(
-    txn: &mut WorldTxn<'_>,
-    holder: EntityId,
-    commodity: CommodityKind,
-    quantity: Quantity,
-    place: EntityId,
-) -> Result<Vec<(EntityId, Quantity)>, ActionError> {
-    let mut remaining = quantity;
-    let mut selected = Vec::new();
-    let mut lots = txn
-        .query_item_lot()
-        .filter_map(|(entity, lot)| {
-            (lot.commodity == commodity
-                && txn.can_exercise_control(holder, entity).is_ok()
-                && txn.effective_place(entity) == Some(place))
-            .then_some((entity, lot.quantity))
-        })
-        .collect::<Vec<_>>();
-    lots.sort_by_key(|(entity, _)| *entity);
-
-    for (lot_id, available) in lots {
-        if remaining == Quantity(0) {
-            break;
-        }
-        if available > remaining {
-            let (_, split_off) = txn
-                .split_lot(lot_id, remaining)
-                .map_err(|error| ActionError::InternalError(error.to_string()))?;
-            selected.push((split_off, remaining));
-            remaining = Quantity(0);
-            break;
-        }
-
-        selected.push((lot_id, available));
-        remaining = remaining.checked_sub(available).ok_or_else(|| {
-            ActionError::InternalError("controlled lot accounting underflowed".to_string())
-        })?;
-    }
-
-    if remaining != Quantity(0) {
-        return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
-                holder,
-                commodity,
-                quantity,
-            },
-        ));
-    }
-
-    Ok(selected)
 }
 
 fn transfer_lot(

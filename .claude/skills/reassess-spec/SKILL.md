@@ -117,6 +117,8 @@ Wait for user response before proceeding to Step 7. (In plan mode: after questio
 
 ### Step 7: Write the Updated Spec
 
+**Pre-Apply Verification**: Before editing, run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying. See `references/spec-writing-rules.md` for full details.
+
 Load `references/spec-writing-rules.md`. Apply all approved changes.
 
 ### Step 8: Final Summary

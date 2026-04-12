@@ -1,4 +1,17 @@
-# Phases 5-6: Synthesis and Validation
+# Phases 4.5-6: Verification, Synthesis, and Validation
+
+## Phase 4.5: VERIFY — Spot-Check Agent Claims
+
+Before synthesis, validate the evidence behind agent findings. Sub-agents operate on grep counts and naming heuristics that produce predictable false positives in Rust codebases. This gate prevents false findings from entering the report.
+
+**For each Lens A or Lens B finding with severity >= Medium**, read at least one cited source file and check:
+
+1. **Duplication claims**: Is the code genuinely copy-pasted, or are the sites trait implementations (`impl TraitName for StructA` / `impl TraitName for StructB`) that serve different data sources? Trait implementations are correct polymorphism, not duplication.
+2. **Enum size claims**: Verify the actual variant count at the `pub enum` definition. Grep-counting `EnumName::Variant` references inflates counts because it includes match arms, constructors, and type annotations.
+3. **Boundary inversion claims**: Does the upper-layer code access authoritative world state, or does it operate on belief state via a trait like `GoalBeliefView`? Belief-based pre-checks in a higher layer are P14-compliant layering, not boundary inversion.
+4. **Scatter claims based on reference counts**: Does the enum/type appear in many files as a type parameter (field type, function argument) or as logic-branching (match arms with variant-specific behavior)? High reference count with no duplicated branching is a well-used domain type.
+
+**Outcome**: Demote findings whose evidence does not survive verification to "Needs Investigation." Promote the confidence level of findings that do survive. Prioritize checking Low and Medium-confidence findings (per agent confidence tags).
 
 ## Phase 5: SYNTHESIZE — Cross-Lens Reinforcement
 

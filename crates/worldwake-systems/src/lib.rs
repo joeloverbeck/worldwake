@@ -10,6 +10,7 @@ pub mod ask_about_person_actions;
 pub mod bandit_camp;
 pub mod bandit_camp_actions;
 pub mod combat;
+mod commodity_support;
 pub mod consult_record_actions;
 mod contention_support;
 pub mod epistemic_actions;

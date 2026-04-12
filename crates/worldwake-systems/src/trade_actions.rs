@@ -1,3 +1,4 @@
+use crate::commodity_support::ensure_accessible_quantity;
 use crate::experience_recording::{
     record_failed_source_attempt, record_successful_source_acquisition,
 };
@@ -1234,25 +1235,6 @@ fn resolve_trade_lots(
     }
 
     Ok(selected)
-}
-
-fn ensure_accessible_quantity(
-    txn: &WorldTxn<'_>,
-    holder: EntityId,
-    commodity: CommodityKind,
-    quantity: Quantity,
-) -> Result<(), ActionError> {
-    let available = txn.controlled_commodity_quantity(holder, commodity);
-    if available < quantity {
-        return Err(ActionError::AbortRequested(
-            ActionAbortRequestReason::HolderLacksAccessibleCommodity {
-                holder,
-                commodity,
-                quantity,
-            },
-        ));
-    }
-    Ok(())
 }
 
 fn transfer_trade_lot(
