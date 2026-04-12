@@ -12,9 +12,9 @@ If plan mode is active:
 - If the ExitPlanMode result contains user comments, treat them as binding modifications.
 - **Delegated resolution in plan mode**: When a question is resolved via delegation (user says "you decide" or "decide based on FOUNDATIONS"), include the resolution rationale in the plan file alongside the resulting change. The ExitPlanMode approval then covers both the resolution and the change.
 
-**Plan file structure**:
-- **Context**: Which spec, why it's being reassessed
-- **Approved Changes**: Organized by Issues Fixed / Improvements Applied / Additions Incorporated, each with severity tag
+**Plan file structure** (condensed action list for Step 7 execution — not a re-presentation of the conversational report):
+- **Context**: Which spec, why it's being reassessed, classification type
+- **Approved Changes**: Compact action items organized by Issues Fixed / Improvements Applied / Additions Incorporated. Each item: severity tag + one-line summary of what to change + affected deliverable number. Omit the full evidence and reasoning — the conversational report (Step 6) carries that.
 - **Critical Files**: Paths of files to be modified
 - **Verification**: How to confirm the updated spec is correct after writing
 

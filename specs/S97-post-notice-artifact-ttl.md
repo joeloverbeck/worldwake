@@ -11,7 +11,9 @@ Phase 7 adjunct. Status: Draft.
 ## Crates
 
 - `worldwake-core` — new `ArtifactPostingProfile` component with TTL defaults
-- `worldwake-ai` — goal dispatch and candidate generation set `expires_at` from profile
+- `worldwake-sim` — `GoalBeliefView` accessor for the new profile
+- `worldwake-ai` — candidate generation sets `expires_at` from profile
+- `worldwake-cli` — `AgentDef` field and `spawn_agent()` registration
 
 ## Dependencies
 
@@ -50,11 +52,11 @@ New component in `worldwake-core`:
 pub struct ArtifactPostingProfile {
     /// Default TTL (in ticks) for ThreatWarning notices posted by this agent.
     /// The posted artifact's `expires_at` is set to `current_tick + threat_warning_ttl`.
-    pub threat_warning_ttl: u32,
+    pub threat_warning_ttl: u64,
     /// Default TTL for OfficeVacancy notices.
-    pub office_vacancy_ttl: u32,
+    pub office_vacancy_ttl: u64,
     /// Default TTL for bounty postings.
-    pub bounty_ttl: u32,
+    pub bounty_ttl: u64,
 }
 ```
 
@@ -71,44 +73,66 @@ impl Default for ArtifactPostingProfile {
 }
 ```
 
-### D2: Goal dispatch sets `expires_at` from profile
+Register on `EntityKind::Agent` in `component_schema.rs`. Universal component (every agent gets `Default` if not specified in scenario).
 
-Modify `goal_dispatch_decl.rs` PostNotice and PostBounty dispatch paths to compute `expires_at` from the agent's `ArtifactPostingProfile`:
+TTL fields are `u64` to match `Tick` arithmetic (`Tick` wraps `u64` and implements `Add<u64>`).
 
-In `GoalDispatchKey::PostNoticeWarning`:
+### D2: `GoalBeliefView` accessor
+
+Add accessor to `GoalBeliefView` trait in `crates/worldwake-sim/src/belief_view.rs`:
+
 ```rust
-GoalDispatchKey::PostNoticeWarning => {
-    let ttl = posting_profile.threat_warning_ttl;
-    GoalKind::PostNotice {
-        posting: ArtifactPostingContext {
-            posting_place: destination,
-            issuing_authority: None,
-            expires_at: Some(Tick(current_tick.0 + ttl)),
-            jurisdiction: None,
-        },
-        topic: NoticeTopic::ThreatWarning { place: destination },
-    }
+fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
+    None
 }
 ```
 
-Similarly for `PostNoticeOther` (using `office_vacancy_ttl`) and `PostBounty` (using `bounty_ttl`).
+Implement in `RuntimeBeliefView` to read the component from the snapshot. Forward through the `impl_goal_belief_view!` macro.
 
-### D3: Candidate generation sets `expires_at` from profile
+This follows the established pattern for profile components read by the AI crate (same as `drive_thresholds`, `cognitive_profile`, `utility_profile`).
 
-All PostNotice candidate generation paths in `candidate_generation.rs` that currently hardcode `expires_at: None` must be updated to compute TTL from the agent's `ArtifactPostingProfile`. The profile is available through the planning snapshot's component access.
+### D3: Runtime candidate generation sets `expires_at` from profile
 
-Affected locations (grep for `expires_at: None` in candidate_generation.rs):
-- Lines 642, 726, 6198, 11034, 11180, 11245
+Two runtime locations in `crates/worldwake-ai/src/candidate_generation.rs` construct `ArtifactPostingContext` with `expires_at: None`:
 
-### D4: Goal ranking and feasibility TTL propagation
+- **Line 642**: `PostBounty` posting in `emit_bounty_posting_candidates` — use `bounty_ttl`
+- **Line 726**: `PostNotice` posting in `emit_notice_posting_candidates` — use `threat_warning_ttl`
 
-Update PostNotice-related code in `ranking.rs`, `feasibility.rs`, `route_threat.rs`, `goal_policy.rs`, `exhaustion.rs`, and `plan_revalidation.rs` that constructs `ArtifactPostingContext` with `expires_at: None` to propagate the profile-derived TTL.
+Both functions receive `ctx: &GenerationContext<'_>` which has `view: &dyn GoalBeliefView`. Access the profile via `ctx.view.artifact_posting_profile(ctx.agent)` and compute:
 
-### D5: `GoalDispatchContext` and `PlanningSnapshot` access
+```rust
+let posting_profile = ctx.view.artifact_posting_profile(ctx.agent);
+let expires_at = posting_profile.map(|p| ctx.current_tick + p.threat_warning_ttl);
+```
 
-Ensure `ArtifactPostingProfile` is accessible in:
-- `GoalDispatchContext` (for goal dispatch TTL computation)
-- `PlanningSnapshot` (for candidate generation TTL computation)
+### D4: CLI scenario support
+
+Add `ArtifactPostingProfile` to the scenario system per the profile completeness invariant:
+
+1. Add `artifact_posting_profile: Option<ArtifactPostingProfile>` field to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs`. No `*Def` wrapper needed (no `EntityId` references in the profile).
+2. Add `set_component` call in `spawn_agent()` in `crates/worldwake-cli/src/scenario/mod.rs`. Universal component pattern: `unwrap_or_default()`, always applied.
+
+### D5: Test fixture updates
+
+Multiple test files construct `ArtifactPostingContext` or `BelievedArtifactState` with `expires_at: None`. After D1-D3 are implemented, test fixtures that construct `ArtifactPostingContext` for PostNotice/PostBounty goals should use profile-derived TTL values for consistency.
+
+**`ArtifactPostingContext` locations (test code — need TTL values):**
+- `candidate_generation.rs`: lines 11034, 11180, 11245 (past `#[cfg(test)]` at line 4899)
+- `goal_dispatch_decl.rs`: lines 803, 819, 828 (in `representative_goal_for`, `#[cfg(test)]` at line 664)
+- `ranking.rs`: lines 2712, 2809, 2894, 2939, 2994, 3189, 3233, 3265 (`#[cfg(test)]` at line 1715)
+- `feasibility.rs`: lines 963, 981 (`#[cfg(test)]` at line 267)
+- `goal_policy.rs`: line 704 (`#[cfg(test)]` at line 121)
+
+**`BelievedArtifactState` locations (no code changes needed):**
+These represent what agents *observe* about existing artifacts. Once artifacts are posted with `expires_at` values (via D3), the belief/perception system will naturally propagate non-None values. No changes needed in:
+- `candidate_generation.rs`: line 6198
+- `ranking.rs`: line 2376
+- `route_threat.rs`: line 295
+- `exhaustion.rs`: lines 1058, 1104, 1157, 1207
+- `goal_model.rs`: lines 9595, 9662, 9904, 9981, 10064
+- `goal_dispatch_key.rs`: 1 occurrence in tests
+- `search/tests.rs`: 5 occurrences in tests
+- `plan_revalidation.rs`: line 1140 (`PostBountyActionPayload`)
 
 ### D6: Golden test — artifact expiry bounds entity count
 
@@ -142,7 +166,7 @@ No new SystemFn. `artifact_lifecycle_system` already handles `expires_at` transi
 
 ## Cross-System Interactions
 
-- **Goal dispatch / candidate generation** (worldwake-ai): Reads `ArtifactPostingProfile` to compute `expires_at` for `ArtifactPostingContext`. Pure state read.
+- **Candidate generation** (worldwake-ai): Reads `ArtifactPostingProfile` via `GoalBeliefView` accessor to compute `expires_at` for `ArtifactPostingContext`. Pure state read.
 - **Action handler** (worldwake-systems): Already uses `payload.expires_at` when creating artifacts — no change needed.
 - **Artifact lifecycle system** (worldwake-systems): Already transitions artifacts with `expires_at` to `Expired` — no change needed.
 - **Perception system** (worldwake-systems): Already skips expired artifacts in observation — no change needed (verify during implementation).

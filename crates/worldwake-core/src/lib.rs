@@ -202,8 +202,8 @@ pub use pursuit::PursuitProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use rights::{EffectiveRight, RightKind};
 pub use social_artifact::{
-    ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactState, BountyTarget, BountyTerms,
-    NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
+    ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile, ArtifactState,
+    BountyTarget, BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
 };
 pub use topology::{
     OUTDOOR_RELIEF_TAGS, Place, PlaceTag, PlaceTagSet, PrototypePlace, Route, Topology, TravelEdge,

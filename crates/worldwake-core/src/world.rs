@@ -1,15 +1,15 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, BanditCamp, BanditFactionPolicy,
-    BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance,
-    CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables,
-    ComponentValue, Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
-    ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DisposalProfile, DriveThresholds,
-    EntityAllocator, EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId,
-    ExecutionBudget, ExpectationStore, ExplorationProfile, FactionData, HomeostaticNeeds,
-    InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
-    JusticeDispositionProfile, KnownRecipes, LastSeenMemory, LoadUnits, LotOperation,
+    ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, ArtifactPostingProfile, BanditCamp,
+    BanditFactionPolicy, BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile,
+    CombatProfile, CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile,
+    ComponentTables, ComponentValue, Container, ContentionDispositionProfile, ContentionIntents,
+    ContentionPolicy, ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DisposalProfile,
+    DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
+    EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
+    FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame,
+    ItemLot, JusticeDispositionProfile, KnownRecipes, LastSeenMemory, LoadUnits, LotOperation,
     MerchandiseProfile, MetabolismProfile, Name, NoticeContent, ObligationExecutionTracker,
     ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
     PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PlaceVisibilityProfile,
@@ -159,6 +159,10 @@ impl World {
             world.insert_component_name(entity, Name(name.to_string()))?;
             world.insert_component_agent_data(entity, AgentData { control_source })?;
             world.insert_component_agent_belief_store(entity, AgentBeliefStore::new())?;
+            world.insert_component_artifact_posting_profile(
+                entity,
+                ArtifactPostingProfile::default(),
+            )?;
             world.insert_component_expectation_store(entity, ExpectationStore::default())?;
             world.insert_component_last_seen_memory(entity, LastSeenMemory::default())?;
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
@@ -621,12 +625,12 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgentBeliefStore, AgentData, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
-        BelievedEntityState, BodyPart, CarryCapacity, CombatProfile, CommodityKind,
-        CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory, DeprivationExposure,
-        DeprivationKind, DisposalProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
-        EpistemicDispositionProfile, EventId, FactionData, FactionPurpose, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
+        AgentBeliefStore, AgentData, ArtifactPostingProfile, BanditCamp, BanditFactionPolicy,
+        BeliefConfidencePolicy, BelievedEntityState, BodyPart, CarryCapacity, CombatProfile,
+        CommodityKind, CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory,
+        DeprivationExposure, DeprivationKind, DisposalProfile, DriveThresholds, EffectiveRight,
+        EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData, FactionPurpose,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
         JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
         MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
         PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
@@ -777,6 +781,14 @@ mod tests {
             alarm_acceptance: Permille::new(965).unwrap(),
             testimony_acceptance: Permille::new(805).unwrap(),
             gossip_acceptance: Permille::new(575).unwrap(),
+        }
+    }
+
+    fn sample_artifact_posting_profile() -> ArtifactPostingProfile {
+        ArtifactPostingProfile {
+            threat_warning_ttl: 36,
+            office_vacancy_ttl: 72,
+            bounty_ttl: 108,
         }
     }
 
@@ -4982,6 +4994,31 @@ mod tests {
         let removed = world.remove_component_perception_profile(id).unwrap();
         assert_eq!(removed, Some(profile));
         assert_eq!(world.get_component_perception_profile(id), None);
+    }
+
+    #[test]
+    fn artifact_posting_profile_component_roundtrip_on_agent() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let id = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = sample_artifact_posting_profile();
+
+        world
+            .insert_component_artifact_posting_profile(id, profile.clone())
+            .unwrap();
+        assert_eq!(
+            world.get_component_artifact_posting_profile(id),
+            Some(&profile)
+        );
+        assert!(world.has_component_artifact_posting_profile(id));
+        assert_eq!(
+            world.query_artifact_posting_profile().collect::<Vec<_>>(),
+            vec![(id, &profile)]
+        );
+        assert_eq!(world.count_with_artifact_posting_profile(), 1);
+
+        let removed = world.remove_component_artifact_posting_profile(id).unwrap();
+        assert_eq!(removed, Some(profile));
+        assert_eq!(world.get_component_artifact_posting_profile(id), None);
     }
 
     #[test]

@@ -19,12 +19,11 @@ use std::{
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
     CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, NoticeTopic, ObligationExecutionTracker,
-    ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
-    Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile,
-    ViolationKind, belief_confidence, failure_ratio_permille,
+    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId,
+    HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+    NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor,
+    OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey, TellTopic,
+    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -1000,8 +999,9 @@ fn apply_obligation_satiation(context: &RankingContext<'_>, raw_score: u32) -> u
     }
 
     let over_threshold = recent_count - context.satiation_profile.satiation_threshold;
-    let decay_total =
-        over_threshold.saturating_mul(u32::from(context.satiation_profile.decay_per_execution.value()));
+    let decay_total = over_threshold.saturating_mul(u32::from(
+        context.satiation_profile.decay_per_execution.value(),
+    ));
     let multiplier = 1000u32
         .saturating_sub(decay_total)
         .max(u32::from(context.satiation_profile.satiation_floor.value()));
@@ -1738,12 +1738,11 @@ mod tests {
         InstitutionalKnowledgeSource, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
         MerchandiseProfile, MetabolismProfile, NoticeTopic, ObligationExecutionTracker,
         ObligationSatiationProfile, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
-        PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind,
-        Quantity, RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource,
-        RightKind, RouteExperience, SourceKey, SourceReliability, TellTopic,
-        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, UtilityProfile, ViolationId, ViolationKind, WorkstationTag, Wound,
-        WoundCause, WoundId, belief_confidence,
+        PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity,
+        RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
+        RouteExperience, SourceKey, SourceReliability, TellTopic, TheftDispositionProfile,
+        TheftFacts, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+        ViolationId, ViolationKind, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,

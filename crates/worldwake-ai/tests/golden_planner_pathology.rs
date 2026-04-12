@@ -5,13 +5,13 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use worldwake_ai::{DecisionOutcome, GoalKind, PlanSearchOutcome, PlannerOpKind};
 use worldwake_core::{
-    hash_event_log, hash_world, AgentData, BelievedActivity, CarryCapacity, CombatProfile,
-    CommodityKind, ControlSource, DisposalProfile, DriveThresholds, EntityId, EventLog,
-    ExplorationProfile, HomeostaticNeeds, IntentionDispositionProfile, IntentionDomainTag,
-    LastSeenMemory, LoadUnits, MetabolismProfile, PatrolProfile, PatrolRoute, PerceptionProfile,
-    Place, PlaceTag, PreferenceProfile, PursuitProfile, Quantity, ResourceSource, Seed,
-    TheftDispositionProfile, Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile,
-    ViolationDispositionProfile, WorkstationMarker, WorkstationTag, World,
+    AgentData, BelievedActivity, CarryCapacity, CombatProfile, CommodityKind, ControlSource,
+    DisposalProfile, DriveThresholds, EntityId, EventLog, ExplorationProfile, HomeostaticNeeds,
+    IntentionDispositionProfile, IntentionDomainTag, LastSeenMemory, LoadUnits, MetabolismProfile,
+    PatrolProfile, PatrolRoute, PerceptionProfile, Place, PlaceTag, PreferenceProfile,
+    PursuitProfile, Quantity, ResourceSource, Seed, TheftDispositionProfile, Tick, Topology,
+    TravelEdge, TravelEdgeId, UtilityProfile, ViolationDispositionProfile, WorkstationMarker,
+    WorkstationTag, World, hash_event_log, hash_world,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
 

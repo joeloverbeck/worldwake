@@ -30,6 +30,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                artifact_posting_profiles,
+                ArtifactPostingProfile,
+                insert_artifact_posting_profile,
+                get_artifact_posting_profile,
+                get_artifact_posting_profile_mut,
+                remove_artifact_posting_profile,
+                has_artifact_posting_profile,
+                iter_artifact_posting_profiles,
+                insert_component_artifact_posting_profile,
+                get_component_artifact_posting_profile,
+                get_component_artifact_posting_profile_mut,
+                remove_component_artifact_posting_profile,
+                has_component_artifact_posting_profile,
+                entities_with_artifact_posting_profile,
+                query_artifact_posting_profile,
+                count_with_artifact_posting_profile,
+                "ArtifactPostingProfile",
+                |kind| kind == EntityKind::Agent,
+                ArtifactPostingProfile,
+                crate::ArtifactPostingProfile,
+                set_component_artifact_posting_profile,
+                clear_component_artifact_posting_profile,
+                txn_simple_set
+            }
+            {
                 agents,
                 AgentData,
                 insert_agent_data,
