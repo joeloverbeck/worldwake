@@ -334,6 +334,26 @@ fn seed_merchant_vara_cli_agent(
     place: EntityId,
     needs: HomeostaticNeeds,
 ) -> EntityId {
+    let harvest_water = h
+        .recipes
+        .recipe_by_name("Harvest Water")
+        .expect("pathology harness should include Harvest Water")
+        .0;
+    let harvest_grain = h
+        .recipes
+        .recipe_by_name("Harvest Grain")
+        .expect("pathology harness should include Harvest Grain")
+        .0;
+    let harvest_apples = h
+        .recipes
+        .recipe_by_name("Harvest Apples")
+        .expect("pathology harness should include Harvest Apples")
+        .0;
+    let bake_bread = h
+        .recipes
+        .recipe_by_name("Bake Bread")
+        .expect("pathology harness should include Bake Bread")
+        .0;
     let agent = seed_agent_with_recipes(
         &mut h.world,
         &mut h.event_log,
@@ -342,7 +362,7 @@ fn seed_merchant_vara_cli_agent(
         needs,
         MetabolismProfile::default(),
         merchant_vara_utility_profile(),
-        KnownRecipes::default(),
+        KnownRecipes::with([harvest_water, harvest_grain, harvest_apples, bake_bread]),
     );
     configure_merchant_vara_cli_components(h, agent);
     agent
@@ -485,6 +505,11 @@ fn seed_guard_theron_cli_agent(
     place: EntityId,
     needs: HomeostaticNeeds,
 ) -> EntityId {
+    let harvest_water = h
+        .recipes
+        .recipe_by_name("Harvest Water")
+        .expect("pathology harness should include Harvest Water")
+        .0;
     let agent = seed_agent_with_recipes(
         &mut h.world,
         &mut h.event_log,
@@ -493,7 +518,7 @@ fn seed_guard_theron_cli_agent(
         needs,
         MetabolismProfile::default(),
         UtilityProfile::default(),
-        KnownRecipes::default(),
+        KnownRecipes::with([harvest_water]),
     );
     configure_guard_theron_cli_components(h, agent);
     agent
@@ -504,6 +529,16 @@ fn seed_kael_cli_agent(
     place: EntityId,
     needs: HomeostaticNeeds,
 ) -> EntityId {
+    let harvest_water = h
+        .recipes
+        .recipe_by_name("Harvest Water")
+        .expect("pathology harness should include Harvest Water")
+        .0;
+    let harvest_grain = h
+        .recipes
+        .recipe_by_name("Harvest Grain")
+        .expect("pathology harness should include Harvest Grain")
+        .0;
     let agent = seed_agent_with_recipes(
         &mut h.world,
         &mut h.event_log,
@@ -528,7 +563,7 @@ fn seed_kael_cli_agent(
             courage: pm(500),
             care_weight: pm(500),
         },
-        KnownRecipes::default(),
+        KnownRecipes::with([harvest_water, harvest_grain]),
     );
 
     set_agent_perception_profile(
@@ -897,6 +932,7 @@ fn seed_agent_at(
     name: &str,
     place: EntityId,
     needs: HomeostaticNeeds,
+    recipes: KnownRecipes,
 ) -> EntityId {
     seed_agent_with_recipes(
         &mut h.world,
@@ -906,8 +942,36 @@ fn seed_agent_at(
         needs,
         MetabolismProfile::default(),
         worldwake_core::UtilityProfile::default(),
-        KnownRecipes::default(),
+        recipes,
     )
+}
+
+fn merchant_vara_recipes(h: &GoldenHarness) -> KnownRecipes {
+    KnownRecipes::with([
+        h.recipes.recipe_by_name("Harvest Water").expect("Harvest Water").0,
+        h.recipes.recipe_by_name("Harvest Grain").expect("Harvest Grain").0,
+        h.recipes.recipe_by_name("Harvest Apples").expect("Harvest Apples").0,
+        h.recipes.recipe_by_name("Bake Bread").expect("Bake Bread").0,
+    ])
+}
+
+fn guard_theron_recipes(h: &GoldenHarness) -> KnownRecipes {
+    KnownRecipes::with([
+        h.recipes.recipe_by_name("Harvest Water").expect("Harvest Water").0,
+    ])
+}
+
+fn kael_recipes(h: &GoldenHarness) -> KnownRecipes {
+    KnownRecipes::with([
+        h.recipes.recipe_by_name("Harvest Water").expect("Harvest Water").0,
+        h.recipes.recipe_by_name("Harvest Grain").expect("Harvest Grain").0,
+    ])
+}
+
+fn forager_lina_recipes(h: &GoldenHarness) -> KnownRecipes {
+    KnownRecipes::with([
+        h.recipes.recipe_by_name("Harvest Apples").expect("Harvest Apples").0,
+    ])
 }
 
 fn set_wounds(h: &mut GoldenHarness, agent: EntityId, severity: u16) {
@@ -1644,11 +1708,13 @@ fn setup_merchant_vara_treat_wounds_snapshot() -> (GoldenHarness, EntityId) {
     let tick = Tick(456);
     let mut h = build_pathology_harness(worldwake_core::Seed([145; 32]));
 
+    let vara_recipes = merchant_vara_recipes(&h);
     let merchant_vara = seed_agent_at(
         &mut h,
         "Merchant Vara",
         DUSTY_TRAIL,
         HomeostaticNeeds::new(pm(214), pm(1000), pm(294), pm(120), pm(557)),
+        vara_recipes,
     );
     set_agent_cognitive_profile(
         &mut h.world,
@@ -1672,17 +1738,21 @@ fn setup_merchant_vara_treat_wounds_snapshot() -> (GoldenHarness, EntityId) {
     );
     set_wounds(&mut h, merchant_vara, 500);
 
+    let theron_recipes = guard_theron_recipes(&h);
     let _guard_theron = seed_agent_at(
         &mut h,
         "Guard Theron",
         DUSTY_TRAIL,
         HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
+        theron_recipes,
     );
+    let kael_r = kael_recipes(&h);
     let kael = seed_agent_at(
         &mut h,
         "Kael",
         THORNWALL_VILLAGE,
         HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
+        kael_r,
     );
 
     let _bow = place_ground_commodity(&mut h, DUSTY_TRAIL, CommodityKind::Bow, Quantity(1));
@@ -1778,17 +1848,21 @@ fn setup_merchant_vara_apple_at_dusty_trail_snapshot() -> (GoldenHarness, Entity
         DUSTY_TRAIL,
         HomeostaticNeeds::new(pm(192), pm(458), pm(272), pm(76), pm(186)),
     );
+    let kael_r = kael_recipes(&h);
     let kael = seed_agent_at(
         &mut h,
         "Kael",
         DUSTY_TRAIL,
         HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
+        kael_r,
     );
+    let theron_recipes = guard_theron_recipes(&h);
     let guard_theron = seed_agent_at(
         &mut h,
         "Guard Theron",
         THORNWALL_VILLAGE,
         HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
+        theron_recipes,
     );
 
     let grain: Vec<_> = (0..9)
@@ -1838,11 +1912,13 @@ fn setup_merchant_vara_apple_at_dusty_trail_snapshot() -> (GoldenHarness, Entity
         },
         ProductionOutputOwner::Actor,
     );
+    let lina_recipes = forager_lina_recipes(&h);
     let _forager_lina = seed_agent_at(
         &mut h,
         "Forager Lina",
         ELDERGROVE_FOREST,
         HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
+        lina_recipes,
     );
     let _chopping_block = place_workstation(
         &mut h.world,
@@ -1940,23 +2016,29 @@ fn setup_kael_water_at_thornwall_late_game_snapshot() -> (GoldenHarness, EntityI
     let tick = Tick(411);
     let mut h = build_pathology_harness(worldwake_core::Seed([144; 32]));
 
+    let kael_r = kael_recipes(&h);
     let kael = seed_agent_at(
         &mut h,
         "Kael",
         THORNWALL_VILLAGE,
         HomeostaticNeeds::new(pm(42), pm(411), pm(284), pm(156), pm(512)),
+        kael_r,
     );
+    let vara_recipes = merchant_vara_recipes(&h);
     let merchant_vara = seed_agent_at(
         &mut h,
         "Merchant Vara",
         DUSTY_TRAIL,
         HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
+        vara_recipes,
     );
+    let theron_recipes = guard_theron_recipes(&h);
     let guard_theron = seed_agent_at(
         &mut h,
         "Guard Theron",
         DUSTY_TRAIL,
         HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
+        theron_recipes,
     );
 
     let _bow = place_ground_commodity(&mut h, DUSTY_TRAIL, CommodityKind::Bow, Quantity(1));
@@ -2065,25 +2147,31 @@ fn setup_kael_treats_vara_snapshot() -> (GoldenHarness, EntityId, EntityId) {
     let tick = Tick(471);
     let mut h = build_pathology_harness(worldwake_core::Seed([146; 32]));
 
+    let kael_r = kael_recipes(&h);
     let kael = seed_agent_at(
         &mut h,
         "Kael",
         DUSTY_TRAIL,
         HomeostaticNeeds::new(pm(162), pm(591), pm(304), pm(8), pm(572)),
+        kael_r,
     );
+    let vara_recipes = merchant_vara_recipes(&h);
     let merchant_vara = seed_agent_at(
         &mut h,
         "Merchant Vara",
         DUSTY_TRAIL,
         HomeostaticNeeds::new(pm(214), pm(1000), pm(294), pm(120), pm(557)),
+        vara_recipes,
     );
     set_wounds(&mut h, merchant_vara, 500);
 
+    let theron_recipes = guard_theron_recipes(&h);
     let _guard_theron = seed_agent_at(
         &mut h,
         "Guard Theron",
         DUSTY_TRAIL,
         HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(100)),
+        theron_recipes,
     );
 
     give_commodity(
@@ -2182,7 +2270,7 @@ fn setup_kael_treats_vara_snapshot() -> (GoldenHarness, EntityId, EntityId) {
 }
 
 #[test]
-fn merchant_vara_water_at_thornwall_residual_budget_exhaustion_contract() {
+fn merchant_vara_water_at_thornwall_finds_harvest_plan() {
     let tick = Tick(11);
     let (h, merchant_vara) = setup_merchant_vara_water_at_thornwall_snapshot();
     let result = search_acquire_commodity(
@@ -2194,15 +2282,14 @@ fn merchant_vara_water_at_thornwall_residual_budget_exhaustion_contract() {
         merchant_vara_execution_budget(),
     );
 
-    assert_exact_exhaustion(
-        result,
-        ExpectedExhaustion::Budget(300),
-        "Merchant Vara AcquireCommodity(Water) snapshot should still budget-exhaust after commodity pruning",
+    assert!(
+        matches!(result, PlanSearchResult::Found(_)),
+        "Merchant Vara AcquireCommodity(Water) should find Harvest Water plan with recipe knowledge",
     );
 }
 
 #[test]
-fn guard_theron_water_at_thornwall_residual_budget_exhaustion_contract() {
+fn guard_theron_water_at_thornwall_finds_harvest_plan() {
     let tick = Tick(25);
     let (h, guard_theron) = setup_guard_theron_water_at_thornwall_snapshot();
     let result = search_acquire_commodity(
@@ -2214,10 +2301,9 @@ fn guard_theron_water_at_thornwall_residual_budget_exhaustion_contract() {
         ExecutionBudget::default(),
     );
 
-    assert_exact_exhaustion(
-        result,
-        ExpectedExhaustion::Budget(224),
-        "Guard Theron AcquireCommodity(Water) snapshot should still budget-exhaust after commodity pruning",
+    assert!(
+        matches!(result, PlanSearchResult::Found(_)),
+        "Guard Theron AcquireCommodity(Water) should find Harvest Water plan with recipe knowledge",
     );
 }
 
@@ -2242,7 +2328,7 @@ fn merchant_vara_apple_at_dusty_trail_residual_budget_exhaustion_contract() {
 }
 
 #[test]
-fn kael_water_at_thornwall_late_game_residual_budget_exhaustion_contract() {
+fn kael_water_at_thornwall_late_game_finds_harvest_plan() {
     let tick = Tick(411);
     let (h, kael) = setup_kael_water_at_thornwall_late_game_snapshot();
     let result = search_acquire_commodity(
@@ -2254,10 +2340,9 @@ fn kael_water_at_thornwall_late_game_residual_budget_exhaustion_contract() {
         ExecutionBudget::default(),
     );
 
-    assert_exact_exhaustion(
-        result,
-        ExpectedExhaustion::Budget(224),
-        "Kael AcquireCommodity(Water) late-game snapshot should still budget-exhaust after commodity pruning",
+    assert!(
+        matches!(result, PlanSearchResult::Found(_)),
+        "Kael AcquireCommodity(Water) late-game should find Harvest Water plan with recipe knowledge",
     );
 }
 

@@ -316,6 +316,7 @@ pub(crate) fn search_plan_with_trace_metadata(
     )));
     let mut landmark_set = LandmarkSet::empty();
     let mut expansions = 0u16;
+    let effective_budget = cognitive.max_node_expansions;
     let mut best_barrier: Option<PlannedPlan> = None;
 
     while let Some(node) = frontier.pop() {
@@ -340,7 +341,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         if node.steps.len() >= usize::from(cognitive.max_plan_depth) {
             continue;
         }
-        if expansions >= cognitive.max_node_expansions {
+        if expansions >= effective_budget {
             if let Some(barrier_plan) = best_barrier {
                 return PlanSearchResult::Found(Box::new(barrier_plan));
             }
@@ -409,6 +410,12 @@ pub(crate) fn search_plan_with_trace_metadata(
             semantics_table,
             active_tactical_goal,
         );
+        // NOTE: Futile root expansion detection was considered here but
+        // deferred. When only Travel candidates survive at root, the planner
+        // may still find affordances at destination locations (e.g., pick_up
+        // at a remote pantry). Synthesis-level omissions alone cannot
+        // distinguish "will never work" from "works after travel." The
+        // recipe knowledge fix in Task 1 is the primary mitigation.
         let combined_places = if expansion_summaries.is_some() {
             combined_relevant_places_with_guidance_for_tactical(
                 goal,
