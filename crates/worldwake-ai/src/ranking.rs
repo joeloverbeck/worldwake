@@ -19,11 +19,12 @@ use std::{
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
     CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId,
-    HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
-    NoticeTopic, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Quantity,
-    RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
-    belief_confidence, failure_ratio_permille,
+    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, NoticeTopic, ObligationExecutionTracker,
+    ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
+    Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile,
+    ViolationKind, belief_confidence, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -346,6 +347,8 @@ struct RankingContext<'a> {
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
     exploration_profile: Option<ExplorationProfile>,
+    satiation_profile: ObligationSatiationProfile,
+    obligation_tracker: ObligationExecutionTracker,
     has_clotted_wounds: bool,
     danger_assessment: crate::DangerAssessment,
     danger_pressure: Permille,
@@ -363,6 +366,14 @@ impl<'a> RankingContext<'a> {
         decision_context: DecisionContext,
     ) -> Self {
         let danger_assessment = assess_danger(view, agent);
+        let satiation_profile = view.obligation_satiation_profile(agent);
+        let mut obligation_tracker = view.obligation_execution_tracker(agent);
+        let window_start = current_tick
+            .0
+            .saturating_sub(u64::from(satiation_profile.window_ticks));
+        obligation_tracker
+            .completion_ticks
+            .retain(|tick| tick.0 >= window_start);
         Self {
             view,
             agent,
@@ -371,6 +382,8 @@ impl<'a> RankingContext<'a> {
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
             exploration_profile: view.exploration_profile(agent),
+            satiation_profile,
+            obligation_tracker,
             has_clotted_wounds: has_clotted_wounds(view, agent),
             danger_pressure: danger_assessment.pressure,
             danger_assessment,
@@ -945,10 +958,11 @@ fn post_bounty_motive(
         return 0;
     }
 
-    score_product(
+    let raw_score = score_product(
         context.utility.bounty_posting_weight,
         reward_signal_from_quantity(terms.reward_quantity),
-    )
+    );
+    apply_obligation_satiation(context, raw_score)
 }
 
 fn post_notice_motive(
@@ -975,7 +989,23 @@ fn post_notice_motive(
     if threat_signal < thresholds.danger.high() {
         return 0;
     }
-    score_product(context.utility.notice_posting_weight, threat_signal)
+    let raw_score = score_product(context.utility.notice_posting_weight, threat_signal);
+    apply_obligation_satiation(context, raw_score)
+}
+
+fn apply_obligation_satiation(context: &RankingContext<'_>, raw_score: u32) -> u32 {
+    let recent_count = context.obligation_tracker.completion_ticks.len() as u32;
+    if recent_count <= context.satiation_profile.satiation_threshold {
+        return raw_score;
+    }
+
+    let over_threshold = recent_count - context.satiation_profile.satiation_threshold;
+    let decay_total =
+        over_threshold.saturating_mul(u32::from(context.satiation_profile.decay_per_execution.value()));
+    let multiplier = 1000u32
+        .saturating_sub(decay_total)
+        .max(u32::from(context.satiation_profile.satiation_floor.value()));
+    raw_score.saturating_mul(multiplier) / 1000
 }
 
 fn belief_pressure_from_state(
@@ -1685,8 +1715,8 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        RankingContext, apply_competition_discount, apply_source_reliability_discount,
-        build_decision_context, rank_candidates,
+        RankingContext, apply_competition_discount, apply_obligation_satiation,
+        apply_source_reliability_discount, build_decision_context, rank_candidates,
     };
     use crate::{
         GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
@@ -1706,11 +1736,12 @@ mod tests {
         ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, OpportunityAnchor,
-        PatrolProfile, PatrolRoute, PerceptionSource, Permille, PreferenceProfile,
-        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation, ReliabilityRecord,
-        ResourceSource, RewardSource, RightKind, RouteExperience, SourceKey, SourceReliability,
-        TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeDispositionProfile,
+        MerchandiseProfile, MetabolismProfile, NoticeTopic, ObligationExecutionTracker,
+        ObligationSatiationProfile, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
+        PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind,
+        Quantity, RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource,
+        RightKind, RouteExperience, SourceKey, SourceReliability, TellTopic,
+        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeDispositionProfile,
         UniqueItemKind, UtilityProfile, ViolationId, ViolationKind, WorkstationTag, Wound,
         WoundCause, WoundId, belief_confidence,
     };
@@ -1729,6 +1760,8 @@ mod tests {
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         exploration_profiles: BTreeMap<EntityId, worldwake_core::ExplorationProfile>,
+        obligation_satiation_profiles: BTreeMap<EntityId, ObligationSatiationProfile>,
+        obligation_execution_trackers: BTreeMap<EntityId, ObligationExecutionTracker>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         courage: BTreeMap<EntityId, Permille>,
@@ -1828,6 +1861,18 @@ mod tests {
             agent: EntityId,
         ) -> Option<worldwake_core::ExplorationProfile> {
             self.exploration_profiles.get(&agent).copied()
+        }
+        fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
+            self.obligation_satiation_profiles
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+        }
+        fn obligation_execution_tracker(&self, agent: EntityId) -> ObligationExecutionTracker {
+            self.obligation_execution_trackers
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
         }
         fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
             self.preference_profiles.get(&agent).copied()
@@ -2398,6 +2443,20 @@ mod tests {
         Tick(10)
     }
 
+    fn obligation_profile(
+        threshold: u32,
+        window_ticks: u32,
+        decay_per_execution: u16,
+        satiation_floor: u16,
+    ) -> ObligationSatiationProfile {
+        ObligationSatiationProfile {
+            satiation_threshold: threshold,
+            window_ticks,
+            decay_per_execution: pm(decay_per_execution),
+            satiation_floor: pm(satiation_floor),
+        }
+    }
+
     fn base_view(agent: EntityId) -> TestBeliefView {
         let mut view = TestBeliefView::default();
         view.alive.insert(agent);
@@ -2677,6 +2736,101 @@ mod tests {
     }
 
     #[test]
+    fn post_bounty_goal_applies_obligation_satiation_decay() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let seat = entity(99);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: seat,
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(6),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: entity(9),
+            accused,
+            violation_id: ViolationId(12),
+            theft,
+            effective_tick: Tick(3),
+        };
+        let mut view = base_view(agent);
+        view.alive.insert(accused);
+        view.office_data.insert(
+            office,
+            OfficeData {
+                title: "Magistrate".to_string(),
+                seat,
+                jurisdiction: BTreeSet::from([seat]),
+                succession_law: worldwake_core::SuccessionLaw::Support,
+                eligibility_rules: Vec::new(),
+                succession_period_ticks: 10,
+                vacancy_since: None,
+            },
+        );
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.institutional_claims.insert(
+            agent,
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record: entity(4),
+                    entry_id: worldwake_core::RecordEntryId(21),
+                },
+                learned_tick: Tick(4),
+                learned_at: Some(seat),
+            }],
+        );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }],
+        );
+        view.obligation_satiation_profiles
+            .insert(agent, obligation_profile(2, 48, 200, 50));
+        view.obligation_execution_trackers.insert(
+            agent,
+            ObligationExecutionTracker {
+                completion_ticks: vec![Tick(7), Tick(8), Tick(9)],
+            },
+        );
+
+        let mut utility = utility();
+        utility.bounty_posting_weight = pm(700);
+
+        let outcome = rank(
+            &[goal(GoalKind::PostBounty {
+                posting: ArtifactPostingContext {
+                    posting_place: seat,
+                    issuing_authority: Some(office),
+                    expires_at: None,
+                    jurisdiction: Some(seat),
+                },
+                terms: BountyTerms {
+                    target: BountyTarget::EliminateEntity { target: accused },
+                    proof_requirement: ProofRequirement::PhysicalEvidence,
+                    reward_commodity: CommodityKind::Coin,
+                    reward_quantity: Quantity(6),
+                    reward_source: RewardSource::InstitutionalTreasury {
+                        treasury_entity: office,
+                    },
+                    claim_place: seat,
+                },
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+        );
+
+        assert_eq!(outcome.ranked.len(), 1);
+        assert_eq!(outcome.ranked[0].motive_score, 3_360);
+    }
+
+    #[test]
     fn post_bounty_goal_is_zero_motive_when_bounty_weight_is_zero() {
         let agent = entity(1);
         let accused = entity(2);
@@ -2803,6 +2957,207 @@ mod tests {
         assert_eq!(outcome.ranked.len(), 1);
         assert_eq!(outcome.ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(outcome.ranked[0].motive_score, expected_motive);
+    }
+
+    #[test]
+    fn post_notice_goal_applies_obligation_satiation_decay() {
+        let agent = entity(1);
+        let hostile = entity(2);
+        let place = entity(99);
+        let mut view = base_view(agent);
+        let thresholds = DriveThresholds::default();
+        view.alive.insert(hostile);
+        view.entity_kinds.insert(hostile, EntityKind::Agent);
+        view.effective_places.insert(hostile, place);
+        view.place_entities.insert(place, vec![agent, hostile]);
+        view.hostiles.insert(agent, vec![hostile]);
+        view.attackers.insert(agent, vec![hostile]);
+        view.thresholds.insert(agent, thresholds);
+        view.obligation_satiation_profiles
+            .insert(agent, obligation_profile(1, 48, 300, 100));
+        view.obligation_execution_trackers.insert(
+            agent,
+            ObligationExecutionTracker {
+                completion_ticks: vec![Tick(7), Tick(8), Tick(9)],
+            },
+        );
+
+        let mut utility = utility();
+        utility.notice_posting_weight = pm(700);
+
+        let outcome = rank(
+            &[goal_at_place(
+                GoalKind::PostNotice {
+                    posting: ArtifactPostingContext {
+                        posting_place: place,
+                        issuing_authority: None,
+                        expires_at: None,
+                        jurisdiction: Some(place),
+                    },
+                    topic: NoticeTopic::ThreatWarning { place },
+                },
+                place,
+            )],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+        );
+
+        let raw_score = super::score_product(
+            utility.notice_posting_weight,
+            super::derive_danger_pressure(&view, agent),
+        );
+        assert_eq!(outcome.ranked.len(), 1);
+        assert_eq!(outcome.ranked[0].motive_score, raw_score * 400 / 1000);
+    }
+
+    #[test]
+    fn apply_obligation_satiation_returns_raw_score_without_recent_executions() {
+        let agent = entity(1);
+        let view = base_view(agent);
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(apply_obligation_satiation(&context, 808_200), 808_200);
+    }
+
+    #[test]
+    fn apply_obligation_satiation_returns_raw_score_at_threshold() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.obligation_satiation_profiles
+            .insert(agent, obligation_profile(2, 48, 200, 50));
+        view.obligation_execution_trackers.insert(
+            agent,
+            ObligationExecutionTracker {
+                completion_ticks: vec![Tick(8), Tick(9)],
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(apply_obligation_satiation(&context, 808_200), 808_200);
+    }
+
+    #[test]
+    fn apply_obligation_satiation_decays_above_threshold() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.obligation_satiation_profiles
+            .insert(agent, obligation_profile(2, 48, 200, 50));
+        view.obligation_execution_trackers.insert(
+            agent,
+            ObligationExecutionTracker {
+                completion_ticks: vec![Tick(7), Tick(8), Tick(9)],
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(apply_obligation_satiation(&context, 808_200), 646_560);
+    }
+
+    #[test]
+    fn apply_obligation_satiation_respects_floor() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.obligation_satiation_profiles
+            .insert(agent, obligation_profile(1, 48, 300, 100));
+        view.obligation_execution_trackers.insert(
+            agent,
+            ObligationExecutionTracker {
+                completion_ticks: vec![Tick(5), Tick(6), Tick(7), Tick(8), Tick(9)],
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(apply_obligation_satiation(&context, 1_000), 100);
+    }
+
+    #[test]
+    fn apply_obligation_satiation_default_profile_matches_spec_arithmetic() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.obligation_satiation_profiles
+            .insert(agent, ObligationSatiationProfile::default());
+        view.obligation_execution_trackers.insert(
+            agent,
+            ObligationExecutionTracker {
+                completion_ticks: vec![
+                    Tick(4),
+                    Tick(5),
+                    Tick(6),
+                    Tick(7),
+                    Tick(8),
+                    Tick(9),
+                    Tick(10),
+                ],
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(apply_obligation_satiation(&context, 808_200), 40_410);
+    }
+
+    #[test]
+    fn ranking_context_prunes_stale_obligation_execution_ticks() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.obligation_satiation_profiles
+            .insert(agent, obligation_profile(2, 3, 200, 50));
+        view.obligation_execution_trackers.insert(
+            agent,
+            ObligationExecutionTracker {
+                completion_ticks: vec![Tick(6), Tick(7), Tick(8), Tick(10)],
+            },
+        );
+        let utility = utility();
+
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(
+            context.obligation_tracker.completion_ticks,
+            vec![Tick(7), Tick(8), Tick(10)]
+        );
     }
 
     #[test]

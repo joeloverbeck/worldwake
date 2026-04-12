@@ -1,10 +1,10 @@
 # S96OBLSAT-005: Satiation-dampened ranking
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — modifies goal ranking logic (RankingContext, post_notice_motive, post_bounty_motive)
-**Deps**: archive/tickets/S96OBLSAT-001.md, archive/tickets/S96OBLSAT-002.md
+**Deps**: archive/tickets/S96OBLSAT-001.md, archive/tickets/S96OBLSAT-002.md, archive/tickets/S96OBLSAT-004.md
 
 ## Problem
 
@@ -16,8 +16,9 @@ Without satiation dampening in goal ranking, obligation-class goals (PostNotice,
 2. `post_notice_motive` at line 954 returns `score_product(context.utility.notice_posting_weight, threat_signal)` at line 978. No existing satiation logic.
 3. `post_bounty_motive` at line 899 returns `score_product(context.utility.bounty_posting_weight, reward_signal)` at line 948-951. No existing satiation logic.
 4. `score_product` at line 1213: `u32::from(weight.value()) * u32::from(pressure.value())`. Returns u32.
-5. Existing focused test in `ranking.rs` `#[cfg(test)]` block at line 1685: `test_same_feasibility_falls_through_to_motive` at line 6106.
-6. Shared boundary: `RankingContext` is private to `ranking.rs` — changes are contained within a single module.
+5. The existing focused obligation ranking proofs already live in `crates/worldwake-ai/src/ranking.rs`: `post_bounty_goal_has_non_zero_motive_for_live_accusation_case` and `post_notice_goal_has_non_zero_motive_for_live_high_danger_case`. They are the right anchors for verifying that both motive paths apply the new dampener.
+6. The local `ranking.rs` `TestBeliefView` still relies on default trait methods for obligation state, so this ticket also owns the test-double widening needed to inject explicit `ObligationSatiationProfile` / `ObligationExecutionTracker` values into focused unit tests.
+7. Shared boundary: `RankingContext` is private to `ranking.rs` — changes are contained within a single module.
 
 ## Architecture Check
 
@@ -30,7 +31,7 @@ Without satiation dampening in goal ranking, obligation-class goals (PostNotice,
 1. Satiation decay below threshold → no effect → focused unit test
 2. Satiation decay above threshold → multiplier applied → focused unit test
 3. Floor prevents zero score → focused unit test
-4. `post_notice_motive` and `post_bounty_motive` both apply satiation → focused unit tests
+4. `post_notice_motive` and `post_bounty_motive` both apply satiation → focused ranking tests in `ranking.rs`
 5. Single-module ticket; cross-system integration verified in golden test (ticket 006).
 
 ## What to Change
@@ -106,9 +107,36 @@ Same pattern — wrap the final `score_product(...)` return with `apply_obligati
 ### New/Modified Tests
 
 1. `crates/worldwake-ai/src/ranking.rs` (inline `#[cfg(test)]`) — unit tests for `apply_obligation_satiation` covering: no decay, at threshold, above threshold, floor enforcement, default profile arithmetic
+2. `crates/worldwake-ai/src/ranking.rs` — extend the existing focused `PostNotice` / `PostBounty` ranking tests to prove the dampener is applied at both live motive call sites
 
 ### Commands
 
-1. `cargo test -p worldwake-ai -- apply_obligation_satiation`
-2. `cargo test -p worldwake-ai`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test -p worldwake-ai --lib ranking::tests::apply_obligation_satiation_default_profile_matches_spec_arithmetic -- --exact`
+2. `cargo test -p worldwake-ai --lib ranking::tests::ranking_context_prunes_stale_obligation_execution_ticks -- --exact`
+3. `cargo test -p worldwake-ai --lib ranking::tests::post_notice_goal_applies_obligation_satiation_decay -- --exact`
+4. `cargo test -p worldwake-ai --lib ranking::tests::post_bounty_goal_applies_obligation_satiation_decay -- --exact`
+5. `cargo test -p worldwake-ai`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completion date: 2026-04-12
+
+Implemented the ranking-side satiation boundary in `crates/worldwake-ai/src/ranking.rs`. `RankingContext` now carries owned `ObligationSatiationProfile` / `ObligationExecutionTracker` values loaded from `GoalBeliefView`, prunes stale completion ticks during construction, and both `post_notice_motive` and `post_bounty_motive` now route their raw scores through a new pure `apply_obligation_satiation` helper.
+
+The local `ranking.rs` test harness was widened to carry explicit obligation profile and tracker values so the unit tests can prove the live dampening behavior rather than relying on default trait fallbacks. Focused tests now cover no-decay, threshold, above-threshold decay, floor enforcement, default-profile arithmetic, stale-entry pruning, and both live motive call sites.
+
+## Deviations
+
+1. The draft command examples were too loose for this multi-test-target crate and initially compiled while running zero tests. The landed verification uses module-qualified `--lib ... -- --exact` selectors discovered via `cargo test -p worldwake-ai --lib -- --list`.
+2. The ticket draft named existing focused tests only as proof anchors, but the real implementation also needed local `TestBeliefView` widening to inject obligation state into `ranking.rs` unit tests. That harness fallout stayed within this ticket because the ranking boundary is single-module and private.
+
+## Verification Result
+
+1. `cargo test -p worldwake-ai --lib ranking::tests::apply_obligation_satiation_default_profile_matches_spec_arithmetic -- --exact`
+2. `cargo test -p worldwake-ai --lib ranking::tests::ranking_context_prunes_stale_obligation_execution_ticks -- --exact`
+3. `cargo test -p worldwake-ai --lib ranking::tests::post_notice_goal_applies_obligation_satiation_decay -- --exact`
+4. `cargo test -p worldwake-ai --lib ranking::tests::post_bounty_goal_applies_obligation_satiation_decay -- --exact`
+5. `cargo test -p worldwake-ai`
+6. `cargo build --workspace`
+7. `cargo clippy --workspace --all-targets -- -D warnings`
