@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — modifies goal ranking logic (RankingContext, post_notice_motive, post_bounty_motive)
-**Deps**: archive/tickets/S96OBLSAT-001.md, S96OBLSAT-002
+**Deps**: archive/tickets/S96OBLSAT-001.md, archive/tickets/S96OBLSAT-002.md
 
 ## Problem
 

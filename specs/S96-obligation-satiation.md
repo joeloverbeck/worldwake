@@ -164,7 +164,7 @@ File: `crates/worldwake-ai/tests/golden_planner_pathology.rs`
 
 **Why not a duplicate**: `golden_integration.rs` tests PostNotice selection and commitment but does not test the interaction with competing survival needs under satiation. `golden_ai_decisions.rs::golden_fallback_to_addressable_need_when_top_need_unsatisfiable` tests fallback when top need is unsatisfiable, but not when a non-survival goal outranks survival.
 
-### D7: `GoalBeliefView` / `BeliefView` accessor methods
+### D7: `GoalBeliefView` / `ProfileBeliefView` accessor methods
 
 Add accessor methods to the belief view traits in `crates/worldwake-sim/src/belief_view.rs`:
 
@@ -181,7 +181,7 @@ fn obligation_execution_tracker(&self, agent: EntityId) -> ObligationExecutionTr
 }
 ```
 
-Add corresponding methods to `BeliefView` trait and implement on `RuntimeBeliefView` to read from the world store, following the existing pattern used by `homeostatic_needs`, `drive_thresholds`, and `exploration_profile`.
+Add corresponding default-returning methods to `ProfileBeliefView` and forward them through the blanket `GoalBeliefView` impl. The canonical runtime read then lives on `PerAgentBeliefView`, which overrides the accessors to read from the world store while planner/test-double surfaces inherit defaults until a later ticket needs planner-visible satiation state.
 
 ### D8: Scenario contract — `AgentDef` and `spawn_agent()` integration
 

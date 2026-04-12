@@ -13,11 +13,12 @@ use worldwake_core::{
     ExpectationStore, ExplorationProfile, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
-    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
+    Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 pub trait GoalSpatialBeliefView {
@@ -198,6 +199,14 @@ pub trait GoalBeliefView {
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
         let _ = agent;
         None
+    }
+    fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
+        let _ = agent;
+        ObligationSatiationProfile::default()
+    }
+    fn obligation_execution_tracker(&self, agent: EntityId) -> ObligationExecutionTracker {
+        let _ = agent;
+        ObligationExecutionTracker::default()
     }
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         let _ = agent;
@@ -441,6 +450,14 @@ pub trait ProfileBeliefView {
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
         let _ = agent;
         None
+    }
+    fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
+        let _ = agent;
+        ObligationSatiationProfile::default()
+    }
+    fn obligation_execution_tracker(&self, agent: EntityId) -> ObligationExecutionTracker {
+        let _ = agent;
+        ObligationExecutionTracker::default()
     }
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         let _ = agent;
@@ -1232,6 +1249,20 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::ExplorationProfile> {
         ProfileBeliefView::exploration_profile(self, agent)
+    }
+
+    fn obligation_satiation_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> worldwake_core::ObligationSatiationProfile {
+        ProfileBeliefView::obligation_satiation_profile(self, agent)
+    }
+
+    fn obligation_execution_tracker(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> worldwake_core::ObligationExecutionTracker {
+        ProfileBeliefView::obligation_execution_tracker(self, agent)
     }
 
     fn cognitive_profile(

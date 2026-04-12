@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: archive/tickets/S96OBLSAT-001.md, S96OBLSAT-002, S96OBLSAT-003, S96OBLSAT-004, S96OBLSAT-005
+**Deps**: archive/tickets/S96OBLSAT-001.md, archive/tickets/S96OBLSAT-002.md, S96OBLSAT-003, S96OBLSAT-004, S96OBLSAT-005
 
 ## Problem
 
