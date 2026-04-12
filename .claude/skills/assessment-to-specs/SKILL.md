@@ -46,7 +46,7 @@ Read ALL of these files before any analysis:
 3. **`docs/spec-drafting-rules.md`** — spec format requirements. Skip if read earlier in this session and not modified since.
 4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. Also determine the highest completed phase number for use in Phase 3. If the file does not exist in `specs/`, check `archive/specs/IMPLEMENTATION-ORDER*.md` for the most recently archived version and read that instead.
 
-**Temporal context**: After reading the assessment, determine its generation date (look for timestamps, headers, or metadata). Cross-reference against completion dates of specs referenced in the assessment. If the assessment was generated *after* referenced completed specs, note this: "Assessment post-dates S{N} (completed YYYY-MM-DD) — observations reflect post-fix simulation state." Carry this forward to Step 3.2 — post-fix observations take precedence over "already addressed" claims.
+**Temporal context**: After reading the assessment, determine its generation date (look for timestamps, headers, or metadata). If the document lacks an explicit date, check filesystem modification time (`stat`), then `git log` for the file's last commit date. If neither is available, ask the user for the assessment's generation date before proceeding. Cross-reference against completion dates of specs referenced in the assessment. If the assessment was generated *after* referenced completed specs, note this: "Assessment post-dates S{N} (completed YYYY-MM-DD) — observations reflect post-fix simulation state." Carry this forward to Step 3.2 — post-fix observations take precedence over "already addressed" claims.
 
 **Re-processed assessment**: If `specs/IMPLEMENTATION-ORDER.md` references this same assessment file as the source for completed adjunct waves, the file may have been regenerated from a new simulation run. The generation date in the assessment header takes precedence — if it post-dates all completed specs derived from this file, treat the assessment as a fresh post-fix document. Do not default to "already processed." When in doubt, ask the user whether the assessment reflects a new simulation run.
 
@@ -252,7 +252,7 @@ After writing IMPLEMENTATION-ORDER.md:
 `specs/IMPLEMENTATION-ORDER.md` — <N> specs across <M> waves.
 
 Next steps:
-1. Archive the old `specs/IMPLEMENTATION-ORDER.md` if not already done
+1. Archive the old `specs/IMPLEMENTATION-ORDER.md` if a fresh file was written (skip if appended)
 2. Run `/reassess-spec <path>` on each new spec before ticket decomposition
 3. Begin implementation with Wave 1
 ```

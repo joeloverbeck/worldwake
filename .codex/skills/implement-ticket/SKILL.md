@@ -69,6 +69,7 @@ Before trusting the ticket as executable, cross-check its internal sections for 
 
 For cross-crate accessor, trait-surface, or API-surface tickets, verify the real downstream caller-facing boundary before coding, not just the immediate trait or type named in the ticket. If live callers consume the data through a broader wrapper, supertrait, blanket impl, or facade surface, correct the ticket to that owned boundary before editing code.
 When a ticket adds a field to a shared struct/component that is serde-deserialized from scenarios, saves, or other explicit inputs, verify omitted-field compatibility during reassessment instead of assuming the struct's `Default` impl is sufficient. Decide whether the ticket must own a field-level serde default, explicit input migration, or fixture/scenario updates before implementation.
+When the owning crate needs a focused omitted-field serde proof and does not already have a suitable text serializer in dev-dependencies, prefer adding a dev-only dependency in that crate over moving the proof to a broader integration crate.
 When a ticket adds internal diagnostic, trace, or metadata carriage, preserve existing public/external call signatures unless the ticket explicitly owns that API change; prefer an internal helper, wrapper, or traced variant for the new carrier rather than widening public fallout by default.
 When a ticket adds a field to an internal diagnostic, trace, or metadata struct, sweep the full carriage chain before accepting a single-file scope: producer, internal conversion/wrapper layers, renderers or report surfaces, manual struct literals, and all-target test/CLI consumers. Treat those as part of the owned reassessment boundary even when the original ticket only names the producer file.
 
@@ -123,6 +124,8 @@ When broadened verification later exposes fallout that crosses the original tick
 
 Load `references/scope-extraction.md`.
 
+For shared-type constructor fallout sweeps, treat raw grep hits as candidate sites only. Confirm whether each hit is a full manual literal, a partial `..Default::default()` literal, or just a type/impl definition before broadening the patch list, and use compiler fallout to validate the remaining real edit surface.
+
 ### 5. Implement with Worldwake discipline
 
 Load `references/implementation-discipline.md`.
@@ -136,6 +139,7 @@ Run the narrowest correct verification first, then broaden.
 Load `references/verification.md`.
 
 Before running a ticket-named focused command, verify that the selector actually proves the owned surface. If a substring filter would compile a target while running zero tests, or would run a broader unrelated surface than the ticket claims, correct the command immediately and update the ticket's command list during reassessment/closeout.
+For omitted-field serde proofs on complex structs, prefer a format-agnostic fixture when hand-written text would be brittle: serialize a full value, remove only the target field from the serialized text, then deserialize and assert the defaulted field value.
 
 When the ticket adds, renames, or materially re-scopes a `golden_*.rs` file or scenario block, run the repository's golden inventory/doc refresh as part of broadened verification and treat the generated docs as expected fallout to review and keep aligned with the landed scenario metadata.
 

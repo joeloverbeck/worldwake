@@ -165,6 +165,20 @@ S91 ✅ archived
 - **S93**: ✅ COMPLETED — [archive/specs/S93-budget-exhaustion-snapshot-goldens.md](/home/joeloverbeck/projects/worldwake/archive/specs/S93-budget-exhaustion-snapshot-goldens.md). Added the dedicated budget-exhaustion snapshot golden suite in `golden_budget_exhaustion_snapshots.rs`, including the four remaining `AcquireCommodity` observer reproductions, the two `TreatWounds` observer reproductions, and ignored phase-2 `Found` follow-ups. The early Thornwall water cases replay `cli-evaluation.ron` to the observer ticks under seed `7777`; the remaining cases use focused file-local reconstruction on the shared snapshot harness.
 - **S94**: ✅ COMPLETED — [archive/specs/S94-commodity-relevance-candidate-pruning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S94-commodity-relevance-candidate-pruning.md). Added `GoalKindPlannerExt::target_commodity()`, commodity-relevance pruning at the root candidate stage with active tactical commodity handling, `CommodityIrrelevant` trace recording, and the zero-ignored post-filter rewrite of `golden_budget_exhaustion_snapshots.rs`.
 
+### Adjunct Wave: GOAP Heuristic Upgrade
+
+Derived from external GOAP architecture assessment (`brainstorming/goap-upgrades.md`) validated against
+the actual codebase and `docs/FOUNDATIONS.md`. Of 7 proposals, 6 were rejected as already addressed
+(S74/S88/S89/S39/S91-S94) or YAGNI. S95 is the one accepted upgrade: FF-style relaxed-plan heuristic
+for better tactical search guidance.
+
+```text
+S95 (independent — planner-internal, no system deps)
+```
+
+**Wave**:
+- **S95**: Relaxed-Plan Heuristic (FF-Style) — RPG-based `h_ff` heuristic + helpful-action pruning for tactical A* search, per-agent `use_ff_heuristic` toggle, decision-trace enrichment
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
