@@ -194,11 +194,7 @@ fn merchant_vara_cognitive_profile() -> CognitiveProfile {
 }
 
 fn merchant_vara_execution_budget() -> ExecutionBudget {
-    ExecutionBudget {
-        beam_width: 10,
-        max_prerequisite_locations: 3,
-        preferred_operator_boost: 3,
-    }
+    ExecutionBudget::new(10, 3, 3)
 }
 
 fn guard_perception_profile() -> worldwake_core::PerceptionProfile {
@@ -948,30 +944,52 @@ fn seed_agent_at(
 
 fn merchant_vara_recipes(h: &GoldenHarness) -> KnownRecipes {
     KnownRecipes::with([
-        h.recipes.recipe_by_name("Harvest Water").expect("Harvest Water").0,
-        h.recipes.recipe_by_name("Harvest Grain").expect("Harvest Grain").0,
-        h.recipes.recipe_by_name("Harvest Apples").expect("Harvest Apples").0,
-        h.recipes.recipe_by_name("Bake Bread").expect("Bake Bread").0,
+        h.recipes
+            .recipe_by_name("Harvest Water")
+            .expect("Harvest Water")
+            .0,
+        h.recipes
+            .recipe_by_name("Harvest Grain")
+            .expect("Harvest Grain")
+            .0,
+        h.recipes
+            .recipe_by_name("Harvest Apples")
+            .expect("Harvest Apples")
+            .0,
+        h.recipes
+            .recipe_by_name("Bake Bread")
+            .expect("Bake Bread")
+            .0,
     ])
 }
 
 fn guard_theron_recipes(h: &GoldenHarness) -> KnownRecipes {
-    KnownRecipes::with([
-        h.recipes.recipe_by_name("Harvest Water").expect("Harvest Water").0,
-    ])
+    KnownRecipes::with([h
+        .recipes
+        .recipe_by_name("Harvest Water")
+        .expect("Harvest Water")
+        .0])
 }
 
 fn kael_recipes(h: &GoldenHarness) -> KnownRecipes {
     KnownRecipes::with([
-        h.recipes.recipe_by_name("Harvest Water").expect("Harvest Water").0,
-        h.recipes.recipe_by_name("Harvest Grain").expect("Harvest Grain").0,
+        h.recipes
+            .recipe_by_name("Harvest Water")
+            .expect("Harvest Water")
+            .0,
+        h.recipes
+            .recipe_by_name("Harvest Grain")
+            .expect("Harvest Grain")
+            .0,
     ])
 }
 
 fn forager_lina_recipes(h: &GoldenHarness) -> KnownRecipes {
-    KnownRecipes::with([
-        h.recipes.recipe_by_name("Harvest Apples").expect("Harvest Apples").0,
-    ])
+    KnownRecipes::with([h
+        .recipes
+        .recipe_by_name("Harvest Apples")
+        .expect("Harvest Apples")
+        .0])
 }
 
 fn set_wounds(h: &mut GoldenHarness, agent: EntityId, severity: u16) {
@@ -1368,16 +1386,16 @@ fn format_expansion_candidate_outcome(outcome: ExpansionCandidateOutcome) -> Str
     }
 }
 
-fn append_scenario_report(
-    report: &mut String,
-    h: &GoldenHarness,
-    scenario_name: &str,
-    actor: EntityId,
-    goal: &str,
-    tick: Tick,
-    result: &PlanSearchResult,
-    summaries: &[SearchExpansionSummary],
-) {
+fn append_scenario_report(report: &mut String, scenario: &ScenarioReport<'_>) {
+    let ScenarioReport {
+        h,
+        scenario_name,
+        actor,
+        goal,
+        tick,
+        result,
+        summaries,
+    } = scenario;
     let root = summaries
         .iter()
         .find(|summary| summary.depth == 0)
@@ -1400,7 +1418,7 @@ fn append_scenario_report(
 
     let _ = writeln!(report, "## {scenario_name}");
     let _ = writeln!(report);
-    let _ = writeln!(report, "- Actor: {}", entity_label(h, actor));
+    let _ = writeln!(report, "- Actor: {}", entity_label(h, *actor));
     let _ = writeln!(report, "- Tick: {}", tick.0);
     let _ = writeln!(report, "- Goal: `{goal}`");
     let _ = writeln!(
@@ -1432,8 +1450,7 @@ fn append_scenario_report(
         };
         let op_kind = candidate
             .op_kind
-            .map(|op| format!("{op:?}"))
-            .unwrap_or_else(|| "None".to_string());
+            .map_or_else(|| "None".to_string(), |op| format!("{op:?}"));
         let _ = writeln!(
             report,
             "{}. `{}` | op=`{}` | targets=`{}` | planner_only=`{}` | payload=`{}` | outcome=`{}`",
@@ -1500,8 +1517,7 @@ fn append_scenario_report(
             };
             let op_kind = candidate
                 .op_kind
-                .map(|op| format!("{op:?}"))
-                .unwrap_or_else(|| "None".to_string());
+                .map_or_else(|| "None".to_string(), |op| format!("{op:?}"));
             let _ = writeln!(
                 report,
                 "{}. `{}` | op=`{}` | targets=`{}` | planner_only=`{}` | payload=`{}` | outcome=`{}`",
@@ -1516,6 +1532,16 @@ fn append_scenario_report(
         }
         let _ = writeln!(report);
     }
+}
+
+struct ScenarioReport<'a> {
+    h: &'a GoldenHarness,
+    scenario_name: &'a str,
+    actor: EntityId,
+    goal: &'a str,
+    tick: Tick,
+    result: &'a PlanSearchResult,
+    summaries: &'a [SearchExpansionSummary],
 }
 
 #[test]
@@ -1547,13 +1573,15 @@ fn generate_residual_candidate_report() {
     );
     append_scenario_report(
         &mut report,
-        &h,
-        "merchant_vara_water_at_thornwall",
-        merchant_vara,
-        "AcquireCommodity(Water)",
-        tick,
-        &result,
-        &summaries,
+        &ScenarioReport {
+            h: &h,
+            scenario_name: "merchant_vara_water_at_thornwall",
+            actor: merchant_vara,
+            goal: "AcquireCommodity(Water)",
+            tick,
+            result: &result,
+            summaries: &summaries,
+        },
     );
 
     let tick = Tick(25);
@@ -1568,13 +1596,15 @@ fn generate_residual_candidate_report() {
     );
     append_scenario_report(
         &mut report,
-        &h,
-        "guard_theron_water_at_thornwall",
-        guard_theron,
-        "AcquireCommodity(Water)",
-        tick,
-        &result,
-        &summaries,
+        &ScenarioReport {
+            h: &h,
+            scenario_name: "guard_theron_water_at_thornwall",
+            actor: guard_theron,
+            goal: "AcquireCommodity(Water)",
+            tick,
+            result: &result,
+            summaries: &summaries,
+        },
     );
 
     let tick = Tick(85);
@@ -1589,13 +1619,15 @@ fn generate_residual_candidate_report() {
     );
     append_scenario_report(
         &mut report,
-        &h,
-        "merchant_vara_apple_at_dusty_trail",
-        merchant_vara,
-        "AcquireCommodity(Apple)",
-        tick,
-        &result,
-        &summaries,
+        &ScenarioReport {
+            h: &h,
+            scenario_name: "merchant_vara_apple_at_dusty_trail",
+            actor: merchant_vara,
+            goal: "AcquireCommodity(Apple)",
+            tick,
+            result: &result,
+            summaries: &summaries,
+        },
     );
 
     let tick = Tick(411);
@@ -1610,13 +1642,15 @@ fn generate_residual_candidate_report() {
     );
     append_scenario_report(
         &mut report,
-        &h,
-        "kael_water_at_thornwall_late_game",
-        kael,
-        "AcquireCommodity(Water)",
-        tick,
-        &result,
-        &summaries,
+        &ScenarioReport {
+            h: &h,
+            scenario_name: "kael_water_at_thornwall_late_game",
+            actor: kael,
+            goal: "AcquireCommodity(Water)",
+            tick,
+            result: &result,
+            summaries: &summaries,
+        },
     );
 
     let tick = Tick(456);
@@ -1631,13 +1665,15 @@ fn generate_residual_candidate_report() {
     );
     append_scenario_report(
         &mut report,
-        &h,
-        "merchant_vara_treat_wounds_at_dusty_trail",
-        merchant_vara,
-        "TreatWounds(self)",
-        tick,
-        &result,
-        &summaries,
+        &ScenarioReport {
+            h: &h,
+            scenario_name: "merchant_vara_treat_wounds_at_dusty_trail",
+            actor: merchant_vara,
+            goal: "TreatWounds(self)",
+            tick,
+            result: &result,
+            summaries: &summaries,
+        },
     );
 
     let tick = Tick(471);
@@ -1652,13 +1688,15 @@ fn generate_residual_candidate_report() {
     );
     append_scenario_report(
         &mut report,
-        &h,
-        "kael_treat_wounds_vara_at_dusty_trail",
-        kael,
-        "TreatWounds(Merchant Vara)",
-        tick,
-        &result,
-        &summaries,
+        &ScenarioReport {
+            h: &h,
+            scenario_name: "kael_treat_wounds_vara_at_dusty_trail",
+            actor: kael,
+            goal: "TreatWounds(Merchant Vara)",
+            tick,
+            result: &result,
+            summaries: &summaries,
+        },
     );
 
     let report_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

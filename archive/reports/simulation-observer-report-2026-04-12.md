@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # Simulation Observer Report
 
 ## Run Summary
@@ -156,3 +158,10 @@ The dump provides excellent coverage for all 10 smells. The Section 7 decision s
 For **TQ-3**: **Recommended addition**: Add per-agent carry capacity (current/max) to Section 2 agent summaries. **Scope**: Observer-binary enhancement.
 
 For **TQ-4**: **Recommended addition**: When an agent has sustained critical needs AND is selecting a non-survival goal, include a drive-score comparison in the decision timeline (e.g., "PostNotice drive=X vs AcquireCommodity drive=Y"). **Scope**: Observer-binary enhancement (derive from existing decision data).
+
+## Outcome
+
+- **Completion date**: 2026-04-12
+- **What changed**: Report findings exploited in ticket S95RELPLAHEU — planner budget exhaustion cascade, PostNotice goal-ranking, and cross-location planning issues addressed.
+- **Deviations**: None.
+- **Verification**: Findings confirmed by planner diagnostics and golden test failures.

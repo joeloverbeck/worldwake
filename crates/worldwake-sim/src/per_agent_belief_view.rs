@@ -8,14 +8,15 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
-    CarryCapacity, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
-    CommodityValuationProfile, ContentionGrant, ControlSource, DemandObservation, DisposalProfile,
-    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
+    AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy, BelievedEntityState,
+    BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile, CombatProfile,
+    CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ContentionGrant,
+    ControlSource, DemandObservation, DisposalProfile, DriveThresholds, EffectiveRight, EntityId,
+    EntityKind, ExpectationStore, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
+    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
+    ObligationSatiationProfile, OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity,
+    RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
     SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
     TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
     UtilityProfile, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
@@ -478,10 +479,42 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
             .flatten()
     }
 
+    fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_artifact_posting_profile(agent)
+                    .cloned()
+            })
+            .flatten()
+    }
+
     fn exploration_profile(&self, agent: EntityId) -> Option<worldwake_core::ExplorationProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_exploration_profile(agent).copied())
             .flatten()
+    }
+
+    fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
+        if agent != self.agent {
+            return ObligationSatiationProfile::default();
+        }
+
+        self.world
+            .get_component_obligation_satiation_profile(agent)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn obligation_execution_tracker(&self, agent: EntityId) -> ObligationExecutionTracker {
+        if agent != self.agent {
+            return ObligationExecutionTracker::default();
+        }
+
+        self.world
+            .get_component_obligation_execution_tracker(agent)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
@@ -1530,18 +1563,20 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
-        BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, CognitiveProfile, CombatProfile,
-        CommodityKind, ControlSource, DisposalProfile, EdgeExperience, EffectiveRight, EntityId,
-        EntityKind, EventLog, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
-        ExpectationStore, ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, OfficeData, PerceptionProfile, Permille, Place,
-        PlaceTag, PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
-        ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
-        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId, build_believed_entity_state, build_prototype_world,
+        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BanditFactionPolicy,
+        BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
+        CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
+        EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, ExpectationBasis,
+        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+        FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
+        PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
+        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
+        RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
+        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
+        build_prototype_world,
         test_utils::{
             sample_commodity_valuation_profile, sample_preference_profile, sample_route_experience,
             sample_source_reliability,
@@ -2497,6 +2532,38 @@ mod tests {
     }
 
     #[test]
+    fn artifact_posting_profile_returns_actor_profile_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = ArtifactPostingProfile {
+            threat_warning_ttl: 36,
+            office_vacancy_ttl: 72,
+            bounty_ttl: 108,
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_artifact_posting_profile(agent, profile.clone())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::artifact_posting_profile(&view, agent),
+            Some(profile.clone())
+        );
+        assert_eq!(
+            GoalBeliefView::artifact_posting_profile(&view, agent),
+            Some(profile)
+        );
+    }
+
+    #[test]
     fn exploration_profile_returns_actor_profile_when_present() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
@@ -2552,6 +2619,92 @@ mod tests {
         assert_eq!(
             GoalBeliefView::exploration_profile(&view, agent),
             Some(ExplorationProfile::default())
+        );
+    }
+
+    #[test]
+    fn obligation_satiation_profile_returns_actor_profile_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let profile = ObligationSatiationProfile {
+            satiation_threshold: 5,
+            ..ObligationSatiationProfile::default()
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_obligation_satiation_profile(agent, profile.clone())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::obligation_satiation_profile(&view, agent),
+            profile
+        );
+        assert_eq!(
+            GoalBeliefView::obligation_satiation_profile(&view, agent),
+            profile
+        );
+    }
+
+    #[test]
+    fn obligation_execution_tracker_returns_default_when_absent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::obligation_execution_tracker(&view, agent),
+            ObligationExecutionTracker::default()
+        );
+        assert_eq!(
+            GoalBeliefView::obligation_execution_tracker(&view, agent),
+            ObligationExecutionTracker::default()
+        );
+    }
+
+    #[test]
+    fn obligation_execution_tracker_returns_actor_tracker_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let tracker = ObligationExecutionTracker {
+            completion_ticks: vec![Tick(3), Tick(8)],
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_obligation_execution_tracker(agent, tracker.clone())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::obligation_execution_tracker(&view, agent),
+            tracker
+        );
+        assert_eq!(
+            GoalBeliefView::obligation_execution_tracker(&view, agent),
+            tracker
         );
     }
 

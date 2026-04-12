@@ -1974,11 +1974,12 @@ fn observed_evidence_entities(evidence: &EvidenceRef) -> BTreeSet<EntityId> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        AgentBeliefStore, BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim,
-        BlockedIntentMemory, CognitiveProfile, CommunicationProfile, DemandMemory, DisposalProfile,
-        EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, FactionData,
-        FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-        InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile, OfficeData,
+        AgentBeliefStore, ArtifactPostingProfile, BeliefStoreDiff, BelievedEntityState,
+        BelievedInstitutionalClaim, BlockedIntentMemory, CognitiveProfile, CommunicationProfile,
+        DemandMemory, DisposalProfile, EpistemicDispositionProfile, ExecutionBudget,
+        ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
+        InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
+        IntentionDispositionProfile, MerchandiseProfile, ObligationSatiationProfile, OfficeData,
         OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
         PerceptionSource, PreferenceProfile, RecordData, RecordEntryId, RecordKind,
         SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile, UtilityProfile,
@@ -2380,6 +2381,14 @@ mod tests {
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,
+                    component_kind: ComponentKind::ArtifactPostingProfile,
+                    before: None,
+                    after: ComponentValue::ArtifactPostingProfile(
+                        ArtifactPostingProfile::default(),
+                    ),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
                     component_kind: ComponentKind::AgentData,
                     before: None,
                     after: ComponentValue::AgentData(crate::AgentData {
@@ -2439,6 +2448,14 @@ mod tests {
                     component_kind: ComponentKind::ExplorationProfile,
                     before: None,
                     after: ComponentValue::ExplorationProfile(ExplorationProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::ObligationSatiationProfile,
+                    before: None,
+                    after: ComponentValue::ObligationSatiationProfile(
+                        ObligationSatiationProfile::default(),
+                    ),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

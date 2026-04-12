@@ -318,7 +318,8 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
         println!("  ExecutionBudget:");
         println!(
             "    beam_width={}, max_prerequisite_locations={}",
-            execution_budget.beam_width, execution_budget.max_prerequisite_locations
+            execution_budget.beam_width(),
+            execution_budget.max_prerequisite_locations()
         );
     }
     if let Some(bim) = world.get_component_blocked_intent_memory(entity) {
@@ -679,6 +680,7 @@ mod tests {
                     )),
                     combat_profile: None,
                     utility_profile: None,
+                    artifact_posting_profile: None,
                     merchandise_profile: None,
                     trade_disposition: None,
                     perception_profile: None,
@@ -691,6 +693,7 @@ mod tests {
                     preference_profile: None,
                     expectation_store: None,
                     last_seen_memory: None,
+                    obligation_satiation_profile: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
                     disposal_profile: None,
@@ -720,6 +723,7 @@ mod tests {
                     )),
                     combat_profile: None,
                     utility_profile: None,
+                    artifact_posting_profile: None,
                     merchandise_profile: None,
                     trade_disposition: None,
                     perception_profile: None,
@@ -732,6 +736,7 @@ mod tests {
                     preference_profile: None,
                     expectation_store: None,
                     last_seen_memory: None,
+                    obligation_satiation_profile: None,
                     drive_thresholds: None,
                     metabolism_profile: None,
                     disposal_profile: None,

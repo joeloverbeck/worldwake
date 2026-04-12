@@ -25,6 +25,10 @@ pub struct CognitiveProfile {
     /// Higher values produce more landmarks for better search guidance at
     /// increased extraction cost. 0 disables landmarks.
     pub landmark_extraction_depth: u8,
+    /// Whether this agent uses the FF-style relaxed-plan heuristic for
+    /// tactical search guidance.
+    #[serde(default = "default_use_ff_heuristic")]
+    pub use_ff_heuristic: bool,
 }
 
 impl Default for CognitiveProfile {
@@ -45,6 +49,7 @@ impl Default for CognitiveProfile {
             max_snapshot_entities_per_place: 50,
             speculative_acquisition: false,
             landmark_extraction_depth: 4,
+            use_ff_heuristic: default_use_ff_heuristic(),
         }
     }
 }
@@ -55,10 +60,18 @@ const fn default_max_candidates_per_expansion() -> u16 {
     200
 }
 
+const fn default_use_ff_heuristic() -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::CognitiveProfile;
     use crate::{ControlSource, EntityKind, Tick, Topology, World, traits::Component};
+    use ron::{
+        de::from_str,
+        ser::{PrettyConfig, to_string_pretty},
+    };
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
@@ -94,6 +107,7 @@ mod tests {
         assert_eq!(profile.max_snapshot_entities_per_place, 50);
         assert!(!profile.speculative_acquisition);
         assert_eq!(profile.landmark_extraction_depth, 4);
+        assert!(profile.use_ff_heuristic);
     }
 
     #[test]
@@ -114,12 +128,33 @@ mod tests {
             max_snapshot_entities_per_place: 75,
             speculative_acquisition: true,
             landmark_extraction_depth: 5,
+            use_ff_heuristic: false,
         };
 
         let bytes = bincode::serialize(&profile).unwrap();
         let roundtrip: CognitiveProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_use_ff_heuristic() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                use_ff_heuristic: false,
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_field = serialized
+            .lines()
+            .filter(|line| !line.contains("use_ff_heuristic"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_field).unwrap();
+
+        assert!(profile.use_ff_heuristic);
     }
 
     #[test]

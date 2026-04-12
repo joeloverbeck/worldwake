@@ -1035,6 +1035,13 @@ fn commit_post_bounty(
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.set_component_contention_queue(artifact, ContentionQueue::default())
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    let mut tracker = txn
+        .get_component_obligation_execution_tracker(instance.actor)
+        .cloned()
+        .unwrap_or_default();
+    tracker.completion_ticks.push(txn.tick());
+    txn.set_component_obligation_execution_tracker(instance.actor, tracker)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.add_target(artifact).add_target(posting_place);
 
     Ok(CommitOutcome::empty())
@@ -1111,6 +1118,13 @@ fn commit_post_notice(
     )
     .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.set_ground_location(artifact, posting_place)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    let mut tracker = txn
+        .get_component_obligation_execution_tracker(instance.actor)
+        .cloned()
+        .unwrap_or_default();
+    tracker.completion_ticks.push(txn.tick());
+    txn.set_component_obligation_execution_tracker(instance.actor, tracker)
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.add_target(artifact).add_target(posting_place);
 
@@ -1228,8 +1242,9 @@ mod tests {
     use worldwake_core::{
         AgentBeliefStore, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         CauseRef, CommodityKind, ContentionQueue, ControlSource, DeadAt, EventLog, EventTag,
-        PerceptionSource, ProofRequirement, PrototypePlace, Quantity, Seed, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn, build_prototype_world, prototype_place_entity,
+        ObligationExecutionTracker, PerceptionSource, ProofRequirement, PrototypePlace, Quantity,
+        Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
@@ -1542,6 +1557,12 @@ mod tests {
             world.get_component_contention_queue(artifact),
             Some(&ContentionQueue::default())
         );
+        assert_eq!(
+            world.get_component_obligation_execution_tracker(actor),
+            Some(&ObligationExecutionTracker {
+                completion_ticks: vec![Tick(7)],
+            })
+        );
         assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
     }
 
@@ -1609,6 +1630,12 @@ mod tests {
         assert_eq!(
             world.get_component_notice_content(artifact).unwrap().topic,
             NoticeTopic::ThreatWarning { place: route }
+        );
+        assert_eq!(
+            world.get_component_obligation_execution_tracker(actor),
+            Some(&ObligationExecutionTracker {
+                completion_ticks: vec![Tick(6)],
+            })
         );
     }
 

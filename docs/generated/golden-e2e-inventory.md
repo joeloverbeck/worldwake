@@ -7,14 +7,14 @@ Do not hand-edit it.
 
 - Golden test files: 28
 - Files contributing `golden_*` tests: 28
-- Total `golden_*` tests: 356
+- Total `golden_*` tests: 361
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
 | `golden_ai_decisions.rs` | 19 |
-| `golden_budget_exhaustion_snapshots.rs` | 6 |
+| `golden_budget_exhaustion_snapshots.rs` | 7 |
 | `golden_care.rs` | 18 |
 | `golden_combat.rs` | 27 |
 | `golden_commodity_opportunity.rs` | 3 |
@@ -23,13 +23,13 @@ Do not hand-edit it.
 | `golden_expectation.rs` | 10 |
 | `golden_experience_preferences.rs` | 6 |
 | `golden_exploration.rs` | 4 |
-| `golden_integration.rs` | 26 |
+| `golden_integration.rs` | 28 |
 | `golden_long_scenarios.rs` | 4 |
 | `golden_merchant_selling.rs` | 20 |
 | `golden_offices.rs` | 24 |
 | `golden_patrol.rs` | 8 |
 | `golden_perception_exposure.rs` | 6 |
-| `golden_planner_pathology.rs` | 2 |
+| `golden_planner_pathology.rs` | 4 |
 | `golden_production.rs` | 34 |
 | `golden_pursuit.rs` | 6 |
 | `golden_reasoning_diversity.rs` | 6 |
@@ -66,10 +66,11 @@ Do not hand-edit it.
 
 ### `golden_budget_exhaustion_snapshots.rs`
 
-- `merchant_vara_water_at_thornwall_residual_budget_exhaustion_contract`
-- `guard_theron_water_at_thornwall_residual_budget_exhaustion_contract`
+- `generate_residual_candidate_report`
+- `merchant_vara_water_at_thornwall_finds_harvest_plan`
+- `guard_theron_water_at_thornwall_finds_harvest_plan`
 - `merchant_vara_apple_at_dusty_trail_residual_budget_exhaustion_contract`
-- `kael_water_at_thornwall_late_game_residual_budget_exhaustion_contract`
+- `kael_water_at_thornwall_late_game_finds_harvest_plan`
 - `merchant_vara_treat_wounds_at_dusty_trail_residual_budget_exhaustion_contract`
 - `kael_treat_wounds_vara_at_dusty_trail_residual_frontier_exhaustion_contract`
 
@@ -254,6 +255,8 @@ Do not hand-edit it.
 - `golden_s51_autonomous_bounty_posting_replays_deterministically`
 - `golden_s58_autonomous_notice_reroutes_later_travel`
 - `golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically`
+- `golden_s97_autonomous_notice_expiry_bounds_active_population`
+- `golden_s97_autonomous_notice_expiry_bounds_active_population_replays_deterministically`
 - `golden_s52_theft_evidence_discovery`
 - `golden_s52_theft_evidence_discovery_replays_deterministically`
 
@@ -338,6 +341,8 @@ Do not hand-edit it.
 
 - `cross_location_water_acquisition_succeeds_without_budget_exhaustion`
 - `degenerate_zero_step_loop_blocks_actionable_goals`
+- `obligation_satiation_allows_survival_needs_to_override_posting`
+- `obligation_satiation_allows_survival_needs_to_override_posting_replays_deterministically`
 
 ### `golden_production.rs`
 

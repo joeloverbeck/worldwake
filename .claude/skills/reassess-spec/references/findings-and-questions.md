@@ -50,6 +50,10 @@ Present in this format:
 6. Payload revalidation — pass | N/A | **flag** (reason)
 7. Golden tests — pass | N/A | **flag** (reason)
 
+### Substantial Redesign Flag
+[If >50% of deliverables change approach: "This reassessment proposes substantial redesign of N/M deliverables. Goals preserved but implementation path changes significantly."]
+[If not triggered: omit section.]
+
 ### Questions
 [If none: "No questions."]
 1. <question>

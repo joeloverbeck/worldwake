@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use worldwake_core::{CommodityKind, EntityId, GoalKind, HomeostaticNeedId, Quantity};
 use worldwake_sim::{InventoryBeliefView, ProfileBeliefView, RecipeRegistry};
@@ -29,6 +29,17 @@ pub(super) struct PlanningOperator {
 pub(super) struct LandmarkSet {
     pub(super) landmarks: BTreeSet<PlanningFact>,
     pub(super) orderings: Vec<(PlanningFact, PlanningFact)>,
+}
+
+/// Result of building an RPG and extracting a relaxed plan.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct RelaxedPlanResult {
+    /// Number of operators in the extracted relaxed plan. This is the
+    /// FF relaxed-plan heuristic value.
+    pub(super) h_ff: u32,
+    /// Indices into the input operator slice for selected layer-0
+    /// operators in the relaxed plan.
+    pub(super) helpful_action_indices: BTreeSet<usize>,
 }
 
 impl LandmarkSet {
@@ -175,6 +186,106 @@ pub(super) fn extract_landmarks(
     }
 }
 
+pub(super) fn compute_ff_heuristic(
+    initial_facts: &BTreeSet<PlanningFact>,
+    goal_facts: &BTreeSet<PlanningFact>,
+    operators: &[PlanningOperator],
+) -> Option<RelaxedPlanResult> {
+    if goal_facts.is_empty() || goal_facts.is_subset(initial_facts) {
+        return Some(RelaxedPlanResult::default());
+    }
+
+    let mut reachable_facts = initial_facts.clone();
+    let mut first_achiever = BTreeMap::<PlanningFact, (usize, usize)>::new();
+    let max_layers = operators.len();
+
+    for layer in 0..max_layers {
+        let mut new_facts = BTreeSet::new();
+
+        for (operator_index, operator) in operators.iter().enumerate() {
+            if !operator.preconditions.is_subset(&reachable_facts) {
+                continue;
+            }
+
+            for effect in &operator.add_effects {
+                if reachable_facts.contains(effect) || new_facts.contains(effect) {
+                    continue;
+                }
+                new_facts.insert(effect.clone());
+                first_achiever.insert(effect.clone(), (layer, operator_index));
+            }
+        }
+
+        if new_facts.is_empty() {
+            return None;
+        }
+
+        reachable_facts.extend(new_facts);
+        if goal_facts.is_subset(&reachable_facts) {
+            break;
+        }
+    }
+
+    if !goal_facts.is_subset(&reachable_facts) {
+        return None;
+    }
+
+    let mut selected_operator_indices = BTreeSet::new();
+    let mut helpful_action_indices = BTreeSet::new();
+
+    for goal_fact in goal_facts {
+        select_fact(
+            goal_fact,
+            initial_facts,
+            &first_achiever,
+            operators,
+            &mut selected_operator_indices,
+            &mut helpful_action_indices,
+        );
+    }
+
+    Some(RelaxedPlanResult {
+        h_ff: selected_operator_indices.len() as u32,
+        helpful_action_indices,
+    })
+}
+
+fn select_fact(
+    fact: &PlanningFact,
+    initial_facts: &BTreeSet<PlanningFact>,
+    first_achiever: &BTreeMap<PlanningFact, (usize, usize)>,
+    operators: &[PlanningOperator],
+    selected_operator_indices: &mut BTreeSet<usize>,
+    helpful_action_indices: &mut BTreeSet<usize>,
+) {
+    if initial_facts.contains(fact) {
+        return;
+    }
+
+    let Some(&(layer, operator_index)) = first_achiever.get(fact) else {
+        return;
+    };
+
+    if layer == 0 {
+        helpful_action_indices.insert(operator_index);
+    }
+
+    if !selected_operator_indices.insert(operator_index) {
+        return;
+    }
+
+    for precondition in &operators[operator_index].preconditions {
+        select_fact(
+            precondition,
+            initial_facts,
+            first_achiever,
+            operators,
+            selected_operator_indices,
+            helpful_action_indices,
+        );
+    }
+}
+
 pub(super) fn preferred_operators(
     landmarks: &LandmarkSet,
     current_facts: &BTreeSet<PlanningFact>,
@@ -227,7 +338,8 @@ mod tests {
     use worldwake_sim::ActionPayload;
 
     use super::{
-        LandmarkSet, PlanningFact, PlanningOperator, extract_landmarks, preferred_operators,
+        LandmarkSet, PlanningFact, PlanningOperator, RelaxedPlanResult, compute_ff_heuristic,
+        extract_landmarks, preferred_operators,
     };
     use crate::PlanningEntityRef;
     use crate::search::candidates::SearchCandidate;
@@ -251,6 +363,18 @@ mod tests {
             preconditions: fact_set(preconditions),
             add_effects: fact_set(add_effects),
             del_effects: BTreeSet::new(),
+        }
+    }
+
+    fn operator_with_delete(
+        preconditions: impl IntoIterator<Item = PlanningFact>,
+        add_effects: impl IntoIterator<Item = PlanningFact>,
+        del_effects: impl IntoIterator<Item = PlanningFact>,
+    ) -> PlanningOperator {
+        PlanningOperator {
+            preconditions: fact_set(preconditions),
+            add_effects: fact_set(add_effects),
+            del_effects: fact_set(del_effects),
         }
     }
 
@@ -384,5 +508,114 @@ mod tests {
         );
 
         assert!(preferred.is_empty());
+    }
+
+    #[test]
+    fn ff_heuristic_returns_none_for_unreachable_goals() {
+        let goal = PlanningFact::HasCommodity(CommodityKind::Water);
+
+        assert_eq!(
+            compute_ff_heuristic(&BTreeSet::new(), &fact_set([goal]), &[]),
+            None
+        );
+    }
+
+    #[test]
+    fn ff_heuristic_returns_zero_when_goal_already_satisfied() {
+        let goal = PlanningFact::HasCommodity(CommodityKind::Water);
+
+        assert_eq!(
+            compute_ff_heuristic(&fact_set([goal.clone()]), &fact_set([goal]), &[]),
+            Some(RelaxedPlanResult::default())
+        );
+    }
+
+    #[test]
+    fn ff_heuristic_counts_linear_relaxed_plan() {
+        let has_bucket = PlanningFact::HasEntity(entity(1));
+        let has_water = PlanningFact::HasCommodity(CommodityKind::Water);
+        let thirst_satisfied = PlanningFact::NeedSatisfied(HomeostaticNeedId::Thirst);
+
+        let result = compute_ff_heuristic(
+            &fact_set([has_bucket.clone()]),
+            &fact_set([thirst_satisfied.clone()]),
+            &[
+                operator([has_bucket], [has_water.clone()]),
+                operator([has_water], [thirst_satisfied]),
+            ],
+        )
+        .expect("linear chain should be reachable");
+
+        assert_eq!(result.h_ff, 2);
+        assert_eq!(result.helpful_action_indices, BTreeSet::from([0]));
+    }
+
+    #[test]
+    fn ff_heuristic_ignores_delete_effects_under_relaxation() {
+        let has_hands = PlanningFact::HasEntity(entity(1));
+        let has_water = PlanningFact::HasCommodity(CommodityKind::Water);
+        let has_medicine = PlanningFact::HasCommodity(CommodityKind::Medicine);
+
+        let result = compute_ff_heuristic(
+            &fact_set([has_hands.clone()]),
+            &fact_set([has_water.clone(), has_medicine.clone()]),
+            &[
+                operator_with_delete(
+                    [has_hands.clone()],
+                    [has_water.clone()],
+                    [has_hands.clone()],
+                ),
+                operator_with_delete([has_hands], [has_medicine.clone()], []),
+                operator([], [PlanningFact::FacilityAvailable(entity(99))]),
+            ],
+        )
+        .expect("delete relaxation should keep both goals reachable");
+
+        assert_eq!(result.h_ff, 2);
+        assert_eq!(result.helpful_action_indices, BTreeSet::from([0, 1]));
+    }
+
+    #[test]
+    fn ff_heuristic_helpful_actions_only_include_selected_layer_zero_ops() {
+        let seed_fact = PlanningFact::HasEntity(entity(1));
+        let intermediate = PlanningFact::FacilityAvailable(entity(2));
+        let distractor = PlanningFact::EntityPresent(entity(3));
+        let goal = PlanningFact::HasCommodity(CommodityKind::Water);
+
+        let result = compute_ff_heuristic(
+            &fact_set([seed_fact.clone()]),
+            &fact_set([goal.clone()]),
+            &[
+                operator([seed_fact.clone()], [intermediate.clone()]),
+                operator([seed_fact], [distractor]),
+                operator([intermediate], [goal]),
+            ],
+        )
+        .expect("goal should be reachable");
+
+        assert_eq!(result.h_ff, 2);
+        assert_eq!(result.helpful_action_indices, BTreeSet::from([0]));
+    }
+
+    #[test]
+    fn ff_heuristic_is_deterministic() {
+        let place = PlanningFact::AtPlace(entity(1));
+        let has_bucket = PlanningFact::HasEntity(entity(2));
+        let has_water = PlanningFact::HasCommodity(CommodityKind::Water);
+        let thirst_satisfied = PlanningFact::NeedSatisfied(HomeostaticNeedId::Thirst);
+        let operators = vec![
+            operator([place.clone()], [has_bucket.clone()]),
+            operator([has_bucket], [has_water.clone()]),
+            operator([has_water], [thirst_satisfied.clone()]),
+        ];
+        let initial_facts = fact_set([place]);
+        let goal_facts = fact_set([thirst_satisfied]);
+
+        let first = compute_ff_heuristic(&initial_facts, &goal_facts, &operators);
+        let second = compute_ff_heuristic(&initial_facts, &goal_facts, &operators);
+        let third = compute_ff_heuristic(&initial_facts, &goal_facts, &operators);
+
+        assert_eq!(first, second);
+        assert_eq!(second, third);
     }
 }

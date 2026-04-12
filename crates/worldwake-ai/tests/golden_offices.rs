@@ -462,10 +462,11 @@ fn golden_bribe_support_coalition() {
         &mut h.world,
         &mut h.event_log,
         agent_a,
-        ExecutionBudget {
-            beam_width: 16,
-            ..ExecutionBudget::default()
-        },
+        ExecutionBudget::new(
+            16,
+            ExecutionBudget::default().max_prerequisite_locations(),
+            ExecutionBudget::default().preferred_operator_boost(),
+        ),
     );
     set_agent_perception_profile(
         &mut h.world,
@@ -722,10 +723,11 @@ fn golden_threaten_with_courage_diversity() {
         &mut h.world,
         &mut h.event_log,
         agent_a,
-        ExecutionBudget {
-            beam_width: 16,
-            ..ExecutionBudget::default()
-        },
+        ExecutionBudget::new(
+            16,
+            ExecutionBudget::default().max_prerequisite_locations(),
+            ExecutionBudget::default().preferred_operator_boost(),
+        ),
     );
     set_agent_perception_profile(
         &mut h.world,

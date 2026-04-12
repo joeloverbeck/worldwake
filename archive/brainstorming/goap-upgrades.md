@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # Proposed GOAP architecture upgrades aligned with FOUNDATIONS
 
 Changes are warranted. The current system is already principled, but it will bottleneck (performance) and exhibit brittle choice dynamics (top‑2 cliff) before it reaches your “hundreds of goals” target. fileciteturn0file1

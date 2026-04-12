@@ -2,6 +2,10 @@
 
 Validate every reference from Step 2. For specs with >10 references, consider parallel Explore agents (see Agent Delegation below).
 
+## 3.0 Cross-Crate Scope Establishment
+
+For patterns referenced across multiple files (e.g., field assignments like `expires_at: None`, enum variant matches, trait method calls), run a cross-crate count grep first to establish the full scope before per-file analysis. Compare the spec's claimed locations against the actual count. This catches files the spec missed and prevents incomplete deliverables.
+
 ## 3.1 File Paths
 
 Glob/Grep to confirm each path exists. If moved, renamed, or deleted, record the discrepancy and actual location.
@@ -26,8 +30,13 @@ Grep for each function. Confirm signature, module location, and export status. L
 - **Proposed modifications to existing functions**: Verify the function's parameters and local scope include variables the proposed code references. Flag out-of-scope variable usage as an Issue.
 - **Symbol partitioning** (splitting traits/enums): Verify the partition is complete (all symbols accounted for) and disjoint (no symbol in two categories). Verify stated counts match listed names. Use automated scripts for large sets (>20 symbols).
 - **Code example fidelity**: If the spec includes Before/After code snippets, verify they match the actual code's control flow structure (e.g., imperative loops vs. iterator chains, match arms vs. if-let chains). Style mismatches in code examples mislead implementers.
+- **Runtime vs. test-only classification**: For deliverables that list specific code locations to modify, check whether each location is inside `#[cfg(test)]` or conditional compilation. Grep for `#[cfg(test)]` in each file to find the boundary line number, then classify each spec-referenced line as runtime (before boundary) or test-only (after boundary). If a deliverable frames test-only locations as runtime targets, flag as an Issue. If a deliverable mixes runtime and test locations without distinction, flag as an Improvement (separate runtime changes from test fixture updates).
 - **Reuse opportunities**: For each new function or trait method the spec proposes to create, grep the codebase for existing functions serving the same purpose. A proposed new method that duplicates existing functionality should be flagged as an Issue (prefer reuse) or Improvement (note the existing alternative).
 - **Existing behavior overlap**: For deliverables that propose modifying existing functions, verify the proposed change isn't already implemented. If the current code already exhibits the described behavior (e.g., locality scoping via a trait implementation the spec doesn't acknowledge), flag as an Issue — the deliverable should either be eliminated, merged into a sibling deliverable, or rewritten as an explanatory note about existing behavior. This requires reading beyond the function signature into the implementation and its call chain. For proposed changes to functions called from multiple code paths, trace which paths are actually active for the spec's scenario. A function may exist and match the spec's description but never be reached in the described failure mode.
+
+## 3.3A Output Format Fidelity
+
+For specs that propose new output or report sections in existing tooling (observer binary, CLI, diagnostic tools), verify the proposed format (section headers, delimiters, label conventions) matches the target file's existing formatting patterns. Grep for existing section markers and formatting conventions in the target file. Flag mismatches as Issues.
 
 ## 3.4 Dependencies (specs/tickets)
 
@@ -80,6 +89,10 @@ Verify proposed functions' parameter/return types are accessible from the target
 
 Grep active specs in `specs/` for references to this spec's deliverables. Note affected specs.
 
+## 3.8A Cross-System and SystemFn Section Validation
+
+For specs that include Cross-System Interactions or SystemFn Integration sections, verify each crate attribution: confirm the described behavior (commit handler, system function, ranking logic, etc.) actually resides in the named crate and module. Flag misattributed crates as Issues — these are prose claims about responsibility that drift when code moves between crates.
+
 ## 3.9 Behavioral Claim Validation
 
 For each claim about who reads/writes a type at runtime, grep all call sites and classify as runtime vs. test-only (`#[cfg(test)]`). Flag contradictions as CRITICAL. If technically wrong but safe (e.g., caller only reads current-tick data), note both the correction and safety argument.
@@ -91,6 +104,7 @@ In plan mode, Explore agents are the primary validation mechanism (read-only, in
 For specs with many references, launch parallel Explore agents organized by theme (e.g., action/type references, AI/test references, dependencies/infrastructure). Choose themes to minimize cross-agent dependencies. Typical: 1 agent for 10-15 references with a single domain, 2-3 agents for 15+ references spanning multiple domains. Max 3 agents.
 
 Guidelines:
+- When agents validate code locations referenced by a spec's deliverables, instruct them to report the `#[cfg(test)]` boundary line number for each file so runtime vs. test classification can be done without follow-up reads.
 - If agents return conflicting results for the same reference, spot-check with direct Grep/Read. Trust the direct tool result over the agent claim.
 - After results arrive, cross-reference findings against the spec's type assumptions and formulas. Agents validate existence; you validate semantic compatibility.
 - For static lookup tables indexed by discriminator enums, verify key granularity matches discrimination needs.

@@ -14,6 +14,26 @@ pub struct ArtifactHeader {
 
 impl Component for ArtifactHeader {}
 
+/// Per-agent defaults for artifact TTL when posting notices and bounties.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ArtifactPostingProfile {
+    pub threat_warning_ttl: u64,
+    pub office_vacancy_ttl: u64,
+    pub bounty_ttl: u64,
+}
+
+impl Default for ArtifactPostingProfile {
+    fn default() -> Self {
+        Self {
+            threat_warning_ttl: 48,
+            office_vacancy_ttl: 96,
+            bounty_ttl: 144,
+        }
+    }
+}
+
+impl Component for ArtifactPostingProfile {}
+
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct ArtifactPostingContext {
     pub posting_place: EntityId,
@@ -102,10 +122,11 @@ pub enum NoticeTopic {
 #[cfg(test)]
 mod tests {
     use super::{
-        ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactState, BountyTarget,
-        BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
+        ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile,
+        ArtifactState, BountyTarget, BountyTerms, NoticeContent, NoticeTopic, ProofRequirement,
+        RewardSource,
     };
-    use crate::{CommodityKind, EntityId, InstitutionalClaim, Quantity, Tick};
+    use crate::{CommodityKind, EntityId, InstitutionalClaim, Quantity, Tick, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
 
     fn entity(slot: u32) -> EntityId {
@@ -115,11 +136,15 @@ mod tests {
         }
     }
 
+    fn assert_component_bounds<T: Component>() {}
+
     fn assert_traits<T: Clone + std::fmt::Debug + Eq + Serialize + DeserializeOwned>() {}
 
     #[test]
     fn social_artifact_types_satisfy_required_traits() {
+        assert_component_bounds::<ArtifactPostingProfile>();
         assert_traits::<ArtifactHeader>();
+        assert_traits::<ArtifactPostingProfile>();
         assert_traits::<ArtifactPostingContext>();
         assert_traits::<ArtifactKind>();
         assert_traits::<ArtifactState>();
@@ -192,5 +217,14 @@ mod tests {
         let notice_bytes = bincode::serialize(&notice).unwrap();
         let notice_roundtrip: NoticeContent = bincode::deserialize(&notice_bytes).unwrap();
         assert_eq!(notice_roundtrip, notice);
+    }
+
+    #[test]
+    fn artifact_posting_profile_default_matches_spec_defaults() {
+        let profile = ArtifactPostingProfile::default();
+
+        assert_eq!(profile.threat_warning_ttl, 48);
+        assert_eq!(profile.office_vacancy_ttl, 96);
+        assert_eq!(profile.bounty_ttl, 144);
     }
 }

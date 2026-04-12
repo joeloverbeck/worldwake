@@ -30,6 +30,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                artifact_posting_profiles,
+                ArtifactPostingProfile,
+                insert_artifact_posting_profile,
+                get_artifact_posting_profile,
+                get_artifact_posting_profile_mut,
+                remove_artifact_posting_profile,
+                has_artifact_posting_profile,
+                iter_artifact_posting_profiles,
+                insert_component_artifact_posting_profile,
+                get_component_artifact_posting_profile,
+                get_component_artifact_posting_profile_mut,
+                remove_component_artifact_posting_profile,
+                has_component_artifact_posting_profile,
+                entities_with_artifact_posting_profile,
+                query_artifact_posting_profile,
+                count_with_artifact_posting_profile,
+                "ArtifactPostingProfile",
+                |kind| kind == EntityKind::Agent,
+                ArtifactPostingProfile,
+                crate::ArtifactPostingProfile,
+                set_component_artifact_posting_profile,
+                clear_component_artifact_posting_profile,
+                txn_simple_set
+            }
+            {
                 agents,
                 AgentData,
                 insert_agent_data,
@@ -827,6 +852,56 @@ macro_rules! with_component_schema_entries {
                 crate::ExplorationProfile,
                 set_component_exploration_profile,
                 clear_component_exploration_profile,
+                txn_simple_set
+            }
+            {
+                obligation_satiation_profiles,
+                ObligationSatiationProfile,
+                insert_obligation_satiation_profile,
+                get_obligation_satiation_profile,
+                get_obligation_satiation_profile_mut,
+                remove_obligation_satiation_profile,
+                has_obligation_satiation_profile,
+                iter_obligation_satiation_profiles,
+                insert_component_obligation_satiation_profile,
+                get_component_obligation_satiation_profile,
+                get_component_obligation_satiation_profile_mut,
+                remove_component_obligation_satiation_profile,
+                has_component_obligation_satiation_profile,
+                entities_with_obligation_satiation_profile,
+                query_obligation_satiation_profile,
+                count_with_obligation_satiation_profile,
+                "ObligationSatiationProfile",
+                |kind| kind == EntityKind::Agent,
+                ObligationSatiationProfile,
+                crate::ObligationSatiationProfile,
+                set_component_obligation_satiation_profile,
+                clear_component_obligation_satiation_profile,
+                txn_simple_set
+            }
+            {
+                obligation_execution_trackers,
+                ObligationExecutionTracker,
+                insert_obligation_execution_tracker,
+                get_obligation_execution_tracker,
+                get_obligation_execution_tracker_mut,
+                remove_obligation_execution_tracker,
+                has_obligation_execution_tracker,
+                iter_obligation_execution_trackers,
+                insert_component_obligation_execution_tracker,
+                get_component_obligation_execution_tracker,
+                get_component_obligation_execution_tracker_mut,
+                remove_component_obligation_execution_tracker,
+                has_component_obligation_execution_tracker,
+                entities_with_obligation_execution_tracker,
+                query_obligation_execution_tracker,
+                count_with_obligation_execution_tracker,
+                "ObligationExecutionTracker",
+                |kind| kind == EntityKind::Agent,
+                ObligationExecutionTracker,
+                crate::ObligationExecutionTracker,
+                set_component_obligation_execution_tracker,
+                clear_component_obligation_execution_tracker,
                 txn_simple_set
             }
             {

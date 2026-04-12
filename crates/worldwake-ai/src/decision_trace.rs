@@ -838,6 +838,11 @@ pub struct SearchExpansionSummary {
     pub preferred_candidates: u16,
     /// Current actionable-landmark count at this expansion boundary.
     pub landmark_heuristic: u32,
+    /// The FF relaxed-plan heuristic value at this expansion boundary, or
+    /// `None` when FF guidance was disabled or unavailable.
+    pub ff_heuristic: Option<u32>,
+    /// Number of helpful actions identified by FF guidance.
+    pub helpful_action_count: u16,
     /// Travel-pruning facts captured before successor construction when the
     /// expansion had spatially guided travel choices.
     pub travel_pruning: Option<TravelPruningTrace>,
@@ -1666,13 +1671,20 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                     } else {
                         ""
                     };
+                    let ff_suffix = exp.ff_heuristic.map_or_else(String::new, |heuristic| {
+                        format!(
+                            ", h_ff={heuristic}, helpful_actions={}",
+                            exp.helpful_action_count
+                        )
+                    });
                     let _ = write!(
                         out,
-                        "\n  search expansion d={}: {} candidates, {} preferred, h_landmark={}, {} skipped, {} terminal{}, {}→{} beam",
+                        "\n  search expansion d={}: {} candidates, {} preferred, h_landmark={}{} , {} skipped, {} terminal{}, {}→{} beam",
                         exp.depth,
                         exp.candidates_generated,
                         exp.preferred_candidates,
                         exp.landmark_heuristic,
+                        ff_suffix,
                         exp.candidates_skipped,
                         exp.terminal_successors,
                         satisfied_tag,
@@ -3963,6 +3975,8 @@ mod tests {
                         found_goal_satisfied: false,
                         preferred_candidates: 1,
                         landmark_heuristic: 2,
+                        ff_heuristic: Some(5),
+                        helpful_action_count: 2,
                         travel_pruning: None,
                         prerequisite_guidance: None,
                         expansion_candidates: vec![],
@@ -4050,6 +4064,7 @@ mod tests {
         );
         assert!(summary.contains("1 preferred"));
         assert!(summary.contains("h_landmark=2"));
+        assert!(summary.contains("h_ff=5, helpful_actions=2"));
     }
 
     #[test]
@@ -4123,6 +4138,8 @@ mod tests {
             found_goal_satisfied: false,
             preferred_candidates: 3,
             landmark_heuristic: 2,
+            ff_heuristic: Some(6),
+            helpful_action_count: 4,
             travel_pruning: Some(TravelPruningTrace {
                 current_place: entity(1),
                 current_remaining_travel_ticks: 4,
@@ -4161,6 +4178,8 @@ mod tests {
         assert_eq!(summary.non_terminal_after_beam, 8);
         assert_eq!(summary.preferred_candidates, 3);
         assert_eq!(summary.landmark_heuristic, 2);
+        assert_eq!(summary.ff_heuristic, Some(6));
+        assert_eq!(summary.helpful_action_count, 4);
         assert!(!summary.found_goal_satisfied);
         assert!(summary.travel_pruning.is_some());
 
@@ -4168,6 +4187,7 @@ mod tests {
         let debug = format!("{summary:?}");
         assert!(debug.contains("SearchExpansionSummary"));
         assert!(debug.contains("depth: 0"));
+        assert!(debug.contains("ff_heuristic: Some(6)"));
     }
 
     // ── Frame Transition Trace Tests ────────────────────────────────

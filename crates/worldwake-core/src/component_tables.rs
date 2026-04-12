@@ -29,6 +29,7 @@ use crate::{
     intention_frame::IntentionFrame,
     items::{Container, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
+    obligation::{ObligationExecutionTracker, ObligationSatiationProfile},
     observation_context::PlaceVisibilityProfile,
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     patrol::{PatrolProfile, PatrolRoute},
@@ -37,7 +38,7 @@ use crate::{
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
     },
     pursuit::PursuitProfile,
-    social_artifact::{ArtifactHeader, BountyTerms, NoticeContent},
+    social_artifact::{ArtifactHeader, ArtifactPostingProfile, BountyTerms, NoticeContent},
     trade::{
         DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy,
         SubstitutePreferences, TradeDispositionProfile,

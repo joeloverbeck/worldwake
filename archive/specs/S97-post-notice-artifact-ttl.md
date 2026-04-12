@@ -1,0 +1,216 @@
+# S97: PostNotice Artifact TTL Provisioning
+
+**Status**: COMPLETED
+
+## Summary
+
+Makes the planner and goal dispatch provide profile-driven `expires_at` values for PostNotice (and PostBounty) artifacts, so that posted notices expire via the existing `artifact_lifecycle_system` instead of persisting indefinitely. Addresses the SocialArtifact pollution identified in the simulation observer report (500+ never-expiring artifacts at Dusty Trail).
+
+## Phase and Status
+
+Phase 7 adjunct. Status: Completed.
+
+## Crates
+
+- `worldwake-core` — new `ArtifactPostingProfile` component with TTL defaults
+- `worldwake-sim` — `GoalBeliefView` accessor for the new profile
+- `worldwake-ai` — candidate generation sets `expires_at` from profile
+- `worldwake-cli` — `AgentDef` field and `spawn_agent()` registration
+
+## Dependencies
+
+- None. The expiry infrastructure already exists: `ArtifactHeader.expires_at`, `artifact_lifecycle_system` in worldwake-systems, `ArtifactState::Expired` transition.
+
+## Design Goals
+
+- Bound SocialArtifact entity count at any location over long runs.
+- Profile-driven TTL so that institutional postings (via issuing_authority) can have different lifetimes than personal postings (FND-22).
+- Zero infrastructure work — use the existing `expires_at` field and `artifact_lifecycle_system`.
+
+## Non-Goals
+
+- Changing artifact lifecycle states or transitions (already correct per FND-25A).
+- Perception throttling (deferred; artifact count reduction should reduce perception load).
+- Modifying PostNotice action handler (already uses `payload.expires_at`).
+
+## FOUNDATIONS Alignment
+
+| Principle | How Satisfied |
+|-----------|---------------|
+| FND-11 (Feedback Dampening) | Closes the undamped artifact accumulation loop: artifacts now expire, bounding the population. |
+| FND-22 (Agent Diversity) | TTL is per-agent profile. Cautious guards post longer-lived warnings; hasty civilians post short-lived ones. |
+| FND-25A (Artifact Lifecycle) | Completes the lifecycle: artifacts now transition Active → Expired via declared `expires_at`. |
+| FND-8 (Every Action Has Cost) | Posting a notice that persists forever had no ongoing cost. Finite TTL means agents must re-post if the threat persists — each re-posting has duration and occupancy cost. |
+
+## Deliverables
+
+### D1: `ArtifactPostingProfile` component
+
+New component in `worldwake-core`:
+
+```rust
+/// Per-agent defaults for artifact TTL when posting notices and bounties.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ArtifactPostingProfile {
+    /// Default TTL (in ticks) for ThreatWarning notices posted by this agent.
+    /// The posted artifact's `expires_at` is set to `current_tick + threat_warning_ttl`.
+    pub threat_warning_ttl: u64,
+    /// Default TTL for OfficeVacancy notices.
+    pub office_vacancy_ttl: u64,
+    /// Default TTL for bounty postings.
+    pub bounty_ttl: u64,
+}
+```
+
+**Default impl** (universal component):
+```rust
+impl Default for ArtifactPostingProfile {
+    fn default() -> Self {
+        Self {
+            threat_warning_ttl: 48,
+            office_vacancy_ttl: 96,
+            bounty_ttl: 144,
+        }
+    }
+}
+```
+
+Register on `EntityKind::Agent` in `component_schema.rs`. Universal component (every agent gets `Default` if not specified in scenario).
+
+TTL fields are `u64` to match `Tick` arithmetic (`Tick` wraps `u64` and implements `Add<u64>`).
+
+### D2: `GoalBeliefView` accessor
+
+Add accessor to `GoalBeliefView` trait in `crates/worldwake-sim/src/belief_view.rs`:
+
+```rust
+fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
+    None
+}
+```
+
+Implement the authoritative self-profile read in `PerAgentBeliefView` via `ProfileBeliefView`, forward it through the blanket `GoalBeliefView` impl in `belief_view.rs`, and carry the field through `PlanningSnapshot` / `PlanningState` so the planner-visible surface can read it lawfully.
+
+This follows the established pattern for profile components read by the AI crate: authoritative runtime read on the per-agent belief view, explicit planner snapshot carriage, and planner-facing access through the shared belief-view surface.
+
+### D3: Runtime candidate generation sets `expires_at` from profile
+
+Two runtime locations in `crates/worldwake-ai/src/candidate_generation.rs` construct `ArtifactPostingContext` with `expires_at: None`:
+
+- **Line 642**: `PostBounty` posting in `emit_bounty_posting_candidates` — use `bounty_ttl`
+- **Line 726**: `PostNotice` posting in `emit_notice_posting_candidates` — use `threat_warning_ttl`
+
+Both functions receive `ctx: &GenerationContext<'_>` which has `view: &dyn GoalBeliefView`. Access the profile via `ctx.view.artifact_posting_profile(ctx.agent)` and compute:
+
+```rust
+let posting_profile = ctx.view.artifact_posting_profile(ctx.agent);
+let expires_at = posting_profile.map(|p| ctx.current_tick + p.threat_warning_ttl);
+```
+
+### D4: CLI scenario support
+
+Add `ArtifactPostingProfile` to the scenario system per the profile completeness invariant:
+
+1. Add `artifact_posting_profile: Option<ArtifactPostingProfile>` field to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs`. No `*Def` wrapper needed (no `EntityId` references in the profile).
+2. Add `set_component` call in `spawn_agent()` in `crates/worldwake-cli/src/scenario/mod.rs`. Universal component pattern: `unwrap_or_default()`, always applied.
+
+### D5: Focused fixture and same-domain golden expectation updates
+
+After D1-D3 are implemented, the owned proof surface is the local candidate-generation harness plus any existing same-domain goldens that already pin the exact selected posting payload shape.
+
+**Focused `ArtifactPostingContext` fixture locations (need TTL values):**
+- `candidate_generation.rs`: lines 11034, 11180, 11245 (past `#[cfg(test)]` at line 4899)
+
+**Existing same-domain golden expectations (need TTL values):**
+- `golden_integration.rs`: autonomous bounty/notice posting expectations that assert the exact selected `GoalKey` payload
+
+**Other synthetic `ArtifactPostingContext` fixtures (no code changes required for this spec slice):**
+These are representative-goal or policy fixtures, not runtime-produced candidate-generation outputs. They stay unchanged unless a later ticket explicitly normalizes representative values:
+- `goal_dispatch_decl.rs`
+- `ranking.rs`
+- `feasibility.rs`
+- `goal_policy.rs`
+
+**`BelievedArtifactState` locations (no code changes needed):**
+These represent what agents *observe* about existing artifacts. Once artifacts are posted with `expires_at` values (via D3), the belief/perception system will naturally propagate non-None values. No changes needed in:
+- `candidate_generation.rs`: line 6198
+- `ranking.rs`: line 2376
+- `route_threat.rs`: line 295
+- `exhaustion.rs`: lines 1058, 1104, 1157, 1207
+- `goal_model.rs`: lines 9595, 9662, 9904, 9981, 10064
+- `goal_dispatch_key.rs`: 1 occurrence in tests
+- `search/tests.rs`: 5 occurrences in tests
+- `plan_revalidation.rs`: line 1140 (`PostBountyActionPayload`)
+
+### D6: Golden test — artifact expiry bounds entity count
+
+File: `crates/worldwake-ai/tests/golden_integration.rs`
+
+**Setup**: AI issuer at Market with non-zero `notice_posting_weight`, a persistent hostile belief at Warned Road, and an explicit short `ArtifactPostingProfile` override so `threat_warning_ttl` is 4. Run long enough to prove repeated post → expire → re-post loops while sampling authoritative artifact state.
+
+**Assertion**: Agent posts multiple ThreatWarning notices. All posted notices have `expires_at` set. Earlier notices transition to `ArtifactState::Expired`. Total active (non-expired) notice count at the posting place stays bounded by the TTL-driven lifecycle cadence under the live tick ordering.
+
+**Emergence justification**: Tests the interaction between goal-driven posting and artifact lifecycle — the posting system creates artifacts, the lifecycle system bounds them, and their interplay determines the artifact population trajectory.
+
+**Why not a duplicate**: Existing artifact lifecycle tests verify the expiry mechanism in isolation. This test verifies that the planner actually provides `expires_at` values and that the end-to-end loop (post → expire → re-post) works.
+
+## FND-01 Section H: Causal Hooks
+
+1. **Information-path analysis**: TTL is agent-local configuration. The artifact's `expires_at` is a public field on the posted entity — any perceiving agent can observe it. Expiry is processed by `artifact_lifecycle_system` which reads `ArtifactHeader` state.
+
+2. **Positive-feedback analysis**: Existing undamped loop: post artifact → artifact persists → more artifacts → more perception load. This spec introduces expiry as a dampener.
+
+3. **Concrete dampeners**: Artifact TTL (`threat_warning_ttl` etc.) — the posted notice decays over time like a physical posting weathering away. The agent must re-post to maintain the warning, and re-posting has duration/occupancy cost per FND-8 (combined with S96 satiation, re-posting also faces satiation decay).
+
+4. **Stored state vs. derived**: `ArtifactPostingProfile` is authoritative per-agent configuration. `ArtifactHeader.expires_at` is authoritative per-artifact state. The expiry transition is a derived consequence of `current_tick >= expires_at`.
+
+## SystemFn Integration
+
+No new SystemFn. `artifact_lifecycle_system` already handles `expires_at` transitions. The only change is that PostNotice artifacts will now have non-None `expires_at` values.
+
+## Component Registration
+
+- `ArtifactPostingProfile`: Register on `EntityKind::Agent` in `component_schema.rs`. Universal component (every agent gets `Default` if not specified in scenario).
+
+## Cross-System Interactions
+
+- **Candidate generation** (worldwake-ai): Reads `ArtifactPostingProfile` via `GoalBeliefView` accessor to compute `expires_at` for `ArtifactPostingContext`. Pure state read.
+- **Action handler** (worldwake-systems): Already uses `payload.expires_at` when creating artifacts — no change needed.
+- **Artifact lifecycle system** (worldwake-systems): Already transitions artifacts with `expires_at` to `Expired` — no change needed.
+- **Perception system** (worldwake-systems): Already skips expired artifacts in observation — no change needed (verify during implementation).
+
+## Profile-Driven Parameters
+
+All TTL values are in `ArtifactPostingProfile`:
+- `threat_warning_ttl`: Ticks before ThreatWarning notices expire
+- `office_vacancy_ttl`: Ticks before OfficeVacancy notices expire
+- `bounty_ttl`: Ticks before bounty postings expire
+
+Scenario authors configure per-agent posting behavior in `AgentDef`. Guard Theron (institutional poster) might have `threat_warning_ttl: 72` (longer warnings). A panicky civilian might have `threat_warning_ttl: 24` (short-lived warnings).
+
+## Outcome
+
+- Completion date: 2026-04-12
+- Added `ArtifactPostingProfile` as a universal agent component in `worldwake-core`, including default seeding, schema registration, crate export, and exact bootstrap delta proof updates.
+- Added lawful planner-visible carriage for `ArtifactPostingProfile` through `PerAgentBeliefView`, `PlanningSnapshot`, and `PlanningState`.
+- Updated runtime candidate generation so autonomous `PostBounty` and `PostNotice` goals provision `expires_at` from the agent profile instead of emitting `None`.
+- Added CLI scenario support via `AgentDef.artifact_posting_profile` plus default and override proof.
+- Landed `golden_s97_autonomous_notice_expiry_bounds_active_population` in `crates/worldwake-ai/tests/golden_integration.rs` and regenerated the golden inventory/docs under `docs/generated/`.
+
+## Deviations
+
+1. The implementation shipped as five reviewable tickets (`S97POSNOTART-001` through `005`) instead of one monolithic pass.
+2. The final bounded-population golden landed in `golden_integration.rs`, not `golden_planner_pathology.rs`, because the integration suite already owned the strongest artifact lifecycle and autonomous posting surface.
+3. The active-count bound is proven by TTL-driven lifecycle expiry under the live tick ordering, not by duplicate-suppression logic.
+
+## Verification Result
+
+1. `cargo test -p worldwake-core artifact_posting`
+2. `cargo test -p worldwake-sim artifact_posting_profile`
+3. `cargo test -p worldwake-ai artifact_posting_profile`
+4. `cargo test -p worldwake-cli test_spawn_agents_receive_default_universal_profiles`
+5. `cargo test -p worldwake-ai golden_s97_autonomous_notice_expiry_bounds_active_population`
+6. `cargo test -p worldwake-ai`
+7. `cargo clippy --workspace --all-targets -- -D warnings`
+8. `cargo test --workspace`
+9. `python3 scripts/golden_inventory.py --write --check-docs`

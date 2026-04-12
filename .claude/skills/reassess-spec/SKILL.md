@@ -38,7 +38,8 @@ Follow these steps in order. Do not skip any step.
 Before beginning Steps 2-3, classify the spec:
 
 - **(a) New system** — introduces new components, actions, goal kinds, or information paths. Full checklist applies.
-- **(b) System extension** — extends existing components, actions, or enums without new systems. Steps 3.1-3.8, 4.4 apply. Skip 3.9 if no behavioral claims about runtime readers/writers. Section H updates only for new deliverable sections. For tooling-only specs, downstream consumer analysis (3.6) can be limited to the tooling binary.
+- **(b) System extension** — extends existing components, actions, or enums without new systems. Steps 3.1-3.8, 4.4 apply. Skip 3.9 if no behavioral claims about runtime readers/writers. Section H updates only for new deliverable sections.
+  - **Tooling-only variant** (observer binary, CLI enhancements, diagnostic tools): Steps 3.1-3.4 fully apply. Steps 3.5-3.7 apply only if the spec extends existing types or enums; if the spec adds only new functions/structs local to the tooling binary, 3.5-3.7 are N/A. Step 3.8 (upstream spec references) still applies. Skip 3.9. Downstream consumer analysis (3.6) can be limited to the tooling binary.
 - **(c) Structural refactor** — trait/module restructuring with no behavioral changes. Skip Steps 3.5, 3.9, 4.4; Section H is N/A. Focus on symbol existence, count accuracy, and blast radius.
 - **(d) Test-only** — adds golden tests, benchmarks, or test infrastructure without modifying production code.
   - Steps 3.1-3.4 apply (validate referenced paths, types, functions, dependencies).
@@ -46,12 +47,13 @@ Before beginning Steps 2-3, classify the spec:
   - Step 4 applies but 4.4 is N/A.
   - Section H updates are N/A unless the test reveals a missing causal hook.
 
-- **(e) Investigation/bugfix** — diagnoses a root cause and proposes targeted fixes, no new systems or components. Covers both hypothesis-driven investigations (conditional fixes) and proven-diagnosis specs (single concrete fix confirmed by existing tests). Also covers computation-optimization specs that add new filter/pruning logic without new world-facing state.
+- **(e) Investigation/bugfix/optimization** — diagnoses a root cause and proposes targeted fixes, no new systems or components. Covers both hypothesis-driven investigations (conditional fixes) and proven-diagnosis specs (single concrete fix confirmed by existing tests). Also covers computation-optimization specs that add new planner-internal algorithms, heuristics, or filter/pruning logic without new world-facing state.
   - Steps 3.1-3.4 apply (validate all referenced paths, types, functions, dependencies).
-  - Steps 3.5-3.8 apply only to proposed fix deliverables (not to hypothesis text).
+  - Steps 3.5-3.8: For investigation/bugfix specs, apply only to proposed fix deliverables (not to hypothesis text). For computation-optimization specs, apply to all deliverables (there is no "hypothesis text" — all deliverables are implementation targets).
   - Step 3.9 applies if claims about runtime behavior are made.
   - Step 4 applies; 4.4 applies if any proposed fix touches action preconditions.
-  - Section H updates only if the fix changes causal hooks.
+  - Section H updates only if the change introduces new causal hooks.
+  - **Root-cause tracing (Step 2)**: The structured root-cause tracing substeps (a-d) apply to investigation/bugfix specs. For computation-optimization specs, skip root-cause tracing — instead prioritize validating that the spec's referenced types, functions, and integration points exist and have the assumed signatures and semantics.
 
 **Deliverable removal**: If validation reveals a deliverable should be removed entirely, skip remaining sub-steps for that deliverable and record the removal as a finding. Continue validation for surviving deliverables.
 
@@ -84,18 +86,22 @@ Extract every concrete codebase reference from the spec:
 - **Code examples** (inline code blocks showing API usage, precondition lists, struct definitions) — extract for fidelity checking against actual source
 - **Scenario and test configuration files** referenced by the spec (RON scenarios, test fixtures, seed values) — extract profile/parameter values the spec's claims depend on
 
-Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked. For investigation/bugfix specs (type e), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist. Structured root-cause tracing:
+Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
+
+For investigation/bugfix specs (type e, investigation/bugfix subtype), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist. Structured root-cause tracing:
 
 - (a) identify each code path the spec claims participates in the bug
 - (b) read the actual implementation of each path
 - (c) verify the claimed divergence mechanism by comparing inputs, computation methods, and outputs across paths
 - (d) check scenario/test configuration for parameter values that trigger the claimed failure
 
+For computation-optimization specs (type e, optimization subtype), skip root-cause tracing — there is no bug hypothesis to validate. Instead prioritize: (a) that all referenced types, functions, and integration points exist with the assumed signatures, (b) that proposed integration sites have the structural shape the spec assumes (e.g., variable availability, loop structure, timing of data collection), and (c) that proposed new types satisfy existing trait bounds at their intended usage sites.
+
 **Proven-diagnosis scoping**: If the spec's diagnosis is already confirmed by existing tests that demonstrate the specific failure mode (e.g., golden tests asserting `BudgetExhausted` with concrete candidate counts), root-cause tracing may scope to verifying the fix's assumptions — that the proposed remedy targets the right code path and reads the right data — rather than re-proving the diagnosis from scratch. Sub-steps (a-b) still apply; (c-d) may be lighter-weight.
 
 ### Step 3: Codebase Validation
 
-Load `references/codebase-validation.md`. Validate every reference from Step 2.
+Load `references/codebase-validation.md` and `references/worldwake-validation-patterns.md`. Validate every reference from Step 2. Apply the pattern-specific checklists from `worldwake-validation-patterns.md` when a spec matches a trigger (new GoalKind variant, new component on Agent, new component read by AI crate, new action type, new cross-crate enum variant).
 
 Do not present findings yet. Collect everything for Step 4.
 

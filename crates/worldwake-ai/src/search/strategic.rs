@@ -89,7 +89,7 @@ pub(crate) fn plan(
         actor_place,
         &goal_places,
         &missing_commodities,
-        execution_budget.max_prerequisite_locations,
+        execution_budget.max_prerequisite_locations(),
     );
 
     if stages.is_empty() {
@@ -107,10 +107,7 @@ pub(crate) fn plan(
         return Some(StrategicPlan { steps: local_steps });
     }
 
-    let search_budget = usize::max(
-        1,
-        usize::from(execution_budget.max_prerequisite_locations) * 2,
-    );
+    let search_budget = strategic_search_budget(*execution_budget);
     let mut frontier = BinaryHeap::new();
     frontier.push(SearchNode {
         stage_index: 0,
@@ -162,6 +159,16 @@ pub(crate) fn plan(
     }
 
     None
+}
+
+fn strategic_search_budget(execution_budget: ExecutionBudget) -> usize {
+    // Strategic search permutes a bounded itinerary of prerequisite/goal stages.
+    // Its cap follows the strategic branching surface (`max_prerequisite_locations`)
+    // rather than the tactical node-expansion budget on `CognitiveProfile`.
+    usize::max(
+        1,
+        usize::from(execution_budget.max_prerequisite_locations()) * 2,
+    )
 }
 
 fn goal_places(
@@ -912,10 +919,11 @@ mod tests {
     }
 
     fn base_budget() -> worldwake_core::ExecutionBudget {
-        worldwake_core::ExecutionBudget {
-            max_prerequisite_locations: 3,
-            ..worldwake_core::ExecutionBudget::default()
-        }
+        worldwake_core::ExecutionBudget::new(
+            worldwake_core::ExecutionBudget::default().beam_width(),
+            3,
+            worldwake_core::ExecutionBudget::default().preferred_operator_boost(),
+        )
     }
 
     #[test]
@@ -936,6 +944,23 @@ mod tests {
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
 
         assert!(plan.steps.is_empty());
+    }
+
+    #[test]
+    fn strategic_search_budget_tracks_execution_budget_stage_cap() {
+        let minimum_valid = worldwake_core::ExecutionBudget::new(
+            worldwake_core::ExecutionBudget::default().beam_width(),
+            1,
+            worldwake_core::ExecutionBudget::default().preferred_operator_boost(),
+        );
+        let widened = worldwake_core::ExecutionBudget::new(
+            worldwake_core::ExecutionBudget::default().beam_width(),
+            5,
+            worldwake_core::ExecutionBudget::default().preferred_operator_boost(),
+        );
+
+        assert_eq!(super::strategic_search_budget(minimum_valid), 2);
+        assert_eq!(super::strategic_search_budget(widened), 10);
     }
 
     #[test]

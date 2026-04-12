@@ -29,6 +29,39 @@ pub(super) struct SearchCandidate {
     pub(super) expansion_trace_index: Option<usize>,
 }
 
+pub(super) struct CandidateTraceSinks<'a> {
+    pub(super) binding_rejections: Option<&'a mut Vec<crate::decision_trace::BindingRejection>>,
+    pub(super) expansion_candidates:
+        Option<&'a mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
+    pub(super) root_candidates: Option<&'a mut Vec<crate::decision_trace::RootCandidateTrace>>,
+    pub(super) root_omissions:
+        Option<&'a mut Vec<crate::decision_trace::RootOperatorOmissionTrace>>,
+}
+
+pub(super) struct CandidateFilterTraceSinks<'a> {
+    pub(super) expansion_candidates:
+        Option<&'a mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
+    pub(super) root_candidates: Option<&'a mut Vec<crate::decision_trace::RootCandidateTrace>>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct CandidateSearchContext<'a> {
+    pub(super) semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
+    pub(super) registry: &'a ActionDefRegistry,
+    pub(super) handlers: &'a ActionHandlerRegistry,
+    pub(super) blocked: &'a BlockedIntentMemory,
+    pub(super) current_tick: Tick,
+    pub(super) relevant_defs: &'a BTreeSet<ActionDefId>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct CommodityFilterContext<'a> {
+    pub(super) tactical_goal: Option<&'a super::TacticalGoal>,
+    pub(super) semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
+    pub(super) registry: &'a ActionDefRegistry,
+    pub(super) recipes: &'a RecipeRegistry,
+}
+
 pub(super) fn relevant_action_defs(
     goal: &GroundedGoal,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -151,46 +184,38 @@ pub(super) fn expansion_candidate_trace_from_candidate(
 pub(super) fn search_candidates(
     goal: &GroundedGoal,
     node: &SearchNode<'_>,
-    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
-    registry: &ActionDefRegistry,
-    handlers: &ActionHandlerRegistry,
-    blocked: &BlockedIntentMemory,
-    current_tick: Tick,
+    context: CandidateSearchContext<'_>,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
     root_omissions: Option<&mut Vec<crate::decision_trace::RootOperatorOmissionTrace>>,
-    relevant_defs: &BTreeSet<ActionDefId>,
 ) -> Vec<SearchCandidate> {
     search_candidates_with_expansion_trace(
         goal,
         node,
-        semantics_table,
-        registry,
-        handlers,
-        blocked,
-        current_tick,
-        binding_rejections,
-        None,
-        root_candidates,
-        root_omissions,
-        relevant_defs,
+        context,
+        CandidateTraceSinks {
+            binding_rejections,
+            expansion_candidates: None,
+            root_candidates,
+            root_omissions,
+        },
     )
 }
 
 pub(super) fn search_candidates_with_expansion_trace(
     goal: &GroundedGoal,
     node: &SearchNode<'_>,
-    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
-    registry: &ActionDefRegistry,
-    handlers: &ActionHandlerRegistry,
-    blocked: &BlockedIntentMemory,
-    current_tick: Tick,
-    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
-    expansion_candidates: Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
-    root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
-    root_omissions: Option<&mut Vec<crate::decision_trace::RootOperatorOmissionTrace>>,
-    relevant_defs: &BTreeSet<ActionDefId>,
+    context: CandidateSearchContext<'_>,
+    trace_sinks: CandidateTraceSinks<'_>,
 ) -> Vec<SearchCandidate> {
+    let CandidateSearchContext {
+        semantics_table,
+        registry,
+        handlers,
+        blocked,
+        current_tick,
+        relevant_defs,
+    } = context;
     let epistemic_subjects = grounded_goal_epistemic_subjects(goal, &node.state);
     let mut affordance_defs = relevant_defs.clone();
     if !epistemic_subjects.is_empty() {
@@ -255,6 +280,12 @@ pub(super) fn search_candidates_with_expansion_trace(
         relevant_defs,
         &candidates,
     ));
+    let CandidateTraceSinks {
+        binding_rejections,
+        expansion_candidates,
+        root_candidates,
+        root_omissions,
+    } = trace_sinks;
     let mut root_omissions = root_omissions;
     if let Some(root_omissions) = root_omissions.as_mut() {
         record_root_operator_omissions(
@@ -425,22 +456,18 @@ pub(super) fn apply_commodity_relevance_filter(
     candidates: &mut Vec<SearchCandidate>,
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
-    tactical_goal: Option<&super::TacticalGoal>,
-    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
-    registry: &ActionDefRegistry,
-    recipes: &RecipeRegistry,
+    context: CommodityFilterContext<'_>,
     root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
 ) {
     apply_commodity_relevance_filter_with_expansion_trace(
         candidates,
         goal,
         state,
-        tactical_goal,
-        semantics_table,
-        registry,
-        recipes,
-        None,
-        root_candidates,
+        context,
+        CandidateFilterTraceSinks {
+            expansion_candidates: None,
+            root_candidates,
+        },
     );
 }
 
@@ -448,13 +475,15 @@ pub(super) fn apply_commodity_relevance_filter_with_expansion_trace(
     candidates: &mut Vec<SearchCandidate>,
     goal: &GroundedGoal,
     state: &PlanningState<'_>,
-    tactical_goal: Option<&super::TacticalGoal>,
-    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
-    registry: &ActionDefRegistry,
-    recipes: &RecipeRegistry,
-    expansion_candidates: Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
-    root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+    context: CommodityFilterContext<'_>,
+    trace_sinks: CandidateFilterTraceSinks<'_>,
 ) {
+    let CommodityFilterContext {
+        tactical_goal,
+        semantics_table,
+        registry,
+        recipes,
+    } = context;
     let Some(goal_commodity) = tactical_goal
         .and_then(|goal| match goal {
             super::TacticalGoal::AcquirePrerequisite { commodity, .. }
@@ -466,6 +495,10 @@ pub(super) fn apply_commodity_relevance_filter_with_expansion_trace(
         return;
     };
 
+    let CandidateFilterTraceSinks {
+        expansion_candidates,
+        root_candidates,
+    } = trace_sinks;
     let mut root_candidates = root_candidates;
     let mut expansion_candidates = expansion_candidates;
     candidates.retain(|candidate| {

@@ -1339,15 +1339,16 @@ mod tests {
                 .max_snapshot_entities_per_place,
             speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
             landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
+            use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         }
     }
 
     fn execution_budget(reasoning: &ProfileFixture) -> ExecutionBudget {
-        ExecutionBudget {
-            beam_width: reasoning.beam_width,
-            max_prerequisite_locations: reasoning.max_prerequisite_locations,
-            preferred_operator_boost: ExecutionBudget::default().preferred_operator_boost,
-        }
+        ExecutionBudget::new(
+            reasoning.beam_width,
+            reasoning.max_prerequisite_locations,
+            ExecutionBudget::default().preferred_operator_boost(),
+        )
     }
 
     fn acquire_goal(
@@ -2321,6 +2322,8 @@ mod tests {
                 non_terminal_after_beam: 1,
                 found_goal_satisfied: true,
                 landmark_heuristic: 0,
+                ff_heuristic: None,
+                helpful_action_count: 0,
                 travel_pruning: None,
                 prerequisite_guidance: None,
                 expansion_candidates: Vec::new(),
@@ -2359,6 +2362,8 @@ mod tests {
                 non_terminal_after_beam: 1,
                 found_goal_satisfied: true,
                 landmark_heuristic: 0,
+                ff_heuristic: None,
+                helpful_action_count: 0,
                 travel_pruning: None,
                 prerequisite_guidance: None,
                 expansion_candidates: Vec::new(),

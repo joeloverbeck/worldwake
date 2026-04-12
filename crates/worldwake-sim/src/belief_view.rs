@@ -6,13 +6,14 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, BelievedActivity, BelievedEntityState,
-    BelievedInstitutionalClaim, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
-    CommodityKind, CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant,
-    DemandObservation, DisposalProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
-    ExpectationStore, ExplorationProfile, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
+    BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim, CognitiveProfile,
+    CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
+    CommodityValuationProfile, ContentionGrant, DemandObservation, DisposalProfile,
+    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
     OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile,
     Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
     RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
@@ -199,6 +200,14 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
+        let _ = agent;
+        ObligationSatiationProfile::default()
+    }
+    fn obligation_execution_tracker(&self, agent: EntityId) -> ObligationExecutionTracker {
+        let _ = agent;
+        ObligationExecutionTracker::default()
+    }
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         let _ = agent;
         None
@@ -313,6 +322,10 @@ pub trait GoalBeliefView {
         None
     }
     fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
+        let _ = agent;
+        None
+    }
+    fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
         let _ = agent;
         None
     }
@@ -442,6 +455,14 @@ pub trait ProfileBeliefView {
         let _ = agent;
         None
     }
+    fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
+        let _ = agent;
+        ObligationSatiationProfile::default()
+    }
+    fn obligation_execution_tracker(&self, agent: EntityId) -> ObligationExecutionTracker {
+        let _ = agent;
+        ObligationExecutionTracker::default()
+    }
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         let _ = agent;
         None
@@ -451,6 +472,10 @@ pub trait ProfileBeliefView {
         None
     }
     fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
+        let _ = agent;
+        None
+    }
+    fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
         let _ = agent;
         None
     }
@@ -1234,6 +1259,20 @@ where
         ProfileBeliefView::exploration_profile(self, agent)
     }
 
+    fn obligation_satiation_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> worldwake_core::ObligationSatiationProfile {
+        ProfileBeliefView::obligation_satiation_profile(self, agent)
+    }
+
+    fn obligation_execution_tracker(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> worldwake_core::ObligationExecutionTracker {
+        ProfileBeliefView::obligation_execution_tracker(self, agent)
+    }
+
     fn cognitive_profile(
         &self,
         agent: worldwake_core::EntityId,
@@ -1403,6 +1442,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::UtilityProfile> {
         ProfileBeliefView::utility_profile(self, agent)
+    }
+
+    fn artifact_posting_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::ArtifactPostingProfile> {
+        ProfileBeliefView::artifact_posting_profile(self, agent)
     }
 
     fn wounds(&self, agent: worldwake_core::EntityId) -> Vec<worldwake_core::Wound> {

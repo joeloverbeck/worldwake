@@ -15,24 +15,24 @@ use candidates::search_candidate_from_planner;
 #[cfg(test)]
 use candidates::search_candidates;
 use candidates::{
+    CandidateFilterTraceSinks, CandidateSearchContext, CandidateTraceSinks, CommodityFilterContext,
     SearchCandidate, apply_commodity_relevance_filter_with_expansion_trace,
     search_candidates_from_affordance, search_candidates_with_expansion_trace, unsupported_goal,
 };
 use frontier::{DualFrontier, FrontierEntry, compare_search_nodes};
 use heuristic::combined_relevant_places_with_guidance;
 #[cfg(test)]
-use heuristic::compute_heuristic;
-#[cfg(test)]
 use heuristic::prune_travel_away_from_goal;
 #[cfg(test)]
 use heuristic::{combined_relevant_places, root_node};
 use heuristic::{
     combined_relevant_places_for_tactical, combined_relevant_places_with_guidance_for_tactical,
-    compute_landmark_heuristic, prune_travel_away_from_goal_with_expansion_trace,
-    root_node_for_tactical,
+    compute_heuristic, compute_landmark_heuristic,
+    prune_travel_away_from_goal_with_expansion_trace, root_node_for_tactical,
 };
 use landmarks::{
-    LandmarkSet, PlanningFact, extract_landmarks, goal_facts_from_goal, planning_facts_from_state,
+    LandmarkSet, PlanningFact, PlanningOperator, RelaxedPlanResult, compute_ff_heuristic,
+    extract_landmarks, goal_facts_from_goal, planning_facts_from_state,
     planning_operator_from_transition, preferred_operators,
 };
 use std::collections::BTreeMap;
@@ -189,6 +189,49 @@ fn travel_to_goal_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> 
     !matches!(goal, worldwake_core::GoalKind::Accuse { .. })
 }
 
+#[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
+fn apply_ff_heuristic_to_successors<'snapshot>(
+    snapshot: &PlanningSnapshot,
+    goal: &GroundedGoal,
+    node: &SearchNode<'snapshot>,
+    cognitive: &CognitiveProfile,
+    recipes: &RecipeRegistry,
+    execution_budget: &ExecutionBudget,
+    tactical_goal: Option<&TacticalGoal>,
+    successor_operators: &[PlanningOperator],
+    successors: &mut [(usize, Option<PlanTerminalKind>, SearchNode<'snapshot>, bool)],
+) -> Option<RelaxedPlanResult> {
+    if !cognitive.use_ff_heuristic || successor_operators.is_empty() {
+        return None;
+    }
+
+    let goal_facts = tactical_goal
+        .map(|tactical_goal| tactical_goal.goal_facts(goal, &node.state, recipes))
+        .unwrap_or_default();
+    if goal_facts.is_empty() {
+        return None;
+    }
+
+    let current_facts = planning_facts_from_state(&node.state);
+    let ff_result = compute_ff_heuristic(&current_facts, &goal_facts, successor_operators)?;
+
+    for (index, (_, _, successor, preferred)) in successors.iter_mut().enumerate() {
+        let combined_places = combined_relevant_places_for_tactical(
+            goal,
+            &successor.state,
+            recipes,
+            execution_budget,
+            tactical_goal,
+        );
+        let spatial_heuristic =
+            compute_heuristic(snapshot, &successor.state, &combined_places.places);
+        successor.heuristic_ticks = spatial_heuristic.max(ff_result.h_ff);
+        *preferred = ff_result.helpful_action_indices.contains(&index);
+    }
+
+    Some(ff_result)
+}
+
 /// Outcome of a plan search for one goal.
 ///
 /// Replaces the previous `Option<PlannedPlan>` return type to preserve
@@ -306,7 +349,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         }
         return PlanSearchResult::FrontierExhausted { expansions_used: 0 };
     }
-    let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost);
+    let mut frontier = DualFrontier::new(execution_budget.preferred_operator_boost());
     frontier.push_regular(FrontierEntry::new(root_node_for_tactical(
         snapshot,
         goal,
@@ -359,16 +402,20 @@ pub(crate) fn search_plan_with_trace_metadata(
         let mut candidates = search_candidates_with_expansion_trace(
             goal,
             &node,
-            semantics_table,
-            registry,
-            handlers,
-            blocked,
-            current_tick,
-            binding_rejections.as_deref_mut(),
-            Some(&mut expansion_candidates),
-            record_root_candidates.then_some(&mut root_candidates),
-            record_root_candidates.then_some(&mut root_omissions),
-            &relevant_defs,
+            CandidateSearchContext {
+                semantics_table,
+                registry,
+                handlers,
+                blocked,
+                current_tick,
+                relevant_defs: &relevant_defs,
+            },
+            CandidateTraceSinks {
+                binding_rejections: binding_rejections.as_deref_mut(),
+                expansion_candidates: Some(&mut expansion_candidates),
+                root_candidates: record_root_candidates.then_some(&mut root_candidates),
+                root_omissions: record_root_candidates.then_some(&mut root_omissions),
+            },
         );
         if let Some(extra_candidates) = social_query_candidates(
             goal,
@@ -395,12 +442,16 @@ pub(crate) fn search_plan_with_trace_metadata(
             &mut candidates,
             goal,
             &node.state,
-            active_tactical_goal,
-            semantics_table,
-            registry,
-            recipes,
-            Some(&mut expansion_candidates),
-            record_root_candidates.then_some(&mut root_candidates),
+            CommodityFilterContext {
+                tactical_goal: active_tactical_goal,
+                semantics_table,
+                registry,
+                recipes,
+            },
+            CandidateFilterTraceSinks {
+                expansion_candidates: Some(&mut expansion_candidates),
+                root_candidates: record_root_candidates.then_some(&mut root_candidates),
+            },
         );
         apply_tactical_candidate_filter_with_expansion_trace(
             &mut candidates,
@@ -521,6 +572,17 @@ pub(crate) fn search_plan_with_trace_metadata(
 
         let terminal_count = terminal_successors.len() as u16;
         let non_terminal_before_beam = successors.len() as u16;
+        let ff_result = apply_ff_heuristic_to_successors(
+            snapshot,
+            goal,
+            &node,
+            cognitive,
+            recipes,
+            execution_budget,
+            active_tactical_goal,
+            &successor_operators,
+            &mut successors,
+        );
 
         let mut found_goal_satisfied = false;
         if !terminal_successors.is_empty() {
@@ -563,6 +625,10 @@ pub(crate) fn search_plan_with_trace_metadata(
                                 found_goal_satisfied,
                                 preferred_candidates: 0,
                                 landmark_heuristic,
+                                ff_heuristic: ff_result.as_ref().map(|result| result.h_ff),
+                                helpful_action_count: ff_result
+                                    .as_ref()
+                                    .map_or(0, |result| result.helpful_action_indices.len() as u16),
                                 travel_pruning: travel_pruning.clone(),
                                 prerequisite_guidance: summary_places
                                     .as_ref()
@@ -623,7 +689,7 @@ pub(crate) fn search_plan_with_trace_metadata(
             }
         }
 
-        if !landmark_set.landmarks.is_empty() && !successors.is_empty() {
+        if ff_result.is_none() && !landmark_set.landmarks.is_empty() && !successors.is_empty() {
             let current_facts = planning_facts_from_state(&node.state);
             let preferred_indices = preferred_operators(
                 &landmark_set,
@@ -639,7 +705,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         successors.sort_by(|left, right| compare_search_nodes(&left.2, &right.2));
         let retained_len = successors
             .len()
-            .min(usize::from(execution_budget.beam_width));
+            .min(usize::from(execution_budget.beam_width()));
         for (index, (trace_index, _, _, preferred)) in successors.iter().enumerate() {
             expansion_candidates[*trace_index].outcome = if index < retained_len {
                 crate::decision_trace::ExpansionCandidateOutcome::RetainedNonTerminal {
@@ -687,6 +753,10 @@ pub(crate) fn search_plan_with_trace_metadata(
                 found_goal_satisfied,
                 preferred_candidates,
                 landmark_heuristic,
+                ff_heuristic: ff_result.as_ref().map(|result| result.h_ff),
+                helpful_action_count: ff_result
+                    .as_ref()
+                    .map_or(0, |result| result.helpful_action_indices.len() as u16),
                 travel_pruning,
                 prerequisite_guidance: summary_places.and_then(|summary| summary.guidance_trace),
                 expansion_candidates,

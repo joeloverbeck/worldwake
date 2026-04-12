@@ -33,15 +33,15 @@ use worldwake_ai::{
     AgentTickDriver, CommodityPurpose, DecisionOutcome, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    AgentBeliefStore, AgentData, ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy,
-    BeliefConfidencePolicy, BelievedActivity, BelievedInstitutionalClaim, BountyTarget,
-    BountyTerms, CombatProfile, CommodityKind, Container, ControlSource, DeadAt, DemandMemory,
-    DemandObservation, DemandObservationReason, EffectiveRight, EligibilityRule, EntityId,
-    EvidenceKind, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes, MerchandiseProfile,
-    MetabolismProfile, NoticeTopic, PerceptionProfile, PerceptionSource, PlaceTag,
-    ProductionOutputOwner, ProofRequirement, PrototypePlace, PursuitProfile, Quantity, RecordData,
-    RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, Seed,
+    AgentBeliefStore, AgentData, ArtifactKind, ArtifactPostingProfile, ArtifactState, BanditCamp,
+    BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity, BelievedInstitutionalClaim,
+    BountyTarget, BountyTerms, CombatProfile, CommodityKind, Container, ControlSource, DeadAt,
+    DemandMemory, DemandObservation, DemandObservationReason, EffectiveRight, EligibilityRule,
+    EntityId, EvidenceKind, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile, KnownRecipes,
+    MerchandiseProfile, MetabolismProfile, NoticeTopic, PerceptionProfile, PerceptionSource,
+    PlaceTag, ProductionOutputOwner, ProofRequirement, PrototypePlace, PursuitProfile, Quantity,
+    RecordData, RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, Seed,
     SocialObservationDetail, StateHash, SuccessionLaw, TellProfile, TellTopic,
     TheftDispositionProfile, TheftFacts, Tick, Topology, TradeDispositionProfile, TravelEdge,
     TravelEdgeId, UtilityProfile, ViolationDispositionProfile, ViolationKind, ViolationMemory,
@@ -685,6 +685,18 @@ fn set_theft_profile(
     txn.set_component_theft_disposition_profile(agent, profile)
         .unwrap();
     commit_txn(txn, &mut h.event_log);
+}
+
+fn set_agent_artifact_posting_profile(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    profile: ArtifactPostingProfile,
+) {
+    let mut txn = new_txn(world, 0);
+    txn.set_component_artifact_posting_profile(agent, profile)
+        .unwrap();
+    commit_txn(txn, event_log);
 }
 
 fn request_action_with_payload(
@@ -4805,7 +4817,7 @@ fn run_s51_autonomous_bounty_posting(seed: Seed) -> (StateHash, StateHash) {
         posting: worldwake_core::ArtifactPostingContext {
             posting_place: PLACE_S45_TOWN_SQUARE,
             issuing_authority: Some(office),
-            expires_at: None,
+            expires_at: Some(Tick(145)),
             jurisdiction: Some(PLACE_S45_TOWN_SQUARE),
         },
         terms: BountyTerms {
@@ -5028,7 +5040,7 @@ fn run_s58_autonomous_notice_reroute(seed: Seed) -> (StateHash, StateHash) {
         posting: worldwake_core::ArtifactPostingContext {
             posting_place: PLACE_S45_MARKET,
             issuing_authority: None,
-            expires_at: None,
+            expires_at: Some(Tick(48)),
             jurisdiction: Some(PLACE_S45_MARKET),
         },
         topic: NoticeTopic::ThreatWarning {
@@ -5136,6 +5148,189 @@ fn run_s58_autonomous_notice_reroute(seed: Seed) -> (StateHash, StateHash) {
         selected_destination,
         Some(PLACE_S45_SAFE_ROUTE),
         "after perceiving the autonomous warning notice, the first search-selected apple trip should begin via the safe route; traces={traveler_summaries:?}"
+    );
+
+    (
+        hash_world(&h.world).unwrap(),
+        hash_event_log(&h.event_log).unwrap(),
+    )
+}
+
+fn run_s97_autonomous_notice_expiry_bounds_active_population(seed: Seed) -> (StateHash, StateHash) {
+    let mut h = build_harness_with_topology(seed, build_s45_notice_topology());
+    h.enable_action_tracing();
+
+    let issuer = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S97 Warning Issuer",
+        PLACE_S45_MARKET,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            notice_posting_weight: pm(1000),
+            social_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        s45_perception_profile(),
+    );
+    let posting_profile = ArtifactPostingProfile {
+        threat_warning_ttl: 4,
+        office_vacancy_ttl: 96,
+        bounty_ttl: 144,
+    };
+    set_agent_artifact_posting_profile(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        posting_profile.clone(),
+    );
+
+    let hostile = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "S97 Roadside Ambusher",
+        PLACE_S45_WARNED_ROAD,
+        HomeostaticNeeds::new(pm(100), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    set_control_source(&mut h, hostile, ControlSource::None, 0);
+
+    seed_belief(
+        &mut h.world,
+        &mut h.event_log,
+        issuer,
+        hostile,
+        worldwake_core::BelievedEntityState {
+            believed_kind: None,
+            last_known_place: Some(PLACE_S45_WARNED_ROAD),
+            last_known_inventory: std::collections::BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: Some(BelievedActivity {
+                action_domain: worldwake_core::ActionDomain::Combat,
+                target: Some(issuer),
+                observed_tick: Tick(0),
+            }),
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            observed_tick: Tick(0),
+            source: PerceptionSource::DirectObservation,
+        },
+    );
+
+    let mut notice_ids = BTreeSet::new();
+    let mut max_active_notices = 0usize;
+    for _ in 0..20 {
+        h.step_once();
+
+        let mut active_notices = 0usize;
+        for entity in h.world.all_entities() {
+            let Some(header) = h.world.get_component_artifact_header(entity) else {
+                continue;
+            };
+            if header.kind != ArtifactKind::Notice {
+                continue;
+            }
+            let notice_content = h
+                .world
+                .get_component_notice_content(entity)
+                .expect("notice artifacts should retain notice content");
+            if notice_content.topic
+                != (NoticeTopic::ThreatWarning {
+                    place: PLACE_S45_WARNED_ROAD,
+                })
+            {
+                continue;
+            }
+
+            notice_ids.insert(entity);
+            assert!(
+                header.expires_at.is_some(),
+                "autonomous warning notices should carry expiry ticks"
+            );
+            if header.state == ArtifactState::Active
+                && h.world.effective_place(entity) == Some(PLACE_S45_MARKET)
+            {
+                active_notices += 1;
+            }
+        }
+        max_active_notices = max_active_notices.max(active_notices);
+    }
+
+    let action_summaries = h.action_trace_sink().map_or_else(Vec::new, |sink| {
+        sink.events_for(issuer)
+            .into_iter()
+            .map(worldwake_sim::ActionTraceEvent::summary)
+            .collect::<Vec<_>>()
+    });
+    let committed_post_notice_ticks = h.action_trace_sink().map_or_else(Vec::new, |sink| {
+        sink.events_for(issuer)
+            .into_iter()
+            .filter_map(|event| {
+                (event.action_name == "post_notice"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. }))
+                .then_some(event.tick)
+            })
+            .collect::<Vec<_>>()
+    });
+    assert!(
+        committed_post_notice_ticks.len() >= 2,
+        "issuer should commit repeated post_notice actions under a persistent threat; action_traces={action_summaries:?}"
+    );
+
+    let notices = notice_ids
+        .into_iter()
+        .map(|entity| {
+            (
+                entity,
+                *h.world
+                    .get_component_artifact_header(entity)
+                    .expect("tracked notice should retain artifact header"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        notices.len() >= 2,
+        "scenario should create multiple warning notices across the run; action_traces={action_summaries:?}"
+    );
+    let expired_notice_expirations = notices
+        .iter()
+        .filter_map(|(_entity, header)| {
+            (header.state == ArtifactState::Expired).then_some(
+                header
+                    .expires_at
+                    .expect("expired notices should retain expiry ticks"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !expired_notice_expirations.is_empty(),
+        "earlier warning notices should expire on the authoritative lifecycle schedule; action_traces={action_summaries:?}"
+    );
+    let repost_after_expiry = expired_notice_expirations.into_iter().any(|expired_at| {
+        notices
+            .iter()
+            .any(|(_entity, header)| header.created_at >= expired_at)
+    });
+    assert!(
+        repost_after_expiry,
+        "the run should prove post -> expire -> re-post rather than one-way accumulation; action_traces={action_summaries:?}"
+    );
+    assert!(
+        max_active_notices <= posting_profile.threat_warning_ttl as usize,
+        "active warning notices at the posting place should stay bounded by TTL-driven expiry; max_active_notices={max_active_notices}; ttl={}; action_traces={action_summaries:?}",
+        posting_profile.threat_warning_ttl
     );
 
     (
@@ -5374,6 +5569,46 @@ fn golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically(
     assert_eq!(
         first, second,
         "S58 autonomous warning notice scenario should replay deterministically"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 137: Autonomous threat-warning expiry bounds active notice population
+// ---------------------------------------------------------------------------
+//
+// Systems: Social artifact actions, artifact lifecycle, Beliefs, AI
+// GoalKinds: PostNotice
+// ActionDomains: Social
+// Places: S45 Market, S45 Warned Road
+// Principles: 7, 11, 14, 25
+//
+// Setup: AI issuer at Market has non-zero `notice_posting_weight`, a persistent
+//   hostile belief at Warned Road, and an explicit short `ArtifactPostingProfile`
+//   override so the warning TTL is only 4 ticks.
+//
+// Proves: TTL-backed autonomous notice posting closes the remaining bounded-
+//   population loop end to end. Repeated `post_notice` commits materialize
+//   expiring notice artifacts with non-`None` expiries, earlier notices age
+//   into `ArtifactState::Expired`, and the active notice population at the
+//   posting place stays bounded by the short TTL instead of growing forever.
+//
+// Chain: persistent danger belief -> repeated AI `PostNotice` selection ->
+//   `post_notice` commits with expiry -> lifecycle flips earlier notices to
+//   `Expired` -> later notices reappear after expiry while active count stays
+//   bounded over time.
+
+#[test]
+fn golden_s97_autonomous_notice_expiry_bounds_active_population() {
+    let _ = run_s97_autonomous_notice_expiry_bounds_active_population(Seed([137; 32]));
+}
+
+#[test]
+fn golden_s97_autonomous_notice_expiry_bounds_active_population_replays_deterministically() {
+    let first = run_s97_autonomous_notice_expiry_bounds_active_population(Seed([138; 32]));
+    let second = run_s97_autonomous_notice_expiry_bounds_active_population(Seed([138; 32]));
+    assert_eq!(
+        first, second,
+        "S97 autonomous warning expiry scenario should replay deterministically"
     );
 }
 
