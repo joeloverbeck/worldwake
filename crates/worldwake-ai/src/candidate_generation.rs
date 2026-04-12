@@ -26,17 +26,18 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    ArtifactPostingContext, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
-    BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, DriveThresholds, EligibilityRule,
-    EntityId, EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState, GoalKey,
-    GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
-    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
-    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
-    UtilityProfile, ViolationId, ViolationKind, ViolationMemory, classify_communication,
-    current_institutional_belief_topics, load_per_unit,
-    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
+    ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
+    BelievedInstitutionalClaim, BlockedIntentMemory, BountyTarget, BountyTerms, CommodityKind,
+    CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, ExpectationOutcome,
+    ExpectationRecord, ExpectationState, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
+    PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
+    PunishmentKind, Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
+    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
+    ViolationKind, ViolationMemory, classify_communication, current_institutional_belief_topics,
+    load_per_unit, social_observation_is_redundant_for_listener,
+    tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
     GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
@@ -276,6 +277,14 @@ pub(crate) fn generate_candidates_with_travel_horizon(
 
 fn utility_profile_for_goal_generation(ctx: &GenerationContext<'_>) -> UtilityProfile {
     ctx.view.utility_profile(ctx.agent).unwrap_or_default()
+}
+
+fn artifact_posting_profile_for_goal_generation(
+    ctx: &GenerationContext<'_>,
+) -> ArtifactPostingProfile {
+    ctx.view
+        .artifact_posting_profile(ctx.agent)
+        .unwrap_or_default()
 }
 
 fn filter_blocked_candidates(
@@ -632,6 +641,7 @@ fn emit_bounty_posting_candidates(
                 });
         }
 
+        let posting_profile = artifact_posting_profile_for_goal_generation(ctx);
         emit_candidate_with_trace(
             candidates,
             diagnostics,
@@ -639,7 +649,7 @@ fn emit_bounty_posting_candidates(
                 posting: ArtifactPostingContext {
                     posting_place,
                     issuing_authority: Some(office),
-                    expires_at: None,
+                    expires_at: Some(ctx.current_tick + posting_profile.bounty_ttl),
                     jurisdiction: Some(posting_place),
                 },
                 terms: BountyTerms {
@@ -716,6 +726,7 @@ fn emit_notice_posting_candidates(
             .push(SelfKnowledgeProvenance::OwnWounds { count: wound_count });
     }
 
+    let posting_profile = artifact_posting_profile_for_goal_generation(ctx);
     emit_candidate_with_trace(
         candidates,
         diagnostics,
@@ -723,7 +734,7 @@ fn emit_notice_posting_candidates(
             posting: ArtifactPostingContext {
                 posting_place,
                 issuing_authority: None,
-                expires_at: None,
+                expires_at: Some(ctx.current_tick + posting_profile.threat_warning_ttl),
                 jurisdiction: Some(posting_place),
             },
             topic: NoticeTopic::ThreatWarning {
@@ -4916,8 +4927,8 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, ArtifactKind, ArtifactPostingContext, ArtifactState,
-        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        AgentBeliefStore, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile,
+        ArtifactState, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
         BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
@@ -4981,6 +4992,7 @@ mod tests {
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         utility_profiles: BTreeMap<EntityId, UtilityProfile>,
+        artifact_posting_profiles: BTreeMap<EntityId, ArtifactPostingProfile>,
         exploration_profiles: BTreeMap<EntityId, ExplorationProfile>,
         cognitive_profiles: BTreeMap<EntityId, CognitiveProfile>,
         disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
@@ -5063,6 +5075,7 @@ mod tests {
                 demand_memory: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
                 utility_profiles: BTreeMap::new(),
+                artifact_posting_profiles: BTreeMap::new(),
                 exploration_profiles: BTreeMap::new(),
                 cognitive_profiles: BTreeMap::new(),
                 disposal_profiles: BTreeMap::new(),
@@ -5218,6 +5231,10 @@ mod tests {
 
         fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
             self.utility_profiles.get(&agent).cloned()
+        }
+
+        fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
+            self.artifact_posting_profiles.get(&agent).cloned()
         }
 
         fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
@@ -10980,6 +10997,8 @@ mod tests {
                 ..UtilityProfile::default()
             },
         );
+        view.artifact_posting_profiles
+            .insert(agent, ArtifactPostingProfile::default());
         view.office_data
             .insert(office, vacant_office("Magistrate", seat, faction));
         view.office_holder_beliefs
@@ -11031,7 +11050,7 @@ mod tests {
                 posting: ArtifactPostingContext {
                     posting_place: seat,
                     issuing_authority: Some(office),
-                    expires_at: None,
+                    expires_at: Some(Tick(149)),
                     jurisdiction: Some(seat),
                 },
                 terms: BountyTerms {
@@ -11157,6 +11176,8 @@ mod tests {
                 ..UtilityProfile::default()
             },
         );
+        view.artifact_posting_profiles
+            .insert(agent, ArtifactPostingProfile::default());
         view.hostiles.insert(agent, vec![hostile]);
         view.attackers.insert(agent, vec![hostile]);
 
@@ -11177,7 +11198,7 @@ mod tests {
                 posting: ArtifactPostingContext {
                     posting_place: place,
                     issuing_authority: None,
-                    expires_at: None,
+                    expires_at: Some(Tick(53)),
                     jurisdiction: Some(place),
                 },
                 topic: NoticeTopic::ThreatWarning { place },
@@ -11207,6 +11228,8 @@ mod tests {
                 ..UtilityProfile::default()
             },
         );
+        view.artifact_posting_profiles
+            .insert(agent, ArtifactPostingProfile::default());
         view.beliefs.insert(
             agent,
             vec![(
@@ -11242,7 +11265,7 @@ mod tests {
                 posting: ArtifactPostingContext {
                     posting_place,
                     issuing_authority: None,
-                    expires_at: None,
+                    expires_at: Some(Tick(53)),
                     jurisdiction: Some(posting_place),
                 },
                 topic: NoticeTopic::ThreatWarning {

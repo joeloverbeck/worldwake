@@ -112,16 +112,22 @@ Add `ArtifactPostingProfile` to the scenario system per the profile completeness
 1. Add `artifact_posting_profile: Option<ArtifactPostingProfile>` field to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs`. No `*Def` wrapper needed (no `EntityId` references in the profile).
 2. Add `set_component` call in `spawn_agent()` in `crates/worldwake-cli/src/scenario/mod.rs`. Universal component pattern: `unwrap_or_default()`, always applied.
 
-### D5: Test fixture updates
+### D5: Focused fixture and same-domain golden expectation updates
 
-Multiple test files construct `ArtifactPostingContext` or `BelievedArtifactState` with `expires_at: None`. After D1-D3 are implemented, test fixtures that construct `ArtifactPostingContext` for PostNotice/PostBounty goals should use profile-derived TTL values for consistency.
+After D1-D3 are implemented, the owned proof surface is the local candidate-generation harness plus any existing same-domain goldens that already pin the exact selected posting payload shape.
 
-**`ArtifactPostingContext` locations (test code — need TTL values):**
+**Focused `ArtifactPostingContext` fixture locations (need TTL values):**
 - `candidate_generation.rs`: lines 11034, 11180, 11245 (past `#[cfg(test)]` at line 4899)
-- `goal_dispatch_decl.rs`: lines 803, 819, 828 (in `representative_goal_for`, `#[cfg(test)]` at line 664)
-- `ranking.rs`: lines 2712, 2809, 2894, 2939, 2994, 3189, 3233, 3265 (`#[cfg(test)]` at line 1715)
-- `feasibility.rs`: lines 963, 981 (`#[cfg(test)]` at line 267)
-- `goal_policy.rs`: line 704 (`#[cfg(test)]` at line 121)
+
+**Existing same-domain golden expectations (need TTL values):**
+- `golden_integration.rs`: autonomous bounty/notice posting expectations that assert the exact selected `GoalKey` payload
+
+**Other synthetic `ArtifactPostingContext` fixtures (no code changes required for this spec slice):**
+These are representative-goal or policy fixtures, not runtime-produced candidate-generation outputs. They stay unchanged unless a later ticket explicitly normalizes representative values:
+- `goal_dispatch_decl.rs`
+- `ranking.rs`
+- `feasibility.rs`
+- `goal_policy.rs`
 
 **`BelievedArtifactState` locations (no code changes needed):**
 These represent what agents *observe* about existing artifacts. Once artifacts are posted with `expires_at` values (via D3), the belief/perception system will naturally propagate non-None values. No changes needed in:

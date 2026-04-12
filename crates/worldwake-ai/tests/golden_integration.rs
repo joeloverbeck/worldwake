@@ -4805,7 +4805,7 @@ fn run_s51_autonomous_bounty_posting(seed: Seed) -> (StateHash, StateHash) {
         posting: worldwake_core::ArtifactPostingContext {
             posting_place: PLACE_S45_TOWN_SQUARE,
             issuing_authority: Some(office),
-            expires_at: None,
+            expires_at: Some(Tick(145)),
             jurisdiction: Some(PLACE_S45_TOWN_SQUARE),
         },
         terms: BountyTerms {
@@ -5028,7 +5028,7 @@ fn run_s58_autonomous_notice_reroute(seed: Seed) -> (StateHash, StateHash) {
         posting: worldwake_core::ArtifactPostingContext {
             posting_place: PLACE_S45_MARKET,
             issuing_authority: None,
-            expires_at: None,
+            expires_at: Some(Tick(48)),
             jurisdiction: Some(PLACE_S45_MARKET),
         },
         topic: NoticeTopic::ThreatWarning {
