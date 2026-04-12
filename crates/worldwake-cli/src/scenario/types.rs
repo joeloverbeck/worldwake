@@ -7,14 +7,15 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    CarryCapacity, CognitiveProfile, CombatProfile, CommodityValuationProfile,
-    CommunicationProfile, ContentionDispositionProfile, ControlSource, DisposalProfile,
-    DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
-    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory,
-    MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille,
-    PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
-    TellProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile,
+    CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile, ControlSource,
+    DisposalProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
+    ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+    LastSeenMemory, MetabolismProfile, ObligationSatiationProfile, PatrolProfile,
+    PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
+    Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag, items::CommodityKind,
+    topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -74,6 +75,8 @@ pub struct AgentDef {
     pub combat_profile: Option<CombatProfile>,
     #[serde(default)]
     pub utility_profile: Option<UtilityProfile>,
+    #[serde(default)]
+    pub artifact_posting_profile: Option<ArtifactPostingProfile>,
     #[serde(default)]
     pub merchandise_profile: Option<MerchandiseProfileDef>,
     #[serde(default)]
@@ -562,6 +565,7 @@ mod tests {
         assert!(agent.needs.is_none());
         assert!(agent.combat_profile.is_none());
         assert!(agent.utility_profile.is_none());
+        assert!(agent.artifact_posting_profile.is_none());
         assert!(agent.merchandise_profile.is_none());
         assert!(agent.trade_disposition.is_none());
         assert!(agent.perception_profile.is_none());
@@ -632,6 +636,59 @@ mod tests {
         assert_eq!(cognitive.max_plan_depth, 10);
         assert!(cognitive.speculative_acquisition);
         assert_eq!(cognitive.landmark_extraction_depth, 3);
+    }
+
+    #[test]
+    fn test_scenario_def_artifact_posting_profile_deserializes_when_present() {
+        let ron_str = r#"(
+            seed: 1,
+            places: [(name: "Nowhere", tags: [])],
+            agents: [
+                (
+                    name: "Herald",
+                    location: "Nowhere",
+                    control: Ai,
+                    artifact_posting_profile: (
+                        threat_warning_ttl: 12,
+                        office_vacancy_ttl: 34,
+                        bounty_ttl: 56,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let profile = def.agents[0]
+            .artifact_posting_profile
+            .clone()
+            .expect("artifact posting profile should deserialize");
+
+        assert_eq!(
+            profile,
+            ArtifactPostingProfile {
+                threat_warning_ttl: 12,
+                office_vacancy_ttl: 34,
+                bounty_ttl: 56,
+            }
+        );
+    }
+
+    #[test]
+    fn test_scenario_def_artifact_posting_profile_omitted_field_stays_none() {
+        let ron_str = r#"(
+            seed: 1,
+            places: [(name: "Nowhere", tags: [])],
+            agents: [
+                (
+                    name: "Herald",
+                    location: "Nowhere",
+                    control: Ai,
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(def.agents[0].artifact_posting_profile, None);
     }
 
     #[test]

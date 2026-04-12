@@ -393,6 +393,11 @@ fn spawn_agent(
     if let Some(ref utility) = agent_def.utility_profile {
         txn.set_component_utility_profile(agent_id, utility.clone())?;
     }
+    let artifact_posting = agent_def
+        .artifact_posting_profile
+        .clone()
+        .unwrap_or_default();
+    txn.set_component_artifact_posting_profile(agent_id, artifact_posting)?;
     if let Some(ref merch_def) = agent_def.merchandise_profile {
         let home_facility = merch_def
             .home_facility
@@ -574,15 +579,15 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
-        BeliefConfidencePolicy, CarryCapacity, CognitiveProfile, CommodityKind,
-        CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
-        ControlSource, DisposalProfile, DriveThresholds, EpistemicDispositionProfile,
-        ExecutionBudget, ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile,
-        JusticeDispositionProfile, LastSeenMemory, LoadUnits, ObligationSatiationProfile,
-        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceVisibilityProfile,
-        PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
-        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
-        WorkstationTag,
+        ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity, CognitiveProfile,
+        CommodityKind, CommodityValuationProfile, CommunicationProfile,
+        ContentionDispositionProfile, ControlSource, DisposalProfile, DriveThresholds,
+        EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
+        IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
+        ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
+        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
+        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        ViolationDispositionProfile, WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -593,6 +598,7 @@ mod tests {
             needs: None,
             combat_profile: None,
             utility_profile: None,
+            artifact_posting_profile: None,
             merchandise_profile: None,
             trade_disposition: None,
             perception_profile: None,
@@ -1487,6 +1493,10 @@ mod tests {
             world.get_component_obligation_satiation_profile(agent),
             Some(&ObligationSatiationProfile::default())
         );
+        assert_eq!(
+            world.get_component_artifact_posting_profile(agent),
+            Some(&ArtifactPostingProfile::default())
+        );
     }
 
     #[test]
@@ -1529,6 +1539,44 @@ mod tests {
         assert_eq!(
             world.get_component_last_seen_memory(agent),
             Some(&custom_memory)
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_with_artifact_posting_profile_override() {
+        let custom_profile = ArtifactPostingProfile {
+            threat_warning_ttl: 12,
+            office_vacancy_ttl: 34,
+            bounty_ttl: 56,
+        };
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Home".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                artifact_posting_profile: Some(custom_profile.clone()),
+                ..minimal_agent("Herald", "Home", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_artifact_posting_profile(agent),
+            Some(&custom_profile)
         );
     }
 

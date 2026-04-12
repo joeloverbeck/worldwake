@@ -272,6 +272,7 @@ mod tests {
                 needs: None,
                 combat_profile: None,
                 utility_profile: None,
+                artifact_posting_profile: None,
                 merchandise_profile: None,
                 trade_disposition: None,
                 perception_profile: None,
