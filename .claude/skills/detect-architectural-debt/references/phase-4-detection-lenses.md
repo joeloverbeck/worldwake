@@ -15,9 +15,9 @@ Within the exercised modules, find cross-cutting concept clusters with structura
 5. Filter to clusters exceeding the file-count threshold: >10% of analyzed files, or 5+ files, whichever is larger. For small analyses (<30 modules), use 5+ files as the floor.
 6. Merge clusters with >50% module overlap.
 
-**Step 2 — Early-Exit Check**:
+**Step 2 — Quick Triage**:
 
-If a cluster's symbols are predominantly single-component accessors (`get_component_*`, `effective_place`, `possessor`, `ground_location`, `commodity_quantity`, or similar read-only queries) and no enum in the cluster is being matched in multiple files, mark the cluster as "Acceptable — fundamental accessor" and skip full measurement. Fundamental accessors appear in many files by design.
+If a cluster's symbols are predominantly single-component accessors (`get_component_*`, `effective_place`, `possessor`, `ground_location`, `commodity_quantity`, or similar read-only queries) and no enum in the cluster is being matched in multiple files, mark the cluster as "Acceptable — fundamental accessor" in the report without detailed signal measurement. Still note the cluster name and file count for completeness. Fundamental accessors appear in many files by design — the triage saves reporting cost, not detection cost.
 
 **Step 3 — Measure Structural Signals**:
 
@@ -71,3 +71,14 @@ Scan the exercised code for these 8 fracture types:
 **Sub-agent delegation**: For large exercised sets (>100 modules), delegate to 2-3 parallel Explore sub-agents, each analyzing a different crate boundary surface (e.g., ai<->sim, ai<->core, sim<->systems).
 
 **Tool usage**: Grep for shared type names across crates, Grep for duplicate predicate patterns, Grep for `pub enum` and `match` expressions crossing module boundaries, Read key functions at boundary points, Bash for `git log` co-change analysis.
+
+## Sub-agent Briefing Template
+
+When delegating Lens A or Lens B to Explore sub-agents, each prompt must be self-contained — sub-agents have no prior context. Structure the prompt as:
+
+1. **Context**: One sentence on what the analysis is about and which test file/directory triggered it.
+2. **Exercised module list**: The key source modules from Phase 1 that the sub-agent should analyze, grouped by crate. Include file paths.
+3. **Entry-point functions and types**: The specific functions and types the tests call directly (from Phase 1 symbol tracing).
+4. **Scenario families**: The behavioral families from Phase 2, so the sub-agent can ground its findings.
+5. **Search targets**: The specific structural signals (Lens A) or fracture types (Lens B) to check, with concrete grep patterns or file-reading instructions tailored to the exercised modules. Do not just repeat the generic signal table — translate it into actionable searches for this specific analysis.
+6. **Thoroughness and output format**: Request "very thorough" exploration. Ask for file paths, line numbers, and counts for each signal found.

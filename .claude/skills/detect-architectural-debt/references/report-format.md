@@ -35,6 +35,7 @@ vs acceptable clusters? Did cross-lens reinforcement elevate any findings?>
 ### F<N>: <Title>
 
 **Lens Source**: Lens A / Lens B / Merged
+**Kind**: Protocol | Authority boundary | Bounded context | Projection owner | Capability ledger | Workflow coordinator | Translation boundary | Lifecycle carrier
 **Fracture Type** (if Lens B): <type from the 8 fracture types>
 **Severity**: Critical / High / Medium / Low
 **Confidence**: High / Medium / Low

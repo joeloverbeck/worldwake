@@ -2241,6 +2241,7 @@ mod tests {
             landmark_heuristic: 0,
             travel_pruning: None,
             prerequisite_guidance: None,
+            expansion_candidates: vec![],
             root_candidates: Vec::new(),
             root_omissions: Vec::new(),
         }
@@ -2268,6 +2269,7 @@ mod tests {
             landmark_heuristic: 0,
             travel_pruning: None,
             prerequisite_guidance: None,
+            expansion_candidates: vec![],
             root_candidates: Vec::new(),
             root_omissions: Vec::new(),
         }
