@@ -16,7 +16,7 @@ The RPG algorithm (ticket 003) exists but is not connected to the search loop. T
 2. `build_successor_detailed` in `transition.rs:199-206` sets `heuristic_ticks = spatial_heuristic.max(landmark_heuristic)` during successor construction. The RPG integration must retroactively update this value after `successor_operators` are fully collected.
 3. `preferred_operators()` function at `landmarks.rs:178` returns `BTreeSet<usize>` — the same type as `RelaxedPlanResult.helpful_action_indices`. The substitution is type-compatible.
 4. `cognitive.use_ff_heuristic` now exists on `CognitiveProfile` after ticket 001. `SearchExpansionSummary.ff_heuristic` and `.helpful_action_count` now exist after ticket 002.
-5. `compute_ff_heuristic` will exist after ticket 003 with signature `(&BTreeSet<PlanningFact>, &BTreeSet<PlanningFact>, &[PlanningOperator]) -> Option<RelaxedPlanResult>`.
+5. `compute_ff_heuristic` now exists after ticket 003 with signature `(&BTreeSet<PlanningFact>, &BTreeSet<PlanningFact>, &[PlanningOperator]) -> Option<RelaxedPlanResult>`.
 6. `planning_facts_from_state` at `landmarks.rs:40` and `tactical_goal.goal_facts()` at `mod.rs:136-154` are already called in the expansion site for landmark extraction — same inputs reused for RPG.
 7. `compute_heuristic` at `heuristic.rs:20-33` computes the spatial heuristic. For the retroactive update, each successor needs its spatial-only component. Currently `heuristic_ticks = max(spatial, landmark)` — the spatial component is not stored separately. The retroactive update will need to recompute spatial heuristic per successor or store it during initial construction.
 

@@ -140,6 +140,7 @@ Run the narrowest correct verification first, then broaden.
 Load `references/verification.md`.
 
 Before running a ticket-named focused command, verify that the selector actually proves the owned surface. If a substring filter would compile a target while running zero tests, or would run a broader unrelated surface than the ticket claims, correct the command immediately and update the ticket's command list during reassessment/closeout.
+For Rust unit-test modules, module-name selectors like `cargo test -p <crate> <module_name>` can still fan out across unrelated bins, integration targets, or zero-test harnesses. After a `-- --list` check, prefer the narrowest truthful exact or module-qualified selector the current test binary layout supports.
 For omitted-field serde proofs on complex structs, prefer a format-agnostic fixture when hand-written text would be brittle: serialize a full value, remove only the target field from the serialized text, then deserialize and assert the defaulted field value.
 
 When the ticket adds, renames, or materially re-scopes a `golden_*.rs` file or scenario block, run the repository's golden inventory/doc refresh as part of broadened verification and treat the generated docs as expected fallout to review and keep aligned with the landed scenario metadata.

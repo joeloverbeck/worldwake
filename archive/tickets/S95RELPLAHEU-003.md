@@ -1,6 +1,6 @@
 # S95RELPLAHEU-003: RPG types and `compute_ff_heuristic` algorithm
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new types and function in worldwake-ai search module
@@ -14,7 +14,8 @@ The current tactical search uses landmark count as its heuristic, which provides
 
 1. `PlanningFact` (enum, `landmarks.rs:12-19`), `PlanningOperator` (struct with `preconditions`, `add_effects`, `del_effects` as `BTreeSet<PlanningFact>`, `landmarks.rs:22-26`), and `LandmarkSet` (`landmarks.rs:29-32`) exist. The RPG algorithm reuses these types directly.
 2. `planning_facts_from_state` exists at `landmarks.rs:40` with signature `fn(&PlanningState<'_>) -> BTreeSet<PlanningFact>`. The RPG function takes `&BTreeSet<PlanningFact>` as input, so it operates on already-extracted facts.
-3. `PlanningFact` derives `Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd` — suitable for `BTreeSet`/`BTreeMap` keys.
+3. `PlanningFact` derives `Clone, Debug, Eq, Ord, PartialEq, PartialOrd` — sufficient for the `BTreeSet`/`BTreeMap`-based deterministic implementation this ticket owns. No `Hash` derivation is present or needed.
+4. `crates/worldwake-ai/src/search/landmarks.rs` already owns focused `#[cfg(test)]` coverage for planning-fact helpers and preferred-operator behavior, so the new RPG proof belongs in that existing test module rather than a new test file.
 
 ## Architecture Check
 
@@ -122,3 +123,22 @@ Add `#[cfg(test)]` module in `landmarks.rs` with tests 1-6 from the spec:
 1. `cargo test -p worldwake-ai -- landmarks`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-12.
+
+- Added `RelaxedPlanResult` and `compute_ff_heuristic` to `crates/worldwake-ai/src/search/landmarks.rs` as deterministic, planner-internal RPG scaffolding for ticket 004.
+- Implemented forward relaxed-graph expansion with accumulated fact layers, first-achiever tracking, dead-end detection, and backward relaxed-plan extraction that returns `h_ff` plus layer-0 helpful action indices.
+- Extended the existing `landmarks.rs` unit-test module with focused coverage for unreachable goals, already-satisfied goals, linear relaxed plans, delete-relaxation behavior, helpful-action selectivity, and determinism.
+- Marked the new helper surface `#[allow(dead_code)]` on landing because ticket 004 still owns wiring the algorithm into the live search loop and CI-matching clippy forbids leaving staged shared helpers unintentionally unused.
+
+## Deviations
+
+- Reassessment corrected the ticket's type-shape claim: `PlanningFact` is ordered for `BTreeSet`/`BTreeMap` use and does not derive `Hash`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai -- landmarks`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
