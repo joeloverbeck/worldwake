@@ -32,7 +32,6 @@ pub(super) struct LandmarkSet {
 }
 
 /// Result of building an RPG and extracting a relaxed plan.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct RelaxedPlanResult {
     /// Number of operators in the extracted relaxed plan. This is the
@@ -187,7 +186,6 @@ pub(super) fn extract_landmarks(
     }
 }
 
-#[allow(dead_code)]
 pub(super) fn compute_ff_heuristic(
     initial_facts: &BTreeSet<PlanningFact>,
     goal_facts: &BTreeSet<PlanningFact>,

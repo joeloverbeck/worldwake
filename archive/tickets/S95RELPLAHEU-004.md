@@ -1,10 +1,10 @@
 # S95RELPLAHEU-004: Search integration — two-pass RPG heuristic and helpful actions
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — search expansion loop in worldwake-ai
-**Deps**: S95RELPLAHEU-001, S95RELPLAHEU-002, S95RELPLAHEU-003
+**Deps**: archive/tickets/S95RELPLAHEU-001.md, archive/tickets/S95RELPLAHEU-002.md, archive/tickets/S95RELPLAHEU-003.md
 
 ## Problem
 
@@ -19,6 +19,7 @@ The RPG algorithm (ticket 003) exists but is not connected to the search loop. T
 5. `compute_ff_heuristic` now exists after ticket 003 with signature `(&BTreeSet<PlanningFact>, &BTreeSet<PlanningFact>, &[PlanningOperator]) -> Option<RelaxedPlanResult>`.
 6. `planning_facts_from_state` at `landmarks.rs:40` and `tactical_goal.goal_facts()` at `mod.rs:136-154` are already called in the expansion site for landmark extraction — same inputs reused for RPG.
 7. `compute_heuristic` at `heuristic.rs:20-33` computes the spatial heuristic. For the retroactive update, each successor needs its spatial-only component. Currently `heuristic_ticks = max(spatial, landmark)` — the spatial component is not stored separately. The retroactive update will need to recompute spatial heuristic per successor or store it during initial construction.
+8. `crates/worldwake-ai/src/search/tests.rs` already has owned expansion-summary trace coverage (`search_expansion_summaries_collected_when_tracing_enabled`, `search_trace_metadata_records_two_phase_strategic_and_landmark_details`, `search_trace_metadata_zero_landmarks_reports_zero_counts`, `beam_truncation_visible_in_expansion_summary`), so this ticket can extend those proofs and add only the additional FF-specific behavior cases it still needs.
 
 ## Architecture Check
 
@@ -128,7 +129,7 @@ Add tests 7-9 from the spec in the `search/` test module:
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/search/tests.rs` — 3 integration tests (FF heuristic combination, FF disabled, dead-end fallback)
+1. `crates/worldwake-ai/src/search/tests.rs` — extend existing expansion-summary trace tests and add focused FF-specific integration tests (heuristic combination, FF disabled, dead-end fallback)
 
 ### Commands
 
@@ -136,3 +137,24 @@ Add tests 7-9 from the spec in the `search/` test module:
 2. `cargo test -p worldwake-ai`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+- Completion date: 2026-04-12
+- Integrated FF relaxed-plan guidance into `crates/worldwake-ai/src/search/mod.rs` with a dedicated post-successor helper that computes `h_ff`, rewrites successor heuristic floors to `max(spatial_h, h_ff)`, and substitutes helpful-action preferred flags whenever FF returns a live result.
+- Preserved landmark behavior as the fallback when FF is disabled or the relaxed plan is unreachable for that expansion, while populating live `ff_heuristic` and `helpful_action_count` fields in both expansion-summary construction paths.
+- Extended `crates/worldwake-ai/src/search/tests.rs` with direct helper proofs for both `h_ff > spatial_h` and `spatial_h > h_ff`, plus trace-level proofs for FF-enabled population, FF-disabled inert fields, and dead-end fallback to landmark guidance.
+
+## Deviations
+
+- The helper integration landed as a small extracted function (`apply_ff_heuristic_to_successors`) rather than as an inline post-loop block. This kept the two-pass logic localized without widening `build_successor_detailed`.
+- The focused verification command from the draft was narrowed with module-qualified exact selectors after `cargo test -p worldwake-ai -- --list` confirmed that bare substring selectors would truthfully compile targets but run zero tests.
+
+## Verification Result
+
+- Passed: `cargo test -p worldwake-ai search::tests::ff_successor_rewrite_uses_relaxed_plan_when_it_exceeds_spatial_heuristic -- --exact`
+- Passed: `cargo test -p worldwake-ai search::tests::search_trace_metadata_records_ff_heuristic_and_helpful_actions_when_enabled -- --exact`
+- Passed: `cargo test -p worldwake-ai search::tests::ff_successor_rewrite_preserves_spatial_heuristic_when_it_exceeds_relaxed_plan -- --exact`
+- Passed: `cargo test -p worldwake-ai`
+- Passed: `cargo test --workspace`
+- Passed: `cargo clippy --workspace --all-targets -- -D warnings`

@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: S95RELPLAHEU-004
+**Deps**: archive/tickets/S95RELPLAHEU-004.md
 
 ## Problem
 
@@ -13,7 +13,7 @@ After the FF heuristic is integrated into the search loop (ticket 004), existing
 ## Assumption Reassessment (2026-04-12)
 
 1. Water-acquisition golden tests exist in `crates/worldwake-ai/tests/golden_planner_pathology.rs:486` (`cross_location_water_acquisition_succeeds_without_budget_exhaustion`) and in `golden_reasoning_diversity.rs:180,235` (AcquireCommodity(Water) scenarios). These exercise multi-step tactical search with expansion summaries.
-2. `SearchExpansionSummary` now has `ff_heuristic: Option<u32>` and `helpful_action_count: u16` after ticket 002; ticket 004 still owns populating them with live values.
+2. `SearchExpansionSummary` now has `ff_heuristic: Option<u32>` and `helpful_action_count: u16` after ticket 002, and ticket 004 has now landed the live search-path population for both fields.
 3. Golden test infrastructure already captures `expansion_summaries` via the `search_plan` trace parameter — no new plumbing needed to access the FF fields.
 4. Default `CognitiveProfile` now has `use_ff_heuristic: true` after ticket 001, so existing golden scenarios will automatically use the FF heuristic without scenario changes.
 

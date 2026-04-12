@@ -22,18 +22,17 @@ use candidates::{
 use frontier::{DualFrontier, FrontierEntry, compare_search_nodes};
 use heuristic::combined_relevant_places_with_guidance;
 #[cfg(test)]
-use heuristic::compute_heuristic;
-#[cfg(test)]
 use heuristic::prune_travel_away_from_goal;
 #[cfg(test)]
 use heuristic::{combined_relevant_places, root_node};
 use heuristic::{
     combined_relevant_places_for_tactical, combined_relevant_places_with_guidance_for_tactical,
-    compute_landmark_heuristic, prune_travel_away_from_goal_with_expansion_trace,
-    root_node_for_tactical,
+    compute_heuristic, compute_landmark_heuristic,
+    prune_travel_away_from_goal_with_expansion_trace, root_node_for_tactical,
 };
 use landmarks::{
-    LandmarkSet, PlanningFact, extract_landmarks, goal_facts_from_goal, planning_facts_from_state,
+    LandmarkSet, PlanningFact, PlanningOperator, RelaxedPlanResult, compute_ff_heuristic,
+    extract_landmarks, goal_facts_from_goal, planning_facts_from_state,
     planning_operator_from_transition, preferred_operators,
 };
 use std::collections::BTreeMap;
@@ -188,6 +187,49 @@ fn should_fail_fast_for_missing_tactical_goal(
 
 fn travel_to_goal_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> bool {
     !matches!(goal, worldwake_core::GoalKind::Accuse { .. })
+}
+
+#[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
+fn apply_ff_heuristic_to_successors<'snapshot>(
+    snapshot: &PlanningSnapshot,
+    goal: &GroundedGoal,
+    node: &SearchNode<'snapshot>,
+    cognitive: &CognitiveProfile,
+    recipes: &RecipeRegistry,
+    execution_budget: &ExecutionBudget,
+    tactical_goal: Option<&TacticalGoal>,
+    successor_operators: &[PlanningOperator],
+    successors: &mut [(usize, Option<PlanTerminalKind>, SearchNode<'snapshot>, bool)],
+) -> Option<RelaxedPlanResult> {
+    if !cognitive.use_ff_heuristic || successor_operators.is_empty() {
+        return None;
+    }
+
+    let goal_facts = tactical_goal
+        .map(|tactical_goal| tactical_goal.goal_facts(goal, &node.state, recipes))
+        .unwrap_or_default();
+    if goal_facts.is_empty() {
+        return None;
+    }
+
+    let current_facts = planning_facts_from_state(&node.state);
+    let ff_result = compute_ff_heuristic(&current_facts, &goal_facts, successor_operators)?;
+
+    for (index, (_, _, successor, preferred)) in successors.iter_mut().enumerate() {
+        let combined_places = combined_relevant_places_for_tactical(
+            goal,
+            &successor.state,
+            recipes,
+            execution_budget,
+            tactical_goal,
+        );
+        let spatial_heuristic =
+            compute_heuristic(snapshot, &successor.state, &combined_places.places);
+        successor.heuristic_ticks = spatial_heuristic.max(ff_result.h_ff);
+        *preferred = ff_result.helpful_action_indices.contains(&index);
+    }
+
+    Some(ff_result)
 }
 
 /// Outcome of a plan search for one goal.
@@ -530,6 +572,17 @@ pub(crate) fn search_plan_with_trace_metadata(
 
         let terminal_count = terminal_successors.len() as u16;
         let non_terminal_before_beam = successors.len() as u16;
+        let ff_result = apply_ff_heuristic_to_successors(
+            snapshot,
+            goal,
+            &node,
+            cognitive,
+            recipes,
+            execution_budget,
+            active_tactical_goal,
+            &successor_operators,
+            &mut successors,
+        );
 
         let mut found_goal_satisfied = false;
         if !terminal_successors.is_empty() {
@@ -572,8 +625,10 @@ pub(crate) fn search_plan_with_trace_metadata(
                                 found_goal_satisfied,
                                 preferred_candidates: 0,
                                 landmark_heuristic,
-                                ff_heuristic: None,
-                                helpful_action_count: 0,
+                                ff_heuristic: ff_result.as_ref().map(|result| result.h_ff),
+                                helpful_action_count: ff_result
+                                    .as_ref()
+                                    .map_or(0, |result| result.helpful_action_indices.len() as u16),
                                 travel_pruning: travel_pruning.clone(),
                                 prerequisite_guidance: summary_places
                                     .as_ref()
@@ -634,7 +689,7 @@ pub(crate) fn search_plan_with_trace_metadata(
             }
         }
 
-        if !landmark_set.landmarks.is_empty() && !successors.is_empty() {
+        if ff_result.is_none() && !landmark_set.landmarks.is_empty() && !successors.is_empty() {
             let current_facts = planning_facts_from_state(&node.state);
             let preferred_indices = preferred_operators(
                 &landmark_set,
@@ -698,8 +753,10 @@ pub(crate) fn search_plan_with_trace_metadata(
                 found_goal_satisfied,
                 preferred_candidates,
                 landmark_heuristic,
-                ff_heuristic: None,
-                helpful_action_count: 0,
+                ff_heuristic: ff_result.as_ref().map(|result| result.h_ff),
+                helpful_action_count: ff_result
+                    .as_ref()
+                    .map_or(0, |result| result.helpful_action_indices.len() as u16),
                 travel_pruning,
                 prerequisite_guidance: summary_places.and_then(|summary| summary.guidance_trace),
                 expansion_candidates,

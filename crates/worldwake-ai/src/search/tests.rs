@@ -209,6 +209,109 @@ fn root_node<'snapshot>(
     super::root_node(snapshot, goal, recipes, &execution_budget(reasoning))
 }
 
+type TacticalRootSuccessor<'snapshot> =
+    (usize, Option<PlanTerminalKind>, SearchNode<'snapshot>, bool);
+type TacticalRootSuccessorSet<'snapshot> = (
+    SearchNode<'snapshot>,
+    Vec<TacticalRootSuccessor<'snapshot>>,
+    Vec<super::landmarks::PlanningOperator>,
+);
+
+fn collect_root_non_terminal_successors_for_tactical_goal<'snapshot>(
+    snapshot: &'snapshot PlanningSnapshot,
+    goal: &GroundedGoal,
+    registry: &ActionDefRegistry,
+    handlers: &worldwake_sim::ActionHandlerRegistry,
+    reasoning: &ProfileFixture,
+    recipes: &RecipeRegistry,
+    tactical_goal: &super::TacticalGoal,
+) -> TacticalRootSuccessorSet<'snapshot> {
+    let semantics_table = build_semantics_table(registry);
+    let budget = execution_budget(reasoning);
+    let node = super::heuristic::root_node_for_tactical(
+        snapshot,
+        goal,
+        recipes,
+        &budget,
+        Some(tactical_goal),
+    );
+    let relevant_defs = relevant_action_defs(goal, &semantics_table);
+    let mut candidates = search_candidates(
+        goal,
+        &node,
+        candidate_search_context(
+            &semantics_table,
+            registry,
+            handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &relevant_defs,
+        ),
+        None,
+        None,
+        None,
+    );
+    apply_commodity_relevance_filter(
+        &mut candidates,
+        goal,
+        &node.state,
+        commodity_filter_context(Some(tactical_goal), &semantics_table, registry, recipes),
+        None,
+    );
+    super::apply_tactical_candidate_filter(
+        &mut candidates,
+        goal,
+        &node,
+        &semantics_table,
+        Some(tactical_goal),
+    );
+    let combined_places = super::heuristic::combined_relevant_places_for_tactical(
+        goal,
+        &node.state,
+        recipes,
+        &budget,
+        Some(tactical_goal),
+    );
+    if let Some(current_place) = node
+        .state
+        .effective_place_ref(PlanningEntityRef::Authoritative(snapshot.actor()))
+    {
+        prune_travel_away_from_goal(
+            &mut candidates,
+            current_place,
+            &combined_places.places,
+            snapshot,
+            &semantics_table,
+        );
+    }
+
+    let mut successors = Vec::new();
+    let mut operators = Vec::new();
+    for candidate in candidates {
+        let Ok((terminal, successor, _)) = super::build_successor_detailed(
+            goal,
+            &semantics_table,
+            registry,
+            &node,
+            &candidate,
+            recipes,
+            &budget,
+            Some(tactical_goal),
+            &super::landmarks::LandmarkSet::empty(),
+        ) else {
+            continue;
+        };
+        if terminal.is_none() {
+            operators.push(super::landmarks::planning_operator_from_transition(
+                &node.state,
+                &successor.state,
+            ));
+            successors.push((successors.len(), terminal, successor, false));
+        }
+    }
+    (node, successors, operators)
+}
+
 struct TestBeliefView {
     current_tick: Tick,
     alive: BTreeSet<EntityId>,
@@ -5328,6 +5431,18 @@ fn build_branching_care_view() -> (
     )
 }
 
+fn build_local_medicine_remote_patient_view()
+-> (TestBeliefView, EntityId, EntityId, EntityId, EntityId) {
+    let (mut view, actor, patient, current_place, patient_place, medicine_place) =
+        build_branching_care_view();
+    let medicine = entity(20);
+    view.effective_places.insert(medicine, current_place);
+    view.entities_at
+        .insert(current_place, vec![actor, medicine]);
+    view.entities_at.insert(medicine_place, Vec::new());
+    (view, actor, patient, current_place, patient_place)
+}
+
 #[test]
 fn heuristic_is_zero_when_actor_at_goal_relevant_place() {
     let (view, actor, place_a, _place_b, _place_c) = build_chain_heuristic_view();
@@ -8397,6 +8512,422 @@ fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
             .all(|summary| summary.preferred_candidates == 0 && summary.landmark_heuristic == 0),
         "zero-landmark mode should keep preferred-candidate and landmark-heuristic trace fields at zero"
     );
+}
+
+#[test]
+fn ff_successor_rewrite_uses_relaxed_plan_when_it_exceeds_spatial_heuristic() {
+    let (mut view, actor, patient, current_place, _patient_place) =
+        build_local_medicine_remote_patient_view();
+    view.wounds.insert(patient, vec![wound(404)]);
+    let (registry, handlers) = build_registry();
+    let recipes = RecipeRegistry::new();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::TreatWounds { patient }),
+        evidence_entities: BTreeSet::from([patient]),
+        evidence_places: BTreeSet::from([current_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        2,
+    );
+    let tactical_goal = TacticalGoal::AcquirePrerequisite {
+        commodity: CommodityKind::Medicine,
+        destination: current_place,
+    };
+    let (node, mut successors, successor_operators) =
+        collect_root_non_terminal_successors_for_tactical_goal(
+            &snapshot,
+            &goal,
+            &registry,
+            &handlers,
+            &ProfileFixture::default(),
+            &recipes,
+            &tactical_goal,
+        );
+    let move_cargo_index = successors
+        .iter()
+        .position(|(_, _, successor, _)| {
+            successor
+                .steps
+                .as_slice()
+                .last()
+                .is_some_and(|step| step.op_kind == PlannerOpKind::MoveCargo)
+        })
+        .expect("local prerequisite fixture should expose a root MoveCargo successor");
+    let combined_places = super::heuristic::combined_relevant_places_for_tactical(
+        &goal,
+        &successors[move_cargo_index].2.state,
+        &recipes,
+        &execution_budget(&ProfileFixture::default()),
+        Some(&tactical_goal),
+    );
+    let spatial_heuristic = compute_heuristic(
+        &snapshot,
+        &successors[move_cargo_index].2.state,
+        &combined_places.places,
+    );
+
+    assert_eq!(spatial_heuristic, 0);
+
+    let ff_result = super::apply_ff_heuristic_to_successors(
+        &snapshot,
+        &goal,
+        &node,
+        &cognitive(&ProfileFixture::default()),
+        &recipes,
+        &execution_budget(&ProfileFixture::default()),
+        Some(&tactical_goal),
+        &successor_operators,
+        &mut successors,
+    )
+    .expect("reachable local prerequisite should yield an FF relaxed plan");
+
+    assert!(
+        ff_result.h_ff > spatial_heuristic,
+        "local pickup should raise the heuristic floor above the zero spatial baseline"
+    );
+    assert!(
+        ff_result.helpful_action_indices.contains(&move_cargo_index),
+        "root MoveCargo should be selected as a helpful action"
+    );
+    assert_eq!(
+        successors[move_cargo_index].2.heuristic_ticks, ff_result.h_ff,
+        "successor heuristic should take the max of spatial and FF guidance"
+    );
+    assert!(successors[move_cargo_index].3);
+}
+
+#[test]
+fn ff_successor_rewrite_preserves_spatial_heuristic_when_it_exceeds_relaxed_plan() {
+    let (mut view, actor, patient, current_place, patient_place, medicine_place) =
+        build_branching_care_view();
+    view.wounds.insert(patient, vec![wound(403)]);
+    view.effective_places.insert(actor, medicine_place);
+    view.entities_at
+        .insert(medicine_place, vec![actor, entity(20)]);
+    view.entities_at.insert(current_place, Vec::new());
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::TreatWounds { patient }),
+        evidence_entities: BTreeSet::from([patient]),
+        evidence_places: BTreeSet::from([patient_place, medicine_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        2,
+    );
+    let tactical_goal = TacticalGoal::AcquirePrerequisite {
+        commodity: CommodityKind::Medicine,
+        destination: patient_place,
+    };
+    let budget = execution_budget(&ProfileFixture::default());
+    let node = super::heuristic::root_node_for_tactical(
+        &snapshot,
+        &goal,
+        &recipes,
+        &budget,
+        Some(&tactical_goal),
+    );
+    let relevant_defs = relevant_action_defs(&goal, &semantics);
+    let candidates = search_candidates(
+        &goal,
+        &node,
+        candidate_search_context(
+            &semantics,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &relevant_defs,
+        ),
+        None,
+        None,
+        None,
+    );
+    let move_cargo = candidates
+        .iter()
+        .find(|candidate| {
+            registry
+                .get(candidate.def_id)
+                .is_some_and(|def| def.name == "pick_up")
+        })
+        .expect("local medicine fixture should expose a root MoveCargo candidate");
+    let (terminal, successor, _) = super::build_successor_detailed(
+        &goal,
+        &semantics,
+        &registry,
+        &node,
+        move_cargo,
+        &recipes,
+        &budget,
+        Some(&tactical_goal),
+        &super::landmarks::LandmarkSet::empty(),
+    )
+    .expect("local medicine pickup should build a tactical successor");
+    let mut successors = vec![(0usize, terminal, successor, false)];
+    let successor_operators = vec![super::landmarks::planning_operator_from_transition(
+        &node.state,
+        &successors[0].2.state,
+    )];
+    let move_cargo_index = successors
+        .iter()
+        .position(|(_, _, successor, _)| {
+            successor
+                .steps
+                .as_slice()
+                .last()
+                .is_some_and(|step| step.op_kind == PlannerOpKind::MoveCargo)
+        })
+        .expect("local medicine fixture should expose a root MoveCargo successor");
+    let combined_places = super::heuristic::combined_relevant_places_for_tactical(
+        &goal,
+        &successors[move_cargo_index].2.state,
+        &recipes,
+        &execution_budget(&ProfileFixture::default()),
+        Some(&tactical_goal),
+    );
+    let spatial_heuristic = compute_heuristic(
+        &snapshot,
+        &successors[move_cargo_index].2.state,
+        &combined_places.places,
+    );
+
+    let ff_result = super::apply_ff_heuristic_to_successors(
+        &snapshot,
+        &goal,
+        &node,
+        &cognitive(&ProfileFixture::default()),
+        &recipes,
+        &execution_budget(&ProfileFixture::default()),
+        Some(&tactical_goal),
+        &successor_operators,
+        &mut successors,
+    )
+    .expect("reachable local medicine pickup should yield an FF relaxed plan");
+
+    assert!(
+        spatial_heuristic > ff_result.h_ff,
+        "remote patient travel should remain the dominant heuristic after local pickup"
+    );
+    assert_eq!(
+        successors[move_cargo_index].2.heuristic_ticks, spatial_heuristic,
+        "successor heuristic should preserve the larger spatial signal"
+    );
+    assert!(
+        ff_result.helpful_action_indices.contains(&move_cargo_index),
+        "local medicine MoveCargo should still be marked helpful"
+    );
+    assert!(successors[move_cargo_index].3);
+}
+
+#[test]
+fn search_trace_metadata_records_ff_heuristic_and_helpful_actions_when_enabled() {
+    let (mut view, actor, patient, _current_place, patient_place, medicine_place) =
+        build_branching_care_view();
+    view.wounds.insert(patient, vec![wound(405)]);
+    let (registry, handlers) = build_registry();
+    let recipes = RecipeRegistry::new();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::TreatWounds { patient }),
+        evidence_entities: BTreeSet::from([patient]),
+        evidence_places: BTreeSet::from([patient_place, medicine_place]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        2,
+    );
+    let mut summaries = Vec::new();
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &recipes,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut summaries),
+        Some(&mut trace_metadata),
+    );
+
+    assert!(
+        result.is_found(),
+        "FF-enabled two-phase production should find a plan"
+    );
+    assert!(
+        summaries
+            .iter()
+            .any(|summary| summary.ff_heuristic.is_some()),
+        "at least one expansion summary should report h_ff when FF guidance is enabled"
+    );
+    assert!(
+        summaries
+            .iter()
+            .any(|summary| summary.helpful_action_count > 0),
+        "at least one expansion summary should report helpful actions when FF guidance is enabled"
+    );
+}
+
+#[test]
+fn search_trace_metadata_disables_ff_fields_when_profile_toggle_is_off() {
+    let fixture = build_remote_produce_commodity_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: fixture.recipe_id,
+        }),
+        evidence_entities: BTreeSet::from([fixture.mill, fixture.firewood]),
+        evidence_places: BTreeSet::from([
+            prototype_place_entity(PrototypePlace::VillageSquare),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+        ]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+    let mut no_ff = cognitive(&ProfileFixture::default());
+    no_ff.use_ff_heuristic = false;
+    let mut summaries = Vec::new();
+    let mut trace_metadata = super::SearchTraceMetadata::default();
+
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &no_ff,
+        &execution_budget(&ProfileFixture::default()),
+        &fixture.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        Some(&mut summaries),
+        Some(&mut trace_metadata),
+    );
+
+    assert!(
+        result.is_found(),
+        "FF-disabled mode should still find the remote production plan"
+    );
+    assert!(
+        summaries
+            .iter()
+            .all(|summary| summary.ff_heuristic.is_none() && summary.helpful_action_count == 0),
+        "FF-disabled mode should keep the FF trace fields inert"
+    );
+    assert!(
+        summaries
+            .iter()
+            .any(|summary| summary.landmark_heuristic > 0),
+        "disabling FF should preserve the landmark guidance path"
+    );
+}
+
+#[test]
+fn ff_dead_end_falls_back_to_landmark_guidance_at_root() {
+    let fixture = build_remote_produce_commodity_fixture();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: fixture.recipe_id,
+        }),
+        evidence_entities: BTreeSet::from([fixture.mill, fixture.firewood]),
+        evidence_places: BTreeSet::from([
+            prototype_place_entity(PrototypePlace::VillageSquare),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+        ]),
+    };
+    let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        fixture.actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+    let mut ff_summaries = Vec::new();
+    let ff_result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &fixture.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        Some(&mut ff_summaries),
+        None,
+    );
+    let mut no_ff = cognitive(&ProfileFixture::default());
+    no_ff.use_ff_heuristic = false;
+    let mut no_ff_summaries = Vec::new();
+    let no_ff_result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &fixture.semantics,
+        &fixture.registry,
+        &fixture.handlers,
+        &no_ff,
+        &execution_budget(&ProfileFixture::default()),
+        &fixture.recipes,
+        &BlockedIntentMemory::default(),
+        Tick(1),
+        None,
+        Some(&mut no_ff_summaries),
+        None,
+    );
+
+    assert!(
+        ff_result.is_found(),
+        "FF-enabled baseline should still find a plan"
+    );
+    assert!(
+        no_ff_result.is_found(),
+        "landmark-only baseline should still find a plan"
+    );
+
+    let ff_root = ff_summaries
+        .first()
+        .expect("FF-enabled run should record a root expansion summary");
+    let no_ff_root = no_ff_summaries
+        .first()
+        .expect("landmark-only run should record a root expansion summary");
+
+    assert_eq!(ff_root.ff_heuristic, None);
+    assert_eq!(ff_root.helpful_action_count, 0);
+    assert_eq!(
+        ff_root.preferred_candidates,
+        no_ff_root.preferred_candidates
+    );
+    assert_eq!(ff_root.landmark_heuristic, no_ff_root.landmark_heuristic);
 }
 
 #[test]
