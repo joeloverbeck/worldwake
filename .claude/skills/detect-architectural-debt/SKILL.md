@@ -57,6 +57,7 @@ Phase 4: DETECT       — Two parallel lenses:
       detect fracture types (split protocols, authority leaks,
       projection drift, boundary inversions, etc.)
 
+Phase 4.5: VERIFY     — Spot-check agent claims against source code
 Phase 5: SYNTHESIZE   — Cross-lens reinforcement + severity ranking
 Phase 6: VALIDATE     — Survival criteria + FOUNDATIONS alignment
 ```
@@ -69,9 +70,11 @@ Phase 6: VALIDATE     — Survival criteria + FOUNDATIONS alignment
 
 2. **Phase 4: Detect.** Load `references/phase-4-detection-lenses.md`. Run Lens A (structural scatter) and Lens B (architectural fractures) in parallel across the exercised modules.
 
-3. **Phases 5-6: Synthesize and Validate.** Load `references/phases-5-6-synthesis-validation.md`. Cross-reference both lenses, produce candidate abstractions, apply survival criteria, and check FOUNDATIONS alignment.
+3. **Phase 4.5: Verify.** Before synthesis, spot-check agent claims against actual source code. For each finding with severity >= Medium: (a) for "duplicated logic" claims, read at least one cited site to confirm the code is genuinely copy-pasted rather than trait implementations serving different data sources; (b) for enum variant counts or "overloaded abstraction" claims, verify the actual variant count at the `pub enum` definition site — do not trust grep-count estimates; (c) for "boundary inversion" claims, read the cited upper-layer code to confirm it accesses authoritative state rather than belief state. Demote findings whose evidence does not survive source-level verification to "Needs Investigation."
 
-4. **Write Report.** Load `references/report-format.md`. Write the structured report to `reports/architectural-debt-<date>-<context>.md`.
+4. **Phases 5-6: Synthesize and Validate.** Load `references/phases-5-6-synthesis-validation.md`. Cross-reference both lenses, produce candidate abstractions, apply survival criteria, and check FOUNDATIONS alignment.
+
+5. **Write Report.** Load `references/report-format.md`. Write the structured report to `reports/architectural-debt-<date>-<context>.md`.
 
 ## Hard Rules
 

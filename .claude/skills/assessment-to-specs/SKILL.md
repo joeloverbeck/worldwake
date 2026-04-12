@@ -66,6 +66,8 @@ From the assessment document, extract every distinct proposal. For each proposal
 
 If the assessment contains heterogeneous proposal types (golden tests, tickets, tooling enhancements), group related proposals that naturally belong in a single spec. A golden-gaps spec may bundle multiple test proposals. Record the grouping in the extraction and carry it forward to classification.
 
+If the assessment contains non-proposal content (investigation signals, health observations, acceptable-architecture confirmations), note these separately. They do not enter the classification pipeline but should be summarized in the triage report under a "### Investigation Signals" or "### Deferred for Future Analysis" section after the classification sections.
+
 #### Step 3: Codebase Validation
 
 For each proposal, validate the assessment's assumptions against the actual codebase.
@@ -119,6 +121,10 @@ Present the triage to the user in a structured format:
 1. **PR-5: <title>** — <specific reason for rejection>. FOUNDATIONS: <aligned / Principle N violated / N/A>.
 2. ...
 
+### Investigation Signals
+[If the assessment contains non-proposal signals (areas needing further analysis, health observations), summarize them here. If none, omit this section.]
+1. **<signal title>** — <1-sentence description>. Deferred for future analysis.
+
 ### Questions
 [If any proposals are ambiguous, ask here. Max 3 questions.]
 ```
@@ -156,6 +162,8 @@ Each spec MUST follow project conventions from `docs/spec-drafting-rules.md`:
 11. **Component Registration**: New components to register in `component_schema.rs`
 12. **Cross-System Interactions**: How the spec interacts with existing systems through state (Principle 26 — never direct calls)
 13. **Profile-Driven Parameters**: Per-agent profile structs instead of hardcoded constants
+
+For pure refactor specs (no new types, systems, or components), many sections will be "Not applicable." This is expected. Include the section header with "Not applicable" rather than omitting it, so reassess-spec can confirm the omission was deliberate.
 
 For golden-gaps specs (bundled test scenarios), use the project's golden-gaps convention: per-scenario blocks with Setup, Assertion, GoalKinds/ActionDomains exercised, emergence justification, and "Why it is not a duplicate." See existing archived golden-gaps specs (e.g., `archive/specs/S67-*.md`) for the format.
 
@@ -275,4 +283,4 @@ Do NOT commit. Leave all files for user review.
 - **No commit**: Write all files and stop. The user handles the file lifecycle.
 - **Worktree discipline**: If working in a worktree, ALL file operations use the worktree root path.
 - **Preserve spec voice**: Match the existing writing style of specs in `specs/`. Do not introduce a different tone or structure.
-- **Plan-mode interaction**: If invoked from plan mode, the skill's file writes (specs, IMPLEMENTATION-ORDER.md) are permitted as the plan's only editable files. The plan file itself serves as the execution summary — avoid duplicating spec summaries and implementation-order details in both the plan file and the conversation. **Exception**: The triage report (Step 6) must be summarized in the AskUserQuestion for triage approval, since the user cannot see the plan file until ExitPlanMode. This is the one permitted duplication. Post-approval, spec summaries and implementation-order summaries should go only in the plan file. Defer implementation-order decisions (append vs. fresh) to Phase 3, not to the triage approval interaction in Step 6.
+- **Plan-mode interaction**: If invoked from plan mode, the skill's file writes (specs, IMPLEMENTATION-ORDER.md) are permitted as the plan's only editable files. The plan file itself serves as the execution summary — avoid duplicating spec summaries and implementation-order details in both the plan file and the conversation. **Exception**: The triage report (Step 6) must be summarized in the AskUserQuestion for triage approval, since the user cannot see the plan file until ExitPlanMode. This is the one permitted duplication. Post-approval, spec summaries and implementation-order summaries should go only in the plan file. Defer implementation-order decisions (append vs. fresh) to Phase 3, not to the triage approval interaction in Step 6. If plan mode exits during the skill (e.g., after AskUserQuestion approval), continue the remaining phases normally — the plan file still serves as the execution summary. Do not attempt to re-enter or re-exit plan mode.
