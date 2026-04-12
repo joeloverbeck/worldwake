@@ -11,10 +11,10 @@ use worldwake_core::{
     CommunicationProfile, ContentionDispositionProfile, ControlSource, DisposalProfile,
     DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
     HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory,
-    MetabolismProfile, PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile,
-    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
-    WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille,
+    PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
+    TellProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -98,6 +98,8 @@ pub struct AgentDef {
     pub expectation_store: Option<ExpectationStore>,
     #[serde(default)]
     pub last_seen_memory: Option<LastSeenMemory>,
+    #[serde(default)]
+    pub obligation_satiation_profile: Option<ObligationSatiationProfile>,
     #[serde(default)]
     pub drive_thresholds: Option<DriveThresholds>,
     #[serde(default)]
@@ -338,6 +340,12 @@ mod tests {
                         max_consecutive_explorations: 5,
                         visit_lookback_ticks: 17,
                     ),
+                    obligation_satiation_profile: (
+                        satiation_threshold: 4,
+                        window_ticks: 96,
+                        decay_per_execution: 150,
+                        satiation_floor: 125,
+                    ),
                     theft_disposition: (
                         steal_duration_ticks: 6,
                         theft_motive_weight: 620,
@@ -421,6 +429,15 @@ mod tests {
                 need_activation_threshold: Permille::new(350).unwrap(),
                 max_consecutive_explorations: 5,
                 visit_lookback_ticks: 17,
+            })
+        );
+        assert_eq!(
+            bob.obligation_satiation_profile,
+            Some(ObligationSatiationProfile {
+                satiation_threshold: 4,
+                window_ticks: 96,
+                decay_per_execution: Permille::new(150).unwrap(),
+                satiation_floor: Permille::new(125).unwrap(),
             })
         );
         assert!(bob.theft_disposition.is_some());
@@ -557,6 +574,7 @@ mod tests {
         assert!(agent.preference_profile.is_none());
         assert!(agent.expectation_store.is_none());
         assert!(agent.last_seen_memory.is_none());
+        assert!(agent.obligation_satiation_profile.is_none());
         assert!(agent.drive_thresholds.is_none());
         assert!(agent.metabolism_profile.is_none());
         assert!(agent.carry_capacity.is_none());

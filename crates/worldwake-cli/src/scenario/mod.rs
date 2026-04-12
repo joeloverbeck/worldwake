@@ -381,6 +381,11 @@ fn spawn_agent(
     txn.set_component_expectation_store(agent_id, expectation_store)?;
     let last_seen_memory = agent_def.last_seen_memory.clone().unwrap_or_default();
     txn.set_component_last_seen_memory(agent_id, last_seen_memory)?;
+    let obligation_satiation_profile = agent_def
+        .obligation_satiation_profile
+        .clone()
+        .unwrap_or_default();
+    txn.set_component_obligation_satiation_profile(agent_id, obligation_satiation_profile)?;
 
     if let Some(ref combat) = agent_def.combat_profile {
         txn.set_component_combat_profile(agent_id, *combat)?;
@@ -573,10 +578,11 @@ mod tests {
         CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile,
         ControlSource, DisposalProfile, DriveThresholds, EpistemicDispositionProfile,
         ExecutionBudget, ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile,
-        JusticeDispositionProfile, LastSeenMemory, LoadUnits, PatrolProfile, PatrolRoute,
-        PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
-        Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
-        TradeCategory, ViolationDispositionProfile, WorkstationTag,
+        JusticeDispositionProfile, LastSeenMemory, LoadUnits, ObligationSatiationProfile,
+        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceVisibilityProfile,
+        PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
+        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
+        WorkstationTag,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -599,6 +605,7 @@ mod tests {
             preference_profile: None,
             expectation_store: None,
             last_seen_memory: None,
+            obligation_satiation_profile: None,
             drive_thresholds: None,
             metabolism_profile: None,
             disposal_profile: None,
@@ -1476,6 +1483,10 @@ mod tests {
             world.get_component_last_seen_memory(agent),
             Some(&LastSeenMemory::default())
         );
+        assert_eq!(
+            world.get_component_obligation_satiation_profile(agent),
+            Some(&ObligationSatiationProfile::default())
+        );
     }
 
     #[test]
@@ -1635,6 +1646,45 @@ mod tests {
                 visit_lookback_ticks: 17,
                 consecutive_exploration_count: 0,
             })
+        );
+    }
+
+    #[test]
+    fn test_spawn_agents_apply_obligation_satiation_profile_override_when_present() {
+        let custom_profile = ObligationSatiationProfile {
+            satiation_threshold: 4,
+            window_ticks: 96,
+            decay_per_execution: Permille::new(150).unwrap(),
+            satiation_floor: Permille::new(125).unwrap(),
+        };
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                obligation_satiation_profile: Some(custom_profile.clone()),
+                ..minimal_agent("Alice", "Town", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_obligation_satiation_profile(agent),
+            Some(&custom_profile)
         );
     }
 
