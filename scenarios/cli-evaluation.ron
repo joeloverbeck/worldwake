@@ -92,6 +92,7 @@
                 entity_memory_capacity: 16,
                 entity_claim_capacity: 16,
                 memory_retention_ticks: 64,
+                infrastructure_retention_ticks: 640,
                 observation_fidelity: 950,
                 confidence_policy: (
                     direct_observation_base: 900,
@@ -331,6 +332,7 @@
                 entity_memory_capacity: 16,
                 entity_claim_capacity: 16,
                 memory_retention_ticks: 64,
+                infrastructure_retention_ticks: 640,
                 observation_fidelity: 950,
                 confidence_policy: (
                     direct_observation_base: 900,

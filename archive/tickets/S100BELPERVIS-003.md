@@ -1,6 +1,6 @@
 # S100BELPERVIS-003: Update scenario RON perception profiles
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -23,7 +23,7 @@ After `archive/tickets/S100BELPERVIS-001.md` adds `infrastructure_retention_tick
 
 ## Verification Layers
 
-1. Scenario loads successfully → CLI smoke test (load cli-evaluation.ron)
+1. Scenario loads successfully and explicit perception-profile values survive spawn → focused `worldwake-cli` integration test using `load_scenario_file()` + `spawn_scenario()`
 2. Single-layer ticket (scenario configuration). No cross-system or mixed-layer concerns.
 
 ## What to Change
@@ -36,9 +36,14 @@ In `scenarios/cli-evaluation.ron`, add `infrastructure_retention_ticks: 640,` to
 
 In `scenarios/cli-evaluation.ron`, add `infrastructure_retention_ticks: 640,` to Guard Theron's `perception_profile` block (after `memory_retention_ticks: 64,` at line 333) to match Kael's explicit profile ratio.
 
+### 3. Add focused CLI integration coverage
+
+In `crates/worldwake-cli/tests/integration.rs`, add a focused test that loads `scenarios/cli-evaluation.ron`, spawns the scenario, and asserts Kael and Guard Theron both receive `infrastructure_retention_ticks: 640` from their explicit RON profiles.
+
 ## Files to Touch
 
 - `scenarios/cli-evaluation.ron` (modify — two perception_profile blocks)
+- `crates/worldwake-cli/tests/integration.rs` (modify — focused cli-evaluation load/spawn proof)
 
 ## Out of Scope
 
@@ -64,9 +69,26 @@ In `scenarios/cli-evaluation.ron`, add `infrastructure_retention_ticks: 640,` to
 
 ### New/Modified Tests
 
-1. None — scenario configuration ticket; verification is command-based. Existing golden tests that load cli-evaluation.ron will exercise the parsing path.
+1. `crates/worldwake-cli/tests/integration.rs::test_cli_evaluation_scenario_loads_with_infrastructure_retention_profiles` — verifies the exact authored scenario loads and spawns with the explicit `640` values
 
 ### Commands
 
-1. `cargo test --workspace` — verifies scenario parsing via any test that loads cli-evaluation.ron
-2. `cargo clippy --workspace --all-targets -- -D warnings` — lint clean
+1. `cargo test -p worldwake-cli test_cli_evaluation_scenario_loads_with_infrastructure_retention_profiles -- --exact` — focused cli-evaluation load/spawn proof
+2. `cargo test --workspace` — full workspace verification
+3. `cargo clippy --workspace --all-targets -- -D warnings` — lint clean
+
+## Outcome
+
+- Completion date: 2026-04-13
+- Added `infrastructure_retention_ticks: 640` to the explicit `perception_profile` blocks for Kael and Guard Theron in `scenarios/cli-evaluation.ron`.
+- Added focused `worldwake-cli` integration coverage that loads `cli-evaluation.ron`, spawns the scenario, and asserts both authored agents receive the explicit `640` infrastructure-retention value after spawn.
+
+## Deviations
+
+- The original ticket assumed command-only verification was sufficient. Reassessment showed no existing focused test loaded `cli-evaluation.ron`, so the landed scope includes a narrow CLI integration test to prove the exact authored scenario path.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli test_cli_evaluation_scenario_loads_with_infrastructure_retention_profiles -- --exact`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

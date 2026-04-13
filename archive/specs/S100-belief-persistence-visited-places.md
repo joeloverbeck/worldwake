@@ -1,6 +1,6 @@
 # S100: Tiered Belief Retention for Infrastructure Entities
 
-**Status**: DRAFT
+**Status**: ✅ COMPLETED
 
 ## Summary
 
@@ -269,3 +269,19 @@ cargo test -p worldwake-core
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+## Outcome
+
+- Completion date: 2026-04-13
+- Added `infrastructure_retention_ticks` to `PerceptionProfile` with a default of `480`, wired tiered time-based retention for infrastructure entities and claims in `AgentBeliefStore`, and updated the authored `cli-evaluation.ron` perception profiles to carry explicit `640` values for Kael and Guard Theron.
+- Landed the focused `worldwake-core` retention regressions, aligned `worldwake-ai` proof surfaces to the new lawful retention contract where broadened verification exposed stale expectations, and added focused `worldwake-cli` integration coverage proving the exact authored scenario loads and spawns with the explicit infrastructure-retention values.
+- Deviations from original plan: the broad production slice stayed intact, but workspace verification required absorbing adjacent AI/golden test updates and a focused CLI integration test so the honest proof surface matched the live authored-input path rather than relying only on broad command coverage.
+- Verification results:
+  - `cargo test -p worldwake-core -- infrastructure_retention`
+  - `cargo test -p worldwake-core -- enforce_capacity`
+  - `cargo test -p worldwake-ai remote_acquisition_belief -- --nocapture`
+  - `cargo test -p worldwake-ai --test golden_merchant_selling combined_market_trip_selected_for_side_benefit -- --nocapture`
+  - `cargo test -p worldwake-cli test_cli_evaluation_scenario_loads_with_infrastructure_retention_profiles -- --exact`
+  - `cargo test -p worldwake-core`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
