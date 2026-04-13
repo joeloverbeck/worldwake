@@ -65,6 +65,7 @@ fn exploration_perception_profile() -> PerceptionProfile {
         entity_memory_capacity: 64,
         entity_claim_capacity: 64,
         memory_retention_ticks: 64,
+        infrastructure_retention_ticks: 640,
         observation_fidelity: pm(875),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,

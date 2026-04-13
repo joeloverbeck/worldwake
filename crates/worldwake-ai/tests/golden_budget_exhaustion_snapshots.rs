@@ -202,6 +202,7 @@ fn guard_perception_profile() -> worldwake_core::PerceptionProfile {
         entity_memory_capacity: 16,
         entity_claim_capacity: 16,
         memory_retention_ticks: 64,
+        infrastructure_retention_ticks: 640,
         observation_fidelity: pm(950),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -570,6 +571,7 @@ fn seed_kael_cli_agent(
             entity_memory_capacity: 16,
             entity_claim_capacity: 16,
             memory_retention_ticks: 64,
+            infrastructure_retention_ticks: 640,
             observation_fidelity: pm(950),
             confidence_policy: worldwake_core::BeliefConfidencePolicy {
                 direct_observation_base: pm(900),

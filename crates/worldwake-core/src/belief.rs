@@ -2180,6 +2180,7 @@ pub struct PerceptionProfile {
     pub entity_memory_capacity: u32,
     pub entity_claim_capacity: u32,
     pub memory_retention_ticks: u64,
+    pub infrastructure_retention_ticks: u64,
     pub observation_fidelity: Permille,
     pub confidence_policy: BeliefConfidencePolicy,
     pub institutional_memory_capacity: u32,
@@ -2195,6 +2196,7 @@ impl Default for PerceptionProfile {
             entity_memory_capacity: 12,
             entity_claim_capacity: 12,
             memory_retention_ticks: 48,
+            infrastructure_retention_ticks: 480,
             observation_fidelity: Permille::new(875).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,
@@ -2300,6 +2302,7 @@ mod tests {
             entity_memory_capacity,
             entity_claim_capacity,
             memory_retention_ticks,
+            infrastructure_retention_ticks: memory_retention_ticks.saturating_mul(10),
             observation_fidelity: Permille::new(750).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 9,
@@ -5042,12 +5045,13 @@ mod tests {
     }
 
     #[test]
-    fn default_perception_profile_carries_default_confidence_policy() {
+    fn perception_profile_default_includes_infrastructure_retention_ticks() {
         let profile = PerceptionProfile::default();
 
         assert_eq!(profile.confidence_policy, BeliefConfidencePolicy::default());
         assert_eq!(profile.entity_memory_capacity, 12);
         assert_eq!(profile.entity_claim_capacity, 12);
+        assert_eq!(profile.infrastructure_retention_ticks, 480);
         assert_eq!(profile.institutional_memory_capacity, 20);
         assert_eq!(
             profile.consultation_speed_factor,

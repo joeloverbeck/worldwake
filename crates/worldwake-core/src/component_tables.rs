@@ -371,6 +371,7 @@ mod tests {
                 entity_memory_capacity: 8,
                 entity_claim_capacity: 8,
                 memory_retention_ticks: 20,
+                infrastructure_retention_ticks: 200,
                 observation_fidelity: Permille::new(900).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 18,
