@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # Needs Starvation Diagnostic
 
 ## Run Summary
@@ -361,3 +363,10 @@ He patrolled between Dusty Trail and Thornwall Village (patrol_route: ["Dusty Tr
 | 2 | DM-2 | golden_local_food_budget_exhaustion | AcquireCommodity budget-exhausts for food physically at agent's location — planner can't find pick_up→eat in 300 expansions |
 | 3 | DM-3 | golden_stranded_agent_no_exploration | Agent without exploration_profile starves at barren location 2 ticks from resources — no mechanism to rediscover forgotten locations |
 | 4 | DM-4 | golden_exploration_ignores_dirtiness | Agent with exploration_profile never explores for WashBasin despite critical dirtiness — ExploreLocation may not trigger for non-food needs |
+
+## Outcome
+
+- **Completion date**: 2026-04-13
+- **What changed**: Diagnostic identified 4 damning moments (DM-1 through DM-4) across all 4 agents, classified root causes into 5 categories (Geographic Desert, Planner Budget Wall, Belief Blindness, Priority Override, Structural Impossibility/Exploration Failure), and proposed 10 concrete solutions with golden test blueprints for each.
+- **Deviations**: None — report produced as designed by the needs-starvation-diagnostic skill.
+- **Verification**: Findings exploited for subsequent remediation work; golden test blueprints informed spec and ticket creation.

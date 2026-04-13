@@ -1,6 +1,6 @@
 # S80EXPDRI-008: Extend ExploreLocation candidate generation to Dirtiness need
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — candidate_generation.rs (AI layer, candidate emission)
@@ -111,13 +111,39 @@ for (need_id, pressure, matches_need) in [
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/candidate_generation.rs::tests::exploration_emits_for_critical_dirtiness_without_water` — proves ExploreLocation fires for Dirtiness when Water is unavailable
-2. `crates/worldwake-ai/src/candidate_generation.rs::tests::exploration_skips_dirtiness_when_water_available` — proves local Water suppresses Dirtiness exploration
-3. `crates/worldwake-ai/src/candidate_generation.rs::tests::exploration_skips_dirtiness_when_acquisition_path_known` — proves known Water source suppresses Dirtiness exploration
+1. `candidate_generation::tests::generate_candidates_emits_exploration_for_critical_dirtiness_without_water` — proves ExploreLocation fires for Dirtiness when Water is unavailable
+2. `candidate_generation::tests::generate_candidates_skips_dirtiness_exploration_when_water_available` — proves local Water suppresses Dirtiness exploration
+3. `candidate_generation::tests::generate_candidates_skips_dirtiness_exploration_when_water_path_is_known` — proves known Water source suppresses Dirtiness exploration
 
 ### Commands
 
-1. `cargo test -p worldwake-ai -- exploration_emits_for_critical_dirtiness`
-2. `cargo test -p worldwake-ai -- exploration_skips_dirtiness`
-3. `cargo test --workspace`
-4. `cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test -p worldwake-ai --lib candidate_generation::tests::generate_candidates_emits_exploration_for_critical_dirtiness_without_water -- --exact`
+2. `cargo test -p worldwake-ai --lib candidate_generation::tests::generate_candidates_skips_dirtiness_exploration_when_water_available -- --exact`
+3. `cargo test -p worldwake-ai --lib candidate_generation::tests::generate_candidates_skips_dirtiness_exploration_when_water_path_is_known -- --exact`
+4. `cargo test -p worldwake-ai`
+5. `cargo test --workspace`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-13.
+
+- Extended `emit_exploration_candidates()` to treat `HomeostaticNeedId::Dirtiness` as a lawful `ExploreLocation` motivator using the same threshold, local-relief, and known-acquisition-path gates already used for hunger and thirst.
+- Added `relieves_dirtiness()` as the commodity matcher for wash-relevant exploration gating; it maps dirtiness relief to `CommodityKind::Water`, matching the existing wash candidate path.
+- Added three focused `candidate_generation` regressions proving dirtiness-driven exploration emission when water is unavailable and suppression when local water or a known water path already exists.
+- No deviations from the ticket's planned production scope or proof surface were required.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::generate_candidates_emits_exploration_for_critical_dirtiness_without_water -- --exact`
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::generate_candidates_skips_dirtiness_exploration_when_water_available -- --exact`
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::generate_candidates_skips_dirtiness_exploration_when_water_path_is_known -- --exact`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Worktree Notes
+
+- Modified tracked file: `crates/worldwake-ai/src/candidate_generation.rs`
+- This ticket file is updated in place under `tickets/`
+- Unrelated worktree changes were already present outside this ticket's scope and were left untouched

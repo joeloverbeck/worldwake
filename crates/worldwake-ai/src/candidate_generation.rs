@@ -2370,6 +2370,11 @@ fn emit_exploration_candidates(
             needs.thirst,
             relieves_thirst as fn(CommodityKind) -> bool,
         ),
+        (
+            HomeostaticNeedId::Dirtiness,
+            needs.dirtiness,
+            relieves_dirtiness as fn(CommodityKind) -> bool,
+        ),
     ] {
         if pressure < profile.need_activation_threshold
             || any_local_need_relief(ctx.view, ctx.agent, ctx.place, matches_need)
@@ -4905,6 +4910,10 @@ fn relieves_thirst(commodity: CommodityKind) -> bool {
         .spec()
         .consumable_profile
         .is_some_and(|profile| profile.thirst_relief_per_unit.value() > 0)
+}
+
+fn relieves_dirtiness(commodity: CommodityKind) -> bool {
+    commodity == CommodityKind::Water
 }
 
 #[cfg(test)]
@@ -15749,6 +15758,258 @@ mod tests {
                 .iter()
                 .any(|candidate| matches!(candidate.key.kind, GoalKind::ExploreLocation { .. })),
             "exploration should stop once the consecutive cap is reached"
+        );
+    }
+
+    #[test]
+    fn generate_candidates_emits_exploration_for_critical_dirtiness_without_water() {
+        let agent = entity(1);
+        let current_place = entity(10);
+        let known_place = entity(11);
+        let frontier_place = entity(12);
+
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, current_place);
+        view.entities_at.insert(current_place, vec![agent]);
+        view.adjacent_places
+            .insert(current_place, vec![known_place]);
+        view.adjacent_places
+            .insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places
+            .insert(frontier_place, vec![known_place]);
+        view.homeostatic_needs.insert(agent, dirtiness(700));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                max_consecutive_explorations: 3,
+                visit_lookback_ticks: 50,
+                consecutive_exploration_count: 0,
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                known_place,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    believed_evidence: None,
+                    observed_tick: Tick(100),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ExploreLocation {
+                target_place: frontier_place,
+                motivating_need: HomeostaticNeedId::Dirtiness,
+            }
+        ));
+    }
+
+    #[test]
+    fn generate_candidates_skips_dirtiness_exploration_when_water_available() {
+        let agent = entity(1);
+        let current_place = entity(10);
+        let known_place = entity(11);
+        let frontier_place = entity(12);
+        let water = entity(20);
+
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(water, EntityKind::ItemLot);
+        view.effective_places.insert(agent, current_place);
+        view.entities_at.insert(current_place, vec![agent, water]);
+        view.adjacent_places
+            .insert(current_place, vec![known_place]);
+        view.adjacent_places
+            .insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places
+            .insert(frontier_place, vec![known_place]);
+        view.homeostatic_needs.insert(agent, dirtiness(700));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                max_consecutive_explorations: 3,
+                visit_lookback_ticks: 50,
+                consecutive_exploration_count: 0,
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                known_place,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    believed_evidence: None,
+                    observed_tick: Tick(100),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        view.lot_commodities.insert(water, CommodityKind::Water);
+        view.controllable.insert((agent, water));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+        );
+
+        assert!(
+            !candidates.iter().any(|candidate| {
+                matches!(
+                    candidate.key.kind,
+                    GoalKind::ExploreLocation {
+                        motivating_need: HomeostaticNeedId::Dirtiness,
+                        ..
+                    }
+                )
+            }),
+            "local water should suppress dirtiness-driven exploration"
+        );
+    }
+
+    #[test]
+    fn generate_candidates_skips_dirtiness_exploration_when_water_path_is_known() {
+        let agent = entity(1);
+        let current_place = entity(10);
+        let known_place = entity(11);
+        let frontier_place = entity(12);
+        let source = entity(20);
+
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, current_place);
+        view.entities_at.insert(current_place, vec![agent]);
+        view.adjacent_places
+            .insert(current_place, vec![known_place]);
+        view.adjacent_places
+            .insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places
+            .insert(frontier_place, vec![known_place]);
+        view.homeostatic_needs.insert(agent, dirtiness(700));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                max_consecutive_explorations: 3,
+                visit_lookback_ticks: 50,
+                consecutive_exploration_count: 0,
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                known_place,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: None,
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    believed_evidence: None,
+                    observed_tick: Tick(100),
+                    source: PerceptionSource::DirectObservation,
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        view.sources_at
+            .insert((known_place, CommodityKind::Water), vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(5),
+                max_quantity: Quantity(5),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+        );
+
+        assert!(
+            !candidates.iter().any(|candidate| {
+                matches!(
+                    candidate.key.kind,
+                    GoalKind::ExploreLocation {
+                        motivating_need: HomeostaticNeedId::Dirtiness,
+                        ..
+                    }
+                )
+            }),
+            "known water path should suppress dirtiness-driven exploration"
         );
     }
 }
