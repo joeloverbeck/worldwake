@@ -45,6 +45,8 @@ cargo run -p worldwake-cli --bin observer -- <scenario_path> --ticks <N> --outpu
 - The observer may take several minutes. Wait for the process to exit rather than checking for the output file. If the Bash tool backgrounds the observer command, wait for the background task completion notification. Do not poll for the output file — the notification will arrive automatically when the process exits.
 - If the binary exits with a non-zero code, diagnose using the same logic as the `simulation-observer` skill (schema drift, runtime error, I/O error). Fix code bugs if found, note fixes in the report.
 
+**Common failure mode — mid-simulation tick error**: If the observer crashes during tick execution (e.g., `Action(PreconditionFailed(...))`) rather than during build or startup, the dump may not be written because the observer calls `std::process::exit(1)` before reaching the dump-writing code. In this case, check the observer's tick error handler in `observer.rs`. If it uses `std::process::exit(1)`, change it to `break` from the tick loop so the observer still writes a partial dump with data collected up to the crash tick. A partial dump (even 500 of 1440 ticks) is far more useful than no dump. Note the crash tick, error message, and any observer fix in the report's Observer Notes section.
+
 **Hard gate**: If `reports/needs-diagnostic-dump.md` does not exist or is empty after the run, stop and report.
 
 **Note**: This uses a separate dump file from `simulation-observer` (`needs-diagnostic-dump.md` vs `simulation-observer-dump.md`) to avoid conflicts if both skills are used.
@@ -118,6 +120,8 @@ For each agent with any need >750 permille for 100+ consecutive ticks, classify 
 | **Structural Impossibility** | No location in the entire scenario has the needed resource/facility | Read scenario `.ron` file. Check all places and facilities. If no WashBasin exists anywhere, dirtiness is structurally unsatisfiable. |
 | **Exploration Failure** | Agent has exploration_profile but ExploreLocation never fires or fails | Section 7 shows ExploreLocation in failed plans or blocked desires. Or ExploreLocation never appears in goals-selected despite the agent having an exploration_profile in the scenario. |
 | **Belief Memory Pollution** | Agent previously knew resource locations but beliefs were displaced by irrelevant entities (SocialArtifacts, Waste) | Section 5 shows belief memory at capacity but dominated by non-resource entities. Cross-reference with Section 2 location history — agent visited resource locations earlier but beliefs decayed and were replaced by high-volume low-value observations. Distinct from Belief Blindness (never learned) — here the agent *had* beliefs that were crowded out. |
+| **Knowledge Gap** | Agent believes resource location exists and is reachable, but lacks recipe or skill to exploit it | Section 5 shows agent knows about facility/resource location (e.g., believes Well exists at Thornwall Village). Scenario file shows agent's `known_recipes` does NOT include the required recipe (e.g., "Harvest Water"). Cross-reference available facilities with agent recipes. Distinct from Belief Blindness (the agent *knows* where resources are) and Structural Impossibility (the resources *exist*). |
+| **Profile Gap** | Agent is missing a profile component that would enable survival-critical behavior | Compare scenario agent definition against engine-registered profile types. If a profile exists in the engine (grep for the type) but is absent from the agent, and that profile is needed for the agent's survival (e.g., `PerceptionProfile` for observing ground items, `CognitiveProfile` for planner budget, `ExplorationProfile` for finding resources), classify as Profile Gap. May co-occur with other categories. |
 
 An agent may have multiple categories (e.g., Geographic Desert + Belief Blindness + Planner Budget Wall often co-occur).
 
@@ -125,17 +129,18 @@ An agent may have multiple categories (e.g., Geographic Desert + Belief Blindnes
 
 **For agents with no needs failures**: Note them as "healthy" with a brief explanation of why they succeeded (e.g., "self-sufficient at resource-rich location").
 
-**Profile gap detection**: For each classified failure, check whether the agent is missing a profile that would address the pathology. Grep for the relevant profile type in the codebase (e.g., `ObligationSatiationProfile`, `ExplorationProfile`, `CognitiveProfile`) to confirm it exists as an implemented component, then check the scenario file for its presence on the affected agent. If the profile exists in the engine but is absent from the agent, note this as a "Profile Gap" — the fix may be a scenario change rather than an engine change. Common profile gaps:
+**Profile gap cross-reference**: When classifying as Profile Gap, check these common patterns:
 - Priority Override without `ObligationSatiationProfile` → S96 satiation mechanism inactive
 - No exploration without `ExplorationProfile` → S80 exploration drive inactive
 - Default planner budget without `CognitiveProfile` → agent uses engine defaults which may be too low
+- No item observation without `PerceptionProfile` → agent can't see ground items, effectively blind
 
 ### Step 4: Capture Damning Moments
 
 This is the primary deliverable section. For each classified failure, extract a "damning moment" — the exact agent state at the point where the failure becomes irrecoverable or clearly pathological.
 
-**Identifying the damning tick**: Use these heuristics:
-- For Geographic Desert: The tick when the agent's needs crossed 750‰ (from Section 3 anomaly tick ranges) while at a barren location (from Section 2 location history). If the Section 2 action count shows a specific number of eat/drink actions, the last one approximately marks when supplies ran out.
+**Identifying the damning tick**: The most reliable source for the 750‰ crossing tick is the Section 3 anomaly flag tick ranges (e.g., "hunger above 750‰ for 274 consecutive ticks (ticks 269–542)" → the damning tick is tick 269). Use these heuristics to refine:
+- For Geographic Desert: The start tick from Section 3 anomaly range, cross-referenced with Section 2 location history to confirm the agent was at a barren location. If the Section 2 action count shows a specific number of eat/drink actions, the last one approximately marks when supplies ran out.
 - For Planner Budget Wall: The first budget-exhausted AcquireCommodity attempt (from Section 7 failed plan attempts, or Section 8 first snapshot for that agent)
 - For Belief Blindness: The tick when needs crossed the "high" threshold while the agent had no beliefs about resource locations
 - For Belief Memory Pollution: The tick when belief memory became dominated by non-resource entities (cross-reference Section 5 end-state beliefs with Section 2 location history — if the agent visited resource locations early but end-state beliefs show only SocialArtifacts/Waste, the pollution occurred between those points)
@@ -237,6 +242,16 @@ For each root cause category found in the diagnostic, propose concrete solutions
 - Priority-based belief retention (beliefs about facilities and resource sources decay slower or are protected from eviction)
 - Observation filtering (reduce observation frequency for entity types that are not survival-relevant when needs are critical)
 
+**Knowledge Gap solutions**:
+- Add missing survival recipes to the agent's `known_recipes` in the scenario (e.g., "Harvest Water" for any agent that might need water)
+- Implement recipe learning — agents can learn recipes by observing other agents performing them
+- Initial common-knowledge recipes — basic survival recipes (Harvest Water, Harvest Grain) could be universal knowledge
+
+**Profile Gap solutions**:
+- Add the missing profile to the agent in the scenario file (e.g., `perception_profile` for agents that need to observe items)
+- Make survival-critical profiles universal with defaults (e.g., PerceptionProfile should auto-apply if not explicitly configured)
+- Add scenario validation that warns when agents lack profiles needed for basic survival behavior
+
 **Exploration Failure solutions**:
 - Lower ExploreLocation activation threshold when survival needs are critical
 - Need-directed exploration (ExploreLocation targets locations believed to have resources, or unknown locations adjacent to resource-rich ones)
@@ -258,6 +273,10 @@ Write `reports/needs-starvation-diagnostic.md`:
 - **Agents**: [names]
 - **Places**: [names]
 - **Deaths**: [agent at tick N (cause), or "None"]
+
+## Observer Notes
+
+[If the observer crashed mid-simulation, document: the tick error message, the crash tick, any code fixes applied (e.g., changing exit(1) to break), and whether the dump is partial. If no observer issues, omit this section.]
 
 ## Agent Needs Overview
 
@@ -296,6 +315,12 @@ Write `reports/needs-starvation-diagnostic.md`:
 [Solutions if this category was found]
 
 ### Structural Impossibility
+[Solutions if this category was found]
+
+### Knowledge Gap
+[Solutions if this category was found]
+
+### Profile Gap
 [Solutions if this category was found]
 
 ### Belief Memory Pollution
