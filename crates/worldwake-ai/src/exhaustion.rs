@@ -1067,8 +1067,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: worldwake_core::Tick(2),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        worldwake_core::Tick(2),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
             ..MockView::default()
@@ -1113,8 +1115,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: worldwake_core::Tick(2),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        worldwake_core::Tick(2),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
             ..MockView::default()
@@ -1170,8 +1174,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: worldwake_core::Tick(2),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        worldwake_core::Tick(2),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
             ..MockView::default()
@@ -1220,8 +1226,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: worldwake_core::Tick(2),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        worldwake_core::Tick(2),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
             ..MockView::default()

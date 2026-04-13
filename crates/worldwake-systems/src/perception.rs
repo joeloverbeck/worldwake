@@ -539,7 +539,7 @@ fn record_observed_snapshot(
         snapshot,
         prior.as_ref(),
         context.tick,
-        Some(snapshot.observed_tick),
+        snapshot.last_observed_tick(),
         &notice_context.profile.confidence_policy,
     );
 }
@@ -1589,7 +1589,7 @@ mod tests {
             .expect("observer should believe current place without scene evidence");
         assert_eq!(belief.last_known_place, None);
         assert_eq!(belief.believed_evidence, None);
-        assert_eq!(belief.observed_tick, Tick(3));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(3)));
         assert_eq!(belief.source, PerceptionSource::DirectObservation);
     }
 
@@ -1736,7 +1736,7 @@ mod tests {
             .unwrap()
             .get_entity(&place)
             .expect("observer should still know current place");
-        assert_eq!(belief.observed_tick, Tick(5));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(5)));
         assert_eq!(belief.believed_evidence, None);
     }
 
@@ -2067,7 +2067,7 @@ mod tests {
             Some(destination),
             "departure-direction projection should update last_known_place to travel destination"
         );
-        assert_eq!(believed.observed_tick, Tick(3));
+        assert_eq!(believed.last_observed_tick(), Some(Tick(3)));
         assert_eq!(believed.source, PerceptionSource::DirectObservation);
     }
 
@@ -2207,7 +2207,7 @@ mod tests {
             Some(&Quantity(2))
         );
         assert!(believed.alive);
-        assert_eq!(believed.observed_tick, Tick(3));
+        assert_eq!(believed.last_observed_tick(), Some(Tick(3)));
         assert_eq!(believed.source, PerceptionSource::DirectObservation);
         let claims = beliefs
             .get_entity_claims(&target)
@@ -3011,8 +3011,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, store)
@@ -3125,7 +3127,7 @@ mod tests {
             })
             .expect("passive same-place observation should capture already-present local entities");
         assert_eq!(target_belief.last_known_place, Some(place));
-        assert_eq!(target_belief.observed_tick, Tick(3));
+        assert_eq!(target_belief.last_observed_tick(), Some(Tick(3)));
         assert_eq!(target_belief.source, PerceptionSource::DirectObservation);
     }
 
@@ -3276,8 +3278,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -3360,8 +3364,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -3443,8 +3449,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4104,8 +4112,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4173,8 +4183,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4275,8 +4287,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4335,8 +4349,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4430,8 +4446,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4529,8 +4547,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4625,8 +4645,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4756,8 +4778,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)

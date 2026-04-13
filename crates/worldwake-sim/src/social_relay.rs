@@ -81,7 +81,8 @@ pub fn relayable_social_subjects(
         .into_iter()
         .filter_map(|(subject, belief)| {
             (belief_chain_len(belief.source) <= max_relay_chain_len)
-                .then_some((belief.observed_tick, subject))
+                .then(|| belief.last_observed_tick().map(|tick| (tick, subject)))
+                .flatten()
         })
         .collect::<Vec<_>>();
     subjects.sort_unstable_by(|(left_tick, left_subject), (right_tick, right_subject)| {
@@ -185,7 +186,9 @@ pub fn listener_aware_tell_topic_selection(
             });
             continue;
         }
-        eligible.push((belief.observed_tick, topic));
+        if let Some(observed_tick) = belief.last_observed_tick() {
+            eligible.push((observed_tick, topic));
+        }
     }
 
     for observation in social_observations {
@@ -298,8 +301,7 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(observed_tick),
-            source,
+            ..BelievedEntityState::single_observation_defaults(Tick(observed_tick), source)
         }
     }
 

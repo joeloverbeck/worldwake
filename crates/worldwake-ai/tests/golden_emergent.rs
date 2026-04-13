@@ -4985,8 +4985,10 @@ fn run_theft_leads_owner_to_local_suspected_theft_discovery(seed: Seed) -> (Stat
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(0),
-            source: PerceptionSource::DirectObservation,
+            ..worldwake_core::BelievedEntityState::single_observation_defaults(
+                Tick(0),
+                PerceptionSource::DirectObservation,
+            )
         },
     );
 
@@ -7694,8 +7696,10 @@ fn run_dual_discovery_converges_without_double_accusation(seed: Seed) -> (StateH
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(0),
-            source: PerceptionSource::DirectObservation,
+            ..worldwake_core::BelievedEntityState::single_observation_defaults(
+                Tick(0),
+                PerceptionSource::DirectObservation,
+            )
         },
     );
     seed_belief_from_world(

@@ -5037,8 +5037,10 @@ fn run_s58_autonomous_notice_reroute(seed: Seed) -> (StateHash, StateHash) {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(0),
-            source: PerceptionSource::DirectObservation,
+            ..worldwake_core::BelievedEntityState::single_observation_defaults(
+                Tick(0),
+                PerceptionSource::DirectObservation,
+            )
         },
     );
 
@@ -5230,8 +5232,10 @@ fn run_s97_autonomous_notice_expiry_bounds_active_population(seed: Seed) -> (Sta
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(0),
-            source: PerceptionSource::DirectObservation,
+            ..worldwake_core::BelievedEntityState::single_observation_defaults(
+                Tick(0),
+                PerceptionSource::DirectObservation,
+            )
         },
     );
 
@@ -5765,8 +5769,10 @@ fn run_s52_theft_evidence_discovery(seed: Seed) -> (StateHash, StateHash) {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(0),
-            source: PerceptionSource::DirectObservation,
+            ..worldwake_core::BelievedEntityState::single_observation_defaults(
+                Tick(0),
+                PerceptionSource::DirectObservation,
+            )
         },
     );
 

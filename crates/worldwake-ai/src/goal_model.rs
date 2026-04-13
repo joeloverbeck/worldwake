@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
     EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
-    LoadUnits, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw,
+    LoadUnits, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick,
     WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
@@ -147,7 +147,9 @@ pub(crate) fn grounded_goal_epistemic_subjects(
                 .known_entity_beliefs(actor)
                 .into_iter()
                 .find_map(|(known, belief)| (known == *entity).then_some(belief))?;
-            let staleness_ticks = current_tick.0.saturating_sub(belief.observed_tick.0);
+            let staleness_ticks = current_tick
+                .0
+                .saturating_sub(belief.last_observed_tick().unwrap_or(Tick(0)).0);
             if belief_confidence(&belief.source, staleness_ticks, &policy)
                 >= profile.stale_evidence_barrier_threshold
             {
@@ -8623,8 +8625,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick,
-            source: worldwake_core::PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                observed_tick,
+                worldwake_core::PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -9606,8 +9610,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -9671,8 +9677,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -9917,8 +9925,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -9994,8 +10004,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -10077,8 +10089,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );

@@ -1013,7 +1013,12 @@ fn belief_pressure_from_state(
     current_tick: Tick,
     policy: &worldwake_core::BeliefConfidencePolicy,
 ) -> Permille {
-    belief_pressure_from_source(state.source, state.observed_tick, current_tick, policy)
+    belief_pressure_from_source(
+        state.source,
+        state.last_observed_tick().unwrap_or(Tick(0)),
+        current_tick,
+        policy,
+    )
 }
 
 fn belief_pressure_from_source(
@@ -2274,8 +2279,7 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(observed_tick),
-            source,
+            ..BelievedEntityState::single_observation_defaults(Tick(observed_tick), source)
         }
     }
 
@@ -2347,8 +2351,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(9),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(9),
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -2384,8 +2390,10 @@ mod tests {
             }),
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(9),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(9),
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -6204,8 +6212,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: current_tick(),
-                    source: PerceptionSource::DirectObservation,
+                    ..worldwake_core::BelievedEntityState::single_observation_defaults(
+                        current_tick(),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );

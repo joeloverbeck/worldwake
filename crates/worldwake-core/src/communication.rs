@@ -158,8 +158,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(10),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(10),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
 
@@ -188,8 +190,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(13),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(13),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
 
@@ -218,8 +222,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(16),
-                source: PerceptionSource::Rumor { chain_len: 2 },
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(16),
+                    PerceptionSource::Rumor { chain_len: 2 },
+                )
             },
         );
 

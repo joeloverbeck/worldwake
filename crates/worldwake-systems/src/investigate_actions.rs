@@ -556,8 +556,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(1),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(1),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
         txn.set_component_agent_belief_store(actor, store).unwrap();
@@ -905,7 +907,8 @@ mod tests {
                 }],
                 observed_tick: Tick(1),
             });
-            belief.observed_tick = Tick(1);
+            belief.presentation_tick_count = 0;
+            belief.push_presentation_tick(Tick(1), 8);
             txn.set_component_agent_belief_store(actor, store).unwrap();
             commit_txn(txn);
         }
@@ -964,7 +967,7 @@ mod tests {
             .unwrap()
             .get_entity(&place)
             .expect("investigation should refresh the place belief");
-        assert_eq!(place_belief.observed_tick, Tick(4));
+        assert_eq!(place_belief.last_observed_tick(), Some(Tick(4)));
         assert_eq!(
             place_belief.believed_evidence,
             Some(BelievedEvidenceState {
@@ -1960,10 +1963,7 @@ mod tests {
         // Simulate another agent resolving the violation between start and commit.
         {
             let mut txn = new_txn(&mut world, 2);
-            let mut memory = txn
-                .get_component_violation_memory(actor)
-                .cloned()
-                .unwrap();
+            let mut memory = txn.get_component_violation_memory(actor).cloned().unwrap();
             memory.resolve_id(violation_id, Tick(2), 50);
             txn.set_component_violation_memory(actor, memory).unwrap();
             commit_txn(txn);

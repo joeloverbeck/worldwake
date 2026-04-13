@@ -871,8 +871,10 @@ fn believed_entity_state_at(
         believed_artifact: None,
         believed_contention: None,
         believed_evidence: None,
-        observed_tick,
-        source: PerceptionSource::DirectObservation,
+        ..BelievedEntityState::single_observation_defaults(
+            observed_tick,
+            PerceptionSource::DirectObservation,
+        )
     }
 }
 
@@ -6969,8 +6971,10 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
                 }),
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(1),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(1),
+                    PerceptionSource::DirectObservation,
+                )
             },
         )],
     );
@@ -7110,8 +7114,10 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             ),
             (
@@ -7129,8 +7135,10 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             ),
         ],
@@ -7252,8 +7260,10 @@ fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_dea
                 }),
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(1),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(1),
+                    PerceptionSource::DirectObservation,
+                )
             },
         )],
     );
@@ -7368,8 +7378,10 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             ),
             (
@@ -7387,8 +7399,10 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             ),
         ],
@@ -7505,8 +7519,10 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             ),
             (
@@ -7524,8 +7540,10 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             ),
         ],
@@ -12106,8 +12124,10 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(9),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(9),
+                    PerceptionSource::DirectObservation,
+                )
             },
         )],
     );
@@ -12208,8 +12228,10 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(9),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(9),
+                    PerceptionSource::DirectObservation,
+                )
             },
         )],
     );

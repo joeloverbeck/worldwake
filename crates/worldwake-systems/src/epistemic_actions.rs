@@ -679,7 +679,7 @@ mod tests {
         let store = world.get_component_agent_belief_store(actor).unwrap();
         let belief = store.get_entity(&subject).unwrap();
         assert_eq!(belief.last_known_place, Some(other_place));
-        assert_eq!(belief.observed_tick, Tick(2));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(2)));
         assert_eq!(
             belief.source,
             PerceptionSource::Report {
@@ -720,7 +720,7 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(actor).unwrap();
         let belief = store.get_entity(&subject).unwrap();
-        assert_eq!(belief.observed_tick, Tick(1));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(1)));
         assert_eq!(belief.source, PerceptionSource::Rumor { chain_len: 1 });
         assert_eq!(
             store
@@ -912,7 +912,10 @@ mod tests {
         }
 
         let store = world.get_component_agent_belief_store(actor).unwrap();
-        assert_eq!(store.get_entity(&subject).unwrap().observed_tick, Tick(1));
+        assert_eq!(
+            store.get_entity(&subject).unwrap().last_observed_tick(),
+            Some(Tick(1))
+        );
         assert_eq!(
             store.ask_witness_memory(&ask_witness_memory_key(&payload), Tick(4), 12),
             None

@@ -462,7 +462,7 @@ fn emit_bounty_candidates(
                             place: belief.last_known_place.unwrap_or(terms.claim_place),
                         },
                         source: belief.source,
-                        observed_tick: belief.observed_tick,
+                        observed_tick: belief.last_observed_tick().unwrap_or(Tick(0)),
                     });
                     if let Some(target_belief) = target_belief {
                         trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
@@ -471,7 +471,7 @@ fn emit_bounty_candidates(
                                 place: target_belief.last_known_place.unwrap_or(terms.claim_place),
                             },
                             source: target_belief.source,
-                            observed_tick: target_belief.observed_tick,
+                            observed_tick: target_belief.last_observed_tick().unwrap_or(Tick(0)),
                         });
                     }
                 }
@@ -514,7 +514,7 @@ fn emit_bounty_candidates(
                             place: belief.last_known_place.unwrap_or(terms.claim_place),
                         },
                         source: belief.source,
-                        observed_tick: belief.observed_tick,
+                        observed_tick: belief.last_observed_tick().unwrap_or(Tick(0)),
                     });
                 }
 
@@ -1232,7 +1232,7 @@ fn emit_social_candidates(
                         subject,
                         aspect: BeliefAspect::LocationAt { place },
                         source: state.source,
-                        observed_tick: state.observed_tick,
+                        observed_tick: state.last_observed_tick().unwrap_or(Tick(0)),
                     });
                 }
             } else if let TellTopic::InstitutionalClaim { claim } = topic
@@ -1892,7 +1892,7 @@ fn emit_engage_hostile_goals(
                 subject: *target,
                 aspect: BeliefAspect::Hostile,
                 source: state.source,
-                observed_tick: state.observed_tick,
+                observed_tick: state.last_observed_tick().unwrap_or(Tick(0)),
             });
         }
         emit_candidate_with_trace(
@@ -2714,7 +2714,7 @@ fn emit_care_goals(
                 subject: entity,
                 aspect: BeliefAspect::Wounded,
                 source: belief.source,
-                observed_tick: belief.observed_tick,
+                observed_tick: belief.last_observed_tick().unwrap_or(Tick(0)),
             });
         }
         emit_candidate_with_trace(
@@ -3178,7 +3178,7 @@ fn emit_loot_goals(
                 subject: corpse,
                 aspect: BeliefAspect::Dead,
                 source: state.source,
-                observed_tick: state.observed_tick,
+                observed_tick: state.last_observed_tick().unwrap_or(Tick(0)),
             });
         }
         emit_candidate_with_trace(
@@ -3238,7 +3238,7 @@ fn emit_bury_goals(
                 subject: corpse,
                 aspect: BeliefAspect::Dead,
                 source: state.source,
-                observed_tick: state.observed_tick,
+                observed_tick: state.last_observed_tick().unwrap_or(Tick(0)),
             });
         }
         emit_candidate_with_trace(
@@ -3315,7 +3315,7 @@ fn emit_theft_candidates(
                 subject: item,
                 aspect: BeliefAspect::LocationAt { place },
                 source: state.source,
-                observed_tick: state.observed_tick,
+                observed_tick: state.last_observed_tick().unwrap_or(Tick(0)),
             });
         }
         emit_candidate_with_trace(
@@ -3359,7 +3359,7 @@ fn belief_provenance_for_contributors(
                 subject: contributor.entity,
                 aspect,
                 source: state.source,
-                observed_tick: state.observed_tick,
+                observed_tick: state.last_observed_tick().unwrap_or(Tick(0)),
             });
         }
     }
@@ -3663,7 +3663,7 @@ fn emit_escort_candidates(
                 subject,
                 aspect: BeliefAspect::Wounded,
                 source: belief.source,
-                observed_tick: belief.observed_tick,
+                observed_tick: belief.last_observed_tick().unwrap_or(Tick(0)),
             });
         }
 
@@ -3832,7 +3832,7 @@ fn emit_violation_goal(
     let belief_entry = beliefs.iter().find(|(id, _)| *id == entity_id);
     let (source, observed_tick) = belief_entry.map_or(
         (PerceptionSource::DirectObservation, ctx.current_tick),
-        |(_, b)| (b.source, b.observed_tick),
+        |(_, b)| (b.source, b.last_observed_tick().unwrap_or(Tick(0))),
     );
 
     let aspect = match kind {
@@ -4310,7 +4310,7 @@ fn known_place_observations(
     if let Some(store) = view.agent_belief_store(agent) {
         for (entity, belief) in &store.known_entities {
             if belief.believed_kind == Some(EntityKind::Place) {
-                known_places.insert(*entity, belief.observed_tick);
+                known_places.insert(*entity, belief.last_observed_tick().unwrap_or(Tick(0)));
             }
         }
     }
@@ -4319,8 +4319,10 @@ fn known_place_observations(
         if belief.believed_kind == Some(EntityKind::Place) {
             known_places
                 .entry(entity)
-                .and_modify(|tick| *tick = (*tick).max(belief.observed_tick))
-                .or_insert(belief.observed_tick);
+                .and_modify(|tick| {
+                    *tick = (*tick).max(belief.last_observed_tick().unwrap_or(Tick(0)));
+                })
+                .or_insert(belief.last_observed_tick().unwrap_or(Tick(0)));
         }
     }
 
@@ -6233,8 +6235,10 @@ mod tests {
             }),
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(5),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(5),
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -6280,8 +6284,10 @@ mod tests {
                         believed_artifact: None,
                         believed_contention: None,
                         believed_evidence: None,
-                        observed_tick: Tick(5),
-                        source: PerceptionSource::DirectObservation,
+                        ..BelievedEntityState::single_observation_defaults(
+                            Tick(5),
+                            PerceptionSource::DirectObservation,
+                        )
                     },
                 ),
             ],
@@ -6403,8 +6409,10 @@ mod tests {
                         believed_artifact: None,
                         believed_contention: None,
                         believed_evidence: None,
-                        observed_tick: Tick(5),
-                        source: PerceptionSource::DirectObservation,
+                        ..BelievedEntityState::single_observation_defaults(
+                            Tick(5),
+                            PerceptionSource::DirectObservation,
+                        )
                     },
                 ),
             ],
@@ -6480,8 +6488,10 @@ mod tests {
                         believed_artifact: None,
                         believed_contention: None,
                         believed_evidence: None,
-                        observed_tick: Tick(5),
-                        source: PerceptionSource::DirectObservation,
+                        ..BelievedEntityState::single_observation_defaults(
+                            Tick(5),
+                            PerceptionSource::DirectObservation,
+                        )
                     },
                 ),
             ],
@@ -6689,8 +6699,7 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(observed_tick),
-            source,
+            ..BelievedEntityState::single_observation_defaults(Tick(observed_tick), source)
         }
     }
 
@@ -11251,7 +11260,6 @@ mod tests {
                         target: Some(agent),
                         observed_tick: Tick(5),
                     }),
-                    observed_tick: Tick(5),
                     ..believed_state(5, PerceptionSource::DirectObservation)
                 },
             )],
@@ -11811,7 +11819,8 @@ mod tests {
         view.tell_profiles.insert(speaker, TellProfile::default());
         let old_belief = known_entity(subject, place).1;
         let mut refreshed_belief = old_belief.clone();
-        refreshed_belief.observed_tick = Tick(11);
+        refreshed_belief.presentation_tick_count = 0;
+        refreshed_belief.push_presentation_tick(Tick(11), 8);
         view.beliefs
             .insert(speaker, vec![(subject, refreshed_belief)]);
         view.told_beliefs.insert(
@@ -11937,7 +11946,8 @@ mod tests {
         );
         let recent_belief = known_entity(recent_subject, place).1;
         let mut older_belief = known_entity(older_subject, place).1;
-        older_belief.observed_tick = Tick(8);
+        older_belief.presentation_tick_count = 0;
+        older_belief.push_presentation_tick(Tick(8), 8);
         view.beliefs.insert(
             speaker,
             vec![
@@ -14224,8 +14234,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: tick,
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                tick,
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -14254,8 +14266,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: tick,
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                tick,
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -15548,18 +15562,7 @@ mod tests {
                 BelievedEntityState {
                     believed_kind: Some(EntityKind::Place),
                     last_known_place: None,
-                    last_known_inventory: BTreeMap::new(),
-                    workstation_tag: None,
-                    resource_source: None,
-                    alive: true,
-                    wounds: Vec::new(),
-                    last_known_courage: None,
-                    believed_activity: None,
-                    believed_artifact: None,
-                    believed_contention: None,
-                    believed_evidence: None,
-                    observed_tick: Tick(100),
-                    source: PerceptionSource::DirectObservation,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
                 },
             )],
         );
@@ -15633,18 +15636,7 @@ mod tests {
                 BelievedEntityState {
                     believed_kind: Some(EntityKind::Place),
                     last_known_place: None,
-                    last_known_inventory: BTreeMap::new(),
-                    workstation_tag: None,
-                    resource_source: None,
-                    alive: true,
-                    wounds: Vec::new(),
-                    last_known_courage: None,
-                    believed_activity: None,
-                    believed_artifact: None,
-                    believed_contention: None,
-                    believed_evidence: None,
-                    observed_tick: Tick(100),
-                    source: PerceptionSource::DirectObservation,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
                 },
             )],
         );
@@ -15728,18 +15720,7 @@ mod tests {
                 BelievedEntityState {
                     believed_kind: Some(EntityKind::Place),
                     last_known_place: None,
-                    last_known_inventory: BTreeMap::new(),
-                    workstation_tag: None,
-                    resource_source: None,
-                    alive: true,
-                    wounds: Vec::new(),
-                    last_known_courage: None,
-                    believed_activity: None,
-                    believed_artifact: None,
-                    believed_contention: None,
-                    believed_evidence: None,
-                    observed_tick: Tick(100),
-                    source: PerceptionSource::DirectObservation,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
                 },
             )],
         );
@@ -15802,18 +15783,7 @@ mod tests {
                 BelievedEntityState {
                     believed_kind: Some(EntityKind::Place),
                     last_known_place: None,
-                    last_known_inventory: BTreeMap::new(),
-                    workstation_tag: None,
-                    resource_source: None,
-                    alive: true,
-                    wounds: Vec::new(),
-                    last_known_courage: None,
-                    believed_activity: None,
-                    believed_artifact: None,
-                    believed_contention: None,
-                    believed_evidence: None,
-                    observed_tick: Tick(100),
-                    source: PerceptionSource::DirectObservation,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
                 },
             )],
         );
@@ -15879,18 +15849,7 @@ mod tests {
                 BelievedEntityState {
                     believed_kind: Some(EntityKind::Place),
                     last_known_place: None,
-                    last_known_inventory: BTreeMap::new(),
-                    workstation_tag: None,
-                    resource_source: None,
-                    alive: true,
-                    wounds: Vec::new(),
-                    last_known_courage: None,
-                    believed_activity: None,
-                    believed_artifact: None,
-                    believed_contention: None,
-                    believed_evidence: None,
-                    observed_tick: Tick(100),
-                    source: PerceptionSource::DirectObservation,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
                 },
             )],
         );
@@ -15962,18 +15921,7 @@ mod tests {
                 BelievedEntityState {
                     believed_kind: Some(EntityKind::Place),
                     last_known_place: None,
-                    last_known_inventory: BTreeMap::new(),
-                    workstation_tag: None,
-                    resource_source: None,
-                    alive: true,
-                    wounds: Vec::new(),
-                    last_known_courage: None,
-                    believed_activity: None,
-                    believed_artifact: None,
-                    believed_contention: None,
-                    believed_evidence: None,
-                    observed_tick: Tick(100),
-                    source: PerceptionSource::DirectObservation,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
                 },
             )],
         );

@@ -4640,8 +4640,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(12),
-                source: PerceptionSource::Inference,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(12),
+                    PerceptionSource::Inference,
+                )
             },
         );
 

@@ -213,7 +213,9 @@ pub fn is_pursuit_plan_invalid(
     }
 
     // Re-derive confidence and check against profile threshold.
-    let staleness = current_tick.0.saturating_sub(state.observed_tick.0);
+    let staleness = current_tick
+        .0
+        .saturating_sub(state.last_observed_tick().unwrap_or(Tick(0)).0);
     let policy = view.belief_confidence_policy(actor);
     let confidence = belief_confidence(&state.source, staleness, &policy);
     if confidence < profile.min_location_confidence {
@@ -1211,8 +1213,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: observed,
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                observed,
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 

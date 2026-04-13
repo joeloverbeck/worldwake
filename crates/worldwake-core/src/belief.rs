@@ -71,7 +71,9 @@ impl AgentBeliefStore {
 
     pub fn update_entity(&mut self, id: EntityId, state: BelievedEntityState) {
         match self.known_entities.get(&id) {
-            Some(existing) if existing.observed_tick > state.observed_tick => {}
+            Some(existing)
+                if existing.last_observed_tick().unwrap_or(Tick(0))
+                    > state.last_observed_tick().unwrap_or(Tick(0)) => {}
             _ => {
                 self.known_entities.insert(id, state);
             }
@@ -103,9 +105,11 @@ impl AgentBeliefStore {
         self.refresh_entity_summary_from_claims(subject, current_tick, policy);
         if snapshot.believed_kind.is_some()
             && let Some(summary) = self.known_entities.get_mut(&subject)
-            && summary.believed_kind.is_none()
         {
-            summary.believed_kind = snapshot.believed_kind;
+            if summary.believed_kind.is_none() {
+                summary.believed_kind = snapshot.believed_kind;
+            }
+            summary.push_presentation_tick(current_tick, 5);
         }
     }
 
@@ -201,7 +205,11 @@ impl AgentBeliefStore {
             } else {
                 profile.memory_retention_ticks
             };
-            within_retention_window(state.observed_tick, current_tick, retention)
+            within_retention_window(
+                state.last_observed_tick().unwrap_or(Tick(0)),
+                current_tick,
+                retention,
+            )
         });
 
         let excess = self
@@ -215,7 +223,13 @@ impl AgentBeliefStore {
         let mut eviction_order = self
             .known_entities
             .iter()
-            .map(|(entity, state)| (entity_eviction_tier(state), state.observed_tick, *entity))
+            .map(|(entity, state)| {
+                (
+                    entity_eviction_tier(state),
+                    state.last_observed_tick().unwrap_or(Tick(0)),
+                    *entity,
+                )
+            })
             .collect::<Vec<_>>();
         eviction_order.sort_unstable();
         for (_, _, entity) in eviction_order.into_iter().take(excess) {
@@ -764,7 +778,8 @@ impl AgentBeliefStore {
     ) -> bool {
         if let Some(belief) = self.known_entities.get_mut(id) {
             belief.last_known_place = Some(destination);
-            belief.observed_tick = observed_tick;
+            belief
+                .push_presentation_tick(observed_tick, BelievedEntityState::MAX_PRESENTATION_TICKS);
             belief.source = PerceptionSource::DirectObservation;
             return true;
         }
@@ -1267,8 +1282,7 @@ impl ObservedEntitySnapshot {
             believed_artifact: self.artifact_state.clone(),
             believed_contention: self.contention_state,
             believed_evidence: self.evidence_state.clone(),
-            observed_tick,
-            source,
+            ..BelievedEntityState::single_observation_defaults(observed_tick, source)
         }
     }
 }
@@ -1336,8 +1350,60 @@ pub struct BelievedEntityState {
     pub believed_contention: Option<BelievedContentionState>,
     #[serde(default)]
     pub believed_evidence: Option<BelievedEvidenceState>,
-    pub observed_tick: Tick,
+    pub presentation_ticks: [Tick; 8],
+    pub presentation_tick_count: u8,
     pub source: PerceptionSource,
+}
+
+impl BelievedEntityState {
+    const MAX_PRESENTATION_TICKS: u8 = 8;
+
+    #[must_use]
+    pub fn single_observation_defaults(observed_tick: Tick, source: PerceptionSource) -> Self {
+        let mut state = Self {
+            believed_kind: None,
+            last_known_place: None,
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            presentation_ticks: [Tick(0); Self::MAX_PRESENTATION_TICKS as usize],
+            presentation_tick_count: 0,
+            source,
+        };
+        state.push_presentation_tick(observed_tick, Self::MAX_PRESENTATION_TICKS);
+        state
+    }
+
+    #[must_use]
+    pub fn last_observed_tick(&self) -> Option<Tick> {
+        if self.presentation_tick_count == 0 {
+            None
+        } else {
+            Some(self.presentation_ticks[usize::from(self.presentation_tick_count - 1)])
+        }
+    }
+
+    pub fn push_presentation_tick(&mut self, tick: Tick, buffer_capacity: u8) {
+        let cap = usize::from(buffer_capacity.min(Self::MAX_PRESENTATION_TICKS));
+        if cap == 0 {
+            return;
+        }
+        if usize::from(self.presentation_tick_count) < cap {
+            self.presentation_ticks[usize::from(self.presentation_tick_count)] = tick;
+            self.presentation_tick_count += 1;
+            return;
+        }
+
+        self.presentation_ticks.copy_within(1..cap, 0);
+        self.presentation_ticks[cap - 1] = tick;
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -1903,10 +1969,12 @@ pub fn derive_entity_summary(
         believed_artifact: None,
         believed_contention: None,
         believed_evidence: None,
-        observed_tick: metadata_claim
-            .claimed_event_tick
-            .unwrap_or(metadata_claim.acquired_tick),
-        source: metadata_claim.source,
+        ..BelievedEntityState::single_observation_defaults(
+            metadata_claim
+                .claimed_event_tick
+                .unwrap_or(metadata_claim.acquired_tick),
+            metadata_claim.source,
+        )
     };
 
     for (aspect, claim) in winners {
@@ -2394,8 +2462,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(observed_tick),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(observed_tick),
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -2844,7 +2914,7 @@ mod tests {
                 last_regeneration_tick: Some(Tick(6)),
             })
         );
-        assert_eq!(summary.observed_tick, Tick(7));
+        assert_eq!(summary.last_observed_tick(), Some(Tick(7)));
         assert_eq!(summary.source, PerceptionSource::DirectObservation);
     }
 
@@ -2877,7 +2947,7 @@ mod tests {
         let summary = derive_entity_summary(&claims, Tick(10), &policy()).unwrap();
 
         assert_eq!(summary.last_known_place, Some(entity(11)));
-        assert_eq!(summary.observed_tick, Tick(7));
+        assert_eq!(summary.last_observed_tick(), Some(Tick(7)));
         assert_eq!(summary.source, PerceptionSource::DirectObservation);
     }
 
@@ -2973,8 +3043,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(3),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(3),
+                PerceptionSource::DirectObservation,
+            )
         };
         store.update_entity(subject, prior.clone());
 
@@ -2993,8 +3065,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(8),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(8),
+                PerceptionSource::DirectObservation,
+            )
         };
 
         store.record_entity_snapshot_claims(
@@ -3047,8 +3121,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(2),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(2),
+                PerceptionSource::DirectObservation,
+            )
         };
         store.update_entity(subject, prior.clone());
 
@@ -3065,8 +3141,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(6),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(6),
+                PerceptionSource::DirectObservation,
+            )
         };
 
         store.record_entity_snapshot_claims(
@@ -3103,8 +3181,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(5),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(5),
+                PerceptionSource::DirectObservation,
+            )
         };
 
         store.record_entity_snapshot_claims(
@@ -3148,12 +3228,24 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(4),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(4),
+                PerceptionSource::DirectObservation,
+            )
         };
         let snapshot = BelievedEntityState {
             alive: false,
-            observed_tick: Tick(5),
+            presentation_ticks: [
+                Tick(5),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+            ],
+            presentation_tick_count: 1,
             ..prior.clone()
         };
 
@@ -3702,8 +3794,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(9),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(9),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
 
@@ -4821,7 +4915,7 @@ mod tests {
     fn shared_belief_snapshot_ignores_observed_tick_and_matches_shareable_content() {
         let older = sample_state(3, 4);
         let mut newer = older.clone();
-        newer.observed_tick = Tick(9);
+        newer.push_presentation_tick(Tick(9), 5);
         let snapshot = to_shared_belief_snapshot(&older);
 
         assert_eq!(snapshot, to_shared_belief_snapshot(&newer));
@@ -5356,7 +5450,7 @@ mod tests {
         assert!(snapshot.alive);
         assert_eq!(snapshot.wounds, vec![wound]);
         assert_eq!(snapshot.believed_contention, None);
-        assert_eq!(snapshot.observed_tick, Tick(9));
+        assert_eq!(snapshot.last_observed_tick(), Some(Tick(9)));
         assert_eq!(
             snapshot.source,
             PerceptionSource::Report {
@@ -5807,8 +5901,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(1),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(1),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
         store.entity_claims.insert(
@@ -5849,8 +5945,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(4),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(4),
+                PerceptionSource::DirectObservation,
+            )
         };
 
         store.record_entity_snapshot_claims(
@@ -5995,7 +6093,7 @@ mod tests {
 
         let belief = store.get_entity(&id).unwrap();
         assert_eq!(belief.last_known_place, Some(destination));
-        assert_eq!(belief.observed_tick, Tick(9));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(9)));
         assert_eq!(belief.source, PerceptionSource::DirectObservation);
     }
 
@@ -6023,8 +6121,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: tick,
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                tick,
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 

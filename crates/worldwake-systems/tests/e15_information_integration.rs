@@ -677,7 +677,7 @@ fn tell_propagation_requires_travel_and_tell_completion() {
 
     let transferred = harness.listener_belief().unwrap();
     assert_eq!(transferred.last_known_place, Some(harness.origin));
-    assert_eq!(transferred.observed_tick, Tick(0));
+    assert_eq!(transferred.last_observed_tick(), Some(Tick(0)));
     assert_eq!(
         transferred.source,
         PerceptionSource::Report {

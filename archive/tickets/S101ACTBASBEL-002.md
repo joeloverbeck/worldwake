@@ -1,6 +1,6 @@
 # S101ACTBASBEL-002: BelievedEntityState ring buffer migration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — BelievedEntityState field replacement across all crates
@@ -14,11 +14,11 @@
 
 1. `BelievedEntityState` at `crates/worldwake-core/src/belief.rs:1322-1341` has `observed_tick: Tick` at line 1339. Grep confirms ~30 struct literal construction sites across worldwake-core, worldwake-ai, worldwake-systems, worldwake-cli.
 2. `enforce_capacity` at `crates/worldwake-core/src/belief.rs:178` reads `state.observed_tick` at lines 204 and 218. After migration, these must use `state.last_observed_tick().unwrap_or(Tick(0))` to keep compiling until ticket 003 removes enforce_capacity.
-3. `record_entity_snapshot_claims` at `crates/worldwake-core/src/belief.rs:81` — this is where new entity information arrives. Currently sets `observed_tick`. Must be updated to push to the ring buffer.
-4. Macro expansion sites: `delta.rs:460`, `world.rs:713`, `component_tables.rs:214`, `world_txn.rs:4630` — these construct BelievedEntityState and must be updated.
-5. Construction sites in test files (worldwake-ai): `route_threat.rs` (3 sites), `exhaustion.rs` (4 sites), `planning_state.rs` (5 sites), `planning_snapshot.rs` (2 sites), `pursuit_belief.rs` (2 sites), `goal_model.rs` (1 site). All construct with `observed_tick:` field.
-6. `crates/worldwake-cli/src/bin/observer.rs:2496` — observer binary constructs BelievedEntityState.
-7. `crates/worldwake-systems/src/artifact_actions.rs:2028` — construction site in systems crate.
+3. `record_entity_snapshot_claims` at `crates/worldwake-core/src/belief.rs:81` does not directly mutate `observed_tick`; instead it records claims and re-derives a `BelievedEntityState` summary via `derive_entity_summary()`. The ring-buffer push therefore has to happen on the stored summary after refresh, while `derive_entity_summary()` still needs a lawful single-tick summary for the temporary ticket-002 boundary.
+4. The canonical projection builders are `ObservedEntitySnapshot::to_believed_entity_state()` at `crates/worldwake-core/src/belief.rs:1245` and `build_believed_entity_state()` at `crates/worldwake-core/src/belief.rs:1783`. These are the right shared boundaries for a single-observation constructor helper.
+5. The ticket's original file list under-claimed the fallout surface. Live `BelievedEntityState` literals also exist in `crates/worldwake-core/src/communication.rs`, `crates/worldwake-sim/src/save_load.rs`, `crates/worldwake-sim/src/per_agent_belief_view.rs`, `crates/worldwake-sim/src/social_relay.rs`, `crates/worldwake-ai/src/search/tests.rs`, `crates/worldwake-ai/src/candidate_generation.rs`, `crates/worldwake-ai/src/ranking.rs`, `crates/worldwake-ai/src/plan_revalidation.rs`, `crates/worldwake-ai/src/search/strategic.rs`, and golden test files. These are lawful current-ticket constructor fallout because they instantiate the migrated shared type directly.
+6. `tickets/S101ACTBASBEL-002.md` is tracked in git on this branch. `archive/tickets/S101ACTBASBEL-001.md` is now the completed prior slice.
+7. `BelievedEntityState` is part of the persisted simulation shape: `crates/worldwake-sim/src/save_load.rs` serializes/deserializes it inside `SimulationState`, and `SAVE_FORMAT_VERSION` is currently `29`. Because Worldwake does not keep backward-compatible save loaders by default, this ticket must update the current save format version alongside the struct migration so older saves fail fast at the version gate instead of deep-deserializing with the wrong shape.
 
 ## Architecture Check
 
@@ -80,7 +80,7 @@ pub(crate) fn push_presentation_tick(&mut self, tick: Tick, buffer_capacity: u8)
 
 ### 2. Update record_entity_snapshot_claims
 
-In the same file, update `record_entity_snapshot_claims` to call `push_presentation_tick(current_tick, buffer_capacity)` instead of setting `observed_tick`. The `buffer_capacity` parameter comes from the caller (PerceptionProfile.observation_buffer_capacity, defaulting to 5). Since PerceptionProfile doesn't have this field yet (ticket 003), temporarily use a constant `5u8` or pass it as a parameter.
+In the same file, update `record_entity_snapshot_claims` to push `current_tick` onto the stored summary after `refresh_entity_summary_from_claims()`. The `buffer_capacity` parameter comes from the caller in the final design (`PerceptionProfile.observation_buffer_capacity`), but ticket 003 has not landed yet, so ticket 002 should use the temporary constant `5u8` at this boundary and let ticket 003 replace that constant with the profile field.
 
 ### 3. Temporarily adapt enforce_capacity
 
@@ -96,21 +96,37 @@ Files with construction sites (from grep):
 - `crates/worldwake-core/src/world.rs:713`
 - `crates/worldwake-core/src/delta.rs:460`
 - `crates/worldwake-core/src/component_tables.rs:214`
+- `crates/worldwake-core/src/communication.rs`
 - `crates/worldwake-core/src/world_txn.rs:4630`
+- `crates/worldwake-sim/src/save_load.rs`
+- `crates/worldwake-sim/src/per_agent_belief_view.rs`
+- `crates/worldwake-sim/src/social_relay.rs`
 - `crates/worldwake-ai/src/route_threat.rs` (3 sites)
 - `crates/worldwake-ai/src/exhaustion.rs` (4 sites)
 - `crates/worldwake-ai/src/planning_state.rs` (5 sites)
 - `crates/worldwake-ai/src/planning_snapshot.rs` (2 sites)
 - `crates/worldwake-ai/src/pursuit_belief.rs` (2 sites)
 - `crates/worldwake-ai/src/goal_model.rs` (1 site)
+- `crates/worldwake-ai/src/search/tests.rs`
+- `crates/worldwake-ai/src/candidate_generation.rs`
+- `crates/worldwake-ai/src/ranking.rs`
+- `crates/worldwake-ai/src/plan_revalidation.rs`
+- `crates/worldwake-ai/src/search/strategic.rs`
+- `crates/worldwake-ai/tests/golden_*.rs`
 - `crates/worldwake-cli/src/bin/observer.rs` (1 site)
 - `crates/worldwake-systems/src/artifact_actions.rs` (1 site)
+- `crates/worldwake-systems/src/perception.rs`
+- `crates/worldwake-systems/src/tell_actions.rs`
+- `crates/worldwake-systems/src/office_actions.rs`
+- `crates/worldwake-systems/src/justice_actions.rs`
+- `crates/worldwake-systems/src/investigate_actions.rs`
 
 ### 5. Unit tests
 
 - `test_ring_buffer_evicts_oldest_on_overflow` — push 6 ticks into capacity-5 buffer, verify oldest evicted
 - `test_last_observed_tick_accessor` — returns most recent tick, returns None when empty
 - `test_push_presentation_tick_respects_capacity` — capacity 3 buffer stays at 3 entries
+- Existing save/load version tests in `crates/worldwake-sim/src/save_load.rs` — updated current-format version continues to round-trip and reject old versions at the header gate
 
 ## Files to Touch
 
@@ -118,15 +134,35 @@ Files with construction sites (from grep):
 - `crates/worldwake-core/src/world.rs` (modify) — construction site
 - `crates/worldwake-core/src/delta.rs` (modify) — construction site
 - `crates/worldwake-core/src/component_tables.rs` (modify) — construction site
+- `crates/worldwake-core/src/communication.rs` (modify) — construction sites
 - `crates/worldwake-core/src/world_txn.rs` (modify) — construction site
+- `crates/worldwake-sim/src/save_load.rs` (modify) — construction sites + `SAVE_FORMAT_VERSION`
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify) — construction sites
+- `crates/worldwake-sim/src/social_relay.rs` (modify) — construction sites
 - `crates/worldwake-ai/src/route_threat.rs` (modify) — construction sites
 - `crates/worldwake-ai/src/exhaustion.rs` (modify) — construction sites
 - `crates/worldwake-ai/src/planning_state.rs` (modify) — construction sites
 - `crates/worldwake-ai/src/planning_snapshot.rs` (modify) — construction sites
 - `crates/worldwake-ai/src/pursuit_belief.rs` (modify) — construction sites
 - `crates/worldwake-ai/src/goal_model.rs` (modify) — construction site
+- `crates/worldwake-ai/src/search/tests.rs` (modify) — construction sites
+- `crates/worldwake-ai/src/candidate_generation.rs` (modify) — construction sites
+- `crates/worldwake-ai/src/ranking.rs` (modify) — construction sites
+- `crates/worldwake-ai/src/plan_revalidation.rs` (modify) — construction sites
+- `crates/worldwake-ai/src/search/strategic.rs` (modify) — construction sites
+- `crates/worldwake-ai/tests/golden_expectation.rs` (modify) — construction sites
+- `crates/worldwake-ai/tests/golden_integration.rs` (modify) — construction sites
+- `crates/worldwake-ai/tests/golden_emergent.rs` (modify) — construction sites
+- `crates/worldwake-ai/tests/golden_harness/mod.rs` (modify) — construction sites
 - `crates/worldwake-cli/src/bin/observer.rs` (modify) — construction site
 - `crates/worldwake-systems/src/artifact_actions.rs` (modify) — construction site
+- `crates/worldwake-systems/src/epistemic_actions.rs` (modify) — observation freshness assertions and helper fallout
+- `crates/worldwake-systems/src/perception.rs` (modify) — construction sites
+- `crates/worldwake-systems/src/tell_actions.rs` (modify) — construction sites
+- `crates/worldwake-systems/src/office_actions.rs` (modify) — construction sites
+- `crates/worldwake-systems/src/justice_actions.rs` (modify) — construction sites
+- `crates/worldwake-systems/src/investigate_actions.rs` (modify) — construction sites
+- `crates/worldwake-systems/tests/e15_information_integration.rs` (modify) — last-observed accessor assertion fallout
 
 ## Out of Scope
 
@@ -145,6 +181,7 @@ Files with construction sites (from grep):
 3. `test_push_presentation_tick_respects_capacity` — capacity limit honored
 4. Existing suite: `cargo test --workspace` — all existing tests pass after construction site migration
 5. `cargo clippy --workspace --all-targets -- -D warnings` — no new warnings
+6. Existing save/load header contract remains honest for the new shape — current saves round-trip under the bumped version, older versions reject at the version gate
 
 ### Invariants
 
@@ -158,11 +195,36 @@ Files with construction sites (from grep):
 ### New/Modified Tests
 
 1. `crates/worldwake-core/src/belief.rs` — `test_ring_buffer_evicts_oldest_on_overflow`, `test_last_observed_tick_accessor`, `test_push_presentation_tick_respects_capacity`
+2. `crates/worldwake-sim/src/save_load.rs` — existing save/load version tests updated for the new current format version
 
 ### Commands
 
 1. `cargo test -p worldwake-core -- test_ring_buffer`
 2. `cargo test -p worldwake-core -- test_last_observed_tick`
 3. `cargo test -p worldwake-core -- test_push_presentation_tick`
-4. `cargo clippy --workspace --all-targets -- -D warnings`
-5. `cargo test --workspace`
+4. `cargo test --workspace --no-run`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
+6. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-13.
+
+- Replaced `BelievedEntityState.observed_tick` with a concrete presentation-history buffer: `presentation_ticks: [Tick; 8]` plus `presentation_tick_count: u8`.
+- Added `BelievedEntityState::single_observation_defaults()`, `last_observed_tick()`, and `push_presentation_tick()` so single-observation callers stay concise while shared logic derives freshness from retained subjective observation history.
+- Updated `record_entity_snapshot_claims()` to push the current presentation tick after refreshing the stored summary, and temporarily adapted `enforce_capacity()` to rank recency through `last_observed_tick().unwrap_or(Tick(0))` until ticket 003 replaces that path.
+- Migrated all direct `BelievedEntityState` construction and freshness assertions across `worldwake-core`, `worldwake-sim`, `worldwake-systems`, `worldwake-ai`, CLI observer output, and AI golden helpers/tests to the new buffer-backed shape.
+- Bumped `SAVE_FORMAT_VERSION` to `30` so persisted state fails fast at the version gate instead of trying to deserialize the old scalar belief shape into the new retained-history representation.
+
+## Deviations
+
+- The original ticket described the cross-crate fallout as mostly mechanical constructor migration across four crates, but the honest live scope also included `worldwake-systems/src/epistemic_actions.rs`, `worldwake-systems/tests/e15_information_integration.rs`, and several AI golden helpers because they asserted or manipulated freshness directly. Those files were absorbed as lawful current-ticket fallout.
+- The temporary presentation-buffer push inside `record_entity_snapshot_claims()` uses `BelievedEntityState::MAX_PRESENTATION_TICKS` at this boundary. Ticket 003 still owns replacing that temporary boundary choice with profile-driven pruning/retention behavior.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core --lib belief`
+- Passed `cargo test -p worldwake-core --lib homeostatic_needs_max_value`
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

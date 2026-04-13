@@ -224,8 +224,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(7),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(7),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             )]),
             social_observations: Vec::new(),

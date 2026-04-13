@@ -2507,8 +2507,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(0),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(0),
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 

@@ -1514,8 +1514,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(tick),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(tick),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
         let mut txn = new_txn(world, tick);
@@ -1649,8 +1651,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             let mut txn = new_txn(&mut fx.world, 2);

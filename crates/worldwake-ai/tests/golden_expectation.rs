@@ -763,11 +763,13 @@ fn run_escort_to_safety(seed: Seed) -> EscortScenarioOutcome {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(0),
-            source: PerceptionSource::Report {
-                from: wounded,
-                chain_len: 1,
-            },
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(0),
+                PerceptionSource::Report {
+                    from: wounded,
+                    chain_len: 1,
+                },
+            )
         },
     );
 
@@ -1195,8 +1197,10 @@ fn run_report_found_after_search(seed: Seed) -> ReportFoundScenarioOutcome {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(0),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(0),
+                PerceptionSource::DirectObservation,
+            )
         },
     );
 

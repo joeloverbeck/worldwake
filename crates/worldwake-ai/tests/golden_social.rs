@@ -150,7 +150,7 @@ fn seed_claim_backed_belief(
         believed_state,
         prior_summary.as_ref(),
         acquired_tick,
-        Some(believed_state.observed_tick),
+        believed_state.last_observed_tick(),
         &profile.confidence_policy,
     );
 
@@ -816,17 +816,23 @@ fn run_rumor_chain_scenario(seed: Seed) -> (worldwake_core::StateHash, worldwake
     let current_tick = h.scheduler.current_tick();
     let alice_confidence = belief_confidence(
         &alice_belief.source,
-        current_tick.0.saturating_sub(alice_belief.observed_tick.0),
+        current_tick
+            .0
+            .saturating_sub(alice_belief.last_observed_tick().unwrap_or(Tick(0)).0),
         &policy,
     );
     let bob_confidence = belief_confidence(
         &bob_belief.source,
-        current_tick.0.saturating_sub(bob_belief.observed_tick.0),
+        current_tick
+            .0
+            .saturating_sub(bob_belief.last_observed_tick().unwrap_or(Tick(0)).0),
         &policy,
     );
     let carol_confidence = belief_confidence(
         &carol_belief.source,
-        current_tick.0.saturating_sub(carol_belief.observed_tick.0),
+        current_tick
+            .0
+            .saturating_sub(carol_belief.last_observed_tick().unwrap_or(Tick(0)).0),
         &policy,
     );
 
@@ -2227,8 +2233,8 @@ fn run_agent_diversity_scenario(
             PerceptionSource::DirectObservation,
         );
         assert_eq!(
-            belief.observed_tick,
-            Tick(1),
+            belief.last_observed_tick(),
+            Some(Tick(1)),
             "{label} belief should preserve the requested observed tick"
         );
     }
