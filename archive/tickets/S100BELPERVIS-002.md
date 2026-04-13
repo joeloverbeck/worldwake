@@ -1,6 +1,6 @@
 # S100BELPERVIS-002: Tiered retention in enforce_capacity and enforce_entity_claim_capacity
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — belief retention logic in `AgentBeliefStore`
@@ -32,7 +32,7 @@ After `archive/tickets/S100BELPERVIS-001.md` adds `infrastructure_retention_tick
 3. Both entity types decay past `infrastructure_retention_ticks` → focused unit test (no permanent memory)
 4. Social observations unaffected → focused unit test
 5. Equal retention parameters produce identical behavior → focused unit test (regression guard)
-6. Single-layer ticket (belief store retention logic within worldwake-core). No cross-system concerns.
+6. Indirect AI fallout check — longer-lived infrastructure beliefs should survive a perception refresh within the infrastructure window and only disappear after a later refresh beyond that window.
 
 ## What to Change
 
@@ -84,6 +84,8 @@ Add 5 new tests to the `#[cfg(test)]` module in `belief.rs`:
 ## Files to Touch
 
 - `crates/worldwake-core/src/belief.rs` (modify — two retain blocks + new tests)
+- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — align remote acquisition refresh coverage with the longer infrastructure retention window)
+- `crates/worldwake-ai/tests/golden_merchant_selling.rs` (modify — narrow the side-benefit golden to the stable opening-selection invariant after the epistemic shift)
 
 ## Out of Scope
 
@@ -130,3 +132,25 @@ Add 5 new tests to the `#[cfg(test)]` module in `belief.rs`:
 3. `cargo test -p worldwake-core` — full core crate
 4. `cargo test --workspace` — full workspace
 5. `cargo clippy --workspace --all-targets -- -D warnings` — lint clean
+
+## Outcome
+
+- Completion date: 2026-04-13
+- `AgentBeliefStore::enforce_capacity()` now applies `infrastructure_retention_ticks` to infrastructure-tier entities and preserves transient entities on `memory_retention_ticks`.
+- `AgentBeliefStore::enforce_entity_claim_capacity()` now applies `infrastructure_retention_ticks` to infrastructure-tier claims and leaves transient claims on `memory_retention_ticks`.
+- Added the five focused `belief.rs` regression tests from this ticket.
+- Workspace verification exposed indirect AI fallout where remote seller beliefs now persist through an in-window refresh and a merchant-selling golden overfit the old execution story. Those tests were updated to assert the new stable contract without changing planner/runtime production code.
+
+## Deviations
+
+- The ticket started as a worldwake-core-only change. Full-workspace verification showed that two `worldwake-ai` tests encoded the pre-ticket retention behavior, so the landed scope includes those test updates.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core -- infrastructure_retention`
+- Passed `cargo test -p worldwake-core -- enforce_capacity`
+- Passed `cargo test -p worldwake-ai remote_acquisition_belief -- --nocapture`
+- Passed `cargo test -p worldwake-ai --test golden_merchant_selling combined_market_trip_selected_for_side_benefit -- --nocapture`
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

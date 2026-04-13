@@ -196,11 +196,12 @@ impl AgentBeliefStore {
             if self.entity_claims.contains_key(entity) {
                 return true;
             }
-            within_retention_window(
-                state.observed_tick,
-                current_tick,
-                profile.memory_retention_ticks,
-            )
+            let retention = if entity_eviction_tier(state) > 0 {
+                profile.infrastructure_retention_ticks
+            } else {
+                profile.memory_retention_ticks
+            };
+            within_retention_window(state.observed_tick, current_tick, retention)
         });
 
         let excess = self
@@ -248,11 +249,12 @@ impl AgentBeliefStore {
             };
 
             claims.retain(|claim| {
-                within_retention_window(
-                    claim.acquired_tick,
-                    current_tick,
-                    profile.memory_retention_ticks,
-                )
+                let retention = if claim_eviction_tier(claim.aspect, believed_kind) == 0 {
+                    profile.infrastructure_retention_ticks
+                } else {
+                    profile.memory_retention_ticks
+                };
+                within_retention_window(claim.acquired_tick, current_tick, retention)
             });
 
             claims.sort_by_key(|claim| {
@@ -3377,6 +3379,64 @@ mod tests {
     }
 
     #[test]
+    fn infrastructure_retention_entities_survive_longer() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut place = sample_state(0, 1);
+        place.believed_kind = Some(EntityKind::Place);
+        let mut item = sample_state(0, 2);
+        item.believed_kind = Some(EntityKind::ItemLot);
+
+        store.update_entity(entity(601), place);
+        store.update_entity(entity(602), item);
+
+        let mut perception = profile(10, 10, 48);
+        perception.infrastructure_retention_ticks = 480;
+
+        store.enforce_capacity(&perception, Tick(100));
+
+        assert!(store.known_entities.contains_key(&entity(601)));
+        assert!(!store.known_entities.contains_key(&entity(602)));
+    }
+
+    #[test]
+    fn infrastructure_retention_eventually_decays() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut place = sample_state(0, 1);
+        place.believed_kind = Some(EntityKind::Place);
+        store.update_entity(entity(603), place);
+
+        let mut perception = profile(10, 10, 48);
+        perception.infrastructure_retention_ticks = 480;
+
+        store.enforce_capacity(&perception, Tick(481));
+
+        assert!(!store.known_entities.contains_key(&entity(603)));
+    }
+
+    #[test]
+    fn infrastructure_retention_equal_parameters_no_regression() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut place = sample_state(0, 1);
+        place.believed_kind = Some(EntityKind::Place);
+        let mut item = sample_state(0, 2);
+        item.believed_kind = Some(EntityKind::ItemLot);
+
+        store.update_entity(entity(604), place);
+        store.update_entity(entity(605), item);
+
+        let mut perception = profile(10, 10, 48);
+        perception.infrastructure_retention_ticks = 48;
+
+        store.enforce_capacity(&perception, Tick(49));
+
+        assert!(!store.known_entities.contains_key(&entity(604)));
+        assert!(!store.known_entities.contains_key(&entity(605)));
+    }
+
+    #[test]
     fn enforce_entity_claim_capacity_evicts_claims_beyond_retention_ticks() {
         let mut store = claim_backed_store(
             60,
@@ -3767,6 +3827,65 @@ mod tests {
 
         assert!(!store.entity_claims.contains_key(&entity(62)));
         assert!(!store.known_entities.contains_key(&entity(62)));
+    }
+
+    #[test]
+    fn infrastructure_retention_claims_survive_longer() {
+        let mut store = claim_backed_store(
+            606,
+            vec![
+                sample_claim(
+                    1,
+                    606,
+                    EntityBeliefAspect::ResourceAvailable(CommodityKind::Apple),
+                    ClaimValue::ResourceSource(Some(ResourceSource {
+                        commodity: CommodityKind::Apple,
+                        available_quantity: Quantity(2),
+                        max_quantity: Quantity(5),
+                        regeneration_ticks_per_unit: None,
+                        last_regeneration_tick: None,
+                    })),
+                    PerceptionSource::DirectObservation,
+                    0,
+                    950,
+                ),
+                sample_claim(
+                    2,
+                    606,
+                    EntityBeliefAspect::Inventory(CommodityKind::Apple),
+                    ClaimValue::Quantity(Quantity(2)),
+                    PerceptionSource::DirectObservation,
+                    0,
+                    950,
+                ),
+            ],
+        );
+
+        let mut perception = profile(10, 10, 48);
+        perception.infrastructure_retention_ticks = 480;
+
+        store.enforce_entity_claim_capacity(&perception, Tick(100));
+
+        let claims = store.entity_claims.get(&entity(606)).unwrap();
+        assert_eq!(claims.len(), 1);
+        assert_eq!(
+            claims[0].aspect,
+            EntityBeliefAspect::ResourceAvailable(CommodityKind::Apple)
+        );
+    }
+
+    #[test]
+    fn infrastructure_retention_social_observations_unaffected() {
+        let mut store = AgentBeliefStore::new();
+        store.record_social_observation(sample_social_observation(0));
+        store.record_social_observation(sample_social_observation(47));
+
+        let mut perception = profile(10, 10, 48);
+        perception.infrastructure_retention_ticks = 480;
+
+        store.enforce_capacity(&perception, Tick(100));
+
+        assert_eq!(store.social_observations, Vec::<SocialObservation>::new());
     }
 
     #[test]
