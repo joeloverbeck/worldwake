@@ -314,6 +314,7 @@ mod tests {
                         entity_memory_capacity: 6,
                         entity_claim_capacity: 9,
                         memory_retention_ticks: 24,
+                        infrastructure_retention_ticks: 240,
                         observation_fidelity: 900,
                         confidence_policy: (
                             direct_observation_base: 980,

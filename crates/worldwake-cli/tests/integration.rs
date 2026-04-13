@@ -27,6 +27,17 @@ fn default_scenario_path() -> PathBuf {
         .join("scenarios/default.ron")
 }
 
+/// Path to the cli evaluation scenario file, resolved relative to the workspace root.
+fn cli_evaluation_scenario_path() -> PathBuf {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    PathBuf::from(manifest)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("scenarios/cli-evaluation.ron")
+}
+
 /// Bundled test context: simulation state + runtime artifacts.
 struct TestContext {
     sim: SimulationState,
@@ -108,6 +119,31 @@ fn test_scenario_loads_and_ticks() {
         ctx.sim.event_log().len() > events_before,
         "events should be generated after ticking"
     );
+}
+
+#[test]
+fn test_cli_evaluation_scenario_loads_with_infrastructure_retention_profiles() {
+    let path = cli_evaluation_scenario_path();
+    let def = load_scenario_file(&path).expect("cli-evaluation.ron should parse");
+    let spawned = spawn_scenario(&def).expect("cli-evaluation.ron should spawn");
+    let world = spawned.state.world();
+
+    for agent_name in ["Kael", "Guard Theron"] {
+        let agent = world
+            .query_name_and_agent_data()
+            .find(|(_, name, _)| name.0 == agent_name)
+            .map_or_else(
+                || panic!("agent \"{agent_name}\" not found"),
+                |(id, _, _)| id,
+            );
+        let profile = world
+            .get_component_perception_profile(agent)
+            .unwrap_or_else(|| panic!("agent \"{agent_name}\" should have a perception profile"));
+        assert_eq!(
+            profile.infrastructure_retention_ticks, 640,
+            "agent \"{agent_name}\" should keep the authored infrastructure retention override",
+        );
+    }
 }
 
 #[test]

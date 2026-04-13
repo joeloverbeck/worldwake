@@ -2052,7 +2052,8 @@ fn main() {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("Tick error at tick {}: {e:?}", current_tick.0);
-                std::process::exit(1);
+                eprintln!("Writing partial report up to tick {}...", current_tick.0);
+                break;
             }
         };
 

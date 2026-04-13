@@ -1647,6 +1647,7 @@ mod tests {
             entity_memory_capacity: 5,
             entity_claim_capacity: 5,
             memory_retention_ticks: 17,
+            infrastructure_retention_ticks: 170,
             observation_fidelity: pm(600),
             confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,

@@ -867,6 +867,7 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, Entit
                 entity_memory_capacity: 12,
                 entity_claim_capacity: 12,
                 memory_retention_ticks: 64,
+                infrastructure_retention_ticks: 640,
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,
@@ -974,6 +975,7 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
                 entity_memory_capacity: 12,
                 entity_claim_capacity: 12,
                 memory_retention_ticks: 4,
+                infrastructure_retention_ticks: 40,
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,
@@ -3837,7 +3839,7 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
 }
 
 #[test]
-fn perception_refresh_evicts_expired_remote_acquisition_belief_and_removes_goal() {
+fn perception_refresh_preserves_remote_seller_belief_within_infrastructure_window() {
     let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
@@ -3866,15 +3868,60 @@ fn perception_refresh_evicts_expired_remote_acquisition_belief_and_removes_goal(
         .get_component_agent_belief_store(harness.actor)
         .unwrap();
     assert!(
+        store.get_entity(&seller).is_some(),
+        "alive remote seller beliefs should survive refreshes within infrastructure_retention_ticks"
+    );
+    assert_eq!(
+        store
+            .get_entity(&seller)
+            .and_then(|belief| belief.last_known_place),
+        Some(destination)
+    );
+    let local_belief = store
+        .get_entity(&local_witness)
+        .expect("same-place witness should be observed during refresh");
+    assert_eq!(local_belief.last_known_place, Some(origin));
+}
+
+#[test]
+fn perception_refresh_evicts_expired_remote_acquisition_belief_after_infrastructure_window() {
+    let (mut harness, seller, local_witness, origin, destination, _bread) =
+        stale_remote_acquisition_harness();
+
+    let before = ranked_goals_at(&mut harness, Tick(1));
+    assert!(has_goal(
+        &before,
+        GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }
+    ));
+    assert_eq!(
+        harness
+            .world
+            .get_component_agent_belief_store(harness.actor)
+            .unwrap()
+            .get_entity(&seller)
+            .and_then(|belief| belief.last_known_place),
+        Some(destination)
+    );
+
+    run_perception_tick(&mut harness, Tick(50));
+
+    let store = harness
+        .world
+        .get_component_agent_belief_store(harness.actor)
+        .unwrap();
+    assert!(
         store.get_entity(&seller).is_none(),
-        "expired remote seller belief should be evicted on a later perception refresh"
+        "expired remote seller belief should be evicted after infrastructure_retention_ticks elapses"
     );
     let local_belief = store
         .get_entity(&local_witness)
         .expect("same-place witness should be observed during refresh");
     assert_eq!(local_belief.last_known_place, Some(origin));
 
-    let after = ranked_goals_at(&mut harness, Tick(10));
+    let after = ranked_goals_at(&mut harness, Tick(50));
     assert!(
         !has_goal(
             &after,
@@ -5353,6 +5400,7 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
                 entity_memory_capacity: 32,
                 entity_claim_capacity: 32,
                 memory_retention_ticks: 240,
+                infrastructure_retention_ticks: 2400,
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,

@@ -37,6 +37,7 @@ fn configure_perception(h: &mut GoldenHarness, agent: EntityId) {
             entity_memory_capacity: 64,
             entity_claim_capacity: 64,
             memory_retention_ticks: 240,
+            infrastructure_retention_ticks: 2400,
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,

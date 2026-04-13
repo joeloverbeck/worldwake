@@ -2640,6 +2640,7 @@ fn contention_perception_profile() -> PerceptionProfile {
         entity_memory_capacity: 20,
         entity_claim_capacity: 20,
         memory_retention_ticks: 100,
+        infrastructure_retention_ticks: 1000,
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,

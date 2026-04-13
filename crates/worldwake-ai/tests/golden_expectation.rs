@@ -20,6 +20,7 @@ fn default_perception_profile() -> PerceptionProfile {
         entity_memory_capacity: 32,
         entity_claim_capacity: 32,
         memory_retention_ticks: 240,
+        infrastructure_retention_ticks: 2400,
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,

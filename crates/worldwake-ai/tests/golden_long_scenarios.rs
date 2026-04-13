@@ -281,6 +281,7 @@ fn t21_default_perception() -> PerceptionProfile {
         institutional_memory_capacity: 20,
         consultation_speed_factor: pm(500),
         contradiction_tolerance: pm(300),
+        infrastructure_retention_ticks: 480,
     }
 }
 
@@ -1224,6 +1225,7 @@ fn t33_default_perception() -> PerceptionProfile {
         institutional_memory_capacity: 20,
         consultation_speed_factor: pm(500),
         contradiction_tolerance: pm(300),
+        infrastructure_retention_ticks: 480,
     }
 }
 
