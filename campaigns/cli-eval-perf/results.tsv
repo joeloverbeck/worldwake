@@ -1,0 +1,6 @@
+experiment_id	metric_value	lines_delta	category	status	description
+baseline	335060	0	baseline	ACCEPT	baseline measurement
+exp-001	329916	26	trace-overhead	NEAR_MISS	gate expansion trace allocation behind expansion_summaries (1.54% improvement, within 3% threshold)
+exp-002	329072	32	trace-overhead	NEAR_MISS	combine trace gating with computation elimination (1.79% improvement, within 3% threshold)
+exp-003	0	30	perception-opt	REJECT	skip re-observation of unchanged entities — requires architectural spec (behavioral divergence, claim dynamics)
+ceiling-001	335060	0	ceiling	REJECT	hard ceiling reached — perception quadratic growth requires spec-level design
