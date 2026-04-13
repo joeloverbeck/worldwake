@@ -590,6 +590,7 @@ fn map_handler_abort_reason(reason: &ActionAbortRequestReason) -> Option<Blockin
         | ActionAbortRequestReason::SaleLotNotPossessedBySeller { .. } => {
             Some(BlockingFact::SellerOutOfStock)
         }
+        ActionAbortRequestReason::ViolationNoLongerActive { .. } => None,
     }
 }
 

@@ -46,6 +46,14 @@ impl HomeostaticNeeds {
     pub const fn new_sated() -> Self {
         Self::new(pm(0), pm(0), pm(0), pm(0), pm(0))
     }
+
+    #[must_use]
+    pub fn max_value(&self) -> u16 {
+        let max = self.hunger.value().max(self.thirst.value());
+        let max = max.max(self.fatigue.value());
+        let max = max.max(self.bladder.value());
+        max.max(self.dirtiness.value())
+    }
 }
 
 impl Component for HomeostaticNeeds {}
@@ -230,6 +238,18 @@ mod tests {
         assert_eq!(needs.bladder, Permille::new(0).unwrap());
         assert_eq!(needs.dirtiness, Permille::new(0).unwrap());
         assert_eq!(needs, HomeostaticNeeds::default());
+    }
+
+    #[test]
+    fn homeostatic_needs_max_value_returns_highest_need() {
+        let needs = HomeostaticNeeds::new(pm(10), pm(875), pm(120), pm(640), pm(500));
+
+        assert_eq!(needs.max_value(), 875);
+    }
+
+    #[test]
+    fn homeostatic_needs_max_value_all_zero() {
+        assert_eq!(HomeostaticNeeds::new_sated().max_value(), 0);
     }
 
     #[test]

@@ -2262,6 +2262,37 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
     current_tick.0.saturating_sub(observed_tick.0) <= retention_ticks
 }
 
+#[must_use]
+pub fn compute_activation(current_tick: Tick, presentation_ticks: &[Tick], count: u8) -> u16 {
+    let mut total: u32 = 0;
+    let count = usize::from(count).min(presentation_ticks.len());
+    for tick in presentation_ticks.iter().take(count) {
+        let age = current_tick.0.saturating_sub(tick.0).max(1);
+        let scaled_root = age.saturating_mul(1_000_000).isqrt().max(1);
+        let contribution = 1_000_000u32 / u32::try_from(scaled_root).unwrap();
+        total = total.saturating_add(contribution);
+    }
+
+    total.min(u32::from(u16::MAX)) as u16
+}
+
+#[must_use]
+pub fn salience_boost(
+    max_need: u16,
+    believed_kind: Option<EntityKind>,
+    urgency_threshold: Permille,
+    boost: Permille,
+) -> u16 {
+    if believed_kind != Some(EntityKind::ItemLot) {
+        return 0;
+    }
+    if max_need < urgency_threshold.value() {
+        return 0;
+    }
+
+    (u32::from(max_need) * u32::from(boost.value()) / 1000) as u16
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -2272,8 +2303,8 @@ mod tests {
         SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
         SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
         belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        derive_entity_summary, recipient_knowledge_status, share_equivalent,
-        to_shared_belief_snapshot,
+        compute_activation, derive_entity_summary, recipient_knowledge_status, salience_boost,
+        share_equivalent, to_shared_belief_snapshot,
     };
     use crate::{
         ActionDefId, ActionDomain, BelievedArtifactState, BelievedBountyTerms,
@@ -2415,6 +2446,85 @@ mod tests {
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
         }
+    }
+
+    #[test]
+    fn test_activation_computation_single_observation() {
+        let current_tick = Tick(1000);
+        let reference_cases = [
+            (Tick(999), 1000),
+            (Tick(996), 500),
+            (Tick(984), 250),
+            (Tick(952), 144),
+            (Tick(900), 100),
+            (Tick(600), 50),
+        ];
+
+        for (observed_tick, expected) in reference_cases {
+            assert_eq!(
+                compute_activation(current_tick, &[observed_tick], 1),
+                expected,
+                "age {}",
+                current_tick.0 - observed_tick.0
+            );
+        }
+    }
+
+    #[test]
+    fn test_activation_computation_multiple_observations() {
+        let current_tick = Tick(50);
+        let presentation_ticks = [Tick(45), Tick(35), Tick(25), Tick(15), Tick(5)];
+
+        assert_eq!(
+            compute_activation(current_tick, &presentation_ticks, 5),
+            1223
+        );
+    }
+
+    #[test]
+    fn test_activation_computation_empty_buffer() {
+        assert_eq!(compute_activation(Tick(10), &[], 0), 0);
+    }
+
+    #[test]
+    fn test_salience_boost_scales_with_need_urgency() {
+        let threshold = Permille::new(500).unwrap();
+        let boost = Permille::new(500).unwrap();
+
+        assert_eq!(
+            salience_boost(500, Some(EntityKind::ItemLot), threshold, boost),
+            250
+        );
+        assert_eq!(
+            salience_boost(1000, Some(EntityKind::ItemLot), threshold, boost),
+            500
+        );
+    }
+
+    #[test]
+    fn test_salience_boost_zero_below_threshold() {
+        assert_eq!(
+            salience_boost(
+                499,
+                Some(EntityKind::ItemLot),
+                Permille::new(500).unwrap(),
+                Permille::new(500).unwrap(),
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn test_salience_boost_zero_for_non_items() {
+        assert_eq!(
+            salience_boost(
+                1000,
+                Some(EntityKind::Agent),
+                Permille::new(500).unwrap(),
+                Permille::new(500).unwrap(),
+            ),
+            0
+        );
     }
 
     fn tell_profile() -> TellProfile {

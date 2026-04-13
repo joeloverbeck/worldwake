@@ -51,7 +51,7 @@ Skip sub-steps 5a-5g if the spec does not add fields to components, create new c
   - **Derive propagation**: For new types with derives (`Hash`, `Ord`, `Copy`, etc.), verify all field types also derive those traits. Flag missing derives on embedded types as CRITICAL Issues.
   - **Derive widening**: If the spec shows a modified type with new derive attributes, compare against current derives. Note explicitly so implementers don't treat them as copy-paste artifacts.
 - **5c. Default and constructors**: For field additions, check `Default` impl and builder/constructor functions.
-- **5d. Downstream consumers**: For field type changes or removals, perform full downstream consumer analysis (3.6).
+- **5d. Downstream consumers**: For field type changes or removals, perform full downstream consumer analysis (3.6). For field removals specifically, also grep each removed field name across the workspace to find all direct usage sites — not just the type's consumers, but any code reading that specific field. This catches cases where sibling logic within the same function depends on the removed field (e.g., social observation pruning depending on `memory_retention_ticks` within `enforce_capacity`).
 - **5e. Scalar-to-collection migrations**: Grep for equality comparisons (`== field_value`) that would need `.contains()`.
 - **5f. Semantic overlap**: Two sub-checks:
   - *Spec-acknowledged overlap*: If the spec documents the relationship between a new field and an existing field, note "overlap acknowledged by spec" and skip the grep.

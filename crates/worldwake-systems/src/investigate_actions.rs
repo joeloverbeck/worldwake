@@ -5,10 +5,11 @@ use worldwake_core::{
     ViolationKind, VisibilitySpec, World, WorldTxn, build_believed_entity_state,
 };
 use worldwake_sim::{
-    AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
-    ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    CommitOutcome, Constraint, ControlBeliefView, DeterministicRng, DurationExpr, Interruptibility,
-    InvestigateActionPayload, PerAgentBeliefView, Precondition, RuntimeBeliefView, TargetSpec,
+    AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
+    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
+    ActionProgress, ActionState, CommitOutcome, Constraint, ControlBeliefView, DeterministicRng,
+    DurationExpr, Interruptibility, InvestigateActionPayload, PerAgentBeliefView, Precondition,
+    RuntimeBeliefView, TargetSpec,
 };
 
 pub fn register_investigate_action(
@@ -174,23 +175,19 @@ fn commit_investigate(
                 instance.actor
             ))
         })?;
+    let abort_violation = || {
+        ActionError::AbortRequested(ActionAbortRequestReason::ViolationNoLongerActive {
+            violation_id: violation_id.0,
+        })
+    };
     let Some(record) = memory.unresolved_by_id(violation_id, txn.tick()) else {
-        return Err(ActionError::PreconditionFailed(format!(
-            "violation {} is no longer active at commit",
-            violation_id.0
-        )));
+        return Err(abort_violation());
     };
     let Some((expected_subject, expected_commodity)) = investigable_binding(record, place) else {
-        return Err(ActionError::PreconditionFailed(format!(
-            "violation {} no longer matches place {}",
-            violation_id.0, place
-        )));
+        return Err(abort_violation());
     };
     if expected_subject != subject || expected_commodity != commodity {
-        return Err(ActionError::PreconditionFailed(format!(
-            "violation {} no longer matches bound investigate state",
-            violation_id.0
-        )));
+        return Err(abort_violation());
     }
     let profile = txn
         .get_component_violation_disposition_profile(instance.actor)
@@ -206,10 +203,7 @@ fn commit_investigate(
         profile.violation_memory_retention_ticks,
     );
     if !resolved {
-        return Err(ActionError::PreconditionFailed(format!(
-            "violation {} expired before resolution",
-            violation_id.0
-        )));
+        return Err(abort_violation());
     }
     if owner_is_investigating_actor {
         memory.record(
@@ -1921,5 +1915,167 @@ mod tests {
                 .violations,
             before_abort
         );
+    }
+
+    #[test]
+    fn commit_aborts_gracefully_when_violation_resolved_by_another_agent() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let missing = entity(30);
+        let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 1, 50);
+        let violation_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: missing,
+                expected_place: place,
+            },
+            1,
+            100,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance = investigate_affordance(&world, actor, &defs, &handlers);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([9; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(2)),
+        )
+        .unwrap();
+
+        // Simulate another agent resolving the violation between start and commit.
+        {
+            let mut txn = new_txn(&mut world, 2);
+            let mut memory = txn
+                .get_component_violation_memory(actor)
+                .cloned()
+                .unwrap();
+            memory.resolve_id(violation_id, Tick(2), 50);
+            txn.set_component_violation_memory(actor, memory).unwrap();
+            commit_txn(txn);
+        }
+
+        // The tick that completes (duration=1) should abort gracefully, not hard-error.
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+        )
+        .unwrap();
+
+        match outcome {
+            TickOutcome::Aborted { reason, .. } => {
+                assert!(
+                    matches!(
+                        reason,
+                        AbortReason::ExternalAbort {
+                            kind: ExternalAbortReason::HandlerRequested {
+                                reason: ActionAbortRequestReason::ViolationNoLongerActive { .. }
+                            },
+                            ..
+                        }
+                    ),
+                    "expected ViolationNoLongerActive abort, got {reason:?}"
+                );
+            }
+            other => panic!("expected aborted outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn commit_aborts_gracefully_when_violation_expired() {
+        let mut world = new_world();
+        let (place, _) = first_two_places(&world);
+        let missing = entity(30);
+        let actor = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 1, 50);
+        // TTL of 2 means it expires at tick 1+2=3.
+        let violation_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: missing,
+                expected_place: place,
+            },
+            1,
+            2,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance =
+            investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([10; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(2)),
+        )
+        .unwrap();
+
+        // Tick at tick 3 — the violation has expired (expires_tick=3, current_tick=3 is not > 3).
+        let outcome = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(3)),
+        )
+        .unwrap();
+
+        match outcome {
+            TickOutcome::Aborted { reason, .. } => {
+                assert!(
+                    matches!(
+                        reason,
+                        AbortReason::ExternalAbort {
+                            kind: ExternalAbortReason::HandlerRequested {
+                                reason: ActionAbortRequestReason::ViolationNoLongerActive { .. }
+                            },
+                            ..
+                        }
+                    ),
+                    "expected ViolationNoLongerActive abort, got {reason:?}"
+                );
+            }
+            other => panic!("expected aborted outcome, got {other:?}"),
+        }
     }
 }
