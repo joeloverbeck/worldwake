@@ -176,6 +176,9 @@ pub(crate) struct CandidateGenerationResult {
     /// in the agent's [`ViolationMemory`] by the caller. Generation itself is
     /// side-effect-free; the caller applies these after the read phase.
     pub pending_violations: Vec<PendingViolationRecord>,
+    /// Need-specific tracker resets detected during candidate generation.
+    /// The caller applies them during the write phase.
+    pub pending_acquisition_exhaustion_resets: BTreeSet<HomeostaticNeedId>,
 }
 
 /// A violation detected during candidate generation, to be recorded in
@@ -226,11 +229,13 @@ pub(crate) fn generate_candidates_with_travel_horizon(
             candidates: Vec::new(),
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
     }
 
     let mut candidates = Vec::new();
     let mut diagnostics = CandidateGenerationDiagnostics::default();
+    let mut pending_acquisition_exhaustion_resets = BTreeSet::new();
     let needs = view.homeostatic_needs(agent);
     let thresholds = view.drive_thresholds(agent);
     let place = view.effective_place(agent);
@@ -262,7 +267,13 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     emit_search_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_report_found_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_escort_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_exploration_candidates(&mut candidates, &mut diagnostics, &ctx, needs);
+    emit_exploration_candidates(
+        &mut candidates,
+        &mut diagnostics,
+        &ctx,
+        needs,
+        &mut pending_acquisition_exhaustion_resets,
+    );
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
@@ -272,6 +283,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         candidates,
         diagnostics,
         pending_violations,
+        pending_acquisition_exhaustion_resets,
     }
 }
 
@@ -2333,6 +2345,7 @@ fn emit_exploration_candidates(
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
+    pending_acquisition_exhaustion_resets: &mut BTreeSet<HomeostaticNeedId>,
 ) {
     if candidates
         .iter()
@@ -2376,9 +2389,17 @@ fn emit_exploration_candidates(
             relieves_dirtiness as fn(CommodityKind) -> bool,
         ),
     ] {
-        if pressure < profile.need_activation_threshold
-            || any_local_need_relief(ctx.view, ctx.agent, ctx.place, matches_need)
-            || need_has_known_acquisition_path(ctx, matches_need)
+        if pressure < profile.need_activation_threshold {
+            if ctx.view.acquisition_exhaustion_count(ctx.agent, need_id) > 0 {
+                pending_acquisition_exhaustion_resets.insert(need_id);
+            }
+            continue;
+        }
+
+        let path_reliable = ctx.view.acquisition_exhaustion_count(ctx.agent, need_id)
+            < profile.acquisition_failure_threshold;
+        if any_local_need_relief(ctx.view, ctx.agent, ctx.place, matches_need)
+            || (path_reliable && need_has_known_acquisition_path(ctx, matches_need))
         {
             continue;
         }
@@ -4918,6 +4939,22 @@ fn relieves_dirtiness(commodity: CommodityKind) -> bool {
     commodity == CommodityKind::Water
 }
 
+pub(crate) fn relieved_needs_for_commodity(
+    commodity: CommodityKind,
+) -> BTreeSet<HomeostaticNeedId> {
+    let mut needs = BTreeSet::new();
+    if relieves_hunger(commodity) {
+        needs.insert(HomeostaticNeedId::Hunger);
+    }
+    if relieves_thirst(commodity) {
+        needs.insert(HomeostaticNeedId::Thirst);
+    }
+    if relieves_dirtiness(commodity) {
+        needs.insert(HomeostaticNeedId::Dirtiness);
+    }
+    needs
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -5005,6 +5042,7 @@ mod tests {
         utility_profiles: BTreeMap<EntityId, UtilityProfile>,
         artifact_posting_profiles: BTreeMap<EntityId, ArtifactPostingProfile>,
         exploration_profiles: BTreeMap<EntityId, ExplorationProfile>,
+        acquisition_exhaustion_counts: BTreeMap<(EntityId, HomeostaticNeedId), u8>,
         cognitive_profiles: BTreeMap<EntityId, CognitiveProfile>,
         disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         corpses_at: BTreeMap<EntityId, Vec<EntityId>>,
@@ -5088,6 +5126,7 @@ mod tests {
                 utility_profiles: BTreeMap::new(),
                 artifact_posting_profiles: BTreeMap::new(),
                 exploration_profiles: BTreeMap::new(),
+                acquisition_exhaustion_counts: BTreeMap::new(),
                 cognitive_profiles: BTreeMap::new(),
                 disposal_profiles: BTreeMap::new(),
                 corpses_at: BTreeMap::new(),
@@ -5250,6 +5289,13 @@ mod tests {
 
         fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
             self.exploration_profiles.get(&agent).copied()
+        }
+
+        fn acquisition_exhaustion_count(&self, agent: EntityId, need: HomeostaticNeedId) -> u8 {
+            self.acquisition_exhaustion_counts
+                .get(&(agent, need))
+                .copied()
+                .unwrap_or(0)
         }
 
         fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
@@ -15669,6 +15715,94 @@ mod tests {
     }
 
     #[test]
+    fn generate_candidates_emits_exploration_when_food_path_is_known_but_exhausted() {
+        let agent = entity(1);
+        let current_place = entity(10);
+        let known_place = entity(11);
+        let frontier_place = entity(12);
+        let source = entity(20);
+
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, current_place);
+        view.entities_at.insert(current_place, vec![agent]);
+        view.adjacent_places
+            .insert(current_place, vec![known_place]);
+        view.adjacent_places
+            .insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places
+            .insert(frontier_place, vec![known_place]);
+        view.homeostatic_needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new(700).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        );
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                acquisition_failure_threshold: 3,
+                visit_lookback_ticks: 50,
+                ..ExplorationProfile::default()
+            },
+        );
+        view.acquisition_exhaustion_counts
+            .insert((agent, HomeostaticNeedId::Hunger), 3);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                known_place,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        view.sources_at
+            .insert((known_place, CommodityKind::Bread), vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Bread,
+                available_quantity: Quantity(5),
+                max_quantity: Quantity(5),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ExploreLocation {
+                target_place: frontier_place,
+                motivating_need: HomeostaticNeedId::Hunger,
+            }
+        ));
+    }
+
+    #[test]
     fn generate_candidates_skips_exploration_when_consecutive_limit_reached() {
         let agent = entity(1);
         let current_place = entity(10);
@@ -15954,6 +16088,79 @@ mod tests {
                 )
             }),
             "known water path should suppress dirtiness-driven exploration"
+        );
+    }
+
+    #[test]
+    fn generate_candidates_records_pending_reset_when_need_pressure_drops_below_threshold() {
+        let agent = entity(1);
+        let current_place = entity(10);
+        let known_place = entity(11);
+        let frontier_place = entity(12);
+
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, current_place);
+        view.entities_at.insert(current_place, vec![agent]);
+        view.adjacent_places
+            .insert(current_place, vec![known_place]);
+        view.adjacent_places
+            .insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places
+            .insert(frontier_place, vec![known_place]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                visit_lookback_ticks: 50,
+                ..ExplorationProfile::default()
+            },
+        );
+        view.acquisition_exhaustion_counts
+            .insert((agent, HomeostaticNeedId::Hunger), 2);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                known_place,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+            6,
+            false,
+        );
+
+        assert_eq!(
+            result.pending_acquisition_exhaustion_resets,
+            BTreeSet::from([HomeostaticNeedId::Hunger])
+        );
+    }
+
+    #[test]
+    fn relieved_needs_for_commodity_keeps_water_multi_need_mapping() {
+        assert_eq!(
+            super::relieved_needs_for_commodity(CommodityKind::Water),
+            BTreeSet::from([HomeostaticNeedId::Thirst, HomeostaticNeedId::Dirtiness])
         );
     }
 }

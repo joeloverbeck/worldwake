@@ -4723,7 +4723,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
     let mut jc = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
-    let (_, initial_valid, initial_continued, _, initial_selection) =
+    let (_, initial_valid, initial_continued, _, initial_selection, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
             &harness.scheduler,
@@ -4812,7 +4812,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
 
     let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
     let mut jc2 = None;
-    let (continued_step, continued_valid, plan_continued, _, continuation_selection) =
+    let (continued_step, continued_valid, plan_continued, _, continuation_selection, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
             &harness.scheduler,

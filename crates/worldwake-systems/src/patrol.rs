@@ -226,8 +226,7 @@ fn social_observation_reactive_window(profile: worldwake_core::PerceptionProfile
     }
     let mut low = 1u64;
     let mut high = 1u64;
-    while compute_activation(worldwake_core::Tick(high), &[worldwake_core::Tick(0)], 1)
-        >= threshold
+    while compute_activation(worldwake_core::Tick(high), &[worldwake_core::Tick(0)], 1) >= threshold
     {
         if high == u64::MAX {
             return u64::MAX;
@@ -319,9 +318,11 @@ mod tests {
             institutional_memory_capacity: 20,
             consultation_speed_factor: pm(500),
             contradiction_tolerance: pm(300),
-            entity_activation_threshold: Permille::new(
-                worldwake_core::belief::compute_activation(Tick(retention.max(1)), &[Tick(0)], 1),
-            )
+            entity_activation_threshold: Permille::new(worldwake_core::belief::compute_activation(
+                Tick(retention.max(1)),
+                &[Tick(0)],
+                1,
+            ))
             .unwrap(),
             claim_confidence_threshold: pm(50),
             observation_buffer_capacity: 5,

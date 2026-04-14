@@ -69,6 +69,9 @@ pub(crate) struct ReadPhaseResult {
     pub(super) decision_context: DecisionContext,
     /// When a pursuit plan was invalidated, records the reason.
     pub(super) pursuit_invalidation: Option<crate::PursuitInvalidationReason>,
+    /// Need-specific tracker resets detected during candidate generation.
+    pub(super) pending_acquisition_exhaustion_resets:
+        std::collections::BTreeSet<worldwake_core::HomeostaticNeedId>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -194,6 +197,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         omitted_violation_detection: candidates.diagnostics.omitted_violation_detection,
         decision_context: dc,
         pursuit_invalidation,
+        pending_acquisition_exhaustion_resets: candidates.pending_acquisition_exhaustion_resets,
     }
 }
 
@@ -746,6 +750,7 @@ mod tests {
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
 
         reinstate_current_plan_candidate(&mut candidates, &runtime, Some(goal));
@@ -789,6 +794,7 @@ mod tests {
             candidates: Vec::new(),
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
 
         reinstate_current_plan_candidate(&mut candidates, &runtime, Some(other_goal));
@@ -826,6 +832,7 @@ mod tests {
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
 
         reinstate_current_plan_candidate(&mut candidates, &runtime, Some(committed_goal));

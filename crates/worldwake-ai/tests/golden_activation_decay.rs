@@ -78,8 +78,9 @@ fn seed_report_claim_from_world(
     acquired_tick: Tick,
 ) {
     let source = PerceptionSource::Report { from, chain_len: 1 };
-    let snapshot = worldwake_core::build_believed_entity_state(&h.world, subject, acquired_tick, source)
-        .expect("claim-pruning scenario should only seed observable snapshots");
+    let snapshot =
+        worldwake_core::build_believed_entity_state(&h.world, subject, acquired_tick, source)
+            .expect("claim-pruning scenario should only seed observable snapshots");
     let mut store = h
         .world
         .get_component_agent_belief_store(agent)
@@ -132,7 +133,12 @@ fn run_decay_boundary_scenario(seed: Seed) -> DecayBoundaryObservation {
         UtilityProfile::default(),
     );
     set_control_source(&mut h, observer, ControlSource::None, 0);
-    set_agent_perception_profile(&mut h.world, &mut h.event_log, observer, activation_profile());
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        observer,
+        activation_profile(),
+    );
     seed_belief_from_world(
         &mut h.world,
         &mut h.event_log,
@@ -163,7 +169,8 @@ struct NeedSalienceObservation {
 
 fn run_need_salience_scenario(seed: Seed) -> NeedSalienceObservation {
     let mut h = GoldenHarness::new(seed);
-    let remembered_apple = place_ground_lot(&mut h, ORCHARD_FARM, CommodityKind::Apple, Quantity(1));
+    let remembered_apple =
+        place_ground_lot(&mut h, ORCHARD_FARM, CommodityKind::Apple, Quantity(1));
     let orchard = place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,
@@ -278,7 +285,12 @@ fn run_claim_confidence_scenario(seed: Seed) -> ClaimConfidenceObservation {
 
     set_control_source(&mut h, informant, ControlSource::None, 0);
     set_control_source(&mut h, listener, ControlSource::None, 0);
-    set_agent_perception_profile(&mut h.world, &mut h.event_log, listener, activation_profile());
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        listener,
+        activation_profile(),
+    );
 
     seed_report_claim_from_world(&mut h, listener, stale_source, informant, Tick(0));
     seed_report_claim_from_world(&mut h, listener, fresh_source, informant, Tick(40));
