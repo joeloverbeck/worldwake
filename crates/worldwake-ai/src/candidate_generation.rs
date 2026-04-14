@@ -15550,9 +15550,8 @@ mod tests {
             ExplorationProfile {
                 curiosity_weight: Permille::new(500).unwrap(),
                 need_activation_threshold: Permille::new(400).unwrap(),
-                max_consecutive_explorations: 3,
                 visit_lookback_ticks: 50,
-                consecutive_exploration_count: 0,
+                ..ExplorationProfile::default()
             },
         );
         view.beliefs.insert(
@@ -15624,9 +15623,8 @@ mod tests {
             ExplorationProfile {
                 curiosity_weight: Permille::new(500).unwrap(),
                 need_activation_threshold: Permille::new(400).unwrap(),
-                max_consecutive_explorations: 3,
                 visit_lookback_ticks: 50,
-                consecutive_exploration_count: 0,
+                ..ExplorationProfile::default()
             },
         );
         view.beliefs.insert(
@@ -15711,6 +15709,7 @@ mod tests {
                 max_consecutive_explorations: 1,
                 visit_lookback_ticks: 50,
                 consecutive_exploration_count: 1,
+                ..ExplorationProfile::default()
             },
         );
         view.beliefs.insert(
@@ -15771,9 +15770,8 @@ mod tests {
             ExplorationProfile {
                 curiosity_weight: Permille::new(500).unwrap(),
                 need_activation_threshold: Permille::new(400).unwrap(),
-                max_consecutive_explorations: 3,
                 visit_lookback_ticks: 50,
-                consecutive_exploration_count: 0,
+                ..ExplorationProfile::default()
             },
         );
         view.beliefs.insert(
@@ -15837,9 +15835,8 @@ mod tests {
             ExplorationProfile {
                 curiosity_weight: Permille::new(500).unwrap(),
                 need_activation_threshold: Permille::new(400).unwrap(),
-                max_consecutive_explorations: 3,
                 visit_lookback_ticks: 50,
-                consecutive_exploration_count: 0,
+                ..ExplorationProfile::default()
             },
         );
         view.beliefs.insert(
@@ -15909,9 +15906,8 @@ mod tests {
             ExplorationProfile {
                 curiosity_weight: Permille::new(500).unwrap(),
                 need_activation_threshold: Permille::new(400).unwrap(),
-                max_consecutive_explorations: 3,
                 visit_lookback_ticks: 50,
-                consecutive_exploration_count: 0,
+                ..ExplorationProfile::default()
             },
         );
         view.beliefs.insert(

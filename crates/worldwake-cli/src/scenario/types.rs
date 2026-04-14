@@ -167,8 +167,26 @@ pub struct PatrolRouteDef {
 pub struct ExplorationProfileDef {
     pub curiosity_weight: Permille,
     pub need_activation_threshold: Permille,
+    #[serde(default = "default_exploration_frontier_depth")]
+    pub frontier_depth: u16,
+    #[serde(default = "default_exploration_acquisition_failure_threshold")]
+    pub acquisition_failure_threshold: u8,
+    #[serde(default = "default_exploration_arrival_boost")]
+    pub exploration_arrival_boost: Permille,
     pub max_consecutive_explorations: u8,
     pub visit_lookback_ticks: u32,
+}
+
+const fn default_exploration_frontier_depth() -> u16 {
+    2
+}
+
+const fn default_exploration_acquisition_failure_threshold() -> u8 {
+    3
+}
+
+fn default_exploration_arrival_boost() -> Permille {
+    Permille::new_unchecked(500)
 }
 
 /// An item lot to place in the world.
@@ -433,6 +451,9 @@ mod tests {
             Some(ExplorationProfileDef {
                 curiosity_weight: Permille::new(275).unwrap(),
                 need_activation_threshold: Permille::new(350).unwrap(),
+                frontier_depth: 2,
+                acquisition_failure_threshold: 3,
+                exploration_arrival_boost: Permille::new(500).unwrap(),
                 max_consecutive_explorations: 5,
                 visit_lookback_ticks: 17,
             })
@@ -511,6 +532,9 @@ mod tests {
                     exploration_profile: (
                         curiosity_weight: 275,
                         need_activation_threshold: 350,
+                        frontier_depth: 4,
+                        acquisition_failure_threshold: 6,
+                        exploration_arrival_boost: 650,
                         max_consecutive_explorations: 5,
                         visit_lookback_ticks: 17,
                         consecutive_exploration_count: 1,
@@ -531,6 +555,39 @@ mod tests {
                 .to_string()
                 .contains("Unexpected field named `consecutive_exploration_count`"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_exploration_profile_def_defaults_new_fields_when_omitted() {
+        let ron_str = r#"(
+            seed: 7,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (
+                    name: "Scout",
+                    location: "Village",
+                    control: Ai,
+                    exploration_profile: (
+                        curiosity_weight: 275,
+                        need_activation_threshold: 350,
+                        max_consecutive_explorations: 5,
+                        visit_lookback_ticks: 17,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let exploration = def.agents[0].exploration_profile.unwrap();
+
+        assert_eq!(exploration.frontier_depth, 2);
+        assert_eq!(exploration.acquisition_failure_threshold, 3);
+        assert_eq!(
+            exploration.exploration_arrival_boost,
+            Permille::new(500).unwrap()
         );
     }
 

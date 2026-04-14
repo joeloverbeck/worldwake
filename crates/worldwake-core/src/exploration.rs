@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 pub struct ExplorationProfile {
     pub curiosity_weight: Permille,
     pub need_activation_threshold: Permille,
+    pub frontier_depth: u16,
+    pub acquisition_failure_threshold: u8,
+    pub exploration_arrival_boost: Permille,
     pub max_consecutive_explorations: u8,
     pub visit_lookback_ticks: u32,
     pub consecutive_exploration_count: u8,
@@ -16,6 +19,9 @@ impl Default for ExplorationProfile {
         Self {
             curiosity_weight: Permille::new_unchecked(500),
             need_activation_threshold: Permille::new_unchecked(400),
+            frontier_depth: 2,
+            acquisition_failure_threshold: 3,
+            exploration_arrival_boost: Permille::new_unchecked(500),
             max_consecutive_explorations: 3,
             visit_lookback_ticks: 200,
             consecutive_exploration_count: 0,
@@ -51,6 +57,12 @@ mod tests {
             profile.need_activation_threshold,
             crate::Permille::new(400).unwrap()
         );
+        assert_eq!(profile.frontier_depth, 2);
+        assert_eq!(profile.acquisition_failure_threshold, 3);
+        assert_eq!(
+            profile.exploration_arrival_boost,
+            crate::Permille::new(500).unwrap()
+        );
         assert_eq!(profile.max_consecutive_explorations, 3);
         assert_eq!(profile.visit_lookback_ticks, 200);
         assert_eq!(profile.consecutive_exploration_count, 0);
@@ -61,6 +73,9 @@ mod tests {
         let profile = ExplorationProfile {
             curiosity_weight: crate::Permille::new(650).unwrap(),
             need_activation_threshold: crate::Permille::new(550).unwrap(),
+            frontier_depth: 4,
+            acquisition_failure_threshold: 5,
+            exploration_arrival_boost: crate::Permille::new(625).unwrap(),
             max_consecutive_explorations: 4,
             visit_lookback_ticks: 320,
             consecutive_exploration_count: 2,

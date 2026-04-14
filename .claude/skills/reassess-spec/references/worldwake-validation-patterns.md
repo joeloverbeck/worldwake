@@ -28,6 +28,8 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 5. `Default` impl if universal
 6. `*Def` wrapper type if component contains `EntityId` references
 
+**Note**: Runtime-only components (not scenario-definable, always start at defaults) still require `component_schema.rs` registration and `create_agent()` insertion. The only exempt items are transient local variables that are never stored as ECS components. If the spec calls it a "component" and proposes `create_agent()` insertion, registration is mandatory.
+
 ## New Component Read by AI Crate
 
 **Trigger**: Spec adds a component that candidate generation, ranking, or planning needs to read.
@@ -36,8 +38,8 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 
 1. `GoalBeliefView` accessor — new method on trait in `crates/worldwake-sim/src/belief_view.rs`
 2. `RuntimeBeliefView` impl — backing implementation
-3. `impl_goal_belief_view!` macro — forwarding the new method
-4. Crate list — `worldwake-sim` must be listed as needing changes
+3. `impl_goal_belief_view!` macro or blanket impl — forwarding the new method
+4. Crate list — `worldwake-sim` must appear in the spec's Crates section (GoalBeliefView and component traits live there)
 
 ## New Action Type
 

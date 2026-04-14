@@ -577,6 +577,9 @@ mod tests {
             ComponentValue::ExplorationProfile(ExplorationProfile {
                 curiosity_weight: Permille::new(650).unwrap(),
                 need_activation_threshold: Permille::new(450).unwrap(),
+                frontier_depth: 3,
+                acquisition_failure_threshold: 4,
+                exploration_arrival_boost: Permille::new(550).unwrap(),
                 max_consecutive_explorations: 4,
                 visit_lookback_ticks: 240,
                 consecutive_exploration_count: 1,

@@ -26,6 +26,18 @@ If no scenario path is provided, glob for `scenarios/*.ron` and present the list
 
 Follow these steps in order. Do not skip any step.
 
+### Step 0.5: Scenario Pre-flight (optional)
+
+Before running the observer, scan the `.ron` scenario file for obvious survival gaps. This is a quick sanity check that can catch trivially broken scenarios before spending minutes on an observer run.
+
+Check for:
+- **Agents without food recipes**: Any AI agent whose `known_recipes` contains no food-producing recipe (e.g., only "Harvest Water") will be unable to produce food. Flag as pre-flight warning.
+- **Agents without perception_profile**: Agents without `perception_profile` have severely limited observation capacity and may be effectively blind to ground items.
+- **Locations without reachable food/water**: For each place with agents, trace travel edges to check whether food and water sources are reachable within a reasonable hop count (2-3 hops). Flag isolated locations with no food/water access.
+- **Missing wash facilities**: Check whether WashBasin exists at or within 2 travel hops of each populated location. Flag gaps.
+
+Report findings as "Pre-flight warnings" in the report's Run Summary section. Do not gate the observer run on pre-flight results — these are informational only. The observer run may reveal that agents compensate through travel, trade, or other mechanisms not visible from the static scenario.
+
 ### Step 1: Build & Run Observer
 
 ```bash
@@ -100,12 +112,12 @@ Read the dump selectively, focusing on needs-related data only.
 **Skip entirely**: Perception analysis, social isolation details, impossible knowledge checks, tell/social action analysis, SocialArtifact enumeration. These are handled by `simulation-observer`.
 
 **Section 7 reading protocol**: Section 7 lines are extremely dense. Use the same extraction sequence as `simulation-observer`:
-- Grep `Tick breakdown` and `Plan search outcomes` first
-- `bash grep 'Goals selected'` for goal type frequency
-- Grep `Failed plan attempts` with `-A 30`
-- Grep `Blocked desires` with `-A 10` (may not be present in all observer versions — skip if absent)
-- Grep `Affordances available`, `Affordances after travel`, `Final affordances` with `-A 15`
-- For dense rows: `bash sed -n 'Xp' <file> | head -c 3000`
+- Use the Grep tool for `Tick breakdown` and `Plan search outcomes` first
+- Use the Grep tool for `Goals selected` for goal type frequency
+- Use the Grep tool for `Failed plan attempts` with `-A 30`
+- Use the Grep tool for `Blocked desires` with `-A 10` (may not be present in all observer versions — skip if absent)
+- Use the Grep tool for `Affordances available`, `Affordances after travel`, `Final affordances` with `-A 15`
+- For dense single-line rows that exceed Grep output limits: `bash sed -n 'Xp' <file> | head -c 3000` (this is a legitimate bash-only operation since the Grep tool cannot do character-level truncation of specific lines)
 
 ### Step 3: Classify Each Agent's Needs Failure
 
@@ -115,7 +127,7 @@ For each agent with any need >750 permille for 100+ consecutive ticks, classify 
 |----------|-----------|---------------|
 | **Geographic Desert** | Agent at location with no local affordance for the need; AcquireCommodity budget-exhausts | Section 6 shows no relevant facility at agent's location. Section 7 shows budget-exhausted AcquireCommodity. Affordance snapshots lack eat/drink/wash/harvest. |
 | **Planner Budget Wall** | Resource exists at reachable location but plan search exceeds expansion budget | Section 7 shows budget-exhausted with high candidate count (500+) and depth (5+). Section 6 confirms the resource exists at another location connected by travel edges. |
-| **Belief Blindness** | Agent lacks beliefs about resource-rich locations, so planner can't plan travel there | Section 5 (beliefs) shows agent doesn't know about locations with resources. Section 8 snapshots show empty believed-entity-locations for resource-producing places. |
+| **Belief Blindness** | Agent lacks beliefs about resource-rich locations, so planner can't plan travel there | Section 5 (beliefs) shows agent doesn't know about locations with resources. Section 8 snapshots show empty believed-entity-locations for resource-producing places. Also covers cases where the agent has a recipe but doesn't know about the location containing the required facility — cross-reference scenario `known_recipes` against facility locations in the scenario file. If the recipe's required facility exists only at places the agent has no beliefs about, classify as Belief Blindness (facility-specific). |
 | **Priority Override** | Agent has affordances for need relief but another goal consistently outranks it | Section 7 goals-selected shows a non-needs goal (PostNotice, Patrol, ShareBelief) dominating during the critical-need period. Affordance snapshots DO include eat/drink/wash but the action never fires. |
 | **Structural Impossibility** | No location in the entire scenario has the needed resource/facility | Read scenario `.ron` file. Check all places and facilities. If no WashBasin exists anywhere, dirtiness is structurally unsatisfiable. |
 | **Exploration Failure** | Agent has exploration_profile but ExploreLocation never fires or fails | Section 7 shows ExploreLocation in failed plans or blocked desires. Or ExploreLocation never appears in goals-selected despite the agent having an exploration_profile in the scenario. |
@@ -183,7 +195,7 @@ This is the primary deliverable section. For each classified failure, extract a 
 3. [Action 2, e.g., "harvest Water at Village Well"]
 4. [Action 3, e.g., "drink Water"]
 
-**Actual behavior**: [what the agent did instead — e.g., "sleep + relieve_wilderness loop"]
+**Actual behavior**: [what the agent did instead — e.g., "sleep + relieve_wilderness loop". Source this from Section 7 decision timeline bins covering the tick range after the damning tick, supplemented by Section 2 action counts. Prefer specific goal names from the decision timeline over generic action types from Section 2.]
 
 **Breakpoint**: [the specific point where the expected chain broke]
 - System: [which system/component failed — e.g., "GOAP planner budget exhaustion", "goal ranking", "affordance generation", "belief formation"]
@@ -199,6 +211,7 @@ This is the primary deliverable section. For each classified failure, extract a 
 
 **Damning moment quality criteria**:
 - Every field must have a concrete value, not "unknown" or "N/A". If the dump doesn't provide a value, note it as "[not in dump — needs observer enhancement]".
+- For needs values at the damning tick: if the dump does not provide a per-tick snapshot at that exact tick (Section 8 only captures budget-exhaustion moments, Section 2 only gives min/max/avg), note the value as "approximately [X]‰ (interpolated from trajectory and anomaly range)" — this is acceptable and preferred over false precision.
 - The expected behavior chain must be a plausible action sequence that the engine could execute if the breakpoint were fixed.
 - The golden test blueprint must be specific enough that someone could write the test from it without re-reading the dump.
 
@@ -256,6 +269,7 @@ For each root cause category found in the diagnostic, propose concrete solutions
 - Lower ExploreLocation activation threshold when survival needs are critical
 - Need-directed exploration (ExploreLocation targets locations believed to have resources, or unknown locations adjacent to resource-rich ones)
 - Exploration budget separate from acquisition budget
+- Multi-hop exploration chaining — when ExploreLocation at an adjacent place reveals no facility matching the motivating need, the agent should consider exploring the next hop (places adjacent to the explored place) rather than re-exploring already-visited locations
 
 ### Step 6: Write Report
 
@@ -352,4 +366,21 @@ Delete `reports/needs-diagnostic-dump.md` — the dump is an intermediate artifa
 - If the dump lacks a Section 8 (Budget Exhaustion Snapshots), the observer binary may predate that feature. Fall back to Section 7 failed plan attempts and Section 2 needs trajectories for damning moment data. Note any "[not in dump]" fields in the damning moments.
 - Human-controlled agents (ControlSource::Human) will not have needs-related planning. Skip them in the diagnostic unless they died from need deprivation (which would indicate a scenario issue).
 - This skill focuses on needs starvation. It does NOT analyze: redundant perception, social isolation, impossible knowledge, economic stagnation (beyond its needs-related aspects), or action loops unrelated to needs. Use `simulation-observer` for comprehensive behavioral analysis.
-- For before/after comparisons, run twice with different tick counts or after code changes, and compare the Agent Needs Overview tables and Damning Moments sections.
+- For before/after comparisons, use the Comparison Mode described below.
+
+## Comparison Mode
+
+When re-running the diagnostic after a fix (code change, scenario edit, or profile tuning), follow this workflow:
+
+1. **Read the previous report** (`reports/needs-starvation-diagnostic.md`) before running the observer.
+2. **Run the diagnostic normally** (Steps 0.5 through 7).
+3. **Add comparison metadata** to the new report's Run Summary:
+   - **Changes since last run**: List the specific changes made (e.g., "Added 'Harvest Grain' to Guard Theron's known_recipes", "Added WashBasin to Eldergrove Forest").
+   - **Previous run deaths**: [count] -> **This run deaths**: [count]
+4. **Add a Delta column** to the Agent Needs Overview table showing improvement or regression:
+   - `RESOLVED` — need was previously >750 for 100+ ticks, now below threshold
+   - `IMPROVED` — still above threshold but fewer ticks or lower max
+   - `UNCHANGED` — same or similar severity
+   - `REGRESSED` — worse than previous run
+   - `NEW` — failure not present in previous run
+5. **Cross-reference prior DMs**: In the Golden Test Recommendations table, note which prior damning moments were resolved by the changes, which persist, and which are new.

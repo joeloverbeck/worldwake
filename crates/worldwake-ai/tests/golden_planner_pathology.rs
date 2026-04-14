@@ -408,9 +408,8 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
         ExplorationProfile {
             curiosity_weight: pm(650),
             need_activation_threshold: pm(350),
-            max_consecutive_explorations: 4,
             visit_lookback_ticks: 150,
-            consecutive_exploration_count: 0,
+            ..ExplorationProfile::default()
         },
     )
     .unwrap();

@@ -351,6 +351,9 @@ fn spawn_agent(
             .map_or_else(ExplorationProfile::default, |profile| ExplorationProfile {
                 curiosity_weight: profile.curiosity_weight,
                 need_activation_threshold: profile.need_activation_threshold,
+                frontier_depth: profile.frontier_depth,
+                acquisition_failure_threshold: profile.acquisition_failure_threshold,
+                exploration_arrival_boost: profile.exploration_arrival_boost,
                 max_consecutive_explorations: profile.max_consecutive_explorations,
                 visit_lookback_ticks: profile.visit_lookback_ticks,
                 consecutive_exploration_count: 0,
@@ -1597,6 +1600,9 @@ mod tests {
         let custom_exploration = ExplorationProfileDef {
             curiosity_weight: Permille::new(275).unwrap(),
             need_activation_threshold: Permille::new(350).unwrap(),
+            frontier_depth: 4,
+            acquisition_failure_threshold: 6,
+            exploration_arrival_boost: Permille::new(650).unwrap(),
             max_consecutive_explorations: 5,
             visit_lookback_ticks: 17,
         };
@@ -1692,6 +1698,9 @@ mod tests {
             Some(&worldwake_core::ExplorationProfile {
                 curiosity_weight: Permille::new(275).unwrap(),
                 need_activation_threshold: Permille::new(350).unwrap(),
+                frontier_depth: 4,
+                acquisition_failure_threshold: 6,
+                exploration_arrival_boost: Permille::new(650).unwrap(),
                 max_consecutive_explorations: 5,
                 visit_lookback_ticks: 17,
                 consecutive_exploration_count: 0,

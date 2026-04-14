@@ -3,248 +3,319 @@
 ## Run Summary
 - **Scenario**: `scenarios/cli-evaluation.ron`
 - **Seed**: 7777
-- **Ticks simulated**: 543 (observer errored at tick 543 due to `PreconditionFailed("violation 12 is no longer active at commit")` in `investigate_actions.rs:179` — partial dump used)
-- **Agents**: Kael (e5g0), Merchant Vara (e6g0), Forager Lina (e7g0), Guard Theron (e8g0)
-- **Places**: Thornwall Village (e0g0), Eldergrove Forest (e1g0), Dusty Trail (e2g0), Hearthstone Inn (e3g0), Golden Fields (e4g0)
-- **Deaths**: None
-- **Observer fix applied**: Changed observer `Err` handler from `std::process::exit(1)` to `break` so partial dumps are written on tick errors.
+- **Ticks simulated**: 1440
+- **Agents**: Kael (AI), Merchant Vara (AI), Forager Lina (AI), Guard Theron (AI)
+- **Places**: Thornwall Village, Eldergrove Forest, Dusty Trail, Hearthstone Inn, Golden Fields
+- **Deaths**: Guard Theron at tick 769 (cause: NeedDeprivation { Hunger })
 
 ## Agent Needs Overview
 
-| Agent | Need | Max Value | Ticks >750‰ | Death? | Root Cause Category |
-|-------|------|-----------|-------------|--------|---------------------|
-| Merchant Vara | Hunger | 1000‰ | 274 | No | Planner Budget Wall |
-| Merchant Vara | Bladder | 1000‰ | 84 | No | (secondary to hunger starvation) |
-| Merchant Vara | Dirtiness | 1000‰ | 79 | No | (secondary to hunger starvation) |
-| Merchant Vara | Fatigue | 841‰ | 32 | No | (secondary to hunger starvation) |
-| Forager Lina | Thirst | 1000‰ | 137 | No | Geographic Desert + Knowledge Gap + Profile Gap |
-| Forager Lina | Bladder | 1000‰ | 84 | No | (secondary to thirst starvation) |
-| Forager Lina | Fatigue | 836‰ | 43 | No | (secondary to thirst starvation) |
-| Forager Lina | Dirtiness | 1000‰ | 6 | No | (secondary — no WashBasin at any visited location) |
-| Kael | (all) | — | 0 | No | Healthy — all needs managed |
-| Guard Theron | (all) | — | 0 | No | Healthy — all needs managed |
+| Agent | Need | Max Value | Ticks >750 | Death? | Root Cause Category |
+|-------|------|-----------|------------|--------|---------------------|
+| Guard Theron | Hunger | 1000 | 1221 (ticks 219-1439) | Yes (tick 769) | Knowledge Gap + Priority Override + Profile Gap |
+| Kael | Hunger | 1000 | 683 (ticks 757-1439) | No | Geographic Desert + Belief Blindness + Planner Budget Wall |
+| Forager Lina | Dirtiness | 1000 | 810 (ticks 630-1439) | No | Geographic Desert + Belief Blindness + Profile Gap |
+| Merchant Vara | Thirst | 1000 | 305 (ticks 476-780) | No | Geographic Desert (transient, self-resolved) |
+| Merchant Vara | Dirtiness | 899 | 147 (ticks 646-792) | No | Geographic Desert (transient, self-resolved) |
 
 ## Failure Classifications
 
-### Merchant Vara
-**Categories**: Planner Budget Wall
-**Confidence**: HIGH
-
+### Guard Theron
+**Categories**: Knowledge Gap, Priority Override, Profile Gap
 **Evidence**:
-- 156 out of 366 plan searches budget-exhausted (42.6%)
-- Every AcquireCommodity attempt for food (Bread, Apple, Grain) budget-exhausted: 300 expansions used, 693 candidates generated, max depth 9
-- Zero eat actions in 543 ticks despite food items being physically present at her location
-- At tick 35 (first budget-exhaustion snapshot): Merchant Vara is at Dusty Trail with 3× Bread on the ground. She believes Bread is there. But AcquireCommodity(Bread) exhausts the 300-expansion budget
-- Her `cognitive_profile.max_node_expansions = 300` and `max_candidates_per_expansion = 150` create a search space that explodes before finding even a 2-step plan (pick_up → eat)
-- Her final affordances at tick 543 show `pick_up` (6 targets) but no `eat` — she has no food in inventory because she never picks it up because the planner can't complete the search
+- `known_recipes: ["Harvest Water"]` -- no food recipes whatsoever
+- Goals selected show ZERO food-related goals: no AcquireCommodity for Grain/Bread/Apple, no ConsumeOwnedCommodity for food
+- Anomaly 34 explicitly flags: "hunger avg 917 but no relief action (eat) was ever attempted"
+- Goals dominated by InvestigateViolation (9), PostNotice (21+), Patrol (2), ShareBelief, Sleep -- duty goals outranked survival even at hunger=1000
+- No `exploration_profile` to discover food sources; no `metabolism_profile` to tune starvation tolerance
+- Stuck for 670 consecutive ticks after tick 400 (behavioral transition: repertoire narrowed to 3 types)
+**Confidence**: HIGH
+**Causal chain**: No food recipes -> planner never generates food acquisition goals -> duty goals fill all decision slots -> hunger rises unchecked -> starvation death at tick 769
 
-**Causal chain**: High `max_candidates_per_expansion` (150) → 693 candidate operators generated → search branches explode at depth 9 → 300-expansion budget exhausted before finding pick_up→eat path → hunger accumulates unchecked → hunger reaches 1000‰ at tick 269 and stays there for 274+ ticks → all other needs cascade (bladder, dirtiness, fatigue) as the agent's behavior narrows to just water harvesting, travel, and tell
+### Kael
+**Categories**: Geographic Desert, Belief Blindness, Planner Budget Wall
+**Evidence**:
+- Spent 1235 of 1440 ticks at Dusty Trail, which has zero food sources, no facilities, no resource sources
+- Only 5 eat actions committed (consumed initial 5x Bread at Thornwall Village early)
+- Knows "Harvest Grain" but FieldPlot is only at Golden Fields -- Kael never visited Golden Fields and has no beliefs about it
+- ProduceCommodity(RecipeId(2)) budget-exhausted at ticks 424, 787, 1230, 1259, 1272 (224 expansions, 583-1652 candidates each time)
+- End-state beliefs only include Thornwall Village and Eldergrove Forest; Golden Fields and Hearthstone Inn unknown
+- At tick 1230: hunger=1000, inventory=20x Coin (no food), beliefs show no food items anywhere
+**Confidence**: HIGH
+**Causal chain**: Migrated to Dusty Trail early -> consumed initial Bread stock -> Harvest Grain needs FieldPlot at unknown Golden Fields -> ProduceCommodity budget-exhausts repeatedly -> no food production path available -> hunger saturates at 1000 from tick 757
 
 ### Forager Lina
-**Categories**: Geographic Desert, Knowledge Gap, Profile Gap
-**Confidence**: HIGH
-
+**Categories**: Geographic Desert, Belief Blindness, Profile Gap
 **Evidence**:
+- WashBasin exists only at Hearthstone Inn; Forager Lina spent 1252 ticks at Eldergrove Forest (no WashBasin)
+- 0 wash actions committed in entire simulation
+- ExploreLocation goals generated (Village e0g0 and Trail e2g0, motivating_need=Dirtiness) but never targeted Hearthstone Inn
+- End-state beliefs only include Eldergrove Forest; no knowledge of Hearthstone Inn or WashBasin
+- No `perception_profile` -> only 216 observations, 137 passed, 25 unique entities (vs Kael's 444/427/73)
+- No `cognitive_profile` -> uses default planner budget
+- Dirtiness reached 1000 and stayed above 750 for 810 consecutive ticks
+**Confidence**: HIGH
+**Causal chain**: No WashBasin at Forest -> ExploreLocation fires for Dirtiness but targets known-adjacent places (Village, Trail) which also lack WashBasin -> never discovers Hearthstone Inn -> dirtiness rises unchecked
 
-*Geographic Desert*:
-- Started at Eldergrove Forest: has OrchardRow (apples) and ChoppingBlock but NO Well, NO water resource source
-- Consumed initial 5× Water placed at Eldergrove Forest (5 drink actions committed)
-- Traveled to Dusty Trail at tick 248: NO facilities, NO resource sources, NO water
-- Neither location she visited has water production capability
-
-*Knowledge Gap*:
-- Known recipes: only `["Harvest Apples"]` — does NOT know `"Harvest Water"`
-- Even if she traveled to Thornwall Village (where the Well is), she couldn't harvest water
-- She knows the Well exists at Thornwall Village (from beliefs) but lacks the recipe to use it
-
-*Profile Gap*:
-- Forager Lina has NO `perception_profile` in the scenario
-- Uses engine defaults which may severely limit observation capacity
-- At Dusty Trail end-state, her beliefs show agents only (Kael, Guard Theron) — NO items despite 3× Grain, 20× Coin, 22× Waste, etc. on the ground
-- Final affordances at tick 543: NO pick_up, NO eat, NO drink — she can't even see the items at her feet
-- Compare to Kael and Guard Theron (both have `perception_profile`) who successfully observe and interact with items
-
-**Causal chain**: No Harvest Water recipe → can only drink pre-placed Water → 5 units consumed by ~tick 100 → thirst_rate=5 (fastest in scenario) drains rapidly → travels to Dusty Trail at tick 248 (no water there either) → no perception_profile → can't observe ground items at Dusty Trail → thirst exceeds 750‰ at tick 406 → 217 consecutive idle ticks (completely stuck) → AcquireCommodity(Water) frontier-exhausts with only 2 candidates at tick 542
+### Merchant Vara
+**Categories**: Geographic Desert (transient)
+**Evidence**:
+- Thirst >750 for 305 ticks (476-780) while primarily at Dusty Trail (928 total ticks at Trail)
+- Eventually resolved: 11 drink, 6 harvest water by end of simulation
+- Knows "Harvest Water" recipe and traveled to Village (143 ticks) and Forest (353 ticks) to satisfy thirst
+- Budget-exhausted AcquireCommodity(Bread/Apple) at tick 32 (300 expansions, 693 candidates) but food was less critical
+**Confidence**: MEDIUM (transient issue, self-resolved through travel)
+**Causal chain**: Migrated to Dusty Trail (no water source) -> thirst rose during Trail residence -> eventually traveled to Village/Forest for water -> resolved
 
 ## Damning Moments
 
-#### Damning Moment DM-1: Merchant Vara — Planner Budget Wall at tick 35
+#### Damning Moment DM-1: Guard Theron -- Knowledge Gap at tick 219
 
-**Agent state at tick 35**:
+**Agent state at tick 219**:
 - Location: Dusty Trail (e2g0)
-- Needs: hunger=278‰, thirst=54‰, fatigue=182‰, bladder=32‰, dirtiness=138‰
-- Inventory: 1× Water
-- Known recipes: Harvest Water, Harvest Grain, Harvest Apples, Bake Bread
+- Needs: hunger=750 (crossing threshold), thirst~150, fatigue~300, bladder~150, dirtiness~140
+- Inventory: 1x Bow, 1x Sword
+- Known recipes: ["Harvest Water"] -- NO food recipes
 
 **Location state**:
 - Facilities at Dusty Trail: none
 - Resource sources at Dusty Trail: none
-- Consumables at Dusty Trail: 3× Bread, 5× Water, 20× Coin
-- Adjacent places: Thornwall Village (2 ticks), Eldergrove Forest (via one-way from forest only — not reachable from trail)
+- Consumables at Dusty Trail: none relevant to hunger (Waste, SocialArtifacts, Coins)
+- Adjacent places: Thornwall Village (2 ticks), Eldergrove Forest (via Village, 5+ ticks)
 
 **Agent beliefs about resources**:
 - Believed locations: Thornwall Village, Dusty Trail
-- Believed at Dusty Trail: Kael, Merchant Vara, 4× Water, 3× Bread, 1× Waste
-- Believed at Thornwall Village: Guard Theron, Mill, Loom, Well
-- Missing beliefs: Eldergrove Forest (OrchardRow, Apples), Hearthstone Inn, Golden Fields
+- Believed resources: Thornwall Village has Mill, Loom, Well; Dusty Trail has various items/waste
+- Missing beliefs: Eldergrove Forest (food), Golden Fields (FieldPlot for Grain), Hearthstone Inn
 
 **Planner state**:
-- Goal attempted: AcquireCommodity { commodity: Bread, purpose: SelfConsume }
-- Outcome: budget-exhausted
-- Candidates: 693, Depth: 9, Expansions: 300/300
-- Competing goals: n/a — food acquisition was highest-priority but couldn't find a plan
+- Goal attempted: No food goal was ever generated (the planner never generated AcquireCommodity for any food)
+- Outcome: never attempted -- the candidate generation system produces no food-related goals because the agent has no food recipes and no food in inventory
+- Competing goals: InvestigateViolation, Patrol, PostNotice, ShareBelief, Sleep dominated all decision ticks
 
 **Expected behavior chain**:
-1. Goal: AcquireCommodity(Bread, SelfConsume)
-2. Action: pick_up(Bread) — Bread is on ground at Dusty Trail
-3. Action: eat(Bread) — from inventory
-4. Result: hunger reduced
+1. CandidateGeneration should produce AcquireCommodity(Grain/Apple/Bread, SelfConsume) when hunger is high
+2. Travel to Thornwall Village (2 ticks) to pick up available Grain (10x) or Bread (5x)
+3. Eat the picked-up food item
 
-**Actual behavior**: Harvest Water loop + relieve_wilderness + tell (the only goals that successfully find plans). Hunger climbs unchecked to 1000‰.
+**Actual behavior**: Patrol, investigate violations, post notices, share beliefs, sleep -- zero food-seeking behavior for 550+ ticks until death
 
-**Breakpoint**: GOAP search generates 693 candidate operators for a simple 2-step plan. With `max_candidates_per_expansion=150` and `beam_width=10`, the search tree explodes across 9 depth levels, exhausting the 300-expansion budget before reaching the pick_up→eat terminal state.
-- System: GOAP planner search — candidate explosion
-- Code area: `worldwake-ai::search` (search space explosion), `worldwake-ai::candidate_generation` (unbounded candidate count per expansion)
+**Breakpoint**: Candidate generation never produces food acquisition goals for an agent without food recipes and without food in inventory. The system requires either known recipes for harvestable commodities or existing food items in reachable locations to generate food goals. Guard Theron has neither -- he only knows "Harvest Water" and has no food items.
+- System: GOAP candidate generation -- `generate_candidates` in worldwake-ai
+- Code area: worldwake-ai::candidate_generation (AcquireCommodity goal generation requires recipe match or item availability)
+- Secondary: worldwake-ai::goal_ranking -- duty goals (investigate, patrol, post_notice) should not outrank critical survival needs
 
 **Golden test blueprint**:
-- Harness setup: Single place, one agent with `cognitive_profile` matching Vara's (max_node_expansions=300, max_candidates_per_expansion=150), 1× Bread on ground, agent knows recipe. Agent has hunger=500.
-- Tick count: 50
-- Primary assertion: agent picks up Bread and eats it within 20 ticks
-- Failure mode assertion: AcquireCommodity(Bread) budget-exhausts; agent never eats; hunger increases monotonically
-- Regression guard: ensures simple pick_up→eat plans are found within planner budget even with high candidate generation settings
+- Harness setup: 2 places (Village with Grain items, Trail with no food), 1 agent at Trail with hunger=700, known_recipes=["Harvest Water"] only, utility_profile with hunger_weight=400, patrol_profile + patrol_route to Trail
+- Tick count: 100
+- Primary assertion: agent either acquires food by picking up ground items OR travels to Village to pick up Grain within 50 ticks
+- Failure mode assertion: agent never commits an eat action; only patrols, posts notices, and sleeps while hunger rises to 1000
+- Regression guard: ensures agents with no food recipes can still pick up and consume available food items at reachable locations
 
-#### Damning Moment DM-2: Forager Lina — Geographic Desert + Knowledge Gap at tick 406
+#### Damning Moment DM-2: Kael -- Geographic Desert + Belief Blindness at tick 757
 
-**Agent state at tick ~406**:
-- Location: Dusty Trail (e2g0) (arrived tick 248)
-- Needs: hunger=~300‰ (estimated from avg), thirst=750‰ (crossing threshold), fatigue=~400‰, bladder=~400‰, dirtiness=~350‰
-- Inventory: empty
-- Known recipes: Harvest Apples (only)
+**Agent state at tick 757**:
+- Location: Dusty Trail (e2g0)
+- Needs: hunger=750 (crossing threshold), thirst~200, fatigue~300, bladder~250, dirtiness~30
+- Inventory: 20x Coin (no food)
+- Known recipes: ["Harvest Water", "Harvest Grain"]
 
 **Location state**:
 - Facilities at Dusty Trail: none
 - Resource sources at Dusty Trail: none
-- Consumables at Dusty Trail: various items (Grain, Water, Coin, etc.) — but Lina can't see them (no perception_profile)
-- Adjacent places: Thornwall Village (2 ticks — has Well + Water resource source)
+- Consumables at Dusty Trail: Waste, SocialArtifacts, Coins -- no food
+- Adjacent places: Thornwall Village (2 ticks -- has Grain and Well but no FieldPlot)
 
 **Agent beliefs about resources**:
 - Believed locations: Thornwall Village, Eldergrove Forest, Dusty Trail
-- Believed at Thornwall Village: Merchant Vara, Mill, Loom, Well
-- Believed at Eldergrove Forest: ChoppingBlock, OrchardRow
-- Believed at Dusty Trail: Kael, Forager Lina, Guard Theron (agents only — no items)
-- Missing beliefs: Items on ground at Dusty Trail, Hearthstone Inn, Golden Fields
+- Believed resources: Thornwall Village has Mill, Loom, Well; Eldergrove Forest has OrchardRow, ChoppingBlock
+- Missing beliefs: Golden Fields (has FieldPlot for Harvest Grain), Hearthstone Inn
 
 **Planner state**:
-- Goal attempted: AcquireCommodity(Water, SelfConsume)
-- Outcome: frontier-exhausted at depth 1 with 2 candidates (tick 542)
-- Candidates: 2, Depth: 1, Expansions: 2
-- Competing goals: none succeeding — stuck in idle
+- Goal attempted: ProduceCommodity(RecipeId(2)) -- Harvest Grain
+- Outcome: budget-exhausted (224 expansions, 583-1652 candidates) -- at ticks 424, 787, 1230, 1259, 1272
+- Candidates: high count indicates planner explores many paths but can't reach FieldPlot
+- Competing goals: ShareBelief, Sleep dominate; AcquireCommodity(Bread) also selected but Bread is exhausted
 
 **Expected behavior chain**:
-1. Goal: AcquireCommodity(Water, SelfConsume)
-2. Action: travel to Thornwall Village (2 ticks)
-3. Action: harvest Water at Village Well
-4. Action: drink Water
+1. ExploreLocation to discover Golden Fields (which has FieldPlot)
+2. Travel to Golden Fields (5 ticks from Village)
+3. Harvest Grain at FieldPlot
+4. Eat Grain (or travel to Village to Bake Bread at Mill)
 
-**Actual behavior**: 217 consecutive idle ticks. AcquireCommodity(Water) frontier-exhausts because: (a) no Water observable at current location (no perception → no pick_up candidates), (b) agent knows Well exists at Thornwall Village but doesn't know "Harvest Water" recipe, so planner can't plan travel→harvest→drink chain.
+**Actual behavior**: Repeatedly budget-exhausts on ProduceCommodity(Harvest Grain) because FieldPlot is at Golden Fields which Kael doesn't know about. Falls back to sleep + tell + relieve at Dusty Trail. Occasionally travels to Village for water but never explores beyond known locations.
 
-**Breakpoint**: Two concurrent failures:
-1. **Recipe knowledge gap**: Lina knows only "Harvest Apples", not "Harvest Water". Even if she traveled to the Well, she couldn't use it.
-2. **No perception_profile**: Without a perception_profile, Lina can't observe items on the ground at Dusty Trail (Water, Grain exist there). If she could perceive them, she might pick_up and drink/eat.
-- System: Scenario configuration (missing recipe + missing profile) → planner has no viable operators
-- Code area: Scenario file `scenarios/cli-evaluation.ron` (Forager Lina agent definition)
+**Breakpoint**: Kael has no `exploration_profile` so ExploreLocation goals are never generated. He knows the Harvest Grain recipe but the required facility (FieldPlot) is at Golden Fields which he has never visited and has no beliefs about. The planner budget-exhausts trying to plan Harvest Grain from Trail/Village because it can't find a FieldPlot in believed locations.
+- System: exploration system (missing profile) + GOAP planner (budget wall on multi-hop resource acquisition)
+- Code area: worldwake-ai::candidate_generation (no ExploreLocation for agents without exploration_profile), worldwake-ai::search (budget exhaustion on deep food plans)
 
 **Golden test blueprint**:
-- Harness setup: Two places connected by travel edge (2 ticks). Place A: agent with thirst=600, thirst_rate=5, known_recipes=["Harvest Apples"] only, NO perception_profile. Place B: Well + Water resource source. Items on ground at Place A: 3× Water.
+- Harness setup: 3 places (Trail, Village with Well+Mill, Fields with FieldPlot), agent at Trail with hunger=700, known_recipes=["Harvest Water", "Harvest Grain"], initial beliefs about Village only (not Fields), no exploration_profile
 - Tick count: 200
-- Primary assertion: agent either (a) perceives ground water and drinks it, or (b) travels to Place B and harvests water
-- Failure mode assertion: agent idles for 100+ consecutive ticks; thirst reaches 1000‰; AcquireCommodity(Water) frontier-exhausts
-- Regression guard: ensures agents without water recipes or with missing perception profiles are detected as scenario configuration errors or handled gracefully
+- Primary assertion: agent travels to Village and either picks up available Grain or discovers path to FieldPlot within 100 ticks
+- Failure mode assertion: agent budget-exhausts on ProduceCommodity repeatedly, never acquires food, hunger reaches 1000
+- Regression guard: ensures agents with food recipes can locate required facilities when beliefs are incomplete
+
+#### Damning Moment DM-3: Forager Lina -- Geographic Desert + Belief Blindness at tick 630
+
+**Agent state at tick 630**:
+- Location: Eldergrove Forest (e1g0)
+- Needs: hunger~37, thirst~79, fatigue~288, bladder~211, dirtiness=750 (crossing threshold)
+- Inventory: Apple (varying)
+- Known recipes: ["Harvest Apples"]
+
+**Location state**:
+- Facilities at Eldergrove Forest: ChoppingBlock, OrchardRow -- NO WashBasin
+- Resource sources at Eldergrove Forest: Apple (OrchardRow, regen 2 ticks, cap 20)
+- Consumables at Eldergrove Forest: Apples, Water (initial 5, depleted over time)
+- Adjacent places: Thornwall Village (3 ticks -- no WashBasin), Dusty Trail (2 ticks one-way -- no WashBasin)
+
+**Agent beliefs about resources**:
+- Believed locations: Eldergrove Forest only (end-state)
+- Believed resources: ChoppingBlock, OrchardRow, Apples, Waste at Forest
+- Missing beliefs: Hearthstone Inn (has WashBasin), Thornwall Village (no WashBasin either), Golden Fields
+
+**Planner state**:
+- Goal attempted: ExploreLocation(target=Village e0g0, motivating_need=Dirtiness) and ExploreLocation(target=Trail e2g0, motivating_need=Dirtiness)
+- Outcome: ExploreLocation goals executed (29 travel actions committed), but target locations also lack WashBasin
+- AcquireCommodity(Water) budget-exhausted at tick 835 (snapshot 8: 224 expansions, 987 candidates)
+
+**Expected behavior chain**:
+1. ExploreLocation targeting Hearthstone Inn (which has WashBasin)
+2. Travel to Hearthstone Inn via Thornwall Village (3 + 4 = 7 ticks)
+3. Wash at WashBasin
+
+**Actual behavior**: ExploreLocation correctly fires for Dirtiness but targets Village (e0g0) and Trail (e2g0) -- neither has a WashBasin. Agent explores known-adjacent places but never discovers Hearthstone Inn. Dirtiness rises to 1000 and stays there.
+
+**Breakpoint**: ExploreLocation targets are limited to places the agent has beliefs about or can infer from adjacency. Hearthstone Inn is 2 hops away from Forest (Forest -> Village -> Inn) and the agent has no beliefs about it. The exploration system explores adjacent known places but doesn't chain multi-hop exploration to discover distant facilities.
+- System: exploration target selection -- ExploreLocation only targets places with existing beliefs or direct adjacency
+- Code area: worldwake-ai::candidate_generation (ExploreLocation target selection), worldwake-systems or worldwake-ai exploration module
+- Secondary: no `perception_profile` limits entity observation capacity (only 25 unique entities seen), reducing chance of learning about distant locations from other agents' tell actions
+
+**Golden test blueprint**:
+- Harness setup: 3 places (Forest with OrchardRow, Village as hub, Inn with WashBasin), agent at Forest with dirtiness=600, exploration_profile with need_activation_threshold=350, no initial beliefs about Inn
+- Tick count: 300
+- Primary assertion: agent discovers Hearthstone Inn via multi-hop exploration and washes within 200 ticks
+- Failure mode assertion: agent explores Village and Trail repeatedly but never reaches Inn; dirtiness reaches 1000
+- Regression guard: ensures exploration can chain through intermediate places to find distant facilities matching a need
 
 ## Proposed Solutions
 
-### Planner Budget Wall
+### Knowledge Gap
 
-**Solution PBW-1: Reduce candidate explosion for simple plans** (Engine fix)
-- **What**: When AcquireCommodity targets a commodity present at the agent's current location, fast-path the search: generate only pick_up + consume operators for that commodity before expanding the full candidate set.
-- **Where**: `worldwake-ai::search` or `worldwake-ai::candidate_generation`
-- **FOUNDATIONS alignment**: FND-01 (causal standard — agent should respond to proximate causes), FND-15 (maximal emergence — the planner should find obvious solutions without hard-coding)
-- **Existing specs**: `specs/S88-*.md` (GOAP overhaul) introduced `max_candidates_per_expansion` and `preferred_operator_boost`. The `preferred_operator_boost=3` setting on Vara should help but appears insufficient when 150 candidates are generated per expansion.
+**Solution KG-1: Add food recipes to Guard Theron in scenario**
+- **What**: Add `"Harvest Grain"` (or `"Harvest Apples"`) to Guard Theron's `known_recipes`
+- **Where**: `scenarios/cli-evaluation.ron`, Guard Theron agent definition
+- **FOUNDATIONS alignment**: FND-07 (Information Locality) -- agents should have minimum viable knowledge for survival
+- **Existing specs**: No spec explicitly addresses minimum recipe coverage for agent survival
+- **Type**: Scenario fix
+- **Impact estimate**: Addresses DM-1 partially (Theron could attempt food harvesting, but still needs facility access)
+
+**Solution KG-2: Add pickup-and-eat as a recipe-free food acquisition path**
+- **What**: Ensure AcquireCommodity(Food) candidate generation considers picking up ground food items even without harvest recipes. Currently candidate generation seems to require a recipe to produce food; agents should also consider picking up existing food items at their location or reachable locations.
+- **Where**: worldwake-ai::candidate_generation -- AcquireCommodity goal generation
+- **FOUNDATIONS alignment**: FND-01 (Causal Standard) -- picking up ground food is a causally valid action that doesn't require recipe knowledge
+- **Existing specs**: Check if `AcquireCommodity` goal already handles ground-item pickup vs harvest-only paths
 - **Type**: Engine fix
-- **Impact**: Addresses DM-1
-
-**Solution PBW-2: Tune Merchant Vara's cognitive_profile** (Scenario fix)
-- **What**: Reduce `max_candidates_per_expansion` from 150 to 30-50. Increase `max_node_expansions` from 300 to 500. This reduces branching factor while giving more budget.
-- **Where**: `scenarios/cli-evaluation.ron` → Merchant Vara → cognitive_profile
-- **FOUNDATIONS alignment**: FND-08 (agent diversity — different agents can have different planner parameters)
-- **Type**: Scenario fix (profile tuning)
-- **Impact**: Addresses DM-1
-
-**Solution PBW-3: Hunger-escalation priority class** (Engine fix)
-- **What**: When hunger is above critical threshold and food is believed present at current location, elevate AcquireCommodity(Food) to a priority class that gets expanded first with a dedicated mini-budget, before falling back to full search.
-- **Where**: `worldwake-ai::candidate_generation` or `worldwake-ai::search`
-- **FOUNDATIONS alignment**: FND-01 (causal standard), FND-15 (emergence). This is a heuristic that lets the planner find obvious local solutions before exploring the full search space.
-- **Existing specs**: S96 (obligation satiation) addresses obligation-vs-need priority but not planner search efficiency for survival needs.
-- **Type**: Engine fix
-- **Impact**: Addresses DM-1
+- **Impact estimate**: Addresses DM-1 (Theron could pick up Grain/Bread at Village without recipes)
 
 ### Geographic Desert
 
-**Solution GD-1: Add Water resource to Eldergrove Forest** (Scenario fix)
-- **What**: Add a stream or pond at Eldergrove Forest so Lina's starting location has water access. Add a facility (e.g., a `Well` or new `Stream` workstation) plus resource source.
-- **Where**: `scenarios/cli-evaluation.ron` → facilities + resource_sources
-- **FOUNDATIONS alignment**: FND-07 (information locality — agents should have local access to survival resources)
+**Solution GD-1: Add food resource source or items to Dusty Trail**
+- **What**: Add a food source (e.g., Berry Bush, small Apple tree) or initial food items at Dusty Trail so agents stationed there can eat
+- **Where**: `scenarios/cli-evaluation.ron`, items/facilities/resource_sources
+- **FOUNDATIONS alignment**: FND-03 (World Dynamics) -- locations should have minimum resource diversity for sustained habitation
 - **Type**: Scenario fix
-- **Impact**: Partially addresses DM-2 (only if Lina also gets Harvest Water recipe)
+- **Impact estimate**: Addresses DM-1 and DM-2 (agents at Trail can access food locally)
 
-### Knowledge Gap (Recipe)
-
-**Solution KG-1: Add "Harvest Water" to Forager Lina's known recipes** (Scenario fix)
-- **What**: Add `"Harvest Water"` to Forager Lina's `known_recipes` list. Water harvesting is basic survival knowledge.
-- **Where**: `scenarios/cli-evaluation.ron` → Forager Lina → known_recipes
-- **FOUNDATIONS alignment**: FND-08 (agent diversity — even foragers need basic survival recipes)
+**Solution GD-2: Add WashBasin to Eldergrove Forest or Thornwall Village**
+- **What**: Add a WashBasin (or water feature usable for washing) to Forest or Village so agents don't need to travel 7+ ticks to Inn
+- **Where**: `scenarios/cli-evaluation.ron`, facilities section
+- **FOUNDATIONS alignment**: FND-03 -- hygiene facilities should be reachable within reasonable travel distances
 - **Type**: Scenario fix
-- **Impact**: Addresses DM-2 together with GD-1 or alone (if Lina travels to Thornwall Village)
+- **Impact estimate**: Addresses DM-3 (Lina can wash locally)
+
+### Belief Blindness
+
+**Solution BB-1: Grant initial common-knowledge beliefs about all places**
+- **What**: Agents should start with beliefs that all named places exist (even if they don't know exact contents), enabling ExploreLocation to target unknown locations
+- **Where**: worldwake-sim or worldwake-systems -- agent initialization / belief bootstrapping
+- **FOUNDATIONS alignment**: FND-07 (Information Locality) -- agents in a small world would know about major landmarks even without visiting. FND-10 (Belief-only planning) -- beliefs must be sufficient for basic survival planning
+- **Existing specs**: Check S80 (Exploration) and S101 (Activation-based belief decay) for interaction with initial beliefs
+- **Type**: Engine fix or scenario fix (add initial beliefs to agent definitions)
+- **Impact estimate**: Addresses DM-2 and DM-3 (agents could target Golden Fields and Hearthstone Inn for exploration)
+
+**Solution BB-2: Add "common knowledge" landmark beliefs to scenario agent definitions**
+- **What**: Add initial believed_locations for all agents covering the 5 places in the scenario (agents know the world has a Village, Forest, Trail, Inn, and Fields even if they haven't visited)
+- **Where**: `scenarios/cli-evaluation.ron`, agent definitions (if scenario format supports initial beliefs)
+- **FOUNDATIONS alignment**: FND-07 -- reasonable starting knowledge for a small community
+- **Type**: Scenario fix
+- **Impact estimate**: Addresses DM-2 and DM-3
+
+### Planner Budget Wall
+
+**Solution PBW-1: Add cognitive_profile to Kael**
+- **What**: Give Kael a `cognitive_profile` with appropriate budget parameters (similar to Merchant Vara's) to improve planner reach
+- **Where**: `scenarios/cli-evaluation.ron`, Kael agent definition
+- **FOUNDATIONS alignment**: FND-12 (System Decoupling) -- planner budget is a per-agent parameter, not a global constant
+- **Type**: Scenario fix (profile tuning)
+- **Impact estimate**: Partially addresses DM-2 (higher budget won't help if Golden Fields is unknown, but could find alternative food paths)
+
+**Solution PBW-2: Need-directed candidate pruning**
+- **What**: When planning for a survival need at critical levels, prune candidates unrelated to need satisfaction before search to reduce wasted budget
+- **Where**: worldwake-ai::search or worldwake-ai::candidate_generation
+- **FOUNDATIONS alignment**: FND-01 (Causal Standard) -- focus planner effort on causally relevant actions
+- **Existing specs**: Check S88 (GOAP overhaul), S90 for existing pruning mechanisms
+- **Type**: Engine fix
+- **Impact estimate**: Reduces budget exhaustion for survival-critical goals across all agents
+
+### Priority Override
+
+**Solution PO-1: Survival-need escalation in goal ranking**
+- **What**: When a survival need (hunger/thirst) is at critical level (>750), apply an escalating bonus to survival goals that grows with need severity, eventually outranking any non-survival goal
+- **Where**: worldwake-ai::goal_ranking or worldwake-ai::candidate_generation
+- **FOUNDATIONS alignment**: FND-01 -- survival is causally prior to duty performance; a dead guard can't patrol
+- **Existing specs**: Check S96 (Obligation Satiation) for existing need-priority mechanisms
+- **Type**: Engine fix
+- **Impact estimate**: Addresses DM-1 secondary cause (even without food recipes, escalating hunger should eventually override patrol/investigate/post_notice goals and trigger alternative food-seeking behavior)
 
 ### Profile Gap
 
-**Solution PG-1: Add perception_profile to Forager Lina** (Scenario fix)
-- **What**: Add a `perception_profile` to Forager Lina similar to Kael's or Guard Theron's. Without it, she can't observe items on the ground, making her unable to interact with her environment at locations she hasn't been configured for.
-- **Where**: `scenarios/cli-evaluation.ron` → Forager Lina
-- **FOUNDATIONS alignment**: FND-07 (information locality — agents need perception to interact with local environment), CLAUDE.md critical invariant "Scenario profile completeness — every agent profile component registered on EntityKind::Agent must be scenario-definable"
-- **Existing specs**: Check whether `PerceptionProfile` is a universal profile that should auto-apply. Per CLAUDE.md: "Golden production tests require PerceptionProfile on agents that need to observe post-production output."
+**Solution PG-1: Add exploration_profile to Kael and Guard Theron**
+- **What**: Both agents lack `exploration_profile`, preventing ExploreLocation goals from being generated. Adding it would allow them to discover unknown resource-rich locations.
+- **Where**: `scenarios/cli-evaluation.ron`, agent definitions
+- **FOUNDATIONS alignment**: FND-07 -- agents should be able to discover information through exploration
 - **Type**: Scenario fix
-- **Impact**: Addresses DM-2 partially — even without Harvest Water recipe, Lina could pick_up and drink pre-existing Water items at her location
+- **Impact estimate**: Addresses DM-1 (Theron could discover food) and DM-2 (Kael could discover Golden Fields)
 
-**Solution PG-2: Make PerceptionProfile a universal profile with defaults** (Engine fix)
-- **What**: If PerceptionProfile isn't already applied universally with defaults, it should be. An agent without perception is essentially blind — this is a critical survival capability, not an optional enhancement.
-- **Where**: `worldwake-core` or wherever universal profiles are registered
-- **FOUNDATIONS alignment**: FND-15 (maximal emergence — agents need baseline perception to participate in the simulation), CLAUDE.md "Universal profiles are always applied with defaults"
-- **Type**: Engine fix
-- **Impact**: Prevents DM-2 class failures across all future scenarios
+**Solution PG-2: Add perception_profile to Forager Lina**
+- **What**: Lina lacks `perception_profile`, resulting in very limited observation (25 unique entities vs Kael's 73). Adding it would improve her ability to learn about resources and locations from other agents or environment.
+- **Where**: `scenarios/cli-evaluation.ron`, Forager Lina agent definition
+- **FOUNDATIONS alignment**: FND-07 -- perception is fundamental to information locality
+- **Type**: Scenario fix
+- **Impact estimate**: Partially addresses DM-3 (better perception could let Lina learn about Inn from other agents' tells)
+
+**Solution PG-3: Add metabolism_profile to Guard Theron**
+- **What**: Theron uses default metabolism rates. An explicit profile would allow tuning starvation_tolerance_ticks to match his duty-focused lifestyle (longer tolerance) or faster hunger_rate to make the problem more urgent for the planner.
+- **Where**: `scenarios/cli-evaluation.ron`, Guard Theron agent definition
+- **FOUNDATIONS alignment**: FND-12 -- per-agent parameters over global defaults
+- **Type**: Scenario fix (profile tuning)
+- **Impact estimate**: Does not fix root cause (Knowledge Gap) but could extend survival window
 
 ### Belief Memory Pollution
 
-**Not observed in this run** — Dusty Trail has 22× Waste at end-state, but the primary failures are due to planner budget and missing profiles/recipes rather than belief displacement. Could become relevant in longer runs.
-
-### Exploration Failure
-
-**Solution EF-1: Lina's ExploreLocation should target water-bearing locations when thirsty** (Engine consideration)
-- **What**: Lina has an `exploration_profile` with `need_activation_threshold: 350`. At tick 406 her thirst is at 750‰ (well above 350). She did select ExploreLocation(target=Dusty Trail, motivating_need=Dirtiness) earlier, but never explored for water.
-- **Where**: `worldwake-ai::candidate_generation` (ExploreLocation goal generation)
-- **FOUNDATIONS alignment**: FND-01 (causal standard — exploration should respond to survival pressures)
-- **Existing specs**: S80 (exploration drive) — check if need-directed exploration considers all critical needs or just the first one encountered.
-- **Type**: Engine investigation (may be working as designed — Lina explored for Dirtiness not Thirst, which suggests the goal generator doesn't prioritize the most critical need)
-- **Impact**: Partially addresses DM-2
+**Solution BMP-1: Partition belief memory by entity type**
+- **What**: End-state beliefs for Kael show 48x Waste and 22+ SocialArtifacts at Dusty Trail, crowding out potentially useful entity beliefs. Partitioning memory so Waste/SocialArtifact entities don't displace facility/resource/food beliefs would preserve survival-critical knowledge.
+- **Where**: worldwake-core or worldwake-ai belief memory management
+- **FOUNDATIONS alignment**: FND-07 -- information locality should prioritize survival-relevant knowledge
+- **Existing specs**: Check S101 (activation-based belief decay) for existing memory management
+- **Type**: Engine fix
+- **Impact estimate**: Partially addresses DM-2 (preserves food-location beliefs that might be displaced by Waste observations)
 
 ## Golden Test Recommendations
 
 | Priority | Damning Moment | Test Name Suggestion | What It Guards Against |
 |----------|---------------|---------------------|----------------------|
-| 1 | DM-1 | `golden_planner_finds_local_pickup_eat` | Planner budget wall: agent with high `max_candidates_per_expansion` fails to find simple pick_up→eat plan for food at current location |
-| 2 | DM-2 | `golden_agent_without_perception_profile_starves` | Profile gap: agent without PerceptionProfile can't observe ground items and starves despite resources being available |
-| 3 | DM-2 | `golden_recipe_gap_prevents_water_harvest` | Knowledge gap: agent near Well but without Harvest Water recipe cannot satisfy thirst |
-
-## Observer Error Note
-
-The observer crashed at tick 543 with `PreconditionFailed("violation 12 is no longer active at commit")` in `investigate_actions.rs:179`. This is a separate bug: Guard Theron's investigation action committed against a violation that had already been resolved between plan execution and commit. The observer was patched to `break` instead of `exit(1)` so partial dumps are still written. The underlying violation-expiry race condition in `investigate_actions.rs` should be addressed separately.
+| 1 | DM-1 | golden_guard_starves_without_food_recipes | Agent with no food recipes starving to death despite food items existing at reachable locations |
+| 2 | DM-2 | golden_agent_hunger_at_barren_location_with_distant_food | Agent with food recipe unable to locate required facility due to belief blindness and no exploration profile |
+| 3 | DM-3 | golden_forager_dirtiness_no_washbasin_reachable | Agent with dirtiness at critical levels unable to discover WashBasin at multi-hop distant location |

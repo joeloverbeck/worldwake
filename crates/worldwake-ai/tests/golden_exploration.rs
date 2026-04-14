@@ -120,9 +120,8 @@ fn exploration_agent(h: &mut GoldenHarness, name: &str) -> EntityId {
         ExplorationProfile {
             curiosity_weight: pm(500),
             need_activation_threshold: pm(400),
-            max_consecutive_explorations: 3,
             visit_lookback_ticks: 200,
-            consecutive_exploration_count: 0,
+            ..ExplorationProfile::default()
         },
     );
     agent

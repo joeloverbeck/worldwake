@@ -56,6 +56,7 @@ Skip sub-steps 5a-5g if the spec does not add fields to components, create new c
 - **5f. Semantic overlap**: Two sub-checks:
   - *Spec-acknowledged overlap*: If the spec documents the relationship between a new field and an existing field, note "overlap acknowledged by spec" and skip the grep.
   - *Unacknowledged overlap*: Grep for semantically similar field names across all components. Also check functional overlap — fields serving the same purpose with different names. Flag as P28 migration candidates. For new components, apply the **novel-domain test**: a component is novel if no existing component serves the same downstream consequence (P5). Novel-domain components focus on functional overlap; domain-extension components also need field name similarity checks.
+- **5f-extra. Non-ECS runtime state overlap**: For new ECS components that track runtime state (counters, caches, trackers), also grep for similar tracking in non-ECS runtime structures (e.g., `AgentDecisionRuntime`, action handler state). Overlap between ECS and non-ECS tracking is a common source of confusion — flag it as an Improvement so the spec can acknowledge the relationship and explain why both are needed (e.g., different granularity).
 - **5g. EntityKind variant overlap**: Check whether existing enum variants overlap semantically with proposed additions. Flag empty/unused variants that fragment the same domain as P28 candidates.
 - **5h. Trait accessor propagation**: For new components read by the AI crate during candidate generation, goal ranking, or planning, check whether `GoalBeliefView` (`worldwake-sim/src/belief_view.rs`) or `BeliefView` needs a new accessor method. If so, flag the spec's crate list as needing update and note the `RuntimeBeliefView` impl and `GoalBeliefView` blanket impl forwarding required. This is a common pattern: new behavioral components almost always need a belief-view accessor for the AI crate to read them.
 
@@ -92,6 +93,8 @@ Grep active specs in `specs/` for references to this spec's deliverables. Note a
 ## 3.8A Cross-System and SystemFn Section Validation
 
 For specs that include Cross-System Interactions or SystemFn Integration sections, verify each crate attribution: confirm the described behavior (commit handler, system function, ranking logic, etc.) actually resides in the named crate and module. Flag misattributed crates as Issues — these are prose claims about responsibility that drift when code moves between crates.
+
+Beyond crate attribution accuracy, evaluate whether each cross-system interaction is architecturally appropriate. A system reading another domain's profile (e.g., needs system reading ExplorationProfile) may indicate cross-concern coupling. Flag as Improvement with an alternative that keeps domain-awareness self-contained (e.g., moving the logic to the domain's own crate).
 
 ## 3.9 Behavioral Claim Validation
 

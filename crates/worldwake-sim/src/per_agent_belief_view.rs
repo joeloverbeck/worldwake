@@ -2572,6 +2572,9 @@ mod tests {
         let profile = ExplorationProfile {
             curiosity_weight: Permille::new(275).unwrap(),
             need_activation_threshold: Permille::new(350).unwrap(),
+            frontier_depth: 4,
+            acquisition_failure_threshold: 6,
+            exploration_arrival_boost: Permille::new(650).unwrap(),
             max_consecutive_explorations: 5,
             visit_lookback_ticks: 17,
             consecutive_exploration_count: 1,

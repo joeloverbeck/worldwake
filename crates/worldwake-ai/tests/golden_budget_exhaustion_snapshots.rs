@@ -702,9 +702,8 @@ fn seed_forager_lina_cli_agent(h: &mut GoldenHarness) -> EntityId {
         worldwake_core::ExplorationProfile {
             curiosity_weight: pm(650),
             need_activation_threshold: pm(350),
-            max_consecutive_explorations: 4,
             visit_lookback_ticks: 150,
-            consecutive_exploration_count: 0,
+            ..worldwake_core::ExplorationProfile::default()
         },
     )
     .unwrap();
@@ -1882,8 +1881,9 @@ fn setup_guard_theron_water_at_thornwall_snapshot() -> (GoldenHarness, EntityId)
         .world
         .query_item_lot()
         .filter_map(|(lot, data)| {
-            (data.commodity == CommodityKind::Water && h.world.owner_of(lot) == Some(agents.guard_theron))
-                .then_some(lot)
+            (data.commodity == CommodityKind::Water
+                && h.world.owner_of(lot) == Some(agents.guard_theron))
+            .then_some(lot)
         })
         .collect();
     let mut txn = new_txn(&mut h.world, 25);
