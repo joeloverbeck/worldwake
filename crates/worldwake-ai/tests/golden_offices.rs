@@ -71,10 +71,11 @@ fn build_simple_office_claim_scenario(
         &mut h.event_log,
         agent,
         PerceptionProfile {
-            entity_memory_capacity: 32,
-            entity_claim_capacity: 32,
-            memory_retention_ticks: 240,
-            infrastructure_retention_ticks: 2400,
+            entity_activation_threshold: pm(64),
+            claim_confidence_threshold: pm(50),
+            observation_buffer_capacity: 32,
+            need_salience_boost: pm(500),
+            need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(875),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,
@@ -221,10 +222,11 @@ fn social_supporter_utility(social: Permille) -> UtilityProfile {
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 32,
-        entity_claim_capacity: 32,
-        memory_retention_ticks: 240,
-        infrastructure_retention_ticks: 2400,
+        entity_activation_threshold: pm(64),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 32,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,

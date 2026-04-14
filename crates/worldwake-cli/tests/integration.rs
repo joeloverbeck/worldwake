@@ -140,8 +140,9 @@ fn test_cli_evaluation_scenario_loads_with_infrastructure_retention_profiles() {
             .get_component_perception_profile(agent)
             .unwrap_or_else(|| panic!("agent \"{agent_name}\" should have a perception profile"));
         assert_eq!(
-            profile.infrastructure_retention_ticks, 640,
-            "agent \"{agent_name}\" should keep the authored infrastructure retention override",
+            profile.entity_activation_threshold.value(),
+            125,
+            "agent \"{agent_name}\" should keep the authored activation-threshold override",
         );
     }
 }

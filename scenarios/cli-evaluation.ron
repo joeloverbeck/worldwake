@@ -24,8 +24,9 @@
 //   attached Thornwall Village water source to the named Village Well.
 // Updated 2026-04-06: TK-1 — Added Water resource source at Thornwall Village and
 //   Water items at Eldergrove Forest to fix universal dehydration (simulation-remediation).
-// Updated 2026-04-06: S54 schema drift — renamed memory_capacity to entity_memory_capacity
-//   + entity_claim_capacity in perception profiles. Added PlaceTag coverage (Hall, Road,
+// Updated 2026-04-13: S101 activation-decay migration replaced fixed capacities
+//   and retention ticks with activation thresholds and observation buffers.
+//   Added PlaceTag coverage (Hall, Road,
 //   Latrine) and WorkstationTag coverage (ChoppingBlock, FieldPlot, OrchardRow).
 // Updated 2026-04-05: Added bounty_posting_weight and notice_posting_weight to all UtilityProfiles (S51ARTISS-001).
 //   Tuned Guard Theron as an explicit posting-capable showcase agent (S51ARTISS-004).
@@ -89,10 +90,11 @@
                 care_weight: 500,
             ),
             perception_profile: (
-                entity_memory_capacity: 16,
-                entity_claim_capacity: 16,
-                memory_retention_ticks: 64,
-                infrastructure_retention_ticks: 640,
+                entity_activation_threshold: 125,
+                claim_confidence_threshold: 50,
+                observation_buffer_capacity: 16,
+                need_salience_boost: 500,
+                need_salience_urgency_threshold: 500,
                 observation_fidelity: 950,
                 confidence_policy: (
                     direct_observation_base: 900,
@@ -329,10 +331,11 @@
                 care_weight: 400,
             ),
             perception_profile: (
-                entity_memory_capacity: 16,
-                entity_claim_capacity: 16,
-                memory_retention_ticks: 64,
-                infrastructure_retention_ticks: 640,
+                entity_activation_threshold: 125,
+                claim_confidence_threshold: 50,
+                observation_buffer_capacity: 16,
+                need_salience_boost: 500,
+                need_salience_urgency_threshold: 500,
                 observation_fidelity: 950,
                 confidence_policy: (
                     direct_observation_base: 900,

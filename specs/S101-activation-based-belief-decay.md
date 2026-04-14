@@ -208,7 +208,7 @@ Replaces `enforce_entity_claim_capacity` hard truncation. Claims already have st
 
 ### Social observations
 
-Social observations use the same activation formula as entity beliefs, applied to their single `observed_tick`. This unifies both pruning paths under one model: `floor(1000 / sqrt(age)) >= entity_activation_threshold`. No structural changes to `SocialObservation` are needed. The `within_retention_window` helper function is removed.
+Social observations use the same activation formula as entity beliefs, applied to their single `observed_tick`. This unifies both pruning paths under one model: `floor(1000 / sqrt(age)) >= entity_activation_threshold`. No structural changes to `SocialObservation` are needed. The old entity/social-observation pruning path no longer depends on `within_retention_window`; that helper may still remain for other time-window memory lanes outside this slice.
 
 This is architecturally consistent: all memory (entity beliefs and social observations) decays via the same power-law function, controlled by the same per-agent threshold (FND-22 diversity). Agents with lower thresholds retain social observations longer; agents with higher thresholds forget faster.
 
@@ -257,7 +257,7 @@ The function signature changes from `enforce_capacity(&mut self, profile: &Perce
 
 ### Modified components
 
-- `PerceptionProfile` — fields changed (4 removed, 5 added). Remains universal, `Default` impl updated. Scenario `AgentDef` updated to reflect new fields. RON deserialization handles new fields with defaults for backward compatibility during scenario migration.
+- `PerceptionProfile` — fields changed (4 removed, 5 added). Remains universal, `Default` impl updated. Scenario `AgentDef` updated to reflect new fields. Removed scenario field names are not kept as backward-compatible aliases; stale authored inputs should fail once the migration lands.
 
 ### No new components
 

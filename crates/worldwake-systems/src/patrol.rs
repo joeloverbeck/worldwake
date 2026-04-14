@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     AgentBeliefStore, CauseRef, EntityId, EventTag, PatrolProfile, PatrolRoute, PerceptionProfile,
     SocialObservationDetail, Tick, ViolationKind, ViolationMemory, VisibilitySpec, WitnessData,
-    WorldTxn,
+    WorldTxn, belief::compute_activation,
 };
 use worldwake_sim::{ActionInstance, ActionInstanceId, SystemError, SystemExecutionContext};
 
@@ -171,7 +171,7 @@ fn collect_active_patrol_places(
             if within_route_reactive_window(
                 current_tick,
                 observation.observed_tick,
-                perception_profile.memory_retention_ticks,
+                social_observation_reactive_window(*perception_profile),
                 profile.route_adaptation_sensitivity,
             ) {
                 record_recent_place(&mut places, theft.expected_place, observation.observed_tick);
@@ -217,6 +217,39 @@ fn scaled_window(base_window_ticks: u64, sensitivity: worldwake_core::Permille) 
         .saturating_mul(sensitivity)
         .saturating_add(999)
         / 1000
+}
+
+fn social_observation_reactive_window(profile: worldwake_core::PerceptionProfile) -> u64 {
+    let threshold = profile.entity_activation_threshold.value();
+    if threshold == 0 {
+        return u64::MAX;
+    }
+    let mut low = 1u64;
+    let mut high = 1u64;
+    while compute_activation(worldwake_core::Tick(high), &[worldwake_core::Tick(0)], 1)
+        >= threshold
+    {
+        if high == u64::MAX {
+            return u64::MAX;
+        }
+        low = high;
+        high = high.saturating_mul(2);
+        if high == low {
+            return u64::MAX;
+        }
+    }
+
+    while low + 1 < high {
+        let mid = low + (high - low) / 2;
+        if compute_activation(worldwake_core::Tick(mid), &[worldwake_core::Tick(0)], 1) >= threshold
+        {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+
+    low
 }
 
 #[cfg(test)]
@@ -281,15 +314,19 @@ mod tests {
 
     fn perception_profile(retention: u64) -> PerceptionProfile {
         PerceptionProfile {
-            entity_memory_capacity: 12,
-            entity_claim_capacity: 12,
-            memory_retention_ticks: retention,
-            infrastructure_retention_ticks: retention.saturating_mul(10),
             observation_fidelity: pm(1000),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,
             consultation_speed_factor: pm(500),
             contradiction_tolerance: pm(300),
+            entity_activation_threshold: Permille::new(
+                worldwake_core::belief::compute_activation(Tick(retention.max(1)), &[Tick(0)], 1),
+            )
+            .unwrap(),
+            claim_confidence_threshold: pm(50),
+            observation_buffer_capacity: 5,
+            need_salience_boost: pm(500),
+            need_salience_urgency_threshold: pm(500),
         }
     }
 

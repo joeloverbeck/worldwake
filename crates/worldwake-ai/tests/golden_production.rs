@@ -26,10 +26,11 @@ use worldwake_sim::{
 
 fn production_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 20,
-        entity_claim_capacity: 20,
-        memory_retention_ticks: 100,
-        infrastructure_retention_ticks: 1000,
+        entity_activation_threshold: pm(100),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 20,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(1000),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -870,10 +871,11 @@ fn setup_materialized_output_theft_scenario(seed: Seed) -> MaterializedOutputThe
         txn.set_component_perception_profile(
             crafter,
             PerceptionProfile {
-                entity_memory_capacity: 64,
-                entity_claim_capacity: 64,
-                memory_retention_ticks: 64,
-                infrastructure_retention_ticks: 640,
+                entity_activation_threshold: pm(125),
+                claim_confidence_threshold: pm(50),
+                observation_buffer_capacity: 64,
+                need_salience_boost: pm(500),
+                need_salience_urgency_threshold: pm(500),
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,
@@ -2310,10 +2312,11 @@ fn run_facility_queue_patience_timeout_scenario(seed: Seed) -> FacilityQueuePati
         txn.set_component_perception_profile(
             patient,
             PerceptionProfile {
-                entity_memory_capacity: 64,
-                entity_claim_capacity: 64,
-                memory_retention_ticks: 64,
-                infrastructure_retention_ticks: 640,
+                entity_activation_threshold: pm(125),
+                claim_confidence_threshold: pm(50),
+                observation_buffer_capacity: 64,
+                need_salience_boost: pm(500),
+                need_salience_urgency_threshold: pm(500),
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,
@@ -2460,10 +2463,11 @@ fn run_local_detour_before_intended_action_scenario(
         txn.set_component_perception_profile(
             agent,
             PerceptionProfile {
-                entity_memory_capacity: 64,
-                entity_claim_capacity: 64,
-                memory_retention_ticks: 64,
-                infrastructure_retention_ticks: 640,
+                entity_activation_threshold: pm(125),
+                claim_confidence_threshold: pm(50),
+                observation_buffer_capacity: 64,
+                need_salience_boost: pm(500),
+                need_salience_urgency_threshold: pm(500),
                 observation_fidelity: pm(875),
                 confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,

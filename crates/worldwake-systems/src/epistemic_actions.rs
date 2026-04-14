@@ -335,6 +335,10 @@ fn commit_ask_witness(
                 instance.actor
             ))
         })?;
+    let actor_needs = txn
+        .get_component_homeostatic_needs(instance.actor)
+        .copied()
+        .unwrap_or_default();
 
     let mut actor_store = txn
         .get_component_agent_belief_store(instance.actor)
@@ -352,7 +356,7 @@ fn commit_ask_witness(
         };
         actor_store.update_entity(*entity, transferred);
     }
-    actor_store.enforce_capacity(&actor_perception, txn.tick());
+    actor_store.prune_decayed_beliefs(&actor_perception, txn.tick(), &actor_needs);
     actor_store.record_asked_witness(
         ask_witness_memory_key(payload),
         AskWitnessMemory {

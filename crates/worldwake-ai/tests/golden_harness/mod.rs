@@ -1646,10 +1646,11 @@ mod tests {
             ..TellProfile::default()
         };
         let perception_profile = PerceptionProfile {
-            entity_memory_capacity: 5,
-            entity_claim_capacity: 5,
-            memory_retention_ticks: 17,
-            infrastructure_retention_ticks: 170,
+            entity_activation_threshold: pm(242),
+            claim_confidence_threshold: pm(50),
+            observation_buffer_capacity: 5,
+            need_salience_boost: pm(500),
+            need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(600),
             confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,

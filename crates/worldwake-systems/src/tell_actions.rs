@@ -620,9 +620,18 @@ fn commit_tell(
                             existing.as_ref(),
                             txn.tick(),
                             speaker_belief.last_observed_tick(),
+                            listener_perception.observation_buffer_capacity,
                             &listener_perception.confidence_policy,
                         );
-                        listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
+                        let listener_needs = txn
+                            .get_component_homeostatic_needs(listener)
+                            .copied()
+                            .unwrap_or_default();
+                        listener_beliefs.prune_decayed_beliefs(
+                            &listener_perception,
+                            txn.tick(),
+                            &listener_needs,
+                        );
                         accepted_any = true;
                         belief_delta =
                             merge_tell_delta_kind(belief_delta, TellBeliefDeltaKind::EntityBelief);
@@ -655,7 +664,15 @@ fn commit_tell(
                                     })?;
                             }
                         }
-                        listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
+                        let listener_needs = txn
+                            .get_component_homeostatic_needs(listener)
+                            .copied()
+                            .unwrap_or_default();
+                        listener_beliefs.prune_decayed_beliefs(
+                            &listener_perception,
+                            txn.tick(),
+                            &listener_needs,
+                        );
                         accepted_any = true;
                         belief_delta = merge_tell_delta_kind(
                             belief_delta,
@@ -1904,7 +1921,7 @@ mod tests {
     }
 
     #[test]
-    fn tell_commit_transfers_direct_observation_as_report_and_preserves_tick() {
+    fn tell_commit_transfers_direct_observation_as_report_and_refreshes_presentation_tick() {
         let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
             tell_test_setup(PerceptionSource::DirectObservation);
         let instance = tell_instance(tell_id, speaker, listener, subject);
@@ -1913,7 +1930,7 @@ mod tests {
 
         let listener_store = world.get_component_agent_belief_store(listener).unwrap();
         let transferred = listener_store.get_entity(&subject).unwrap();
-        assert_eq!(transferred.last_observed_tick(), Some(Tick(2)));
+        assert_eq!(transferred.last_observed_tick(), Some(Tick(8)));
         assert_eq!(
             transferred.source,
             PerceptionSource::Report {
@@ -2338,9 +2355,14 @@ mod tests {
                 prior_summary.as_ref(),
                 Tick(7),
                 Some(Tick(2)),
+                listener_profile.observation_buffer_capacity,
                 &listener_profile.confidence_policy,
             );
-            listener_store.enforce_capacity(&listener_profile, Tick(7));
+            listener_store.prune_decayed_beliefs(
+                &listener_profile,
+                Tick(7),
+                &HomeostaticNeeds::new_sated(),
+            );
 
             let mut direct_belief = build_believed_entity_state(
                 &world,
@@ -2531,7 +2553,7 @@ mod tests {
     }
 
     #[test]
-    fn tell_commit_enforces_listener_memory_capacity() {
+    fn tell_commit_preserves_listener_entities_above_activation_threshold() {
         let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
             tell_test_setup(PerceptionSource::DirectObservation);
         let older_subject = {
@@ -2563,15 +2585,16 @@ mod tests {
             txn.set_component_perception_profile(
                 listener,
                 PerceptionProfile {
-                    entity_memory_capacity: 1,
-                    entity_claim_capacity: 8,
-                    memory_retention_ticks: 100,
-                    infrastructure_retention_ticks: 1000,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),
                     institutional_memory_capacity: 20,
                     consultation_speed_factor: Permille::new(500).unwrap(),
                     contradiction_tolerance: Permille::new(300).unwrap(),
+                    entity_activation_threshold: Permille::new(100).unwrap(),
+                    claim_confidence_threshold: Permille::new(50).unwrap(),
+                    observation_buffer_capacity: 5,
+                    need_salience_boost: Permille::new(500).unwrap(),
+                    need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 },
             )
             .unwrap();
@@ -2587,9 +2610,9 @@ mod tests {
             listener_store.get_entity(&subject).unwrap().believed_kind,
             Some(EntityKind::Agent)
         );
-        assert!(listener_store.get_entity(&older_subject).is_none());
+        assert!(listener_store.get_entity(&older_subject).is_some());
         assert!(listener_store.get_entity(&subject).is_some());
-        assert_eq!(listener_store.known_entities.len(), 1);
+        assert_eq!(listener_store.known_entities.len(), 2);
     }
 
     #[test]

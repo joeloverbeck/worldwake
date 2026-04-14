@@ -370,15 +370,16 @@ mod tests {
         tables.insert_perception_profile(
             entity(24),
             PerceptionProfile {
-                entity_memory_capacity: 8,
-                entity_claim_capacity: 8,
-                memory_retention_ticks: 20,
-                infrastructure_retention_ticks: 200,
                 observation_fidelity: Permille::new(900).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 18,
                 consultation_speed_factor: Permille::new(550).unwrap(),
                 contradiction_tolerance: Permille::new(325).unwrap(),
+                entity_activation_threshold: Permille::new(100).unwrap(),
+                claim_confidence_threshold: Permille::new(50).unwrap(),
+                observation_buffer_capacity: 5,
+                need_salience_boost: Permille::new(500).unwrap(),
+                need_salience_urgency_threshold: Permille::new(500).unwrap(),
             },
         );
         tables.insert_tell_profile(entity(25), sample_roundtrip_tell_profile());

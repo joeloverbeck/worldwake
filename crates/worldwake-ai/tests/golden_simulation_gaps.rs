@@ -19,10 +19,11 @@ use worldwake_sim::ActionTraceKind;
 
 fn remote_resource_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 64,
-        infrastructure_retention_ticks: 640,
+        entity_activation_threshold: pm(125),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,

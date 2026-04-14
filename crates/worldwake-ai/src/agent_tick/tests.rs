@@ -864,10 +864,11 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, Entit
         txn.set_component_perception_profile(
             actor,
             PerceptionProfile {
-                entity_memory_capacity: 12,
-                entity_claim_capacity: 12,
-                memory_retention_ticks: 64,
-                infrastructure_retention_ticks: 640,
+                entity_activation_threshold: Permille::new(125).unwrap(),
+                claim_confidence_threshold: Permille::new(50).unwrap(),
+                observation_buffer_capacity: 12,
+                need_salience_boost: Permille::new(500).unwrap(),
+                need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,
@@ -972,10 +973,11 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
         txn.set_component_perception_profile(
             actor,
             PerceptionProfile {
-                entity_memory_capacity: 12,
-                entity_claim_capacity: 12,
-                memory_retention_ticks: 4,
-                infrastructure_retention_ticks: 40,
+                entity_activation_threshold: Permille::new(158).unwrap(),
+                claim_confidence_threshold: Permille::new(50).unwrap(),
+                observation_buffer_capacity: 12,
+                need_salience_boost: Permille::new(500).unwrap(),
+                need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,
@@ -3839,7 +3841,7 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
 }
 
 #[test]
-fn perception_refresh_preserves_remote_seller_belief_within_infrastructure_window() {
+fn perception_refresh_preserves_remote_seller_belief_above_activation_threshold() {
     let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
@@ -3869,7 +3871,7 @@ fn perception_refresh_preserves_remote_seller_belief_within_infrastructure_windo
         .unwrap();
     assert!(
         store.get_entity(&seller).is_some(),
-        "alive remote seller beliefs should survive refreshes within infrastructure_retention_ticks"
+        "alive remote seller beliefs should survive refreshes while activation stays above threshold"
     );
     assert_eq!(
         store
@@ -3884,7 +3886,7 @@ fn perception_refresh_preserves_remote_seller_belief_within_infrastructure_windo
 }
 
 #[test]
-fn perception_refresh_evicts_expired_remote_acquisition_belief_after_infrastructure_window() {
+fn perception_refresh_evicts_remote_acquisition_belief_below_activation_threshold() {
     let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
@@ -3914,7 +3916,7 @@ fn perception_refresh_evicts_expired_remote_acquisition_belief_after_infrastruct
         .unwrap();
     assert!(
         store.get_entity(&seller).is_none(),
-        "expired remote seller belief should be evicted after infrastructure_retention_ticks elapses"
+        "expired remote seller belief should be evicted once activation falls below threshold"
     );
     let local_belief = store
         .get_entity(&local_witness)
@@ -3930,7 +3932,7 @@ fn perception_refresh_evicts_expired_remote_acquisition_belief_after_infrastruct
                 purpose: CommodityPurpose::SelfConsume,
             }
         ),
-        "once retention enforcement prunes the stale remote seller, the acquire goal must disappear"
+        "once activation pruning removes the stale remote seller, the acquire goal must disappear"
     );
 }
 
@@ -5397,10 +5399,11 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
         txn.set_component_perception_profile(
             harness.actor,
             PerceptionProfile {
-                entity_memory_capacity: 32,
-                entity_claim_capacity: 32,
-                memory_retention_ticks: 240,
-                infrastructure_retention_ticks: 2400,
+                entity_activation_threshold: Permille::new(64).unwrap(),
+                claim_confidence_threshold: Permille::new(50).unwrap(),
+                observation_buffer_capacity: 32,
+                need_salience_boost: Permille::new(500).unwrap(),
+                need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,

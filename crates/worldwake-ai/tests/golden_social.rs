@@ -27,10 +27,11 @@ fn social_weighted_utility(weight: u16) -> UtilityProfile {
 
 fn blind_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 16,
-        entity_claim_capacity: 16,
-        memory_retention_ticks: 240,
-        infrastructure_retention_ticks: 2400,
+        entity_activation_threshold: pm(64),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 16,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(0),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -41,10 +42,11 @@ fn blind_perception_profile() -> PerceptionProfile {
 
 fn keen_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 32,
-        entity_claim_capacity: 32,
-        memory_retention_ticks: 240,
-        infrastructure_retention_ticks: 2400,
+        entity_activation_threshold: pm(64),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 32,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(1000),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -151,6 +153,7 @@ fn seed_claim_backed_belief(
         prior_summary.as_ref(),
         acquired_tick,
         believed_state.last_observed_tick(),
+        profile.observation_buffer_capacity,
         &profile.confidence_policy,
     );
 

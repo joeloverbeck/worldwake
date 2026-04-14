@@ -199,10 +199,11 @@ fn merchant_vara_execution_budget() -> ExecutionBudget {
 
 fn guard_perception_profile() -> worldwake_core::PerceptionProfile {
     worldwake_core::PerceptionProfile {
-        entity_memory_capacity: 16,
-        entity_claim_capacity: 16,
-        memory_retention_ticks: 64,
-        infrastructure_retention_ticks: 640,
+        entity_activation_threshold: pm(125),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 16,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(950),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -568,10 +569,11 @@ fn seed_kael_cli_agent(
         &mut h.event_log,
         agent,
         worldwake_core::PerceptionProfile {
-            entity_memory_capacity: 16,
-            entity_claim_capacity: 16,
-            memory_retention_ticks: 64,
-            infrastructure_retention_ticks: 640,
+            entity_activation_threshold: pm(125),
+            claim_confidence_threshold: pm(50),
+            observation_buffer_capacity: 16,
+            need_salience_boost: pm(500),
+            need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(950),
             confidence_policy: worldwake_core::BeliefConfidencePolicy {
                 direct_observation_base: pm(900),
@@ -1870,12 +1872,31 @@ fn setup_merchant_vara_water_at_thornwall_snapshot() -> (GoldenHarness, EntityId
 }
 
 fn setup_guard_theron_water_at_thornwall_snapshot() -> (GoldenHarness, EntityId) {
-    let (h, agents) = setup_cli_evaluation_scenario_until_tick(25);
+    let (mut h, agents) = setup_cli_evaluation_scenario_until_tick(25);
     assert_eq!(
         h.world.effective_place(agents.guard_theron),
         Some(THORNWALL_VILLAGE),
         "Guard Theron should be at Thornwall Village by tick 25",
     );
+    let carried_water: Vec<_> = h
+        .world
+        .query_item_lot()
+        .filter_map(|(lot, data)| {
+            (data.commodity == CommodityKind::Water && h.world.owner_of(lot) == Some(agents.guard_theron))
+                .then_some(lot)
+        })
+        .collect();
+    let mut txn = new_txn(&mut h.world, 25);
+    txn.set_component_homeostatic_needs(
+        agents.guard_theron,
+        HomeostaticNeeds::new(pm(300), pm(900), pm(100), pm(100), pm(100)),
+    )
+    .unwrap();
+    for lot in carried_water {
+        txn.clear_owner(lot).unwrap();
+        txn.set_ground_location(lot, THORNWALL_VILLAGE).unwrap();
+    }
+    commit_txn(txn, &mut h.event_log);
     (h, agents.guard_theron)
 }
 

@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 52: Patrol Cycle Wraps Route
 
-- Source: `golden_patrol.rs:296`
+- Source: `golden_patrol.rs:298`
 - Systems: AI, Travel, Patrol
 - GoalKinds: Patrol
 - ActionDomains: Travel, Generic
@@ -25,7 +25,7 @@ Scenarios: 6
 
 ### Scenario 53: Patrol Interruption Preserves Waypoint Until Resume
 
-- Source: `golden_patrol.rs:330`
+- Source: `golden_patrol.rs:332`
 - Systems: AI, Needs, Patrol
 - GoalKinds: Patrol, ConsumeOwnedCommodity
 - ActionDomains: Generic, Needs
@@ -41,7 +41,7 @@ Scenarios: 6
 
 ### Scenario 54: Patrol Belief Urgency Scales From Local Crime And Vacancy
 
-- Source: `golden_patrol.rs:480`
+- Source: `golden_patrol.rs:482`
 - Systems: AI, Patrol, Institutional beliefs
 - GoalKinds: Patrol
 - ActionDomains: Generic
@@ -57,7 +57,7 @@ Scenarios: 6
 
 ### Scenario 55: Patrol Route Adaptation Retargets After Local Report
 
-- Source: `golden_patrol.rs:600`
+- Source: `golden_patrol.rs:602`
 - Systems: Patrol adaptation, AI, Travel
 - GoalKinds: Patrol
 - ActionDomains: Travel, Generic
@@ -73,7 +73,7 @@ Scenarios: 6
 
 ### Scenario 56: Patrol Locality Requires Guard-Local Report
 
-- Source: `golden_patrol.rs:696`
+- Source: `golden_patrol.rs:698`
 - Systems: Patrol adaptation, AI
 - GoalKinds: Patrol
 - ActionDomains: Generic
@@ -89,7 +89,7 @@ Scenarios: 6
 
 ### Scenario 57: Patrol-Driven Crime Discovery Chain
 
-- Source: `golden_patrol.rs:787`
+- Source: `golden_patrol.rs:789`
 - Systems: AI, Travel, Patrol, Perception, Investigation
 - GoalKinds: Patrol, InvestigateViolation
 - ActionDomains: Travel, Generic

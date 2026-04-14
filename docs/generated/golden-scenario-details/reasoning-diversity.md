@@ -7,7 +7,7 @@ Scenarios: 3
 
 ### Scenario 97: Search Depth Drives Multi-Step Plan Divergence
 
-- Source: `golden_reasoning_diversity.rs:288`
+- Source: `golden_reasoning_diversity.rs:290`
 - Systems: Production, AI, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Needs
@@ -25,7 +25,7 @@ Scenarios: 3
 
 ### Scenario 141: Landmark Depth Changes Two-Phase Trace Shape Without Breaking Planning
 
-- Source: `golden_reasoning_diversity.rs:388`
+- Source: `golden_reasoning_diversity.rs:390`
 - Systems: Production, AI, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Travel, Needs
@@ -43,7 +43,7 @@ Scenarios: 3
 
 ### Scenario 129: Utility Profiles Diverge Under Identical Self-Care Pressure
 
-- Source: `golden_reasoning_diversity.rs:540`
+- Source: `golden_reasoning_diversity.rs:542`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

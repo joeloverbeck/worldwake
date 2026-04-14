@@ -311,10 +311,11 @@ mod tests {
                         market_presence_ticks: 30,
                     ),
                     perception_profile: (
-                        entity_memory_capacity: 6,
-                        entity_claim_capacity: 9,
-                        memory_retention_ticks: 24,
-                        infrastructure_retention_ticks: 240,
+                        entity_activation_threshold: 204,
+                        claim_confidence_threshold: 50,
+                        observation_buffer_capacity: 6,
+                        need_salience_boost: 500,
+                        need_salience_urgency_threshold: 500,
                         observation_fidelity: 900,
                         confidence_policy: (
                             direct_observation_base: 980,
@@ -422,8 +423,9 @@ mod tests {
         assert!(bob.trade_disposition.is_some());
         assert!(bob.perception_profile.is_some());
         let perception = bob.perception_profile.unwrap();
-        assert_eq!(perception.entity_memory_capacity, 6);
-        assert_eq!(perception.entity_claim_capacity, 9);
+        assert_eq!(perception.entity_activation_threshold.value(), 204);
+        assert_eq!(perception.claim_confidence_threshold.value(), 50);
+        assert_eq!(perception.observation_buffer_capacity, 6);
         assert!(bob.drive_thresholds.is_some());
         assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
         assert_eq!(

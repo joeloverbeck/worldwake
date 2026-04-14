@@ -221,7 +221,11 @@ fn process_witness_event(
         });
     }
 
-    store.enforce_capacity(&profile, tick);
+    let needs = world
+        .get_component_homeostatic_needs(witness)
+        .copied()
+        .unwrap_or_default();
+    store.prune_decayed_beliefs(&profile, tick, &needs);
 }
 
 fn observe_passive_local_entities(
@@ -287,6 +291,10 @@ fn observe_passive_local_entities(
             &mut store,
             &batch,
             &profile,
+            world
+                .get_component_homeostatic_needs(agent)
+                .copied()
+                .unwrap_or_default(),
         );
         let doctrine_changed = project_local_bandit_rally_doctrine(
             world,
@@ -486,6 +494,7 @@ fn apply_direct_local_observation_batch(
     store: &mut AgentBeliefStore,
     batch: &DirectLocalObservationBatch,
     profile: &worldwake_core::PerceptionProfile,
+    needs: worldwake_core::HomeostaticNeeds,
 ) {
     for (subject, snapshot) in &batch.observed_snapshots {
         record_observed_snapshot(
@@ -507,7 +516,7 @@ fn apply_direct_local_observation_batch(
     }
 
     if !batch.observed_snapshots.is_empty() {
-        store.enforce_capacity(profile, context.tick);
+        store.prune_decayed_beliefs(profile, context.tick, &needs);
     }
 }
 
@@ -540,6 +549,7 @@ fn record_observed_snapshot(
         prior.as_ref(),
         context.tick,
         snapshot.last_observed_tick(),
+        notice_context.profile.observation_buffer_capacity,
         &notice_context.profile.confidence_policy,
     );
 }
@@ -1186,15 +1196,16 @@ mod tests {
 
     fn profile(fidelity: u16) -> PerceptionProfile {
         PerceptionProfile {
-            entity_memory_capacity: 8,
-            entity_claim_capacity: 8,
-            memory_retention_ticks: 32,
-            infrastructure_retention_ticks: 320,
             observation_fidelity: Permille::new(fidelity).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,
             consultation_speed_factor: Permille::new(500).unwrap(),
             contradiction_tolerance: Permille::new(300).unwrap(),
+            entity_activation_threshold: Permille::new(100).unwrap(),
+            claim_confidence_threshold: Permille::new(50).unwrap(),
+            observation_buffer_capacity: 5,
+            need_salience_boost: Permille::new(500).unwrap(),
+            need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
     }
 
@@ -2151,8 +2162,8 @@ mod tests {
             txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
                 .unwrap();
             let mut observer_profile = profile(1000);
-            observer_profile.entity_memory_capacity = 16;
-            observer_profile.entity_claim_capacity = 16;
+            observer_profile.entity_activation_threshold = Permille::new(50).unwrap();
+            observer_profile.observation_buffer_capacity = 8;
             txn.set_component_perception_profile(observer, observer_profile)
                 .unwrap();
             let bread = txn
@@ -2237,8 +2248,8 @@ mod tests {
             txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
                 .unwrap();
             let mut observer_profile = profile(1000);
-            observer_profile.entity_memory_capacity = 16;
-            observer_profile.entity_claim_capacity = 16;
+            observer_profile.entity_activation_threshold = Permille::new(50).unwrap();
+            observer_profile.observation_buffer_capacity = 8;
             txn.set_component_perception_profile(observer, observer_profile)
                 .unwrap();
             let bread = txn
@@ -2984,7 +2995,7 @@ mod tests {
     }
 
     #[test]
-    fn memory_capacity_evicts_older_beliefs_after_new_observation() {
+    fn new_observation_does_not_hard_cap_existing_entity_beliefs() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (observer, older_target, newer_target) = {
@@ -3022,15 +3033,16 @@ mod tests {
             txn.set_component_perception_profile(
                 observer,
                 PerceptionProfile {
-                    entity_memory_capacity: 1,
-                    entity_claim_capacity: 8,
-                    memory_retention_ticks: 32,
-                    infrastructure_retention_ticks: 320,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),
                     institutional_memory_capacity: 20,
                     consultation_speed_factor: Permille::new(500).unwrap(),
                     contradiction_tolerance: Permille::new(300).unwrap(),
+                    entity_activation_threshold: Permille::new(100).unwrap(),
+                    claim_confidence_threshold: Permille::new(50).unwrap(),
+                    observation_buffer_capacity: 5,
+                    need_salience_boost: Permille::new(500).unwrap(),
+                    need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 },
             )
             .unwrap();
@@ -3071,7 +3083,7 @@ mod tests {
         .unwrap();
 
         let beliefs = world.get_component_agent_belief_store(observer).unwrap();
-        assert!(beliefs.get_entity(&older_target).is_none());
+        assert!(beliefs.get_entity(&older_target).is_some());
         assert!(beliefs.get_entity(&newer_target).is_some());
     }
 

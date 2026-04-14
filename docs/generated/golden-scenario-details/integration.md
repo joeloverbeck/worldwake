@@ -25,7 +25,7 @@ Scenarios: 12
 
 ### Scenario 27: Controlled Agent Death
 
-- Source: `golden_integration.rs:1053`
+- Source: `golden_integration.rs:1057`
 - Systems: Combat, AI, Needs
 - GoalKinds: EngageHostile
 - ActionDomains: Combat
@@ -43,7 +43,7 @@ Scenarios: 12
 
 ### Scenario 28: Pursuit Across Information Boundary
 
-- Source: `golden_integration.rs:1316`
+- Source: `golden_integration.rs:1320`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social (≥ 2 required)
@@ -61,7 +61,7 @@ Scenarios: 12
 
 ### Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
 
-- Source: `golden_integration.rs:2884`
+- Source: `golden_integration.rs:2894`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
 - GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Generic, Travel, Social, Production
@@ -79,7 +79,7 @@ Scenarios: 12
 
 ### Scenario 105: Social artifact bounty lifecycle closes canonically
 
-- Source: `golden_integration.rs:5335`
+- Source: `golden_integration.rs:5359`
 - Systems: Social artifact actions, Perception, AI, Travel, Combat
 - GoalKinds: FulfillBounty
 - ActionDomains: Social, Travel, Combat
@@ -97,7 +97,7 @@ Scenarios: 12
 
 ### Scenario 106: Expired bounty stays visible but no longer generates pursuit
 
-- Source: `golden_integration.rs:5373`
+- Source: `golden_integration.rs:5397`
 - Systems: Social artifact actions, pre-action artifact lifecycle, Perception, AI
 - GoalKinds: FulfillBounty
 - ActionDomains: Social
@@ -115,7 +115,7 @@ Scenarios: 12
 
 ### Scenario 108: Delivery bounty closes through cargo movement and later claim
 
-- Source: `golden_integration.rs:5410`
+- Source: `golden_integration.rs:5434`
 - Systems: Social artifact actions, Perception, AI, Travel, Transport
 - GoalKinds: FulfillBounty, MoveCargo
 - ActionDomains: Social, Travel, Transport
@@ -133,7 +133,7 @@ Scenarios: 12
 
 ### Scenario 107: Threat-warning notice flips the next route choice
 
-- Source: `golden_integration.rs:5450`
+- Source: `golden_integration.rs:5474`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production
@@ -151,7 +151,7 @@ Scenarios: 12
 
 ### Scenario 112: Autonomous institutional bounty posts from consulted accusation
 
-- Source: `golden_integration.rs:5488`
+- Source: `golden_integration.rs:5512`
 - Systems: Social artifact actions, Beliefs, AI, Offices
 - GoalKinds: PostBounty
 - ActionDomains: Social
@@ -169,7 +169,7 @@ Scenarios: 12
 
 ### Scenario 113: Autonomous threat-warning notice reroutes later travel
 
-- Source: `golden_integration.rs:5527`
+- Source: `golden_integration.rs:5551`
 - Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Travel, Production
@@ -187,7 +187,7 @@ Scenarios: 12
 
 ### Scenario 137: Autonomous threat-warning expiry bounds active notice population
 
-- Source: `golden_integration.rs:5568`
+- Source: `golden_integration.rs:5592`
 - Systems: Social artifact actions, artifact lifecycle, Beliefs, AI
 - GoalKinds: PostNotice
 - ActionDomains: Social
@@ -205,7 +205,7 @@ Scenarios: 12
 
 ### Scenario 114: Theft evidence persists, is perceived locally, and decays
 
-- Source: `golden_integration.rs:5608`
+- Source: `golden_integration.rs:5632`
 - Systems: Transport, Perception, Evidence decay, AI
 - GoalKinds: InvestigateViolation
 - ActionDomains: Transport, Travel, Generic

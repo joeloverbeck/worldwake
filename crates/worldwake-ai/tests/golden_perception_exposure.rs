@@ -179,9 +179,11 @@ fn run_perception_forms_resource_source_beliefs(seed: Seed) -> ResourceSourceBel
         &mut h.event_log,
         observer,
         PerceptionProfile {
-            entity_memory_capacity: 4,
-            entity_claim_capacity: 12,
-            memory_retention_ticks: 64,
+            entity_activation_threshold: pm(125),
+            claim_confidence_threshold: pm(50),
+            observation_buffer_capacity: 4,
+            need_salience_boost: pm(500),
+            need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(1000),
             ..PerceptionProfile::default()
         },
@@ -433,11 +435,11 @@ fn golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity() {
 // Places: OrchardFarm
 // Principles: 7, 14, 15, 16
 //
-// Setup: An AI observer with `entity_memory_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
+// Setup: An AI observer with `observation_buffer_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
 //
-// Proves: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed memory capacity.
+// Proves: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed the observation-history buffer width.
 //
-// Chain: same-place observation -> belief recording -> `enforce_capacity()` eviction -> retained infrastructure beliefs.
+// Chain: same-place repeated observation -> activation refresh -> retained infrastructure beliefs without a hard entity-count clamp.
 #[test]
 fn golden_perception_forms_resource_source_beliefs() {
     let observation = run_perception_forms_resource_source_beliefs(Seed([178; 32]));
@@ -450,14 +452,9 @@ fn golden_perception_forms_resource_source_beliefs() {
         observation.water_source_believed,
         "observer should retain the water source belief under capacity pressure; observation={observation:?}"
     );
-    assert_eq!(
-        observation.known_entities.len(),
-        4,
-        "memory capacity should bind so the scenario proves eviction under competition; observation={observation:?}"
-    );
     assert!(
-        observation.retained_waste_entities.len() < 6,
-        "not all waste lots should survive once capacity eviction runs; observation={observation:?}"
+        observation.known_entities.len() > 4,
+        "activation-based retention should not clamp known entities to the observation buffer width; observation={observation:?}"
     );
 }
 

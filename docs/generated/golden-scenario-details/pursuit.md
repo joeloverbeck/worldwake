@@ -7,7 +7,7 @@ Scenarios: 3
 
 ### Scenario 68: Bandit witnesses traveler leave, pursues, attacks
 
-- Source: `golden_pursuit.rs:340`
+- Source: `golden_pursuit.rs:342`
 - Systems: Perception, AI, Travel, Combat
 - GoalKinds: RaidTarget
 - ActionDomains: Travel, Combat
@@ -25,7 +25,7 @@ Scenarios: 3
 
 ### Scenario 69: Bandit pursues stale target, arrival failure
 
-- Source: `golden_pursuit.rs:478`
+- Source: `golden_pursuit.rs:480`
 - Systems: Perception, AI, Travel
 - GoalKinds: RaidTarget
 - ActionDomains: Travel
@@ -43,7 +43,7 @@ Scenarios: 3
 
 ### Scenario 70: Combat → flee → re-pursue
 
-- Source: `golden_pursuit.rs:619`
+- Source: `golden_pursuit.rs:621`
 - Systems: Perception, AI, Travel, Combat
 - GoalKinds: RaidTarget, EngageHostile
 - ActionDomains: Travel, Combat

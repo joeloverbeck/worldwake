@@ -7,7 +7,7 @@ Scenarios: 4
 
 ### Scenario 22: Bandit Camp Destruction Chain
 
-- Source: `golden_t22_bandit_camp_destruction.rs:1980`
+- Source: `golden_t22_bandit_camp_destruction.rs:1982`
 - Systems: Combat, Perception, Beliefs, AI, Travel, Production
 - GoalKinds: ReduceDanger, RegroupWithFaction, AcquireCommodity(SelfConsume)
 - ActionDomains: Combat, Generic, Production, Travel
@@ -25,7 +25,7 @@ Scenarios: 4
 
 ### Scenario 47: Pressure-Driven Raid Emergence
 
-- Source: `golden_t22_bandit_camp_destruction.rs:2024`
+- Source: `golden_t22_bandit_camp_destruction.rs:2026`
 - Systems: Needs, AI, Combat, Loot, Conservation
 - GoalKinds: RaidTarget, LootCorpse, AcquireCommodity(SelfConsume)
 - ActionDomains: Combat, Corpse, Production, Travel
@@ -43,7 +43,7 @@ Scenarios: 4
 
 ### Scenario 48: Raid-Belief Economic Cascade
 
-- Source: `golden_t22_bandit_camp_destruction.rs:2063`
+- Source: `golden_t22_bandit_camp_destruction.rs:2065`
 - Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI
 - GoalKinds: RaidTarget, ShareBelief, RestockCommodity
 - ActionDomains: Combat, Social, Travel, Production
@@ -61,7 +61,7 @@ Scenarios: 4
 
 ### Scenario 49: Wound-Dampened Raid Spiral
 
-- Source: `golden_t22_bandit_camp_destruction.rs:2102`
+- Source: `golden_t22_bandit_camp_destruction.rs:2104`
 - Systems: Combat, Wounds, AI, Needs
 - GoalKinds: RaidTarget, ConsumeOwnedCommodity
 - ActionDomains: Combat, Needs, Travel

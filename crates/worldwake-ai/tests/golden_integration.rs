@@ -174,10 +174,11 @@ fn build_t20_topology() -> Topology {
 
 fn t20_default_perception() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 480,
-        infrastructure_retention_ticks: 4800,
+        entity_activation_threshold: pm(45),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -653,10 +654,11 @@ fn set_control_source(
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 240,
-        infrastructure_retention_ticks: 2400,
+        entity_activation_threshold: pm(64),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -1376,10 +1378,11 @@ fn build_t28_topology() -> Topology {
 
 fn t28_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 240,
-        infrastructure_retention_ticks: 2400,
+        entity_activation_threshold: pm(64),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -1898,10 +1901,11 @@ fn build_t29_topology() -> Topology {
 
 fn t29_default_perception() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 240,
-        infrastructure_retention_ticks: 2400,
+        entity_activation_threshold: pm(64),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -2742,10 +2746,11 @@ fn build_t22r_topology() -> Topology {
 
 fn t22r_perception() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 480,
-        infrastructure_retention_ticks: 4800,
+        entity_activation_threshold: pm(45),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -3634,10 +3639,11 @@ fn connect(topology: &mut Topology, base_id: u32, from: EntityId, to: EntityId, 
 
 fn s45_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 240,
-        infrastructure_retention_ticks: 2400,
+        entity_activation_threshold: pm(64),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,

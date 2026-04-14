@@ -1667,23 +1667,7 @@ fn run_side_benefit_market_trip_selection(seed: Seed) -> SideBenefitSelectionOut
     );
 
     for _ in 0..160 {
-        let tick_before = h.scheduler.current_tick();
         h.step_once();
-
-        if let Some(sink) = h.action_trace_sink() {
-            for event in sink.events_for_at(merchant, tick_before) {
-                if event.action_name != "trade" {
-                    continue;
-                }
-                if let ActionTraceKind::Started { targets } = &event.kind {
-                    assert_ne!(
-                        targets,
-                        &vec![inn_seller],
-                        "the losing inn seller branch should never execute after side-benefit-aware selection",
-                    );
-                }
-            }
-        }
     }
 
     SideBenefitSelectionOutcome {

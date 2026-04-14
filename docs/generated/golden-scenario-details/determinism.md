@@ -42,7 +42,7 @@ Scenarios: 5
 
 ### Scenario S21-005: Save/Load Preserves Promoted Commitments
 
-- Source: `golden_determinism.rs:559`
+- Source: `golden_determinism.rs:563`
 - Systems: Needs, Production, Travel, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -59,14 +59,14 @@ Scenarios: 5
 
 ### Scenario S22-007: Save/load verification for IntentionFrame and
 
-- Source: `golden_determinism.rs:774`
+- Source: `golden_determinism.rs:780`
 - Primary tests: `golden_save_load_preserves_suspended_intention_frame`, `golden_save_load_preserves_intention_disposition_profile`, `golden_save_load_preserves_frame_assumptions`
 - Replay tests: None
 - All tests: `golden_save_load_preserves_suspended_intention_frame`, `golden_save_load_preserves_intention_disposition_profile`, `golden_save_load_preserves_frame_assumptions`
 
 ### Scenario 104: Save/Load Preserves Generalized Contention World And Belief State
 
-- Source: `golden_determinism.rs:1017`
+- Source: `golden_determinism.rs:1023`
 - Systems: SaveLoad, Contention, Perception
 - GoalKinds: LootCorpse
 - ActionDomains: Corpse

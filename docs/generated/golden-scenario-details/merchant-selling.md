@@ -7,7 +7,7 @@ Scenarios: 15
 
 ### Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 
-- Source: `golden_merchant_selling.rs:389`
+- Source: `golden_merchant_selling.rs:370`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade
@@ -20,7 +20,7 @@ Scenarios: 15
 
 ### Scenario 76: Buyer Trades Against Listed Lot
 
-- Source: `golden_merchant_selling.rs:467`
+- Source: `golden_merchant_selling.rs:448`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity, SellCommodity
 - ActionDomains: Trade
@@ -33,7 +33,7 @@ Scenarios: 15
 
 ### Scenario 77: Unlisted Stock Not Sellable
 
-- Source: `golden_merchant_selling.rs:577`
+- Source: `golden_merchant_selling.rs:558`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -46,7 +46,7 @@ Scenarios: 15
 
 ### Scenario 78: Loose Home Stock Is Staged Before Sell Goal Settles
 
-- Source: `golden_merchant_selling.rs:652`
+- Source: `golden_merchant_selling.rs:633`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade
@@ -59,7 +59,7 @@ Scenarios: 15
 
 ### Scenario 79: Deterministic Replay Preserves Listing Behavior
 
-- Source: `golden_merchant_selling.rs:791`
+- Source: `golden_merchant_selling.rs:772`
 - Systems: Trade, AI
 - Principles: P2
 - Primary tests: `deterministic_replay_preserves_listing_behavior`
@@ -70,7 +70,7 @@ Scenarios: 15
 
 ### Scenario 79b: Unstage Round Trip Preserves Storage Contract
 
-- Source: `golden_merchant_selling.rs:888`
+- Source: `golden_merchant_selling.rs:869`
 - Systems: Trade, AI
 - ActionDomains: Trade
 - Principles: P4, P24
@@ -82,7 +82,7 @@ Scenarios: 15
 
 ### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
 
-- Source: `golden_merchant_selling.rs:912`
+- Source: `golden_merchant_selling.rs:893`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -95,7 +95,7 @@ Scenarios: 15
 
 ### Scenario 81: Merchant Emits SellCommodity at Home Market
 
-- Source: `golden_merchant_selling.rs:980`
+- Source: `golden_merchant_selling.rs:961`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade
@@ -108,7 +108,7 @@ Scenarios: 15
 
 ### Scenario 82: Seller Departure Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:1084`
+- Source: `golden_merchant_selling.rs:1065`
 - Systems: Trade
 - Principles: P3, P7
 - Primary tests: `seller_departure_invalidates_listing`
@@ -119,7 +119,7 @@ Scenarios: 15
 
 ### Scenario 83: Dead Seller Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:1141`
+- Source: `golden_merchant_selling.rs:1122`
 - Systems: Trade
 - Principles: P3, P4
 - Primary tests: `dead_seller_invalidates_listing`
@@ -130,7 +130,7 @@ Scenarios: 15
 
 ### Scenario 84: Remote Merchant Travels to Home Market to Sell
 
-- Source: `golden_merchant_selling.rs:1213`
+- Source: `golden_merchant_selling.rs:1194`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade, Travel
@@ -143,7 +143,7 @@ Scenarios: 15
 
 ### Scenario 85: Demand Memory Raises Sell Ranking
 
-- Source: `golden_merchant_selling.rs:1330`
+- Source: `golden_merchant_selling.rs:1311`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
@@ -155,7 +155,7 @@ Scenarios: 15
 
 ### Scenario 86: Planning State Preserves Listing Determinism
 
-- Source: `golden_merchant_selling.rs:1402`
+- Source: `golden_merchant_selling.rs:1383`
 - Systems: Trade, AI
 - Principles: P2
 - Primary tests: `planning_state_preserves_listing_determinism`
@@ -166,7 +166,7 @@ Scenarios: 15
 
 ### Scenario 95: Side-Benefit Selection Prefers Home Market Combined Trip
 
-- Source: `golden_merchant_selling.rs:1419`
+- Source: `golden_merchant_selling.rs:1400`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity, SellCommodity
 - ActionDomains: Travel, Trade
@@ -175,11 +175,11 @@ Scenarios: 15
 - Replay tests: `combined_market_trip_selected_for_side_benefit_replays_deterministically`
 - All tests: `combined_market_trip_selected_for_side_benefit`, `combined_market_trip_selected_for_side_benefit_replays_deterministically`
 
-**Proves**: a remote merchant with equal primary bread opportunities prefers the home-market seller because the selected path also carries a lawful SellCommodity side benefit at that destination; after acquisition the merchant stages firewood for sale there without a second market trip
+**Proves**: a remote merchant with equal primary bread opportunities prefers the home-market seller because the selected path also carries a lawful SellCommodity side benefit at that destination; the opening selection remains deterministic even if later execution reprioritizes
 
 ### Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `golden_merchant_selling.rs:1784`
+- Source: `golden_merchant_selling.rs:1695`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)

@@ -1583,10 +1583,11 @@ mod tests {
     #[test]
     fn test_spawn_agent_with_profile_overrides() {
         let custom_perception = PerceptionProfile {
-            entity_memory_capacity: 4,
-            entity_claim_capacity: 6,
-            memory_retention_ticks: 16,
-            infrastructure_retention_ticks: 160,
+            entity_activation_threshold: Permille::new(250).unwrap(),
+            claim_confidence_threshold: Permille::new(50).unwrap(),
+            observation_buffer_capacity: 4,
+            need_salience_boost: Permille::new(500).unwrap(),
+            need_salience_urgency_threshold: Permille::new(500).unwrap(),
             observation_fidelity: Permille::new(900).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 9,

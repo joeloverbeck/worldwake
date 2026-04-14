@@ -7,7 +7,7 @@ Scenarios: 14
 
 ### Scenario 44: Wounded Politician Enterprise vs Care Priority
 
-- Source: `golden_emergent.rs:513`
+- Source: `golden_emergent.rs:517`
 - Systems: Care, Politics, AI, Succession
 - GoalKinds: TreatWounds, ClaimOffice
 - ActionDomains: Care, Social
@@ -21,7 +21,7 @@ Scenarios: 14
 
 ### Scenario 45: Combat Death Triggers Force Succession
 
-- Source: `golden_emergent.rs:1241`
+- Source: `golden_emergent.rs:1245`
 - Systems: Combat, Politics, AI
 - GoalKinds: EngageHostile
 - ActionDomains: Combat, Social
@@ -33,7 +33,7 @@ Scenarios: 14
 
 ### Scenario 46: Social Tell Propagates Political Knowledge
 
-- Source: `golden_emergent.rs:1586`
+- Source: `golden_emergent.rs:1590`
 - Systems: PressForceClaim (two claimants), Force-Control State Machine (contested state detection), Perception (witness observes contested political event), Institutional Belief Projection (ForceControl belief with `contested: true`), Travel, Social Tell, Belief Store (remote belief with contested flag), action tracing, deterministic replay
 - GoalKinds: ShareBelief
 - ActionDomains: Social, Generic
@@ -51,7 +51,7 @@ Scenarios: 14
 
 ### Scenario 35: Same-Place Concurrent Violations Stay Distinct
 
-- Source: `golden_emergent.rs:4261`
+- Source: `golden_emergent.rs:4265`
 - Systems: Perception, AI, Generic Actions
 - GoalKinds: InvestigateViolation
 - ActionDomains: Generic
@@ -63,7 +63,7 @@ Scenarios: 14
 
 ### Scenario 36: Entity Missing Triggers Investigation
 
-- Source: `golden_emergent.rs:4641`
+- Source: `golden_emergent.rs:4645`
 - Systems: Perception, AI, Generic Actions
 - GoalKinds: InvestigateViolation
 - ActionDomains: Generic
@@ -75,7 +75,7 @@ Scenarios: 14
 
 ### Scenario 37: Theft Leads Owner To Local Suspected Theft Discovery
 
-- Source: `golden_emergent.rs:4876`
+- Source: `golden_emergent.rs:4880`
 - Systems: Transport, Perception, AI, Generic Actions
 - GoalKinds: StealItem, InvestigateViolation
 - ActionDomains: Transport, Generic, Travel
@@ -87,7 +87,7 @@ Scenarios: 14
 
 ### Scenario 38: Witnessed Theft Enables Accusation Chain
 
-- Source: `golden_emergent.rs:5257`
+- Source: `golden_emergent.rs:5263`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -99,7 +99,7 @@ Scenarios: 14
 
 ### Scenario 39: Traceability Explains Stale Fine Branch
 
-- Source: `golden_emergent.rs:5691`
+- Source: `golden_emergent.rs:5697`
 - Systems: AI, Institutions, Justice, Action Trace
 - GoalKinds: PunishAccused
 - ActionDomains: Social
@@ -111,7 +111,7 @@ Scenarios: 14
 
 ### Scenario 40: Supply Depletion Enables ShareBelief
 
-- Source: `golden_emergent.rs:5995`
+- Source: `golden_emergent.rs:6001`
 - Systems: Perception, AI, Generic Actions, Social Tell
 - GoalKinds: ShareBelief, InvestigateViolation
 - ActionDomains: Generic, Social
@@ -123,7 +123,7 @@ Scenarios: 14
 
 ### Scenario 42: Witness Deterrence Suppresses Theft Candidate
 
-- Source: `golden_emergent.rs:6278`
+- Source: `golden_emergent.rs:6284`
 - Systems: AI, Perception, Needs
 - GoalKinds: ConsumeOwnedCommodity (NOT StealItem)
 - ActionDomains: Needs
@@ -135,7 +135,7 @@ Scenarios: 14
 
 ### Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
 
-- Source: `golden_emergent.rs:6534`
+- Source: `golden_emergent.rs:6540`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
 - ActionDomains: Transport, Social, Travel
@@ -147,7 +147,7 @@ Scenarios: 14
 
 ### Scenario 110: Jurisdiction-Gated Punishment
 
-- Source: `golden_emergent.rs:7400`
+- Source: `golden_emergent.rs:7406`
 - GoalKinds: PunishAccused
 - ActionDomains: Social
 - Places: RulersHall, GeneralStore
@@ -158,7 +158,7 @@ Scenarios: 14
 
 ### Scenario 111: Secondary-Jurisdiction Punishment Away From Office Seat
 
-- Source: `golden_emergent.rs:7451`
+- Source: `golden_emergent.rs:7457`
 - GoalKinds: PunishAccused
 - ActionDomains: Social
 - Places: RulersHall, GeneralStore
@@ -169,7 +169,7 @@ Scenarios: 14
 
 ### Scenario 43: Dual Discovery Converges Without Double Accusation
 
-- Source: `golden_emergent.rs:7491`
+- Source: `golden_emergent.rs:7497`
 - Systems: Transport, Perception, Social Tell, AI, Institutions
 - GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
 - ActionDomains: Transport, Social, Travel

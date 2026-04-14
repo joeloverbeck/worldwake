@@ -42,7 +42,7 @@ Scenarios: 7
 
 ### Scenario 1c: Exhausted Opportunity Falls Through To Sibling Source
 
-- Source: `golden_ai_decisions.rs:318`
+- Source: `golden_ai_decisions.rs:320`
 - Systems: Needs, AI, Production, Travel
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Needs, Transport
@@ -60,7 +60,7 @@ Scenarios: 7
 
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:546`
+- Source: `golden_ai_decisions.rs:550`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -78,7 +78,7 @@ Scenarios: 7
 
 ### Scenario 5: Blocked Intent Memory with TTL Expiry
 
-- Source: `golden_ai_decisions.rs:659`
+- Source: `golden_ai_decisions.rs:663`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -95,7 +95,7 @@ Scenarios: 7
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:775`
+- Source: `golden_ai_decisions.rs:781`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -112,7 +112,7 @@ Scenarios: 7
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1980`
+- Source: `golden_ai_decisions.rs:1990`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

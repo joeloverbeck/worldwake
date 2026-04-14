@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 116: Concealment Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:295`
+- Source: `golden_perception_exposure.rs:297`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -24,7 +24,7 @@ Scenarios: 5
 
 ### Scenario 117: Fatigue Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:336`
+- Source: `golden_perception_exposure.rs:338`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -41,7 +41,7 @@ Scenarios: 5
 
 ### Scenario 118: Attention Cost Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:377`
+- Source: `golden_perception_exposure.rs:379`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -58,7 +58,7 @@ Scenarios: 5
 
 ### Scenario 119: Multiplicative Stacking
 
-- Source: `golden_perception_exposure.rs:403`
+- Source: `golden_perception_exposure.rs:405`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -75,7 +75,7 @@ Scenarios: 5
 
 ### Scenario 128: Perception Forms Beliefs About Resource Sources
 
-- Source: `golden_perception_exposure.rs:429`
+- Source: `golden_perception_exposure.rs:431`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: OrchardFarm
@@ -84,8 +84,8 @@ Scenarios: 5
 - Replay tests: `golden_perception_forms_resource_source_beliefs_replays_deterministically`
 - All tests: `golden_perception_forms_resource_source_beliefs`, `golden_perception_forms_resource_source_beliefs_replays_deterministically`
 
-**Setup**: An AI observer with `entity_memory_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
+**Setup**: An AI observer with `observation_buffer_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
 
-**Proves**: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed memory capacity.
+**Proves**: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed the observation-history buffer width.
 
-**Cross-system chain**: same-place observation -> belief recording -> `enforce_capacity()` eviction -> retained infrastructure beliefs.
+**Cross-system chain**: same-place repeated observation -> activation refresh -> retained infrastructure beliefs without a hard entity-count clamp.

@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 120: Overdue Expectation Drives Search
 
-- Source: `golden_expectation.rs:609`
+- Source: `golden_expectation.rs:611`
 - Systems: ExpectationCheck, AI, Travel, SearchPlace
 - GoalKinds: SearchForMissing
 - ActionDomains: Travel, Epistemic
@@ -25,7 +25,7 @@ Scenarios: 5
 
 ### Scenario 121: Report Missing Creates Institutional Record Then Searches
 
-- Source: `golden_expectation.rs:643`
+- Source: `golden_expectation.rs:645`
 - Systems: ExpectationCheck, AI, ReportMissing, ViolationMemory, OfficeRegister, Travel, SearchPlace
 - GoalKinds: ReportMissing, SearchForMissing
 - ActionDomains: Social, Travel, Epistemic
@@ -43,7 +43,7 @@ Scenarios: 5
 
 ### Scenario 122: Escort Wounded Entity to Safety
 
-- Source: `golden_expectation.rs:879`
+- Source: `golden_expectation.rs:883`
 - Systems: AI, Travel, EscortToSafety
 - GoalKinds: EscortToSafety
 - ActionDomains: Care, Travel
@@ -61,7 +61,7 @@ Scenarios: 5
 
 ### Scenario 124: AskAboutPerson as Progress Barrier Within SearchForMissing
 
-- Source: `golden_expectation.rs:1080`
+- Source: `golden_expectation.rs:1084`
 - Systems: ExpectationCheck, AI, AskAboutPerson, Travel, SearchPlace
 - GoalKinds: SearchForMissing
 - ActionDomains: Epistemic, Travel
@@ -79,7 +79,7 @@ Scenarios: 5
 
 ### Scenario 125: ReportFound After Search Resolution
 
-- Source: `golden_expectation.rs:1307`
+- Source: `golden_expectation.rs:1313`
 - Systems: ExpectationCheck, AI, Travel, SearchPlace, ReportFound, OfficeRegister
 - GoalKinds: SearchForMissing, ReportFound
 - ActionDomains: Travel, Epistemic, Social

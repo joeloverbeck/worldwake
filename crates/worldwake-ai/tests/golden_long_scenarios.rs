@@ -273,15 +273,16 @@ fn build_t21_topology() -> Topology {
 
 fn t21_default_perception() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 2880,
+        entity_activation_threshold: pm(22),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
         consultation_speed_factor: pm(500),
         contradiction_tolerance: pm(300),
-        infrastructure_retention_ticks: 480,
     }
 }
 
@@ -1217,15 +1218,16 @@ fn build_t33_topology() -> Topology {
 
 fn t33_default_perception() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 2880,
+        entity_activation_threshold: pm(22),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(875),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
         consultation_speed_factor: pm(500),
         contradiction_tolerance: pm(300),
-        infrastructure_retention_ticks: 480,
     }
 }
 
