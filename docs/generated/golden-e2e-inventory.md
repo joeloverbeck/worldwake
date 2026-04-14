@@ -5,14 +5,15 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 28
-- Files contributing `golden_*` tests: 28
-- Total `golden_*` tests: 361
+- Golden test files: 29
+- Files contributing `golden_*` tests: 29
+- Total `golden_*` tests: 367
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
+| `golden_activation_decay.rs` | 6 |
 | `golden_ai_decisions.rs` | 19 |
 | `golden_budget_exhaustion_snapshots.rs` | 7 |
 | `golden_care.rs` | 18 |
@@ -41,6 +42,15 @@ Do not hand-edit it.
 | `golden_t22_bandit_camp_destruction.rs` | 8 |
 | `golden_trade.rs` | 11 |
 | `golden_travel_physiology.rs` | 12 |
+
+### `golden_activation_decay.rs`
+
+- `golden_activation_decay_prunes_stale_entities`
+- `golden_activation_decay_prunes_stale_entities_replays_deterministically`
+- `golden_need_salience_retains_hungry_item_belief`
+- `golden_need_salience_retains_hungry_item_belief_replays_deterministically`
+- `golden_claim_confidence_threshold_prunes_stale_reports`
+- `golden_claim_confidence_threshold_prunes_stale_reports_replays_deterministically`
 
 ### `golden_ai_decisions.rs`
 

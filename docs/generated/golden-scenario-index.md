@@ -9,9 +9,51 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 160
-- Contributing golden test files: 26
-- Associated tests: 339
+- Scenario blocks: 163
+- Contributing golden test files: 27
+- Associated tests: 345
+
+### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
+
+- Source: `golden_activation_decay.rs:302`
+- Systems: Perception
+- ActionDomains: N/A
+- Places: VillageSquare, OrchardFarm
+- Principles: 3, 7, 15, 16, 18
+
+**Setup**: An inert observer at `VillageSquare` starts with one direct-observation belief about a
+
+**Proves**: The activation-decay boundary stays faithful to the landed S101 helper contract: a
+
+**Cross-system chain**: seeded direct belief -> no re-observation refresh -> threshold-edge retention -> first
+
+### Scenario 146: Need Salience Extends Item Retention But Not Facility Retention
+
+- Source: `golden_activation_decay.rs:340`
+- Systems: Perception
+- ActionDomains: N/A
+- Places: VillageSquare, OrchardFarm
+- Principles: 3, 7, 15, 16, 18, 22
+
+**Setup**: An urgently hungry inert observer at `VillageSquare` starts with two remote
+
+**Proves**: The live salience boost extends retention only for the item belief. The facility belief
+
+**Cross-system chain**: seeded stale item + facility beliefs -> urgent hunger retained in agent state ->
+
+### Scenario 147: Claim Confidence Threshold Prunes Stale Reports Before Fresh Reports
+
+- Source: `golden_activation_decay.rs:378`
+- Systems: Perception, Social Information
+- ActionDomains: N/A
+- Places: VillageSquare, OrchardFarm
+- Principles: 3, 7, 15, 16, 18
+
+**Setup**: A listener at `VillageSquare` starts with two report-backed beliefs about remote
+
+**Proves**: Stale report claims are pruned from both `entity_claims` and the derived summary, while
+
+**Cross-system chain**: report-backed claim ingestion -> confidence decays with claimed-event age -> stale claim
 
 ### Scenario 1: Goal Invalidation by Another Agent
 

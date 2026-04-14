@@ -1,5 +1,7 @@
 # S101: Activation-Based Belief Decay
 
+**Status**: COMPLETED
+
 ## Summary
 
 Replace the hard-capacity entity eviction system in `AgentBeliefStore` with ACT-R base-level activation decay. Currently, agents have a fixed `entity_memory_capacity` (default 12) with tiered eviction that arbitrarily forgets items before infrastructure. This produces brittle failure modes where agents "forget" survival-critical items at their feet because their memory slots are filled with places and facilities. The replacement computes memory activation as a power-law decay over observation history — recently and frequently observed entities persist, neglected ones fade gradually, and no hard cap exists. Memory size emerges from the agent's actual experience patterns.
@@ -12,7 +14,7 @@ Core infrastructure (belief system overhaul)
 
 ## Status
 
-Draft
+Completed
 
 ## Crates
 
@@ -303,3 +305,31 @@ Tests that construct `PerceptionProfile` directly will need updating. Tests that
 - `enforce_entity_claim_capacity` — replaced by confidence-threshold pruning inline in `prune_decayed_beliefs`
 - `entity_eviction_tier` — no longer needed (no tiered eviction)
 - `within_retention_window` — no longer needed (activation replaces time-window checks)
+
+## Outcome
+
+Completed on 2026-04-14.
+
+- Replaced the old hard-cap belief-retention path with activation-based retention across the landed S101 ticket chain:
+  - [S101ACTBASBEL-001](/home/joeloverbeck/projects/worldwake/archive/tickets/S101ACTBASBEL-001.md) added `compute_activation()`, `salience_boost()`, and `HomeostaticNeeds::max_value()`
+  - [S101ACTBASBEL-002](/home/joeloverbeck/projects/worldwake/archive/tickets/S101ACTBASBEL-002.md) migrated `BelievedEntityState` to retained `presentation_ticks`
+  - [S101ACTBASBEL-003](/home/joeloverbeck/projects/worldwake/archive/tickets/S101ACTBASBEL-003.md) migrated `PerceptionProfile`, landed `prune_decayed_beliefs()`, and removed the old capacity/retention-field production path
+  - [S101ACTBASBEL-004](/home/joeloverbeck/projects/worldwake/archive/tickets/S101ACTBASBEL-004.md) added the missing focused golden E2E coverage
+  - [S101ACTBASBEL-005](/home/joeloverbeck/projects/worldwake/archive/tickets/S101ACTBASBEL-005.md) repaired the soak-only golden helper fallout and regenerated the owned golden docs
+- The live implementation now uses fixed-point integer square-root math for `floor(1000 / sqrt(age))`, confidence-threshold claim pruning, item-only need salience, retained presentation history, and generated golden docs that reflect the activation-based contract.
+
+### Deviations
+
+- The original draft's `1000 / isqrt(age)` snippet was incorrect relative to the reference table and accumulation example. The landed implementation uses scaled integer square-root arithmetic so the helper matches the documented values.
+- The draft golden plan overclaimed a brand-new five-test suite. On reassessment, two regression guards were already owned by existing goldens (`golden_perception_exposure.rs` and `golden_planner_pathology.rs`), so the final S101 golden slice narrowed to the three still-missing activation-decay contracts.
+- `within_retention_window` was not globally removed from the codebase; it remains lawfully used by other memory lanes outside entity/social-observation pruning.
+
+### Verification Result
+
+- Passed `cargo test -p worldwake-core --lib belief`
+- Passed `cargo test -p worldwake-ai --test golden_activation_decay`
+- Passed `cargo test -p worldwake-ai -- golden_perception_forms_resource_source_beliefs`
+- Passed `cargo test -p worldwake-ai -- degenerate_zero_step_loop_blocks_actionable_goals`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`
