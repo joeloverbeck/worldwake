@@ -18,7 +18,7 @@ Post-Phase 7 adjunct (extends S80 — exploration drive)
 
 ## Status
 
-DRAFT
+COMPLETED
 
 ## Crates
 
@@ -393,3 +393,25 @@ No direct function calls between systems. All interactions are mediated through 
 ### Golden Test 4: Counter Reset on Need Satisfaction
 
 **Setup**: Same as Test 1, but after agent finds food and eats (hunger drops below `need_activation_threshold`), verify `AcquisitionExhaustionTracker` count for Hunger resets to 0. Agent should not spuriously explore for food when hunger is satisfied.
+
+## Outcome
+
+Completed on 2026-04-14.
+
+Landed the full frontier-aware exploration follow-on across `worldwake-core`, `worldwake-ai`, `worldwake-sim`, `worldwake-systems`, and `worldwake-cli`. `ExplorationProfile` now carries `frontier_depth`, `acquisition_failure_threshold`, and `exploration_arrival_boost`; agents now store per-need `AcquisitionExhaustionTracker` state; belief-view accessors expose that tracker to AI; candidate generation stops suppressing exploration after repeated budget exhaustion, expands the frontier by BFS out to configured depth, and resets exhaustion lazily on need satisfaction; travel arrival reinforces explored-place beliefs so multi-hop chains persist; and authored scenarios can override the new exploration profile fields.
+
+The final S102 proof landed in `crates/worldwake-ai/tests/golden_exploration.rs` with goldens for budget-exhaustion unlock, staged multi-hop frontier discovery, exploration-chain belief reinforcement, and lazy counter reset. Generated golden inventory/index/detail docs were refreshed as owned fallout.
+
+Deviation from the original narrative: the exploration-chain persistence control run did not justify the stronger claim that zero arrival boost must stall the chain entirely under the live cadence. The implemented and archived contract was narrowed to the honest comparative effect: stronger retained intermediate-place belief state plus boosted-run second-hop discovery. The generated-doc refresh also touched adjacent inventory outputs beyond the initially expected exploration-specific files, which was accepted as in-scope fallout.
+
+Verification completed with:
+- `cargo test -p worldwake-ai --test golden_exploration -- --list`
+- `cargo test -p worldwake-ai --test golden_exploration golden_s102_gate_unlock_after_budget_exhaustion -- --exact`
+- `cargo test -p worldwake-ai --test golden_exploration golden_s102_multi_hop_frontier_discovery -- --exact`
+- `cargo test -p worldwake-ai --test golden_exploration golden_s102_exploration_chain_belief_persistence -- --exact`
+- `cargo test -p worldwake-ai --test golden_exploration golden_s102_counter_reset_on_need_satisfaction -- --exact`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo test -p worldwake-ai`
+- `cargo build --workspace`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`

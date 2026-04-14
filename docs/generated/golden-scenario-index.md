@@ -9,13 +9,13 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 163
+- Scenario blocks: 167
 - Contributing golden test files: 27
-- Associated tests: 345
+- Associated tests: 349
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
-- Source: `golden_activation_decay.rs:302`
+- Source: `golden_activation_decay.rs:314`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: VillageSquare, OrchardFarm
@@ -29,7 +29,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 146: Need Salience Extends Item Retention But Not Facility Retention
 
-- Source: `golden_activation_decay.rs:340`
+- Source: `golden_activation_decay.rs:352`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: VillageSquare, OrchardFarm
@@ -43,7 +43,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 147: Claim Confidence Threshold Prunes Stale Reports Before Fresh Reports
 
-- Source: `golden_activation_decay.rs:378`
+- Source: `golden_activation_decay.rs:390`
 - Systems: Perception, Social Information
 - ActionDomains: N/A
 - Places: VillageSquare, OrchardFarm
@@ -726,7 +726,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 133: Ignorance-Driven Frontier Exploration
 
-- Source: `golden_exploration.rs:213`
+- Source: `golden_exploration.rs:484`
 - Systems: AI, Needs, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -741,7 +741,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 134: Known Satisfaction Path Suppresses Exploration
 
-- Source: `golden_exploration.rs:276`
+- Source: `golden_exploration.rs:547`
 - Systems: AI, Needs, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -756,7 +756,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 135: Consecutive Exploration Cap Suppresses Re-Emission
 
-- Source: `golden_exploration.rs:340`
+- Source: `golden_exploration.rs:611`
 - Systems: AI, Needs, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: N/A
@@ -771,7 +771,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 136: Arrival Perception Unlocks Concrete Relief
 
-- Source: `golden_exploration.rs:387`
+- Source: `golden_exploration.rs:658`
 - Systems: AI, Needs, Travel, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -783,6 +783,66 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the agent first commits travel under `ExploreLocation`, then arrival perception adds a resource-source belief for the frontier, and later planning shifts to `AcquireCommodity(SelfConsume)`.
 
 **Cross-system chain**: unmet need + frontier belief -> exploration travel -> arrival perception -> source belief acquisition -> concrete self-care plan.
+
+### Scenario 337: Budget Exhaustion Unlocks Frontier Exploration
+
+- Source: `golden_exploration.rs:784`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
+- ActionDomains: Travel, Production
+- Places: Trail, Village
+- Principles: 14, 20, 22
+
+**Setup**: A hungry agent at Trail already believes there is a lawful apple
+
+**Proves**: repeated `BudgetExhausted` acquire attempts increment the
+
+**Cross-system chain**: known remote relief path -> repeated budget exhaustion -> stored
+
+### Scenario 338: Multi-Hop Frontier Discovery Composes Across Rounds
+
+- Source: `golden_exploration.rs:955`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Production
+- Places: Forest, Village, Fields
+- Principles: 7, 14, 20, 22
+
+**Setup**: A hungry agent starts in Forest, knows only Forest, and has
+
+**Proves**: exploration first selects Village, later selects Fields, and arrival
+
+**Cross-system chain**: start-place belief -> ranked multi-hop frontier search -> first-hop
+
+### Scenario 339: Arrival Boost Preserves The Exploration Chain
+
+- Source: `golden_exploration.rs:1167`
+- Systems: AI, Travel, Perception, Needs, Production
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel, Perception
+- Places: Forest, Village, Inn
+- Principles: 7, 14, 15, 22
+
+**Setup**: Two otherwise identical dirtiness-driven runs differ only in
+
+**Proves**: the boosted run records a stronger Village place belief on arrival,
+
+**Cross-system chain**: first-hop exploration arrival -> boosted place belief retention ->
+
+### Scenario 340: Need Satisfaction Lazily Resets Exhaustion State
+
+- Source: `golden_exploration.rs:1213`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
+- ActionDomains: Travel, Production, Needs
+- Places: Trail, Village
+- Principles: 3, 20, 22
+
+**Setup**: Same as Scenario 337, but the run continues through local apple
+
+**Proves**: the authoritative hunger exhaustion counter stays non-zero while the
+
+**Cross-system chain**: repeated budget exhaustion -> exploration unlock -> local relief ->
 
 ### Scenario 20: Apple Stockout → Carrier Reroute → Supply Chain Disruption
 
@@ -1509,7 +1569,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 
-- Source: `golden_planner_pathology.rs:673`
+- Source: `golden_planner_pathology.rs:672`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Production, Needs
@@ -1524,7 +1584,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
 
-- Source: `golden_planner_pathology.rs:796`
+- Source: `golden_planner_pathology.rs:795`
 - Systems: Needs, AI, Production
 - GoalKinds: FreeCarryCapacity
 - ActionDomains: Needs, Production
@@ -1539,7 +1599,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 144: Obligation satiation allows survival needs to override posting
 
-- Source: `golden_planner_pathology.rs:908`
+- Source: `golden_planner_pathology.rs:907`
 - Systems: Social artifact actions, Needs, AI, Perception
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs

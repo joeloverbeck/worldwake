@@ -42,7 +42,9 @@ To determine correct values for missing fields (applied in Step 4): read the str
 
 Then read `scenarios/cli-evaluation.ron` to understand what's currently exercised.
 
-Take inventory:
+**Inventory depth gate**: If validation passed (no parse error) AND the trigger is a known spec or small set of recent commits, skip the full enum variant comparison below — the AgentDef field comparison in Step 3.1 is the higher-value check and will find coverage gaps more efficiently. Proceed directly to Step 2 after reading the RON file. The full inventory below is most valuable when the scenario hasn't been updated in several spec cycles or when the scope of changes is unknown.
+
+Take inventory (when the depth gate above does not apply):
 - Which place tags are used
 - Which agent profiles are present (all optional `AgentDef` fields — compare against the struct in `types.rs`)
 - Which commodities exist
@@ -50,8 +52,6 @@ Take inventory:
 - Which resource sources exist
 
 Compare each inventory against the full set of variants in the corresponding enum (`CommodityKind::ALL`, `WorkstationTag::ALL`, `PlaceTag::ALL`) to identify unexercised variants. Not all variants need scenario coverage — apply "exercise, don't overload."
-
-This full inventory is most valuable when the scenario hasn't been updated in several spec cycles. When the trigger is a specific parse error and Step 3 substeps 1-3 fully account for the drift, the inventory can be abbreviated to a scan of the RON structure rather than exhaustive variant comparison.
 
 ### Step 2: Read Latest Evaluation
 
@@ -67,7 +67,11 @@ Check what's changed recently. Substeps 1-3 are the highest-value checks (primar
 
 1. Compare the full set of `AgentDef` fields against what the current scenario RON actually uses. Fields present in `AgentDef` but absent from all agents in the RON are coverage gaps — these are the primary candidates for scenario updates. To perform this comparison: read the `AgentDef` struct definition in `types.rs`, list all `pub` fields (excluding `name`, `location`, `control`), then grep or scan the RON for each field name. Fields that appear in `AgentDef` but not in any agent's RON block are coverage gaps. Also check for fields in the RON that do NOT appear in `AgentDef` — these indicate stale renamed fields (silent schema drift). **Fast path**: If Step 1 validation passed (no parse error) AND `git diff` of `types.rs` between the last RON update commit and HEAD shows no new fields added to `AgentDef`, the full field-by-field RON scan can be replaced with a diff-only check for AgentDef-level additions and internal profile struct changes. Some AgentDef fields (e.g., `expectation_store`) exist for deserialization completeness but contain only runtime-generated state (empty collections, counters, no tunable parameters). These are not coverage gaps — note them as "runtime-only, not scenario-authorable" and move on.
 2. Check git diff of `types.rs` against the version used when the RON was last updated. Field renames or removals in `AgentDef` that aren't reflected in the RON indicate silent schema drift. To identify the baseline commit: check the most recent `Updated YYYY-MM-DD` comment at the top of the RON file, then find the corresponding commit in `git log` by date or spec reference.
-3. For each profile type that IS present in the RON, check whether its internal fields changed. New or renamed fields inside a profile struct (e.g., `CognitiveProfile` gaining a field) won't show up as an AgentDef-level gap — the AgentDef field exists, but the RON block is incomplete. The quickest approach: if Step 1 (scenario validation) produced a parse error naming a specific struct, run `git show --stat <commit>` on the commit that introduced the change to see all files modified in that commit, then check each profile struct file that was modified — not just the struct named in the error. RON deserialization stops at the first missing field, so additional missing fields in other structs from the same commit remain hidden until earlier ones are fixed. Otherwise, spot-check profile structs that appear in recent commits.
+3. For each profile type that IS present in the RON, check whether its internal fields changed. This covers two cases:
+   - **Parse-error case**: New required fields cause deserialization failure. If Step 1 produced a parse error naming a specific struct, run `git show --stat <commit>` on the commit that introduced the change to see all files modified in that commit, then check each profile struct file that was modified — not just the struct named in the error. RON deserialization stops at the first missing field, so additional missing fields in other structs from the same commit remain hidden until earlier ones are fixed.
+   - **Silent-default case**: New fields with `#[serde(default)]` won't cause parse errors but aren't explicitly exercised. For profiles already present in the RON, check whether new defaulted fields exist that aren't explicitly set. Use `git diff` of the profile struct source between the RON's last-update commit and HEAD to identify added fields. Explicitly setting non-default values exercises the field and makes agent personalities more distinctive — these are scenario update candidates in Step 4.
+   
+   If neither case applies (no parse error AND no recent profile struct changes), spot-check profile structs that appear in recent commits.
 4. If substeps 1-3 fully account for the schema drift found in Step 1 and no AgentDef-level fields were added, substeps 5-10 can be scanned quickly (git log + skim) rather than performed exhaustively.
 5. Read recent git commits: `git log --oneline -20`
 6. Check active specs in `specs/` for newly implemented features

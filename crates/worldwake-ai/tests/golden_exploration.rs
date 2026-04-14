@@ -3,7 +3,10 @@
 mod golden_harness;
 
 use golden_harness::*;
-use worldwake_ai::{CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, PlannerOpKind};
+use worldwake_ai::{
+    CommodityPurpose, CognitiveProfile, DecisionOutcome, GoalKey, GoalKind, GoalTraceStatus,
+    PlanSearchOutcome, PlannerOpKind, PlanningPipelineTrace,
+};
 use worldwake_core::{
     CommodityKind, EntityId, EventLog, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds,
     KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, Place, PlaceTag,
@@ -14,6 +17,11 @@ use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest}
 
 const PLACE_START: EntityId = entity(900);
 const PLACE_FRONTIER: EntityId = entity(901);
+const PLACE_TRAIL: EntityId = entity(902);
+const PLACE_VILLAGE: EntityId = entity(903);
+const PLACE_FOREST: EntityId = entity(904);
+const PLACE_FIELDS: EntityId = entity(905);
+const PLACE_INN: EntityId = entity(906);
 
 const fn entity(slot: u32) -> EntityId {
     EntityId {
@@ -52,12 +60,105 @@ fn build_exploration_topology() -> Topology {
 }
 
 fn build_exploration_harness(seed: Seed) -> GoldenHarness {
+    build_harness_with_topology(seed, build_exploration_topology())
+}
+
+fn build_harness_with_topology(seed: Seed, topology: Topology) -> GoldenHarness {
     let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
-    h.world = World::new(build_exploration_topology()).unwrap();
+    h.world = World::new(topology).unwrap();
     h.event_log = EventLog::new();
     h.scheduler = Scheduler::new(SystemManifest::canonical());
     h.controller = ControllerState::new();
     h
+}
+
+fn add_bidirectional_edge(
+    topology: &mut Topology,
+    forward: TravelEdgeId,
+    reverse: TravelEdgeId,
+    origin: EntityId,
+    destination: EntityId,
+) {
+    topology
+        .add_edge(TravelEdge::new(forward, origin, destination, 1, None).unwrap())
+        .unwrap();
+    topology
+        .add_edge(TravelEdge::new(reverse, destination, origin, 1, None).unwrap())
+        .unwrap();
+}
+
+fn build_gate_unlock_topology() -> Topology {
+    let mut topology = Topology::new();
+    topology
+        .add_place(PLACE_TRAIL, place("Trail", &[PlaceTag::Trail]))
+        .unwrap();
+    topology
+        .add_place(PLACE_VILLAGE, place("Village", &[PlaceTag::Village]))
+        .unwrap();
+    add_bidirectional_edge(
+        &mut topology,
+        TravelEdgeId(902),
+        TravelEdgeId(903),
+        PLACE_TRAIL,
+        PLACE_VILLAGE,
+    );
+    topology
+}
+
+fn build_multi_hop_topology() -> Topology {
+    let mut topology = Topology::new();
+    topology
+        .add_place(PLACE_FOREST, place("Forest", &[PlaceTag::Forest]))
+        .unwrap();
+    topology
+        .add_place(PLACE_VILLAGE, place("Village", &[PlaceTag::Village]))
+        .unwrap();
+    topology
+        .add_place(PLACE_FIELDS, place("Fields", &[PlaceTag::Field]))
+        .unwrap();
+    add_bidirectional_edge(
+        &mut topology,
+        TravelEdgeId(904),
+        TravelEdgeId(905),
+        PLACE_FOREST,
+        PLACE_VILLAGE,
+    );
+    add_bidirectional_edge(
+        &mut topology,
+        TravelEdgeId(906),
+        TravelEdgeId(907),
+        PLACE_VILLAGE,
+        PLACE_FIELDS,
+    );
+    topology
+}
+
+fn build_persistence_topology() -> Topology {
+    let mut topology = Topology::new();
+    topology
+        .add_place(PLACE_FOREST, place("Forest", &[PlaceTag::Forest]))
+        .unwrap();
+    topology
+        .add_place(PLACE_VILLAGE, place("Village", &[PlaceTag::Village]))
+        .unwrap();
+    topology
+        .add_place(PLACE_INN, place("Inn", &[PlaceTag::Inn]))
+        .unwrap();
+    add_bidirectional_edge(
+        &mut topology,
+        TravelEdgeId(908),
+        TravelEdgeId(909),
+        PLACE_FOREST,
+        PLACE_VILLAGE,
+    );
+    add_bidirectional_edge(
+        &mut topology,
+        TravelEdgeId(910),
+        TravelEdgeId(911),
+        PLACE_VILLAGE,
+        PLACE_INN,
+    );
+    topology
 }
 
 fn exploration_perception_profile() -> PerceptionProfile {
@@ -87,16 +188,31 @@ fn set_agent_exploration_profile(
 }
 
 fn exploration_agent(h: &mut GoldenHarness, name: &str) -> EntityId {
-    let apple_recipe = h
-        .recipes
-        .recipe_by_name("Harvest Apples")
-        .map(|(id, _)| id)
-        .expect("exploration scenarios require the harvest-apple recipe");
+    hunger_exploration_agent(
+        h,
+        name,
+        PLACE_START,
+        KnownRecipes::with([recipe_id(h, "Harvest Apples")]),
+    )
+}
+
+fn recipe_id(h: &GoldenHarness, name: &str) -> worldwake_core::RecipeId {
+    h.recipes
+        .recipe_by_name(name)
+        .map_or_else(|| panic!("missing recipe {name}"), |(id, _)| id)
+}
+
+fn hunger_exploration_agent(
+    h: &mut GoldenHarness,
+    name: &str,
+    start_place: EntityId,
+    known_recipes: KnownRecipes,
+) -> EntityId {
     let agent = seed_agent_with_recipes(
         &mut h.world,
         &mut h.event_log,
         name,
-        PLACE_START,
+        start_place,
         HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
         MetabolismProfile::default(),
         UtilityProfile {
@@ -106,7 +222,7 @@ fn exploration_agent(h: &mut GoldenHarness, name: &str) -> EntityId {
             bladder_weight: pm(0),
             ..UtilityProfile::default()
         },
-        KnownRecipes::with([apple_recipe]),
+        known_recipes,
     );
     set_agent_perception_profile(
         &mut h.world,
@@ -125,6 +241,161 @@ fn exploration_agent(h: &mut GoldenHarness, name: &str) -> EntityId {
         },
     );
     agent
+}
+
+fn dirtiness_exploration_agent(
+    h: &mut GoldenHarness,
+    name: &str,
+    start_place: EntityId,
+    known_recipes: KnownRecipes,
+) -> EntityId {
+    let apple_recipe = h
+        .recipes
+        .recipe_by_name("Harvest Water")
+        .map(|(id, _)| id)
+        .expect("exploration scenarios require the harvest-water recipe");
+    let agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        name,
+        start_place,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(900)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            hunger_weight: pm(100),
+            thirst_weight: pm(100),
+            fatigue_weight: pm(0),
+            bladder_weight: pm(0),
+            dirtiness_weight: pm(950),
+            ..UtilityProfile::default()
+        },
+        if known_recipes.recipes.is_empty() {
+            KnownRecipes::with([apple_recipe])
+        } else {
+            known_recipes
+        },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        exploration_perception_profile(),
+    );
+    set_agent_exploration_profile(
+        h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            visit_lookback_ticks: 200,
+            ..ExplorationProfile::default()
+        },
+    );
+    agent
+}
+
+fn processed_tick(h: &GoldenHarness) -> Tick {
+    Tick(h.scheduler.current_tick().0.saturating_sub(1))
+}
+
+fn exploration_goal(target_place: EntityId, motivating_need: HomeostaticNeedId) -> GoalKey {
+    GoalKey::from(GoalKind::ExploreLocation {
+        target_place,
+        motivating_need,
+    })
+}
+
+fn acquire_goal(commodity: CommodityKind) -> GoalKey {
+    GoalKey::from(GoalKind::AcquireCommodity {
+        commodity,
+        purpose: CommodityPurpose::SelfConsume,
+    })
+}
+
+fn planning_trace_at(
+    h: &GoldenHarness,
+    agent: EntityId,
+    tick: Tick,
+) -> Option<&PlanningPipelineTrace> {
+    match &h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(agent, tick)?
+        .outcome
+    {
+        DecisionOutcome::Planning(planning) => Some(planning.as_ref()),
+        _ => None,
+    }
+}
+
+fn planning_trace_selected_goal(
+    h: &GoldenHarness,
+    agent: EntityId,
+    tick: Tick,
+    expected_goal: GoalKey,
+) -> bool {
+    planning_trace_at(h, agent, tick)
+        .is_some_and(|planning| planning.selection.selected_goal_is(expected_goal))
+}
+
+fn planning_trace_has_budget_exhausted_attempt(
+    h: &GoldenHarness,
+    agent: EntityId,
+    tick: Tick,
+    expected_goal: GoalKey,
+) -> bool {
+    planning_trace_at(h, agent, tick).is_some_and(|planning| {
+        planning.planning.attempts.iter().any(|attempt| {
+            attempt.goal == expected_goal
+                && matches!(attempt.outcome, PlanSearchOutcome::BudgetExhausted { .. })
+        })
+    })
+}
+
+fn planning_trace_has_budget_exhausted_attempt_for_any(
+    h: &GoldenHarness,
+    agent: EntityId,
+    tick: Tick,
+    expected_goals: &[GoalKey],
+) -> bool {
+    expected_goals
+        .iter()
+        .copied()
+        .any(|goal| planning_trace_has_budget_exhausted_attempt(h, agent, tick, goal))
+}
+
+fn planning_trace_selected_goal_status(
+    h: &GoldenHarness,
+    agent: EntityId,
+    tick: Tick,
+    goal: &GoalKind,
+) -> GoalTraceStatus {
+    h.driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .goal_status_at(agent, tick, goal)
+}
+
+fn any_committed_action_named(h: &GoldenHarness, agent: EntityId, action_name: &str) -> bool {
+    h.action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for(agent)
+        .iter()
+        .any(|event| {
+            event.action_name == action_name
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+        })
+}
+
+fn acquisition_exhaustion_count(
+    h: &GoldenHarness,
+    agent: EntityId,
+    need: HomeostaticNeedId,
+) -> u8 {
+    h.world
+        .get_component_acquisition_exhaustion_tracker(agent)
+        .map_or(0, |tracker| tracker.count(need))
 }
 
 fn planning_trace_has_generated_goal(
@@ -505,5 +776,575 @@ fn golden_exploration_arrival_unlocks_beliefs_and_concrete_relief() {
     assert!(
         selected_concrete_relief,
         "after the frontier source is perceived, planning should shift to AcquireCommodity for self-consumption"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 337: Budget Exhaustion Unlocks Frontier Exploration
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Travel, Production
+// GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
+// ActionDomains: Travel, Production
+// Places: Trail, Village
+// Principles: 14, 20, 22
+//
+// Setup: A hungry agent at Trail already believes there is a lawful apple
+// source at Village, but its low planning budget repeatedly exhausts the
+// remote acquire path. The exploration profile uses
+// `acquisition_failure_threshold = 3` and a short lookback so Village can be
+// revisited once the path becomes unreliable.
+//
+// Proves: repeated `BudgetExhausted` acquire attempts increment the
+// authoritative exhaustion tracker, then exploration bypasses known-path
+// suppression and selects travel to Village.
+//
+// Chain: known remote relief path -> repeated budget exhaustion -> stored
+// failure count reaches threshold -> exploration emitted/selected -> travel
+// commit.
+#[test]
+fn golden_s102_gate_unlock_after_budget_exhaustion() {
+    let mut h = build_harness_with_topology(Seed([214; 32]), build_gate_unlock_topology());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    let harvest_apple = recipe_id(&h, "Harvest Apples");
+
+    let agent = hunger_exploration_agent(
+        &mut h,
+        "Budget-Limited Scout",
+        PLACE_TRAIL,
+        KnownRecipes::with([harvest_apple]),
+    );
+    set_agent_cognitive_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        CognitiveProfile {
+            max_node_expansions: 1,
+            ..CognitiveProfile::default()
+        },
+    );
+    set_agent_exploration_profile(
+        &mut h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            visit_lookback_ticks: 1,
+            acquisition_failure_threshold: 3,
+            ..ExplorationProfile::default()
+        },
+    );
+
+    let village_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        PLACE_VILLAGE,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(5),
+            max_quantity: Quantity(5),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_TRAIL,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_VILLAGE,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        village_source,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let acquire_apple = acquire_goal(CommodityKind::Apple);
+    let produce_apples = GoalKey::from(GoalKind::ProduceCommodity {
+        recipe_id: harvest_apple,
+    });
+    let explore_village = exploration_goal(PLACE_VILLAGE, HomeostaticNeedId::Hunger);
+    let mut budget_exhaustion_ticks = Vec::new();
+    let mut unlock_tick = None;
+    let mut reached_village = false;
+
+    for _ in 0..20 {
+        h.step_once();
+        let tick = processed_tick(&h);
+
+        if planning_trace_has_budget_exhausted_attempt_for_any(
+            &h,
+            agent,
+            tick,
+            &[acquire_apple, produce_apples],
+        ) {
+            budget_exhaustion_ticks.push(tick);
+        }
+
+        if unlock_tick.is_none() && planning_trace_selected_goal(&h, agent, tick, explore_village) {
+            unlock_tick = Some(tick);
+        }
+
+        reached_village |= h.world.effective_place(agent) == Some(PLACE_VILLAGE);
+
+        if unlock_tick.is_some() && reached_village {
+            break;
+        }
+    }
+
+    let unlock_tick = unlock_tick.unwrap_or_else(|| {
+        panic!(
+            "exploration should unlock after repeated budget exhaustion; budget_ticks={budget_exhaustion_ticks:?}; tracker={}; traces={:#?}; actions={:#?}",
+            acquisition_exhaustion_count(&h, agent, HomeostaticNeedId::Hunger),
+            h.driver
+                .trace_sink()
+                .expect("decision tracing should be enabled")
+                .traces_for(agent),
+            h.action_trace_sink()
+                .expect("action tracing should be enabled")
+                .events_for(agent)
+        )
+    });
+    assert!(
+        budget_exhaustion_ticks.len() >= 3,
+        "the remote acquire path should budget-exhaust at least three times before exploration unlocks; ticks={budget_exhaustion_ticks:?}"
+    );
+    assert!(
+        acquisition_exhaustion_count(&h, agent, HomeostaticNeedId::Hunger) >= 3,
+        "budget exhaustion should persist on the authoritative hunger tracker before satisfaction"
+    );
+    assert!(
+        planning_trace_has_generated_goal(&h, agent, unlock_tick, explore_village),
+        "the unlock tick should emit ExploreLocation toward Village"
+    );
+    assert!(
+        reached_village,
+        "once the known path is marked unreliable, the agent should commit travel to Village; traces={:#?}; actions={:#?}",
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .traces_for(agent),
+        h.action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(agent)
+    );
+    assert!(
+        any_committed_action_named(&h, agent, "travel"),
+        "unlocking exploration should commit a travel action"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 338: Multi-Hop Frontier Discovery Composes Across Rounds
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Travel, Production, Perception
+// GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+// ActionDomains: Travel, Production
+// Places: Forest, Village, Fields
+// Principles: 7, 14, 20, 22
+//
+// Setup: A hungry agent starts in Forest, knows only Forest, and has
+// `frontier_depth = 2`. The only food source is a grain field at Fields.
+//
+// Proves: exploration first selects Village, later selects Fields, and arrival
+// perception at Fields unlocks a concrete grain acquisition path.
+//
+// Chain: start-place belief -> ranked multi-hop frontier search -> first-hop
+// travel -> second-hop travel -> source belief acquisition -> concrete acquire
+// selection.
+#[test]
+fn golden_s102_multi_hop_frontier_discovery() {
+    let mut h = build_harness_with_topology(Seed([215; 32]), build_multi_hop_topology());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    let harvest_grain = recipe_id(&h, "Harvest Grain");
+
+    let agent = hunger_exploration_agent(
+        &mut h,
+        "Frontier Walker",
+        PLACE_FOREST,
+        KnownRecipes::with([harvest_grain]),
+    );
+    set_agent_exploration_profile(
+        &mut h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            frontier_depth: 2,
+            ..ExplorationProfile::default()
+        },
+    );
+
+    let field_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        PLACE_FIELDS,
+        WorkstationTag::FieldPlot,
+        ResourceSource {
+            commodity: CommodityKind::Grain,
+            available_quantity: Quantity(5),
+            max_quantity: Quantity(5),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_FOREST,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let explore_village = exploration_goal(PLACE_VILLAGE, HomeostaticNeedId::Hunger);
+    let explore_fields = exploration_goal(PLACE_FIELDS, HomeostaticNeedId::Hunger);
+    let acquire_grain = acquire_goal(CommodityKind::Grain);
+    let mut selected_village_tick = None;
+    let mut selected_fields_tick = None;
+    let mut reached_fields = false;
+    let mut selected_acquire_grain = false;
+
+    for _ in 0..36 {
+        h.step_once();
+        let tick = processed_tick(&h);
+
+        if selected_village_tick.is_none()
+            && planning_trace_selected_goal(&h, agent, tick, explore_village)
+        {
+            selected_village_tick = Some(tick);
+        }
+        if selected_fields_tick.is_none()
+            && planning_trace_selected_goal(&h, agent, tick, explore_fields)
+        {
+            selected_fields_tick = Some(tick);
+        }
+        if planning_trace_selected_goal(&h, agent, tick, acquire_grain) {
+            selected_acquire_grain = true;
+        }
+
+        reached_fields |= h.world.effective_place(agent) == Some(PLACE_FIELDS);
+
+        if reached_fields
+            && selected_acquire_grain
+            && agent_belief_about(&h.world, agent, field_source)
+                .is_some_and(|belief| belief.resource_source.is_some())
+        {
+            break;
+        }
+    }
+
+    let selected_village_tick =
+        selected_village_tick.expect("the first exploration round should select Village");
+    let selected_fields_tick =
+        selected_fields_tick.expect("a later exploration round should select Fields");
+    assert!(
+        selected_fields_tick.0 > selected_village_tick.0,
+        "Fields should be selected only after the first-hop Village round; village={selected_village_tick:?}, fields={selected_fields_tick:?}"
+    );
+    assert!(
+        reached_fields,
+        "multi-hop exploration should physically reach the second-hop Fields place"
+    );
+    assert!(
+        agent_belief_about(&h.world, agent, field_source)
+            .is_some_and(|belief| belief.resource_source.is_some()),
+        "arrival perception at Fields should add a belief about the grain field source"
+    );
+    assert!(
+        selected_acquire_grain,
+        "once the Fields source is discovered, planning should shift to AcquireCommodity(Grain)"
+    );
+}
+
+#[derive(Debug)]
+struct PersistenceOutcome {
+    village_belief_after_arrival: bool,
+    village_presentation_tick_count: u8,
+    reached_inn: bool,
+    selected_inn_tick: Option<Tick>,
+    discovered_basin: bool,
+}
+
+fn run_persistence_scenario(seed: Seed, exploration_arrival_boost: u16) -> PersistenceOutcome {
+    let mut h = build_harness_with_topology(seed, build_persistence_topology());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    let agent = dirtiness_exploration_agent(&mut h, "Dusty Traveler", PLACE_FOREST, KnownRecipes::new());
+    let mut perception = exploration_perception_profile();
+    perception.entity_activation_threshold = pm(900);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, agent, perception);
+    set_agent_exploration_profile(
+        &mut h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            frontier_depth: 1,
+            exploration_arrival_boost: pm(exploration_arrival_boost),
+            ..ExplorationProfile::default()
+        },
+    );
+
+    let inn_basin = place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        PLACE_INN,
+        WorkstationTag::WashBasin,
+        ProductionOutputOwner::Actor,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_FOREST,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let explore_inn = exploration_goal(PLACE_INN, HomeostaticNeedId::Dirtiness);
+    let mut village_belief_after_arrival = false;
+    let mut village_presentation_tick_count = 0;
+    let mut reached_inn = false;
+    let mut selected_inn_tick = None;
+    let mut discovered_basin = false;
+
+    for _ in 0..40 {
+        h.step_once();
+        let tick = processed_tick(&h);
+
+        if h.world.effective_place(agent) == Some(PLACE_VILLAGE)
+            && let Some(belief) = agent_belief_about(&h.world, agent, PLACE_VILLAGE)
+        {
+            village_belief_after_arrival = true;
+            village_presentation_tick_count =
+                village_presentation_tick_count.max(belief.presentation_tick_count);
+        }
+        if selected_inn_tick.is_none()
+            && planning_trace_selected_goal(&h, agent, tick, explore_inn)
+        {
+            selected_inn_tick = Some(tick);
+        }
+        reached_inn |= h.world.effective_place(agent) == Some(PLACE_INN);
+        discovered_basin |= agent_belief_about(&h.world, agent, inn_basin)
+            .is_some_and(|belief| belief.workstation_tag == Some(WorkstationTag::WashBasin));
+
+        if selected_inn_tick.is_some() && discovered_basin {
+            break;
+        }
+    }
+
+    PersistenceOutcome {
+        village_belief_after_arrival,
+        village_presentation_tick_count,
+        reached_inn,
+        selected_inn_tick,
+        discovered_basin,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 339: Arrival Boost Preserves The Exploration Chain
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Travel, Perception, Needs, Production
+// GoalKinds: ExploreLocation
+// ActionDomains: Travel, Perception
+// Places: Forest, Village, Inn
+// Principles: 7, 14, 15, 22
+//
+// Setup: Two otherwise identical dirtiness-driven runs differ only in
+// `exploration_arrival_boost`. The world is a 1-hop chain Forest -> Village ->
+// Inn, and the Inn contains a wash basin that starts unknown.
+//
+// Proves: the boosted run records a stronger Village place belief on arrival,
+// then continues the chain to Inn where arrival perception discovers the wash
+// basin. The zero-boost control remains a comparison run for the belief-state
+// reinforcement itself.
+//
+// Chain: first-hop exploration arrival -> boosted place belief retention ->
+// second-hop exploration -> arrival perception at Inn -> facility discovery.
+#[test]
+fn golden_s102_exploration_chain_belief_persistence() {
+    let boosted = run_persistence_scenario(Seed([216; 32]), 500);
+    let unboosted = run_persistence_scenario(Seed([217; 32]), 0);
+
+    assert!(
+        boosted.village_belief_after_arrival,
+        "the boosted run should retain a Village belief after first arrival; boosted={boosted:?}; unboosted={unboosted:?}"
+    );
+    assert!(
+        boosted.village_presentation_tick_count > unboosted.village_presentation_tick_count,
+        "arrival boost should increase the retained Village presentation history; boosted={boosted:?}; unboosted={unboosted:?}"
+    );
+    assert!(
+        boosted.selected_inn_tick.is_some() && boosted.reached_inn,
+        "the boosted run should continue exploration to Inn; boosted={boosted:?}; unboosted={unboosted:?}"
+    );
+    assert!(boosted.discovered_basin, "the boosted run should discover the Inn wash basin");
+
+    assert!(
+        unboosted.village_belief_after_arrival,
+        "the control run should still record the baseline Village belief for comparison; outcome={unboosted:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 340: Need Satisfaction Lazily Resets Exhaustion State
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Travel, Production
+// GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
+// ActionDomains: Travel, Production, Needs
+// Places: Trail, Village
+// Principles: 3, 20, 22
+//
+// Setup: Same as Scenario 337, but the run continues through local apple
+// harvest and eating after exploration reaches Village.
+//
+// Proves: the authoritative hunger exhaustion counter stays non-zero while the
+// need is active, then clears on the next candidate-generation pass after
+// hunger relief drops below the exploration activation threshold.
+//
+// Chain: repeated budget exhaustion -> exploration unlock -> local relief ->
+// satisfied hunger -> lazy tracker reset on next planning tick.
+#[test]
+fn golden_s102_counter_reset_on_need_satisfaction() {
+    let mut h = build_harness_with_topology(Seed([218; 32]), build_gate_unlock_topology());
+    h.driver.enable_tracing();
+    let harvest_apple = recipe_id(&h, "Harvest Apples");
+
+    let agent = hunger_exploration_agent(
+        &mut h,
+        "Resetting Scout",
+        PLACE_TRAIL,
+        KnownRecipes::with([harvest_apple]),
+    );
+    set_agent_cognitive_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        CognitiveProfile {
+            max_node_expansions: 1,
+            ..CognitiveProfile::default()
+        },
+    );
+    set_agent_exploration_profile(
+        &mut h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            visit_lookback_ticks: 1,
+            acquisition_failure_threshold: 3,
+            ..ExplorationProfile::default()
+        },
+    );
+
+    let village_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        PLACE_VILLAGE,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(5),
+            max_quantity: Quantity(5),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_TRAIL,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_VILLAGE,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        village_source,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let explore_village_kind = GoalKind::ExploreLocation {
+        target_place: PLACE_VILLAGE,
+        motivating_need: HomeostaticNeedId::Hunger,
+    };
+    let mut saw_nonzero_tracker = false;
+    let mut reset_tick = None;
+
+    for _ in 0..48 {
+        h.step_once();
+        let tick = processed_tick(&h);
+        let hunger = h
+            .world
+            .get_component_homeostatic_needs(agent)
+            .map_or(pm(0), |needs| needs.hunger);
+        let tracker_count = acquisition_exhaustion_count(&h, agent, HomeostaticNeedId::Hunger);
+        saw_nonzero_tracker |= tracker_count > 0;
+
+        if saw_nonzero_tracker
+            && hunger < pm(400)
+            && tracker_count == 0
+            && matches!(
+                planning_trace_selected_goal_status(&h, agent, tick, &explore_village_kind),
+                GoalTraceStatus::NotGenerated | GoalTraceStatus::NoTrace
+            )
+        {
+            reset_tick = Some(tick);
+            break;
+        }
+    }
+
+    let reset_tick =
+        reset_tick.expect("hunger relief should lazily clear the exhaustion tracker on a later planning tick");
+    assert!(
+        saw_nonzero_tracker,
+        "the scenario should accumulate non-zero hunger exhaustion before relief"
+    );
+    assert_eq!(
+        acquisition_exhaustion_count(&h, agent, HomeostaticNeedId::Hunger),
+        0,
+        "the authoritative hunger exhaustion tracker should reset after satisfaction"
+    );
+    assert!(
+        matches!(
+            planning_trace_selected_goal_status(&h, agent, reset_tick, &explore_village_kind),
+            GoalTraceStatus::NotGenerated | GoalTraceStatus::NoTrace
+        ),
+        "once hunger is satisfied, the next planning pass should not re-emit hunger-motivated exploration"
     );
 }

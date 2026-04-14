@@ -24,6 +24,11 @@
 //   attached Thornwall Village water source to the named Village Well.
 // Updated 2026-04-06: TK-1 — Added Water resource source at Thornwall Village and
 //   Water items at Eldergrove Forest to fix universal dehydration (simulation-remediation).
+// Updated 2026-04-14: S102 frontier-aware exploration — Added frontier_depth,
+//   acquisition_failure_threshold, exploration_arrival_boost to Forager Lina's
+//   exploration_profile with non-default values. Added artifact_posting_profile on
+//   Guard Theron and obligation_satiation_profile on Merchant Vara for AgentDef
+//   field coverage. Added use_ff_heuristic to Merchant Vara's cognitive_profile.
 // Updated 2026-04-13: S101 activation-decay migration replaced fixed capacities
 //   and retention ticks with activation thresholds and observation buffers.
 //   Added PlaceTag coverage (Hall, Road,
@@ -190,6 +195,7 @@
                 max_snapshot_entities_per_place: 50,
                 speculative_acquisition: true,
                 landmark_extraction_depth: 3,
+                use_ff_heuristic: true,
             ),
             execution_budget: (
                 max_prerequisite_locations: 3,
@@ -206,6 +212,12 @@
             ),
             substitute_preferences: (
                 preferences: { Food: [Grain, Apple, Bread] },
+            ),
+            obligation_satiation_profile: (
+                satiation_threshold: 5,
+                window_ticks: 80,
+                decay_per_execution: 200,
+                satiation_floor: 100,
             ),
         ),
         // AI forager in the forest — dehydrates fast, urgent thirst, tempted by theft
@@ -280,6 +292,9 @@
             exploration_profile: (
                 curiosity_weight: 650,
                 need_activation_threshold: 350,
+                frontier_depth: 3,
+                acquisition_failure_threshold: 2,
+                exploration_arrival_boost: 650,
                 max_consecutive_explorations: 4,
                 visit_lookback_ticks: 150,
             ),
@@ -392,6 +407,11 @@
             justice_disposition: (
                 accusation_motive_weight: 700,
                 fine_severity: 500,
+            ),
+            artifact_posting_profile: (
+                threat_warning_ttl: 24,
+                office_vacancy_ttl: 48,
+                bounty_ttl: 36,
             ),
         ),
     ],
