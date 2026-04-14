@@ -63,10 +63,21 @@ impl AgentBeliefStore {
 
     pub fn record_entity_claim(&mut self, claim: EntityBeliefClaim) {
         self.next_claim_id = ClaimId(claim.claim_id.0.saturating_add(1).max(self.next_claim_id.0));
-        self.entity_claims
-            .entry(claim.subject)
-            .or_default()
-            .push(claim);
+        let claims = self.entity_claims.entry(claim.subject).or_default();
+        let new_kind = source_kind(&claim.source);
+        if claims.iter().any(|existing| {
+            existing.aspect == claim.aspect
+                && source_kind(&existing.source) == new_kind
+                && claim_dominates(existing, &claim)
+        }) {
+            return;
+        }
+        claims.retain(|existing| {
+            existing.aspect != claim.aspect
+                || source_kind(&existing.source) != new_kind
+                || !claim_dominates(&claim, existing)
+        });
+        claims.push(claim);
     }
 
     pub fn update_entity(&mut self, id: EntityId, state: BelievedEntityState) {
@@ -1980,6 +1991,45 @@ fn claim_rank(
     )
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+enum SourceKind {
+    Direct,
+    Report(EntityId),
+    Rumor,
+    Inference,
+}
+
+fn source_kind(source: &PerceptionSource) -> SourceKind {
+    match source {
+        PerceptionSource::DirectObservation => SourceKind::Direct,
+        PerceptionSource::Report { from, .. } => SourceKind::Report(*from),
+        PerceptionSource::Rumor { .. } => SourceKind::Rumor,
+        PerceptionSource::Inference => SourceKind::Inference,
+    }
+}
+
+fn claim_staleness_anchor(claim: &EntityBeliefClaim) -> Tick {
+    claim.claimed_event_tick.unwrap_or(claim.acquired_tick)
+}
+
+fn claim_dominates(left: &EntityBeliefClaim, right: &EntityBeliefClaim) -> bool {
+    let left_anchor = claim_staleness_anchor(left);
+    let right_anchor = claim_staleness_anchor(right);
+
+    if left.confidence < right.confidence
+        || left_anchor < right_anchor
+        || left.acquired_tick < right.acquired_tick
+        || left.claim_id < right.claim_id
+    {
+        return false;
+    }
+
+    left.confidence > right.confidence
+        || left_anchor > right_anchor
+        || left.acquired_tick > right.acquired_tick
+        || left.claim_id > right.claim_id
+}
+
 fn effective_claim_confidence(
     claim: &EntityBeliefClaim,
     current_tick: Tick,
@@ -2936,6 +2986,143 @@ mod tests {
 
         assert_eq!(summary.last_known_place, Some(entity(11)));
         assert_eq!(summary.source, PerceptionSource::DirectObservation);
+    }
+
+    #[test]
+    fn record_entity_claim_replaces_dominated_same_source_same_aspect() {
+        let subject = entity(44);
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_claim(sample_claim(
+            1,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(10))),
+            PerceptionSource::DirectObservation,
+            7,
+            950,
+        ));
+        store.record_entity_claim(sample_claim(
+            2,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(11))),
+            PerceptionSource::DirectObservation,
+            8,
+            950,
+        ));
+
+        let claims = &store.entity_claims[&subject];
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].value, ClaimValue::Place(Some(entity(11))));
+        assert_eq!(claims[0].acquired_tick, Tick(8));
+    }
+
+    #[test]
+    fn record_entity_claim_preserves_different_sources() {
+        let subject = entity(45);
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_claim(sample_claim(
+            1,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(10))),
+            PerceptionSource::DirectObservation,
+            7,
+            950,
+        ));
+        store.record_entity_claim(sample_claim(
+            2,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(11))),
+            PerceptionSource::Report {
+                from: entity(2),
+                chain_len: 1,
+            },
+            8,
+            780,
+        ));
+
+        assert_eq!(store.entity_claims[&subject].len(), 2);
+    }
+
+    #[test]
+    fn record_entity_claim_distinguishes_report_informants() {
+        let subject = entity(46);
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_claim(sample_claim(
+            1,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(10))),
+            PerceptionSource::Report {
+                from: entity(2),
+                chain_len: 1,
+            },
+            7,
+            780,
+        ));
+        store.record_entity_claim(sample_claim(
+            2,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(11))),
+            PerceptionSource::Report {
+                from: entity(3),
+                chain_len: 1,
+            },
+            8,
+            780,
+        ));
+
+        assert_eq!(store.entity_claims[&subject].len(), 2);
+    }
+
+    #[test]
+    fn record_entity_claim_preserves_nondominated_same_informant_report() {
+        let subject = entity(47);
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(1),
+            subject,
+            aspect: EntityBeliefAspect::Location,
+            value: ClaimValue::Place(Some(entity(10))),
+            source: PerceptionSource::Report {
+                from: entity(2),
+                chain_len: 1,
+            },
+            acquired_tick: Tick(8),
+            claimed_event_tick: Some(Tick(8)),
+            confidence: Permille::new(780).unwrap(),
+        });
+        store.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(2),
+            subject,
+            aspect: EntityBeliefAspect::Location,
+            value: ClaimValue::Place(Some(entity(11))),
+            source: PerceptionSource::Report {
+                from: entity(2),
+                chain_len: 3,
+            },
+            acquired_tick: Tick(9),
+            claimed_event_tick: Some(Tick(2)),
+            confidence: Permille::new(600).unwrap(),
+        });
+
+        let claims = &store.entity_claims[&subject];
+        assert_eq!(claims.len(), 2);
+        assert!(claims.iter().any(|claim| {
+            claim.value == ClaimValue::Place(Some(entity(10)))
+                && claim.claimed_event_tick == Some(Tick(8))
+        }));
+        assert!(claims.iter().any(|claim| {
+            claim.value == ClaimValue::Place(Some(entity(11)))
+                && claim.claimed_event_tick == Some(Tick(2))
+        }));
     }
 
     #[test]

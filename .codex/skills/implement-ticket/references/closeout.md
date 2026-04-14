@@ -55,7 +55,7 @@ For implementation-only completion:
 - Re-check inline code snippets, example signatures, or API sketches against the final landed shape.
 - Re-check `Status`, `## Outcome`, and verification/command notes -- they should reflect commands that actually passed, not the pre-reassessment plan.
 - If formatting was required in a dirty worktree, check for formatter spillover and call it out explicitly.
-- Report tracked-vs-untracked status for the active ticket and any follow-up tickets created during the session (see Section 1 for tracking awareness).
+- Report tracked-vs-untracked status for the active ticket, any follow-up tickets created during the session, and any linked spec or planning drafts modified during reassessment/implementation (see Section 1 for tracking awareness).
 - After golden scenario metadata changes, refresh the generated golden inventory/docs (see verification.md, Golden test verification). Inspect the generated diff footprint and call out whether broader generated-file churn is expected inventory/index fallout or unexpected.
 
 ### Minimal active-ticket close-out shape

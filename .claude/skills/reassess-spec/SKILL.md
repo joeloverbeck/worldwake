@@ -47,7 +47,7 @@ Before beginning Steps 2-3, classify the spec:
   - Step 4 applies but 4.4 is N/A.
   - Section H updates are N/A unless the test reveals a missing causal hook.
 
-- **(e) Investigation/bugfix/optimization** — diagnoses a root cause and proposes targeted fixes, no new systems or components. Covers both hypothesis-driven investigations (conditional fixes) and proven-diagnosis specs (single concrete fix confirmed by existing tests). Also covers computation-optimization specs that add new planner-internal algorithms, heuristics, or filter/pruning logic without new world-facing state.
+- **(e) Investigation/bugfix/optimization** — diagnoses a root cause and proposes targeted fixes, no new systems or components. Covers both hypothesis-driven investigations (conditional fixes) and proven-diagnosis specs (single concrete fix confirmed by existing tests). Also covers computation-optimization specs that add new planner-internal algorithms, heuristics, or filter/pruning logic without new world-facing state, as well as storage-layer performance fixes (deduplication, indexing, amortization) that change how data is stored or iterated without altering what the data means.
   - Steps 3.1-3.4 apply (validate all referenced paths, types, functions, dependencies).
   - Steps 3.5-3.8: For investigation/bugfix specs, apply only to proposed fix deliverables (not to hypothesis text). For computation-optimization specs, apply to all deliverables (there is no "hypothesis text" — all deliverables are implementation targets).
   - Step 3.9 applies if claims about runtime behavior are made.
@@ -97,7 +97,7 @@ For investigation/bugfix specs (type e, investigation/bugfix subtype), also prio
 
 For computation-optimization specs (type e, optimization subtype), skip root-cause tracing — there is no bug hypothesis to validate. Instead prioritize: (a) that all referenced types, functions, and integration points exist with the assumed signatures, (b) that proposed integration sites have the structural shape the spec assumes (e.g., variable availability, loop structure, timing of data collection), and (c) that proposed new types satisfy existing trait bounds at their intended usage sites.
 
-**Proven-diagnosis scoping**: If the spec's diagnosis is already confirmed by existing tests that demonstrate the specific failure mode (e.g., golden tests asserting `BudgetExhausted` with concrete candidate counts), root-cause tracing may scope to verifying the fix's assumptions — that the proposed remedy targets the right code path and reads the right data — rather than re-proving the diagnosis from scratch. Sub-steps (a-b) still apply; (c-d) may be lighter-weight.
+**Proven-diagnosis scoping**: If the spec's diagnosis is already confirmed by existing tests that demonstrate the specific failure mode or by profiling data that quantifies the specific bottleneck (e.g., golden tests asserting `BudgetExhausted` with concrete candidate counts, or profiling showing specific function hot-paths with measured growth rates), root-cause tracing may scope to verifying the fix's assumptions — that the proposed remedy targets the right code path and reads the right data — rather than re-proving the diagnosis from scratch. Sub-steps (a-b) still apply; (c-d) may be lighter-weight.
 
 ### Step 3: Codebase Validation
 
