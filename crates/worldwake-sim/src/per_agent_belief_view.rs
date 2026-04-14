@@ -12,15 +12,15 @@ use worldwake_core::{
     BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile, CombatProfile,
     CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ContentionGrant,
     ControlSource, DemandObservation, DisposalProfile, DriveThresholds, EffectiveRight, EntityId,
-    EntityKind, ExpectationStore, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
-    ObligationSatiationProfile, OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity,
-    RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
-    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
-    load_of_entity,
+    EntityKind, ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, Permille, PlaceTag,
+    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
+    ResourceSource, RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
+    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, World, Wound,
+    danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -493,6 +493,16 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
         (agent == self.agent)
             .then(|| self.world.get_component_exploration_profile(agent).copied())
             .flatten()
+    }
+
+    fn acquisition_exhaustion_count(&self, agent: EntityId, need: HomeostaticNeedId) -> u8 {
+        if agent != self.agent {
+            return 0;
+        }
+
+        self.world
+            .get_component_acquisition_exhaustion_tracker(agent)
+            .map_or(0, |tracker| tracker.count(need))
     }
 
     fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
@@ -1568,10 +1578,10 @@ mod tests {
         CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
         EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, ExpectationBasis,
         ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
-        FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
-        PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
+        FactionData, FactionPurpose, HomeostaticNeedId, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, ObligationExecutionTracker, ObligationSatiationProfile,
+        OfficeData, PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
         RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
         RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
         TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
@@ -2624,6 +2634,92 @@ mod tests {
         assert_eq!(
             GoalBeliefView::exploration_profile(&view, agent),
             Some(ExplorationProfile::default())
+        );
+    }
+
+    #[test]
+    fn acquisition_exhaustion_count_returns_actor_tracker_count_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let mut tracker = worldwake_core::AcquisitionExhaustionTracker::default();
+            tracker.increment(HomeostaticNeedId::Hunger);
+            tracker.increment(HomeostaticNeedId::Hunger);
+            tracker.increment(HomeostaticNeedId::Thirst);
+            txn.set_component_acquisition_exhaustion_tracker(agent, tracker)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::acquisition_exhaustion_count(
+                &view,
+                agent,
+                HomeostaticNeedId::Hunger
+            ),
+            2
+        );
+        assert_eq!(
+            GoalBeliefView::acquisition_exhaustion_count(&view, agent, HomeostaticNeedId::Hunger),
+            2
+        );
+        assert_eq!(
+            GoalBeliefView::acquisition_exhaustion_count(&view, agent, HomeostaticNeedId::Thirst),
+            1
+        );
+    }
+
+    #[test]
+    fn acquisition_exhaustion_count_returns_zero_for_non_self_and_default_live_agent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            let mut tracker = worldwake_core::AcquisitionExhaustionTracker::default();
+            tracker.increment(HomeostaticNeedId::Hunger);
+            txn.set_component_acquisition_exhaustion_tracker(other, tracker)
+                .unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::acquisition_exhaustion_count(
+                &view,
+                agent,
+                HomeostaticNeedId::Hunger
+            ),
+            0
+        );
+        assert_eq!(
+            GoalBeliefView::acquisition_exhaustion_count(&view, agent, HomeostaticNeedId::Hunger),
+            0
+        );
+        assert_eq!(
+            ProfileBeliefView::acquisition_exhaustion_count(
+                &view,
+                other,
+                HomeostaticNeedId::Hunger
+            ),
+            0
+        );
+        assert_eq!(
+            GoalBeliefView::acquisition_exhaustion_count(&view, other, HomeostaticNeedId::Hunger),
+            0
         );
     }
 

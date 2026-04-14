@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — test-only
-**Deps**: archive/tickets/S102FROAWAEXP-001.md, archive/tickets/S102FROAWAEXP-002.md, tickets/S102FROAWAEXP-003.md, tickets/S102FROAWAEXP-004.md, tickets/S102FROAWAEXP-005.md, tickets/S102FROAWAEXP-006.md
+**Deps**: archive/tickets/S102FROAWAEXP-001.md, archive/tickets/S102FROAWAEXP-002.md, archive/tickets/S102FROAWAEXP-003.md, tickets/S102FROAWAEXP-004.md, tickets/S102FROAWAEXP-005.md, tickets/S102FROAWAEXP-006.md
 
 ## Problem
 

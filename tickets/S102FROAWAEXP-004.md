@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — plan search outcome handler (worldwake-ai), emit_exploration_candidates gate logic, tracker reset
-**Deps**: archive/tickets/S102FROAWAEXP-001.md, archive/tickets/S102FROAWAEXP-002.md, tickets/S102FROAWAEXP-003.md
+**Deps**: archive/tickets/S102FROAWAEXP-001.md, archive/tickets/S102FROAWAEXP-002.md, archive/tickets/S102FROAWAEXP-003.md
 
 ## Problem
 

@@ -11,14 +11,15 @@ use worldwake_core::{
     CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
     CommodityValuationProfile, ContentionGrant, DemandObservation, DisposalProfile,
     DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
-    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
-    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
+    HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
+    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
+    ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag,
+    PlaceTagSet, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+    RecordedViolation, ResourceSource, RouteExperience, SocialObservation, SourceReliability,
+    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationDispositionProfile,
+    WorkstationTag, Wound,
 };
 
 pub trait GoalSpatialBeliefView {
@@ -199,6 +200,10 @@ pub trait GoalBeliefView {
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
         let _ = agent;
         None
+    }
+    fn acquisition_exhaustion_count(&self, agent: EntityId, need: HomeostaticNeedId) -> u8 {
+        let _ = (agent, need);
+        0
     }
     fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
         let _ = agent;
@@ -454,6 +459,10 @@ pub trait ProfileBeliefView {
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
         let _ = agent;
         None
+    }
+    fn acquisition_exhaustion_count(&self, agent: EntityId, need: HomeostaticNeedId) -> u8 {
+        let _ = (agent, need);
+        0
     }
     fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
         let _ = agent;
@@ -1259,6 +1268,14 @@ where
         ProfileBeliefView::exploration_profile(self, agent)
     }
 
+    fn acquisition_exhaustion_count(
+        &self,
+        agent: worldwake_core::EntityId,
+        need: worldwake_core::HomeostaticNeedId,
+    ) -> u8 {
+        ProfileBeliefView::acquisition_exhaustion_count(self, agent, need)
+    }
+
     fn obligation_satiation_profile(
         &self,
         agent: worldwake_core::EntityId,
@@ -1765,9 +1782,10 @@ mod tests {
     };
     use worldwake_core::{
         AgentBeliefStore, CauseRef, CommodityConsumableProfile, CommodityKind, ControlSource,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
-        LoadUnits, PatrolProfile, Permille, Quantity, ResourceSource, Tick, UniqueItemKind,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeedId,
+        HomeostaticNeeds, LoadUnits, PatrolProfile, Permille, Quantity, ResourceSource, Tick,
+        UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
     };
 
     struct StubGoalBeliefView;
@@ -1840,6 +1858,10 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::ExplorationProfile> {
             None
+        }
+
+        fn acquisition_exhaustion_count(&self, _agent: EntityId, _need: HomeostaticNeedId) -> u8 {
+            0
         }
     }
 
@@ -2104,5 +2126,27 @@ mod tests {
 
         assert_eq!(GoalBeliefView::expectation_store(&view, agent), None);
         assert_eq!(GoalBeliefView::last_seen_memory(&view, agent), None);
+    }
+
+    #[test]
+    fn goal_belief_view_acquisition_exhaustion_count_defaults_to_zero() {
+        let view = StubGoalBeliefView;
+        let agent = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+
+        assert_eq!(
+            ProfileBeliefView::acquisition_exhaustion_count(
+                &view,
+                agent,
+                HomeostaticNeedId::Hunger
+            ),
+            0
+        );
+        assert_eq!(
+            GoalBeliefView::acquisition_exhaustion_count(&view, agent, HomeostaticNeedId::Hunger),
+            0
+        );
     }
 }
