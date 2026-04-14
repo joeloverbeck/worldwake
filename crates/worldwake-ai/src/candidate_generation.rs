@@ -2451,7 +2451,7 @@ fn emit_need_driven_candidates(
     // redundant acquisition goals.
     let already_satisfied = CommodityKind::ALL.into_iter().any(|commodity| {
         matches_need(commodity)
-            && local_controlled_commodity_exists(ctx.view, ctx.agent, ctx.place, commodity)
+            && local_owned_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity).is_some()
     });
 
     for commodity in CommodityKind::ALL
@@ -2465,7 +2465,7 @@ fn emit_need_driven_candidates(
         // SellCommodity stays at Medium, so the merchant only eats sale
         // stock when survival urgency exceeds enterprise value.
         if let Some(evidence) =
-            local_controlled_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
+            local_owned_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
         {
             emit_candidate(
                 candidates,
@@ -4916,6 +4916,31 @@ fn local_controlled_commodity_evidence(
     (!evidence.entities.is_empty()).then_some(evidence)
 }
 
+fn local_owned_commodity_evidence(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    place: Option<EntityId>,
+    commodity: CommodityKind,
+) -> Option<Evidence> {
+    let place = place?;
+    let mut evidence = Evidence::with_place(place);
+    let mut local_entities = BTreeSet::new();
+    local_entities.extend(view.entities_at(place));
+    local_entities.extend(view.direct_possessions(agent));
+    for entity in local_entities {
+        if view.item_lot_commodity(entity) != Some(commodity) || !view.can_control(agent, entity) {
+            continue;
+        }
+        let directly_possessed = view.direct_possessor(entity) == Some(agent);
+        let locally_owned = view.believed_owner_of(entity) == Some(agent);
+        if !directly_possessed && !locally_owned {
+            continue;
+        }
+        evidence.entities.insert(entity);
+    }
+    (!evidence.entities.is_empty()).then_some(evidence)
+}
+
 fn any_local_need_relief(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -7021,6 +7046,90 @@ mod tests {
         view.controlled_entities.insert(agent);
         view.commodity_quantities
             .insert((agent, CommodityKind::Water), Quantity(1));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Water,
+            }
+        ));
+    }
+
+    #[test]
+    fn local_unpossessed_water_emits_acquire_goal_when_thirsty() {
+        let agent = entity(1);
+        let place = entity(10);
+        let water_lot = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, water_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(water_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(water_lot, place);
+        view.entities_at.insert(place, vec![agent, water_lot]);
+        view.homeostatic_needs.insert(agent, thirst(200));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(water_lot, CommodityKind::Water);
+        view.consumable_profiles.insert(
+            water_lot,
+            CommodityKind::Water.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, water_lot));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Water,
+            }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+    }
+
+    #[test]
+    fn local_owned_water_emits_consume_goal_when_thirsty() {
+        let agent = entity(1);
+        let place = entity(10);
+        let water_lot = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, water_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(water_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(water_lot, place);
+        view.entities_at.insert(place, vec![agent, water_lot]);
+        view.homeostatic_needs.insert(agent, thirst(200));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(water_lot, CommodityKind::Water);
+        view.consumable_profiles.insert(
+            water_lot,
+            CommodityKind::Water.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, water_lot));
+        view.believed_owners.insert(water_lot, agent);
 
         let candidates = generate_candidates(
             &view,

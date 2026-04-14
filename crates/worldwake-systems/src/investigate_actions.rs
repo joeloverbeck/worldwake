@@ -138,6 +138,15 @@ fn commit_investigate(
                 instance.actor
             ))
         })?;
+    let actor_perception = txn
+        .get_component_perception_profile(instance.actor)
+        .copied()
+        .ok_or_else(|| {
+            ActionError::InternalError(format!(
+                "live agent {} lacks PerceptionProfile",
+                instance.actor
+            ))
+        })?;
     store.record_social_observation(SocialObservation {
         detail: SocialObservationDetail::WitnessedAbsence {
             missing_entity: subject,
@@ -161,7 +170,12 @@ fn commit_investigate(
     if let Some(place_belief) =
         build_believed_entity_state(txn, place, txn.tick(), PerceptionSource::DirectObservation)
     {
-        store.update_entity(place, place_belief);
+        store.import_entity_snapshot(
+            place,
+            &place_belief,
+            txn.tick(),
+            &actor_perception.confidence_policy,
+        );
     }
     txn.set_component_agent_belief_store(instance.actor, store)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;

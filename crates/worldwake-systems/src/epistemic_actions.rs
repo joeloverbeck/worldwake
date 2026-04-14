@@ -354,7 +354,12 @@ fn commit_ask_witness(
             from: target,
             chain_len: 1,
         };
-        actor_store.update_entity(*entity, transferred);
+        actor_store.import_entity_snapshot(
+            *entity,
+            &transferred,
+            txn.tick(),
+            &actor_perception.confidence_policy,
+        );
     }
     actor_store.prune_decayed_beliefs(&actor_perception, txn.tick(), &actor_needs);
     actor_store.record_asked_witness(

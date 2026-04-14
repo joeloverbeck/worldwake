@@ -1894,6 +1894,7 @@ fn setup_guard_theron_water_at_thornwall_snapshot() -> (GoldenHarness, EntityId)
     .unwrap();
     for lot in carried_water {
         txn.clear_owner(lot).unwrap();
+        txn.clear_possessor(lot).unwrap();
         txn.set_ground_location(lot, THORNWALL_VILLAGE).unwrap();
     }
     commit_txn(txn, &mut h.event_log);

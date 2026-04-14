@@ -4,7 +4,7 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_ai::{
-    CommodityPurpose, CognitiveProfile, DecisionOutcome, GoalKey, GoalKind, GoalTraceStatus,
+    CognitiveProfile, CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, GoalTraceStatus,
     PlanSearchOutcome, PlannerOpKind, PlanningPipelineTrace,
 };
 use worldwake_core::{
@@ -388,11 +388,7 @@ fn any_committed_action_named(h: &GoldenHarness, agent: EntityId, action_name: &
         })
 }
 
-fn acquisition_exhaustion_count(
-    h: &GoldenHarness,
-    agent: EntityId,
-    need: HomeostaticNeedId,
-) -> u8 {
+fn acquisition_exhaustion_count(h: &GoldenHarness, agent: EntityId, need: HomeostaticNeedId) -> u8 {
     h.world
         .get_component_acquisition_exhaustion_tracker(agent)
         .map_or(0, |tracker| tracker.count(need))
@@ -1089,7 +1085,8 @@ fn run_persistence_scenario(seed: Seed, exploration_arrival_boost: u16) -> Persi
     let mut h = build_harness_with_topology(seed, build_persistence_topology());
     h.driver.enable_tracing();
     h.enable_action_tracing();
-    let agent = dirtiness_exploration_agent(&mut h, "Dusty Traveler", PLACE_FOREST, KnownRecipes::new());
+    let agent =
+        dirtiness_exploration_agent(&mut h, "Dusty Traveler", PLACE_FOREST, KnownRecipes::new());
     let mut perception = exploration_perception_profile();
     perception.entity_activation_threshold = pm(900);
     set_agent_perception_profile(&mut h.world, &mut h.event_log, agent, perception);
@@ -1139,8 +1136,7 @@ fn run_persistence_scenario(seed: Seed, exploration_arrival_boost: u16) -> Persi
             village_presentation_tick_count =
                 village_presentation_tick_count.max(belief.presentation_tick_count);
         }
-        if selected_inn_tick.is_none()
-            && planning_trace_selected_goal(&h, agent, tick, explore_inn)
+        if selected_inn_tick.is_none() && planning_trace_selected_goal(&h, agent, tick, explore_inn)
         {
             selected_inn_tick = Some(tick);
         }
@@ -1200,7 +1196,10 @@ fn golden_s102_exploration_chain_belief_persistence() {
         boosted.selected_inn_tick.is_some() && boosted.reached_inn,
         "the boosted run should continue exploration to Inn; boosted={boosted:?}; unboosted={unboosted:?}"
     );
-    assert!(boosted.discovered_basin, "the boosted run should discover the Inn wash basin");
+    assert!(
+        boosted.discovered_basin,
+        "the boosted run should discover the Inn wash basin"
+    );
 
     assert!(
         unboosted.village_belief_after_arrival,
@@ -1329,8 +1328,9 @@ fn golden_s102_counter_reset_on_need_satisfaction() {
         }
     }
 
-    let reset_tick =
-        reset_tick.expect("hunger relief should lazily clear the exhaustion tracker on a later planning tick");
+    let reset_tick = reset_tick.expect(
+        "hunger relief should lazily clear the exhaustion tracker on a later planning tick",
+    );
     assert!(
         saw_nonzero_tracker,
         "the scenario should accumulate non-zero hunger exhaustion before relief"

@@ -365,6 +365,9 @@ fn observe_active_actions(
     }
 
     for (agent, batch) in direct_local_batches {
+        let Some(profile) = world.get_component_perception_profile(*agent).copied() else {
+            continue;
+        };
         let Some(base_store) = updated_stores
             .get(agent)
             .cloned()
@@ -391,13 +394,18 @@ fn observe_active_actions(
                 None => None,
             };
 
-            if store.update_believed_activity(subject, next_activity) {
+            if store.update_believed_activity(
+                subject,
+                next_activity,
+                tick,
+                &profile.confidence_policy,
+            ) {
                 changed = true;
             }
         }
 
         for subject in &batch.noticed_missing_subjects {
-            if store.clear_believed_activity(subject) {
+            if store.clear_believed_activity(subject, tick, &profile.confidence_policy) {
                 changed = true;
             }
 
@@ -413,7 +421,12 @@ fn observe_active_actions(
                     .is_some_and(|def| def.domain == worldwake_core::ActionDomain::Travel);
                 if is_travel
                     && let Some(destination) = instance.targets.first().copied()
-                    && store.update_departure_projection(subject, destination, tick)
+                    && store.update_departure_projection(
+                        subject,
+                        destination,
+                        tick,
+                        &profile.confidence_policy,
+                    )
                 {
                     changed = true;
                 }

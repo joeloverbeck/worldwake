@@ -242,11 +242,7 @@ fn profile_t30_soak_performance() {
     writeln!(report, "|--------|-------------|").unwrap();
     writeln!(report, "| First 50 ticks | {early_avg:.2} |").unwrap();
     writeln!(report, "| Last 50 ticks | {late_avg:.2} |").unwrap();
-    writeln!(
-        report,
-        "| Growth ratio | {growth_ratio:.2}x |"
-    )
-    .unwrap();
+    writeln!(report, "| Growth ratio | {growth_ratio:.2}x |").unwrap();
     writeln!(report).unwrap();
     if growth_ratio > 2.0 {
         writeln!(
@@ -271,7 +267,10 @@ fn profile_t30_soak_performance() {
         "|------|-----|----------|---------------------|-------------|-------------|-----------|---------------------|"
     )
     .unwrap();
-    for t in tick_timings.iter().filter(|t| t.tick % 10 == 0 || t.tick == PROFILE_TICKS - 1) {
+    for t in tick_timings
+        .iter()
+        .filter(|t| t.tick % 10 == 0 || t.tick == PROFILE_TICKS - 1)
+    {
         writeln!(
             report,
             "| {} | {:.1} | {} | {} | {} | {} | {} | {} |",
@@ -387,31 +386,22 @@ fn profile_t30_soak_performance() {
         let n = tick_timings.len() as f64;
         let sum_x: f64 = tick_timings.iter().map(|t| t.tick as f64).sum();
         let sum_y: f64 = tick_timings.iter().map(|t| t.wall_ms).sum();
-        let sum_xy: f64 = tick_timings
-            .iter()
-            .map(|t| t.tick as f64 * t.wall_ms)
-            .sum();
+        let sum_xy: f64 = tick_timings.iter().map(|t| t.tick as f64 * t.wall_ms).sum();
         let sum_x2: f64 = tick_timings.iter().map(|t| (t.tick as f64).powi(2)).sum();
         let denom = n * sum_x2 - sum_x * sum_x;
         if denom.abs() > 1e-10 {
             let b = (n * sum_xy - sum_x * sum_y) / denom;
             let a = (sum_y - b * sum_x) / n;
             let est_10080_ms = a + b * 10080.0;
-            let est_total_s: f64 = (0..10080)
-                .map(|t| (a + b * t as f64).max(0.0))
-                .sum::<f64>()
-                / 1000.0;
+            let est_total_s: f64 =
+                (0..10080).map(|t| (a + b * t as f64).max(0.0)).sum::<f64>() / 1000.0;
 
             writeln!(
                 report,
                 "Linear regression: ms/tick = {a:.2} + {b:.4} * tick"
             )
             .unwrap();
-            writeln!(
-                report,
-                "Estimated ms/tick at tick 10080: {est_10080_ms:.1}"
-            )
-            .unwrap();
+            writeln!(report, "Estimated ms/tick at tick 10080: {est_10080_ms:.1}").unwrap();
             writeln!(
                 report,
                 "Estimated total time for 10080 ticks: {est_total_s:.0}s ({:.1} min)",
@@ -442,9 +432,7 @@ fn profile_t30_soak_performance() {
 
     eprintln!("Report written to: {}", report_path.display());
     eprintln!("Total time: {:.2}s", total_elapsed.as_secs_f64());
-    eprintln!(
-        "Avg tick: {avg_ms:.2}ms, Growth: {growth_ratio:.2}x"
-    );
+    eprintln!("Avg tick: {avg_ms:.2}ms, Growth: {growth_ratio:.2}x");
 }
 
 fn percentile(data: &[f64], pct: usize) -> f64 {

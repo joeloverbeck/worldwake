@@ -7,7 +7,7 @@ Fix the unbounded growth of entity belief claims that causes soak test performan
 The fix applies three targeted changes, all architecturally grounded in existing FOUNDATIONS principles:
 
 1. **Aspect-source deduplication**: When a new claim arrives for an aspect that already has a claim from the same source type, replace the older claim instead of appending. This is not a capacity cap — it is the recognition that a fresh direct observation of an entity's location supersedes a stale direct observation of the same aspect (FND-16: newer evidence overwrites weaker).
-2. **Amortized summary re-derivation**: Skip `derive_entity_summary` during `prune_decayed_beliefs` when no claims were actually removed for an entity, avoiding O(claims) iteration on entities that changed nothing.
+2. **Canonicalize semantic belief transport before amortized pruning**: remove production paths that mutate `known_entities` semantics outside `entity_claims`, then skip `derive_entity_summary` during `prune_decayed_beliefs` when no claims were actually removed for an entity. This work is split into `S103BELCLADED-004` (boundary cleanup) followed by `S103BELCLADED-002` (optimization).
 3. **Social observation deduplication**: When a new social observation matches an existing one by `detail`, replace rather than append — a repeated sighting of the same social event is an update, not a new independent record.
 
 ## Phase
@@ -75,7 +75,7 @@ This is not a capacity problem requiring a cap. This is a **redundant evidence**
 | FND-1 (Emergence) | No change to what agents learn or forget — only how fast redundant records accumulate |
 | FND-3 (Concrete State) | Claims remain concrete stored state. Deduplication removes records that are provably dominated by fresher records of the same kind |
 | FND-11 (Physical Dampeners) | The dampener on claim growth becomes the physical world's aspect diversity (finite number of observable aspects per entity), not an artificial number |
-| FND-12 (Performance Compresses Computation, Not Causality) | The deduplication does not change which claims win in `derive_entity_summary` — it removes only claims that would never be selected as winners. The derived summary is identical before and after |
+| FND-12 (Performance Compresses Computation, Not Causality) | Deduplication is already valid because it removes only dominated claims. Amortized pruning becomes valid only after semantic belief updates are claim-backed, so unchanged claims imply unchanged summaries |
 | FND-15 (Knowledge Travels Physically) | No change — provenance, source, confidence, and event time are all preserved |
 | FND-16 (Uncertainty and Contradiction) | Multi-source claims are preserved. An agent can still hold a DirectObservation claim AND a Report claim for the same aspect, enabling contradiction detection. Only same-source-same-aspect duplicates are eliminated |
 | FND-22 (Agent Diversity) | No profile parameter changes. Per-agent `claim_confidence_threshold` and `staleness_penalty_per_tick` continue to control when evidence ages out |
@@ -111,9 +111,18 @@ The direct-observation hot path collapses to roughly one claim per aspect, which
 
 Note: `record_entity_snapshot_claims` also calls `refresh_entity_summary_from_claims` after every observation batch (`belief.rs:107`). With deduplication, this existing call benefits automatically — the per-entity claim count it iterates is dramatically reduced.
 
-### Change 2: Skip summary re-derivation when no claims were pruned
+### Change 2: Canonicalize semantic belief transport, then skip summary re-derivation when no claims were pruned
 
-In `prune_decayed_beliefs`, the current code calls `refresh_entity_summary_from_claims` for every entity that has claims, regardless of whether any claims were actually removed:
+The naive optimization was tested on 2026-04-14 and failed `cargo test -p worldwake-ai` in `guard_theron_water_at_thornwall_finds_harvest_plan`: skipping unconditional refresh changed planner-visible behavior. That means `known_entities` is not currently a pure derived cache.
+
+The architectural issue is that production code still transports semantic belief facts through both:
+
+1. `entity_claims` + `refresh_entity_summary_from_claims`
+2. direct `known_entities` writes such as `update_entity`, `update_believed_activity`, `update_departure_projection`, and evidence mutation in investigation code
+
+This violates the intended derived-cache contract for `known_entities`. Before amortized pruning ships, semantic fields already represented by `EntityBeliefAspect` must be updated through claims with explicit provenance and timing. After that cleanup, `prune_decayed_beliefs` may safely skip `refresh_entity_summary_from_claims` for entities whose claim vectors did not change.
+
+The final pruning optimization remains:
 
 ```rust
 let affected_entities = self.entity_claims.keys().copied().collect::<Vec<_>>();
@@ -153,7 +162,7 @@ The deduplication key for `SocialObservation` is the full `detail: SocialObserva
 
 ### Information-path analysis
 
-No new information paths. Claims continue to be generated through the same perception, report, and tell mechanisms. Deduplication only affects storage of claims that would be superseded anyway during summary derivation.
+Change 1 removes redundant same-source claim accumulation without changing information paths. Change 2 tightens the information path contract: semantic entity beliefs must travel through `entity_claims`, not through duplicate summary mutation paths. This is a cleanup of competing lawful transports, not a new path.
 
 ### Positive-feedback analysis
 
@@ -172,8 +181,8 @@ The claim accumulation rate is now dampened by:
 
 | Item | Classification | Change |
 |------|---------------|--------|
-| `entity_claims` (per entity) | Authoritative stored state | Deduplication removes only provably dominated records |
-| `derive_entity_summary` result | Derived (identical with or without duplicates) | No change |
+| `entity_claims` (per entity) | Authoritative stored state | Deduplication removes only provably dominated records; semantic entity belief updates must also become canonical here before amortized pruning |
+| `derive_entity_summary` result | Derived | Must become the sole semantic producer of `known_entities` for claim-backed fields |
 | `social_observations` | Authoritative stored state | Deduplication removes only superseded observations |
 | `prune_decayed_beliefs` changed-entity tracking | Transient computation | New (not stored) |
 
