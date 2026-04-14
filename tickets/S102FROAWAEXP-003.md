@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — ProfileBeliefView trait, GoalBeliefView blanket impl, PerAgentBeliefView backing
-**Deps**: S102FROAWAEXP-002
+**Deps**: archive/tickets/S102FROAWAEXP-002.md
 
 ## Problem
 

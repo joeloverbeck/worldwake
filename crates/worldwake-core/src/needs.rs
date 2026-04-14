@@ -24,6 +24,10 @@ pub enum HomeostaticNeedId {
     Dirtiness,
 }
 
+impl HomeostaticNeedId {
+    pub const VARIANT_COUNT: usize = 5;
+}
+
 impl HomeostaticNeeds {
     #[must_use]
     pub const fn new(
@@ -217,7 +221,8 @@ const fn nz(value: u32) -> NonZeroU32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile, nz, pm,
+        BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds,
+        MetabolismProfile, nz, pm,
     };
     use crate::{Permille, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
@@ -238,6 +243,11 @@ mod tests {
         assert_eq!(needs.bladder, Permille::new(0).unwrap());
         assert_eq!(needs.dirtiness, Permille::new(0).unwrap());
         assert_eq!(needs, HomeostaticNeeds::default());
+    }
+
+    #[test]
+    fn homeostatic_need_id_variant_count_matches_enum() {
+        assert_eq!(HomeostaticNeedId::VARIANT_COUNT, 5);
     }
 
     #[test]

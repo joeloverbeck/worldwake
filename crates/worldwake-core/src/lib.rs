@@ -159,7 +159,7 @@ pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
     SourceReliability, danger_ratio_permille, failure_ratio_permille,
 };
-pub use exploration::ExplorationProfile;
+pub use exploration::{AcquisitionExhaustionTracker, ExplorationProfile};
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};

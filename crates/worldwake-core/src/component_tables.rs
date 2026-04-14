@@ -21,7 +21,7 @@ use crate::{
     execution_budget::ExecutionBudget,
     expectation::{ExpectationStore, LastSeenMemory},
     experience::{PreferenceProfile, RouteExperience, SourceReliability},
-    exploration::ExplorationProfile,
+    exploration::{AcquisitionExhaustionTracker, ExplorationProfile},
     factions::FactionData,
     institutional::RecordData,
     intention::ActiveGoal,

@@ -830,6 +830,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                acquisition_exhaustion_trackers,
+                AcquisitionExhaustionTracker,
+                insert_acquisition_exhaustion_tracker,
+                get_acquisition_exhaustion_tracker,
+                get_acquisition_exhaustion_tracker_mut,
+                remove_acquisition_exhaustion_tracker,
+                has_acquisition_exhaustion_tracker,
+                iter_acquisition_exhaustion_trackers,
+                insert_component_acquisition_exhaustion_tracker,
+                get_component_acquisition_exhaustion_tracker,
+                get_component_acquisition_exhaustion_tracker_mut,
+                remove_component_acquisition_exhaustion_tracker,
+                has_component_acquisition_exhaustion_tracker,
+                entities_with_acquisition_exhaustion_tracker,
+                query_acquisition_exhaustion_tracker,
+                count_with_acquisition_exhaustion_tracker,
+                "AcquisitionExhaustionTracker",
+                |kind| kind == EntityKind::Agent,
+                AcquisitionExhaustionTracker,
+                crate::AcquisitionExhaustionTracker,
+                set_component_acquisition_exhaustion_tracker,
+                clear_component_acquisition_exhaustion_tracker,
+                txn_simple_set
+            }
+            {
                 exploration_profiles,
                 ExplorationProfile,
                 insert_exploration_profile,

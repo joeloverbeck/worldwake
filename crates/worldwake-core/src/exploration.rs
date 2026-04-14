@@ -1,4 +1,4 @@
-use crate::{Component, Permille};
+use crate::{Component, HomeostaticNeedId, Permille};
 use serde::{Deserialize, Serialize};
 
 /// Stable per-agent parameters governing need-driven exploration pressure.
@@ -31,10 +31,36 @@ impl Default for ExplorationProfile {
 
 impl Component for ExplorationProfile {}
 
+/// Tracks per-need budget exhaustion counts for exploration fallback gating.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct AcquisitionExhaustionTracker {
+    counts: [u8; HomeostaticNeedId::VARIANT_COUNT],
+}
+
+impl AcquisitionExhaustionTracker {
+    #[must_use]
+    pub fn count(&self, need: HomeostaticNeedId) -> u8 {
+        self.counts[need as usize]
+    }
+
+    pub fn increment(&mut self, need: HomeostaticNeedId) {
+        let idx = need as usize;
+        self.counts[idx] = self.counts[idx].saturating_add(1);
+    }
+
+    pub fn reset(&mut self, need: HomeostaticNeedId) {
+        self.counts[need as usize] = 0;
+    }
+}
+
+impl Component for AcquisitionExhaustionTracker {}
+
 #[cfg(test)]
 mod tests {
-    use super::ExplorationProfile;
-    use crate::{ControlSource, EntityKind, Tick, Topology, World, traits::Component};
+    use super::{AcquisitionExhaustionTracker, ExplorationProfile};
+    use crate::{
+        ControlSource, EntityKind, HomeostaticNeedId, Tick, Topology, World, traits::Component,
+    };
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
@@ -46,6 +72,12 @@ mod tests {
     fn exploration_profile_component_bounds() {
         assert_component_bounds::<ExplorationProfile>();
         assert_value_bounds::<ExplorationProfile>();
+    }
+
+    #[test]
+    fn acquisition_exhaustion_tracker_component_bounds() {
+        assert_component_bounds::<AcquisitionExhaustionTracker>();
+        assert_value_bounds::<AcquisitionExhaustionTracker>();
     }
 
     #[test]
@@ -126,6 +158,90 @@ mod tests {
             vec![(agent, &profile)]
         );
         assert_eq!(world.count_with_exploration_profile(), 1);
+        assert_eq!(world.entity_kind(agent), Some(EntityKind::Agent));
+    }
+
+    #[test]
+    fn acquisition_exhaustion_tracker_default_is_zeroed() {
+        let tracker = AcquisitionExhaustionTracker::default();
+
+        assert_eq!(tracker.count(HomeostaticNeedId::Hunger), 0);
+        assert_eq!(tracker.count(HomeostaticNeedId::Thirst), 0);
+        assert_eq!(tracker.count(HomeostaticNeedId::Fatigue), 0);
+        assert_eq!(tracker.count(HomeostaticNeedId::Bladder), 0);
+        assert_eq!(tracker.count(HomeostaticNeedId::Dirtiness), 0);
+    }
+
+    #[test]
+    fn acquisition_exhaustion_tracker_increment_and_reset_are_need_specific() {
+        let mut tracker = AcquisitionExhaustionTracker::default();
+
+        tracker.increment(HomeostaticNeedId::Hunger);
+        tracker.increment(HomeostaticNeedId::Hunger);
+        tracker.increment(HomeostaticNeedId::Thirst);
+
+        assert_eq!(tracker.count(HomeostaticNeedId::Hunger), 2);
+        assert_eq!(tracker.count(HomeostaticNeedId::Thirst), 1);
+        assert_eq!(tracker.count(HomeostaticNeedId::Dirtiness), 0);
+
+        tracker.reset(HomeostaticNeedId::Hunger);
+
+        assert_eq!(tracker.count(HomeostaticNeedId::Hunger), 0);
+        assert_eq!(tracker.count(HomeostaticNeedId::Thirst), 1);
+    }
+
+    #[test]
+    fn acquisition_exhaustion_tracker_saturates_at_u8_max() {
+        let mut tracker = AcquisitionExhaustionTracker::default();
+
+        for _ in 0..=u8::MAX {
+            tracker.increment(HomeostaticNeedId::Hunger);
+        }
+
+        assert_eq!(tracker.count(HomeostaticNeedId::Hunger), u8::MAX);
+    }
+
+    #[test]
+    fn acquisition_exhaustion_tracker_registers_for_agents() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let agent = world
+            .create_agent("Scout", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let mut tracker = AcquisitionExhaustionTracker::default();
+        tracker.increment(HomeostaticNeedId::Fatigue);
+
+        assert_eq!(
+            world.get_component_acquisition_exhaustion_tracker(agent),
+            Some(&AcquisitionExhaustionTracker::default())
+        );
+        assert_eq!(
+            world
+                .remove_component_acquisition_exhaustion_tracker(agent)
+                .unwrap(),
+            Some(AcquisitionExhaustionTracker::default())
+        );
+
+        world
+            .insert_component_acquisition_exhaustion_tracker(agent, tracker)
+            .unwrap();
+
+        assert_eq!(
+            world.get_component_acquisition_exhaustion_tracker(agent),
+            Some(&tracker)
+        );
+        assert_eq!(
+            world
+                .entities_with_acquisition_exhaustion_tracker()
+                .collect::<Vec<_>>(),
+            vec![agent]
+        );
+        assert_eq!(
+            world
+                .query_acquisition_exhaustion_tracker()
+                .collect::<Vec<_>>(),
+            vec![(agent, &tracker)]
+        );
+        assert_eq!(world.count_with_acquisition_exhaustion_tracker(), 1);
         assert_eq!(world.entity_kind(agent), Some(EntityKind::Agent));
     }
 }

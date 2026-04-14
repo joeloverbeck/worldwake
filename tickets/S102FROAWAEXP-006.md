@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — travel commit handler in worldwake-systems
-**Deps**: S102FROAWAEXP-001
+**Deps**: archive/tickets/S102FROAWAEXP-001.md
 
 ## Problem
 

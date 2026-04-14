@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — select_exploration_target in candidate_generation.rs
-**Deps**: S102FROAWAEXP-001
+**Deps**: archive/tickets/S102FROAWAEXP-001.md
 
 ## Problem
 

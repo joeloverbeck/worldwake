@@ -2,12 +2,13 @@
 
 use crate::BeliefStoreDiff;
 use crate::{
-    ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, ArtifactPostingProfile, BanditCamp,
-    BanditFactionPolicy, BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile,
-    CombatProfile, CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile,
-    Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
-    DeadAt, DemandMemory, DeprivationExposure, DisposalProfile, DriveThresholds, EntityId,
-    EntityKind, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, ExplorationProfile,
+    AcquisitionExhaustionTracker, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader,
+    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockedIntentMemory, BountyTerms,
+    CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
+    CommodityValuationProfile, CommunicationProfile, Container, ContentionDispositionProfile,
+    ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, DemandMemory,
+    DeprivationExposure, DisposalProfile, DriveThresholds, EntityId, EntityKind,
+    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, ExplorationProfile,
     FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame,
     ItemLot, JusticeDispositionProfile, KnownRecipes, LastSeenMemory, MerchandiseProfile,
     MetabolismProfile, Name, NoticeContent, ObligationExecutionTracker, ObligationSatiationProfile,
@@ -271,10 +272,10 @@ mod tests {
         RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        ActionDefId, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, ArtifactKind,
-        ArtifactPostingProfile, ArtifactState, BanditCamp, BanditFactionPolicy,
-        BeliefConfidencePolicy, BelievedEntityState, BodyPart, BountyTarget, BountyTerms,
-        CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
+        AcquisitionExhaustionTracker, ActionDefId, ActiveGoal, AgentBeliefStore, AgentData,
+        ArtifactHeader, ArtifactKind, ArtifactPostingProfile, ArtifactState, BanditCamp,
+        BanditFactionPolicy, BeliefConfidencePolicy, BelievedEntityState, BodyPart, BountyTarget,
+        BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
         CommunicationProfile, Container, ContentionIntents, ContentionPolicy, ContentionQueue,
         ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DisposalProfile,
         DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventId,
@@ -597,6 +598,7 @@ mod tests {
                 capacity_strain_threshold: Permille::new(850).unwrap(),
             }),
             ComponentValue::ExecutionBudget(ExecutionBudget::new(11, 4, 3)),
+            ComponentValue::AcquisitionExhaustionTracker(AcquisitionExhaustionTracker::default()),
             ComponentValue::DriveThresholds(DriveThresholds::default()),
             ComponentValue::HomeostaticNeeds(HomeostaticNeeds::new(
                 Permille::new(100).unwrap(),
@@ -869,6 +871,7 @@ mod tests {
                 ComponentKind::TellProfile,
                 ComponentKind::CommunicationProfile,
                 ComponentKind::CognitiveProfile,
+                ComponentKind::AcquisitionExhaustionTracker,
                 ComponentKind::ExplorationProfile,
                 ComponentKind::ObligationSatiationProfile,
                 ComponentKind::ObligationExecutionTracker,

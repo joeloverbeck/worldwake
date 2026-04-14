@@ -2,8 +2,7 @@
 
 use crate::{
     ActionDomain, BelievedInstitutionalClaim, ClaimId, ClaimValue, CommodityKind, Component,
-    EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind,
-    HomeostaticNeeds,
+    EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind, HomeostaticNeeds,
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
     WorkstationTag, World, Wound,
@@ -208,7 +207,11 @@ impl AgentBeliefStore {
         }
         self.entity_claims.retain(|_, claims| !claims.is_empty());
         for entity in affected_entities {
-            self.refresh_entity_summary_from_claims(entity, current_tick, &profile.confidence_policy);
+            self.refresh_entity_summary_from_claims(
+                entity,
+                current_tick,
+                &profile.confidence_policy,
+            );
         }
 
         let max_need = agent_needs.max_value();
@@ -2289,10 +2292,10 @@ mod tests {
         ActionDefId, ActionDomain, BelievedArtifactState, BelievedBountyTerms,
         BelievedInstitutionalClaim, BodyPart, ClaimId, ClaimValue, CommodityKind, ControlSource,
         DeadAt, DisturbanceKind, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
-        EvidenceKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, NoticeTopic, Permille, Quantity, ResourceSource,
-        SceneEvidence, TheftFacts, Tick, WorkstationTag, World, Wound, WoundCause, WoundId,
-        WoundList, build_prototype_world, current_institutional_belief_topics,
+        EvidenceKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, Permille, Quantity,
+        ResourceSource, SceneEvidence, TheftFacts, Tick, WorkstationTag, World, Wound, WoundCause,
+        WoundId, WoundList, build_prototype_world, current_institutional_belief_topics,
         institutional_claim_same_memory_lane, traits::Component,
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -4144,7 +4147,10 @@ mod tests {
             &HomeostaticNeeds::new_sated(),
         );
 
-        assert_eq!(store.social_observations, vec![sample_social_observation(100)]);
+        assert_eq!(
+            store.social_observations,
+            vec![sample_social_observation(100)]
+        );
     }
 
     #[test]
@@ -4192,7 +4198,11 @@ mod tests {
         assert_eq!(claims.len(), 2);
         assert!(!claims.iter().any(|claim| claim.claim_id == ClaimId(1)));
         assert_eq!(
-            store.known_entities.get(&entity(61)).unwrap().last_known_place,
+            store
+                .known_entities
+                .get(&entity(61))
+                .unwrap()
+                .last_known_place,
             Some(entity(11))
         );
     }
@@ -4317,7 +4327,10 @@ mod tests {
 
         let summary = store.known_entities.get(&entity(81)).unwrap();
         assert_eq!(summary.presentation_tick_count, 3);
-        assert_eq!(&summary.presentation_ticks[..3], &[Tick(1), Tick(5), Tick(9)]);
+        assert_eq!(
+            &summary.presentation_ticks[..3],
+            &[Tick(1), Tick(5), Tick(9)]
+        );
     }
 
     #[test]
@@ -5501,8 +5514,14 @@ mod tests {
         let profile = PerceptionProfile::default();
 
         assert_eq!(profile.confidence_policy, BeliefConfidencePolicy::default());
-        assert_eq!(profile.entity_activation_threshold, Permille::new(100).unwrap());
-        assert_eq!(profile.claim_confidence_threshold, Permille::new(50).unwrap());
+        assert_eq!(
+            profile.entity_activation_threshold,
+            Permille::new(100).unwrap()
+        );
+        assert_eq!(
+            profile.claim_confidence_threshold,
+            Permille::new(50).unwrap()
+        );
         assert_eq!(profile.observation_buffer_capacity, 5);
         assert_eq!(profile.need_salience_boost, Permille::new(500).unwrap());
         assert_eq!(

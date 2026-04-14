@@ -1,25 +1,25 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, ArtifactPostingProfile, BanditCamp,
-    BanditFactionPolicy, BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile,
-    CombatProfile, CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile,
-    ComponentTables, ComponentValue, Container, ContentionDispositionProfile, ContentionIntents,
-    ContentionPolicy, ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DisposalProfile,
-    DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
-    EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
-    FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame,
-    ItemLot, JusticeDispositionProfile, KnownRecipes, LastSeenMemory, LoadUnits, LotOperation,
-    MerchandiseProfile, MetabolismProfile, Name, NoticeContent, ObligationExecutionTracker,
-    ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-    PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PlaceVisibilityProfile,
-    PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
-    PursuitProfile, Quantity, RecordData, RelationTables, ResourceSource, RouteExperience,
-    SaleListing, SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy,
-    SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick, Topology,
-    TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
-    component_schema::with_component_schema_entries,
+    AcquisitionExhaustionTracker, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader,
+    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockedIntentMemory, BountyTerms,
+    CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
+    CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
+    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
+    DemandMemory, DeprivationExposure, DisposalProfile, DriveThresholds, EntityAllocator, EntityId,
+    EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
+    ExpectationStore, ExplorationProfile, FactionData, HomeostaticNeeds, InTransitOnEdge,
+    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
+    LastSeenMemory, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+    NoticeContent, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
+    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag,
+    PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
+    ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, RecordData,
+    RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence, SourceReliability,
+    StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
+    WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -168,6 +168,10 @@ impl World {
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
+            world.insert_component_acquisition_exhaustion_tracker(
+                entity,
+                AcquisitionExhaustionTracker::default(),
+            )?;
             world.insert_component_exploration_profile(entity, ExplorationProfile::default())?;
             world.insert_component_obligation_satiation_profile(
                 entity,
