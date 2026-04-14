@@ -4288,17 +4288,9 @@ fn select_exploration_target(
 ) -> Option<EntityId> {
     let origin = ctx.place?;
     let current_tick = ctx.view.current_tick();
-    let known_places = known_place_observations(ctx.view, ctx.agent);
-    if known_places.is_empty() {
+    let candidates = exploration_candidate_places(ctx.view, ctx.agent, profile.frontier_depth);
+    if candidates.is_empty() {
         return None;
-    }
-
-    let mut candidates = BTreeMap::<EntityId, Option<Tick>>::new();
-    for (place, observed_tick) in &known_places {
-        candidates.insert(*place, Some(*observed_tick));
-        for (adjacent, _) in ctx.view.adjacent_places_with_travel_ticks(*place) {
-            candidates.entry(adjacent).or_insert(None);
-        }
     }
 
     candidates
@@ -4321,6 +4313,43 @@ fn select_exploration_target(
         })
         .min()
         .map(|(_, _, _, place)| place)
+}
+
+fn exploration_candidate_places(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    frontier_depth: u16,
+) -> BTreeMap<EntityId, Option<Tick>> {
+    let known_places = known_place_observations(view, agent);
+    let mut candidates = BTreeMap::<EntityId, Option<Tick>>::new();
+    let mut frontier = VecDeque::new();
+
+    for (place, observed_tick) in known_places {
+        candidates.insert(place, Some(observed_tick));
+        frontier.push_back(place);
+    }
+
+    for _ in 0..frontier_depth {
+        if frontier.is_empty() {
+            break;
+        }
+
+        let mut next_frontier = VecDeque::new();
+        while let Some(place) = frontier.pop_front() {
+            for (adjacent, _) in view.adjacent_places_with_travel_ticks(place) {
+                if let std::collections::btree_map::Entry::Vacant(entry) =
+                    candidates.entry(adjacent)
+                {
+                    entry.insert(None);
+                    next_frontier.push_back(adjacent);
+                }
+            }
+        }
+
+        frontier = next_frontier;
+    }
+
+    candidates
 }
 
 fn known_place_observations(
@@ -15628,6 +15657,214 @@ mod tests {
                 motivating_need: HomeostaticNeedId::Hunger,
             }
         ));
+    }
+
+    #[test]
+    fn exploration_candidate_places_frontier_depth_one_matches_single_hop_candidates() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let one_hop = entity(11);
+        let two_hop = entity(12);
+
+        let mut view = TestBeliefView::default();
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, origin);
+        view.adjacent_places.insert(origin, vec![one_hop]);
+        view.adjacent_places.insert(one_hop, vec![origin, two_hop]);
+        view.adjacent_places.insert(two_hop, vec![one_hop]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                origin,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        assert_eq!(
+            super::exploration_candidate_places(&view, agent, 1),
+            BTreeMap::from([(origin, Some(Tick(100))), (one_hop, None)])
+        );
+    }
+
+    #[test]
+    fn exploration_candidate_places_frontier_depth_two_discovers_second_hop_places() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let one_hop = entity(11);
+        let two_hop = entity(12);
+
+        let mut view = TestBeliefView::default();
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, origin);
+        view.adjacent_places.insert(origin, vec![one_hop]);
+        view.adjacent_places.insert(one_hop, vec![origin, two_hop]);
+        view.adjacent_places.insert(two_hop, vec![one_hop]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                origin,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        assert_eq!(
+            super::exploration_candidate_places(&view, agent, 2),
+            BTreeMap::from([(origin, Some(Tick(100))), (one_hop, None), (two_hop, None),])
+        );
+    }
+
+    #[test]
+    fn exploration_candidate_places_frontier_depth_cap_controls_third_hop_discovery() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let one_hop = entity(11);
+        let two_hop = entity(12);
+        let three_hop = entity(13);
+
+        let mut view = TestBeliefView::default();
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, origin);
+        view.adjacent_places.insert(origin, vec![one_hop]);
+        view.adjacent_places.insert(one_hop, vec![origin, two_hop]);
+        view.adjacent_places
+            .insert(two_hop, vec![one_hop, three_hop]);
+        view.adjacent_places.insert(three_hop, vec![two_hop]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                origin,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        assert_eq!(
+            super::exploration_candidate_places(&view, agent, 2),
+            BTreeMap::from([(origin, Some(Tick(100))), (one_hop, None), (two_hop, None),])
+        );
+        assert_eq!(
+            super::exploration_candidate_places(&view, agent, 3),
+            BTreeMap::from([
+                (origin, Some(Tick(100))),
+                (one_hop, None),
+                (two_hop, None),
+                (three_hop, None),
+            ])
+        );
+    }
+
+    #[test]
+    fn exploration_candidate_places_terminates_on_cyclic_topology_without_duplicates() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let one_hop = entity(11);
+        let two_hop = entity(12);
+
+        let mut view = TestBeliefView::default();
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, origin);
+        view.adjacent_places.insert(origin, vec![one_hop, two_hop]);
+        view.adjacent_places.insert(one_hop, vec![origin, two_hop]);
+        view.adjacent_places.insert(two_hop, vec![origin, one_hop]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                origin,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        assert_eq!(
+            super::exploration_candidate_places(&view, agent, 6),
+            BTreeMap::from([(origin, Some(Tick(100))), (one_hop, None), (two_hop, None),])
+        );
+    }
+
+    #[test]
+    fn select_exploration_target_skips_current_place_and_recently_visited_places() {
+        let agent = entity(1);
+        let origin = entity(10);
+        let recently_visited = entity(11);
+        let second_hop = entity(12);
+
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, origin);
+        view.adjacent_places.insert(origin, vec![recently_visited]);
+        view.adjacent_places
+            .insert(recently_visited, vec![origin, second_hop]);
+        view.adjacent_places
+            .insert(second_hop, vec![recently_visited]);
+        view.beliefs.insert(
+            agent,
+            vec![
+                (
+                    origin,
+                    BelievedEntityState {
+                        believed_kind: Some(EntityKind::Place),
+                        last_known_place: None,
+                        ..believed_state(480, PerceptionSource::DirectObservation)
+                    },
+                ),
+                (
+                    recently_visited,
+                    BelievedEntityState {
+                        believed_kind: Some(EntityKind::Place),
+                        last_known_place: None,
+                        ..believed_state(480, PerceptionSource::DirectObservation)
+                    },
+                ),
+            ],
+        );
+        view.sync_belief_store(agent);
+
+        let blocked = BlockedIntentMemory::default();
+        let ctx = GenerationContext {
+            view: &view,
+            agent,
+            place: Some(origin),
+            travel_horizon: 6,
+            enterprise: EnterpriseSignals::default(),
+            blocked: &blocked,
+            violation_memory: &ViolationMemory::default(),
+            recipes: &RecipeRegistry::new(),
+            current_tick: Tick(500),
+            tracing_enabled: false,
+        };
+
+        assert_eq!(
+            super::select_exploration_target(
+                &ctx,
+                ExplorationProfile {
+                    frontier_depth: 2,
+                    visit_lookback_ticks: 50,
+                    ..ExplorationProfile::default()
+                }
+            ),
+            Some(second_hop)
+        );
     }
 
     #[test]
