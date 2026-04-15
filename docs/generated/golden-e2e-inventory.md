@@ -5,42 +5,23 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 29
-- Files contributing `golden_*` tests: 29
-- Total `golden_*` tests: 371
+- Golden test files: 10
+- Files contributing `golden_*` tests: 10
+- Total `golden_*` tests: 77
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
 | `golden_activation_decay.rs` | 6 |
-| `golden_ai_decisions.rs` | 19 |
-| `golden_budget_exhaustion_snapshots.rs` | 7 |
-| `golden_care.rs` | 18 |
-| `golden_combat.rs` | 27 |
-| `golden_commodity_opportunity.rs` | 3 |
-| `golden_determinism.rs` | 12 |
-| `golden_emergent.rs` | 51 |
-| `golden_expectation.rs` | 10 |
-| `golden_experience_preferences.rs` | 6 |
+| `golden_ai_decisions.rs` | 13 |
+| `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 8 |
-| `golden_integration.rs` | 28 |
-| `golden_long_scenarios.rs` | 4 |
-| `golden_merchant_selling.rs` | 20 |
-| `golden_offices.rs` | 24 |
-| `golden_patrol.rs` | 8 |
+| `golden_merchant_selling.rs` | 9 |
+| `golden_offices.rs` | 12 |
 | `golden_perception_exposure.rs` | 6 |
-| `golden_planner_pathology.rs` | 4 |
-| `golden_production.rs` | 34 |
-| `golden_pursuit.rs` | 6 |
-| `golden_reasoning_diversity.rs` | 6 |
-| `golden_resilience.rs` | 2 |
-| `golden_simulation_gaps.rs` | 10 |
-| `golden_soak.rs` | 1 |
-| `golden_social.rs` | 18 |
-| `golden_supply_chain.rs` | 2 |
-| `golden_t22_bandit_camp_destruction.rs` | 8 |
-| `golden_trade.rs` | 11 |
+| `golden_planner_pathology.rs` | 3 |
+| `golden_simulation_gaps.rs` | 5 |
 | `golden_travel_physiology.rs` | 12 |
 
 ### `golden_activation_decay.rs`
@@ -56,9 +37,6 @@ Do not hand-edit it.
 
 - `golden_goal_invalidation_by_another_agent`
 - `golden_unrelated_commodity_change_preserves_frontier_exhaustion`
-- `golden_unrelated_commodity_change_preserves_frontier_exhaustion_replays_deterministically`
-- `golden_exhausted_opportunity_switches_to_sibling_source`
-- `golden_exhausted_opportunity_switches_to_sibling_source_replays_deterministically`
 - `golden_priority_based_interrupt`
 - `golden_blocked_intent_memory_with_ttl_expiry`
 - `golden_deprivation_cascade`
@@ -67,170 +45,15 @@ Do not hand-edit it.
 - `golden_three_way_need_competition`
 - `golden_bladder_relief_with_travel`
 - `golden_goal_switching_during_multi_leg_travel`
-- `golden_multi_hop_travel_plan`
-- `golden_spatial_multi_hop_plan`
-- `golden_spatial_multi_hop_plan_replays_deterministically`
 - `golden_utility_weight_diversity_in_need_selection`
 - `golden_trace_enabled_scenario`
 - `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
 
-### `golden_budget_exhaustion_snapshots.rs`
-
-- `generate_residual_candidate_report`
-- `merchant_vara_water_at_thornwall_finds_harvest_plan`
-- `guard_theron_water_at_thornwall_finds_harvest_plan`
-- `merchant_vara_apple_at_dusty_trail_residual_budget_exhaustion_contract`
-- `kael_water_at_thornwall_late_game_finds_harvest_plan`
-- `merchant_vara_treat_wounds_at_dusty_trail_residual_budget_exhaustion_contract`
-- `kael_treat_wounds_vara_at_dusty_trail_residual_frontier_exhaustion_contract`
-
-### `golden_care.rs`
-
-- `remote_treat_wounds_snapshot_supports_pick_up_transition_at_orchard`
-- `remote_treat_wounds_search_needs_eight_step_depth_budget_in_prototype_topology`
-- `golden_healing_wounded_agent`
-- `golden_healing_wounded_agent_replays_deterministically`
-- `golden_healer_acquires_ground_medicine_for_patient`
-- `golden_healer_acquires_ground_medicine_for_patient_replays_deterministically`
-- `golden_healer_acquires_remote_ground_medicine_for_patient`
-- `golden_healer_acquires_remote_ground_medicine_for_patient_replays_deterministically`
-- `golden_self_care_with_medicine`
-- `golden_self_care_with_medicine_replays_deterministically`
-- `golden_self_care_acquires_ground_medicine`
-- `golden_self_care_acquires_ground_medicine_replays_deterministically`
-- `golden_indirect_report_does_not_trigger_care`
-- `golden_indirect_report_does_not_trigger_care_replays_deterministically`
-- `golden_care_goal_invalidation_when_patient_heals`
-- `golden_care_goal_invalidation_when_patient_heals_replays_deterministically`
-- `golden_care_pre_start_wound_disappearance_records_blocker`
-- `golden_care_pre_start_wound_disappearance_records_blocker_replays_deterministically`
-
-### `golden_combat.rs`
-
-- `golden_bury_corpse`
-- `golden_reduce_danger_defensive_mitigation`
-- `golden_defend_replans_after_finite_stance_expires`
-- `golden_defend_changed_conditions`
-- `golden_defend_changed_conditions_replays_deterministically`
-- `golden_wound_bleed_clotting_natural_recovery`
-- `golden_wound_bleed_clotting_natural_recovery_replays_deterministically`
-- `golden_recovery_aware_boost_eats_before_wash`
-- `golden_recovery_aware_boost_eats_before_wash_replays_deterministically`
-- `golden_death_cascade_and_opportunistic_loot`
-- `golden_death_cascade_and_opportunistic_loot_replays_deterministically`
-- `golden_loot_suppressed_under_self_care_pressure`
-- `golden_loot_suppressed_under_self_care_pressure_replays_deterministically`
-- `golden_death_while_traveling`
-- `golden_death_while_traveling_replays_deterministically`
-- `golden_combat_between_living_agents`
-- `golden_seed_sensitivity_living_combat_different_outcomes`
-- `golden_combat_between_living_agents_replays_deterministically`
-- `golden_multi_corpse_loot_binding`
-- `golden_multi_corpse_loot_binding_replays_deterministically`
-- `golden_bury_suppressed_under_stress`
-- `golden_bury_suppressed_under_stress_replays_deterministically`
-- `golden_suppression_then_binding_combined`
-- `golden_suppression_then_binding_combined_replays_deterministically`
-- `golden_corpse_contention_projects_visible_queue_and_grant_state`
-- `golden_corpse_contention_projects_visible_queue_and_grant_state_replays_deterministically`
-- `golden_action_trace_records_loot_lifecycle`
-
-### `golden_commodity_opportunity.rs`
-
-- `golden_unreachable_workstation_suppresses_recipe_input_value`
-- `golden_unreachable_workstation_suppresses_recipe_input_value_replays_deterministically`
-- `golden_no_known_recipe_suppresses_recipe_input_value`
-
-### `golden_determinism.rs`
-
-- `golden_deterministic_replay_fidelity`
-- `golden_save_load_round_trip_under_ai`
-- `golden_world_runs_without_observers`
-- `golden_world_runs_without_observers_replays_deterministically`
-- `bench_world_runs_without_observers`
-- `golden_save_load_preserves_promoted_commitments`
-- `golden_save_load_preserves_promoted_commitments_replays_deterministically`
-- `golden_save_load_preserves_suspended_intention_frame`
-- `golden_save_load_preserves_intention_disposition_profile`
-- `golden_save_load_preserves_frame_assumptions`
-- `golden_save_load_preserves_generalized_contention_state`
-- `golden_save_load_preserves_generalized_contention_state_replays_deterministically`
-
-### `golden_emergent.rs`
-
-- `golden_wound_vs_hunger_pain_first`
-- `golden_wound_vs_hunger_hunger_first`
-- `golden_wound_vs_hunger_replays_deterministically`
-- `golden_deprivation_wound_worsening_consolidates_not_duplicates`
-- `golden_deprivation_wound_worsening_consolidates_not_duplicates_replays_deterministically`
-- `golden_wounded_politician_pain_first`
-- `golden_wounded_politician_enterprise_first`
-- `golden_wounded_politician_replays_deterministically`
-- `golden_care_weight_divergence_under_observation`
-- `golden_care_weight_divergence_replays_deterministically`
-- `golden_care_travel_to_remote_patient`
-- `golden_care_travel_to_remote_patient_replays_deterministically`
-- `golden_loot_corpse_self_care_chain`
-- `golden_loot_corpse_self_care_chain_replays_deterministically`
-- `golden_combat_death_triggers_force_succession`
-- `golden_combat_death_triggers_force_succession_replays_deterministically`
-- `golden_tell_propagates_political_knowledge`
-- `golden_tell_propagates_political_knowledge_replays_deterministically`
-- `golden_same_place_office_fact_still_requires_tell`
-- `golden_same_place_office_fact_still_requires_tell_replays_deterministically`
-- `golden_remote_office_claim_start_failure_loses_gracefully`
-- `golden_remote_office_claim_start_failure_loses_gracefully_replays_deterministically`
-- `golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact`
-- `golden_already_told_recent_subject_does_not_crowd_out_untold_office_fact_replays_deterministically`
-- `golden_force_controller_departure_enables_rival_claim`
-- `golden_force_controller_departure_enables_rival_claim_replays_deterministically`
-- `golden_force_claim_creates_hostility_witnessed_and_propagated`
-- `golden_force_claim_creates_hostility_witnessed_and_propagated_replays_deterministically`
-- `golden_contested_force_state_propagates_through_belief_system`
-- `golden_contested_force_state_propagates_through_belief_system_replays_deterministically`
-- `golden_same_place_concurrent_violations_stay_distinct`
-- `golden_same_place_concurrent_violations_stay_distinct_replays_deterministically`
-- `golden_entity_missing_triggers_investigation`
-- `golden_entity_missing_triggers_investigation_replays_deterministically`
-- `golden_theft_leads_owner_to_local_suspected_theft_discovery`
-- `golden_theft_leads_owner_to_local_suspected_theft_discovery_replays_deterministically`
-- `golden_witnessed_theft_accusation_chain`
-- `golden_witnessed_theft_accusation_chain_replays_deterministically`
-- `golden_traceability_explains_stale_fine_branch_without_source_diving`
-- `golden_supply_depletion_enables_share_belief`
-- `golden_supply_depletion_enables_share_belief_replays_deterministically`
-- `golden_witness_deterrence_suppresses_theft_candidate`
-- `golden_witness_deterrence_suppresses_theft_candidate_replays_deterministically`
-- `golden_exile_punishment_when_fine_is_not_locally_collectible`
-- `golden_exile_punishment_when_fine_is_not_locally_collectible_replays_deterministically`
-- `golden_jurisdiction_gated_punishment`
-- `golden_jurisdiction_gated_punishment_replays_deterministically`
-- `golden_secondary_jurisdiction_punishment`
-- `golden_secondary_jurisdiction_punishment_replays_deterministically`
-- `golden_dual_discovery_converges_without_double_accusation`
-- `golden_dual_discovery_converges_without_double_accusation_replays_deterministically`
-
-### `golden_expectation.rs`
-
-- `golden_overdue_expectation_drives_search`
-- `golden_overdue_expectation_drives_search_replays_deterministically`
-- `golden_report_missing_creates_violation_and_institutional_record`
-- `golden_report_missing_creates_violation_and_institutional_record_replays_deterministically`
-- `golden_escort_to_safety_after_finding_wounded`
-- `golden_escort_to_safety_after_finding_wounded_replays_deterministically`
-- `golden_ask_about_person_during_search`
-- `golden_ask_about_person_during_search_replays_deterministically`
-- `golden_report_found_after_search`
-- `golden_report_found_after_search_replays_deterministically`
-
 ### `golden_experience_preferences.rs`
 
 - `golden_hostile_completed_travel_flips_next_route_choice`
-- `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically`
 - `golden_combat_aborted_travel_flips_next_route_choice`
-- `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically`
 - `golden_preference_profile_diversifies_route_selection`
-- `golden_preference_profile_diversifies_route_selection_replays_deterministically`
 
 ### `golden_exploration.rs`
 
@@ -243,104 +66,32 @@ Do not hand-edit it.
 - `golden_s102_exploration_chain_belief_persistence`
 - `golden_s102_counter_reset_on_need_satisfaction`
 
-### `golden_integration.rs`
-
-- `t20_apple_stockout_seed_1`
-- `t20_apple_stockout_seed_2`
-- `t24_player_replacement_seed_1`
-- `t24_player_replacement_seed_2`
-- `t27_controlled_agent_death_seed_1`
-- `t27_controlled_agent_death_seed_2`
-- `t28_pursuit_information_boundary_seed_1`
-- `t28_pursuit_information_boundary_seed_2`
-- `t29_wrongful_accusation_seed_1`
-- `t29_wrongful_accusation_seed_2`
-- `t22_camp_reconstitution_seed_1`
-- `t22_camp_reconstitution_seed_2`
-- `golden_s45_bounty_lifecycle`
-- `golden_s45_bounty_lifecycle_replays_deterministically`
-- `golden_s45_bounty_expiration_blocks_pursuit`
-- `golden_s45_bounty_expiration_blocks_pursuit_replays_deterministically`
-- `golden_s49_delivery_bounty_lifecycle`
-- `golden_s49_delivery_bounty_lifecycle_replays_deterministically`
-- `golden_s45_notice_warning_flips_route_choice`
-- `golden_s45_notice_warning_flips_route_choice_replays_deterministically`
-- `golden_s51_autonomous_bounty_posting`
-- `golden_s51_autonomous_bounty_posting_replays_deterministically`
-- `golden_s58_autonomous_notice_reroutes_later_travel`
-- `golden_s58_autonomous_notice_reroutes_later_travel_replays_deterministically`
-- `golden_s97_autonomous_notice_expiry_bounds_active_population`
-- `golden_s97_autonomous_notice_expiry_bounds_active_population_replays_deterministically`
-- `golden_s52_theft_evidence_discovery`
-- `golden_s52_theft_evidence_discovery_replays_deterministically`
-
-### `golden_long_scenarios.rs`
-
-- `t21_ruler_death_patrol_gap_seed_1`
-- `t21_ruler_death_patrol_gap_seed_2`
-- `t33_vacancy_crime_recovery_seed_1`
-- `t33_vacancy_crime_recovery_seed_2`
-
 ### `golden_merchant_selling.rs`
 
 - `staff_market_retains_displayed_listing_through_presence_cycle`
-- `staff_market_retains_displayed_listing_replays_deterministically`
 - `buyer_trades_against_listed_lot`
-- `buyer_trades_against_listed_lot_replays_deterministically`
 - `unlisted_stock_not_sellable`
-- `loose_home_stock_is_staged_before_sell_goal_settles`
-- `deterministic_replay_preserves_listing_behavior`
 - `unstage_round_trip_preserves_storage_contract`
-- `unstage_round_trip_preserves_storage_contract_replays_deterministically`
 - `buyer_discovers_listed_lots_not_unlisted_stock`
-- `merchant_emits_sell_commodity_at_home_facility`
 - `seller_departure_invalidates_listing`
 - `dead_seller_invalidates_listing`
-- `move_cargo_then_sell_commodity_plan_shape`
 - `demand_memory_raises_sell_ranking`
-- `planning_state_preserves_listing_determinism`
-- `combined_market_trip_selected_for_side_benefit`
-- `combined_market_trip_selected_for_side_benefit_replays_deterministically`
 - `hungry_merchant_eats_listed_stock`
-- `hungry_merchant_eats_listed_stock_replays_deterministically`
 
 ### `golden_offices.rs`
 
 - `golden_simple_office_claim_via_declare_support`
-- `golden_simple_office_claim_deterministic_replay`
 - `golden_competing_claims_with_loyal_supporter`
 - `golden_bribe_support_coalition`
 - `bench_branchy_office_coalition`
 - `golden_threaten_with_courage_diversity`
 - `golden_travel_to_distant_jurisdiction_for_claim`
 - `golden_information_locality_for_political_facts`
-- `golden_information_locality_for_political_facts_replays_deterministically`
-- `golden_remote_record_consultation_political_action`
-- `golden_remote_record_consultation_political_action_replays_deterministically`
-- `golden_knowledge_asymmetry_race_informed_wins_office`
-- `golden_knowledge_asymmetry_race_informed_wins_office_replays_deterministically`
 - `golden_survival_pressure_suppresses_political_goals`
-- `golden_survival_pressure_suppresses_political_goals_replays_deterministically`
 - `golden_faction_eligibility_filters_office_claim`
-- `golden_force_claim_ai_installation`
-- `golden_force_claim_ai_installation_replays_deterministically`
 - `golden_contested_force_claim_resolves_after_yield`
-- `golden_contested_force_claim_resolves_after_yield_replays_deterministically`
 - `golden_force_control_locality_requires_tell`
-- `golden_force_control_locality_requires_tell_replays_deterministically`
 - `golden_vacancy_notice_unlocks_political_action_without_record_consult`
-- `golden_vacancy_notice_unlocks_political_action_without_record_consult_replays_deterministically`
-
-### `golden_patrol.rs`
-
-- `golden_patrol_cycle_wraps_route`
-- `golden_patrol_cycle_wraps_route_replays_deterministically`
-- `golden_patrol_interruption_preserves_waypoint_until_resume`
-- `golden_patrol_belief_urgency_scales_from_local_crime_and_vacancy`
-- `golden_patrol_route_adaptation_retargets_after_local_report`
-- `golden_patrol_locality_requires_guard_local_report`
-- `golden_patrol_driven_crime_discovery`
-- `golden_patrol_driven_crime_discovery_replays_deterministically`
 
 ### `golden_perception_exposure.rs`
 
@@ -356,135 +107,14 @@ Do not hand-edit it.
 - `cross_location_water_acquisition_succeeds_without_budget_exhaustion`
 - `degenerate_zero_step_loop_blocks_actionable_goals`
 - `obligation_satiation_allows_survival_needs_to_override_posting`
-- `obligation_satiation_allows_survival_needs_to_override_posting_replays_deterministically`
-
-### `golden_production.rs`
-
-- `golden_resource_contention_with_conservation`
-- `golden_resource_exhaustion_race`
-- `golden_contested_harvest_start_failure_recovers_via_remote_fallback`
-- `golden_observed_harvest_competition_redirects_to_remote_sibling`
-- `golden_observed_harvest_competition_redirects_to_remote_sibling_replays_deterministically`
-- `golden_zero_activity_awareness_does_not_avoid_observed_harvest_competition`
-- `golden_exclusive_queue_contention_uses_queue_grants_and_rotates_first_turns`
-- `golden_dead_agent_pruned_from_facility_queue`
-- `golden_departed_waiter_pruned_from_facility_queue`
-- `golden_facility_queue_patience_timeout`
-- `golden_facility_queue_patience_timeout_replays_deterministically`
-- `golden_local_detour_reuses_existing_grant_before_harvest`
-- `golden_materialized_output_ownership_prevents_theft`
-- `golden_materialization_barrier_chain`
-- `golden_acquire_commodity_recipe_input`
-- `golden_remote_acquire_commodity_recipe_input`
-- `golden_remote_acquire_commodity_recipe_input_replays_deterministically`
-- `golden_multi_recipe_craft_path`
-- `golden_capacity_constrained_ground_lot_pickup`
-- `golden_resource_exhaustion_race_replays_deterministically`
-- `golden_contested_harvest_start_failure_recovers_via_remote_fallback_replays_deterministically`
-- `golden_exclusive_queue_contention_replays_deterministically`
-- `golden_dead_agent_pruned_from_facility_queue_replays_deterministically`
-- `golden_departed_waiter_pruned_from_facility_queue_replays_deterministically`
-- `golden_unique_item_race_rejection_redirects_to_local_alternative`
-- `golden_unique_item_race_rejection_redirects_to_local_alternative_replays_deterministically`
-- `golden_faction_ownership_producer_owner_delegation`
-- `golden_faction_ownership_producer_owner_delegation_replays_deterministically`
-- `golden_goal_switch_clears_contention_queue_entry`
-- `golden_goal_switch_clears_contention_queue_entry_replays_deterministically`
-- `golden_waste_disposal_cycle`
-- `golden_waste_disposal_cycle_replays_deterministically`
-- `golden_waste_disposal_exact_full_threshold_cycle`
-- `golden_waste_disposal_exact_full_threshold_cycle_replays_deterministically`
-
-### `golden_pursuit.rs`
-
-- `golden_bandit_witnesses_and_pursues`
-- `golden_bandit_witnesses_and_pursues_replays_deterministically`
-- `golden_stale_pursuit_arrival_failure`
-- `golden_stale_pursuit_arrival_failure_replays_deterministically`
-- `golden_combat_flee_re_pursue`
-- `golden_combat_flee_re_pursue_replays_deterministically`
-
-### `golden_reasoning_diversity.rs`
-
-- `search_depth_divergence`
-- `search_depth_divergence_replays_deterministically`
-- `landmark_depth_divergence`
-- `landmark_depth_divergence_replays_deterministically`
-- `golden_utility_profile_diversity`
-- `golden_utility_profile_diversity_replays_deterministically`
-
-### `golden_resilience.rs`
-
-- `t31_stress_disruptions`
-- `t32_replay_consistency`
 
 ### `golden_simulation_gaps.rs`
 
 - `golden_remote_travel_when_local_supply_exhausted`
-- `golden_remote_travel_when_local_supply_exhausted_replays_deterministically`
 - `golden_max_idle_under_remote_resource_scarcity`
-- `golden_max_idle_under_remote_resource_scarcity_replays_deterministically`
 - `golden_multi_agent_convergence`
-- `golden_multi_agent_convergence_replays_deterministically`
 - `golden_death_traceability`
-- `golden_death_traceability_replays_deterministically`
 - `golden_harvest_to_consume`
-- `golden_harvest_to_consume_replays_deterministically`
-
-### `golden_soak.rs`
-
-- `t30_seven_day_soak`
-
-### `golden_social.rs`
-
-- `golden_agent_autonomously_tells_colocated_peer`
-- `golden_rumor_chain_degrades_through_three_agents`
-- `golden_stale_belief_travel_reobserve_replan`
-- `golden_skeptical_listener_rejects_told_belief`
-- `golden_bystander_sees_telling_but_gets_no_belief`
-- `golden_entity_missing_discovery_does_not_teleport_belief`
-- `golden_survival_needs_suppress_social_goals`
-- `golden_agent_does_not_repeat_same_unchanged_tell_to_same_listener`
-- `golden_agent_retells_after_subject_belief_changes`
-- `golden_agent_retells_after_conversation_memory_expiry`
-- `golden_decision_trace_explains_social_candidate_reenabled_after_belief_change_or_expiry`
-- `golden_chain_length_filtering_stops_gossip`
-- `golden_agent_diversity_in_social_behavior`
-- `golden_rumor_leads_to_wasted_trip_then_discovery`
-- `golden_alarm_survives_stress_suppression`
-- `golden_class_aware_acceptance`
-- `golden_alarm_relay_through_stressed_intermediary`
-- `golden_contradictory_location_claims_coexist_and_direct_observation_wins`
-
-### `golden_supply_chain.rs`
-
-- `golden_full_supply_chain_negotiated_restock_to_consumption`
-- `golden_full_supply_chain_negotiated_restock_to_consumption_replays_deterministically`
-
-### `golden_t22_bandit_camp_destruction.rs`
-
-- `golden_t22_bandit_camp_destruction`
-- `golden_t22_bandit_camp_destruction_replays_deterministically`
-- `golden_pressure_driven_raid_emergence`
-- `golden_pressure_driven_raid_emergence_replays_deterministically`
-- `golden_raid_belief_economic_cascade`
-- `golden_raid_belief_economic_cascade_replays_deterministically`
-- `golden_wound_dampened_raid_spiral`
-- `golden_wound_dampened_raid_spiral_replays_deterministically`
-
-### `golden_trade.rs`
-
-- `merchant_route_knowledge_alone_does_not_unlock_remote_restock`
-- `golden_buyer_driven_trade_acquisition`
-- `golden_buyer_driven_trade_acquisition_replays_deterministically`
-- `golden_merchant_restock_return_stock`
-- `golden_merchant_restock_return_stock_replays_deterministically`
-- `golden_carrier_delivery_to_facility_preserves_seller_identity`
-- `golden_carrier_delivery_to_facility_preserves_seller_identity_replays_deterministically`
-- `golden_local_trade_start_failure_recovers_via_production_fallback`
-- `golden_local_trade_start_failure_recovers_via_production_fallback_replays_deterministically`
-- `golden_trade_rejection_reroutes_to_reliable_seller`
-- `golden_trade_rejection_reroutes_to_reliable_seller_replays_deterministically`
 
 ### `golden_travel_physiology.rs`
 

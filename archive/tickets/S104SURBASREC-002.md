@@ -1,6 +1,6 @@
 # S104SURBASREC-002: Triage mixed golden test files
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -22,6 +22,7 @@ Six golden test files contain a mix of invariant-based tests and hash/sequence-d
 2. `scripts/golden_inventory.py` exists and supports `--write --check-docs` flags — confirmed during reassessment.
 3. Generated doc targets exist: `docs/generated/golden-scenario-index.md`, `docs/generated/golden-coverage-matrix.md`, `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-details/*.md`.
 4. Factual follow-up from archived `S104SURBASREC-001`: Rust integration tests in `crates/worldwake-ai/tests/` are file-based and do not use a shared `mod golden_*;` entry point. If a TRIAGE file is deleted during this ticket, removing the file is sufficient; no central harness-module edit is expected.
+5. Live inventory validation is stricter than generated-doc regeneration alone: `scripts/golden_inventory.py --write --check-docs` rejects scenario comment blocks that no longer own any `#[test]` function and rejects stale `golden_*` references in `docs/golden-e2e-testing.md`. That doc had two stale references from older removed tests and needed factual cleanup during this ticket.
 
 ## Architecture Check
 
@@ -55,6 +56,14 @@ Triage notes from the spec:
 - For files where ALL tests are KEEP: leave unchanged
 - For files where ALL tests are REMOVE: delete the file
 - For mixed files: remove individual REMOVE test functions and their associated setup code. If this leaves the file with only 1-2 tests, consider whether keeping the file is worthwhile or if remaining tests should be moved to an existing KEEP file.
+
+Implemented triage:
+- `golden_ai_decisions.rs`: removed the replay-only frontier-exhaustion test, the exhausted-opportunity sibling-source scenario block, the spatial multi-hop planner-shape block, and one leftover multi-hop test that depended on those helpers.
+- `golden_experience_preferences.rs`: removed the three replay/hash companions; kept the three invariant route-learning tests.
+- `golden_merchant_selling.rs`: removed replay/hash companions plus the staging, candidate-emission, remote plan-shape, side-benefit-selection, and planning-determinism scenarios; kept the invariant listing, trade, invalidation, unstage, demand-memory, and hungry-merchant outcome coverage. Removed orphaned scenario comment blocks so inventory generation remains valid.
+- `golden_offices.rs`: removed replay/hash companions plus the remote-record, knowledge-asymmetry, and force-claim planner-shape scenario blocks; kept the invariant political outcome/locality/suppression tests.
+- `golden_planner_pathology.rs`: removed the replay/hash companion; kept the main survival override scenario.
+- `golden_simulation_gaps.rs`: removed the five replay/hash companions; kept the invariant gap scenarios.
 
 ### 3. Regenerate golden documentation
 
@@ -112,3 +121,15 @@ This regenerates:
 1. `cargo test -p worldwake-ai` — remaining tests pass
 2. `python3 scripts/golden_inventory.py --write --check-docs` — docs regenerated
 3. `cargo clippy --workspace --all-targets -- -D warnings` — clean
+4. `cargo test --workspace` — workspace remains green
+
+## Outcome
+
+- **Completion date**: 2026-04-15
+- **What actually changed**: Removed the hash/sequence-coupled tests and helper blocks from the six TRIAGE files without touching KEEP files or production code; regenerated the golden inventory artifacts under `docs/generated/`; and corrected stale manual `golden_*` references in `docs/golden-e2e-testing.md` so `python3 scripts/golden_inventory.py --write --check-docs` passes against the live test set.
+- **Deviations from original plan**: No file deletions or test splitting were needed. The ticket also had to absorb inventory-validator fallout that the original file list did not name explicitly: orphaned scenario comment blocks in `golden_merchant_selling.rs` and stale manual doc references in `docs/golden-e2e-testing.md`.
+- **Verification results**:
+  - `cargo test -p worldwake-ai`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`

@@ -50,8 +50,8 @@ Scenarios: 3
 - Places: DustyTrail, HearthstoneInn
 - Principles: 3, 7, 11, 22, 26
 - Primary tests: `obligation_satiation_allows_survival_needs_to_override_posting`
-- Replay tests: `obligation_satiation_allows_survival_needs_to_override_posting_replays_deterministically`
-- All tests: `obligation_satiation_allows_survival_needs_to_override_posting`, `obligation_satiation_allows_survival_needs_to_override_posting_replays_deterministically`
+- Replay tests: None
+- All tests: `obligation_satiation_allows_survival_needs_to_override_posting`
 
 **Setup**: A guard first directly observes a hostile at Dusty Trail, then starts the scenario window at Hearthstone Inn with local Bread and Water, critical hunger/thirst, `notice_posting_weight=900`, and the default obligation satiation profile. The remembered combat belief keeps a remote `ThreatWarning` notice branch lawful without reintroducing co-located combat as a competing explanation.
 

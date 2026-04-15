@@ -394,16 +394,6 @@ fn golden_remote_travel_when_local_supply_exhausted() {
     let _ = run_remote_travel_when_local_supply_exhausted(Seed([176; 32]));
 }
 
-#[test]
-fn golden_remote_travel_when_local_supply_exhausted_replays_deterministically() {
-    let first = run_remote_travel_when_local_supply_exhausted(Seed([176; 32]));
-    let second = run_remote_travel_when_local_supply_exhausted(Seed([176; 32]));
-    assert_eq!(
-        first, second,
-        "remote travel under local scarcity should replay deterministically"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Scenario 127: Idle Cap Under Remote Resource Scarcity
 // ---------------------------------------------------------------------------
@@ -428,16 +418,6 @@ fn golden_remote_travel_when_local_supply_exhausted_replays_deterministically() 
 #[test]
 fn golden_max_idle_under_remote_resource_scarcity() {
     let _ = run_max_idle_under_remote_resource_scarcity(Seed([177; 32]));
-}
-
-#[test]
-fn golden_max_idle_under_remote_resource_scarcity_replays_deterministically() {
-    let first = run_max_idle_under_remote_resource_scarcity(Seed([177; 32]));
-    let second = run_max_idle_under_remote_resource_scarcity(Seed([177; 32]));
-    assert_eq!(
-        first, second,
-        "idle cap under remote resource scarcity should replay deterministically"
-    );
 }
 
 fn run_multi_agent_convergence(
@@ -682,16 +662,6 @@ fn run_multi_agent_convergence(
 #[test]
 fn golden_multi_agent_convergence() {
     let _ = run_multi_agent_convergence(Seed([178; 32]));
-}
-
-#[test]
-fn golden_multi_agent_convergence_replays_deterministically() {
-    let first = run_multi_agent_convergence(Seed([178; 32]));
-    let second = run_multi_agent_convergence(Seed([178; 32]));
-    assert_eq!(
-        first, second,
-        "multi-agent convergence under remote resource scarcity should replay deterministically"
-    );
 }
 
 fn starvation_traceability_metabolism() -> MetabolismProfile {
@@ -1044,16 +1014,6 @@ fn golden_death_traceability() {
     let _ = run_death_traceability(Seed([179; 32]));
 }
 
-#[test]
-fn golden_death_traceability_replays_deterministically() {
-    let first = run_death_traceability(Seed([179; 32]));
-    let second = run_death_traceability(Seed([179; 32]));
-    assert_eq!(
-        first, second,
-        "death traceability under unmet needs should replay deterministically"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
 // ---------------------------------------------------------------------------
@@ -1080,14 +1040,4 @@ fn golden_death_traceability_replays_deterministically() {
 #[test]
 fn golden_harvest_to_consume() {
     let _ = run_harvest_to_consume(Seed([180; 32]));
-}
-
-#[test]
-fn golden_harvest_to_consume_replays_deterministically() {
-    let first = run_harvest_to_consume(Seed([180; 32]));
-    let second = run_harvest_to_consume(Seed([180; 32]));
-    assert_eq!(
-        first, second,
-        "harvest-to-consume at resource source locations should replay deterministically"
-    );
 }

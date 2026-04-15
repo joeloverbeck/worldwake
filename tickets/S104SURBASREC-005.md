@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: archive/tickets/S104SURBASREC-001.md, S104SURBASREC-002, S104SURBASREC-004
+**Deps**: archive/tickets/S104SURBASREC-001.md, archive/tickets/S104SURBASREC-002.md, S104SURBASREC-004
 
 ## Problem
 

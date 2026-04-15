@@ -13,8 +13,8 @@ Scenarios: 3
 - ActionDomains: Travel, Production
 - Places: S38 Market, S38 Dangerous Road, S38 Safe Route, S38 Orchard
 - Primary tests: `golden_hostile_completed_travel_flips_next_route_choice`
-- Replay tests: `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically`
-- All tests: `golden_hostile_completed_travel_flips_next_route_choice`, `golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically`
+- Replay tests: None
+- All tests: `golden_hostile_completed_travel_flips_next_route_choice`
 
 **Setup**: A hungry traveler first traverses the shorter road under human control.
 
@@ -22,14 +22,14 @@ Scenarios: 3
 
 ### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 
-- Source: `golden_experience_preferences.rs:569`
+- Source: `golden_experience_preferences.rs:559`
 - Systems: Travel, interrupt/abort, learned route experience, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
 - Places: S38 Market, S38 Dangerous Road, S38 Safe Route, S38 Orchard
 - Primary tests: `golden_combat_aborted_travel_flips_next_route_choice`
-- Replay tests: `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically`
-- All tests: `golden_combat_aborted_travel_flips_next_route_choice`, `golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically`
+- Replay tests: None
+- All tests: `golden_combat_aborted_travel_flips_next_route_choice`
 
 **Setup**: Same topology and motive, but the dangerous-road travel is interrupted
 
@@ -37,14 +37,14 @@ Scenarios: 3
 
 ### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 
-- Source: `golden_experience_preferences.rs:600`
+- Source: `golden_experience_preferences.rs:580`
 - Systems: learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
 - Places: S38 Market, S38 Dangerous Road, S38 Safe Route, S38 Orchard
 - Primary tests: `golden_preference_profile_diversifies_route_selection`
-- Replay tests: `golden_preference_profile_diversifies_route_selection_replays_deterministically`
-- All tests: `golden_preference_profile_diversifies_route_selection`, `golden_preference_profile_diversifies_route_selection_replays_deterministically`
+- Replay tests: None
+- All tests: `golden_preference_profile_diversifies_route_selection`
 
 **Setup**: Two equally hungry agents share the same topology, source beliefs, and
 

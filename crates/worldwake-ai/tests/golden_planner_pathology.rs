@@ -932,13 +932,3 @@ fn degenerate_zero_step_loop_blocks_actionable_goals() {
 fn obligation_satiation_allows_survival_needs_to_override_posting() {
     let _ = run_obligation_satiation_allows_survival(Seed([144; 32]));
 }
-
-#[test]
-fn obligation_satiation_allows_survival_needs_to_override_posting_replays_deterministically() {
-    let first = run_obligation_satiation_allows_survival(Seed([145; 32]));
-    let second = run_obligation_satiation_allows_survival(Seed([145; 32]));
-    assert_eq!(
-        first, second,
-        "obligation satiation survival scenario should replay deterministically"
-    );
-}
