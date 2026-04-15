@@ -39,11 +39,7 @@ Read ALL of the following files completely:
 
 1. **Completed spec**: Find `specs/*{arg}*.md` or `archive/specs/*{arg}*.md`. Search `specs/` first, then `archive/specs/` if needed. If the user provides a specific canonical spec path, accept that path wherever the spec currently resides and note separately whether it is still active or already archived — do not treat location alone as the completion signal. If multiple matches, list them and ask the user to disambiguate.
 2. **Stale spec assessment**: If the resolved spec still lives in `specs/` but the implementation is already complete, explicitly decide whether it is (a) still the active roadmap authority for unfinished behavior, or (b) implemented but stale prose that has not yet been archived or reconciled. Check `archive/tickets/` for the spec's decomposed tickets — if all tickets are completed and archived, the spec's implemented scope is defined by those tickets, not by the broader spec prose. In the second case, prefer live code, generated golden coverage, and the completed ticket/archive chain over broader unlanded behavior claims in the spec text when judging gaps.
-3. **Coverage dashboard**: `docs/golden-e2e-coverage.md` — pay special attention to:
-   - "Evaluated and Rejected Scenarios" section
-   - "Removed Backlog Items" section
-   - "Pending Backlog Summary" section
-4. **Test inventory**: `docs/generated/golden-e2e-inventory.md`
+3. **Test inventory**: `docs/generated/golden-e2e-inventory.md`
 5. **Scenario index**: `docs/generated/golden-scenario-index.md` (gameplay overview) and per-file details in `docs/generated/golden-scenario-details/`
 6. **Coverage matrix**: `docs/generated/golden-coverage-matrix.md`
 7. **Foundations**: `docs/FOUNDATIONS.md`
@@ -96,9 +92,7 @@ The highest-value golden tests are those that demonstrate **emergent behavior ac
 
 Before proposing any scenario, verify it is NOT already covered by:
 1. **Existing scenarios** in `docs/generated/golden-scenario-index.md` and per-file details in `docs/generated/golden-scenario-details/`
-2. **Rejected scenarios** in the "Evaluated and Rejected Scenarios" section of `docs/golden-e2e-coverage.md`
-3. **Removed backlog items** in the "Removed Backlog Items" section of `docs/golden-e2e-coverage.md`
-4. **Live golden suites** — when the generated docs alone are too coarse to tell whether the candidate proves a materially distinct contract, inspect the relevant live `golden_*` source directly
+2. **Live golden suites** — when the generated docs alone are too coarse to tell whether the candidate proves a materially distinct contract, inspect the relevant live `golden_*` source directly
 
 If a proposed scenario exercises the same code paths as an existing or rejected scenario, do not propose it. Explain why it was filtered.
 
@@ -151,8 +145,7 @@ The spec should also include:
 
 1. **Report findings**: List proposed scenarios with one-line summaries
 2. **Report spec location**: Where the spec was written
-3. **Update coverage dashboard**: If scenarios were proposed, add them to the "Pending Backlog Summary" section of `docs/golden-e2e-coverage.md` with a brief description and cross-reference to the new spec. Before adding new pending entries, check if the dashboard still lists older pending gaps whose specs are now archived or whose scenarios are already live in the suite — correct those stale pending entries first by moving them to the removed/completed backlog notes.
-4. **Add missing scenario headers**: If existing golden tests for the spec lack `// Scenario` metadata headers, add them so the inventory script can track coverage. Assign sequential scenario IDs that don't collide with existing IDs.
+3. **Add missing scenario headers**: If existing golden tests for the spec lack `// Scenario` metadata headers, add them so the inventory script can track coverage. Assign sequential scenario IDs that don't collide with existing IDs.
 5. **If no gaps found**: Report the analysis was thorough and coverage is complete for this spec
 
 ## Report Format

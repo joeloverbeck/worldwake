@@ -54,6 +54,22 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 5. Affordance query — how the planner discovers this action is available
 6. `Authoritative-to-AI Impact Rule` checklist (CLAUDE.md) if modifying preconditions
 
+## New Scenario Design
+
+**Trigger**: Spec creates or redesigns a `.ron` scenario file.
+
+**Verify the spec addresses**:
+
+1. All `WorkstationTag` values exist as enum variants (`crates/worldwake-core/src/production.rs`)
+2. All `PlaceTag` values exist as enum variants (`crates/worldwake-core/src/topology.rs`). Note: `PlaceTag` (place-level property) and `WorkstationTag` (facility-level) are distinct — do not conflate them
+3. Recipe names match the action registry format: Title Case with spaces (e.g., `"Harvest Grain"`, not `HarvestGrain`)
+4. `AgentDef` fields match current definition in `crates/worldwake-cli/src/scenario/types.rs`
+5. Commodity names match `CommodityKind` enum variants
+6. If the scenario claims survival coverage, all `HomeostaticNeedId` variants (Hunger, Thirst, Fatigue, Bladder, Dirtiness) have satisfiable action paths given the proposed places, facilities, and tags
+7. Action preconditions are satisfiable: check that each need-satisfaction action's required facility, tag, or possession constraint is met by at least one reachable place in the scenario
+
+Cross-reference with existing scenarios (`scenarios/*.ron`) for structural conventions.
+
 ## New Enum Variant on Cross-Crate Enum
 
 **Trigger**: Spec extends an enum used across multiple crates.

@@ -2,7 +2,7 @@
 
 ## Summary
 
-Agents cannot satisfy basic needs (eating, drinking, washing) in realistic 1440-tick simulations. The root cause is not architectural — the needs chain (pressure → goal → plan → action → satisfaction) works correctly when agents have the right profiles, recipes, and knowledge. The root cause is that development built features and golden tests in sterile isolation, and no scenario ever proved agents can bootstrap survival from realistic starting conditions. The golden test suite (167 scenarios, 349 tests, 27 files) now actively blocks survival fixes because behavioral assertions encode the current broken priority ordering.
+Agents cannot satisfy basic needs (eating, drinking, washing, sleeping, relieving) in realistic 1440-tick simulations. The root cause is not architectural — the needs chain (pressure → goal → plan → action → satisfaction) works correctly when agents have the right profiles, recipes, and knowledge. The root cause is that development built features and golden tests in sterile isolation, and no scenario ever proved agents can bootstrap survival from realistic starting conditions. The golden test suite (~366 tests, 29 files) now actively blocks survival fixes because behavioral assertions encode the current broken priority ordering.
 
 This spec defines a three-phase recovery: (1) triage and remove golden tests that block progress, (2) fix profile-gating so all candidate emitters gracefully handle absent profiles and design a minimal survival scenario, (3) rebuild golden test coverage bottom-up from a proven survival baseline.
 
@@ -24,7 +24,7 @@ Draft
 
 ## Dependencies
 
-- S103 (belief claim deduplication) — independent, can proceed in parallel
+- S103 (belief claim deduplication) — completed, archived
 - All Phase 7 specs (S60–S66) — blocked until survival baseline is proven
 
 ## Problem Statement
@@ -52,13 +52,13 @@ This means golden tests verify "does the mechanism work when everything is set u
 
 ### Why golden tests now block fixes
 
-Every behavioral change to candidate generation (profile-gating, priority ordering, exploration triggers) changes the exact sequence of goals and actions agents take. 243 of 349 tests use `StateHash` comparisons or tick-specific action assertions that break with any behavioral change. The test suite has become a constraint that preserves broken behavior.
+Every behavioral change to candidate generation (profile-gating, priority ordering, exploration triggers) changes the exact sequence of goals and actions agents take. Approximately 260 of ~366 tests use `StateHash` comparisons or tick-specific action assertions that break with any behavioral change. The test suite has become a constraint that preserves broken behavior.
 
 ## Design Goals
 
 1. Remove golden tests that encode the current broken behavior, freeing the codebase for survival fixes
 2. Fix the one profile-gating defect where candidate generation panics on absent profiles
-3. Design a minimal scenario that proves agents can meet basic needs for 1440 ticks
+3. Design a minimal scenario that proves agents can meet all five homeostatic needs (Hunger, Thirst, Fatigue, Bladder, Dirtiness) for 1440 ticks
 4. Rebuild golden test coverage from a survival baseline, layering complexity incrementally
 5. Establish a workflow where scenarios prove behavior before golden tests pin it
 
@@ -103,38 +103,39 @@ Every behavioral change to candidate generation (profile-gating, priority orderi
 | `golden_perception_exposure.rs` | 6 | Perception exposure invariants (witnessed-event, place concealment, fatigue). Zero hashes. |
 | `golden_travel_physiology.rs` | 12 | Travel exertion invariants (body cost multipliers, need escalation, critical thresholds). Zero hashes. |
 
-**REMOVE (18 files, ~243 tests):**
+**REMOVE (19 files, ~251 tests):**
 
 | File | Tests | Hash Calls | Reason |
 |------|-------|-----------|--------|
 | `golden_budget_exhaustion_snapshots.rs` | 7 | 0 | Tick-specific action sequence assertions |
 | `golden_care.rs` | 18 | 17 | Hash-dominant, care interaction chains sensitive to priority ordering |
 | `golden_combat.rs` | 27 | 23 | Hash-dominant, combat decision trees depend on survival/duty ordering |
-| `golden_commodity_opportunity.rs` | 3 | 3 | Pure hash assertions, no invariant fallback |
-| `golden_determinism.rs` | 12 | 18 | Hash-dominant determinism checks — valuable concept but hashes must be regenerated after fixes |
-| `golden_emergent.rs` | 51 | 47 | Largest file, highest hash density, multi-system chains cascade with priority changes |
-| `golden_expectation.rs` | 10 | 11 | Hash-dependent with tick-specific search assertions |
-| `golden_integration.rs` | 28 | 31 | Hash-dominant cross-system integration tests |
+| `golden_commodity_opportunity.rs` | 3 | 2 | Pure hash assertions, no invariant fallback |
+| `golden_determinism.rs` | 12 | 10 | Hash-dominant determinism checks — valuable concept but hashes must be regenerated after fixes |
+| `golden_emergent.rs` | 51 | 53 | Largest file, highest hash density, multi-system chains cascade with priority changes |
+| `golden_expectation.rs` | 10 | 10 | Hash-dependent with tick-specific search assertions |
+| `golden_integration.rs` | 28 | 29 | Hash-dominant cross-system integration tests |
 | `golden_long_scenarios.rs` | 4 | 5 | Long-running scenarios with tick-specific assertions on office vacancy chains |
+| `golden_patrol.rs` | 8 | 2 | Hash-dependent patrol scenarios sensitive to goal ordering |
 | `golden_production.rs` | 34 | 31 | Hash-dominant production chains sensitive to priority ordering |
 | `golden_pursuit.rs` | 6 | 7 | Hash-dependent pursuit scenarios |
 | `golden_reasoning_diversity.rs` | 6 | 9 | Hash-dependent reasoning traces |
-| `golden_resilience.rs` | 2 | 10 | High hash density (10 hashes on 2 tests) with tick assertions |
-| `golden_soak.rs` | 1 | 5 | Soak invariants are valuable but hash calls and specific thresholds will break; rebuild after baseline proven |
-| `golden_social.rs` | 18 | 38 | Highest hash density (38 calls), social chains shift with priority ordering |
+| `golden_resilience.rs` | 2 | 6 | High hash density (6 hashes on 2 tests) with tick assertions |
+| `golden_soak.rs` | 1 | 3 | Soak invariants are valuable but hash calls and specific thresholds will break; rebuild after baseline proven |
+| `golden_social.rs` | 18 | 36 | Highest hash density (36 calls), social chains shift with priority ordering |
 | `golden_supply_chain.rs` | 2 | 13 | Hash-dominant supply chain |
-| `golden_t22_bandit_camp_destruction.rs` | 8 | 9 | Hash-dependent multi-system scenario |
-| `golden_trade.rs` | 11 | 11 | Hash-dependent trade decisions |
+| `golden_t22_bandit_camp_destruction.rs` | 8 | 8 | Hash-dependent multi-system scenario |
+| `golden_trade.rs` | 11 | 10 | Hash-dependent trade decisions |
 
-**TRIAGE (5 files, ~74 tests):**
+**TRIAGE (6 files, ~83 tests):**
 
 | File | Tests | Hash Calls | Notes |
 |------|-------|-----------|-------|
 | `golden_ai_decisions.rs` | 19 | 2 | Low hash count, heavy invariants (64). Scenario 1 tests two hungry agents — directly relevant to survival. Review per-test. |
-| `golden_experience_preferences.rs` | 6 | 5 | Small file. Route preference learning may not depend on goal ordering. |
-| `golden_merchant_selling.rs` | 20 | 11 | Enterprise-weighted, may be insensitive to survival reordering. |
-| `golden_offices.rs` | 24 | 22 | High hash count but enterprise-weighted. Individual review needed. |
-| `golden_planner_pathology.rs` | 4 | 3 | Low hash count. Pathology-focused tests may be goal-ordering independent. |
+| `golden_experience_preferences.rs` | 6 | 4 | Small file. Route preference learning may not depend on goal ordering. |
+| `golden_merchant_selling.rs` | 20 | 10 | Enterprise-weighted, may be insensitive to survival reordering. |
+| `golden_offices.rs` | 24 | 19 | High hash count but enterprise-weighted. Individual review needed. |
+| `golden_planner_pathology.rs` | 4 | 2 | Low hash count. Pathology-focused tests may be goal-ordering independent. |
 | `golden_simulation_gaps.rs` | 10 | 11 | Mixed invariants and hashes. Gap-specific tests need individual review. |
 
 #### Infrastructure Files (unchanged)
@@ -161,7 +162,7 @@ Comprehensive audit of `candidate_generation.rs` found one defect:
 |----------|------|---------|---------|-----|
 | `emit_social_candidates` | 1153 | `TellProfile` | **Panics** via `unwrap_or_else(\|\| panic!(...))` | Change to `let Some(profile) = ctx.view.tell_profile(ctx.agent) else { return; }` |
 
-All other emitters (32 functions) already use graceful skip patterns (`let ... else { return; }` or `if let Some(...)`). No `unwrap_or_default()` issues were found — `utility_profile_for_goal_generation` uses `unwrap_or_default()` but downstream functions check weight values and return early when zero.
+All other emitters (~45 functions) already use graceful skip patterns (`let ... else { return; }` or `if let Some(...)`). No `unwrap_or_default()` issues were found — `utility_profile_for_goal_generation` uses `unwrap_or_default()` but downstream functions check weight values and return early when zero.
 
 The TellProfile fix aligns with FND-22: role-specific profiles must be optional. An agent without social capabilities should simply not generate social goals, not crash.
 
@@ -170,10 +171,20 @@ The TellProfile fix aligns with FND-22: role-specific profiles must be optional.
 Create `scenarios/survival-baseline.ron` with:
 
 **Places (4):**
-- **Riverside Camp**: WaterSource (Well), SleepSpot, Latrine. Starting location for 2 agents.
-- **Fertile Fields**: FieldPlot (Grain), Orchard (Apple). Travel: 3 ticks from Riverside.
-- **Forest Clearing**: WaterSource (Stream), WoodSource. Travel: 4 ticks from Riverside, 5 ticks from Fields.
-- **Hillside Cave**: SleepSpot, WashBasin. Travel: 3 ticks from Forest, 6 ticks from Riverside.
+- **Riverside Camp** (place tags: Camp, Latrine): Facilities: Well. Resource sources: Water (via Well). Starting location for Agents A and B. Latrine tag enables indoor bladder relief.
+- **Fertile Fields** (place tags: Field, Farm): Facilities: FieldPlot, OrchardRow. Resource sources: Grain (via FieldPlot), Apple (via OrchardRow). Travel: 3 ticks from Riverside. Outdoor tags (Field, Farm) enable outdoor bladder relief with dirtiness penalty.
+- **Forest Clearing** (place tags: Forest): Facilities: Well. Resource sources: Water (via Well). Travel: 4 ticks from Riverside, 5 ticks from Fields. Outdoor tag (Forest) enables outdoor bladder relief with dirtiness penalty.
+- **Hillside Shelter** (place tags: Camp, Latrine): No workstations or resource sources. Travel: 3 ticks from Forest, 6 ticks from Riverside. Latrine tag enables indoor bladder relief.
+
+**Need satisfaction mapping:**
+
+| Need | Satisfaction Mechanism | Required Facility/Tag |
+|------|----------------------|----------------------|
+| Hunger | Eat action (consume Apple, Grain, or Bread) | Production: FieldPlot or OrchardRow + resource source |
+| Thirst | Drink action (consume Water) | Production: Well + resource source |
+| Fatigue | Sleep action | None — agents sleep anywhere |
+| Bladder | Toilet action (at Latrine) or Relieve Wilderness (at outdoor tag: Forest, Field, Farm, Trail, Road) | PlaceTag::Latrine or OUTDOOR_RELIEF_TAGS |
+| Dirtiness | Wash action (consumes 1 Water from inventory) | None — requires Water in possession |
 
 **Agents (3):**
 Each agent has ONLY survival-relevant profiles:
@@ -186,25 +197,25 @@ Each agent has ONLY survival-relevant profiles:
 No agent has: PatrolProfile, JusticeDispositionProfile, TellProfile, ArtifactPostingProfile, MerchandiseProfile, CombatProfile, ViolationDispositionProfile, or any other duty/role profile.
 
 **Recipes:**
-All agents know: HarvestGrain, HarvestApple, HarvestWater. These are the minimum recipes for food and water self-sufficiency.
+All agents know: `"Harvest Grain"`, `"Harvest Apples"`, `"Harvest Water"`. These are the minimum recipes for food and water self-sufficiency.
 
 **Starting knowledge:**
 - Agent A starts at Riverside Camp, knows Riverside and Fertile Fields
 - Agent B starts at Riverside Camp, knows only Riverside
-- Agent C starts at Forest Clearing, knows Forest and Hillside Cave
+- Agent C starts at Forest Clearing, knows Forest and Hillside Shelter
 
-This creates varied starting conditions: Agent A has a known food source, Agent B must explore to find food, Agent C has water but must explore for food.
+This creates varied starting conditions: Agent A has a known food source, Agent B must explore to find food, Agent C has water but must explore for food. All agents have access to bladder relief at their starting locations (Latrine at Riverside/Hillside, Forest outdoor tag at Forest Clearing).
 
 #### 2c. Observer Validation
 
-Run: `worldwake-observer scenarios/survival-baseline.ron --ticks 1440 --output reports/survival-baseline-validation.md`
+Run: `observer scenarios/survival-baseline.ron --ticks 1440 --output reports/survival-baseline-validation.md`
 
 **Success criteria:**
 - Zero deaths
-- No need sustained above critical threshold (Permille 750) for more than 100 consecutive ticks
-- All agents execute at least one eat, drink, and wash action
+- No need sustained above critical threshold (Permille 750) for more than 100 consecutive ticks — applies to all five homeostatic needs (Hunger, Thirst, Fatigue, Bladder, Dirtiness)
+- All agents execute at least one eat, drink, wash, sleep, and relieve action
 - Agent B successfully explores to discover a food source
-- No planner budget exhaustion on survival-related goals (AcquireCommodity with SelfConsume purpose, ConsumeOwnedCommodity, ExploreLocation with motivating need)
+- No planner budget exhaustion on survival-related goals (AcquireCommodity with SelfConsume purpose, ConsumeOwnedCommodity, ExploreLocation with motivating need, Sleep, Relieve)
 - No anomaly flags for idle stretches > 50 ticks or action loops
 
 ### Phase 3: Golden Test Rebuild
@@ -214,7 +225,7 @@ After Phase 2 proves survival works, rebuild golden test coverage in layers:
 **Layer 0: Survival Baseline Golden Tests**
 - New file: `golden_survival_baseline.rs`
 - Tests: 3-4 agents with only survival profiles, 1440 ticks
-- Assertions: invariant-style (needs stay managed, no deaths, exploration discovers resources)
+- Assertions: invariant-style (all five needs stay managed, no deaths, exploration discovers resources)
 - No StateHash assertions — only structural invariants
 - This becomes the permanent survival regression test
 
@@ -249,7 +260,7 @@ No new feedback loops introduced. The existing needs → goal → action → sat
 ### Concrete dampeners
 
 Existing dampeners unchanged:
-- **Need satisfaction**: Eating/drinking reduces need pressure, stopping goal generation (physical process)
+- **Need satisfaction**: Eating/drinking/sleeping/relieving reduces need pressure, stopping goal generation (physical process)
 - **Exploration exhaustion**: `max_consecutive_explorations` limits unbounded exploration (bounded agent capacity)
 - **Acquisition exhaustion**: Failed acquisition attempts are tracked, preventing infinite retry loops (agent memory)
 
@@ -273,8 +284,8 @@ Existing dampeners unchanged:
 ### Phase 2 Verification
 1. `cargo clippy --workspace --all-targets -- -D warnings` — clean
 2. `cargo test -p worldwake-ai` — KEEP tests still pass after profile-gating fix
-3. Observer run: `worldwake-observer scenarios/survival-baseline.ron --ticks 1440` meets all success criteria
-4. Manual CLI smoke test: load `survival-baseline.ron`, tick 100, verify agents are eating/drinking
+3. Observer run: `observer scenarios/survival-baseline.ron --ticks 1440` meets all success criteria
+4. Manual CLI smoke test: load `survival-baseline.ron`, tick 100, verify agents are eating/drinking/sleeping
 
 ### Phase 3 Verification
 1. `cargo test -p worldwake-ai` — all new golden tests pass

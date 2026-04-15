@@ -38,6 +38,18 @@ Grep for each function. Confirm signature, module location, and export status. L
 
 For specs that propose new output or report sections in existing tooling (observer binary, CLI, diagnostic tools), verify the proposed format (section headers, delimiters, label conventions) matches the target file's existing formatting patterns. Grep for existing section markers and formatting conventions in the target file. Flag mismatches as Issues.
 
+## 3.3B Scenario Content Validation
+
+For specs that design new RON scenarios or propose specific scenario configurations, validate all proposed values against actual codebase definitions:
+
+- **WorkstationTag values**: Grep the `WorkstationTag` enum and confirm every proposed workstation exists as a variant.
+- **PlaceTag values**: Grep the `PlaceTag` enum and confirm every proposed place tag exists. Note the distinction between PlaceTags (place-level properties like `Latrine`, `Forest`) and WorkstationTags (facility-level like `Well`, `FieldPlot`).
+- **Recipe names**: Grep the action registry or existing scenarios for recipe name format. Worldwake uses Title Case with spaces (e.g., `"Harvest Grain"`, `"Harvest Apples"`), not camelCase or snake_case.
+- **AgentDef fields**: Cross-reference proposed agent profile fields against `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs`.
+- **Commodity names**: Verify proposed commodity references against `CommodityKind` enum variants.
+- **Format conventions**: Cross-reference with existing scenarios (glob `scenarios/*.ron`) for structural conventions (facility definitions, resource source fields, agent profile structure).
+- **Need coverage**: If the scenario claims to prove survival or need satisfaction, verify it covers all `HomeostaticNeedId` variants and that the proposed facilities/tags can satisfy each need's action preconditions.
+
 ## 3.4 Dependencies (specs/tickets)
 
 Verify each dependency lives in `specs/`, `archive/specs/`, `tickets/`, or `archive/tickets/`. Record correct paths. Note dependencies listed as incomplete but since implemented.

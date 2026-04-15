@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # Soak Performance Profile Report
 
 **Date**: 2026-04-14
