@@ -1147,10 +1147,9 @@ fn emit_social_candidates(
     let Some(place) = ctx.place else {
         return;
     };
-    let profile = ctx
-        .view
-        .tell_profile(ctx.agent)
-        .unwrap_or_else(|| panic!("agent {} lacks TellProfile", ctx.agent));
+    let Some(profile) = ctx.view.tell_profile(ctx.agent) else {
+        return;
+    };
     let known_beliefs = ctx.view.known_entity_beliefs(ctx.agent);
     let known_social_observations = ctx.view.known_social_observations(ctx.agent);
     let known_institutional_beliefs =
@@ -5104,6 +5103,7 @@ mod tests {
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         social_observations: BTreeMap<EntityId, Vec<worldwake_core::SocialObservation>>,
         tell_profiles: BTreeMap<EntityId, TellProfile>,
+        agents_without_default_tell_profile: BTreeSet<EntityId>,
         told_beliefs: BTreeMap<EntityId, Vec<(TellMemoryKey, ToldBeliefMemory)>>,
         record_data: BTreeMap<EntityId, RecordData>,
         office_data: BTreeMap<EntityId, OfficeData>,
@@ -5188,6 +5188,7 @@ mod tests {
                 beliefs: BTreeMap::new(),
                 social_observations: BTreeMap::new(),
                 tell_profiles: BTreeMap::new(),
+                agents_without_default_tell_profile: BTreeSet::new(),
                 told_beliefs: BTreeMap::new(),
                 record_data: BTreeMap::new(),
                 office_data: BTreeMap::new(),
@@ -5482,6 +5483,9 @@ mod tests {
             None
         }
         fn tell_profile(&self, agent: EntityId) -> Option<TellProfile> {
+            if self.agents_without_default_tell_profile.contains(&agent) {
+                return self.tell_profiles.get(&agent).copied();
+            }
             self.tell_profiles
                 .get(&agent)
                 .copied()
@@ -11754,6 +11758,51 @@ mod tests {
                     subject: rumor_subject,
                 },
                 communication_class: CommunicationClass::Gossip,
+            }
+        ));
+    }
+
+    #[test]
+    fn emit_social_candidates_skips_agents_without_tell_profile() {
+        let speaker = entity(1);
+        let listener = entity(2);
+        let subject = entity(20);
+        let place = entity(10);
+        let remote_place = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([speaker, listener, subject]);
+        view.entity_kinds.insert(speaker, EntityKind::Agent);
+        view.entity_kinds.insert(listener, EntityKind::Agent);
+        view.entity_kinds.insert(subject, EntityKind::Agent);
+        view.effective_places.extend([
+            (speaker, place),
+            (listener, place),
+            (subject, remote_place),
+        ]);
+        view.entities_at.insert(place, vec![speaker, listener]);
+        view.agents_without_default_tell_profile.insert(speaker);
+        view.beliefs.insert(
+            speaker,
+            vec![(
+                subject,
+                believed_state(8, PerceptionSource::DirectObservation),
+            )],
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            speaker,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(11),
+        );
+
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::ShareBelief {
+                listener,
+                topic: TellTopic::EntityBelief { subject },
+                communication_class: CommunicationClass::Testimony,
             }
         ));
     }

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: S104SURBASREC-003
+**Deps**: archive/tickets/S104SURBASREC-003.md
 
 ## Problem
 

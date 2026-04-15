@@ -1,6 +1,6 @@
 # S104SURBASREC-003: Fix TellProfile panic in emit_social_candidates
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — candidate generation (worldwake-ai)
@@ -86,3 +86,13 @@ This matches the pattern used by `emit_justice_candidates`, `emit_patrol_candida
 1. `cargo test -p worldwake-ai -- emit_social` — targeted test
 2. `cargo clippy --workspace --all-targets -- -D warnings` — clean
 3. `cargo test -p worldwake-ai` — full AI crate suite
+
+## Outcome
+
+- **Completion date**: 2026-04-15
+- **What actually changed**: Replaced the `TellProfile` panic in `emit_social_candidates` with the established graceful-skip pattern, added a focused regression test for an agent that explicitly lacks a tell profile, and extended the local `TestBeliefView` helper so the test can opt out of its default tell-profile fallback.
+- **Deviations from original plan**: The production fix matched the ticket exactly. The only additional change was the narrow test-harness opt-out flag needed to exercise the absent-profile path because the existing helper synthesized `TellProfile::default()` for missing agents.
+- **Verification results**:
+  - `cargo test -p worldwake-ai -- emit_social_candidates_skips_agents_without_tell_profile`
+  - `cargo test -p worldwake-ai`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
