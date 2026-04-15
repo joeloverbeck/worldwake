@@ -239,22 +239,37 @@ impl AgentBeliefStore {
 
         let affected_entities = self.entity_claims.keys().copied().collect::<Vec<_>>();
         let claim_confidence_threshold = profile.claim_confidence_threshold.value();
+        let mut changed_entities = Vec::new();
         for entity in &affected_entities {
             let Some(claims) = self.entity_claims.get_mut(entity) else {
                 continue;
             };
+            let len_before = claims.len();
             claims.retain(|claim| {
                 effective_claim_confidence(claim, current_tick, &profile.confidence_policy)
                     >= claim_confidence_threshold
             });
+            if claims.len() != len_before {
+                changed_entities.push(*entity);
+            }
         }
         self.entity_claims.retain(|_, claims| !claims.is_empty());
-        for entity in affected_entities {
-            self.refresh_entity_summary_from_claims(
-                entity,
-                current_tick,
-                &profile.confidence_policy,
-            );
+        if claim_confidence_threshold == 0 {
+            for entity in affected_entities {
+                self.refresh_entity_summary_from_claims(
+                    entity,
+                    current_tick,
+                    &profile.confidence_policy,
+                );
+            }
+        } else {
+            for entity in changed_entities {
+                self.refresh_entity_summary_from_claims(
+                    entity,
+                    current_tick,
+                    &profile.confidence_policy,
+                );
+            }
         }
 
         let max_need = agent_needs.max_value();
@@ -4564,6 +4579,174 @@ mod tests {
 
         assert!(!store.entity_claims.contains_key(&entity(62)));
         assert!(!store.known_entities.contains_key(&entity(62)));
+    }
+
+    #[test]
+    fn test_prune_decayed_beliefs_refreshes_only_changed_claim_vectors() {
+        let changed = entity(90);
+        let unchanged = entity(91);
+        let mut store = AgentBeliefStore::new();
+        store.entity_claims.insert(
+            changed,
+            vec![
+                sample_claim(
+                    1,
+                    90,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(10))),
+                    PerceptionSource::DirectObservation,
+                    0,
+                    950,
+                ),
+                sample_claim(
+                    2,
+                    90,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(11))),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+                sample_claim(
+                    3,
+                    90,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+            ],
+        );
+        store.entity_claims.insert(
+            unchanged,
+            vec![
+                sample_claim(
+                    4,
+                    91,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(20))),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+                sample_claim(
+                    5,
+                    91,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+            ],
+        );
+        for subject in [changed, unchanged] {
+            store.known_entities.insert(
+                subject,
+                derive_entity_summary(
+                    store.entity_claims.get(&subject).unwrap(),
+                    Tick(300),
+                    &policy(),
+                )
+                .unwrap(),
+            );
+        }
+        let unchanged_before = store.get_entity(&unchanged).unwrap().clone();
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(300),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        assert_eq!(store.entity_claims.get(&changed).unwrap().len(), 2);
+        assert_eq!(
+            store.get_entity(&changed).unwrap().last_known_place,
+            Some(entity(11))
+        );
+        assert_eq!(store.entity_claims.get(&unchanged).unwrap().len(), 2);
+        assert_eq!(store.get_entity(&unchanged).unwrap(), &unchanged_before);
+        assert_eq!(
+            store.get_entity(&unchanged),
+            derive_entity_summary(
+                store.entity_claims.get(&unchanged).unwrap(),
+                Tick(300),
+                &policy(),
+            )
+            .as_ref()
+        );
+    }
+
+    #[test]
+    fn test_prune_decayed_beliefs_zero_threshold_refreshes_saturated_ties() {
+        let subject = entity(92);
+        let mut store = AgentBeliefStore::new();
+        store.entity_claims.insert(
+            subject,
+            vec![
+                sample_claim(
+                    1,
+                    92,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(30))),
+                    PerceptionSource::DirectObservation,
+                    1,
+                    900,
+                ),
+                sample_claim(
+                    2,
+                    92,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(31))),
+                    PerceptionSource::Report {
+                        from: entity(3),
+                        chain_len: 1,
+                    },
+                    9,
+                    850,
+                ),
+                sample_claim(
+                    3,
+                    92,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+            ],
+        );
+        store.known_entities.insert(
+            subject,
+            derive_entity_summary(
+                store.entity_claims.get(&subject).unwrap(),
+                Tick(10),
+                &policy(),
+            )
+            .unwrap(),
+        );
+
+        store.prune_decayed_beliefs(
+            &profile(0, 0, 5),
+            Tick(1_000),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        assert_eq!(store.entity_claims.get(&subject).unwrap().len(), 3);
+        assert_eq!(
+            store.get_entity(&subject),
+            derive_entity_summary(
+                store.entity_claims.get(&subject).unwrap(),
+                Tick(1_000),
+                &policy(),
+            )
+            .as_ref()
+        );
+        assert_eq!(
+            store.get_entity(&subject).unwrap().last_known_place,
+            Some(entity(31))
+        );
     }
 
     #[test]

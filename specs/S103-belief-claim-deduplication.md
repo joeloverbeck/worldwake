@@ -7,7 +7,7 @@ Fix the unbounded growth of entity belief claims that causes soak test performan
 The fix applies three targeted changes, all architecturally grounded in existing FOUNDATIONS principles:
 
 1. **Aspect-source deduplication**: When a new claim arrives for an aspect that already has a claim from the same source type, replace the older claim instead of appending. This is not a capacity cap — it is the recognition that a fresh direct observation of an entity's location supersedes a stale direct observation of the same aspect (FND-16: newer evidence overwrites weaker).
-2. **Canonicalize semantic belief transport before any pruning optimization, then make invalidation time-aware**: remove production paths that mutate `known_entities` semantics outside `entity_claims`, then optimize summary refresh only through a contract that accounts for both evidence changes and time-driven winner changes. The original changed-entity-only slice (`S103BELCLADED-002`) was rejected after live verification because unchanged claim vectors can still change summary winners as staleness penalties accumulate. The valid follow-up sequence is `S103BELCLADED-004` (boundary cleanup) followed by `S103BELCLADED-005` (time-aware invalidation).
+2. **Canonicalize semantic belief transport before amortized pruning**: remove production paths that mutate `known_entities` semantics outside `entity_claims`, then skip `derive_entity_summary` during `prune_decayed_beliefs` when no claims were actually removed for an entity. Reassessment after `S103BELCLADED-004` showed the earlier broad time-aware invalidation ticket (`S103BELCLADED-005`) was unnecessary under the live positive-threshold pruning contract. The valid follow-up sequence is `S103BELCLADED-004` (boundary cleanup) followed by `S103BELCLADED-002` (optimization), while preserving the old full-refresh path for the narrow zero-threshold saturation edge.
 3. **Social observation deduplication**: When a new social observation matches an existing one by `detail`, replace rather than append — a repeated sighting of the same social event is an update, not a new independent record.
 
 ## Phase
@@ -162,7 +162,7 @@ The deduplication key for `SocialObservation` is the full `detail: SocialObserva
 
 ### Information-path analysis
 
-Change 1 removes redundant same-source claim accumulation without changing information paths. Change 2 first tightens the information path contract so semantic entity beliefs travel through `entity_claims`, not duplicate summary mutation paths. The remaining optimization work must then respect that summaries still vary with time, not just claim membership.
+Change 1 removes redundant same-source claim accumulation without changing information paths. Change 2 first tightens the information path contract so semantic entity beliefs travel through `entity_claims`, not duplicate summary mutation paths. Under the live positive-threshold pruning contract, unchanged claim membership preserves winners until pruning removes a claim; only the zero-threshold saturation edge still needs the old full-refresh behavior.
 
 ### Positive-feedback analysis
 
