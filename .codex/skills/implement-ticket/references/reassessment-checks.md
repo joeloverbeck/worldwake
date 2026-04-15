@@ -9,6 +9,7 @@ For planner-root, snapshot-completeness, or planner-traceability tickets, cite t
 When the ticket is an audit-then-fix (e.g., "verify path X, fix if needed"), treat the audit as reassessment. Record findings in the reassessment section. If a gap is confirmed, auto-correct `Engine Changes`, `What to Change`, and `Files to Touch` before coding. If no gap exists, close with a reassessment-only Outcome documenting the audit trail.
 
 If focused traces, regression tests, or lower-layer proofs falsify the current implementation hypothesis after coding has already started, stop and reassess immediately. Restate the live boundary, update the ticket sections that define owned scope, remove stale partial edits from the disproved approach, and only then continue.
+If the falsified hypothesis was the ticket's core implementability claim rather than just one candidate fix, switch from implementation to rejection-or-successor triage immediately: revert the disproved code path, restate the live contradiction in the active ticket, decide whether the current ticket becomes a factual rejection record or narrows to a remaining valid slice, and create a successor ticket when real work remains.
 
 ## Reference and baseline validation
 
@@ -110,6 +111,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 **Belief and projection surfaces:**
 - When the ticket keeps an action family unified while widening to new entity kinds, inspect `TargetSpec`, affordance enumeration, authoritative validation, planner semantics, and payload validators.
 - When extending a projected belief or derived state, check for parallel snapshot builders, event carriers, or projection helpers.
+- For cache/compression/performance tickets over derived belief or summary state, verify whether the derived surface depends only on stored membership or also on external inputs such as `current_tick`, activation, ordering, or other live context. Do not approve "changed set only" invalidation unless the ticket's contract models every input that can change the derived winner.
 - When a new world artifact becomes perceivable and the spec says discovery affects behavior, verify at least one lawful downstream consumer exists.
 - When the ticket says information should be "internalized," search for an existing belief lane or consumer before inventing a new belief substrate.
 - When the ticket changes historical event content or view semantics, inspect renderers and detail views for reconstruction from live runtime state instead of stored event records.

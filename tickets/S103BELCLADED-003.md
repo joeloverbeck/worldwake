@@ -61,7 +61,7 @@ pub fn record_social_observation(&mut self, observation: SocialObservation) {
 
 - Changing activation-based social observation pruning in `prune_decayed_beliefs`
 - Entity claim deduplication (S103BELCLADED-001)
-- Amortized pruning optimization (S103BELCLADED-002)
+- Time-aware pruning optimization successor (S103BELCLADED-005)
 - Changing `SocialObservation` or `SocialObservationDetail` struct definitions
 
 ## Acceptance Criteria

@@ -17,6 +17,7 @@ After the owned implementation is fully verified:
 6. Do not silently broaden the current ticket during close-out. If the remaining work has its own architectural boundary, capture it as a follow-up.
 7. Keep scenario prose aligned with updated assertions so the documented contract stays traceable.
 8. When the implemented ticket intentionally changes a contract still described in an active spec, update that active spec text in the same pass unless a named follow-up ticket explicitly owns the spec drift.
+9. If reassessment proves the active ticket's core invariant false and no lawful implementation slice remains, close it as a rejection record instead of forcing `COMPLETED`: revert disproved code, set a factual terminal status such as `REJECTED`, record the reason in `Problem`/`Assumption Reassessment`/`Outcome`, create the successor ticket if work remains, and update the active spec or roadmap in the same pass.
 
 ### Planner and AI proof
 
@@ -47,6 +48,11 @@ For implementation-only completion:
 - Set `Status: COMPLETED` on the active ticket once the required verification surface has passed.
 - Append factual close-out notes: `## Outcome`, `## Verification Result`, and any explicit deviations.
 - If the active ticket is short-form or pre-template, add only the minimum missing sections: `## Assumption Reassessment`, `## Outcome`, optional `## Deviations`, and `## Verification Result`.
+
+For reassessment-only rejection:
+- Set a factual non-completion status such as `REJECTED` when the live contract disproves the ticket's implementability claim.
+- Keep the active ticket in place as the rejection record unless the user explicitly asks to archive it.
+- Record the rejection cause, the reverted/discarded implementation attempt if one existed, and the successor ticket/spec link that now owns the remaining work.
 
 ### Before finishing
 
