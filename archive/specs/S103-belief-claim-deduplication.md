@@ -16,7 +16,7 @@ Core infrastructure (performance fix for S101 belief system)
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -196,3 +196,25 @@ The claim accumulation rate is now dampened by:
    - Extrapolated full soak time should be < 10 minutes (vs. current 108 min)
    - Steady-state claims per agent should be < 1,000 (vs. current 3,000-4,500)
 5. `SOAK_SEED_START=0 SOAK_SEEDS=2 cargo test --release -p worldwake-ai --features soak --test golden_soak` completes in < 6 minutes
+
+## Outcome
+
+Completed on 2026-04-15.
+
+Implemented all three planned S103 slices:
+- `S103BELCLADED-001`: dominance-based aspect/source claim compaction in `record_entity_claim`
+- `S103BELCLADED-004` + `S103BELCLADED-002`: canonicalized claim-backed semantic entity belief transport, then skipped summary re-derivation in `prune_decayed_beliefs` when no claims were pruned, while preserving the zero-threshold full-refresh edge
+- `S103BELCLADED-003`: same-detail social observation deduplication plus same-carrier diff/apply correctness under in-place replacement
+
+The roadmap was also corrected during implementation: the speculative time-aware invalidation slice `S103BELCLADED-005` was rejected after reassessment showed it was not required by the live positive-threshold pruning contract.
+
+Verification completed across the ticket slices:
+- Passed `cargo test -p worldwake-core`
+- Passed focused `worldwake-core` belief tests for claim deduplication, pruning optimization, and social observation deduplication
+- Passed targeted `worldwake-ai` golden verification for the motivating pruning regression (`guard_theron_water_at_thornwall_finds_harvest_plan`)
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+
+Not completed in the S103 ticket sequence:
+- Full soak-profiler rerun
+- Release soak test rerun
+- A fully green `cargo test -p worldwake-ai` remains blocked by the separate unrelated ticket `S01PROOUTOWNCLA-013-faction-producer-owner-apple-chain-regression`

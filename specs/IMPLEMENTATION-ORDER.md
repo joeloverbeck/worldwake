@@ -214,6 +214,25 @@ S99 ✅ archived
 **Completed wave**:
 - **S99**: ✅ COMPLETED — archived at [archive/specs/S99-commodity-validation-helpers.md](/home/joeloverbeck/projects/worldwake/archive/specs/S99-commodity-validation-helpers.md). Consolidated duplicated `ensure_accessible_quantity` (4 copies) and `resolve_controlled_lots` (3 copies) into shared internal `commodity_support` helpers in `worldwake-systems` while preserving behavior and caller-specific underflow messaging.
 
+### Adjunct Wave: Survival Baseline Recovery
+
+Derived from starvation diagnostic (`reports/needs-starvation-diagnostic.md`) which revealed that agents
+cannot satisfy basic needs in realistic 1440-tick simulations despite passing 349 golden tests.
+Root cause: golden tests pre-wire success conditions in sterile environments, never testing whether agents
+can bootstrap survival from realistic starting conditions.
+
+**Prerequisite for all Phase 7 consequence-carrier specs (S60–S66)**: survival baseline must be proven
+before adding more gameplay complexity.
+
+```text
+S103 (independent, parallel)
+S104 (blocks S60–S66)
+```
+
+**Wave**:
+- **S103**: Belief Claim Deduplication and Amortized Pruning — performance fix for S101 belief system (independent, can proceed in parallel with S104)
+- **S104**: Survival Baseline Recovery — golden test triage, profile-gating cleanup, survival baseline scenario, golden test rebuild from survival-capable agents
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed

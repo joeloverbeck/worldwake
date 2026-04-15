@@ -187,6 +187,17 @@ impl AgentBeliefStore {
     }
 
     pub fn record_social_observation(&mut self, observation: SocialObservation) {
+        if let Some(existing) = self
+            .social_observations
+            .iter_mut()
+            .find(|existing| existing.detail == observation.detail)
+        {
+            if observation.observed_tick > existing.observed_tick {
+                *existing = observation;
+            }
+            return;
+        }
+
         self.social_observations.push(observation);
     }
 
@@ -1222,9 +1233,23 @@ fn diff_social_observations(
         }
     }
 
-    let removed = (before.len() - surviving) as u16;
+    let removed = u16::try_from(before.len() - surviving).unwrap_or(u16::MAX);
     let added = after[surviving..].to_vec();
-    (removed, added)
+
+    let mut reconstructed = before.to_vec();
+    if removed > 0 {
+        reconstructed.drain(..usize::from(removed).min(reconstructed.len()));
+    }
+    reconstructed.extend(added.iter().copied());
+
+    if reconstructed == after {
+        (removed, added)
+    } else {
+        (
+            u16::try_from(before.len()).unwrap_or(u16::MAX),
+            after.to_vec(),
+        )
+    }
 }
 
 fn derive_institutional_read<'a, T>(
@@ -3629,7 +3654,7 @@ mod tests {
     }
 
     #[test]
-    fn record_social_observation_appends_to_list() {
+    fn record_social_observation_keeps_distinct_details() {
         let mut store = AgentBeliefStore::new();
         let first = sample_social_observation(3);
         let second = SocialObservation {
@@ -3641,6 +3666,46 @@ mod tests {
         store.record_social_observation(second);
 
         assert_eq!(store.social_observations, vec![first, second]);
+    }
+
+    #[test]
+    fn record_social_observation_replaces_same_detail_with_newer_observation() {
+        let mut store = AgentBeliefStore::new();
+        let first = sample_social_observation(3);
+        let newer = SocialObservation {
+            place: entity(55),
+            observed_tick: Tick(6),
+            source: PerceptionSource::Report {
+                from: entity(9),
+                chain_len: 1,
+            },
+            ..first
+        };
+
+        store.record_social_observation(first);
+        store.record_social_observation(newer);
+
+        assert_eq!(store.social_observations, vec![newer]);
+    }
+
+    #[test]
+    fn record_social_observation_keeps_newer_same_detail_when_older_arrives() {
+        let mut store = AgentBeliefStore::new();
+        let newer = sample_social_observation(6);
+        let older = SocialObservation {
+            place: entity(55),
+            observed_tick: Tick(3),
+            source: PerceptionSource::Report {
+                from: entity(9),
+                chain_len: 1,
+            },
+            ..newer
+        };
+
+        store.record_social_observation(newer);
+        store.record_social_observation(older);
+
+        assert_eq!(store.social_observations, vec![newer]);
     }
 
     #[test]
@@ -7018,6 +7083,32 @@ mod tests {
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.social_observations_removed_count, 1);
         assert_eq!(diff.social_observations_added.len(), 2);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_social_observation_same_detail_replacement() {
+        let mut before = AgentBeliefStore::new();
+        before
+            .social_observations
+            .push(make_social_observation(Tick(1)));
+        before.social_observations.push(SocialObservation {
+            detail: SocialObservationDetail::CoPresence { other: entity(7) },
+            ..make_social_observation(Tick(2))
+        });
+
+        let mut after = before.clone();
+        after.social_observations[0] = SocialObservation {
+            place: entity(99),
+            observed_tick: Tick(5),
+            source: PerceptionSource::Report {
+                from: entity(8),
+                chain_len: 1,
+            },
+            ..before.social_observations[0]
+        };
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.apply(&before), after);
     }
 

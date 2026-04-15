@@ -1,6 +1,6 @@
 # S103BELCLADED-003: Social observation deduplication in `record_social_observation`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — social observation storage (worldwake-core)
@@ -95,3 +95,21 @@ pub fn record_social_observation(&mut self, observation: SocialObservation) {
 2. `cargo test -p worldwake-core`
 3. `cargo test -p worldwake-ai`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-15.
+
+Implemented same-detail social observation deduplication in `AgentBeliefStore::record_social_observation`. Repeated observations now keep only the newest `observed_tick` for a given full `SocialObservationDetail`, while distinct details still coexist. The belief-store diff path was also tightened to fall back to full social-observation replacement whenever front-evict/tail-append encoding cannot reconstruct the new vector exactly, which preserves diff/apply correctness under in-place same-detail replacement.
+
+## Verification Result
+
+Passed:
+1. `cargo test -p worldwake-core record_social_observation`
+2. `cargo test -p worldwake-core social_observation`
+3. `cargo test -p worldwake-core`
+4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+Blocked by pre-existing unrelated failure:
+1. `cargo test -p worldwake-ai`
+   Fails at `golden_faction_ownership_producer_owner_delegation` in `crates/worldwake-ai/tests/golden_production.rs:4030`, already owned by `tickets/S01PROOUTOWNCLA-013-faction-producer-owner-apple-chain-regression.md`.

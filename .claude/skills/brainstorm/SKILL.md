@@ -59,7 +59,7 @@ Next-steps menu (user chooses)
 
 6. **External research**: If the topic requires domain knowledge beyond the codebase (academic algorithms, industry best practices, competing architectures, scaling solutions), launch research agents BEFORE the interview. The user's request may explicitly call for research ("research this online", "look for solutions") or the problem may implicitly require it (novel algorithms, scaling problems, unfamiliar domains). Summarize findings for the user before asking interview questions. Research findings inform both the confidence calibration (what solution space exists) and the approach proposal (what concrete options are available). If codebase exploration (sub-step 7) produces a clear root cause with concrete code-path evidence, external research may be skipped even if the user suggested it. Note the skip decision when presenting findings.
 
-7. **Project context**: Explore existing implementations relevant to the topic before starting the interview — this context informs better questions. For tooling/process topics, examine existing instances of the thing being designed (e.g., existing skills, configs, workflows — their structure, size, patterns). For codebase topics, check relevant files, specs, and tickets. Launch Explore agents for broad surveys when needed. Keep exploration targeted to what informs the interview.
+7. **Project context**: Explore existing implementations relevant to the topic before starting the interview — this context informs better questions. For tooling/process topics, examine existing instances of the thing being designed (e.g., existing skills, configs, workflows — their structure, size, patterns). For codebase topics, check relevant files, specs, and tickets. Launch Explore agents for broad surveys when needed. Keep exploration targeted to what informs the interview. For brainstorms triggered by frustration or repeated failure, also explore the history of attempted fixes — not just the current state. Patterns of repeated remediation specs, escalating complexity, or accumulated workarounds are signals that the approaches (Step 3) should include radical options (reset, strip, rebuild from scratch) alongside incremental fixes. A long chain of narrowly-scoped fixes that didn't resolve the underlying problem is evidence that the problem may be structural, not tactical.
 
 ## Step 2: Confidence-Driven Interview
 
@@ -115,6 +115,14 @@ When initial confidence from Step 1 is >= 85% (detailed user request with eviden
 
 If the user says something like "just go" or "that's enough questions", respect it. Announce your current confidence, list remaining gaps as assumptions you'll make, and proceed to Step 3. Mark those assumptions explicitly in the design so the user can correct them.
 
+### Recovery/Reset Brainstorms
+
+When the brainstorm is triggered by frustration indicators ("huge mistake", "wrong approach", "start over", "strip everything", "remove all"), adjust the interview:
+
+1. **Validate the diagnosis before accepting it.** The user may be catastrophizing after a bad run, or missing that the system is more salvageable than they think. Present what exploration revealed — both what's broken AND what's working — before agreeing with a scorched-earth instinct.
+2. **Focus confidence on "what's actually broken?"** before "what's the fix?" The confidence target shifts from requirements discovery to failure-mode agreement. Key gaps to close: is the problem structural (architecture) or tactical (configuration, scenario design, missing profiles)? Is the user's frustration proportional to the evidence?
+3. **Always include a radical option.** When proposing approaches (Step 3), ensure at least one option represents the user's most aggressive instinct (strip, delete, rebuild). Even if you recommend a less radical path, validating the radical option as a real choice respects the user's judgment and prevents the feeling of being talked out of something.
+
 ## Step 3: Propose Approaches
 
 Present **2-3 distinct approaches** with:
@@ -166,6 +174,8 @@ After design approval, do NOT apply changes or implement the design until the us
 - If the brainstorm produces **hybrid deliverables** (e.g., both implementation code AND a spec), the plan file describes the full implementation sequence — code changes, spec writing, and any other artifacts. The spec is still written after plan approval, but the plan may describe implementation steps for non-spec deliverables at normal detail. Keep the plan file under 100 lines when the spec is the primary deliverable; for plans with N independent deliverables, the line budget scales to approximately 100 + 20*(N-1) lines to accommodate per-deliverable summaries. Investigation findings that change the deliverable set (items added, dropped, or reframed) should be captured in the plan's Context section.
 - If the brainstorm reveals that the deliverable **requires data that doesn't yet exist** (e.g., new instrumentation, enhanced diagnostics, or data-gathering tooling), the plan should include a pre-deliverable data-gathering phase. In plan mode, the plan file describes both the tooling enhancement and the final deliverable. The tooling work is executed after plan approval but before the spec/design doc is written, since the spec content depends on the gathered data.
 - If the brainstorm produces **implementation tickets** (bounded fixes to existing code, not requiring full spec-drafting-rules compliance), the deliverable is the ticket file(s) in `tickets/`. Skip the `docs/plans/` design doc — the tickets ARE the design. Read `tickets/README.md` and `tickets/_TEMPLATE.md` to ensure ticket format compliance. Adjust the Step 6 menu accordingly (omit "create a spec" option, replace with "implement ticket" or "reassess ticket").
+
+**Deliverable pivot**: If the user redirects the deliverable type mid-brainstorm (e.g., "actually, make this a spec" or "create a spec for this"), reclassify using the rules above and adjust the flow accordingly. In plan mode, rewrite the plan file to match the new deliverable type before calling ExitPlanMode. Do not ask the user to confirm the pivot — they just told you what they want.
 
 Once all sections are approved, write the complete design:
 

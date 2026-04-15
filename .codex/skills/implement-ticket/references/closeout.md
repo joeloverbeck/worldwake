@@ -8,7 +8,7 @@ After the owned implementation is fully verified:
 
 1. Update the ticket's `Status` when the required verification surface has passed.
 2. If reassessment, implementation, or broad verification exposed an adjacent but out-of-scope contradiction, create or update a follow-up ticket immediately (see mismatch-handling.md, Escalation decision tree).
-3. If the owned invariant is proved and a broader rerun exposes a different unrelated blocker, close the current ticket honestly, record the broader blocker, and create the follow-up immediately.
+3. If the owned invariant is proved and a broader rerun exposes a different unrelated blocker, close the current ticket honestly, record the broader blocker, and either link the existing owning ticket or create the follow-up immediately when no owner exists yet.
 4. Give each follow-up explicit `Deps` links to the implemented ticket and any still-pending sibling tickets or active specs.
 5. Distinguish clearly between:
    - bugs fixed inside the current ticket
