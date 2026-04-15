@@ -172,7 +172,7 @@ Create `scenarios/survival-baseline.ron` with:
 
 **Places (4):**
 - **Riverside Camp** (place tags: Camp, Latrine): Facilities: Well. Resource sources: Water (via Well). Starting location for Agents A and B. Latrine tag enables indoor bladder relief.
-- **Fertile Fields** (place tags: Field, Farm): Facilities: FieldPlot, OrchardRow. Resource sources: Grain (via FieldPlot), Apple (via OrchardRow). Travel: 3 ticks from Riverside. Outdoor tags (Field, Farm) enable outdoor bladder relief with dirtiness penalty.
+- **Fertile Fields** (place tags: Field, Farm): Facilities: OrchardRow. Resource sources: Apple (via OrchardRow). Travel: 3 ticks from Riverside. Outdoor tags (Field, Farm) enable outdoor bladder relief with dirtiness penalty.
 - **Forest Clearing** (place tags: Forest): Facilities: Well. Resource sources: Water (via Well). Travel: 4 ticks from Riverside, 5 ticks from Fields. Outdoor tag (Forest) enables outdoor bladder relief with dirtiness penalty.
 - **Hillside Shelter** (place tags: Camp, Latrine): No workstations or resource sources. Travel: 3 ticks from Forest, 6 ticks from Riverside. Latrine tag enables indoor bladder relief.
 
@@ -180,7 +180,7 @@ Create `scenarios/survival-baseline.ron` with:
 
 | Need | Satisfaction Mechanism | Required Facility/Tag |
 |------|----------------------|----------------------|
-| Hunger | Eat action (consume Apple, Grain, or Bread) | Production: FieldPlot or OrchardRow + resource source |
+| Hunger | Eat action (consume Apple, Grain, or Bread) | Production: OrchardRow + resource source in the minimal authored baseline |
 | Thirst | Drink action (consume Water) | Production: Well + resource source |
 | Fatigue | Sleep action | None — agents sleep anywhere |
 | Bladder | Toilet action (at Latrine) or Relieve Wilderness (at outdoor tag: Forest, Field, Farm, Trail, Road) | PlaceTag::Latrine or OUTDOOR_RELIEF_TAGS |
@@ -197,7 +197,7 @@ Each agent has ONLY survival-relevant profiles:
 No agent has: PatrolProfile, JusticeDispositionProfile, TellProfile, ArtifactPostingProfile, MerchandiseProfile, CombatProfile, ViolationDispositionProfile, or any other duty/role profile.
 
 **Recipes:**
-All agents know: `"Harvest Grain"`, `"Harvest Apples"`, `"Harvest Water"`. These are the minimum recipes for food and water self-sufficiency.
+All agents know: `"Harvest Apples"` and `"Harvest Water"`. These are the minimum recipes used by the authored baseline that still prove food and water self-sufficiency through exploration.
 
 **Starting knowledge:**
 - Agent A starts at Riverside Camp, knows Riverside and Fertile Fields
@@ -215,7 +215,8 @@ Run: `observer scenarios/survival-baseline.ron --ticks 1440 --output reports/sur
 - No need sustained above critical threshold (Permille 750) for more than 100 consecutive ticks — applies to all five homeostatic needs (Hunger, Thirst, Fatigue, Bladder, Dirtiness)
 - All agents execute at least one eat, drink, wash, sleep, and relieve action
 - Agent B successfully explores to discover a food source
-- No planner budget exhaustion on survival-related goals (AcquireCommodity with SelfConsume purpose, ConsumeOwnedCommodity, ExploreLocation with motivating need, Sleep, Relieve)
+- Zero deaths, all five needs kept below the sustained-critical threshold, and all agents execute eat/drink/wash/sleep/relieve at least once in the observer report
+- Remaining survival-path `ProduceCommodity` budget-exhaustion signatures are tracked separately in follow-up ticket `S104SURBASREC-007` before Layer 0 pins the baseline as a clean regression surface
 - No anomaly flags for idle stretches > 50 ticks or action loops
 
 ### Phase 3: Golden Test Rebuild
@@ -228,6 +229,7 @@ After Phase 2 proves survival works, rebuild golden test coverage in layers:
 - Assertions: invariant-style (all five needs stay managed, no deaths, exploration discovers resources)
 - No StateHash assertions — only structural invariants
 - This becomes the permanent survival regression test
+- Depends on the scenario from `S104SURBASREC-004` plus planner cleanup in `S104SURBASREC-007`, because the authored baseline survives today but still emits survival-path `ProduceCommodity` budget-exhaustion snapshots in the observer report.
 
 **Layer 1: Single-System Addition Tests**
 For each non-survival system (trade, combat, social, offices, patrol, etc.):

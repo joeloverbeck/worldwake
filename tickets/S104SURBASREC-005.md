@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: archive/tickets/S104SURBASREC-001.md, archive/tickets/S104SURBASREC-002.md, S104SURBASREC-004
+**Deps**: archive/tickets/S104SURBASREC-001.md, archive/tickets/S104SURBASREC-002.md, archive/tickets/S104SURBASREC-004.md, S104SURBASREC-007
 
 ## Problem
 
@@ -13,7 +13,7 @@ After golden test triage (001, 002) removes hash-dependent tests and the surviva
 ## Assumption Reassessment (2026-04-15)
 
 1. Golden test infrastructure exists and is unchanged: `golden_harness/mod.rs`, `golden_harness/soak_world.rs`, `golden_harness/timeline.rs` — confirmed during reassessment. The harness provides `GoldenTestBuilder`, scenario loading, tick advancement, and assertion utilities.
-2. `scenarios/survival-baseline.ron` will exist after S104SURBASREC-004 — this ticket depends on it.
+2. `scenarios/survival-baseline.ron` will exist after S104SURBASREC-004, but the scenario ticket no longer owns removal of the remaining survival-path `ProduceCommodity` budget-exhaustion snapshots. That cleanup now belongs to `S104SURBASREC-007`, so Layer 0 should wait for both the scenario and the planner cleanup.
 3. After S104SURBASREC-001 and S104SURBASREC-002, the golden test file namespace has room for `golden_survival_baseline.rs`.
 4. `HomeostaticNeedId` variants (Hunger, Thirst, Fatigue, Bladder, Dirtiness) and their accessors are available through the belief view and world state for assertion purposes.
 5. The spec mandates NO StateHash assertions in Layer 0 tests — only structural invariants.
