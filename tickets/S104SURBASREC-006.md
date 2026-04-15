@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None
-**Deps**: S104SURBASREC-005
+**Deps**: archive/tickets/S104SURBASREC-005.md
 
 ## Problem
 
@@ -12,7 +12,7 @@ After Layer 0 proves survival works, the project needs to rebuild the cross-syst
 
 ## Assumption Reassessment (2026-04-15)
 
-1. Layer 0 (`golden_survival_baseline.rs`) will exist after S104SURBASREC-005, providing proven survival-capable agent configurations.
+1. Layer 0 (`golden_survival_baseline.rs`) landed in `archive/tickets/S104SURBASREC-005.md`, providing proven survival-capable agent configurations loaded from the authored `survival-baseline.ron` scenario.
 2. The systems to rebuild coverage for include: trade, combat, social, offices, patrol, care, production, exploration (beyond survival), pursuit, supply chain, and multi-system emergent scenarios.
 3. Golden harness infrastructure remains available: `golden_harness/mod.rs`, `golden_harness/soak_world.rs`, `golden_harness/timeline.rs`.
 4. This ticket is intentionally large because the rebuild is incremental and each layer depends on the prior. It may be split further during implementation if the scope proves too broad for a single review cycle.

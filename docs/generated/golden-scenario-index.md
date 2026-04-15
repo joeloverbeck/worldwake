@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 63
-- Contributing golden test files: 10
-- Associated tests: 77
+- Scenario blocks: 67
+- Contributing golden test files: 11
+- Associated tests: 81
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -713,7 +713,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 131: Death Traceability Under Unmet Needs
 
-- Source: `golden_simulation_gaps.rs:991`
+- Source: `golden_simulation_gaps.rs:1006`
 - Systems: Needs, Wounds, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Needs
@@ -728,7 +728,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
 
-- Source: `golden_simulation_gaps.rs:1018`
+- Source: `golden_simulation_gaps.rs:1033`
 - Systems: Production, Needs, AI
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Needs
@@ -740,6 +740,66 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: The opening AI plan selects the self-consume harvest branch for each agent, then the full colocated chain completes: harvest -> possession/ materialization -> drink/eat -> corresponding need decreases.
 
 **Cross-system chain**: local resource-source beliefs + recipe knowledge -> harvest plan -> committed harvest action -> committed consume action -> lower thirst/hunger.
+
+### Scenario 148: Survival Baseline Keeps All Agents Alive For 1440 Ticks
+
+- Source: `golden_survival_baseline.rs:275`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: Riverside Camp, Fertile Fields, Forest Clearing, Hillside Shelter
+- Principles: 1, 6, 22, 31
+
+**Setup**: Load the authored `survival-baseline.ron` scenario and run the real
+
+**Proves**: all authored agents remain alive and none of the five tracked needs
+
+**Cross-system chain**: authored survival substrate -> exploration/perception discovers food
+
+### Scenario 149: Survival Baseline Exercises All Five Self-Care Action Families
+
+- Source: `golden_survival_baseline.rs:331`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: Riverside Camp, Fertile Fields, Forest Clearing, Hillside Shelter
+- Principles: 3, 6, 31
+
+**Setup**: Run the authored survival baseline for 1440 ticks and collect action
+
+**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions in
+
+**Cross-system chain**: varied initial needs and authored place affordances -> repeated
+
+### Scenario 150: Survival Baseline Explorer Discovers Fertile Fields Orchard
+
+- Source: `golden_survival_baseline.rs:358`
+- Systems: AI, Exploration, Perception, Production
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Production, Needs
+- Places: Riverside Camp, Fertile Fields
+- Principles: 1, 6, 14, 31
+
+**Setup**: Agent B starts at Riverside Camp in the authored survival baseline
+
+**Proves**: Agent B reaches Fertile Fields and retains a belief about the
+
+**Cross-system chain**: no authored seeded food knowledge -> exploration candidate selected
+
+### Scenario 151: Survival Baseline Avoids Budget Exhaustion On Survival Goals
+
+- Source: `golden_survival_baseline.rs:392`
+- Systems: AI, Search, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
+- ActionDomains: Needs, Travel, Production
+- Places: Riverside Camp, Fertile Fields, Forest Clearing, Hillside Shelter
+- Principles: 6, 14, 31
+
+**Setup**: Run the authored survival baseline with decision tracing enabled and
+
+**Proves**: no survival-goal planning attempt in the baseline ends in
+
+**Cross-system chain**: cleaned survival candidate/planner surface from `S104SURBASREC-007`
 
 ### Scenario 58: Travel Need Escalation
 

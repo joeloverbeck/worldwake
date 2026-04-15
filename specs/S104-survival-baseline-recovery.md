@@ -228,8 +228,8 @@ After Phase 2 proves survival works, rebuild golden test coverage in layers:
 - Tests: 3-4 agents with only survival profiles, 1440 ticks
 - Assertions: invariant-style (all five needs stay managed, no deaths, exploration discovers resources)
 - No StateHash assertions — only structural invariants
-- This becomes the permanent survival regression test
-- Depends on the scenario from `S104SURBASREC-004` plus the landed planner cleanup from `archive/tickets/S104SURBASREC-007.md`; the remaining Layer 0 work is now the golden proof surface, not unresolved observer-side budget exhaustion.
+- This is now the permanent survival regression test, implemented in `archive/tickets/S104SURBASREC-005.md`
+- It loads `scenarios/survival-baseline.ron` through a test-only `worldwake-cli` scenario bridge, proving survival, self-care action coverage, Agent B food discovery, and the absence of survival-goal `BudgetExhausted` attempts
 
 **Layer 1: Single-System Addition Tests**
 For each non-survival system (trade, combat, social, offices, patrol, etc.):
