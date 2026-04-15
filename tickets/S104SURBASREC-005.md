@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: archive/tickets/S104SURBASREC-001.md, archive/tickets/S104SURBASREC-002.md, archive/tickets/S104SURBASREC-004.md, S104SURBASREC-007
+**Deps**: archive/tickets/S104SURBASREC-001.md, archive/tickets/S104SURBASREC-002.md, archive/tickets/S104SURBASREC-004.md, archive/tickets/S104SURBASREC-007.md
 
 ## Problem
 
@@ -13,16 +13,19 @@ After golden test triage (001, 002) removes hash-dependent tests and the surviva
 ## Assumption Reassessment (2026-04-15)
 
 1. Golden test infrastructure exists and is unchanged: `golden_harness/mod.rs`, `golden_harness/soak_world.rs`, `golden_harness/timeline.rs` — confirmed during reassessment. The harness provides `GoldenTestBuilder`, scenario loading, tick advancement, and assertion utilities.
-2. `scenarios/survival-baseline.ron` will exist after S104SURBASREC-004, but the scenario ticket no longer owns removal of the remaining survival-path `ProduceCommodity` budget-exhaustion snapshots. That cleanup now belongs to `S104SURBASREC-007`, so Layer 0 should wait for both the scenario and the planner cleanup.
+2. `scenarios/survival-baseline.ron` exists after S104SURBASREC-004, and the planner cleanup that removed the remaining survival-path `ProduceCommodity` budget-exhaustion snapshots landed in `archive/tickets/S104SURBASREC-007.md`. Layer 0 can now rely on the baseline observer report as a clean survival proof surface.
 3. After S104SURBASREC-001 and S104SURBASREC-002, the golden test file namespace has room for `golden_survival_baseline.rs`.
 4. `HomeostaticNeedId` variants (Hunger, Thirst, Fatigue, Bladder, Dirtiness) and their accessors are available through the belief view and world state for assertion purposes.
 5. The spec mandates NO StateHash assertions in Layer 0 tests — only structural invariants.
 6. Factual follow-up from archived `S104SURBASREC-001`: `crates/worldwake-ai/tests/` uses file-based Rust integration tests. A new `golden_survival_baseline.rs` file should declare its own local `mod golden_harness;` like the surviving golden files, not rely on a shared test-harness entry point.
+7. `S104SURBASREC-007` is now complete, and `reports/survival-baseline-validation.md` records `No budget exhaustion events detected.` in Section 8 for the live `survival-baseline.ron` run.
+8. The remaining real reassessment correction for this ticket is test-surface scaffolding: current `worldwake-ai` golden tests construct worlds through `GoldenHarness` and do not yet load authored RON scenarios. Reusing `scenarios/survival-baseline.ron` in `golden_survival_baseline.rs` will therefore need honest same-crate test-surface scaffolding, likely via a `worldwake-cli` dev-dependency plus scenario loader/spawn helpers, rather than assuming an existing direct pattern.
 
 ## Architecture Check
 
 1. Invariant-based assertions are more resilient to behavioral changes than hash-based assertions. This is the core lesson from the golden test triage — tests should verify "agents survive" not "agents take exactly this sequence of actions."
 2. No backwards-compatibility shims. New test file following existing golden test conventions.
+3. The correct sequencing remains scenario -> planner cleanup -> Layer 0 golden pinning. That planner cleanup is now complete, so the remaining work on this ticket is the Layer 0 golden proof itself rather than a blocked engine dependency.
 
 ## Verification Layers
 
@@ -31,6 +34,12 @@ After golden test triage (001, 002) removes hash-dependent tests and the surviva
 3. All agents performed survival actions → event-log / action trace assertions
 4. Agent B explored and discovered food → belief state / event-log assertion
 5. Single-layer ticket — test infrastructure only, verifying emergent survival behavior.
+6. Current status gate: the observer baseline is now truthful; the remaining work is building the Layer 0 golden proof surface on top of it.
+
+## Resume Notes (2026-04-15)
+
+- `archive/tickets/S104SURBASREC-007.md` removed the remaining survival-path `ProduceCommodity` budget-exhaustion snapshots, so the Layer 0 acceptance contract is now live.
+- `golden_survival_baseline.rs` will still need explicit scenario-loading scaffolding because the current `worldwake-ai` golden harness does not load authored RON scenarios directly.
 
 ## What to Change
 

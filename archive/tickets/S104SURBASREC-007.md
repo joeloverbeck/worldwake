@@ -1,6 +1,6 @@
 # S104SURBASREC-007: Remove survival-baseline ProduceCommodity budget exhaustion
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — survival planning / candidate-generation surface in `worldwake-ai`
@@ -90,3 +90,13 @@ Use the existing `scenarios/survival-baseline.ron` observer run as the final pro
 1. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output reports/survival-baseline-validation.md`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+- **Completion date**: 2026-04-15
+- **What actually changed**: `emit_produce_goals` in `crates/worldwake-ai/src/candidate_generation.rs` now suppresses self-consume `ProduceCommodity` candidates when the same commodity already has a direct non-recipe acquisition path, which removes the duplicate survival lane for source-backed zero-input harvest recipes such as apples and water. `crates/worldwake-ai/src/interrupts.rs` also now treats the in-flight plan goal as the effective active goal for penalty-interrupt evaluation and skips self-interrupting when the currently running critical goal is still the top-ranked critical candidate, preventing `Harvest Water` from repeatedly aborting itself under `CriticalSurvival`.
+- **Deviations from original plan**: Reassessment proved the observer noise was not only a candidate-emission problem. Removing the duplicate `ProduceCommodity` lane exposed a same-domain execution regression in `golden_harvest_to_consume`, so the honest fix also included a narrow interrupt-layer correction plus a focused regression test for that self-interrupt loop.
+- **Verification results**:
+  - `cargo test -p worldwake-ai`
+  - `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output reports/survival-baseline-validation.md`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

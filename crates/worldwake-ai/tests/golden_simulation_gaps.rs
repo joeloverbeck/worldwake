@@ -828,6 +828,20 @@ fn committed_action_names(h: &GoldenHarness, agent: EntityId) -> BTreeSet<String
         .collect()
 }
 
+fn action_lifecycle_summaries(h: &GoldenHarness, agent: EntityId) -> Vec<String> {
+    h.action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for(agent)
+        .iter()
+        .map(|event| {
+            format!(
+                "tick {} {:?} {}",
+                event.tick.0, event.kind, event.action_name
+            )
+        })
+        .collect()
+}
+
 fn run_harvest_to_consume(seed: Seed) -> (HarvestToConsumeObservation, StateHash, StateHash) {
     let mut h = GoldenHarness::with_recipes(seed, build_multi_recipe_registry());
     h.driver.enable_tracing();
@@ -951,7 +965,8 @@ fn run_harvest_to_consume(seed: Seed) -> (HarvestToConsumeObservation, StateHash
         observation
             .water_committed_actions
             .contains("harvest:Harvest Water"),
-        "water agent should commit Harvest Water; observation={observation:?}"
+        "water agent should commit Harvest Water; observation={observation:?}; lifecycle={:?}",
+        action_lifecycle_summaries(&h, water_agent)
     );
     assert!(
         observation.water_committed_actions.contains("drink"),
