@@ -1,6 +1,6 @@
 # S105OBSSALFIL-002: Implement observation priority and budget pipeline
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — perception pipeline in worldwake-systems
@@ -17,7 +17,7 @@ The perception pipeline in `collect_direct_local_observation_batch` iterates ALL
 3. `world.entity_kind(entity)` at `crates/worldwake-core/src/world.rs:453` returns `Option<EntityKind>`. `EntityKind` has 10 variants: Agent, ItemLot, UniqueItem, Container, Facility, Place, Faction, Office, Record, SocialArtifact.
 4. `world.get_component_item_lot(entity)` returns `Option<&ItemLot>`. `ItemLot.commodity` (not `commodity_kind`) is of type `CommodityKind`. `CommodityKind::Waste` exists.
 5. `HomeostaticNeeds::max_value()` at `crates/worldwake-core/src/needs.rs:55` returns `u16`. The existing `salience_boost()` at `crates/worldwake-core/src/belief.rs:2513` uses u32 intermediate math: `(u32::from(max_need) * u32::from(boost.value()) / 1000) as u16`. The observation-side boost must follow the same pattern but exclude Waste ItemLots (the retention-side does not exclude Waste).
-6. No focused tests exist for `collect_direct_local_observation_batch` in the perception.rs test module (`#[cfg(test)]` boundary at line 1164). The function is tested indirectly through `perception_system`.
+6. No dedicated non-default-budget test exists yet for `collect_direct_local_observation_batch`; that focused coverage remains owned by `tickets/S105OBSSALFIL-003.md`. The current branch does already have focused `perception::tests::*` coverage over the passive observation path plus broad `worldwake-ai` golden regressions that should remain unchanged at the default budget of 24.
 7. `passes_observation_check` at line 817 takes `(fidelity: u16, rng: &mut DeterministicRng)` and returns `bool`. Its interface is unchanged by this ticket.
 
 ## Architecture Check
@@ -27,11 +27,9 @@ The perception pipeline in `collect_direct_local_observation_batch` iterates ALL
 
 ## Verification Layers
 
-1. Priority ordering is deterministic (EntityKind + EntityId tie-breaking) → unit test with known entity composition
-2. Budget truncation caps observed entities → unit test asserting truncation at `observation_budget`
-3. Need-based boost activates only for non-Waste ItemLots above urgency threshold → unit test with mixed entity types and varying need pressure
-4. Pipeline behavioral correctness (high-priority entities always observed first) → unit test verifying Agent/Facility entities appear in batch before Waste
-5. Existing perception behavior unchanged at default budget → existing test suite passes (regression)
+1. Passive same-place observation path still internalizes snapshots and missing-entity detection correctly at the lived default budget → existing `perception::tests::*` coverage in `crates/worldwake-systems/src/perception.rs`
+2. Existing AI and golden behavior remains unchanged at the default budget of 24 → `cargo test -p worldwake-ai`
+3. Dedicated non-default-budget ordering/truncation proof remains a sibling-owned verification surface → `tickets/S105OBSSALFIL-003.md`
 
 ## What to Change
 
@@ -86,9 +84,10 @@ Move the `get_component_homeostatic_needs` call (currently at line ~295) to befo
 
 ### Tests That Must Pass
 
-1. `cargo build --workspace` compiles
-2. `cargo test --workspace` passes — all existing golden tests produce identical results at default budget (24)
-3. `cargo clippy --workspace --all-targets -- -D warnings` passes
+1. `cargo test --workspace --no-run` compiles after the perception signature and helper changes
+2. `cargo test -p worldwake-systems` passes — passive observation regressions stay green at the default budget
+3. `cargo test -p worldwake-ai` passes — existing golden/AI behavior remains unchanged at the default budget of 24
+4. `cargo clippy --workspace --all-targets -- -D warnings` passes
 
 ### Invariants
 
@@ -102,10 +101,30 @@ Move the `get_component_homeostatic_needs` call (currently at line ~295) to befo
 
 ### New/Modified Tests
 
-1. None in this ticket — tests are in S105OBSSALFIL-003. This ticket's correctness is verified by existing test suite passing unchanged (behavioral equivalence at default budget).
+1. None in this ticket — dedicated non-default-budget unit/golden proof remains in `S105OBSSALFIL-003`; this ticket relies on existing perception-path tests plus `worldwake-ai` regression coverage at the default budget.
 
 ### Commands
 
-1. `cargo test -p worldwake-systems`
-2. `cargo test -p worldwake-ai`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test --workspace --no-run`
+2. `cargo test -p worldwake-systems`
+3. `cargo test -p worldwake-ai`
+4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed: 2026-04-16
+
+Implemented deterministic same-place observation prioritization in `crates/worldwake-systems/src/perception.rs`. Passive local observation now computes entity priorities from entity kind, Waste-vs-non-Waste item-lot commodity, and the observer's current homeostatic need pressure, sorts descending with `EntityId` tie-breaking, and truncates the candidate set to `PerceptionProfile.observation_budget` before running the existing fidelity gate and snapshot-building path. `observe_passive_local_entities` now threads the observer's `HomeostaticNeeds` and `PerceptionProfile` into the batch collector so the budgeted priority path stays local to the perception system.
+
+Deviations from original plan:
+
+- No new focused unit or golden tests landed in this ticket after reassessment. The dedicated non-default-budget proof surface remains explicitly owned by `tickets/S105OBSSALFIL-003.md`; this ticket's verification stayed on existing `worldwake-systems` perception-path coverage plus `worldwake-ai` regression coverage at the default budget of 24.
+
+## Verification Result
+
+Passed:
+
+1. `cargo test --workspace --no-run`
+2. `cargo test -p worldwake-systems`
+3. `cargo test -p worldwake-ai`
+4. `cargo clippy --workspace --all-targets -- -D warnings`

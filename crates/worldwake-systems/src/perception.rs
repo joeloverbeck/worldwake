@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, CauseRef, ComponentDelta,
-    ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload, EventTag,
-    EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
+    AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, CauseRef, CommodityKind,
+    ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload,
+    EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, MismatchKind, NoticeTopic, ObservationContext, PendingEvent,
     PerceptionSource, Permille, RelationDelta, RelationValue, SocialObservation,
     SocialObservationDetail, SocialObservationKind, StateDelta, TheftFacts, VisibilitySpec,
@@ -267,6 +267,10 @@ fn observe_passive_local_entities(
             action_defs,
         )
         .value();
+        let needs = world
+            .get_component_homeostatic_needs(agent)
+            .copied()
+            .unwrap_or_default();
         let Some(batch) = collect_direct_local_observation_batch(
             world,
             agent,
@@ -276,6 +280,8 @@ fn observe_passive_local_entities(
             effective_fidelity,
             rng,
             &base_store,
+            needs,
+            &profile,
         ) else {
             continue;
         };
@@ -291,10 +297,7 @@ fn observe_passive_local_entities(
             &mut store,
             &batch,
             &profile,
-            world
-                .get_component_homeostatic_needs(agent)
-                .copied()
-                .unwrap_or_default(),
+            needs,
         );
         let doctrine_changed = project_local_bandit_rally_doctrine(
             world,
@@ -449,12 +452,26 @@ fn collect_direct_local_observation_batch(
     observation_fidelity: u16,
     rng: &mut worldwake_sim::DeterministicRng,
     store: &AgentBeliefStore,
+    needs: worldwake_core::HomeostaticNeeds,
+    profile: &worldwake_core::PerceptionProfile,
 ) -> Option<DirectLocalObservationBatch> {
     let mut observed_snapshots = BTreeMap::new();
-    for &entity in colocated_entities {
-        if entity == observer {
-            continue;
-        }
+    let mut prioritized_entities = colocated_entities
+        .iter()
+        .copied()
+        .filter(|entity| *entity != observer)
+        .map(|entity| {
+            (
+                compute_observation_priority(world, entity, &needs, profile),
+                entity,
+            )
+        })
+        .collect::<Vec<_>>();
+    prioritized_entities
+        .sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    prioritized_entities.truncate(usize::from(profile.observation_budget));
+
+    for (_, entity) in prioritized_entities {
         if !passes_observation_check(observation_fidelity, rng) {
             continue;
         }
@@ -499,6 +516,38 @@ fn collect_direct_local_observation_batch(
         observed_snapshots,
         noticed_missing_subjects,
     })
+}
+
+fn compute_observation_priority(
+    world: &World,
+    entity: EntityId,
+    needs: &worldwake_core::HomeostaticNeeds,
+    profile: &worldwake_core::PerceptionProfile,
+) -> u16 {
+    let item_need_boost = || -> u16 {
+        if needs.max_value() < profile.need_salience_urgency_threshold.value() {
+            return 0;
+        }
+        (u32::from(needs.max_value()) * u32::from(profile.need_salience_boost.value()) / 1000)
+            as u16
+    };
+
+    match world.entity_kind(entity) {
+        Some(EntityKind::Agent) => 900,
+        Some(EntityKind::Place) => 800,
+        Some(EntityKind::Facility) => 700,
+        Some(EntityKind::UniqueItem) => 600,
+        Some(EntityKind::Office) => 550,
+        Some(EntityKind::Container) => 500,
+        Some(EntityKind::Faction) => 450,
+        Some(EntityKind::Record | EntityKind::SocialArtifact) => 400,
+        Some(EntityKind::ItemLot) => match world.get_component_item_lot(entity) {
+            Some(lot) if lot.commodity == CommodityKind::Waste => 100,
+            Some(_) => 300 + item_need_boost(),
+            None => 300,
+        },
+        None => 0,
+    }
 }
 
 fn apply_direct_local_observation_batch(
