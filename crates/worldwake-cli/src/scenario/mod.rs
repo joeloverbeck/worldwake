@@ -1589,6 +1589,7 @@ mod tests {
             entity_activation_threshold: Permille::new(250).unwrap(),
             claim_confidence_threshold: Permille::new(50).unwrap(),
             observation_buffer_capacity: 4,
+            observation_budget: 7,
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
             observation_fidelity: Permille::new(900).unwrap(),
@@ -1689,6 +1690,7 @@ mod tests {
             world.get_component_perception_profile(agent),
             Some(&custom_perception)
         );
+        assert_eq!(custom_perception.observation_budget, 7);
         assert_eq!(
             world.get_component_drive_thresholds(agent),
             Some(&custom_thresholds)

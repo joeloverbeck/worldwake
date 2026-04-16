@@ -2412,6 +2412,9 @@ pub struct PerceptionProfile {
     pub claim_confidence_threshold: Permille,
     /// Maximum number of pending observations buffered before processing.
     pub observation_buffer_capacity: u8,
+    /// Maximum number of co-located entities observed per tick before salience filtering truncates.
+    #[serde(default = "default_observation_budget")]
+    pub observation_budget: u8,
     /// Observation priority boost for entities relevant to the agent's current needs.
     pub need_salience_boost: Permille,
     /// Need pressure level above which the salience boost activates.
@@ -2419,6 +2422,10 @@ pub struct PerceptionProfile {
 }
 
 impl Component for PerceptionProfile {}
+
+fn default_observation_budget() -> u8 {
+    24
+}
 
 impl Default for PerceptionProfile {
     fn default() -> Self {
@@ -2431,6 +2438,7 @@ impl Default for PerceptionProfile {
             entity_activation_threshold: Permille::new(100).unwrap(),
             claim_confidence_threshold: Permille::new(50).unwrap(),
             observation_buffer_capacity: 5,
+            observation_budget: default_observation_budget(),
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
@@ -2573,6 +2581,7 @@ mod tests {
             entity_activation_threshold: Permille::new(entity_activation_threshold).unwrap(),
             claim_confidence_threshold: Permille::new(claim_confidence_threshold).unwrap(),
             observation_buffer_capacity,
+            observation_budget: 24,
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
@@ -6119,6 +6128,7 @@ mod tests {
             Permille::new(50).unwrap()
         );
         assert_eq!(profile.observation_buffer_capacity, 5);
+        assert_eq!(profile.observation_budget, 24);
         assert_eq!(profile.need_salience_boost, Permille::new(500).unwrap());
         assert_eq!(
             profile.need_salience_urgency_threshold,
@@ -6130,6 +6140,30 @@ mod tests {
             Permille::new(500).unwrap()
         );
         assert_eq!(profile.contradiction_tolerance, Permille::new(300).unwrap());
+    }
+
+    #[test]
+    fn perception_profile_serde_defaults_observation_budget_when_omitted() {
+        let serialized = ron::to_string(&PerceptionProfile::default()).expect("serialize");
+        let omitted = serialized
+            .replace("observation_budget:24,", "")
+            .replace("observation_budget: 24,", "");
+        let profile: PerceptionProfile = ron::from_str(&omitted)
+            .expect("deserialize perception profile without observation_budget");
+
+        assert_eq!(profile.observation_budget, 24);
+    }
+
+    #[test]
+    fn perception_profile_serde_accepts_explicit_observation_budget() {
+        let serialized = ron::to_string(&PerceptionProfile::default()).expect("serialize");
+        let explicit = serialized
+            .replace("observation_budget:24", "observation_budget:11")
+            .replace("observation_budget: 24", "observation_budget: 11");
+        let profile: PerceptionProfile = ron::from_str(&explicit)
+            .expect("deserialize perception profile with explicit observation_budget");
+
+        assert_eq!(profile.observation_budget, 11);
     }
 
     #[test]

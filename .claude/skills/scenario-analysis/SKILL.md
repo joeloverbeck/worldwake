@@ -41,7 +41,7 @@ Check for:
 - **Agents without food recipes**: Any AI agent whose `known_recipes` contains no food-producing recipe (e.g., only "Harvest Water") will be unable to produce food. Flag as pre-flight warning.
 - **Agents without perception_profile**: Agents without `perception_profile` have severely limited observation capacity and may be effectively blind to ground items.
 - **Locations without reachable food/water**: For each place with agents, trace travel edges to check whether food and water sources are reachable within a reasonable hop count (2-3 hops). Flag isolated locations with no food/water access.
-- **Missing wash facilities**: Check whether a wash-capable facility (WashBasin, Well, or other facility whose workstation type supports the wash action) exists at or within 2 travel hops of each populated location. Flag gaps. If unsure which facilities support washing, grep for wash-related affordance registration in the codebase (e.g., `wash` in `affordance_query.rs` or action handler registration).
+- **Agents without water access for washing**: Wash requires possessed Water (not a facility). Check whether agents can reach a water source (Well, River, or other water-producing facility) to harvest Water for washing. Flag agents with no reachable water source within 2-3 travel hops.
 
 Report findings as "Pre-flight Warnings" in the report's Run Summary section. Do not gate the observer run on pre-flight results — these are informational only.
 
@@ -85,7 +85,7 @@ The dump has 7 sections:
 - **Section 1**: Run Metadata (scenario, seed, ticks, agents, places)
 - **Section 2**: Per-Agent Summary (actions, perception, needs, locations, idle ticks, behavioral transitions, death tick/cause if applicable)
 - **Section 3**: Anomaly Flags (mechanically detected smells)
-- **Section 4**: Raw Event Sample (first/last 100 events, per-agent action timeline histograms in 100-tick bins, per-agent perception timeline in 100-tick bins)
+- **Section 4**: Raw Event Sample (first/last 100 events)
 - **Section 5**: Per-Agent Belief Summary (known entities, believed locations, social/told/heard/institutional beliefs). Uses item type names (e.g., "Waste", "Apple"), not EntityIds.
 - **Section 6**: End-State Inventory & Resources (agent possessions, place contents). Places with 500+ SocialArtifacts from post_notice/tell spam appear as extremely long single lines — note the pollution count and skip individual enumeration.
 - **Section 7**: Per-Agent Decision Summary (planning outcomes, goal selection, failed plans, blocked desires, affordances)
@@ -104,7 +104,7 @@ The dump has 7 sections:
 After reading Sections 1, 2, and 3, evaluate whether any agent has any need above 750 permille for 100+ consecutive ticks (from Section 2 "Ticks above 750 permille" and Section 3 Smell 5/6 flags).
 
 **If NO agent meets this threshold** (healthy scenario):
-1. Perform lightweight extraction: read Section 6 (end-state) and grep Section 7 for `Plan search outcomes` only.
+1. Perform lightweight extraction: read Section 5 (beliefs), Section 6 (end-state), and grep Section 7 for `Plan search outcomes`, `Goals selected`, and `Final affordances`. Optionally read Section 4 last events for perception pattern analysis. This gives enough data for meaningful Layer 1 and Layer 3 analysis without requiring the full Section 7 deep-dive protocol.
 2. Run Layer 1 (lighter — smells unlikely to be severe) and Layer 3 (always runs — detection gaps matter even in healthy scenarios).
 3. Skip Layer 2 entirely (no needs failures to diagnose).
 4. Use the Healthy Scenario Report Template.
@@ -123,11 +123,11 @@ Analyze the dump for all 10 smell categories. For each, state whether the smell 
 1. **Redundant Perception** — Agent observes the same unchanged entity repeatedly. Suggests overly broad perception or belief never updating.
 
 2. **Action Loops** — Agent repeats the same action sequence (not patrol) without progress. Cross-reference with Section 7's decision timeline to see what the planner was selecting during the loop period. Also look for:
-   - **Behavioral collapse**: agents settling into a minimal-action pattern (e.g., only sleep+relieve) for extended periods. Section 2 includes pre-computed behavioral transition markers — use these as starting points, then verify against Section 4 action timeline bins.
+   - **Behavioral collapse**: agents settling into a minimal-action pattern (e.g., only sleep+relieve) for extended periods. Section 2 includes pre-computed behavioral transition markers — use these as starting points, then verify against Section 7 Decision timeline bins.
    - **Degenerate plan loops**: Section 7 shows the same goal selected repeatedly with plans found but 0 actions executed. Grep for `GoalSatisfied\[steps=0` — if an agent has hundreds of these across multiple 100-tick bins, it confirms a degenerate plan loop.
    - **Affordance-reporting gaps**: if an action type appears frequently in the action timeline but is absent from all affordance snapshots, note this discrepancy in Cross-Cutting Patterns.
 
-3. **Stuck Agents** — No actions for many consecutive ticks. Distinguish explainable idle (human-controlled, needs satisfied, no affordances) from pathological (needs rising, agent does nothing). Check Section 7 for planner outcomes during the idle period. Also check whether candidate count dropped to 0 — the agent may be idle because no goal candidates were generated at all. If the agent has dead ticks, their idle status post-death is expected — focus on ticks leading to death.
+3. **Stuck Agents** — No actions for many consecutive ticks. Distinguish explainable idle (human-controlled, needs satisfied, no affordances) from pathological (needs rising, agent does nothing). Check Section 7 for planner outcomes during the idle period. Also check whether candidate count dropped to 0 — the agent may be idle because no goal candidates were generated at all. If the agent has dead ticks, their idle status post-death is expected — focus on ticks leading to death. Note: the mechanical stuck-agent detector counts consecutive ticks with no action *started or in-progress*. Multi-tick actions like sleep occupy the agent and are not counted as idle. Therefore "max consecutive idle ticks" in Section 2 may exceed the detector's threshold without triggering an anomaly.
 
 4. **Failed Action Spirals** — Agent keeps attempting actions that fail validation. What precondition is failing? Is the agent's belief stale?
 
@@ -300,12 +300,12 @@ For each false positive, document:
 Scan the trace data for problematic behaviors that are NOT caught by any of the 6 mechanical anomaly kinds or 4 LLM-only smells. These are behaviors visible in the dump but that no current detector flags.
 
 **Systematic scan approach**: For each agent, cross-reference:
-- Section 4 action timelines vs. Section 2 needs trajectories: Are there periods where needs rise but the action pattern doesn't change?
+- Section 7 Decision timeline vs. Section 2 needs trajectories: Are there periods where needs rise but the action pattern doesn't change?
 - Section 7 goal selection vs. Section 7 affordances: Are affordances available that are never selected?
-- Section 7 plan outcomes vs. Section 4 action counts: Are plans found but actions never committed?
+- Section 7 plan outcomes vs. Section 2 action counts: Are plans found but actions never committed?
 - Section 5 beliefs vs. Section 6 reality: Are there belief-reality mismatches beyond what smell 8 covers?
 - Section 2 location history vs. Section 7 goals: Is travel purposeful or aimless?
-- Section 4 perception timeline vs. Section 5 beliefs: Are observations being made but beliefs not forming?
+- Section 2 perception counts vs. Section 5 beliefs: Are observations being made but beliefs not forming?
 
 **Common gap patterns to look for**:
 - **Aimless travel**: Agent repeatedly travels between locations without executing any goal-relevant action at destinations. Travel serves no purpose.
@@ -556,6 +556,8 @@ For each agent: where they spent time, how they obtained food/water, wash freque
 ### Margins and Risk Observations
 
 [Which needs closest to 750 threshold. What scenario changes could push agents over. Structural observations about resource distribution.]
+
+Note total waste items per location from Section 6. If any location has >30 Waste items, flag as "waste accumulation risk — belief stores may be polluted in longer runs" and note the count. Cross-reference with agent belief stores (Section 5) to check whether Waste entities dominate known-item counts.
 
 ---
 

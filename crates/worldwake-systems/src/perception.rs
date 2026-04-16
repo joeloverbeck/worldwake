@@ -1217,6 +1217,7 @@ mod tests {
             entity_activation_threshold: Permille::new(100).unwrap(),
             claim_confidence_threshold: Permille::new(50).unwrap(),
             observation_buffer_capacity: 5,
+            observation_budget: 24,
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
@@ -3054,6 +3055,7 @@ mod tests {
                     entity_activation_threshold: Permille::new(100).unwrap(),
                     claim_confidence_threshold: Permille::new(50).unwrap(),
                     observation_buffer_capacity: 5,
+                    observation_budget: 24,
                     need_salience_boost: Permille::new(500).unwrap(),
                     need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 },

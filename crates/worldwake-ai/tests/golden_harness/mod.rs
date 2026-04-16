@@ -1649,6 +1649,7 @@ mod tests {
             entity_activation_threshold: pm(242),
             claim_confidence_threshold: pm(50),
             observation_buffer_capacity: 5,
+            observation_budget: 24,
             need_salience_boost: pm(500),
             need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(600),

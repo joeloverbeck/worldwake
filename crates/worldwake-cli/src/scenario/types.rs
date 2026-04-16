@@ -264,6 +264,50 @@ mod tests {
     }
 
     #[test]
+    fn test_scenario_def_perception_profile_defaults_observation_budget_when_omitted() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (
+                    name: "Bob",
+                    location: "Village",
+                    control: Ai,
+                    perception_profile: (
+                        entity_activation_threshold: 204,
+                        claim_confidence_threshold: 50,
+                        observation_buffer_capacity: 6,
+                        need_salience_boost: 500,
+                        need_salience_urgency_threshold: 500,
+                        observation_fidelity: 900,
+                        confidence_policy: (
+                            direct_observation_base: 980,
+                            report_base: 820,
+                            rumor_base: 610,
+                            inference_base: 430,
+                            report_chain_penalty: 45,
+                            rumor_chain_penalty: 120,
+                            staleness_penalty_per_tick: 4,
+                        ),
+                        institutional_memory_capacity: 14,
+                        consultation_speed_factor: 600,
+                        contradiction_tolerance: 250,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let perception = def.agents[0]
+            .perception_profile
+            .expect("perception profile should deserialize");
+
+        assert_eq!(perception.observation_budget, 24);
+    }
+
+    #[test]
     fn test_scenario_def_deserialize_full() {
         let ron_str = r#"(
             seed: 123,
@@ -332,6 +376,7 @@ mod tests {
                         entity_activation_threshold: 204,
                         claim_confidence_threshold: 50,
                         observation_buffer_capacity: 6,
+                        observation_budget: 7,
                         need_salience_boost: 500,
                         need_salience_urgency_threshold: 500,
                         observation_fidelity: 900,
@@ -444,6 +489,7 @@ mod tests {
         assert_eq!(perception.entity_activation_threshold.value(), 204);
         assert_eq!(perception.claim_confidence_threshold.value(), 50);
         assert_eq!(perception.observation_buffer_capacity, 6);
+        assert_eq!(perception.observation_budget, 7);
         assert!(bob.drive_thresholds.is_some());
         assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
         assert_eq!(

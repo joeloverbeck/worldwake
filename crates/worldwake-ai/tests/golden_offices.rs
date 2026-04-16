@@ -6,9 +6,9 @@ use golden_harness::*;
 use worldwake_core::{
     AgentData, BeliefConfidencePolicy, CombatProfile, CommodityKind, ControlSource,
     DriveThresholds, EventTag, ExecutionBudget, FactionPurpose, GoalKind, HomeostaticNeeds,
-    InstitutionalBeliefRead, MetabolismProfile, NoticeTopic, PerceptionProfile,
-    PerceptionSource, Permille, PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw,
-    TellProfile, Tick, UtilityProfile, hash_event_log, hash_world, prototype_place_entity,
+    InstitutionalBeliefRead, MetabolismProfile, NoticeTopic, PerceptionProfile, PerceptionSource,
+    Permille, PrototypePlace, Quantity, Seed, StateHash, SuccessionLaw, TellProfile, Tick,
+    UtilityProfile, hash_event_log, hash_world, prototype_place_entity,
 };
 use worldwake_sim::{
     ActionPayload, ActionRequestMode, ActionTraceDetail, ActionTraceKind, InputKind,
@@ -65,6 +65,7 @@ fn build_simple_office_claim_scenario(
             entity_activation_threshold: pm(64),
             claim_confidence_threshold: pm(50),
             observation_buffer_capacity: 32,
+            observation_budget: 24,
             need_salience_boost: pm(500),
             need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(875),
@@ -178,6 +179,7 @@ fn default_perception_profile() -> PerceptionProfile {
         entity_activation_threshold: pm(64),
         claim_confidence_threshold: pm(50),
         observation_buffer_capacity: 32,
+        observation_budget: 24,
         need_salience_boost: pm(500),
         need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(875),

@@ -233,6 +233,23 @@ S104 (blocks S60–S66)
 - **S103**: Belief Claim Deduplication and Amortized Pruning — performance fix for S101 belief system (independent, can proceed in parallel with S104)
 - **S104**: Survival Baseline Recovery — golden test triage, profile-gating cleanup, survival baseline scenario, golden test rebuild from survival-capable agents
 
+### Adjunct Wave: Perception and Item Lifecycle
+
+Derived from healthy scenario analysis of `survival-baseline.ron` (seed 104004, 1440 ticks, 0 deaths)
+revealing LOW-severity architectural gaps in perception budget waste on low-value entities, unbounded
+item accumulation, and belief store pollution. External research (aura-nimbus interest management,
+DF/RimWorld decay systems, ACT-R activation models) validated both gaps as genuine architectural
+deficiencies that would worsen in longer runs or denser scenarios.
+
+```text
+S105 (independent, parallel)
+S106 (independent, parallel)
+```
+
+**Wave** (parallel, no deps):
+- **S105**: Observation Salience Filtering — entity-kind-based observation priority tiers, per-agent `observation_budget` on PerceptionProfile, need-based priority boosting in `collect_direct_local_observation_batch`
+- **S106**: Ground Item Decay — time-based decay for ground items, per-commodity-kind `CommodityDecayMap`, `GroundSince` component tracking, archive-based removal with `EventTag::ItemDecay` tracing, new `ItemDecay` SystemFn after `EvidenceDecay`
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
