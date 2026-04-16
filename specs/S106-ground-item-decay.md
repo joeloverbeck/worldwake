@@ -28,7 +28,7 @@ None — new system with no dependencies on other pending specs.
 
 ### Evidence
 
-Observer run on `scenarios/survival-baseline.ron` (seed 104004, 1440 ticks):
+Observer run on a multi-agent variant of `scenarios/survival-baseline.ron` (seed 104004, 1440 ticks). Note: the current `survival-baseline.ron` has 1 agent; the data below is illustrative of the accumulation problem at scale:
 
 | Location | Ground Waste Items | Source | Growth Rate |
 |----------|-------------------|--------|-------------|
@@ -80,9 +80,10 @@ pub struct GroundSince(pub Tick);
 ```
 
 **Lifecycle:**
-- **Set** when `set_ground_location(entity, place)` is called — the function also sets `GroundSince(current_tick)` on the entity.
-- **Cleared** when the item is picked up (`pick_up` action), put into a container, or given a possessor. Any function that removes ground location also removes `GroundSince`.
-- **Not set** for items created directly in agent inventory or containers — only ground items have `GroundSince`.
+- **Tracked on loose ground items only**: eligible kinds are `ItemLot` and `UniqueItem`, with `effective_place` present, no direct container, no possessor, and not in transit.
+- **Set/reset** when an item enters that loose-ground state through any tick-aware path: explicit `WorldTxn::set_ground_location`, `remove_from_container` from a grounded container, `clear_possessor` when the item already has a place, and archive-preparation drop/spill resolutions.
+- **Cleared** when the item leaves loose-ground state by being possessed, put into a container, or moved into transit.
+- **Not set** for items created directly in agent inventory or containers — only loose ground items have `GroundSince`.
 
 Items spawned on the ground during scenario initialization get `GroundSince(Tick(0))`.
 
@@ -91,47 +92,65 @@ Items spawned on the ground during scenario initialization get `GroundSince(Tick
 New system following the `evidence_decay.rs` pattern:
 
 ```rust
-pub fn item_decay_system(world: &mut World, event_log: &mut EventLog, tick: Tick) {
+pub fn item_decay_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
+    let SystemExecutionContext { world, event_log, tick, .. } = ctx;
+
     let decay_map: &CommodityDecayMap = /* read from world config */;
     let mut to_archive = Vec::new();
 
-    for (entity, ground_since) in world.iter_component::<GroundSince>() {
-        // Skip if entity is archived or not an ItemLot
-        let Some(item_lot) = world.get_component::<ItemLot>(entity) else { continue };
-        let Some(&decay_ticks) = decay_map.get(&item_lot.commodity_kind) else { continue };
+    for (entity, ground_since) in world.query_ground_since() {
+        let Some(item_lot) = world.get_component_item_lot(entity) else { continue };
+        let Some(&decay_ticks) = decay_map.get(&item_lot.commodity) else { continue };
 
-        let elapsed = tick.0.saturating_sub(ground_since.0.0);
-        if elapsed >= decay_ticks.get() {
+        let elapsed = tick.0.saturating_sub(ground_since.0 .0);
+        if elapsed >= u64::from(decay_ticks.get()) {
             to_archive.push(entity);
         }
     }
 
     for entity in to_archive {
-        let mut txn = WorldTxn::new(tick, None, None, None);
-        txn.archive_entity(entity);
-        let event_id = event_log.append_event(tick, None, None, None);
-        event_log.tag_event(event_id, EventTag::ItemDecay);
-        event_log.tag_event(event_id, EventTag::WorldMutation);
-        txn.apply(world);
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::SystemTick(tick),
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::ItemDecay)
+            .add_tag(EventTag::WorldMutation);
+
+        // archive_entity may fail if the entity has archive dependencies;
+        // skip and log rather than panic.
+        if let Err(e) = txn.archive_entity(entity) {
+            continue;
+        }
+
+        let _ = txn.commit(event_log);
     }
+
+    Ok(())
 }
 ```
 
-The exact API will match the existing `evidence_decay_system` pattern for `WorldTxn` usage, event logging, and entity archival.
+The API follows the existing `evidence_decay_system` pattern (evidence_decay.rs) for `SystemExecutionContext` destructuring, `WorldTxn` creation, tag registration, and commit.
 
 ### System Ordering
 
 New `SystemId::ItemDecay` inserted after `EvidenceDecay` in the canonical order:
 
 ```
-Needs → Production → Trade → Combat → ArtifactLifecycle → Contention → Politics
-→ Perception → BanditCamp → Patrol → EvidenceDecay → ItemDecay → ExpectationCheck → Compaction
+Needs → Production → Trade → Combat → BanditCamp → Contention → Politics
+→ Perception → ExpectationCheck → EvidenceDecay → ItemDecay → Patrol → Compaction
 ```
+
+Note: `ArtifactLifecycle` runs in the separate `pre_action()` pass, not in the canonical per-tick order.
 
 **Ordering rationale:**
 - After `Perception`: same-tick observers can still see the item on its last tick before decay
 - After `EvidenceDecay`: groups cleanup systems together
-- Before `ExpectationCheck`: decayed items may trigger expectation violations (agent expected item to be there)
+- After `ExpectationCheck`: decayed items are detected by agents on the **next tick** when they re-observe the location and notice the absence via `noticed_missing_subjects` in `collect_direct_local_observation_batch` (perception.rs:494-508)
 - Before `Compaction`: archived entities are included in checkpoint state
 
 ### Scenario Configuration
@@ -175,6 +194,7 @@ If `commodity_decay` is absent from the RON file, the default map is applied (Wa
 | FND-12 (Performance Compression) | Bounded entity count prevents linear performance degradation with simulation length |
 | FND-26 (Systems Through State) | ItemDecay reads `GroundSince`, `ItemLot`, and the decay map; writes archive state and event log. No cross-system calls |
 | FND-28 (No Backward Compat) | New system. Existing scenarios gain decay behavior through default decay map |
+| FND-30 (Causal Hooks) | All 18 items addressed through Design, Section H, and Testing sections. `GroundSince` and `CommodityDecayMap` both derive `Serialize`/`Deserialize` and survive save/load/replay without changing world meaning |
 
 ## FND-01 Section H Analyses
 
@@ -211,7 +231,7 @@ The decay system itself is the dampener: each commodity kind has a concrete time
 
 **Dispatch:** Registered in `dispatch_table()` in `crates/worldwake-systems/src/lib.rs` mapping `SystemId::ItemDecay` to `item_decay_system`.
 
-**Signature:** `fn item_decay_system(world: &mut World, event_log: &mut EventLog, tick: Tick)` — follows the standard SystemFn pattern used by `evidence_decay_system`.
+**Signature:** `fn item_decay_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError>` — follows the standard SystemFn pattern used by `evidence_decay_system` (evidence_decay.rs:7).
 
 ## Component Registration
 
@@ -240,12 +260,12 @@ The decay system itself is the dampener: each commodity kind has a concrete time
 
 1. **Unit test in `item_decay.rs`**: Create 3 ground items (Waste at tick 10, Apple at tick 10, Sword at tick 10). Set Waste decay to 50, Apple decay to 100, Sword has no entry. Run decay system at tick 60: Waste is archived, Apple and Sword survive. Run at tick 110: Apple is archived, Sword survives. Run at tick 200: Sword still survives.
 
-2. **Unit test for GroundSince lifecycle**: Create item, put in container (no GroundSince), remove to ground (GroundSince set to current tick). Pick up (GroundSince removed). Drop again (GroundSince set to new tick). Verify ground time resets on each drop.
+2. **Unit test for GroundSince lifecycle**: Create item, put in container (no GroundSince), remove to ground (GroundSince set to current tick). Pick up (GroundSince removed). Drop again (GroundSince set to new tick). Verify ground time resets on each transition into loose-ground state.
 
 3. **Golden E2E test**: Scenario with 2 agents producing Waste via `relieve_wilderness` for 400 ticks with Waste decay at 200. Assert that ground Waste entity count reaches a steady state (never exceeds ~production_rate * decay_ticks) rather than growing unboundedly. Assert archived Waste count grows.
 
 4. **Event log test**: Verify decayed items produce events with `EventTag::ItemDecay` and `EventTag::WorldMutation` tags.
 
-5. **Conservation test**: At every checkpoint tick, verify `items_created - items_archived == live_item_count`.
+5. **Conservation test**: At every checkpoint tick, verify using `verify_live_lot_conservation` and `verify_authoritative_conservation` (conservation.rs) that `items_created - items_archived == live_item_count`.
 
 6. **Regression**: All existing golden tests must pass. Default decay values (Waste: 200, Apple: 720) must not interfere with existing test scenarios (which typically run < 200 ticks or have pre-placed items that should not decay during the test window).

@@ -8,18 +8,19 @@ use crate::{
     ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
     DemandMemory, DeprivationExposure, DisposalProfile, DriveThresholds, EntityAllocator, EntityId,
     EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
-    ExpectationStore, ExplorationProfile, FactionData, HomeostaticNeeds, InTransitOnEdge,
-    IntentionDispositionProfile, IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes,
-    LastSeenMemory, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
-    NoticeContent, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag,
-    PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
-    ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, RecordData,
-    RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence, SourceReliability,
-    StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
-    WoundList, component_schema::with_component_schema_entries,
+    ExpectationStore, ExplorationProfile, FactionData, GroundSince, HomeostaticNeeds,
+    InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
+    JusticeDispositionProfile, KnownRecipes, LastSeenMemory, LoadUnits, LotOperation,
+    MerchandiseProfile, MetabolismProfile, Name, NoticeContent, ObligationExecutionTracker,
+    ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
+    PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PlaceVisibilityProfile,
+    PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
+    PursuitProfile, Quantity, RecordData, RelationTables, ResourceSource, RouteExperience,
+    SaleListing, SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy,
+    SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick, Topology,
+    TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
+    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
+    component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -634,15 +635,16 @@ mod tests {
         CommodityKind, CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory,
         DeprivationExposure, DeprivationKind, DisposalProfile, DriveThresholds, EffectiveRight,
         EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData, FactionPurpose,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
-        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
-        MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
-        ProvenanceEntry, PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind,
-        ReservationId, ReservationRecord, ResourceSource, RightKind, SubstitutePreferences,
-        SuccessionLaw, TellProfile, TheftDispositionProfile, Tick, TickRange, Topology,
-        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, WorldError, Wound, WoundCause, WoundList, build_prototype_world,
+        GroundSince, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
+        InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits,
+        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
+        OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
+        Permille, Place, PlaceTag, ProductionJob, ProvenanceEntry, PursuitProfile, Quantity,
+        RecordData, RecordEntryId, RecordKind, ReservationId, ReservationRecord, ResourceSource,
+        RightKind, SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
+        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause,
+        WoundList, build_prototype_world,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -2064,7 +2066,9 @@ mod tests {
         world.set_ground_location(container, place).unwrap();
         world.put_into_container(item, container).unwrap();
 
-        let report = world.prepare_entity_for_archive(container).unwrap();
+        let report = world
+            .prepare_entity_for_archive(container, Tick(3))
+            .unwrap();
         assert!(report.is_ready_for_archive());
         assert_eq!(
             report,
@@ -2081,9 +2085,13 @@ mod tests {
         );
         assert_eq!(world.direct_container(item), None);
         assert_eq!(world.effective_place(item), Some(place));
+        assert_eq!(
+            world.get_component_ground_since(item),
+            Some(&GroundSince(Tick(3)))
+        );
         assert_eq!(world.archive_dependencies(container).unwrap(), Vec::new());
 
-        world.archive_entity(container, Tick(3)).unwrap();
+        world.archive_entity(container, Tick(4)).unwrap();
 
         assert!(world.is_archived(container));
     }
@@ -2117,7 +2125,7 @@ mod tests {
         );
 
         assert_eq!(
-            world.prepare_entity_for_archive(faction).unwrap(),
+            world.prepare_entity_for_archive(faction, Tick(9)).unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![
                     crate::ArchivePreparationAction {
@@ -2205,7 +2213,7 @@ mod tests {
         );
 
         assert_eq!(
-            world.prepare_entity_for_archive(claimant).unwrap(),
+            world.prepare_entity_for_archive(claimant, Tick(7)).unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
                     dependency: crate::ArchiveDependency {
@@ -2218,7 +2226,9 @@ mod tests {
             }
         );
         assert_eq!(
-            world.prepare_entity_for_archive(controller).unwrap(),
+            world
+                .prepare_entity_for_archive(controller, Tick(8))
+                .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
                     dependency: crate::ArchiveDependency {
@@ -2262,7 +2272,7 @@ mod tests {
         )]);
         assert_eq!(
             world
-                .prepare_entity_for_archive_with_policy(container, &policy)
+                .prepare_entity_for_archive_with_policy(container, Tick(6), &policy)
                 .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
@@ -2312,7 +2322,7 @@ mod tests {
             Err(WorldError::InvalidOperation(_))
         ));
         assert!(matches!(
-            world.prepare_entity_for_archive_with_policy(container, &policy),
+            world.prepare_entity_for_archive_with_policy(container, Tick(5), &policy),
             Err(WorldError::InvalidOperation(_))
         ));
         assert_eq!(world.direct_container(item), Some(container));
@@ -2339,7 +2349,7 @@ mod tests {
 
         assert_eq!(
             world
-                .prepare_entity_for_archive_with_policy(root, &policy)
+                .prepare_entity_for_archive_with_policy(root, Tick(4), &policy)
                 .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
@@ -2394,7 +2404,7 @@ mod tests {
 
         assert_eq!(
             world
-                .prepare_entity_for_archive_with_policy(current_owner, &policy)
+                .prepare_entity_for_archive_with_policy(current_owner, Tick(7), &policy)
                 .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
@@ -2411,7 +2421,7 @@ mod tests {
 
         assert_eq!(
             world
-                .prepare_entity_for_archive_with_policy(current_holder, &policy)
+                .prepare_entity_for_archive_with_policy(current_holder, Tick(8), &policy)
                 .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
@@ -2443,10 +2453,36 @@ mod tests {
         )]);
 
         assert!(matches!(
-            world.prepare_entity_for_archive_with_policy(owner, &policy),
+            world.prepare_entity_for_archive_with_policy(owner, Tick(4), &policy),
             Err(WorldError::InvalidOperation(_))
         ));
         assert_eq!(world.owner_of(item), Some(owner));
+    }
+
+    #[test]
+    fn prepare_entity_for_archive_drop_possessions_stamps_ground_since() {
+        let mut world = World::new(test_topology()).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(2))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(holder, place).unwrap();
+        world.set_ground_location(item, place).unwrap();
+        world.set_possessor(item, holder).unwrap();
+
+        let report = world.prepare_entity_for_archive(holder, Tick(9)).unwrap();
+
+        assert!(report.is_ready_for_archive());
+        assert_eq!(world.possessor_of(item), None);
+        assert_eq!(world.effective_place(item), Some(place));
+        assert_eq!(
+            world.get_component_ground_since(item),
+            Some(&GroundSince(Tick(9)))
+        );
     }
 
     #[test]
@@ -6626,6 +6662,8 @@ mod tests {
         assert_eq!(world.query_item_lot().count(), 0);
         assert_eq!(world.entities_with_unique_item().count(), 0);
         assert_eq!(world.query_unique_item().count(), 0);
+        assert_eq!(world.entities_with_ground_since().count(), 0);
+        assert_eq!(world.query_ground_since().count(), 0);
         assert_eq!(world.entities_with_container().count(), 0);
         assert_eq!(world.query_container().count(), 0);
         assert_eq!(world.entities_with_name_and_agent_data().count(), 0);
@@ -6719,6 +6757,7 @@ mod tests {
         assert_eq!(world.count_with_blocked_intent_memory(), 1);
         assert_eq!(world.count_with_item_lot(), 0);
         assert_eq!(world.count_with_unique_item(), 0);
+        assert_eq!(world.count_with_ground_since(), 0);
         assert_eq!(world.count_with_container(), 0);
     }
 
@@ -6821,6 +6860,7 @@ mod tests {
             assert_eq!(world.get_component_drive_thresholds(place_id), None);
             assert_eq!(world.get_component_item_lot(place_id), None);
             assert_eq!(world.get_component_unique_item(place_id), None);
+            assert_eq!(world.get_component_ground_since(place_id), None);
             assert_eq!(world.get_component_container(place_id), None);
         }
     }

@@ -176,8 +176,8 @@ pub use intention_frame::{
 };
 pub use items::{
     CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
-    CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,
-    ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
+    CommodityPhysicalProfile, CommodityTreatmentProfile, Container, GroundSince, ItemLot,
+    LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
     UniqueItemPhysicalProfile,
 };
 pub use load::{

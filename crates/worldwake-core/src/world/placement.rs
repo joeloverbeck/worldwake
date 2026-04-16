@@ -1,5 +1,8 @@
 use super::World;
-use crate::{Container, EntityId, WorldError, load_of_entity, remaining_container_capacity};
+use crate::{
+    Container, EntityId, GroundSince, Tick, WorldError, load_of_entity,
+    remaining_container_capacity,
+};
 use std::collections::BTreeSet;
 
 impl World {
@@ -162,6 +165,47 @@ impl World {
             for descendant in descendants {
                 self.clear_located_in(descendant);
                 self.relations.in_transit.insert(descendant);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn desired_ground_since(
+        &self,
+        entity: EntityId,
+        tick: Tick,
+    ) -> Result<Option<GroundSince>, WorldError> {
+        self.ensure_alive(entity)?;
+        let is_trackable_item = self.get_component_item_lot(entity).is_some()
+            || self.get_component_unique_item(entity).is_some();
+        if !is_trackable_item {
+            return Ok(None);
+        }
+
+        let is_loose_ground_item = self.effective_place(entity).is_some()
+            && !self.is_in_transit(entity)
+            && self.direct_container(entity).is_none()
+            && self.possessor_of(entity).is_none();
+
+        Ok(is_loose_ground_item.then_some(GroundSince(tick)))
+    }
+
+    pub(crate) fn sync_ground_since(
+        &mut self,
+        entity: EntityId,
+        tick: Tick,
+    ) -> Result<(), WorldError> {
+        match self.desired_ground_since(entity, tick)? {
+            Some(ground_since) => {
+                if let Some(existing) = self.get_component_ground_since_mut(entity) {
+                    *existing = ground_since;
+                } else {
+                    self.insert_component_ground_since(entity, ground_since)?;
+                }
+            }
+            None => {
+                let _ = self.remove_component_ground_since(entity)?;
             }
         }
 

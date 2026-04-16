@@ -332,6 +332,12 @@ pub struct UniqueItem {
 
 impl Component for UniqueItem {}
 
+/// Tick when an item most recently became a loose ground item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GroundSince(pub Tick);
+
+impl Component for GroundSince {}
+
 /// Deterministic storage and admission policy for container entities.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Container {
@@ -358,9 +364,9 @@ const fn nz(value: u32) -> NonZeroU32 {
 mod tests {
     use super::{
         CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
-        CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,
-        ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
-        UniqueItemPhysicalProfile,
+        CommodityPhysicalProfile, CommodityTreatmentProfile, Container, GroundSince, ItemLot,
+        LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
+        UniqueItemKindSpec, UniqueItemPhysicalProfile,
     };
     use crate::{EntityId, EventId, LoadUnits, Permille, Quantity, Tick, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
@@ -409,6 +415,12 @@ mod tests {
     fn unique_item_component_bounds() {
         fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
         assert_component_bounds::<UniqueItem>();
+    }
+
+    #[test]
+    fn ground_since_component_bounds() {
+        fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
+        assert_component_bounds::<GroundSince>();
     }
 
     #[test]
@@ -609,6 +621,16 @@ mod tests {
         let roundtrip: UniqueItem = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, item);
+    }
+
+    #[test]
+    fn ground_since_roundtrips_through_bincode() {
+        let ground_since = GroundSince(Tick(42));
+
+        let bytes = bincode::serialize(&ground_since).unwrap();
+        let roundtrip: GroundSince = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, ground_since);
     }
 
     #[test]

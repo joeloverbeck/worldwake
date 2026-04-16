@@ -27,7 +27,7 @@ use crate::{
     intention::ActiveGoal,
     intention_disposition::IntentionDispositionProfile,
     intention_frame::IntentionFrame,
-    items::{Container, ItemLot, UniqueItem},
+    items::{Container, GroundSince, ItemLot, UniqueItem},
     needs::{DeprivationExposure, HomeostaticNeeds, MetabolismProfile},
     obligation::{ObligationExecutionTracker, ObligationSatiationProfile},
     observation_context::PlaceVisibilityProfile,

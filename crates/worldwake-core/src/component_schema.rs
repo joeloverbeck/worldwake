@@ -1765,6 +1765,31 @@ macro_rules! with_component_schema_entries {
                 no_txn_simple_set
             }
             {
+                ground_since,
+                GroundSince,
+                insert_ground_since,
+                get_ground_since,
+                get_ground_since_mut,
+                remove_ground_since,
+                has_ground_since,
+                iter_ground_since,
+                insert_component_ground_since,
+                get_component_ground_since,
+                get_component_ground_since_mut,
+                remove_component_ground_since,
+                has_component_ground_since,
+                entities_with_ground_since,
+                query_ground_since,
+                count_with_ground_since,
+                "GroundSince",
+                |kind| kind == EntityKind::ItemLot || kind == EntityKind::UniqueItem,
+                GroundSince,
+                crate::GroundSince,
+                set_component_ground_since,
+                clear_component_ground_since,
+                txn_simple_set
+            }
+            {
                 containers,
                 Container,
                 insert_container,
