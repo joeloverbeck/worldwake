@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 11
-- Files contributing `golden_*` tests: 11
-- Total `golden_*` tests: 81
+- Golden test files: 12
+- Files contributing `golden_*` tests: 12
+- Total `golden_*` tests: 88
 
 ## Per-File Inventory
 
@@ -19,10 +19,11 @@ Do not hand-edit it.
 | `golden_exploration.rs` | 8 |
 | `golden_merchant_selling.rs` | 9 |
 | `golden_offices.rs` | 12 |
-| `golden_perception_exposure.rs` | 6 |
+| `golden_perception_exposure.rs` | 7 |
 | `golden_planner_pathology.rs` | 3 |
 | `golden_simulation_gaps.rs` | 5 |
-| `golden_survival_baseline.rs` | 4 |
+| `golden_survival_baseline.rs` | 5 |
+| `golden_survival_scattered.rs` | 5 |
 | `golden_travel_physiology.rs` | 12 |
 
 ### `golden_activation_decay.rs`
@@ -102,6 +103,7 @@ Do not hand-edit it.
 - `golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity`
 - `golden_perception_forms_resource_source_beliefs`
 - `golden_perception_forms_resource_source_beliefs_replays_deterministically`
+- `golden_observation_budget_prioritizes_agents_and_facilities_over_waste`
 
 ### `golden_planner_pathology.rs`
 
@@ -123,6 +125,15 @@ Do not hand-edit it.
 - `all_agents_perform_survival_actions`
 - `explorer_discovers_food_source`
 - `no_budget_exhaustion_on_survival_goals`
+- `no_stuck_idle_windows_with_elevated_needs`
+
+### `golden_survival_scattered.rs`
+
+- `all_agents_survive_1440_ticks`
+- `all_agents_perform_survival_actions`
+- `isolated_agent_reaches_food_source`
+- `no_budget_exhaustion_on_survival_goals`
+- `no_stuck_idle_windows_with_elevated_needs`
 
 ### `golden_travel_physiology.rs`
 

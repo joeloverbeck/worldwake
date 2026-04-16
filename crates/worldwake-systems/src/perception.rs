@@ -2368,6 +2368,210 @@ mod tests {
     }
 
     #[test]
+    fn passive_local_observation_applies_budget_priority_to_non_place_entities() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, other_agent, facilities, waste_lots) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let other_agent = txn.create_agent("Other Agent", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(other_agent, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_homeostatic_needs(observer, HomeostaticNeeds::new_sated())
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.observation_budget = 10;
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+
+            let facilities = (0..2)
+                .map(|_| {
+                    let facility = txn.create_entity(EntityKind::Facility);
+                    txn.set_ground_location(facility, place).unwrap();
+                    facility
+                })
+                .collect::<Vec<_>>();
+            let waste_lots = (0..30)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Waste, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, other_agent, facilities, waste_lots)
+        };
+
+        let observer_profile = world
+            .get_component_perception_profile(observer)
+            .copied()
+            .unwrap();
+        let needs = world
+            .get_component_homeostatic_needs(observer)
+            .copied()
+            .unwrap();
+        let base_store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .unwrap_or_default();
+        let colocated_entities = world.entities_effectively_at(place);
+        let mut rng = DeterministicRng::new(Seed([0x61; 32]));
+
+        let batch = super::collect_direct_local_observation_batch(
+            &world,
+            observer,
+            place,
+            &colocated_entities,
+            Tick(2),
+            1000,
+            &mut rng,
+            &base_store,
+            needs,
+            &observer_profile,
+        )
+        .expect("budgeted same-place observation should produce a batch");
+
+        assert!(
+            batch.observed_snapshots.contains_key(&place),
+            "place observation should remain separate from the budgeted entity set"
+        );
+        let observed_non_place_entities = batch
+            .observed_snapshots
+            .keys()
+            .copied()
+            .filter(|entity| *entity != place)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            observed_non_place_entities.len(),
+            usize::from(observer_profile.observation_budget)
+        );
+        assert!(
+            batch.observed_snapshots.contains_key(&other_agent),
+            "other colocated agents should outrank waste"
+        );
+        for facility in &facilities {
+            assert!(
+                batch.observed_snapshots.contains_key(facility),
+                "facilities should outrank waste under the observation budget"
+            );
+        }
+
+        let retained_waste = waste_lots
+            .iter()
+            .copied()
+            .filter(|lot| batch.observed_snapshots.contains_key(lot))
+            .collect::<Vec<_>>();
+        assert_eq!(retained_waste.len(), 7);
+        assert_eq!(
+            retained_waste,
+            waste_lots[..7].to_vec(),
+            "same-priority waste lots should be selected by lowest EntityId"
+        );
+    }
+
+    #[test]
+    fn passive_local_observation_boosts_non_waste_item_lots_when_needs_are_urgent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let urgent_needs = HomeostaticNeeds::new(
+            Permille::new(800).unwrap(),
+            Permille::ZERO,
+            Permille::ZERO,
+            Permille::ZERO,
+            Permille::ZERO,
+        );
+        let (observer, apple_lots, waste_lots) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_homeostatic_needs(observer, urgent_needs)
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.observation_budget = 8;
+            observer_profile.need_salience_urgency_threshold = Permille::new(400).unwrap();
+            observer_profile.need_salience_boost = Permille::new(500).unwrap();
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+
+            let apple_lots = (0..5)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Apple, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let waste_lots = (0..10)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Waste, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, apple_lots, waste_lots)
+        };
+
+        let observer_profile = world
+            .get_component_perception_profile(observer)
+            .copied()
+            .unwrap();
+        let base_store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .unwrap_or_default();
+        let colocated_entities = world.entities_effectively_at(place);
+        let mut rng = DeterministicRng::new(Seed([0x62; 32]));
+
+        let batch = super::collect_direct_local_observation_batch(
+            &world,
+            observer,
+            place,
+            &colocated_entities,
+            Tick(2),
+            1000,
+            &mut rng,
+            &base_store,
+            urgent_needs,
+            &observer_profile,
+        )
+        .expect("urgent-need observation should produce a batch");
+
+        let retained_apples = apple_lots
+            .iter()
+            .copied()
+            .filter(|lot| batch.observed_snapshots.contains_key(lot))
+            .collect::<Vec<_>>();
+        let retained_waste = waste_lots
+            .iter()
+            .copied()
+            .filter(|lot| batch.observed_snapshots.contains_key(lot))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            retained_apples, apple_lots,
+            "urgent non-waste item lots should fill the budget before waste"
+        );
+        assert_eq!(retained_waste.len(), 3);
+        assert_eq!(
+            retained_waste,
+            waste_lots[..3].to_vec(),
+            "remaining budget should admit only the lowest-EntityId waste lots"
+        );
+    }
+
+    #[test]
     fn trade_event_records_witnessed_cooperation() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();

@@ -42,7 +42,7 @@ Scenarios: 6
 
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:310`
+- Source: `golden_ai_decisions.rs:311`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -60,7 +60,7 @@ Scenarios: 6
 
 ### Scenario 5: Blocked Intent Memory with TTL Expiry
 
-- Source: `golden_ai_decisions.rs:423`
+- Source: `golden_ai_decisions.rs:424`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -77,7 +77,7 @@ Scenarios: 6
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:541`
+- Source: `golden_ai_decisions.rs:543`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -94,7 +94,7 @@ Scenarios: 6
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1356`
+- Source: `golden_ai_decisions.rs:1359`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

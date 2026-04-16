@@ -1,6 +1,6 @@
 # S105: Observation Salience Filtering
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Summary
 
@@ -204,3 +204,26 @@ The perception system already reads `HomeostaticNeeds` from agent components for
 3. **Regression**: Default `observation_budget = 24` must not trigger in any existing golden test scenario (verify entity counts per place in existing scenarios are below 24).
 
 4. **Observer validation**: Re-run `survival-baseline.ron` with `observation_budget = 20` in perception profiles. Verify Discovery events per tick are bounded by the observation budget (reduced from the unbounded ~55 entity observation pool), and all agents still survive (needs managed, 0 deaths).
+
+## Outcome
+
+Completed on 2026-04-16.
+
+Implemented the spec through the archived ticket chain `S105OBSSALFIL-001` through `S105OBSSALFIL-003`. The landed production work added `observation_budget` to `PerceptionProfile` with a default of 24 plus omitted-field serde compatibility for authored scenario input, threaded the live budgeted-priority observation path into `collect_direct_local_observation_batch`, and kept the priority function local to perception using entity kind, Waste-vs-non-Waste `ItemLot` state, and the observer's `HomeostaticNeeds`.
+
+The landed proof surface adds focused unit coverage for non-place budget truncation, deterministic same-priority retention, and urgent non-Waste item boosting, plus Scenario 341 in `golden_perception_exposure.rs` proving reduced-budget retention of colocated agents and facilities with bounded Waste visibility. The golden inventory refresh was also run so the new scenario metadata is represented in generated golden docs.
+
+Deviations from the original draft:
+- The implementation was split into three bounded tickets instead of landing as one direct spec-sized patch.
+- The truthful budget proof counts observed entities excluding the place snapshot, because direct local observation stores the place separately from the budgeted non-place entity set.
+- Deterministic tie-breaking is proved by the retained same-priority `EntityId` subset, not by map iteration order.
+- The draft's proposed observer rerun on `survival-baseline.ron` was not kept as a committed verification step; the final proof set stayed on focused unit tests, focused golden coverage, crate test suites, generated golden-doc refresh, and workspace clippy.
+
+Verification completed during implementation:
+- `cargo test -p worldwake-systems --lib perception::tests::passive_local_observation_applies_budget_priority_to_non_place_entities -- --exact`
+- `cargo test -p worldwake-systems --lib perception::tests::passive_local_observation_boosts_non_waste_item_lots_when_needs_are_urgent -- --exact`
+- `cargo test -p worldwake-ai --test golden_perception_exposure golden_observation_budget_prioritizes_agents_and_facilities_over_waste -- --exact`
+- `cargo test -p worldwake-systems`
+- `cargo test -p worldwake-ai`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo clippy --workspace --all-targets -- -D warnings`

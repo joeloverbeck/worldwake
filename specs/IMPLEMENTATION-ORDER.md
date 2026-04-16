@@ -23,6 +23,7 @@ Completed Phase 7 specs:
 - `S100: Tiered Belief Retention for Infrastructure Entities` — archived at [archive/specs/S100-belief-persistence-visited-places.md](/home/joeloverbeck/projects/worldwake/archive/specs/S100-belief-persistence-visited-places.md). Added `PerceptionProfile.infrastructure_retention_ticks`, tiered time-based retention for infrastructure entities/claims in `AgentBeliefStore`, aligned the dependent AI proof surfaces to the new lawful retention contract, and updated the authored CLI evaluation scenario profiles plus focused CLI load/spawn coverage.
 - `S101: Activation-Based Belief Decay` — archived at [archive/specs/S101-activation-based-belief-decay.md](/home/joeloverbeck/projects/worldwake/archive/specs/S101-activation-based-belief-decay.md). Replaced the old hard-cap belief-retention path with activation-based retention over retained presentation history, landed confidence-threshold claim pruning and item-only need salience, and closed the remaining golden/doc fallout through the archived `S101ACTBASBEL-001` through `S101ACTBASBEL-005` ticket chain.
 - `S102: Frontier-Aware Need-Driven Exploration` — archived at [archive/specs/S102-frontier-aware-exploration.md](/home/joeloverbeck/projects/worldwake/archive/specs/S102-frontier-aware-exploration.md). Landed the exploration follow-on for repeated acquisition budget exhaustion, multi-hop BFS frontier selection, exploration-chain belief reinforcement, per-agent exploration profile tuning, authored scenario support, and end-to-end golden coverage plus generated golden-doc refresh.
+- `S105: Observation Salience Filtering` — archived at [archive/specs/S105-observation-salience-filtering.md](/home/joeloverbeck/projects/worldwake/archive/specs/S105-observation-salience-filtering.md). Landed `PerceptionProfile.observation_budget` with authored-input compatibility, deterministic same-place observation priority plus budget truncation in `collect_direct_local_observation_batch`, focused unit proof for non-place truncation / need-based non-Waste boosting, and Scenario 341 golden coverage for bounded waste visibility under reduced observation budgets.
 
 Completed adjunct specs:
 - `S67: Golden E2E Gaps — S59` archived at [archive/specs/S67-golden-gaps-S59.md](/home/joeloverbeck/projects/worldwake/archive/specs/S67-golden-gaps-S59.md).
@@ -242,12 +243,12 @@ DF/RimWorld decay systems, ACT-R activation models) validated both gaps as genui
 deficiencies that would worsen in longer runs or denser scenarios.
 
 ```text
-S105 (independent, parallel)
+S105 ✅ archived
 S106 (independent, parallel)
 ```
 
-**Wave** (parallel, no deps):
-- **S105**: Observation Salience Filtering — entity-kind-based observation priority tiers, per-agent `observation_budget` on PerceptionProfile, need-based priority boosting in `collect_direct_local_observation_batch`
+**Wave**:
+- **S105**: ✅ COMPLETED — archived at [archive/specs/S105-observation-salience-filtering.md](/home/joeloverbeck/projects/worldwake/archive/specs/S105-observation-salience-filtering.md). Landed `PerceptionProfile.observation_budget`, omitted-field authored-input compatibility, deterministic observation priority plus truncation in `collect_direct_local_observation_batch`, focused unit coverage for same-place budget behavior, and Scenario 341 golden proof of bounded waste retention under reduced observation budgets.
 - **S106**: Ground Item Decay — time-based decay for ground items, per-commodity-kind `CommodityDecayMap`, `GroundSince` component tracking, archive-based removal with `EventTag::ItemDecay` tracing, new `ItemDecay` SystemFn after `EvidenceDecay`
 
 ### Phase 7 Gate
