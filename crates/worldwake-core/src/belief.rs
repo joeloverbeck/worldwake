@@ -2396,15 +2396,25 @@ pub enum MismatchKind {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PerceptionProfile {
+    /// Base accuracy of direct observations. Higher values mean more reliable perception.
     pub observation_fidelity: Permille,
+    /// Policy governing how belief confidence is assigned and decays over time.
     pub confidence_policy: BeliefConfidencePolicy,
+    /// Maximum number of institutional belief entries the agent retains.
     pub institutional_memory_capacity: u32,
+    /// Speed modifier for consulting institutional records (e.g., ledgers, boards).
     pub consultation_speed_factor: Permille,
+    /// Threshold below which contradicting evidence causes belief revision.
     pub contradiction_tolerance: Permille,
+    /// Age threshold (in ticks) at which stale entity beliefs are pruned by activation decay.
     pub entity_activation_threshold: Permille,
+    /// Minimum confidence required for an entity belief claim to be retained.
     pub claim_confidence_threshold: Permille,
+    /// Maximum number of pending observations buffered before processing.
     pub observation_buffer_capacity: u8,
+    /// Observation priority boost for entities relevant to the agent's current needs.
     pub need_salience_boost: Permille,
+    /// Need pressure level above which the salience boost activates.
     pub need_salience_urgency_threshold: Permille,
 }
 
@@ -2430,9 +2440,13 @@ impl Default for PerceptionProfile {
 /// Per-agent parameters controlling what information an agent relays and accepts.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TellProfile {
+    /// Maximum number of co-located agents this agent considers as tell recipients per tick.
     pub max_tell_candidates: u8,
+    /// Maximum relay chain length before the agent stops forwarding heard information.
     pub max_relay_chain_len: u8,
+    /// Maximum number of recent conversation entries the agent retains.
     pub conversation_memory_capacity: u16,
+    /// How long (in ticks) conversation memory entries are retained before expiry.
     pub conversation_memory_retention_ticks: u64,
 }
 

@@ -17,8 +17,11 @@ pub enum CommunicationClass {
 /// Per-agent parameters controlling communication acceptance by class.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommunicationProfile {
+    /// Probability of accepting alarm-class communications (urgent safety warnings).
     pub alarm_acceptance: Permille,
+    /// Probability of accepting testimony-class communications (direct observations from others).
     pub testimony_acceptance: Permille,
+    /// Probability of accepting gossip-class communications (secondhand social information).
     pub gossip_acceptance: Permille,
 }
 

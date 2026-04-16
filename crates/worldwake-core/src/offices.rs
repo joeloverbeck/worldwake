@@ -20,8 +20,11 @@ impl Component for OfficeData {}
 /// Explicit force-succession timing policy attached to force-law offices.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OfficeForceProfile {
+    /// Ticks of uncontested presence required to claim control of a force-law office.
     pub uncontested_hold_ticks: NonZeroU32,
+    /// Grace period in ticks after vacancy before a new claimant can take the office.
     pub vacancy_claim_grace_ticks: NonZeroU32,
+    /// Grace period in ticks a challenger must be co-located before they can contest control.
     pub challenger_presence_grace_ticks: NonZeroU32,
 }
 

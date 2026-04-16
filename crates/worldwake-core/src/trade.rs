@@ -8,7 +8,9 @@ use std::num::NonZeroU32;
 /// Concrete merchant sale intent for an agent.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MerchandiseProfile {
+    /// Set of commodity kinds this merchant is willing to sell.
     pub sale_kinds: BTreeSet<CommodityKind>,
+    /// Optional facility entity where this merchant stores and displays stock.
     pub home_facility: Option<EntityId>,
 }
 
@@ -76,11 +78,17 @@ pub enum TradeRole {
 /// Per-agent negotiation pacing, opening stance, and demand-memory retention.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TradeDispositionProfile {
+    /// Duration in ticks of each negotiation round during trade.
     pub negotiation_round_ticks: NonZeroU32,
+    /// Opening offer bias; higher values mean the agent starts with more aggressive pricing.
     pub initial_offer_bias: Permille,
+    /// Rate at which the agent concedes per negotiation round.
     pub concession_rate: Permille,
+    /// Rate at which rejection responses escalate after failed rounds.
     pub rejection_escalation_rate: Permille,
+    /// How long (in ticks) the agent remembers observed demand for price reasoning.
     pub demand_memory_retention_ticks: u32,
+    /// Minimum ticks the agent remains at a market location for trade.
     pub market_presence_ticks: NonZeroU32,
 }
 

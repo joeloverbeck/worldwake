@@ -16,8 +16,11 @@ pub struct TheftFacts {
 /// Per-agent parameters governing theft behavior.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TheftDispositionProfile {
+    /// Duration in ticks to complete a steal action.
     pub steal_duration_ticks: NonZeroU32,
+    /// Base motive weight for theft-driven goals.
     pub theft_motive_weight: Permille,
+    /// Penalty applied to theft utility when potential witnesses are present.
     pub witness_risk_penalty: Permille,
 }
 
@@ -26,7 +29,9 @@ impl Component for TheftDispositionProfile {}
 /// Per-agent parameters governing accusation and punishment behavior.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct JusticeDispositionProfile {
+    /// Base motive weight for accusation goals when a violation is suspected.
     pub accusation_motive_weight: Permille,
+    /// Severity multiplier for monetary fines imposed on convicted offenders.
     pub fine_severity: Permille,
 }
 

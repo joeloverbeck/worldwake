@@ -15,10 +15,15 @@ impl Component for PatrolRoute {}
 /// Stable per-agent parameters that shape patrol behavior.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PatrolProfile {
+    /// Minimum ticks the agent dwells at each patrol waypoint.
     pub base_dwell_ticks: u32,
+    /// Additional dwell ticks scaled by vigilance level.
     pub dwell_vigilance_scale_ticks: u32,
+    /// Baseline vigilance level during patrol; affects observation thoroughness and dwell time.
     pub vigilance: Permille,
+    /// How quickly the agent adapts patrol routes in response to observed threats.
     pub route_adaptation_sensitivity: Permille,
+    /// Base motive weight for patrol-driven goals.
     pub patrol_motive_weight: Permille,
 }
 

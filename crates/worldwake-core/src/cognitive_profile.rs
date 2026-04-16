@@ -4,19 +4,32 @@ use serde::{Deserialize, Serialize};
 /// Stable per-agent cognitive reasoning parameters used by the AI layer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct CognitiveProfile {
+    /// Maximum number of top-scoring goal candidates the planner evaluates per decision cycle.
     pub max_candidates_to_plan: u8,
+    /// Maximum action successors expanded per search node during plan search.
     #[serde(default = "default_max_candidates_per_expansion")]
     pub max_candidates_per_expansion: u16,
+    /// Maximum number of sequential actions allowed in a single plan.
     pub max_plan_depth: u8,
+    /// How many travel hops away the planner considers when building world snapshots for search.
     pub snapshot_travel_horizon: u8,
+    /// Hard cap on total nodes expanded during a single plan search before giving up.
     pub max_node_expansions: u16,
+    /// Utility margin a new goal must exceed over the current goal to trigger a goal switch during execution.
     pub switch_margin: Permille,
+    /// Utility margin a challenger plan must exceed over the current plan to trigger a plan switch.
     pub planning_switch_margin: Permille,
+    /// Ticks before a transiently blocked goal is re-evaluated.
     pub transient_block_ticks: u32,
+    /// Ticks before a goal blocked for unknown reasons is re-evaluated.
     pub unknown_block_ticks: u32,
+    /// Ticks before a structurally blocked goal (no valid plan exists) is re-evaluated.
     pub structural_block_ticks: u32,
+    /// Base cooldown ticks after a goal fails before the agent retries it.
     pub initial_cooldown_ticks: u32,
+    /// Maximum cooldown ticks after repeated failures (exponential backoff cap).
     pub max_cooldown_ticks: u32,
+    /// Maximum entities included per place in the planner's world snapshot.
     pub max_snapshot_entities_per_place: u16,
     /// Whether this agent considers known places even without current positive
     /// resource evidence when generating acquisition candidates.

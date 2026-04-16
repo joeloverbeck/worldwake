@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 /// Stable per-agent parameters governing when inventory disposal becomes worthwhile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct DisposalProfile {
+    /// Carry capacity usage fraction above which the agent considers disposing of low-value items.
     pub capacity_strain_threshold: Permille,
 }
 

@@ -82,21 +82,37 @@ impl Component for DeprivationExposure {}
 /// Per-agent physiology parameters that drive metabolism and recovery.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MetabolismProfile {
+    /// Hunger increase per tick during normal activity.
     pub hunger_rate: Permille,
+    /// Thirst increase per tick during normal activity.
     pub thirst_rate: Permille,
+    /// Fatigue increase per tick during normal activity.
     pub fatigue_rate: Permille,
+    /// Bladder pressure increase per tick during normal activity.
     pub bladder_rate: Permille,
+    /// Dirtiness increase per tick during normal activity.
     pub dirtiness_rate: Permille,
+    /// Fatigue decrease per tick while resting or sleeping.
     pub rest_efficiency: Permille,
+    /// Ticks at critical hunger before starvation consequences begin.
     pub starvation_tolerance_ticks: NonZeroU32,
+    /// Ticks at critical thirst before dehydration consequences begin.
     pub dehydration_tolerance_ticks: NonZeroU32,
+    /// Ticks at critical fatigue before the agent collapses.
     pub exhaustion_collapse_ticks: NonZeroU32,
+    /// Ticks at critical bladder pressure before an accident occurs.
     pub bladder_accident_tolerance_ticks: NonZeroU32,
+    /// Duration in ticks to complete a toilet action.
     pub toilet_ticks: NonZeroU32,
+    /// Duration in ticks to complete a washing action.
     pub wash_ticks: NonZeroU32,
+    /// Multiplier applied to fatigue rate while traveling.
     pub travel_fatigue_multiplier: Permille,
+    /// Multiplier applied to thirst rate while traveling.
     pub travel_thirst_multiplier: Permille,
+    /// Multiplier applied to bladder rate while traveling.
     pub travel_bladder_multiplier: Permille,
+    /// Additional dirtiness incurred when relieving oneself in the wilderness rather than at a proper facility.
     pub wilderness_relief_dirtiness_penalty: Permille,
 }
 

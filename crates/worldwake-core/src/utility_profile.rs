@@ -6,20 +6,35 @@ use serde::{Deserialize, Serialize};
 /// Stable per-agent utility weights used to diversify decision making.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UtilityProfile {
+    /// Weight applied to hunger-driven goals in utility scoring.
     pub hunger_weight: Permille,
+    /// Weight applied to thirst-driven goals in utility scoring.
     pub thirst_weight: Permille,
+    /// Weight applied to fatigue-driven goals in utility scoring.
     pub fatigue_weight: Permille,
+    /// Weight applied to bladder-driven goals in utility scoring.
     pub bladder_weight: Permille,
+    /// Weight applied to dirtiness-driven goals in utility scoring.
     pub dirtiness_weight: Permille,
+    /// Weight applied to pain-driven goals in utility scoring.
     pub pain_weight: Permille,
+    /// Weight applied to danger-avoidance goals in utility scoring.
     pub danger_weight: Permille,
+    /// Weight applied to economic and productive goals in utility scoring.
     pub enterprise_weight: Permille,
+    /// Weight applied to social interaction goals in utility scoring.
     pub social_weight: Permille,
+    /// Weight applied to awareness-of-activity goals (observation, investigation).
     pub activity_awareness_weight: Permille,
+    /// Weight applied to opportunistic side-benefit actions discovered during planning.
     pub side_benefit_weight: Permille,
+    /// Weight applied to bounty-posting goals. 0 disables bounty posting.
     pub bounty_posting_weight: Permille,
+    /// Weight applied to notice-posting goals. 0 disables notice posting.
     pub notice_posting_weight: Permille,
+    /// Willingness to engage in risky actions such as combat or confrontation.
     pub courage: Permille,
+    /// Weight applied to caregiving and obligation-fulfillment goals.
     pub care_weight: Permille,
 }
 

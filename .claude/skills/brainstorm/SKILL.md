@@ -49,9 +49,12 @@ Next-steps menu (user chooses)
 
 1. **Reference file**: If `reference_path` is provided, read the entire file. Extract key claims, proposals, and open questions from it. Summarize what it contains in 2-3 sentences before proceeding. If the user references files inline in their request text (rather than via the `reference_path` argument), treat those files as reference material with the same read-and-summarize treatment. Multiple inline references are common; read all of them. If inline references include sibling skills (skills in the same pipeline or workflow), note their input/output interfaces (consumed/produced files, shared terminology, intermediate artifacts) and ensure the new design is compatible. For diagnostic/analysis reference files, treat claims about codebase state (e.g., "agent lacks profile X", "component Y is opt-in") as hypotheses to verify during codebase exploration (sub-step 7), not as established facts. Flag any claims that contradict what exploration reveals — these corrections should be prominently communicated to the user before proceeding to triage or approach proposal.
 
-2. **Topic classification**: Determine whether this brainstorm is **implementation-related** (code changes, architecture, engine modifications, new features, bug fixes) or **non-implementation** (process, tooling config, workflow, strategy, skill design).
+2. **Topic classification**: Determine which category this brainstorm falls into:
+   - **implementation-related**: Changes that alter simulation behavior — engine modifications, new systems, planner changes, action handlers, component logic, new features, bug fixes in simulation code.
+   - **implementation-adjacent**: Code changes that do not affect simulation behavior — developer tooling, documentation generators, build scripts, test infrastructure, doc comment enrichment, CLI cosmetics.
+   - **non-implementation**: No code changes — process, workflow, strategy, skill design, tooling configuration.
 
-3. **If implementation-related OR if the topic directly concerns FOUNDATIONS.md principles**: Read `docs/FOUNDATIONS.md`. You will need it in Steps 3 and 4 to validate proposed approaches against architectural principles.
+3. **If implementation-related OR if the topic directly concerns FOUNDATIONS.md principles**: Read `docs/FOUNDATIONS.md`. You will need it in Steps 3 and 4 to validate proposed approaches against architectural principles. For implementation-adjacent topics, reading FOUNDATIONS.md is optional — only read it if the topic touches engine architecture or component registration.
 
 4. **Confidence calibration from reference material and request**: If the reference file provides a comprehensive design (rationale, decisions, structure, adaptation notes), set initial confidence based on how much of the problem space it covers. A thorough reference file may start confidence at 70-85%, reducing the interview to closing operational gaps (naming, cleanup, customization preferences). The same calibration applies to the user's initial request text — if the request includes detailed problem analysis, specific evidence, root cause identification, and a clear ask, calibrate initial confidence from the request itself, not just from reference files. If the user's request includes root cause analysis, proposed solution, code locations, and FOUNDATIONS justification, set initial confidence to 85-95%. The interview becomes a gap-closing exercise (1-2 targeted questions about scope or edge cases), not a discovery process. Do not ask motivational questions ("what problem does this solve?") when the user has already demonstrated deep understanding of the problem. Research findings (sub-step 6 below) also contribute to confidence by narrowing the solution space before the interview begins. When the brainstorm is invoked mid-conversation after prior investigation (observer runs, code analysis, debugging), calibrate initial confidence from the accumulated conversation context — not just from reference files or the request text. Prior evidence gathering in the same session is a first-class confidence source.
 
@@ -132,7 +135,7 @@ Present **2-3 distinct approaches** with:
 - **Tradeoffs**: What you gain, what you give up
 - **Recommendation**: Lead with your recommended option and explain why
 
-**If implementation-related**: For each approach, note which FOUNDATIONS.md principles it aligns with or tensions it creates. Use format: `Foundations: F1 (aligns), F8 (tensions — [reason])`.
+**If implementation-related** (not implementation-adjacent): For each approach, note which FOUNDATIONS.md principles it aligns with or tensions it creates. Use format: `Foundations: F1 (aligns), F8 (tensions — [reason])`.
 
 **If the problem space is fully constrained** (e.g., a reference document provides a proven design, or requirements eliminate alternatives), state why only one approach exists and present it directly. Do not invent artificial alternatives. In plan mode with a single viable approach, the approach rationale may be embedded in the plan file's Context section rather than presented as a separate conversational step.
 
@@ -153,8 +156,8 @@ Sections to cover (skip irrelevant ones):
 3. **Key decisions**: Important choices and why
 4. **Data flow / Process**: How information moves through the system
 5. **Edge cases**: Known tricky scenarios and how they're handled
-6. **Testing strategy**: How to verify this works (if implementation-related)
-7. **FOUNDATIONS.md alignment**: Table of relevant principles and how the design respects them (if implementation-related)
+6. **Testing strategy**: How to verify this works (if implementation-related or implementation-adjacent)
+7. **FOUNDATIONS.md alignment**: Table of relevant principles and how the design respects them (implementation-related only; skip for implementation-adjacent)
 
 Section names are suggestions. Rename or combine sections to match the topic's natural structure. The key requirement is per-section approval, not specific section names.
 

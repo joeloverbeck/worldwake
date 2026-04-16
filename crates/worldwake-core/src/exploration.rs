@@ -4,13 +4,21 @@ use serde::{Deserialize, Serialize};
 /// Stable per-agent parameters governing need-driven exploration pressure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ExplorationProfile {
+    /// Base motive weight for exploration-driven goals.
     pub curiosity_weight: Permille,
+    /// Need pressure level that must be exceeded before exploration is considered.
     pub need_activation_threshold: Permille,
+    /// Maximum graph distance (in hops) the agent considers as frontier for exploration.
     pub frontier_depth: u16,
+    /// Number of consecutive acquisition failures before exploration is triggered.
     pub acquisition_failure_threshold: u8,
+    /// Utility bonus applied upon arriving at a newly explored location.
     pub exploration_arrival_boost: Permille,
+    /// Maximum consecutive exploration actions before the agent must address other goals.
     pub max_consecutive_explorations: u8,
+    /// How far back in ticks the agent looks when evaluating recently visited places.
     pub visit_lookback_ticks: u32,
+    /// Runtime counter tracking consecutive explorations (not a tuning parameter).
     pub consecutive_exploration_count: u8,
 }
 

@@ -13,7 +13,9 @@ use std::num::NonZeroU32;
 /// willing to chase.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PursuitProfile {
+    /// Minimum belief confidence in the target's location required before the agent will pursue.
     pub min_location_confidence: Permille,
+    /// Maximum travel distance in ticks the agent is willing to chase a target.
     pub max_pursuit_travel_ticks: NonZeroU32,
 }
 

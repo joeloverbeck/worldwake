@@ -60,6 +60,7 @@ pub struct QueuedContentionIntent {
 /// Per-agent tolerance for waiting in generalized contention queues.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ContentionDispositionProfile {
+    /// Maximum ticks the agent will wait in a contention queue before abandoning. None means infinite patience.
     pub queue_patience_ticks: Option<NonZeroU32>,
 }
 

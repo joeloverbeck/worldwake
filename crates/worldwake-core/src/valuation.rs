@@ -7,8 +7,11 @@ use std::num::NonZeroU8;
 /// Stable per-agent limits for bounded indirect commodity valuation.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct CommodityValuationProfile {
+    /// Maximum recipe chain depth for indirect commodity valuation (e.g., ore -> bar -> sword).
     pub recipe_opportunity_depth: NonZeroU8,
+    /// Maximum graph distance (in hops) to consider recipe opportunities at remote locations.
     pub recipe_place_horizon: u8,
+    /// Value decay applied per step in an indirect valuation chain.
     pub indirect_value_decay_per_step: Permille,
 }
 

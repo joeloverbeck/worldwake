@@ -27,8 +27,10 @@ impl ObservationContext {
     }
 }
 
+/// Environmental visibility parameters attached to place entities.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PlaceVisibilityProfile {
+    /// Baseline concealment modifier for entities at this place; higher values make observation harder.
     pub base_concealment: Permille,
 }
 
