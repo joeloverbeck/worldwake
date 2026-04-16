@@ -694,6 +694,7 @@ mod tests {
             CognitiveProfile::default().max_candidates_per_expansion
         );
         assert_eq!(cognitive.max_plan_depth, 10);
+        assert_eq!(cognitive.max_travel_candidates_per_expansion, None);
         assert!(cognitive.speculative_acquisition);
         assert_eq!(cognitive.landmark_extraction_depth, 3);
     }

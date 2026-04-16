@@ -11,6 +11,9 @@ pub struct CognitiveProfile {
     pub max_candidates_per_expansion: u16,
     /// Maximum number of sequential actions allowed in a single plan.
     pub max_plan_depth: u8,
+    /// Optional per-expansion cap on travel candidates kept for successor construction.
+    /// `None` preserves the uncapped historical behavior.
+    pub max_travel_candidates_per_expansion: Option<u16>,
     /// How many travel hops away the planner considers when building world snapshots for search.
     pub snapshot_travel_horizon: u8,
     /// Hard cap on total nodes expanded during a single plan search before giving up.
@@ -50,6 +53,7 @@ impl Default for CognitiveProfile {
             max_candidates_to_plan: 2,
             max_candidates_per_expansion: default_max_candidates_per_expansion(),
             max_plan_depth: 8,
+            max_travel_candidates_per_expansion: None,
             snapshot_travel_horizon: 6,
             max_node_expansions: 224,
             switch_margin: Permille::new_unchecked(100),
@@ -105,6 +109,7 @@ mod tests {
         assert_eq!(profile.max_candidates_to_plan, 2);
         assert_eq!(profile.max_candidates_per_expansion, 200);
         assert_eq!(profile.max_plan_depth, 8);
+        assert_eq!(profile.max_travel_candidates_per_expansion, None);
         assert_eq!(profile.snapshot_travel_horizon, 6);
         assert_eq!(profile.max_node_expansions, 224);
         assert_eq!(profile.switch_margin, crate::Permille::new(100).unwrap());
@@ -129,6 +134,7 @@ mod tests {
             max_candidates_to_plan: 3,
             max_candidates_per_expansion: 144,
             max_plan_depth: 10,
+            max_travel_candidates_per_expansion: Some(5),
             snapshot_travel_horizon: 9,
             max_node_expansions: 512,
             switch_margin: crate::Permille::new(175).unwrap(),
@@ -168,6 +174,26 @@ mod tests {
         let profile: CognitiveProfile = from_str(&without_field).unwrap();
 
         assert!(profile.use_ff_heuristic);
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_travel_candidate_cap_to_none() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                max_travel_candidates_per_expansion: Some(4),
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_field = serialized
+            .lines()
+            .filter(|line| !line.contains("max_travel_candidates_per_expansion"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_field).unwrap();
+
+        assert_eq!(profile.max_travel_candidates_per_expansion, None);
     }
 
     #[test]

@@ -72,7 +72,7 @@ const ACQUIRE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
 ];
-const SLEEP_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep, PlannerOpKind::Travel];
+const SLEEP_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep];
 const RELIEVE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Relieve, PlannerOpKind::Travel];
 const WASH_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Wash,

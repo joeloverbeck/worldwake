@@ -18,6 +18,7 @@ use candidates::{
     CandidateFilterTraceSinks, CandidateSearchContext, CandidateTraceSinks, CommodityFilterContext,
     SearchCandidate, apply_commodity_relevance_filter_with_expansion_trace,
     search_candidates_from_affordance, search_candidates_with_expansion_trace, unsupported_goal,
+    update_expansion_candidate_outcome, update_root_candidate_outcome,
 };
 use frontier::{DualFrontier, FrontierEntry, compare_search_nodes};
 use heuristic::combined_relevant_places_with_guidance;
@@ -198,6 +199,8 @@ fn apply_ff_heuristic_to_successors<'snapshot>(
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
     tactical_goal: Option<&TacticalGoal>,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    successor_candidates: &[SearchCandidate],
     successor_operators: &[PlanningOperator],
     successors: &mut [(usize, Option<PlanTerminalKind>, SearchNode<'snapshot>, bool)],
 ) -> Option<RelaxedPlanResult> {
@@ -226,10 +229,174 @@ fn apply_ff_heuristic_to_successors<'snapshot>(
         let spatial_heuristic =
             compute_heuristic(snapshot, &successor.state, &combined_places.places);
         successor.heuristic_ticks = spatial_heuristic.max(ff_result.h_ff);
-        *preferred = ff_result.helpful_action_indices.contains(&index);
+        let helpful = ff_result.helpful_action_indices.contains(&index);
+        *preferred = ff_helpful_candidate_is_preferred(
+            snapshot,
+            node,
+            &successor.state,
+            &successor_candidates[index],
+            helpful,
+            &combined_places.places,
+            semantics_table,
+        );
     }
 
     Some(ff_result)
+}
+
+fn ff_helpful_candidate_is_preferred(
+    snapshot: &PlanningSnapshot,
+    node: &SearchNode<'_>,
+    successor_state: &PlanningState<'_>,
+    candidate: &SearchCandidate,
+    helpful: bool,
+    goal_relevant_places: &[worldwake_core::EntityId],
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+) -> bool {
+    if !helpful {
+        return false;
+    }
+    let is_travel = semantics_table
+        .get(&candidate.def_id)
+        .is_some_and(|semantics| semantics.op_kind == crate::PlannerOpKind::Travel);
+    if !is_travel {
+        return true;
+    }
+    travel_candidate_is_goal_directed(
+        snapshot,
+        node,
+        successor_state,
+        goal_relevant_places,
+        candidate,
+    )
+}
+
+fn travel_candidate_is_goal_directed(
+    snapshot: &PlanningSnapshot,
+    node: &SearchNode<'_>,
+    successor_state: &PlanningState<'_>,
+    goal_relevant_places: &[worldwake_core::EntityId],
+    candidate: &SearchCandidate,
+) -> bool {
+    if goal_relevant_places.is_empty() {
+        return false;
+    }
+    let Some(current_place) = node.state.effective_place(node.state.snapshot().actor()) else {
+        return false;
+    };
+    let Some(next_place) = successor_state.effective_place(successor_state.snapshot().actor())
+    else {
+        return false;
+    };
+    if candidate.authoritative_targets.first().copied() != Some(next_place) {
+        return false;
+    }
+    let current_remaining = snapshot
+        .min_perceived_travel_cost_to_any(current_place, goal_relevant_places)
+        .unwrap_or(u32::MAX);
+    let next_remaining = snapshot
+        .min_perceived_travel_cost_to_any(next_place, goal_relevant_places)
+        .unwrap_or(u32::MAX);
+    next_remaining < current_remaining || goal_relevant_places.contains(&next_place)
+}
+
+fn projected_travel_candidate_cost(
+    snapshot: &PlanningSnapshot,
+    state: &PlanningState<'_>,
+    goal_relevant_places: &[worldwake_core::EntityId],
+    candidate: &SearchCandidate,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+) -> Option<u32> {
+    let is_travel = semantics_table
+        .get(&candidate.def_id)
+        .is_some_and(|semantics| semantics.op_kind == crate::PlannerOpKind::Travel);
+    if !is_travel {
+        return None;
+    }
+    let current_place = state.effective_place(state.snapshot().actor())?;
+    let destination = candidate.authoritative_targets.first().copied()?;
+    let direct_cost = snapshot.direct_perceived_travel_cost(current_place, destination)?;
+    if goal_relevant_places.is_empty() {
+        return Some(direct_cost);
+    }
+    let remaining_cost = snapshot
+        .min_perceived_travel_cost_to_any(destination, goal_relevant_places)
+        .unwrap_or(u32::MAX);
+    Some(direct_cost.saturating_add(remaining_cost))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cap_travel_candidates(
+    candidates: &mut Vec<SearchCandidate>,
+    snapshot: &PlanningSnapshot,
+    state: &PlanningState<'_>,
+    goal_relevant_places: &[worldwake_core::EntityId],
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    max_travel_candidates_per_expansion: Option<u16>,
+    expansion_candidates: &mut Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
+    root_candidates: &mut Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
+) {
+    let Some(cap) = max_travel_candidates_per_expansion else {
+        return;
+    };
+    let cap_usize = usize::from(cap);
+    let mut scored_travel_candidates = candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(index, candidate)| {
+            projected_travel_candidate_cost(
+                snapshot,
+                state,
+                goal_relevant_places,
+                candidate,
+                semantics_table,
+            )
+            .map(|cost| {
+                (
+                    index,
+                    cost,
+                    candidate.authoritative_targets.first().copied(),
+                    candidate.def_id,
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if scored_travel_candidates.len() <= cap_usize {
+        return;
+    }
+    scored_travel_candidates
+        .sort_by_key(|(_, cost, destination, def_id)| (*cost, *destination, *def_id));
+    let retained_indices = scored_travel_candidates
+        .iter()
+        .take(cap_usize)
+        .map(|(index, _, _, _)| *index)
+        .collect::<std::collections::BTreeSet<_>>();
+    let original = std::mem::take(candidates);
+    let mut retained = Vec::with_capacity(original.len());
+    for (index, candidate) in original.into_iter().enumerate() {
+        let is_travel = semantics_table
+            .get(&candidate.def_id)
+            .is_some_and(|semantics| semantics.op_kind == crate::PlannerOpKind::Travel);
+        if !is_travel || retained_indices.contains(&index) {
+            retained.push(candidate);
+            continue;
+        }
+        update_expansion_candidate_outcome(
+            expansion_candidates,
+            candidate.expansion_trace_index,
+            crate::decision_trace::ExpansionCandidateOutcome::Filtered(
+                crate::decision_trace::ExpansionCandidateFilterReason::TravelCandidateCap { cap },
+            ),
+        );
+        update_root_candidate_outcome(
+            root_candidates,
+            candidate.trace_index,
+            crate::decision_trace::RootCandidateOutcome::Filtered(
+                crate::decision_trace::RootCandidateFilterReason::TravelCandidateCap { cap },
+            ),
+        );
+    }
+    *candidates = retained;
 }
 
 /// Outcome of a plan search for one goal.
@@ -503,6 +670,18 @@ pub(crate) fn search_plan_with_trace_metadata(
                 semantics_table,
             );
         }
+        let mut expansion_trace_sink = Some(&mut expansion_candidates);
+        let mut root_candidate_sink = Some(&mut root_candidates);
+        cap_travel_candidates(
+            &mut candidates,
+            snapshot,
+            &node.state,
+            &combined_places.places,
+            semantics_table,
+            cognitive.max_travel_candidates_per_expansion,
+            &mut expansion_trace_sink,
+            &mut root_candidate_sink,
+        );
 
         let candidates_generated = candidates.len() as u16;
         if candidates_generated > cognitive.max_candidates_per_expansion {
@@ -580,6 +759,8 @@ pub(crate) fn search_plan_with_trace_metadata(
             recipes,
             execution_budget,
             active_tactical_goal,
+            semantics_table,
+            &successor_candidates,
             &successor_operators,
             &mut successors,
         );

@@ -62,6 +62,14 @@ struct BehavioralTransition {
     needs: NeedsSample,
 }
 
+/// A contiguous window where the agent had no action trace events.
+#[derive(Clone, Debug)]
+struct IdleWindow {
+    start_tick: u64,
+    end_tick: u64,
+    needs_at_start: NeedsSample,
+}
+
 struct AgentStats {
     name: String,
     // Action counts by name and lifecycle kind
@@ -73,6 +81,8 @@ struct AgentStats {
     observations_total: u32,
     observations_passed: u32,
     observation_entity_counts: BTreeMap<EntityId, u32>,
+    /// Per-entity: set of distinct ticks at which the entity was observed.
+    observation_tick_sets: BTreeMap<EntityId, BTreeSet<u64>>,
     // Needs trajectory
     needs_samples: Vec<NeedsSample>,
     // Location tracking
@@ -82,6 +92,12 @@ struct AgentStats {
     // Idle tracking
     consecutive_idle_ticks: u32,
     max_consecutive_idle: u32,
+    /// Start tick of the current idle window (None if not idle).
+    idle_window_start: Option<u64>,
+    /// Needs snapshot taken when the current idle window began.
+    idle_window_needs: Option<NeedsSample>,
+    /// All idle windows that lasted >= 2 ticks.
+    idle_windows: Vec<IdleWindow>,
     // Whether agent has a patrol route (exempt from loop detection)
     has_patrol_route: bool,
 }
@@ -97,11 +113,15 @@ impl AgentStats {
             observations_total: 0,
             observations_passed: 0,
             observation_entity_counts: BTreeMap::new(),
+            observation_tick_sets: BTreeMap::new(),
             needs_samples: Vec::new(),
             location_ticks: BTreeMap::new(),
             action_sequence: Vec::new(),
             consecutive_idle_ticks: 0,
             max_consecutive_idle: 0,
+            idle_window_start: None,
+            idle_window_needs: None,
+            idle_windows: Vec::new(),
             has_patrol_route,
         }
     }
@@ -114,14 +134,52 @@ impl AgentStats {
             + sum(&self.actions_start_failed)
     }
 
-    fn record_idle_tick(&mut self, had_action: bool) {
+    fn record_idle_tick(&mut self, had_action: bool, current_tick: u64, current_needs: NeedsSample) {
         if had_action {
+            // Close any open idle window.
+            if let Some(start) = self.idle_window_start.take() {
+                let needs_at_start = self
+                    .idle_window_needs
+                    .take()
+                    .unwrap_or(current_needs);
+                self.idle_windows.push(IdleWindow {
+                    start_tick: start,
+                    end_tick: current_tick.saturating_sub(1),
+                    needs_at_start,
+                });
+            }
             self.consecutive_idle_ticks = 0;
         } else {
+            // Open a new idle window on the first idle tick.
+            if self.idle_window_start.is_none() {
+                self.idle_window_start = Some(current_tick);
+                self.idle_window_needs = Some(current_needs);
+            }
             self.consecutive_idle_ticks += 1;
             if self.consecutive_idle_ticks > self.max_consecutive_idle {
                 self.max_consecutive_idle = self.consecutive_idle_ticks;
             }
+        }
+    }
+
+    /// Flush any open idle window at simulation end.
+    fn flush_idle_window(&mut self, final_tick: u64) {
+        if let Some(start) = self.idle_window_start.take() {
+            let needs_at_start = self
+                .idle_window_needs
+                .take()
+                .unwrap_or(NeedsSample {
+                    hunger: 0,
+                    thirst: 0,
+                    fatigue: 0,
+                    bladder: 0,
+                    dirtiness: 0,
+                });
+            self.idle_windows.push(IdleWindow {
+                start_tick: start,
+                end_tick: final_tick,
+                needs_at_start,
+            });
         }
     }
 }
@@ -459,6 +517,7 @@ fn detect_anomalies(
     agent_stats: &BTreeMap<EntityId, AgentStats>,
     perception_trace: &PerceptionTraceSink,
     event_log: &worldwake_core::EventLog,
+    world: &worldwake_core::World,
 ) -> Vec<Anomaly> {
     let mut anomalies = Vec::new();
 
@@ -469,11 +528,20 @@ fn detect_anomalies(
         //    the event log which is expensive; we use count as a heuristic.
         for (entity, count) in &stats.observation_entity_counts {
             if *count >= 10 {
+                let entity_name = entity_display_name(world, *entity);
+                let distinct_ticks = stats
+                    .observation_tick_sets
+                    .get(entity)
+                    .map_or(0, BTreeSet::len);
+                let entity_kind = world
+                    .entity_kind(*entity)
+                    .map_or_else(|| "unknown".to_string(), |k| format!("{k:?}"));
                 anomalies.push(Anomaly {
                     kind: AnomalyKind::RedundantPerception,
                     agent_name: stats.name.clone(),
                     description: format!(
-                        "Observed entity {entity} {count} times (may indicate redundant perception if entity state unchanged)",
+                        "Observed entity {entity} ({entity_name}, {entity_kind}) {count} times \
+                         across {distinct_ticks} distinct ticks via event witnessing",
                     ),
                     tick_range: None,
                 });
@@ -494,14 +562,41 @@ fn detect_anomalies(
 
         // 3. Stuck agents: no actions for >= 20 consecutive ticks
         if stats.max_consecutive_idle >= 20 {
+            // Find the longest idle window(s) that match the max.
+            let significant_windows: Vec<_> = stats
+                .idle_windows
+                .iter()
+                .filter(|w| (w.end_tick - w.start_tick + 1) as u32 >= 20)
+                .collect();
+            let mut desc = format!(
+                "No actions for {} consecutive ticks.",
+                stats.max_consecutive_idle
+            );
+            for w in &significant_windows {
+                let duration = w.end_tick - w.start_tick + 1;
+                write!(
+                    desc,
+                    "\n  Window ticks {}-{} ({} ticks): needs at start: \
+                     hunger={}, thirst={}, fatigue={}, bladder={}, dirtiness={}",
+                    w.start_tick,
+                    w.end_tick,
+                    duration,
+                    w.needs_at_start.hunger,
+                    w.needs_at_start.thirst,
+                    w.needs_at_start.fatigue,
+                    w.needs_at_start.bladder,
+                    w.needs_at_start.dirtiness,
+                )
+                .unwrap();
+            }
+            let tick_range = significant_windows
+                .first()
+                .map(|w| (w.start_tick, w.end_tick));
             anomalies.push(Anomaly {
                 kind: AnomalyKind::StuckAgent,
                 agent_name: stats.name.clone(),
-                description: format!(
-                    "No actions for {} consecutive ticks",
-                    stats.max_consecutive_idle
-                ),
-                tick_range: None,
+                description: desc,
+                tick_range,
             });
         }
 
@@ -538,6 +633,10 @@ fn detect_anomalies(
 
     // Cross-reference redundant perception more precisely using event log
     refine_redundant_perception(&mut anomalies, agent_stats, perception_trace, event_log);
+
+    // Remove stuck-agent anomalies that are just agents correctly idling
+    // with all needs low.
+    refine_stuck_agents(&mut anomalies, agent_stats);
 
     anomalies
 }
@@ -668,21 +767,93 @@ fn detect_action_loop(sequence: &[String]) -> Option<String> {
     None
 }
 
-/// Refine redundant perception anomalies by checking if the observed entity
-/// actually had state changes between observations. This is done by looking
-/// at the event log for events that modify the observed entity between the
-/// perception events.
+/// Refine redundant perception anomalies by removing cases where the
+/// observation rate is ~1 per tick (normal event witnessing from co-location).
+///
+/// When `observation_count / distinct_ticks <= 1.5`, the agent is seeing the
+/// entity roughly once per tick through ordinary event witnessing — expected
+/// behavior when agents are co-located. We remove these anomalies.
 fn refine_redundant_perception(
     anomalies: &mut Vec<Anomaly>,
-    _agent_stats: &BTreeMap<EntityId, AgentStats>,
+    agent_stats: &BTreeMap<EntityId, AgentStats>,
     _perception_trace: &PerceptionTraceSink,
     _event_log: &worldwake_core::EventLog,
 ) {
-    // For v1, the count-based heuristic is sufficient.
-    // A future version can cross-reference perception_trace.events_for(agent)
-    // with event_log entries that modify the observed entity, and only flag
-    // truly redundant observations (no intervening state change).
-    let _ = anomalies;
+    anomalies.retain(|a| {
+        if !matches!(a.kind, AnomalyKind::RedundantPerception) {
+            return true;
+        }
+        // Find the matching agent stats.
+        let Some(stats) = agent_stats
+            .values()
+            .find(|s| s.name == a.agent_name)
+        else {
+            return true;
+        };
+        // Parse entity id from the description (format: "Observed entity eXgY ...")
+        // Instead of parsing, iterate entity counts and match by description content.
+        for (entity, count) in &stats.observation_entity_counts {
+            if !a.description.contains(&format!("entity {entity}")) {
+                continue;
+            }
+            let distinct_ticks = stats
+                .observation_tick_sets
+                .get(entity)
+                .map_or(0, BTreeSet::len);
+            if distinct_ticks == 0 {
+                return true;
+            }
+            // If observations are roughly 1-per-tick, this is normal co-location
+            // event witnessing, not genuinely redundant perception.
+            // Use integer arithmetic: count * 2 <= distinct_ticks * 3 is ratio <= 1.5.
+            let count_u64 = u64::from(*count);
+            let ticks_u64 = distinct_ticks as u64;
+            if count_u64 * 2 <= ticks_u64 * 3 {
+                return false; // Remove this anomaly.
+            }
+        }
+        true
+    });
+}
+
+/// Refine stuck-agent anomalies by removing cases where the agent's needs
+/// were all low during the idle window (the agent correctly had nothing to do).
+///
+/// An agent is not "stuck" if all five needs are below 300 permille at the
+/// start of the idle window — there is genuinely no pressing goal.
+fn refine_stuck_agents(anomalies: &mut Vec<Anomaly>, agent_stats: &BTreeMap<EntityId, AgentStats>) {
+    const NEEDS_LOW_CEILING: u16 = 300;
+
+    anomalies.retain(|a| {
+        if !matches!(a.kind, AnomalyKind::StuckAgent) {
+            return true;
+        }
+        let Some(stats) = agent_stats
+            .values()
+            .find(|s| s.name == a.agent_name)
+        else {
+            return true;
+        };
+        // Check all idle windows that triggered the anomaly (>= 20 ticks).
+        // If EVERY significant window started with all needs below the ceiling,
+        // the agent was correctly idle.
+        let significant_windows: Vec<_> = stats
+            .idle_windows
+            .iter()
+            .filter(|w| (w.end_tick - w.start_tick + 1) as u32 >= 20)
+            .collect();
+        if significant_windows.is_empty() {
+            return true;
+        }
+        let all_low = significant_windows.iter().all(|w| {
+            w.needs_at_start.hunger <= NEEDS_LOW_CEILING
+                && w.needs_at_start.thirst <= NEEDS_LOW_CEILING
+                && w.needs_at_start.fatigue <= NEEDS_LOW_CEILING
+                && w.needs_at_start.bladder <= NEEDS_LOW_CEILING
+                && w.needs_at_start.dirtiness <= NEEDS_LOW_CEILING
+        });
+        !all_low // Keep the anomaly only if some window had elevated needs.
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2103,23 +2274,32 @@ fn main() {
                 }
                 for entity in &event.entity_observations {
                     *stats.observation_entity_counts.entry(*entity).or_insert(0) += 1;
+                    stats
+                        .observation_tick_sets
+                        .entry(*entity)
+                        .or_default()
+                        .insert(current_tick.0);
                 }
             }
         }
 
-        // Needs and location sampling (read from world after tick)
+        // Needs, location sampling, and idle tracking (read from world after tick)
         let world = sim.world();
         for (agent_id, stats) in &mut agent_stats {
             // Needs
-            if let Some(needs) = world.get_component_homeostatic_needs(*agent_id) {
-                stats.needs_samples.push(NeedsSample {
+            let current_needs = if let Some(needs) = world.get_component_homeostatic_needs(*agent_id) {
+                let sample = NeedsSample {
                     hunger: needs.hunger.value(),
                     thirst: needs.thirst.value(),
                     fatigue: needs.fatigue.value(),
                     bladder: needs.bladder.value(),
                     dirtiness: needs.dirtiness.value(),
-                });
-            }
+                };
+                stats.needs_samples.push(sample);
+                sample
+            } else {
+                NeedsSample { hunger: 0, thirst: 0, fatigue: 0, bladder: 0, dirtiness: 0 }
+            };
 
             // Location
             if let Some(place) = world.effective_place(*agent_id) {
@@ -2131,7 +2311,7 @@ fn main() {
                 .events_for_at(*agent_id, current_tick)
                 .iter()
                 .any(|e| !matches!(e.kind, ActionTraceKind::StartFailed { .. }));
-            stats.record_idle_tick(had_action);
+            stats.record_idle_tick(had_action, current_tick.0, current_needs);
         }
 
         // Budget exhaustion snapshot collection
@@ -2242,9 +2422,19 @@ fn main() {
         }
     }
 
+    // Flush any open idle windows at simulation end.
+    for stats in agent_stats.values_mut() {
+        stats.flush_idle_window(cli.ticks.saturating_sub(1));
+    }
+
     eprintln!("Simulation complete. Detecting anomalies...");
 
-    let anomalies = detect_anomalies(&agent_stats, &perception_trace, sim.event_log());
+    let anomalies = detect_anomalies(
+        &agent_stats,
+        &perception_trace,
+        sim.event_log(),
+        sim.world(),
+    );
 
     eprintln!("Found {} anomalies. Writing report...", anomalies.len());
 

@@ -95,6 +95,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         max_candidates_to_plan: reasoning.max_candidates_to_plan,
         max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
         max_plan_depth: reasoning.max_plan_depth,
+        max_travel_candidates_per_expansion: CognitiveProfile::default()
+            .max_travel_candidates_per_expansion,
         snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
         max_node_expansions: reasoning.max_node_expansions,
         switch_margin: reasoning.switch_margin,

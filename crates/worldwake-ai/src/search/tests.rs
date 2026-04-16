@@ -50,6 +50,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         max_candidates_to_plan: reasoning.max_candidates_to_plan,
         max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
         max_plan_depth: reasoning.max_plan_depth,
+        max_travel_candidates_per_expansion: CognitiveProfile::default()
+            .max_travel_candidates_per_expansion,
         snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
         max_node_expansions: reasoning.max_node_expansions,
         switch_margin: reasoning.switch_margin,
@@ -214,7 +216,9 @@ type TacticalRootSuccessor<'snapshot> =
 type TacticalRootSuccessorSet<'snapshot> = (
     SearchNode<'snapshot>,
     Vec<TacticalRootSuccessor<'snapshot>>,
+    Vec<SearchCandidate>,
     Vec<super::landmarks::PlanningOperator>,
+    BTreeMap<ActionDefId, PlannerOpSemantics>,
 );
 
 fn collect_root_non_terminal_successors_for_tactical_goal<'snapshot>(
@@ -285,6 +289,7 @@ fn collect_root_non_terminal_successors_for_tactical_goal<'snapshot>(
         );
     }
 
+    let successor_candidates = candidates.clone();
     let mut successors = Vec::new();
     let mut operators = Vec::new();
     for candidate in candidates {
@@ -309,7 +314,13 @@ fn collect_root_non_terminal_successors_for_tactical_goal<'snapshot>(
             successors.push((successors.len(), terminal, successor, false));
         }
     }
-    (node, successors, operators)
+    (
+        node,
+        successors,
+        successor_candidates,
+        operators,
+        semantics_table,
+    )
 }
 
 struct TestBeliefView {
@@ -6141,6 +6152,61 @@ fn prune_travel_noop_when_goal_places_empty() {
 }
 
 #[test]
+fn travel_candidate_cap_keeps_lowest_cost_local_travel_when_goal_places_unknown() {
+    let (view, actor, hub, east, south, north, _goal_store) = build_hub_pruning_view();
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::new(),
+        &BTreeSet::from([hub, east, south, north]),
+        5,
+    );
+    let state = PlanningState::new(&snapshot);
+
+    let travel_east_id = ActionDefId(100);
+    let travel_south_id = ActionDefId(101);
+    let travel_north_id = ActionDefId(102);
+
+    let mut semantics_table = BTreeMap::new();
+    semantics_table.insert(travel_east_id, travel_semantics());
+    semantics_table.insert(travel_south_id, travel_semantics());
+    semantics_table.insert(travel_north_id, travel_semantics());
+
+    let mut candidates = vec![
+        make_travel_candidate(travel_east_id, east),
+        make_travel_candidate(travel_south_id, south),
+        make_travel_candidate(travel_north_id, north),
+    ];
+
+    let mut expansion_candidates = None;
+    let mut root_candidates = None;
+    super::cap_travel_candidates(
+        &mut candidates,
+        &snapshot,
+        &state,
+        &[],
+        &semantics_table,
+        Some(2),
+        &mut expansion_candidates,
+        &mut root_candidates,
+    );
+
+    assert_eq!(
+        candidates.len(),
+        2,
+        "travel cap should reduce retained travel branches"
+    );
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.authoritative_targets[0])
+            .collect::<Vec<_>>(),
+        vec![south, north],
+        "with no goal-place guidance, the cap should keep the cheapest direct local travel branches"
+    );
+}
+
+#[test]
 fn prune_travel_never_prunes_non_travel_actions() {
     let (view, actor, hub, east, south, north, goal_store) = build_hub_pruning_view();
     let snapshot = build_planning_snapshot(
@@ -8556,7 +8622,7 @@ fn ff_successor_rewrite_uses_relaxed_plan_when_it_exceeds_spatial_heuristic() {
         commodity: CommodityKind::Medicine,
         destination: current_place,
     };
-    let (node, mut successors, successor_operators) =
+    let (node, mut successors, successor_candidates, successor_operators, semantics_table) =
         collect_root_non_terminal_successors_for_tactical_goal(
             &snapshot,
             &goal,
@@ -8599,6 +8665,8 @@ fn ff_successor_rewrite_uses_relaxed_plan_when_it_exceeds_spatial_heuristic() {
         &recipes,
         &execution_budget(&ProfileFixture::default()),
         Some(&tactical_goal),
+        &semantics_table,
+        &successor_candidates,
         &successor_operators,
         &mut successors,
     )
@@ -8617,6 +8685,42 @@ fn ff_successor_rewrite_uses_relaxed_plan_when_it_exceeds_spatial_heuristic() {
         "successor heuristic should take the max of spatial and FF guidance"
     );
     assert!(successors[move_cargo_index].3);
+}
+
+#[test]
+fn ff_helpful_non_travel_candidates_always_stay_preferred() {
+    let (view, actor, hub, east, _south, _north, goal_store) = build_hub_pruning_view();
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::new(),
+        &BTreeSet::from([hub, east, goal_store]),
+        5,
+    );
+    let node = SearchNode {
+        state: PlanningState::new(&snapshot),
+        steps: SharedVec::new(),
+        total_estimated_ticks: 0,
+        search_cost: 0,
+        tactical_barrier_reached: false,
+        heuristic_ticks: 0,
+    };
+    let candidate = make_non_travel_candidate(ActionDefId(200), goal_store);
+    let mut semantics_table = BTreeMap::new();
+    semantics_table.insert(ActionDefId(200), harvest_semantics());
+
+    assert!(
+        super::ff_helpful_candidate_is_preferred(
+            &snapshot,
+            &node,
+            &node.state,
+            &candidate,
+            true,
+            &[],
+            &semantics_table,
+        ),
+        "helpful non-travel candidates should always enter the preferred queue even without travel guidance"
+    );
 }
 
 #[test]
@@ -8693,6 +8797,7 @@ fn ff_successor_rewrite_preserves_spatial_heuristic_when_it_exceeds_relaxed_plan
     )
     .expect("local medicine pickup should build a tactical successor");
     let mut successors = vec![(0usize, terminal, successor, false)];
+    let successor_candidates = vec![move_cargo.clone()];
     let successor_operators = vec![super::landmarks::planning_operator_from_transition(
         &node.state,
         &successors[0].2.state,
@@ -8728,6 +8833,8 @@ fn ff_successor_rewrite_preserves_spatial_heuristic_when_it_exceeds_relaxed_plan
         &recipes,
         &execution_budget(&ProfileFixture::default()),
         Some(&tactical_goal),
+        &semantics,
+        &successor_candidates,
         &successor_operators,
         &mut successors,
     )

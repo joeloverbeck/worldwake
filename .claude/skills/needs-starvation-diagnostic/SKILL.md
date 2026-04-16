@@ -34,9 +34,13 @@ Check for:
 - **Agents without food recipes**: Any AI agent whose `known_recipes` contains no food-producing recipe (e.g., only "Harvest Water") will be unable to produce food. Flag as pre-flight warning.
 - **Agents without perception_profile**: Agents without `perception_profile` have severely limited observation capacity and may be effectively blind to ground items.
 - **Locations without reachable food/water**: For each place with agents, trace travel edges to check whether food and water sources are reachable within a reasonable hop count (2-3 hops). Flag isolated locations with no food/water access.
-- **Missing wash facilities**: Check whether WashBasin exists at or within 2 travel hops of each populated location. Flag gaps.
+- **Missing wash facilities**: Check whether a wash-capable facility (WashBasin, Well, or other facility whose workstation type supports the wash action) exists at or within 2 travel hops of each populated location. Flag gaps. If unsure which facilities support washing, grep for wash-related affordance registration in the codebase (e.g., `wash` in `affordance_query.rs` or action handler registration).
 
 Report findings as "Pre-flight warnings" in the report's Run Summary section. Do not gate the observer run on pre-flight results — these are informational only. The observer run may reveal that agents compensate through travel, trade, or other mechanisms not visible from the static scenario.
+
+### Step 0.7: Extract Scenario Purpose (optional)
+
+If the scenario `.ron` file contains a purpose comment (typically the first `//` comment block at the top of the file), extract it and include it in the report's Run Summary as **Scenario purpose**. In the report conclusion or summary, note whether the scenario achieved its stated purpose based on the diagnostic results.
 
 ### Step 1: Build & Run Observer
 
@@ -119,6 +123,17 @@ Read the dump selectively, focusing on needs-related data only.
 - Use the Grep tool for `Affordances available`, `Affordances after travel`, `Final affordances` with `-A 15`
 - For dense single-line rows that exceed Grep output limits: `bash sed -n 'Xp' <file> | head -c 3000` (this is a legitimate bash-only operation since the Grep tool cannot do character-level truncation of specific lines)
 
+**Triage checkpoint — early exit for healthy scenarios**: After reading Sections 1, 2, and 3, evaluate whether any agent has any need above 750 permille for 100+ consecutive ticks (from Section 2 "Ticks above 750‰" and Section 3 Smell 5/6 flags). If **no agent** meets this threshold:
+
+1. Perform a **lightweight extraction** of remaining sections:
+   - Read Section 6 (end-state inventory and resources) — needed for the report's survival strategy summary.
+   - Grep Section 7 for `Plan search outcomes` only — to confirm no budget exhaustion lurking beneath the surface.
+   - Skip Section 5 (beliefs) and Section 8 (budget exhaustion snapshots) entirely.
+2. Skip Steps 3, 4, and 5 (classification, damning moments, and solutions are not applicable).
+3. Proceed directly to Step 6, using the **Healthy Scenario Report Template** (see below) instead of the standard failure report template.
+
+If any agent does meet the threshold, continue with the full extraction (Sections 5, 6, 7, 8) and proceed to Step 3 as normal.
+
 ### Step 3: Classify Each Agent's Needs Failure
 
 For each agent with any need >750 permille for 100+ consecutive ticks, classify the root cause into one or more categories:
@@ -129,7 +144,7 @@ For each agent with any need >750 permille for 100+ consecutive ticks, classify 
 | **Planner Budget Wall** | Resource exists at reachable location but plan search exceeds expansion budget | Section 7 shows budget-exhausted with high candidate count (500+) and depth (5+). Section 6 confirms the resource exists at another location connected by travel edges. |
 | **Belief Blindness** | Agent lacks beliefs about resource-rich locations, so planner can't plan travel there | Section 5 (beliefs) shows agent doesn't know about locations with resources. Section 8 snapshots show empty believed-entity-locations for resource-producing places. Also covers cases where the agent has a recipe but doesn't know about the location containing the required facility — cross-reference scenario `known_recipes` against facility locations in the scenario file. If the recipe's required facility exists only at places the agent has no beliefs about, classify as Belief Blindness (facility-specific). |
 | **Priority Override** | Agent has affordances for need relief but another goal consistently outranks it | Section 7 goals-selected shows a non-needs goal (PostNotice, Patrol, ShareBelief) dominating during the critical-need period. Affordance snapshots DO include eat/drink/wash but the action never fires. |
-| **Structural Impossibility** | No location in the entire scenario has the needed resource/facility | Read scenario `.ron` file. Check all places and facilities. If no WashBasin exists anywhere, dirtiness is structurally unsatisfiable. |
+| **Structural Impossibility** | No location in the entire scenario has the needed resource/facility | Read scenario `.ron` file. Check all places and facilities. If no wash-capable facility (WashBasin, Well, or equivalent) exists anywhere, dirtiness is structurally unsatisfiable. |
 | **Exploration Failure** | Agent has exploration_profile but ExploreLocation never fires or fails | Section 7 shows ExploreLocation in failed plans or blocked desires. Or ExploreLocation never appears in goals-selected despite the agent having an exploration_profile in the scenario. |
 | **Belief Memory Pollution** | Agent previously knew resource locations but beliefs were displaced by irrelevant entities (SocialArtifacts, Waste) | Section 5 shows belief memory at capacity but dominated by non-resource entities. Cross-reference with Section 2 location history — agent visited resource locations earlier but beliefs decayed and were replaced by high-volume low-value observations. Distinct from Belief Blindness (never learned) — here the agent *had* beliefs that were crowded out. |
 | **Knowledge Gap** | Agent believes resource location exists and is reachable, but lacks recipe or skill to exploit it | Section 5 shows agent knows about facility/resource location (e.g., believes Well exists at Thornwall Village). Scenario file shows agent's `known_recipes` does NOT include the required recipe (e.g., "Harvest Water"). Cross-reference available facilities with agent recipes. Distinct from Belief Blindness (the agent *knows* where resources are) and Structural Impossibility (the resources *exist*). |
@@ -355,6 +370,50 @@ Write `reports/needs-starvation-diagnostic.md`:
 [Ordered by priority: deaths first, then sustained critical needs, then moderate failures. Include a suggested test file name following the project's `golden_*.rs` naming convention.]
 ```
 
+#### Healthy Scenario Report Template
+
+Use this template when the triage checkpoint (end of Step 2) determines that no agent has any need above 750 permille for 100+ consecutive ticks. This replaces the standard failure report template above.
+
+```markdown
+# Needs Starvation Diagnostic
+
+## Run Summary
+- **Scenario**: `[path]`
+- **Scenario purpose**: [extracted from scenario file comment, or "none stated"]
+- **Seed**: [N]
+- **Ticks simulated**: [N]
+- **Agents**: [names and starting locations]
+- **Places**: [names]
+- **Deaths**: None
+
+### Pre-flight Warnings
+[List any pre-flight warnings from Step 0.5. For each, note whether the actual run confirmed or contradicted the warning.]
+
+## Agent Needs Overview
+
+| Agent | Closest-to-Threshold Need | Max Value | Margin to 750 | Planner Health |
+|-------|--------------------------|-----------|---------------|----------------|
+| ... | ... | ...‰ | ...‰ | N found, N budget-exhausted, N frontier-exhausted |
+
+[One row per agent. "Margin to 750" = 750 - max value. "Planner Health" = plan search outcome counts from Section 7.]
+
+## Survival Strategy Summary
+
+For each agent: where they spent their time, how they obtained food/water, wash frequency, key action counts (eat, drink, harvest, travel, wash). Note which locations served as primary survival bases.
+
+## Margins and Risk Observations
+
+[Which needs are closest to the 750 threshold across all agents. What scenario changes (higher need rates, fewer facilities, longer travel times) could push agents over the edge. Structural observations about place graph connectivity and resource distribution. Note whether the scenario achieved its stated purpose.]
+
+## Golden Test Recommendations
+
+[Optional — include only if margins are tight enough to warrant regression guards. Use the same table format as the standard template but reference observations rather than damning moments.]
+
+| Priority | Observation | Test Name Suggestion | What It Would Guard Against |
+|----------|------------|---------------------|----------------------------|
+| ... | ... | golden_[descriptive_name] | [regression description] |
+```
+
 ### Step 7: Clean Up
 
 Delete `reports/needs-diagnostic-dump.md` — the dump is an intermediate artifact. The report in `reports/needs-starvation-diagnostic.md` is the deliverable.
@@ -373,7 +432,7 @@ Delete `reports/needs-diagnostic-dump.md` — the dump is an intermediate artifa
 When re-running the diagnostic after a fix (code change, scenario edit, or profile tuning), follow this workflow:
 
 1. **Read the previous report** (`reports/needs-starvation-diagnostic.md`) before running the observer.
-2. **Run the diagnostic normally** (Steps 0.5 through 7).
+2. **Run the diagnostic normally** (Steps 0.5 through 7). If the triage checkpoint triggers the healthy-scenario early exit, use the Healthy Scenario Report Template with the comparison additions below.
 3. **Add comparison metadata** to the new report's Run Summary:
    - **Changes since last run**: List the specific changes made (e.g., "Added 'Harvest Grain' to Guard Theron's known_recipes", "Added WashBasin to Eldergrove Forest").
    - **Previous run deaths**: [count] -> **This run deaths**: [count]
