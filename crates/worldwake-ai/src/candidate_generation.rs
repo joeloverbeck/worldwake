@@ -4098,7 +4098,6 @@ fn acquisition_path_opportunities(
 #[derive(Copy, Clone)]
 struct FilteredAcquisitionPlace {
     place: EntityId,
-    speculative: bool,
 }
 
 struct AcquisitionPathSearchResult {
@@ -4112,7 +4111,6 @@ struct BeliefGateOptions<'a> {
     recipes: &'a RecipeRegistry,
     travel_horizon: u8,
     search: AcquisitionSearchOptions<'a>,
-    include_speculative: bool,
 }
 
 fn acquisition_path_search_inner(
@@ -4142,9 +4140,6 @@ fn acquisition_path_search_inner(
             recipes,
             travel_horizon,
             search: options,
-            include_speculative: view
-                .cognitive_profile(agent)
-                .is_some_and(|profile| profile.speculative_acquisition),
         },
     );
     let places_after_belief_filter = filtered.len().try_into().unwrap_or(u32::MAX);
@@ -4162,15 +4157,6 @@ fn acquisition_path_search_inner(
                 options,
             )
             .map(|(evidence, trace)| (candidate_place, evidence, trace))
-            .or_else(|| {
-                filtered_place.speculative.then(|| {
-                    (
-                        candidate_place,
-                        Evidence::with_place(candidate_place),
-                        EvidenceTrace::default(),
-                    )
-                })
-            })
         })
         .collect();
 
@@ -4189,9 +4175,6 @@ fn belief_gated_places(
     options: BeliefGateOptions<'_>,
 ) -> Vec<FilteredAcquisitionPlace> {
     let current_place = view.effective_place(agent);
-    let known_places = options
-        .include_speculative
-        .then(|| known_place_observations(view, agent));
 
     reachable
         .iter()
@@ -4210,19 +4193,9 @@ fn belief_gated_places(
                         options.search.visited_commodities,
                     ))
             {
-                return Some(FilteredAcquisitionPlace {
-                    place,
-                    speculative: false,
-                });
+                return Some(FilteredAcquisitionPlace { place });
             }
-
-            known_places
-                .as_ref()
-                .is_some_and(|known| known.contains_key(&place))
-                .then_some(FilteredAcquisitionPlace {
-                    place,
-                    speculative: true,
-                })
+            None
         })
         .collect()
 }
@@ -5029,9 +5002,8 @@ pub(crate) fn relieved_needs_for_commodity(
 mod tests {
     use super::{
         AcquisitionSearchOptions, BeliefGateOptions, CandidateGenerationDiagnostics,
-        GenerationContext, acquisition_path_search_inner, belief_gated_places,
-        deliverable_quantity, emit_produce_goals, emit_restock_goals, generate_candidates,
-        generate_candidates_with_travel_horizon,
+        GenerationContext, belief_gated_places, deliverable_quantity, emit_produce_goals,
+        emit_restock_goals, generate_candidates, generate_candidates_with_travel_horizon,
     };
     use crate::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
@@ -8872,7 +8844,6 @@ mod tests {
                     include_recipes: false,
                     visited_commodities: &visited,
                 },
-                include_speculative: false,
             },
         );
 
@@ -8931,80 +8902,11 @@ mod tests {
                     include_recipes: true,
                     visited_commodities: &visited,
                 },
-                include_speculative: false,
             },
         );
 
         let kept: Vec<_> = filtered.into_iter().map(|place| place.place).collect();
         assert_eq!(kept, vec![origin, mill_place]);
-    }
-
-    #[test]
-    fn belief_gated_places_speculative_includes_known_places() {
-        let agent = entity(1);
-        let origin = entity(10);
-        let rumor_place = entity(11);
-        let mut view = TestBeliefView::default();
-        view.alive.insert(agent);
-        view.entity_kinds.insert(agent, EntityKind::Agent);
-        view.effective_places.insert(agent, origin);
-        view.adjacent_places.insert(origin, vec![rumor_place]);
-        view.adjacent_places.insert(rumor_place, vec![origin]);
-        let mut known_place = belief_at_place(rumor_place, Tick(3));
-        known_place.believed_kind = Some(EntityKind::Place);
-        known_place.last_known_place = None;
-        view.beliefs.insert(agent, vec![(rumor_place, known_place)]);
-        view.sync_belief_store(agent);
-
-        let search_without_speculation = acquisition_path_search_inner(
-            &view,
-            agent,
-            Some(origin),
-            CommodityKind::Bread,
-            &RecipeRegistry::new(),
-            6,
-            AcquisitionSearchOptions {
-                include_recipes: false,
-                visited_commodities: &BTreeSet::new(),
-            },
-        );
-        assert!(
-            !search_without_speculation
-                .opportunities
-                .iter()
-                .any(|(place, _, _)| *place == rumor_place)
-        );
-
-        view.cognitive_profiles.insert(
-            agent,
-            CognitiveProfile {
-                speculative_acquisition: true,
-                ..CognitiveProfile::default()
-            },
-        );
-        let search_with_speculation = acquisition_path_search_inner(
-            &view,
-            agent,
-            Some(origin),
-            CommodityKind::Bread,
-            &RecipeRegistry::new(),
-            6,
-            AcquisitionSearchOptions {
-                include_recipes: false,
-                visited_commodities: &BTreeSet::new(),
-            },
-        );
-        assert!(
-            search_with_speculation
-                .opportunities
-                .iter()
-                .any(|(place, evidence, _)| {
-                    *place == rumor_place
-                        && evidence.places.contains(&rumor_place)
-                        && evidence.entities.is_empty()
-                }),
-            "speculative acquisition should keep known places as place-only opportunities"
-        );
     }
 
     #[test]

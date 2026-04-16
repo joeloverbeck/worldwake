@@ -572,7 +572,6 @@ mod tests {
                 initial_cooldown_ticks: 7,
                 max_cooldown_ticks: 90,
                 max_snapshot_entities_per_place: 60,
-                speculative_acquisition: false,
                 landmark_extraction_depth: 3,
                 use_ff_heuristic: true,
             }),

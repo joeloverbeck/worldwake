@@ -1,4 +1,12 @@
+**Status**: COMPLETED
+
 # Needs Starvation Diagnostic
+
+## Outcome
+- **Completion date**: 2026-04-16
+- **What changed**: Report superseded by unified `/scenario-analysis` skill which replaces both `simulation-observer` and `needs-starvation-diagnostic` skills.
+- **Deviations**: None — report served its purpose during survival-baseline validation.
+- **Verification**: Scenario analysis skill created; old skills deleted; cross-references updated.
 
 ## Run Summary
 - **Scenario**: `scenarios/survival-baseline.ron`

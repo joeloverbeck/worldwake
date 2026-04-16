@@ -2815,7 +2815,6 @@ mod tests {
         let place = world.topology().place_ids().next().unwrap();
         let profile = CognitiveProfile {
             max_plan_depth: 12,
-            speculative_acquisition: true,
             landmark_extraction_depth: 6,
             ..CognitiveProfile::default()
         };

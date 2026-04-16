@@ -676,7 +676,6 @@ mod tests {
                         initial_cooldown_ticks: 4,
                         max_cooldown_ticks: 64,
                         max_snapshot_entities_per_place: 50,
-                        speculative_acquisition: true,
                         landmark_extraction_depth: 3,
                     ),
                 ),
@@ -695,7 +694,6 @@ mod tests {
         );
         assert_eq!(cognitive.max_plan_depth, 10);
         assert_eq!(cognitive.max_travel_candidates_per_expansion, None);
-        assert!(cognitive.speculative_acquisition);
         assert_eq!(cognitive.landmark_extraction_depth, 3);
     }
 

@@ -1,4 +1,12 @@
-# Simulation Observer Dump
+**Status**: COMPLETED
+
+# Survival Baseline Validation
+
+## Outcome
+- **Completion date**: 2026-04-16
+- **What changed**: Validation report from early survival-baseline scenario testing. Superseded by iterative scenario analysis workflow.
+- **Deviations**: None.
+- **Verification**: Survival-baseline scenario remains in `scenarios/` for ongoing use.
 
 ## Section 1 — Run Metadata
 
@@ -154,7 +162,83 @@
 
 ## Section 3 — Anomaly Flags
 
-No anomalies detected.
+19 anomalies detected:
+
+### Anomaly 1 — REDUNDANT_PERCEPTION (Agent A)
+
+Observed entity e1g0 44 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 2 — REDUNDANT_PERCEPTION (Agent A)
+
+Observed entity e4g0 39 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 3 — REDUNDANT_PERCEPTION (Agent A)
+
+Observed entity e5g0 27 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 4 — REDUNDANT_PERCEPTION (Agent A)
+
+Observed entity e6g0 25 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 5 — REDUNDANT_PERCEPTION (Agent A)
+
+Observed entity e9g0 74 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 6 — STUCK_AGENT (Agent A)
+
+No actions for 36 consecutive ticks
+
+### Anomaly 7 — REDUNDANT_PERCEPTION (Agent B)
+
+Observed entity e1g0 46 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 8 — REDUNDANT_PERCEPTION (Agent B)
+
+Observed entity e4g0 31 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 9 — REDUNDANT_PERCEPTION (Agent B)
+
+Observed entity e5g0 40 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 10 — REDUNDANT_PERCEPTION (Agent B)
+
+Observed entity e6g0 28 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 11 — REDUNDANT_PERCEPTION (Agent B)
+
+Observed entity e9g0 87 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 12 — STUCK_AGENT (Agent B)
+
+No actions for 41 consecutive ticks
+
+### Anomaly 13 — REDUNDANT_PERCEPTION (Agent C)
+
+Observed entity e1g0 39 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 14 — REDUNDANT_PERCEPTION (Agent C)
+
+Observed entity e4g0 25 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 15 — REDUNDANT_PERCEPTION (Agent C)
+
+Observed entity e5g0 24 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 16 — REDUNDANT_PERCEPTION (Agent C)
+
+Observed entity e6g0 47 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 17 — REDUNDANT_PERCEPTION (Agent C)
+
+Observed entity e8g0 14 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 18 — REDUNDANT_PERCEPTION (Agent C)
+
+Observed entity e9g0 63 times (may indicate redundant perception if entity state unchanged)
+
+### Anomaly 19 — STUCK_AGENT (Agent C)
+
+No actions for 27 consecutive ticks
 
 ## Section 4 — Raw Event Sample
 

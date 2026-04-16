@@ -9,9 +9,9 @@
 // Updated 2026-04-11: S88 schema drift — Added landmark_extraction_depth to
 //   Merchant Vara's cognitive_profile and preferred_operator_boost to her
 //   execution_budget (GOAP overhaul added fields to CognitiveProfile and ExecutionBudget).
-// Updated 2026-04-10: S82/S83 schema drift — Added speculative_acquisition to
-//   Merchant Vara's cognitive_profile (S83). Added disposal_profile on Forager
-//   Lina for S82 coverage.
+// Updated 2026-04-10: S82/S83 schema drift — Added disposal_profile on Forager
+//   Lina for S82 coverage. Later cleanup removed the obsolete S83-only
+//   cognitive_profile field.
 // Updated 2026-04-08: S73/S74 schema drift — Added planning_switch_margin and
 //   max_snapshot_entities_per_place to Merchant Vara's cognitive_profile.
 // Updated 2026-04-06: Post-phase-6 — Added visibility_profile on Eldergrove Forest
@@ -193,7 +193,6 @@
                 initial_cooldown_ticks: 4,
                 max_cooldown_ticks: 64,
                 max_snapshot_entities_per_place: 50,
-                speculative_acquisition: true,
                 landmark_extraction_depth: 3,
                 use_ff_heuristic: true,
             ),

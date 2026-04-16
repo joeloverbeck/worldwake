@@ -34,9 +34,6 @@ pub struct CognitiveProfile {
     pub max_cooldown_ticks: u32,
     /// Maximum entities included per place in the planner's world snapshot.
     pub max_snapshot_entities_per_place: u16,
-    /// Whether this agent considers known places even without current positive
-    /// resource evidence when generating acquisition candidates.
-    pub speculative_acquisition: bool,
     /// Maximum depth of landmark chain extraction during tactical planning.
     /// Higher values produce more landmarks for better search guidance at
     /// increased extraction cost. 0 disables landmarks.
@@ -64,7 +61,6 @@ impl Default for CognitiveProfile {
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,
             max_snapshot_entities_per_place: 50,
-            speculative_acquisition: false,
             landmark_extraction_depth: 4,
             use_ff_heuristic: default_use_ff_heuristic(),
         }
@@ -123,7 +119,6 @@ mod tests {
         assert_eq!(profile.initial_cooldown_ticks, 4);
         assert_eq!(profile.max_cooldown_ticks, 64);
         assert_eq!(profile.max_snapshot_entities_per_place, 50);
-        assert!(!profile.speculative_acquisition);
         assert_eq!(profile.landmark_extraction_depth, 4);
         assert!(profile.use_ff_heuristic);
     }
@@ -145,7 +140,6 @@ mod tests {
             initial_cooldown_ticks: 6,
             max_cooldown_ticks: 72,
             max_snapshot_entities_per_place: 75,
-            speculative_acquisition: true,
             landmark_extraction_depth: 5,
             use_ff_heuristic: false,
         };
