@@ -111,8 +111,7 @@ fn update_need_run(current: &mut u32, max: &mut u32, above_threshold: bool) {
 }
 
 fn scenario_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scenarios/survival-scattered.ron")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/survival-scattered.ron")
 }
 
 fn load_survival_scattered_harness() -> (GoldenHarness, ScenarioDef) {
@@ -245,7 +244,9 @@ fn run_survival_scattered() -> SurvivalScatteredObservation {
             } else {
                 if start.is_none() {
                     *start = Some(tick_num);
-                    let max_n = needs.hunger.value()
+                    let max_n = needs
+                        .hunger
+                        .value()
                         .max(needs.thirst.value())
                         .max(needs.fatigue.value())
                         .max(needs.bladder.value())

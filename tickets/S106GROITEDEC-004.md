@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: S106GROITEDEC-001, S106GROITEDEC-002, S106GROITEDEC-003
+**Deps**: archive/tickets/S106GROITEDEC-001.md, archive/tickets/S106GROITEDEC-002.md, tickets/S106GROITEDEC-003.md
 
 ## Problem
 

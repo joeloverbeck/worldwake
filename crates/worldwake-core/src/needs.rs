@@ -162,24 +162,24 @@ impl Component for MetabolismProfile {}
 
 impl Default for MetabolismProfile {
     fn default() -> Self {
-        Self::new(
-            pm(2),
-            pm(3),
-            pm(2),
-            pm(4),
-            pm(1),
-            pm(20),
-            nz(480),
-            nz(240),
-            nz(120),
-            nz(40),
-            nz(8),
-            nz(12),
-            pm(0),
-            pm(0),
-            pm(0),
-            pm(0),
-        )
+        Self {
+            hunger_rate: pm(2),
+            thirst_rate: pm(3),
+            fatigue_rate: pm(2),
+            bladder_rate: pm(4),
+            dirtiness_rate: pm(1),
+            rest_efficiency: pm(20),
+            starvation_tolerance_ticks: nz(480),
+            dehydration_tolerance_ticks: nz(240),
+            exhaustion_collapse_ticks: nz(120),
+            bladder_accident_tolerance_ticks: nz(40),
+            toilet_ticks: nz(8),
+            wash_ticks: nz(12),
+            travel_fatigue_multiplier: pm(0),
+            travel_thirst_multiplier: pm(0),
+            travel_bladder_multiplier: pm(0),
+            wilderness_relief_dirtiness_penalty: pm(0),
+        }
     }
 }
 

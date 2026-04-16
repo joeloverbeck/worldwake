@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 30;
+pub const SAVE_FORMAT_VERSION: u32 = 31;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -301,6 +301,10 @@ mod tests {
 
     fn populated_state() -> (SimulationState, EntityId, EntityId, EntityId) {
         let mut world = World::new(build_prototype_world()).unwrap();
+        world.set_commodity_decay(std::collections::BTreeMap::from([(
+            CommodityKind::Waste,
+            std::num::NonZeroU32::new(17).unwrap(),
+        )]));
         let mut event_log = EventLog::new();
         let actor = spawn_agent(&mut world, &mut event_log, Tick(0), "save-actor");
         let target = spawn_agent(&mut world, &mut event_log, Tick(1), "save-target");
@@ -656,6 +660,10 @@ mod tests {
         assert_eq!(restored.recipe_registry().len(), 1);
         assert_eq!(restored.replay_state().checkpoints().len(), 1);
         assert_eq!(restored.controller_state().controlled_entity(), Some(actor));
+        assert_eq!(
+            restored.world().commodity_decay(),
+            state.world().commodity_decay()
+        );
         assert!(!restored.world().reservations_for(reserved_item).is_empty());
         let restored_belief = restored
             .world()

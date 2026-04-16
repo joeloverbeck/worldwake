@@ -227,7 +227,7 @@ The decay system itself is the dampener: each commodity kind has a concrete time
 
 **New SystemId:** `ItemDecay`
 
-**Registration:** Added to `define_system_ids!` macro in `crates/worldwake-sim/src/system_manifest.rs`, between `EvidenceDecay` and `ExpectationCheck`.
+**Registration:** Added to `define_system_ids!` macro in `crates/worldwake-sim/src/system_manifest.rs`, after `EvidenceDecay` and before `Patrol` in the canonical per-tick order.
 
 **Dispatch:** Registered in `dispatch_table()` in `crates/worldwake-systems/src/lib.rs` mapping `SystemId::ItemDecay` to `item_decay_system`.
 

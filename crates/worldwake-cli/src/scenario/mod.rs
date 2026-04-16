@@ -14,7 +14,7 @@ use worldwake_core::{
     ExplorationProfile, KnownRecipes, LoadUnits, MerchandiseProfile, PatrolRoute, Place,
     ProductionOutputOwner, ProductionOutputOwnershipPolicy, ResourceSource, Seed, Tick, Topology,
     TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn,
-    hash_world,
+    default_commodity_decay_map, hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -109,6 +109,11 @@ pub fn spawn_scenario(def: &ScenarioDef) -> Result<SpawnedSimulation, ScenarioEr
 
     let topology = build_topology(def, &mut names, &mut place_names)?;
     let mut world = World::new(topology)?;
+    world.set_commodity_decay(
+        def.commodity_decay
+            .clone()
+            .unwrap_or_else(default_commodity_decay_map),
+    );
     let mut event_log = EventLog::new();
 
     spawn_entities(
@@ -583,14 +588,14 @@ mod tests {
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
         ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity, CognitiveProfile,
-        CommodityKind, CommodityValuationProfile, CommunicationProfile,
+        CommodityDecayMap, CommodityKind, CommodityValuationProfile, CommunicationProfile,
         ContentionDispositionProfile, ControlSource, DisposalProfile, DriveThresholds,
         EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
         IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
         ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
         PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
         TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WorkstationTag,
+        ViolationDispositionProfile, WorkstationTag, default_commodity_decay_map,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -647,6 +652,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         }
     }
@@ -675,6 +681,32 @@ mod tests {
     }
 
     #[test]
+    fn test_spawn_minimal_scenario_uses_default_commodity_decay() {
+        let spawned = spawn_scenario(&minimal_def()).unwrap();
+
+        assert_eq!(
+            spawned.state.world().commodity_decay(),
+            &default_commodity_decay_map()
+        );
+    }
+
+    #[test]
+    fn test_spawn_scenario_applies_explicit_commodity_decay_override() {
+        let mut def = minimal_def();
+        def.commodity_decay = Some(CommodityDecayMap::from([(
+            CommodityKind::Waste,
+            NonZeroU32::new(17).unwrap(),
+        )]));
+
+        let spawned = spawn_scenario(&def).unwrap();
+
+        assert_eq!(
+            spawned.state.world().commodity_decay(),
+            &CommodityDecayMap::from([(CommodityKind::Waste, NonZeroU32::new(17).unwrap())])
+        );
+    }
+
+    #[test]
     fn test_spawn_agents_at_places() {
         let def = ScenarioDef {
             seed: 1,
@@ -698,6 +730,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -739,6 +772,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -769,6 +803,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -804,6 +839,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -838,6 +874,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -887,6 +924,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -934,6 +972,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -980,6 +1019,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1032,6 +1072,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1086,6 +1127,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1135,6 +1177,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(5),
                 capacity: Quantity(20),
             }],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1193,6 +1236,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1249,6 +1293,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(2),
                 capacity: Quantity(20),
             }],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1308,6 +1353,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(3),
                 capacity: Quantity(15),
             }],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1390,6 +1436,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1426,6 +1473,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1525,6 +1573,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1567,6 +1616,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1676,6 +1726,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1733,6 +1784,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1824,6 +1876,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1930,6 +1983,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 

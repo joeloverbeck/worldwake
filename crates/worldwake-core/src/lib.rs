@@ -175,10 +175,10 @@ pub use intention_frame::{
     IntentionFrame, SuspensionReason,
 };
 pub use items::{
-    CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
-    CommodityPhysicalProfile, CommodityTreatmentProfile, Container, GroundSince, ItemLot,
-    LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
-    UniqueItemPhysicalProfile,
+    CombatWeaponProfile, CommodityConsumableProfile, CommodityDecayMap, CommodityKind,
+    CommodityKindSpec, CommodityPhysicalProfile, CommodityTreatmentProfile, Container, GroundSince,
+    ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
+    UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
 };
 pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,

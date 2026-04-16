@@ -14,8 +14,8 @@ use worldwake_core::{
     AgentData, CommodityKind, ControlSource, DemandMemory, DemandObservation,
     DemandObservationReason, EventTag, GoalKind, HomeostaticNeeds, KnownRecipes, LoadUnits,
     MerchandiseProfile, MetabolismProfile, PerceptionProfile, Quantity, SaleListing, Seed,
-    StockAssignmentKind, Tick, TradeDispositionProfile, UtilityProfile, hash_event_log,
-    hash_world, total_live_lot_quantity,
+    StockAssignmentKind, Tick, TradeDispositionProfile, UtilityProfile, hash_event_log, hash_world,
+    total_live_lot_quantity,
 };
 use worldwake_sim::{
     ActionRequestMode, ActionTraceKind, EconomicBeliefView, InputKind, PerAgentBeliefView,

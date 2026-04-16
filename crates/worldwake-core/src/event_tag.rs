@@ -27,6 +27,7 @@ pub enum EventTag {
     Political,
     Control,
     System,
+    ItemDecay,
     WildernessRelief,
     BladderAccident,
     Death,
@@ -42,7 +43,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 25] = [
+    const ALL_EVENT_TAGS: [EventTag; 26] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -65,6 +66,7 @@ mod tests {
         EventTag::Political,
         EventTag::Control,
         EventTag::System,
+        EventTag::ItemDecay,
         EventTag::WildernessRelief,
         EventTag::BladderAccident,
         EventTag::Death,
@@ -77,7 +79,7 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 25);
+        assert_eq!(ALL_EVENT_TAGS.len(), 26);
     }
 
     #[test]

@@ -30,8 +30,10 @@ macro_rules! define_system_ids {
             ///   become visible before later cleanup runs.
             /// - `Perception` also runs before `EvidenceDecay` so same-tick observers can still
             ///   perceive fresh scene evidence before cleanup runs.
-            /// - `EvidenceDecay` runs before `Patrol` so authoritative route adaptation only sees
-            ///   scene evidence that remains live after the tick's decay boundary.
+            /// - `EvidenceDecay` runs before `ItemDecay` so scene-evidence cleanup happens before
+            ///   physical ground-item cleanup in the same tick.
+            /// - `ItemDecay` runs before `Patrol` so authoritative route adaptation only sees
+            ///   ground items that remain live after the tick's decay boundary.
             /// - `Compaction` runs last so all game systems have finished emitting events
             ///   before the checkpoint serializes World state and strips old `state_deltas`.
             ///
@@ -69,6 +71,7 @@ define_system_ids! {
     (BanditCamp, "bandit_camp"),
     (Patrol, "patrol"),
     (EvidenceDecay, "evidence_decay"),
+    (ItemDecay, "item_decay"),
     (ExpectationCheck, "expectation_check"),
     (Compaction, "compaction"),
 }
@@ -117,6 +120,7 @@ impl SystemManifest {
             SystemId::Perception,
             SystemId::ExpectationCheck,
             SystemId::EvidenceDecay,
+            SystemId::ItemDecay,
             SystemId::Patrol,
             SystemId::Compaction,
         ])
@@ -190,6 +194,7 @@ mod tests {
         assert_eq!(SystemId::Contention.to_string(), "contention");
         assert_eq!(SystemId::Perception.to_string(), "perception");
         assert_eq!(SystemId::EvidenceDecay.to_string(), "evidence_decay");
+        assert_eq!(SystemId::ItemDecay.to_string(), "item_decay");
         assert_eq!(SystemId::ExpectationCheck.to_string(), "expectation_check");
         assert_eq!(SystemId::Politics.to_string(), "politics");
         assert_eq!(SystemId::Patrol.to_string(), "patrol");
@@ -212,6 +217,7 @@ mod tests {
                 SystemId::BanditCamp,
                 SystemId::Patrol,
                 SystemId::EvidenceDecay,
+                SystemId::ItemDecay,
                 SystemId::ExpectationCheck,
                 SystemId::Compaction,
             ]
@@ -280,6 +286,7 @@ mod tests {
                 SystemId::Perception,
                 SystemId::ExpectationCheck,
                 SystemId::EvidenceDecay,
+                SystemId::ItemDecay,
                 SystemId::Patrol,
                 SystemId::Compaction,
             ]
@@ -305,6 +312,27 @@ mod tests {
 
         assert_eq!(expectation_index, perception_index + 1);
         assert_eq!(evidence_decay_index, expectation_index + 1);
+    }
+
+    #[test]
+    fn canonical_manifest_places_item_decay_between_evidence_decay_and_patrol() {
+        let manifest = SystemManifest::canonical();
+        let ordered = manifest.ordered_ids();
+        let evidence_decay_index = ordered
+            .iter()
+            .position(|id| *id == SystemId::EvidenceDecay)
+            .unwrap();
+        let item_decay_index = ordered
+            .iter()
+            .position(|id| *id == SystemId::ItemDecay)
+            .unwrap();
+        let patrol_index = ordered
+            .iter()
+            .position(|id| *id == SystemId::Patrol)
+            .unwrap();
+
+        assert_eq!(item_decay_index, evidence_decay_index + 1);
+        assert_eq!(patrol_index, item_decay_index + 1);
     }
 
     #[test]

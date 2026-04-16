@@ -134,14 +134,16 @@ impl AgentStats {
             + sum(&self.actions_start_failed)
     }
 
-    fn record_idle_tick(&mut self, had_action: bool, current_tick: u64, current_needs: NeedsSample) {
+    fn record_idle_tick(
+        &mut self,
+        had_action: bool,
+        current_tick: u64,
+        current_needs: NeedsSample,
+    ) {
         if had_action {
             // Close any open idle window.
             if let Some(start) = self.idle_window_start.take() {
-                let needs_at_start = self
-                    .idle_window_needs
-                    .take()
-                    .unwrap_or(current_needs);
+                let needs_at_start = self.idle_window_needs.take().unwrap_or(current_needs);
                 self.idle_windows.push(IdleWindow {
                     start_tick: start,
                     end_tick: current_tick.saturating_sub(1),
@@ -165,16 +167,13 @@ impl AgentStats {
     /// Flush any open idle window at simulation end.
     fn flush_idle_window(&mut self, final_tick: u64) {
         if let Some(start) = self.idle_window_start.take() {
-            let needs_at_start = self
-                .idle_window_needs
-                .take()
-                .unwrap_or(NeedsSample {
-                    hunger: 0,
-                    thirst: 0,
-                    fatigue: 0,
-                    bladder: 0,
-                    dirtiness: 0,
-                });
+            let needs_at_start = self.idle_window_needs.take().unwrap_or(NeedsSample {
+                hunger: 0,
+                thirst: 0,
+                fatigue: 0,
+                bladder: 0,
+                dirtiness: 0,
+            });
             self.idle_windows.push(IdleWindow {
                 start_tick: start,
                 end_tick: final_tick,
@@ -784,10 +783,7 @@ fn refine_redundant_perception(
             return true;
         }
         // Find the matching agent stats.
-        let Some(stats) = agent_stats
-            .values()
-            .find(|s| s.name == a.agent_name)
-        else {
+        let Some(stats) = agent_stats.values().find(|s| s.name == a.agent_name) else {
             return true;
         };
         // Parse entity id from the description (format: "Observed entity eXgY ...")
@@ -828,10 +824,7 @@ fn refine_stuck_agents(anomalies: &mut Vec<Anomaly>, agent_stats: &BTreeMap<Enti
         if !matches!(a.kind, AnomalyKind::StuckAgent) {
             return true;
         }
-        let Some(stats) = agent_stats
-            .values()
-            .find(|s| s.name == a.agent_name)
-        else {
+        let Some(stats) = agent_stats.values().find(|s| s.name == a.agent_name) else {
             return true;
         };
         // Check all idle windows that triggered the anomaly (>= 20 ticks).
@@ -2287,19 +2280,26 @@ fn main() {
         let world = sim.world();
         for (agent_id, stats) in &mut agent_stats {
             // Needs
-            let current_needs = if let Some(needs) = world.get_component_homeostatic_needs(*agent_id) {
-                let sample = NeedsSample {
-                    hunger: needs.hunger.value(),
-                    thirst: needs.thirst.value(),
-                    fatigue: needs.fatigue.value(),
-                    bladder: needs.bladder.value(),
-                    dirtiness: needs.dirtiness.value(),
+            let current_needs =
+                if let Some(needs) = world.get_component_homeostatic_needs(*agent_id) {
+                    let sample = NeedsSample {
+                        hunger: needs.hunger.value(),
+                        thirst: needs.thirst.value(),
+                        fatigue: needs.fatigue.value(),
+                        bladder: needs.bladder.value(),
+                        dirtiness: needs.dirtiness.value(),
+                    };
+                    stats.needs_samples.push(sample);
+                    sample
+                } else {
+                    NeedsSample {
+                        hunger: 0,
+                        thirst: 0,
+                        fatigue: 0,
+                        bladder: 0,
+                        dirtiness: 0,
+                    }
                 };
-                stats.needs_samples.push(sample);
-                sample
-            } else {
-                NeedsSample { hunger: 0, thirst: 0, fatigue: 0, bladder: 0, dirtiness: 0 }
-            };
 
             // Location
             if let Some(place) = world.effective_place(*agent_id) {

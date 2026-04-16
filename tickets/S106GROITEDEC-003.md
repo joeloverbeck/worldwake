@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `item_decay_system` replaces stub with decay logic
-**Deps**: S106GROITEDEC-001, S106GROITEDEC-002
+**Deps**: archive/tickets/S106GROITEDEC-001.md, archive/tickets/S106GROITEDEC-002.md
 
 ## Problem
 

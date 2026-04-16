@@ -3,7 +3,7 @@
 use crate::{
     AcquisitionExhaustionTracker, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader,
     ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockedIntentMemory, BountyTerms,
-    CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
+    CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityDecayMap, CommodityKind,
     CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
     ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
     DemandMemory, DeprivationExposure, DisposalProfile, DriveThresholds, EntityAllocator, EntityId,
@@ -125,6 +125,7 @@ pub struct World {
     components: ComponentTables,
     relations: RelationTables,
     topology: Topology,
+    commodity_decay: CommodityDecayMap,
 }
 
 impl World {
@@ -139,7 +140,17 @@ impl World {
             components: ComponentTables::default(),
             relations: RelationTables::default(),
             topology,
+            commodity_decay: CommodityDecayMap::default(),
         })
+    }
+
+    #[must_use]
+    pub const fn commodity_decay(&self) -> &CommodityDecayMap {
+        &self.commodity_decay
+    }
+
+    pub fn set_commodity_decay(&mut self, commodity_decay: CommodityDecayMap) {
+        self.commodity_decay = commodity_decay;
     }
 
     pub(crate) fn create_entity(&mut self, kind: EntityKind, tick: Tick) -> EntityId {

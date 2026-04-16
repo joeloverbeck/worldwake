@@ -76,6 +76,7 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 | `max_candidates_to_plan` | `u8` | Maximum number of top-scoring goal candidates the planner evaluates per decision cycle. (default: `2`) |
 | `max_candidates_per_expansion` | `u16` | Maximum action successors expanded per search node during plan search. (default: `default_max_candidates_per_expansion()`) |
 | `max_plan_depth` | `u8` | Maximum number of sequential actions allowed in a single plan. (default: `8`) |
+| `max_travel_candidates_per_expansion` | `Option<u16>` | Optional per-expansion cap on travel candidates kept for successor construction. `None` preserves the uncapped historical behavior. (default: `None`) |
 | `snapshot_travel_horizon` | `u8` | How many travel hops away the planner considers when building world snapshots for search. (default: `6`) |
 | `max_node_expansions` | `u16` | Hard cap on total nodes expanded during a single plan search before giving up. (default: `224`) |
 | `switch_margin` | `Permille` | Utility margin a new goal must exceed over the current goal to trigger a goal switch during execution. (default: `Permille::new_unchecked(100)`) |
@@ -170,22 +171,22 @@ Per-agent physiology parameters that drive metabolism and recovery.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `hunger_rate` | `Permille` | Hunger increase per tick during normal activity. |
-| `thirst_rate` | `Permille` | Thirst increase per tick during normal activity. |
-| `fatigue_rate` | `Permille` | Fatigue increase per tick during normal activity. |
-| `bladder_rate` | `Permille` | Bladder pressure increase per tick during normal activity. |
-| `dirtiness_rate` | `Permille` | Dirtiness increase per tick during normal activity. |
-| `rest_efficiency` | `Permille` | Fatigue decrease per tick while resting or sleeping. |
-| `starvation_tolerance_ticks` | `NonZeroU32` | Ticks at critical hunger before starvation consequences begin. |
-| `dehydration_tolerance_ticks` | `NonZeroU32` | Ticks at critical thirst before dehydration consequences begin. |
-| `exhaustion_collapse_ticks` | `NonZeroU32` | Ticks at critical fatigue before the agent collapses. |
-| `bladder_accident_tolerance_ticks` | `NonZeroU32` | Ticks at critical bladder pressure before an accident occurs. |
-| `toilet_ticks` | `NonZeroU32` | Duration in ticks to complete a toilet action. |
-| `wash_ticks` | `NonZeroU32` | Duration in ticks to complete a washing action. |
-| `travel_fatigue_multiplier` | `Permille` | Multiplier applied to fatigue rate while traveling. |
-| `travel_thirst_multiplier` | `Permille` | Multiplier applied to thirst rate while traveling. |
-| `travel_bladder_multiplier` | `Permille` | Multiplier applied to bladder rate while traveling. |
-| `wilderness_relief_dirtiness_penalty` | `Permille` | Additional dirtiness incurred when relieving oneself in the wilderness rather than at a proper facility. |
+| `hunger_rate` | `Permille` | Hunger increase per tick during normal activity. (default: `pm(2)`) |
+| `thirst_rate` | `Permille` | Thirst increase per tick during normal activity. (default: `pm(3)`) |
+| `fatigue_rate` | `Permille` | Fatigue increase per tick during normal activity. (default: `pm(2)`) |
+| `bladder_rate` | `Permille` | Bladder pressure increase per tick during normal activity. (default: `pm(4)`) |
+| `dirtiness_rate` | `Permille` | Dirtiness increase per tick during normal activity. (default: `pm(1)`) |
+| `rest_efficiency` | `Permille` | Fatigue decrease per tick while resting or sleeping. (default: `pm(20)`) |
+| `starvation_tolerance_ticks` | `NonZeroU32` | Ticks at critical hunger before starvation consequences begin. (default: `nz(480)`) |
+| `dehydration_tolerance_ticks` | `NonZeroU32` | Ticks at critical thirst before dehydration consequences begin. (default: `nz(240)`) |
+| `exhaustion_collapse_ticks` | `NonZeroU32` | Ticks at critical fatigue before the agent collapses. (default: `nz(120)`) |
+| `bladder_accident_tolerance_ticks` | `NonZeroU32` | Ticks at critical bladder pressure before an accident occurs. (default: `nz(40)`) |
+| `toilet_ticks` | `NonZeroU32` | Duration in ticks to complete a toilet action. (default: `nz(8)`) |
+| `wash_ticks` | `NonZeroU32` | Duration in ticks to complete a washing action. (default: `nz(12)`) |
+| `travel_fatigue_multiplier` | `Permille` | Multiplier applied to fatigue rate while traveling. (default: `pm(0)`) |
+| `travel_thirst_multiplier` | `Permille` | Multiplier applied to thirst rate while traveling. (default: `pm(0)`) |
+| `travel_bladder_multiplier` | `Permille` | Multiplier applied to bladder rate while traveling. (default: `pm(0)`) |
+| `wilderness_relief_dirtiness_penalty` | `Permille` | Additional dirtiness incurred when relieving oneself in the wilderness rather than at a proper facility. (default: `pm(0)`) |
 
 ---
 
@@ -224,6 +225,7 @@ Per-agent parameters controlling belief retention and observation quality.
 | `entity_activation_threshold` | `Permille` | Age threshold (in ticks) at which stale entity beliefs are pruned by activation decay. (default: `Permille::new(100).unwrap()`) |
 | `claim_confidence_threshold` | `Permille` | Minimum confidence required for an entity belief claim to be retained. (default: `Permille::new(50).unwrap()`) |
 | `observation_buffer_capacity` | `u8` | Maximum number of pending observations buffered before processing. (default: `5`) |
+| `observation_budget` | `u8` | Maximum number of co-located entities observed per tick before salience filtering truncates. (default: `default_observation_budget()`) |
 | `need_salience_boost` | `Permille` | Observation priority boost for entities relevant to the agent's current needs. (default: `Permille::new(500).unwrap()`) |
 | `need_salience_urgency_threshold` | `Permille` | Need pressure level above which the salience boost activates. (default: `Permille::new(500).unwrap()`) |
 
@@ -251,7 +253,7 @@ Per-agent experience-based route and source preference parameters.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2442`
+**Source**: `crates/worldwake-core/src/belief.rs:2450`
 
 Per-agent parameters controlling what information an agent relays and accepts.
 
@@ -504,3 +506,4 @@ Environmental visibility parameters attached to place entities.
 | `base_concealment` | `Permille` | Baseline concealment modifier for entities at this place; higher values make observation harder. |
 
 ---
+

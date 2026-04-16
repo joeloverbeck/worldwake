@@ -7,7 +7,7 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile,
+    ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile, CommodityDecayMap,
     CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile, ControlSource,
     DisposalProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
     ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
@@ -33,6 +33,8 @@ pub struct ScenarioDef {
     pub facilities: Vec<FacilityDef>,
     #[serde(default)]
     pub resource_sources: Vec<ResourceSourceDef>,
+    #[serde(default)]
+    pub commodity_decay: Option<CommodityDecayMap>,
     /// Ticks between checkpoint snapshots for event log compaction.
     /// Default: 50. Set to 0 to disable compaction.
     #[serde(default = "default_compaction_interval")]
@@ -261,6 +263,7 @@ mod tests {
         assert!(def.items.is_empty());
         assert!(def.facilities.is_empty());
         assert!(def.resource_sources.is_empty());
+        assert_eq!(def.commodity_decay, None);
     }
 
     #[test]
@@ -534,6 +537,50 @@ mod tests {
         assert_eq!(def.facilities[0].workstation, WorkstationTag::Forge);
         assert_eq!(def.resource_sources.len(), 1);
         assert_eq!(def.resource_sources[0].capacity, Quantity(20));
+    }
+
+    #[test]
+    fn test_scenario_def_commodity_decay_omitted_field_stays_none() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+
+        assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_commodity_decay_deserializes_when_present() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+            ],
+            commodity_decay: {
+                Waste: 200,
+                Apple: 720,
+            },
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+
+        assert_eq!(
+            def.commodity_decay,
+            Some(CommodityDecayMap::from([
+                (CommodityKind::Apple, NonZeroU32::new(720).unwrap()),
+                (CommodityKind::Waste, NonZeroU32::new(200).unwrap()),
+            ]))
+        );
     }
 
     #[test]

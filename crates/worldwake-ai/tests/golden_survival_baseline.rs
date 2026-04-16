@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use golden_harness::*;
 use worldwake_ai::{CommodityPurpose, DecisionOutcome, PlanSearchOutcome};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
-use worldwake_core::{AgentBeliefStore, CommodityKind, EntityId, GoalKind, HomeostaticNeeds, Tick, WorkstationTag};
+use worldwake_core::{
+    AgentBeliefStore, CommodityKind, EntityId, GoalKind, HomeostaticNeeds, Tick, WorkstationTag,
+};
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
@@ -106,8 +108,7 @@ fn update_need_run(current: &mut u32, max: &mut u32, above_threshold: bool) {
 }
 
 fn scenario_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scenarios/survival-baseline.ron")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/survival-baseline.ron")
 }
 
 fn load_survival_baseline_harness() -> (GoldenHarness, ScenarioDef) {
@@ -223,7 +224,9 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
             } else {
                 if start.is_none() {
                     *start = Some(tick_num);
-                    let max_n = needs.hunger.value()
+                    let max_n = needs
+                        .hunger
+                        .value()
                         .max(needs.thirst.value())
                         .max(needs.fatigue.value())
                         .max(needs.bladder.value())
