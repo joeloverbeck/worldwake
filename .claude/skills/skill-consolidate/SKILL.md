@@ -4,7 +4,7 @@ description: "Consolidates a skill's SKILL.md by removing redundancies, regroupi
 user-invocable: true
 arguments:
   - name: skill-path
-    description: "Path to skill directory (e.g., .codex/skills/implement-ticket or .claude/skills/reassess-spec)"
+    description: "Path to a skill directory (targets its SKILL.md) or a direct path to a markdown file under references/ (e.g., .codex/skills/implement-ticket or .codex/skills/implement-ticket/references/closeout.md)"
     required: true
 ---
 
@@ -21,7 +21,7 @@ Complements skill-audit: skill-audit reports issues and suggests additions (grow
 ```
 
 **Arguments** (required, positional):
-- `<skill-path>` — path to skill directory (e.g., `.codex/skills/implement-ticket` or `.claude/skills/reassess-spec`)
+- `<skill-path>` — path to either a skill directory (targets `<skill-path>/SKILL.md`, e.g., `.codex/skills/implement-ticket` or `.claude/skills/reassess-spec`) OR a direct path to a markdown file under `<skill-path>/references/` (e.g., `.codex/skills/implement-ticket/references/closeout.md`). Reference files are valid consolidation targets; the frontmatter-preservation guardrail is vacuous for them since reference files have no frontmatter.
 
 If the argument is missing, ask the user to provide it before proceeding.
 
@@ -37,18 +37,19 @@ Follow these 9 steps in order. Do not skip any step.
 
 ### Step 1: Read & Parse
 
-Read the target `SKILL.md` from `<skill-path>/SKILL.md`. If the file does not exist, stop and report the error.
+Resolve the target file from `<skill-path>`:
+- If `<skill-path>` ends in `.md`, treat it as a direct file target and read that file. The frontmatter-preservation guardrail is vacuous (reference files have no frontmatter); all other process steps apply normally.
+- Otherwise, treat `<skill-path>` as a skill directory and read `<skill-path>/SKILL.md`.
+- If the resolved file does not exist, stop and report the error.
 
 Parse into logical blocks:
-- **Frontmatter**: YAML metadata between `---` delimiters
+- **Frontmatter**: YAML metadata between `---` delimiters (SKILL.md targets only)
 - **Sections**: Top-level headings (`##`) and their content
 - **Subsections**: Nested headings (`###`, `####`)
 - **Instruction lists**: Bullet points, numbered lists, inline directives
 - **Guardrails**: Typically the final section with constraint bullets
 
-Count:
-- Total lines (including blank lines)
-- Total characters
+Measure baseline with `wc -lc <target-file>` (or equivalent) and record the exact line and character counts. These numbers feed the Step 9 summary verbatim; do not estimate.
 
 The "before" baseline for Step 9 metrics is the file content as read in this step, regardless of git state.
 
@@ -115,6 +116,8 @@ For each scattered decision path:
 4. **Replace scattered mentions** with brief cross-references to the unified structure. Use descriptive section references (e.g., "see Section 3, Escalation decision tree") over bare section numbers, since numbers may shift in future consolidation passes.
 5. **Record** the clarification for the diff summary
 
+**Cross-reference hygiene**: Repairing broken or obsolete cross-references (e.g., a "see Section 1" pointer to a section that no longer exists in the current file, or references to content that has moved to another file) is in-scope consolidation hygiene, not scope expansion. Log each repair in the Step 9 summary under "Cross-reference Hygiene" so the change is visible in the diff surface.
+
 ---
 
 ### Step 6: Tighten Wording
@@ -175,6 +178,9 @@ After writing, present a structured summary in the conversation:
 ### Wording Tightened
 - <N> instructions shortened for conciseness (no semantic changes)
 - Examples: "<before>" → "<after>" (include 2-3 representative samples)
+
+### Cross-reference Hygiene (<count>)
+- "<before>" → "<after>" — reason (e.g., "Section 1 no longer exists in this file; target now lives in SKILL.md Step 1")
 
 ### Observations (if any)
 [Gaps noticed during consolidation that were not filled (per No Scope Expansion guardrail).]

@@ -58,7 +58,7 @@ Follow these 10 steps in order. Do not skip any step.
 
 Exit with "Nothing to rebalance — tree is already well-balanced" if ALL of the following hold:
 - `SKILL.md` is ≤ 80 lines.
-- Every reference is ≤ 150 lines.
+- Every reference is ≤ 150 lines (or ≤ 165 lines when the file covers one coherent topic and further splitting would create stubs or fracture tightly-related guidance — see Step 3 borderline tolerance).
 - No reference covers ≥ 2 clearly distinct sub-topics (spot-check via H2/H3 heading diversity).
 
 Otherwise, proceed.
@@ -72,6 +72,8 @@ Classify each file in the tree:
 - **Overloaded reference**: > 150 lines of real content, OR covers 2+ distinct sub-topics identifiable by heading groups / workflow phases / orthogonal decision domains.
 - **Underloaded reference**: < 20 lines of real content. Candidate for merge into another reference, not a split source.
 - **SKILL.md re-bloat zones**: any workflow step containing > ~10 lines of dense directive content beyond framing + load instruction. Typical signs: embedded decision matrices, classification tables, long "when X, do Y" lists, accumulated audit-driven edge-case guidance.
+
+**Borderline tolerance**: A file up to ~165 lines (≤ 10% over 150) that covers one coherent topic does NOT count as overloaded if further splitting would produce stubs or fracture tightly-related guidance. Classify it as acceptable and record the decision in Step 10 Observations so subsequent audits see it was a deliberate choice — this preserves idempotency when the next invocation reaches Step 2.
 
 Record each flagged file/section with its classification. This list feeds Step 4.
 
@@ -91,6 +93,8 @@ Propose a split when **both** hold:
   - Internal "when X, ..." / "when Y, ..." blocks where X and Y are orthogonal concerns (not variants of the same concern).
 
 Propose kebab-case filenames derived from each sub-topic's subject matter (same convention as `skill-extract-references`).
+
+**Categorizing ambiguous sections**: When a section could plausibly sit in multiple destination files, assign it to the destination most likely to be loaded together with related content — i.e., the file a future caller would load first for that ticket/task type. Avoid duplicating across destinations unless the section is genuinely dual-purpose; when dual-purpose, prefer a cross-reference over duplication.
 
 **Do NOT split when**:
 - File is long but covers one coherent topic (length alone is insufficient).
@@ -130,6 +134,8 @@ When a single file qualifies for multiple operations, apply in this order:
 3. **Move last** — redistribute across the now-stable set of files.
 
 This ordering prevents thrash (e.g., splitting a reference before re-extracting new content into it would immediately require another rebalance).
+
+**Destination-aware re-extraction shortcut**: When a planned re-extraction target is itself slated for splitting, plan the split first (naming the final destination files during Step 4a) and route re-extracted content directly to those destinations during Step 6. The priority order above still holds conceptually — re-extraction decisions come before split decisions in the plan — but when split destinations can be named up front, skip the temporary append-then-redistribute intermediate write. This avoids churn and makes Step 10 spot-checks easier to follow. If destination assignment is ambiguous at plan time, fall back to the default append-then-split sequence.
 
 ---
 

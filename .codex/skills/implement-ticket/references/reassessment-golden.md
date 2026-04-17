@@ -1,0 +1,35 @@
+# Reassessment Checks — Golden E2E
+
+Golden E2E, observer-report, and scenario-motivated validation for Step 2.
+
+## Golden-specific reassessment
+
+- Claimed missing scenarios are not already covered by current `golden_*` suites or generated golden inventory/docs.
+- Identify the strongest existing owning `golden_*` suite before accepting the ticket's proposed file list; reuse existing ownership surfaces instead of creating new golden files.
+- When existing goldens appear to cover the domain, verify whether they exercise the authored/runtime path under ticket ownership or bypass it through direct harness/world construction.
+- When a failing golden motivates the ticket, restate the owned invariant before editing and decide whether the contradiction is most honestly proved at the golden layer or at a lower production layer. Prefer the strongest lower-layer proof for root cause.
+- When the same scenario currently exists twice in one golden file as an active stale expectation plus an ignored optimistic "after fix" duplicate, treat that as a transitional ownership smell rather than two independent proof obligations. First determine the live contract on the current branch, then collapse the pair to one honest active regression surface for that scenario instead of carrying both copies forward.
+- When same-domain verification fails, first check the referenced spec and any active sibling tickets for an explicit owner of that fallout before touching tests or broadening scope.
+- When a shared concept has both upstream producers and downstream consumers, compare their semantics directly. If the consumer already supports a broader shape, correct the ticket to own that parity fix.
+- If a claimed divergence is proved at lower layers but not stably isolatable as a golden without scenario-distorting scaffolding, correct the ticket to the strongest honest golden contract.
+- For golden communication or information-path tickets, verify separately what actually degrades: provenance, confidence, communication class, eligibility, ranking, or another distinct mechanism.
+- When a ticket proposes extending an existing trace/debug carrier, verify the exact live coverage of that carrier before coding.
+- Scan the referenced spec for explicitly anticipated golden fallout, timing-sensitive scenarios, or downstream validation tickets. Use that mapping when triaging new failures.
+- When the ticket adds candidate generation or goal model integration for a domain that already has golden coverage, run the existing golden suites for that domain as part of reassessment, before implementation begins. This catches cross-goal interference early.
+- When a golden ticket proposes specific GoalKind pairs, verify that each goal's declared ops (in `goal_dispatch_decl.rs`) include the required PlannerOpKind. Correct the ticket's domain if not.
+- When the ticket claims a specific scenario ID is free, verify by scanning all `golden_*.rs` files for that ID. Update the ticket if taken.
+- For planner continuity or same-goal branch-stability bugs, triage in this order: is the committed branch absent from candidate generation, removed by a snapshot/read filter, reordered behind interleaved goals, or rejected later by search/start validation? Fix the earliest concrete layer.
+- When canonical runtime registries change, sweep golden/conformance helper builders that mirror those registries. Keep helper registries aligned with runtime unless the divergence is explicitly owned and documented.
+
+## Observer-report and scenario-motivated tickets
+
+When a ticket is motivated by an observer report, golden failure, or named scenario condition, verify the exact motivating substrate before distilling the harness or fixture. Confirm the scenario file, named places/entities, travel graph, and the reported failure location/path still match the ticket's execution narrative, then record what is preserved versus intentionally omitted in the distilled setup. Do not substitute a nearby prototype-world approximation when the ticket's claimed proof depends on a specific scenario/location condition.
+If a supposedly exact static reconstruction still yields a simpler lawful result than the observer-reported failure after you have matched the named scenario substrate, belief surface, and relevant actor profiles/components, stop escalating the hand-built approximation. Rebuild the live scenario substrate at the cited seed, advance to the observer tick, and prove the planner/search contract on that live tick state instead of continuing to guess at hidden accumulated history.
+When a scenario-only or observer-validated ticket uses an observer report as its main proof surface, compare observer anomaly heuristics and thresholds against the ticket's actual acceptance criteria before treating every flagged anomaly as a blocker. If the observer reports heuristic noise (for example redundant-perception counts or a stricter idle threshold) while the ticket's named survival or world-state contract is already satisfied, record that distinction explicitly during reassessment instead of silently overfitting the scenario to clear every heuristic.
+
+## Golden coverage and bounded accumulation
+
+For golden E2E tickets, search existing `golden_*.rs` suites and the generated scenario docs for the same invariant, regression, or named scenario before accepting a new dedicated golden file or scenario family as the honest scope. If the same-layer contract is already owned elsewhere, narrow the current ticket to the remaining uncovered delta and cite the existing owning suite(s) explicitly instead of duplicating coverage.
+When a golden ticket asserts a bounded accumulated population, repeated reappearance, or other dampened-count contract, identify the real live dampener before writing assertions: candidate/admission suppression, authoritative validation, lifecycle cadence/expiry, or another concrete mechanism. Record that source in reassessment and keep the bound math aligned with that mechanism rather than assuming a duplicate-suppression rule that may not exist.
+When a golden or integration ticket asks for commodity conservation across archived entities, verify the live query surface before choosing the assertion shape. If archived entities are no longer queryable by commodity on the authoritative world boundary, derive the expected live total from the strongest lawful creation/archive counters available (for example event tags, record entries, or another explicit archive carrier) and then use `verify_live_lot_conservation` / `verify_authoritative_conservation` against that expected live total instead of pretending the world can directly sum archived commodity totals.
+When a golden ticket adds or renumbers source-declared `// Scenario ...` blocks, verify that the chosen scenario identifiers are globally unique across the repository's golden suites, not just unique within the edited file. If the inventory/doc generator reports a duplicate scenario identifier from another golden file, treat that as current-ticket fallout and renumber before closeout.

@@ -56,13 +56,15 @@ For reassessment-only rejection:
 
 ### Before finishing
 
-- Re-check `What to Change`, `Files to Touch`, `Verification Layers`, and `Test Plan` against the actual landed diff. Remove reassessment-only fallout that did not become real edits.
+- Re-check `What to Change`, `Files to Touch`, `Verification Layers`, `Test Plan`, and `Out of Scope` against the actual landed diff. Remove reassessment-only fallout that did not become real edits. When drift changed the owned surface, update recorded scope, touched files/symbols, deviations, and stale exclusions so the ticket matches what really landed.
 - If reassessment or verification changed the semantic contract, also re-check `Problem`, `Architecture Check`, and `Acceptance Criteria` so the ticket's narrative matches the landed behavior.
 - Re-check inline code snippets, example signatures, or API sketches against the final landed shape.
 - Re-check `Status`, `## Outcome`, and verification/command notes -- they should reflect commands that actually passed, not the pre-reassessment plan.
 - If formatting was required in a dirty worktree, check for formatter spillover and call it out explicitly.
-- Report tracked-vs-untracked status for the active ticket, any follow-up tickets created during the session, and any linked spec or planning drafts modified during reassessment/implementation (see Section 1 for tracking awareness).
-- After golden scenario metadata changes, refresh the generated golden inventory/docs (see verification.md, Golden test verification). Inspect the generated diff footprint and call out whether broader generated-file churn is expected inventory/index fallout or unexpected.
+- Report tracked-vs-untracked status for the active ticket, any follow-up tickets created during the session, and any linked spec or planning drafts modified during reassessment/implementation (see SKILL.md Step 1 for tracking awareness).
+- After golden scenario metadata changes, refresh the generated golden inventory/docs (see verification.md, Golden test verification). Inspect the generated diff footprint and call out whether broader generated-file churn is expected inventory/index fallout or unexpected. When a new `golden_*.rs` file introduces new scenario blocks, check whether the generated fallout includes a newly created `docs/generated/golden-scenario-details/<topic>.md` page alongside inventory/index/matrix files, and reflect that new file in closeout scope and outcome.
+- If several cited golden scenarios were lawful but only a subset truthfully exposed the new trace contract, narrow the ticket to the surviving proof surface(s) and record the rejected candidates as reassessment deviations instead of forcing parallel assertions onto non-emitting scenarios.
+- If the verification command that motivated the ticket remained the same but the final blocking culprit shifted during implementation, make sure the ticket's recorded reassessment/outcome explains that progression rather than implying the original blocker remained the only live cause throughout.
 
 ### Minimal active-ticket close-out shape
 

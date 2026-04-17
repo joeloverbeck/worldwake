@@ -70,3 +70,55 @@ For migrations moving config/profile state from driver-global to per-entity comp
 3. Update runtime/save-load mirrors and serialization helpers
 4. Add harness helpers for per-entity profile injection when repeated setup would sprawl
 5. Rerun both tests and CI-matching clippy after the API reshape
+
+## Resolving focused test IDs
+
+Before running focused Rust tests, resolve the exact live test IDs first (for example via `cargo test -- --list`) so the first selector is already module-qualified or exact when needed, rather than a loose substring that may compile a target while executing zero tests. A focused command that builds successfully but runs zero intended tests does not count as proof and must be corrected before continuing.
+
+Before running a ticket-named focused command, verify that the selector actually proves the owned surface. If a substring filter would compile a target while running zero tests, or would run a broader unrelated surface than the ticket claims, correct the command immediately and update the ticket's command list during reassessment/closeout.
+For Rust unit-test modules, module-name selectors like `cargo test -p <crate> <module_name>` can still fan out across unrelated bins, integration targets, or zero-test harnesses. After a `-- --list` check, prefer the narrowest truthful exact or module-qualified selector the current test binary layout supports. In multi-target Rust crates, when the proof lives in the library unit-test binary, prefer `cargo test -p <crate> --lib <module_path> -- --exact` over trying the crate-root selector form first.
+
+## Cargo lock contention
+
+For Rust verification commands that share Cargo build/artifact directories (for example `cargo test -p <crate>`, focused `cargo test` selectors, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`), prefer running them sequentially rather than in parallel. Parallelize cheap reads/searches and non-Cargo focused checks freely, but avoid turning verification into cargo lock contention.
+
+## Omitted-field serde proof fixtures
+
+For omitted-field serde proofs on complex structs, prefer a format-agnostic fixture when hand-written text would be brittle: serialize a full value, remove only the target field from the serialized text, then deserialize and assert the defaulted field value.
+
+## Golden inventory refresh fallout
+
+When the ticket adds, renames, or materially re-scopes a `golden_*.rs` file or scenario block, run the repository's golden inventory/doc refresh as part of broadened verification and treat the generated docs as expected fallout to review and keep aligned with the landed scenario metadata. That generated fallout can extend beyond the scenario-details page to global inventory totals, coverage tables, and index entries; record the wider generated surface honestly in the ticket when it lands. In a dirty worktree, generated inventory docs can also absorb pre-existing local scenario metadata outside the current ticket, so quickly inspect whether the widened generated diff is current-ticket fallout, pre-existing local state, or a mix, and phrase closeout accordingly. Also expect those generators to compile feature-gated or list-only test targets outside the normal workspace proof surface; if the generator is part of the ticket's owned verification contract, helper or fixture failures exposed only by that refresh still count as lawful current-ticket fallout and should be fixed before closeout.
+When `python3 scripts/golden_inventory.py --write --check-docs` is part of the owned verification contract, also expect validation fallout outside the generated markdown files themselves: orphaned `// Scenario ...` blocks that no longer own any `#[test]` function, and stale manual ``golden_*`` references in checked docs such as `docs/golden-e2e-testing.md`, both count as current-ticket fallout and should be fixed before closeout.
+
+## Repo-wide live-contract fallout
+
+If reassessment revealed that additive substrate from an earlier ticket already landed, include repository-wide live-contract fallout in the broadened verification sweep, not just the ticket's newly edited file set. Typical fallout includes stale `ALL` lists, exhaustiveness fixtures, representative-goal inventories, explicit length assertions that still reflect the pre-addition shape, and adjacent registry/declaration surfaces such as feasibility or invalidation strategies, provenance-family mappings, and other dispatch-table contracts that must now treat the additive shape as live behavior rather than inert scaffolding.
+For component-registration tickets specifically, expect broadened fallout to include hardcoded component or manifest inventories, `ComponentValue`/sample-builder coverage, and exact bootstrap delta assertions in addition to compile-time macro expansion sites.
+
+For additive planner-root tickets, also sweep helpers keyed by shared planner transitions or op-family semantics rather than only declaration tables and enum matches. Typical fallout includes planner-only synthetic candidate builders, search helpers that expand candidates from shared `PlannerTransitionKind` behavior, and exhaustive `PlannerOpKind` matches in non-obvious support modules such as observation/runtime reconciliation, blocker classification, or related-place/related-entity helpers.
+
+## Behavior-expanding and scenario-isolation fallout
+
+For behavior-expanding tickets, expect broadened golden fallout to include stale scenario isolation, not just compile or enum-shape fallout. If an existing golden now reaches a newly lawful branch, tighten the scenario so it still proves its intended invariant using explicit local belief seeding, profile/perception overrides, or other lawful setup constraints rather than silently preserving the old behavior. If the scenario's motivating invariant is still proved at an earlier or more stable boundary than the stale end-to-end narrative, narrow the golden back to that stable contract instead of overfitting the test to preserve the old execution story.
+When a golden or replay fixture is meant to put an item on the ground, release carried stock, or otherwise change local control semantics, re-check authoritative owner, possessor, container, and ground-location state together before treating a changed golden outcome as a production regression. Old passing behavior can be masking a faulty fixture when only one of those coupled relations was updated.
+
+## Belief-retention and epistemic-scope fallout
+
+For belief-retention, perception-horizon, and other epistemic-scope tickets, expect broadened fallout to include tests that assert disappearance timing, stale-belief pruning, or planner candidate loss under the old window. When those expectations change because the ticket lawfully preserves beliefs longer, restate the live epistemic contract in the test and keep the proof at the strongest honest boundary rather than treating every AI-side expectation shift as a production regression. Also recheck cross-agent transfer and relay assertions (`tell`, `ask`, witness/report propagation, replay or integration harnesses) for presentation-tick semantics: a lawful migration may refresh the receiver's presentation history while preserving provenance and content, so stale "original observation tick survives transfer" expectations should be updated as verification fallout rather than misdiagnosed as regressions.
+For belief-retention, arrival-reinforcement, or similar tickets that mutate an existing belief record, prove during reassessment whether a first-visit or no-record case is lawful on the live path. If it is, decide explicitly whether the ticket must seed the belief before applying the mutation rather than assuming an existing record is always present.
+
+## Planner/search fallback and retained-successor fixtures
+
+When a new fallback contract becomes lawful, re-check nearby planner/search tests and traces that previously asserted failure, suppression, or exhaustion. The honest post-change contract may now be `Found(ProgressBarrier)` or another bounded fallback plan rather than `not found`, and those expectation shifts should be treated as intentional verification fallout, not as automatic regressions.
+When a planner/search post-pass helper mutates successor state after construction, and the live retained-successor path lawfully filters or terminalizes the specific branch shape you need to inspect, it is acceptable to prove that helper with a directly constructed lawful successor from the same production builder instead of overfitting the fixture to keep that branch retained.
+
+## Broadened verification loop and reruns
+
+When broadened verification fails, treat each failure as current-ticket fallout and continue the fix-and-rerun loop until the broadened target passes or you hit a real 1-3-1 blocker. Do not stop after the first full-suite failure if the next step is a straightforward fallout fix within the ticket's live scope.
+When a planner/candidate-generation fix changes self-care or other high-priority AI behavior, same-domain fallout may surface one layer later as active-action interrupt/replan churn rather than another candidate-emission bug; treat that execution-layer loop as current-ticket fallout when it is still part of restoring the owned AI contract.
+After each fallout fix, rerun the same broadened verification target that exposed the failure before treating the branch as green. Do not rely on focused follow-up checks alone when the broader package or suite has not yet been rerun clean.
+If a broadened verification command was started but its final exit status can no longer be recovered from the active tooling session, treat that proof as incomplete and rerun the same broadened command before closeout rather than assuming it passed from partial streamed output.
+When an all-target compile-only pass or broadened verification reports the same underlying file through multiple targets (for example a shared golden harness compiled both as a test and via a bin test target), treat that as expected target duplication rather than separate ownership. Fix the shared source once, then rerun the same broad command.
+If the final post-verification edit is isolated to a bin, integration test, or other target surfaced only by broadened lint/CI fallout, rerun the narrowest honest proof for that exact target (for example `cargo test -p <crate> --bin <name> --no-run`) before closeout so the last change is not left unproved.
+If diagnosis required temporary tracing, debug prints, probe assertions, or similar instrumentation, remove them before broadened verification and before updating the ticket's final outcome/verification text.

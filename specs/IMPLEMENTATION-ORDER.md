@@ -269,6 +269,32 @@ S107 ✅ archived
 **Completed wave**:
 - **S107**: ✅ COMPLETED — archived at [archive/specs/S107-proactive-diversification.md](/home/joeloverbeck/projects/worldwake/archive/specs/S107-proactive-diversification.md). Landed `DiversificationProfile`, passive place-visit tracking in `AgentBeliefStore`, proactive `ExploreLocation` emission/ranking with need-slack and cooldown gating, authored scenario support, and `golden_exploration.rs` coverage for proactive discovery, need-pressure veto, and cooldown spacing.
 
+### Adjunct Wave: Survival Baseline Under Contention
+
+Derived from `/brainstorm` session (2026-04-17, `docs/plans/2026-04-17-survival-contested-scenario-design.md`) that triaged whether the two existing survival scenarios (`survival-baseline.ron`, `survival-scattered.ron`) cover the baseline appropriately before layering gameplay-feature scenarios. Finding: neither scenario exercises resource contention, dynamic depletion, or realistic rivalry among more than 3 agents; closing that gap before Phase 7 consequence-carrier feature work preserves the "prove baseline before features" discipline that `/brainstorm` context notes was violated prior to the S104 recovery.
+
+Constraint: the new scenario uses only the profile set already exercised by the baseline / scattered scenarios — no `DiversificationProfile` or other opt-in feature profiles — so the proof is genuinely about baseline survival under contention, not about whether a specific feature works.
+
+- **survival-contested** (scenario + goldens): ✅ LANDED — `scenarios/survival-contested.ron` (seed 306006, 1440 ticks, 4 AI agents, 8 places with chokepoint hub, two capacity-4 wells and a single co-located wash basin). `golden_survival_contested.rs` Scenarios 158–163 prove: all 4 agents alive; both water sources drawn during the run; both camp sides reach food under chokepoint pressure; all 5 self-care families committed; no non-Wash survival-goal budget exhaustion; no stuck idle windows ≥ 40 ticks. `MAX_CRITICAL_RUN_TICKS` landed at 400 (matching scattered — see the golden's comment for the wash-starvation dynamic under contention, which is a legitimate observation for gameplay-feature specs to consider).
+
+### Adjunct Wave: Contested Scenario Remediation
+
+Derived from `/scenario-analysis` of `survival-contested.ron` (seed 306006, 1440 ticks) and the follow-up `/brainstorm` triage (2026-04-17). The scenario surfaced a structural wash-starvation equilibrium: all 4 agents had dirtiness >= 750 permille for 703–901 ticks because dirtiness_weight (625) loses motive scoring to hunger_weight (700–750) and the existing `MAX_CRITICAL_RUN_TICKS=400` golden tolerance knowingly encodes this deferred architectural concern. The brainstorm triage also identified four detection gaps in the observer anomaly suite (geographic convergence, maintenance-cycle starvation, recipe monoculture, sub-threshold acute spikes) and one precision gap in the `STUCK_AGENT` detector. Solutions split between one engine change (drive escalation) and two observer-only refinements.
+
+```text
+S116 (engine, independent)
+S117 (observer, independent)
+S118 (observer, independent)
+```
+
+**Wave** (parallel, no deps among S116/S117/S118):
+
+- **S116**: Drive Escalation Under Sustained Critical Need — per-agent `DriveEscalationProfile` + `DriveEscalationTracker`, `drive_escalation_system` SystemFn between metabolism and planning, motive-score multiplier in AI goal ranking, new `EscalationBegan`/`EscalationEnded` event tags. Regression goldens plus a retrofit tightening `golden_survival_contested.rs::MAX_CRITICAL_RUN_TICKS` from 400 to 200.
+- **S117**: Convergence and Maintenance-Cycle Observer Smells — four new mechanical anomaly kinds in the observer binary (`GEOGRAPHIC_CONVERGENCE`, `MAINTENANCE_STARVATION`, `RECIPE_MONOCULTURE`, `ACUTE_NEED_SPIKE`), plus supplementary Section 2 maintenance-rate and recipe-usage tables. Observer-only; no simulation behavior change.
+- **S118**: Stuck-Agent Detector Precision — Active-Frame Exclusion — observer-only fix that excludes tick windows overlapping an open ActionStarted/ActionCommitted frame from the `STUCK_AGENT` idle counter. Eliminates the 26-tick wash+travel false positive observed on Agent C.
+
+Follow-up tickets (not specs): scenario weight rebalance for `survival-contested.ron`, belief-retention investigation for landmark facilities under memory pressure (pending mid-run belief snapshot capability).
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
@@ -283,3 +309,89 @@ S107 ✅ archived
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 - [ ] Golden E2E coverage for each new spec's core behavior
+
+---
+
+## Phase 8: Belief-First Continual Planning Foundation
+
+Derived from external AI architecture assessment (`brainstorming/worldwake_ai_architecture_review.md`, regenerated 2026-04-17) validated against the actual codebase and `docs/FOUNDATIONS.md`. The assessment post-dates all completed specs through S107. Of ~40+ proposals across 7 sections, 6 accepted and 4 scoped down into 8 specs (6 in Phase 8, 2 deferred to Phase 9). The remaining proposals were rejected as already addressed (unified payload-override validator, emitter-based generation, `shortest_travel_ticks` accessor fence, `SceneEvidence` carriers, `ContentionQueue`/`ContentionGrant`, `ArtifactState`, `ExplorationProfile`/`DiversificationProfile`), as overlapping with drafted Phase 7 specs S60–S66 (evidence extension, route condition state, institution throughput, commitment aftermath), or as YAGNI without concrete scenarios.
+
+Phase 8 runs in parallel with the remaining Phase 7 feature work — Phase 8 touches the AI planner substrate and the event-log schema, while Phase 7 adds new ECS consequence carriers. No direct dependency in either direction.
+
+The travel-fence epistemic regression audit (originally PR-1.11 in the assessment) is folded into S111 as a ticket, not a standalone spec.
+
+### Dependency Graph
+
+```text
+S108 (independent)              S111 (independent)
+   │
+   └── S109 (soft dep on S108)
+         │
+         └── S110 (soft dep on S109)
+                    │
+                    ├── S112 (soft dep on S109)
+                    └── S113 (soft dep on S109)
+```
+
+### Active Execution Steps
+
+**Wave 1** (parallel, no hard deps):
+- **S108**: Per-Action Binding Strictness — `BindingStrictness` enum per `ActionDef`; revalidation/dispatch/affordance-enum all consult the same strictness class; `ExactIdentity` refuses BestEffort substitution for socially-consequential actions.
+- **S111**: Scenario Profile Homogeneity Lints — scenario-load-time lints for profile homogeneity, proactive-exploration-without-curiosity, archetype inheritance; includes the `PlanningSnapshot` accessor-only architecture regression test (PR-1.11 travel-fence audit).
+
+**Wave 2** (after Wave 1):
+- **S109**: Typed Discrepancy Taxonomy and BlockedIntentMemory Split — replace `BlockingFact::Unknown`/`AssumptionFailed` with `Discrepancy` enum; split `BlockedIntentMemory` into `DiscrepancyMemory`/`BlockerMemory`/`RepairMemory`/`LearnedOpportunityMemory`; per-class TTL.
+  - soft depends on S108 for `MatchOutcome::ExactIdentityRequired` → `Discrepancy::NoLegalBinding`
+- **S110**: Authoritative Decision History Events — new `EventTag` variants (`GoalOffered`, `GoalCommitted`, `PlanAdopted`, `PlanInvalidated`, `ExpectationMismatch`, `RepairApplied`, `BlockerRecorded`, `ReplanTriggered`); bounded rejected-alternative summaries.
+  - soft depends on S109 for `Discrepancy` payload on `BlockerRecorded`
+
+**Wave 3** (after Wave 2):
+- **S112**: Portfolio Planning with Feasibility Probes — replace flat top-N selection with 4-slot portfolio (survival / commitment / economic / information) gated by cheap feasibility probes; low-confidence agents activate the information slot.
+  - soft depends on S109 for probe reading of discrepancy/blocker memories
+- **S113**: Planner-Facing Belief Envelope — `BeliefValue<T>` / `BeliefSet<T>` wrappers on target-presence / believed-location / believed-stock queries; surface confidence, freshness, status (Certain/Probable/Stale/Disputed/Contradicted), and alternatives.
+  - soft depends on S109 for `BeliefStatus::Contradicted` alignment
+
+### Phase 8 Gate
+
+- [ ] All 6 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [ ] Wave 1 specs implemented and passing golden E2E tests
+- [ ] Wave 2 specs implemented and passing golden E2E tests
+- [ ] Wave 3 specs implemented and passing golden E2E tests
+- [ ] Every `ActionDef` registration has explicit `BindingStrictness` (compile-time coverage)
+- [ ] No remaining `BlockingFact::Unknown` or `AssumptionFailed` variants (migrated to typed `Discrepancy`)
+- [ ] Authoritative decision history events surfaced in observer "Decision History" section for `survival-baseline.ron` and `survival-contested.ron`
+- [ ] Portfolio planning golden (infeasible top-N + feasible lower slot) passes
+- [ ] Belief envelope golden (stale belief surfaces via `status == Stale`) passes
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [ ] `cargo test --workspace` passing
+
+---
+
+## Phase 9: Belief-First Continual Planning Structural
+
+Follow-on to Phase 8. Deferred from the Phase 8 scope because these specs depend on the Phase 8 substrate (typed discrepancies, decision-history events, belief envelope) and are significantly larger refactors. Phase 9 specs should be reassessed just before implementation, since the architectural surface may drift after Phase 7 (S60–S66) and Phase 8 land.
+
+### Dependency Graph
+
+```text
+S114 (hard deps on S109, S110, S113)
+  │
+  └── S115 (hard deps on S110, S112, S114)
+```
+
+### Active Execution Steps
+
+**Wave 1**:
+- **S114**: Plan Step Guards and Expectation Monitoring — annotate `PlannedStep` with `PlanGuard` (required facts, min confidence, invalidators) and `PlanExpectation` (immediate / state / informed / regression); new `expectation_monitor_system` SystemFn; guard breaches emit `ExpectationMismatch` events and typed discrepancies.
+
+**Wave 2** (after Wave 1):
+- **S115**: Agenda Manager with Goal Lifecycle — `AgendaState` with `committed`/`pending`/`suspended` entries, each with origin, freshness, revival trigger, kill condition; rename `GroundedGoal` → `GoalOffer`, `RankedGoal` → `AgendaEntry`; new `agenda_tick_system` SystemFn; margin-based commit (S74) reads the agenda manager.
+
+### Phase 9 Gate
+
+- [ ] Both specs reassessed post-Phase-7/8 and ticket-decomposed
+- [ ] S114 implemented: guard breaches short-circuit revalidation before affordance matching; `ExpectationMismatch` events appear in event log
+- [ ] S115 implemented: committed goals persist across ticks deterministically; pending/suspended surfaced in observer output
+- [ ] Deterministic replay of scenarios produces identical agenda state transitions
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [ ] `cargo test --workspace` passing

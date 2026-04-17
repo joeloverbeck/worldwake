@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 78
-- Contributing golden test files: 13
-- Associated tests: 92
+- Scenario blocks: 84
+- Contributing golden test files: 14
+- Associated tests: 98
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -887,6 +887,96 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: Run the authored survival baseline for 1440 ticks and track idle
 
 **Proves**: no agent is idle for 20+ consecutive ticks while any need exceeds
+
+**Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
+
+### Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
+
+- Source: `golden_survival_contested.rs:421`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: North Camp, South Camp, Forest Glade, Central Crossing, Stone Well, Spring Basin, East Orchard, West Grainfield
+- Principles: 1, 6, 7, 10, 22, 31
+
+**Setup**: Load the authored `survival-contested.ron` scenario and run the real
+
+**Proves**: all four agents remain alive and none of the five tracked needs
+
+**Cross-system chain**: aligned starting needs -> concurrent demand at low-capacity wells ->
+
+### Scenario 159: Contested Survival Exercises All Five Self-Care Action Families
+
+- Source: `golden_survival_contested.rs:488`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: all 8 contested-scenario places
+- Principles: 3, 6, 7, 31
+
+**Setup**: Run the authored survival contested scenario for 1440 ticks and
+
+**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions
+
+**Cross-system chain**: contested resources + chokepoint topology -> agents explore, queue,
+
+### Scenario 160: Contested Survival Draws From Both Water Sources Across The Run
+
+- Source: `golden_survival_contested.rs:517`
+- Systems: AI, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
+- ActionDomains: Needs, Travel, Production
+- Places: Stone Well, Spring Basin
+- Principles: 1, 6, 7, 10, 31
+
+**Setup**: Run the authored survival contested scenario and record the place
+
+**Proves**: at least one agent draws from Stone Well AND at least one agent
+
+**Cross-system chain**: aligned demand -> capacity saturation at nearest well -> belief
+
+### Scenario 161: Contested Survival Has Both Camp Sides Reach A Food Source
+
+- Source: `golden_survival_contested.rs:560`
+- Systems: AI, Exploration, Perception, Travel
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Needs
+- Places: East Orchard, West Grainfield
+- Principles: 1, 6, 7, 14, 31
+
+**Setup**: Agents A and B start at North Camp; C and D start at South Camp.
+
+**Proves**: at least one North-side agent reaches a food-producing place AND
+
+**Cross-system chain**: hunger rising -> exploration drive activated -> multi-hop travel
+
+### Scenario 162: Contested Survival Avoids Budget Exhaustion On Survival Goals
+
+- Source: `golden_survival_contested.rs:596`
+- Systems: AI, Search, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
+- ActionDomains: Needs, Travel, Production
+- Places: all 8 contested-scenario places
+- Principles: 6, 14, 31
+
+**Setup**: Run the authored survival contested scenario with decision tracing
+
+**Proves**: no non-Wash survival-goal planning attempt ends in
+
+**Cross-system chain**: preserved travel-branch cap (4) + 640 planner expansions +
+
+### Scenario 163: Contested Survival Has No Stuck Idle Windows With Elevated Needs
+
+- Source: `golden_survival_contested.rs:629`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: all 8 contested-scenario places
+- Principles: 6, 7, 22, 31
+
+**Setup**: Run the authored survival contested scenario for 1440 ticks and
+
+**Proves**: no agent is idle for 40+ consecutive ticks while any need exceeds
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
 

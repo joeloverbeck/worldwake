@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 13
-- Files contributing `golden_*` tests: 13
-- Total `golden_*` tests: 92
+- Golden test files: 14
+- Files contributing `golden_*` tests: 14
+- Total `golden_*` tests: 98
 
 ## Per-File Inventory
 
@@ -24,6 +24,7 @@ Do not hand-edit it.
 | `golden_planner_pathology.rs` | 3 |
 | `golden_simulation_gaps.rs` | 5 |
 | `golden_survival_baseline.rs` | 5 |
+| `golden_survival_contested.rs` | 6 |
 | `golden_survival_scattered.rs` | 5 |
 | `golden_travel_physiology.rs` | 12 |
 
@@ -132,6 +133,15 @@ Do not hand-edit it.
 - `all_agents_survive_1440_ticks`
 - `all_agents_perform_survival_actions`
 - `explorer_discovers_food_source`
+- `no_budget_exhaustion_on_survival_goals`
+- `no_stuck_idle_windows_with_elevated_needs`
+
+### `golden_survival_contested.rs`
+
+- `all_agents_survive_1440_ticks`
+- `all_agents_perform_survival_actions`
+- `both_water_sources_are_used`
+- `both_camp_sides_reach_food`
 - `no_budget_exhaustion_on_survival_goals`
 - `no_stuck_idle_windows_with_elevated_needs`
 

@@ -32,6 +32,11 @@ Follow these 3 phases in order. Do not skip any phase.
 
 This phase combines test discovery and source tracing. They are deeply interleaved (tests reference the same types being traced) and should be dispatched as a single parallel batch of up to 3 Explore agents, not run sequentially.
 
+**Recommended agent grouping** (adapt if volume shifts):
+- **Agent A** — Stages 1–3: goal ranking, candidate generation, affordance queries (pipeline entry).
+- **Agent B** — Stage 4: strategic + tactical search internals (landmarks, frontier, heuristic, `PlanningSnapshot`).
+- **Agent C** — Stages 5–8 + test discovery: revalidation, dispatch, replanning, cognitive parameters, plus the `tests/golden_*.rs` inventory.
+
 **From golden E2E tests** (`crates/worldwake-ai/tests/`): For each test, extract planning-relevant elements:
 
 1. **Goal kinds triggered** — which `GoalKind` variants appear
@@ -55,7 +60,11 @@ For each element found, trace into source and record: concrete type names with f
 7. **Replanning** — `handle_plan_failure()` (find via grep in `failure_handling.rs` or the ai crate), replan triggers (action failure, budget exhaustion, belief contradiction), belief update on failure, how the agent re-enters the decision pipeline
 8. **Cognitive parameters** — all `CognitiveProfile` fields, all `ExecutionBudget` fields, per-agent diversity effects
 
-### Phase 2 — Live Diagnostics (optional)
+**Stage → Report Section mapping**: 1→§2, 2→§3, 3→§4, 4→§5, 5+6→§6, 7→§7, 8→§8. Stages 5 (plan revalidation) and 6 (action dispatch) both feed Section 6 of the report — do not split them into separate top-level sections.
+
+### Phase 2 — Live Diagnostics (documentation-only)
+
+This phase is always performed; only *running live tests* is optional. Document the trace infrastructure as it exists on disk — do not skip the phase.
 
 Check if diagnostic trace types exist that capture planning metrics (e.g., `PlanAttemptTrace`, `SearchExpansionSummary`, `CandidateGenerationDiagnostics`). Grep for these types and document their fields and what they capture.
 
@@ -117,9 +126,11 @@ budget exhaustion, belief contradiction). How beliefs update on failure.
 How the agent re-enters the decision pipeline. Replan limits if any.
 
 ## 8. Cognitive Parameters
-All per-agent planning parameters with their effects, organized as a table:
+All per-agent planning parameters with their **default values** and effects, organized as a table:
 - CognitiveProfile fields (max_node_expansions, landmark_extraction_depth, etc.)
 - ExecutionBudget fields (beam_width, preferred_operator_boost, etc.)
+Include each field's default value from the `impl Default` block so the
+external evaluator can reason about the out-of-the-box planner shape.
 How agent diversity (FND-22) manifests in planning behavior.
 
 ## 9. FOUNDATIONS Alignment
