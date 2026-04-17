@@ -12,12 +12,12 @@ use worldwake_core::{
     BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile, CombatProfile,
     CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ContentionGrant,
     ControlSource, DemandObservation, DisposalProfile, DiversificationProfile, DriveThresholds,
-    EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeedId,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    IntentionDispositionProfile, JusticeDispositionProfile, LastProactiveExplorationTick,
-    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
-    ObligationSatiationProfile, OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity,
-    RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
+    EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeedId, HomeostaticNeeds,
+    InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LastProactiveExplorationTick, LastSeenMemory, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
+    OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
     SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
     TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
     UtilityProfile, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
@@ -498,7 +498,11 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
 
     fn diversification_profile(&self, agent: EntityId) -> Option<DiversificationProfile> {
         (agent == self.agent)
-            .then(|| self.world.get_component_diversification_profile(agent).copied())
+            .then(|| {
+                self.world
+                    .get_component_diversification_profile(agent)
+                    .copied()
+            })
             .flatten()
     }
 

@@ -42,7 +42,10 @@ fn live_waste_count(h: &GoldenHarness) -> usize {
 fn tagged_events_through_tick(log: &EventLog, tag: EventTag, tick: Tick) -> usize {
     log.events_by_tag(tag)
         .iter()
-        .filter(|event_id| log.get(**event_id).is_some_and(|record| record.tick() <= tick))
+        .filter(|event_id| {
+            log.get(**event_id)
+                .is_some_and(|record| record.tick() <= tick)
+        })
         .count()
 }
 
@@ -88,10 +91,11 @@ fn recent_wilderness_relief_events(log: &EventLog, tick: Tick, decay_window: u64
 #[test]
 fn golden_waste_decay_reaches_steady_state() {
     let mut h = GoldenHarness::new(Seed([181; 32]));
-    h.world.set_commodity_decay(std::collections::BTreeMap::from([(
-        CommodityKind::Waste,
-        nz(200),
-    )]));
+    h.world
+        .set_commodity_decay(std::collections::BTreeMap::from([(
+            CommodityKind::Waste,
+            nz(200),
+        )]));
 
     let utility = UtilityProfile {
         bladder_weight: pm(1000),
@@ -125,7 +129,8 @@ fn golden_waste_decay_reaches_steady_state() {
         let live_waste = live_waste_count(&h);
         max_live_waste = max_live_waste.max(live_waste);
 
-        let created_waste = tagged_events_through_tick(&h.event_log, EventTag::WildernessRelief, tick);
+        let created_waste =
+            tagged_events_through_tick(&h.event_log, EventTag::WildernessRelief, tick);
         let decayed_waste = tagged_events_through_tick(&h.event_log, EventTag::ItemDecay, tick);
         let expected_live_waste = created_waste.saturating_sub(decayed_waste) as u64;
 

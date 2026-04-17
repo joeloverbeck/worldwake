@@ -11,10 +11,10 @@ use std::path::Path;
 use types::ScenarioDef;
 use worldwake_core::{
     CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
-    ExplorationProfile, KnownRecipes, LoadUnits, MerchandiseProfile, PatrolRoute, Place,
-    ProductionOutputOwner, ProductionOutputOwnershipPolicy, ResourceSource, Seed, Tick, Topology,
-    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn,
-    default_commodity_decay_map, hash_world,
+    ExplorationProfile, KnownRecipes, LastProactiveExplorationTick, LoadUnits, MerchandiseProfile,
+    PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy, ResourceSource,
+    Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
+    World, WorldTxn, default_commodity_decay_map, hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -364,6 +364,13 @@ fn spawn_agent(
                 consecutive_exploration_count: 0,
             });
     txn.set_component_exploration_profile(agent_id, exploration)?;
+    if let Some(profile) = agent_def.diversification_profile {
+        txn.set_component_diversification_profile(agent_id, profile)?;
+        txn.set_component_last_proactive_exploration_tick(
+            agent_id,
+            LastProactiveExplorationTick(None),
+        )?;
+    }
     let carry = agent_def
         .carry_capacity
         .unwrap_or(DEFAULT_AGENT_CARRY_CAPACITY);
@@ -589,13 +596,14 @@ mod tests {
     use worldwake_core::{
         ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity, CognitiveProfile,
         CommodityDecayMap, CommodityKind, CommodityValuationProfile, CommunicationProfile,
-        ContentionDispositionProfile, ControlSource, DisposalProfile, DriveThresholds,
-        EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
-        IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-        ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
-        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
-        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WorkstationTag, default_commodity_decay_map,
+        ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
+        DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
+        HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+        LastProactiveExplorationTick, LastSeenMemory, LoadUnits, ObligationSatiationProfile,
+        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceVisibilityProfile,
+        PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
+        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
+        WorkstationTag, default_commodity_decay_map,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -624,6 +632,7 @@ mod tests {
             metabolism_profile: None,
             disposal_profile: None,
             exploration_profile: None,
+            diversification_profile: None,
             carry_capacity: None,
             theft_disposition: None,
             justice_disposition: None,
@@ -1547,6 +1556,59 @@ mod tests {
         assert_eq!(
             world.get_component_artifact_posting_profile(agent),
             Some(&ArtifactPostingProfile::default())
+        );
+        assert_eq!(world.get_component_diversification_profile(agent), None);
+        assert_eq!(
+            world.get_component_last_proactive_exploration_tick(agent),
+            None
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_with_diversification_profile_sets_runtime_components() {
+        let profile = DiversificationProfile {
+            base_curiosity: Permille::new(400).unwrap(),
+            comfort_threshold: Permille::new(450).unwrap(),
+            curiosity_buildup_rate: Permille::new(5).unwrap(),
+            exploration_cooldown_ticks: 60,
+            familiarity_per_visit: Permille::new(150).unwrap(),
+            familiarity_recovery_per_tick: Permille::new(2).unwrap(),
+            familiarity_floor: Permille::new(50).unwrap(),
+            max_exploration_hops: 3,
+        };
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                diversification_profile: Some(profile),
+                ..minimal_agent("Scout", "Town", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            commodity_decay: None,
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_diversification_profile(agent),
+            Some(&profile)
+        );
+        assert_eq!(
+            world.get_component_last_proactive_exploration_tick(agent),
+            Some(&LastProactiveExplorationTick(None))
         );
     }
 

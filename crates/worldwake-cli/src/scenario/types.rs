@@ -9,13 +9,13 @@ use serde::Deserialize;
 use worldwake_core::{
     ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile, CommodityDecayMap,
     CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile, ControlSource,
-    DisposalProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-    ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastSeenMemory, MetabolismProfile, ObligationSatiationProfile, PatrolProfile,
-    PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
-    Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, items::CommodityKind,
-    topology::PlaceTag,
+    DisposalProfile, DiversificationProfile, DriveThresholds, EpistemicDispositionProfile,
+    ExecutionBudget, ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile,
+    JusticeDispositionProfile, LastSeenMemory, MetabolismProfile, ObligationSatiationProfile,
+    PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile,
+    PursuitProfile, Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -113,6 +113,8 @@ pub struct AgentDef {
     pub disposal_profile: Option<DisposalProfile>,
     #[serde(default)]
     pub exploration_profile: Option<ExplorationProfileDef>,
+    #[serde(default)]
+    pub diversification_profile: Option<DiversificationProfile>,
     #[serde(default)]
     pub carry_capacity: Option<CarryCapacity>,
     #[serde(default)]
@@ -260,10 +262,53 @@ mod tests {
         assert_eq!(def.agents[0].name, "Alice");
         assert_eq!(def.agents[0].location, "Village");
         assert_eq!(def.agents[0].control, ControlSource::Human);
+        assert_eq!(def.agents[0].diversification_profile, None);
         assert!(def.items.is_empty());
         assert!(def.facilities.is_empty());
         assert!(def.resource_sources.is_empty());
         assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_deserializes_diversification_profile() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (
+                    name: "Alice",
+                    location: "Village",
+                    control: Human,
+                    diversification_profile: (
+                        base_curiosity: 400,
+                        comfort_threshold: 450,
+                        curiosity_buildup_rate: 5,
+                        exploration_cooldown_ticks: 60,
+                        familiarity_per_visit: 150,
+                        familiarity_recovery_per_tick: 2,
+                        familiarity_floor: 50,
+                        max_exploration_hops: 3,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(
+            def.agents[0].diversification_profile,
+            Some(DiversificationProfile {
+                base_curiosity: Permille::new(400).unwrap(),
+                comfort_threshold: Permille::new(450).unwrap(),
+                curiosity_buildup_rate: Permille::new(5).unwrap(),
+                exploration_cooldown_ticks: 60,
+                familiarity_per_visit: Permille::new(150).unwrap(),
+                familiarity_recovery_per_tick: Permille::new(2).unwrap(),
+                familiarity_floor: Permille::new(50).unwrap(),
+                max_exploration_hops: 3,
+            })
+        );
     }
 
     #[test]

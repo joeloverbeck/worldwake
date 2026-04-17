@@ -69,8 +69,8 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        CauseRef, CommodityKind, EntityId, EventLog, EventTag, EventView, PrototypePlace,
-        Quantity, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        CauseRef, CommodityKind, EntityId, EventLog, EventTag, EventView, PrototypePlace, Quantity,
+        Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
         prototype_place_entity,
     };
     use worldwake_sim::{

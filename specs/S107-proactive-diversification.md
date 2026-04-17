@@ -386,7 +386,7 @@ No new SystemFn is needed. The proactive exploration candidate emission integrat
 
 **Scenario wiring**:
 - Add `diversification_profile: Option<DiversificationProfile>` to `AgentDef` in `types.rs` (no `*Def` wrapper needed — the profile contains no `EntityId` references, only `Permille`, `u32`, and `u16` fields)
-- Add `if let Some(ref dp) = agent_def.diversification_profile { txn.set_component_diversification_profile(agent_id, *dp)?; }` in `spawn_agent()` (role-specific pattern)
+- Add `if let Some(ref dp) = agent_def.diversification_profile { txn.set_component_diversification_profile(agent_id, *dp)?; txn.set_component_last_proactive_exploration_tick(agent_id, LastProactiveExplorationTick(None))?; }` in `spawn_agent()` (role-specific pattern, with runtime proactive state initialized at spawn)
 
 **GoalBeliefView accessor** (in `worldwake-sim`):
 - Add `fn diversification_profile(&self, agent: EntityId) -> Option<DiversificationProfile>` to `GoalBeliefView` trait

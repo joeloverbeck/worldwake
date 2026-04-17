@@ -13,14 +13,13 @@ use worldwake_core::{
     DiversificationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
     ExpectationStore, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
-    ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag,
-    PlaceTagSet, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-    RecordedViolation, ResourceSource, RouteExperience, SocialObservation, SourceReliability,
-    StockStoragePolicy, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationDispositionProfile,
-    WorkstationTag, Wound,
+    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
+    Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 pub trait GoalSpatialBeliefView {
@@ -1813,8 +1812,8 @@ mod tests {
     };
     use worldwake_core::{
         AgentBeliefStore, CauseRef, CommodityConsumableProfile, CommodityKind, ControlSource,
-        DemandObservation, DiversificationProfile, DriveThresholds, EntityId, EntityKind,
-        EventLog, HomeostaticNeedId, HomeostaticNeeds, LastProactiveExplorationTick, LoadUnits,
+        DemandObservation, DiversificationProfile, DriveThresholds, EntityId, EntityKind, EventLog,
+        HomeostaticNeedId, HomeostaticNeeds, LastProactiveExplorationTick, LoadUnits,
         PatrolProfile, Permille, Quantity, ResourceSource, Tick, UniqueItemKind, VisibilitySpec,
         WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };

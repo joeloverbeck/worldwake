@@ -290,6 +290,7 @@ mod tests {
                 metabolism_profile: None,
                 disposal_profile: None,
                 exploration_profile: None,
+                diversification_profile: None,
                 carry_capacity: None,
                 theft_disposition: None,
                 justice_disposition: None,
