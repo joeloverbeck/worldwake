@@ -8,10 +8,10 @@ use worldwake_ai::{
     PlanSearchOutcome, PlannerOpKind, PlanningPipelineTrace,
 };
 use worldwake_core::{
-    CommodityKind, EntityId, EventLog, ExplorationMotivation, ExplorationProfile,
-    HomeostaticNeedId, HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile,
-    PerceptionSource, Place, PlaceTag, Quantity, ResourceSource, Seed, Tick, Topology, TravelEdge,
-    TravelEdgeId, UtilityProfile, WorkstationTag, World,
+    CommodityKind, DiversificationProfile, EntityId, EventLog, ExplorationMotivation,
+    ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, KnownRecipes, MetabolismProfile,
+    PerceptionProfile, PerceptionSource, Place, PlaceTag, Quantity, ResourceSource, Seed, Tick,
+    Topology, TravelEdge, TravelEdgeId, UtilityProfile, WorkstationTag, World,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
 
@@ -22,6 +22,10 @@ const PLACE_VILLAGE: EntityId = entity(903);
 const PLACE_FOREST: EntityId = entity(904);
 const PLACE_FIELDS: EntityId = entity(905);
 const PLACE_INN: EntityId = entity(906);
+const PLACE_PROACTIVE_HOME: EntityId = entity(920);
+const PLACE_PROACTIVE_EAST: EntityId = entity(921);
+const PLACE_PROACTIVE_NORTH: EntityId = entity(922);
+const PLACE_PROACTIVE_SOUTH: EntityId = entity(923);
 
 const fn entity(slot: u32) -> EntityId {
     EntityId {
@@ -161,6 +165,56 @@ fn build_persistence_topology() -> Topology {
     topology
 }
 
+fn build_proactive_branch_topology() -> Topology {
+    let mut topology = Topology::new();
+    topology
+        .add_place(
+            PLACE_PROACTIVE_HOME,
+            place("ProactiveHome", &[PlaceTag::Village]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            PLACE_PROACTIVE_EAST,
+            place("ProactiveEast", &[PlaceTag::Field]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            PLACE_PROACTIVE_NORTH,
+            place("ProactiveNorth", &[PlaceTag::Forest]),
+        )
+        .unwrap();
+    topology
+        .add_place(
+            PLACE_PROACTIVE_SOUTH,
+            place("ProactiveSouth", &[PlaceTag::Farm]),
+        )
+        .unwrap();
+    add_bidirectional_edge(
+        &mut topology,
+        TravelEdgeId(920),
+        TravelEdgeId(921),
+        PLACE_PROACTIVE_HOME,
+        PLACE_PROACTIVE_EAST,
+    );
+    add_bidirectional_edge(
+        &mut topology,
+        TravelEdgeId(922),
+        TravelEdgeId(923),
+        PLACE_PROACTIVE_HOME,
+        PLACE_PROACTIVE_NORTH,
+    );
+    add_bidirectional_edge(
+        &mut topology,
+        TravelEdgeId(924),
+        TravelEdgeId(925),
+        PLACE_PROACTIVE_HOME,
+        PLACE_PROACTIVE_SOUTH,
+    );
+    topology
+}
+
 fn exploration_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
         entity_activation_threshold: pm(125),
@@ -275,6 +329,69 @@ fn dirtiness_exploration_agent(
         } else {
             known_recipes
         },
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        exploration_perception_profile(),
+    );
+    set_agent_exploration_profile(
+        h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            visit_lookback_ticks: 200,
+            ..ExplorationProfile::default()
+        },
+    );
+    agent
+}
+
+fn calm_metabolism_profile() -> MetabolismProfile {
+    MetabolismProfile {
+        hunger_rate: pm(0),
+        thirst_rate: pm(0),
+        fatigue_rate: pm(0),
+        bladder_rate: pm(0),
+        dirtiness_rate: pm(0),
+        ..MetabolismProfile::default()
+    }
+}
+
+fn isolated_utility_profile() -> UtilityProfile {
+    UtilityProfile {
+        social_weight: pm(0),
+        activity_awareness_weight: pm(0),
+        care_weight: pm(0),
+        enterprise_weight: pm(0),
+        side_benefit_weight: pm(0),
+        ..UtilityProfile::default()
+    }
+}
+
+fn set_agent_diversification_profile(
+    h: &mut GoldenHarness,
+    agent: EntityId,
+    profile: DiversificationProfile,
+) {
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_diversification_profile(agent, profile)
+        .expect("golden harness should keep diversification profiles writable");
+    commit_txn(txn, &mut h.event_log);
+}
+
+fn comfortable_proactive_agent(h: &mut GoldenHarness, name: &str) -> EntityId {
+    let agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        name,
+        PLACE_PROACTIVE_HOME,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+        calm_metabolism_profile(),
+        isolated_utility_profile(),
+        KnownRecipes::new(),
     );
     set_agent_perception_profile(
         &mut h.world,
@@ -411,6 +528,78 @@ fn planning_trace_has_generated_goal(
                 .generated
                 .iter()
                 .any(|goal| goal.goal_key == expected_goal),
+            _ => false,
+        })
+}
+
+fn planning_trace_has_generated_proactive_exploration(
+    h: &GoldenHarness,
+    agent: EntityId,
+    tick: Tick,
+) -> bool {
+    h.driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(agent, tick)
+        .is_some_and(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => {
+                planning.candidates.generated.iter().any(|goal| {
+                    matches!(
+                        goal.goal_key.kind,
+                        GoalKind::ExploreLocation {
+                            motivating_need: ExplorationMotivation::Proactive,
+                            ..
+                        }
+                    )
+                })
+            }
+            _ => false,
+        })
+}
+
+fn selected_proactive_exploration_goals(
+    h: &GoldenHarness,
+    agent: EntityId,
+) -> Vec<(Tick, EntityId)> {
+    h.driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .traces_for(agent)
+        .iter()
+        .filter_map(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => {
+                let GoalKind::ExploreLocation {
+                    target_place,
+                    motivating_need: ExplorationMotivation::Proactive,
+                } = planning.selection.selected_goal()?.kind
+                else {
+                    return None;
+                };
+                Some((trace.tick, target_place))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn any_generated_need_driven_exploration(h: &GoldenHarness, agent: EntityId) -> bool {
+    h.driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .traces_for(agent)
+        .iter()
+        .any(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => {
+                planning.candidates.generated.iter().any(|goal| {
+                    matches!(
+                        goal.goal_key.kind,
+                        GoalKind::ExploreLocation {
+                            motivating_need: ExplorationMotivation::NeedDriven(_),
+                            ..
+                        }
+                    )
+                })
+            }
             _ => false,
         })
 }
@@ -1348,4 +1537,234 @@ fn golden_s102_counter_reset_on_need_satisfaction() {
         ),
         "once hunger is satisfied, the next planning pass should not re-emit hunger-motivated exploration"
     );
+}
+
+#[derive(Debug)]
+struct ProactiveDiscoveryOutcome {
+    selected_proactive_goals: Vec<(Tick, EntityId)>,
+    reached_south: bool,
+}
+
+fn run_proactive_discovery_scenario(seed: Seed, with_profile: bool) -> ProactiveDiscoveryOutcome {
+    let mut h = build_harness_with_topology(seed, build_proactive_branch_topology());
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agent = comfortable_proactive_agent(&mut h, "Calm Scout");
+    if with_profile {
+        set_agent_diversification_profile(
+            &mut h,
+            agent,
+            DiversificationProfile {
+                base_curiosity: pm(900),
+                comfort_threshold: pm(450),
+                curiosity_buildup_rate: pm(250),
+                exploration_cooldown_ticks: 6,
+                familiarity_per_visit: pm(150),
+                familiarity_recovery_per_tick: pm(2),
+                familiarity_floor: pm(50),
+                max_exploration_hops: 2,
+            },
+        );
+    }
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_PROACTIVE_HOME,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let mut reached_south = false;
+    for _ in 0..16 {
+        h.step_once();
+        reached_south |= h.world.effective_place(agent) == Some(PLACE_PROACTIVE_SOUTH);
+        if reached_south {
+            break;
+        }
+    }
+
+    ProactiveDiscoveryOutcome {
+        selected_proactive_goals: selected_proactive_exploration_goals(&h, agent),
+        reached_south,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 343: Diversification Profile Unlocks Proactive Discovery
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Travel, Perception
+// GoalKinds: ExploreLocation
+// ActionDomains: Travel
+// Places: ProactiveHome, ProactiveEast, ProactiveNorth, ProactiveSouth
+// Principles: 7, 14, 22
+//
+// Setup: Two otherwise identical calm runs start with only a belief about ProactiveHome. The diversified run has a `DiversificationProfile`; the control run does not. No survival-pressure goals are active.
+//
+// Proves: the diversified run selects and completes proactive exploration to the novel branch place, while the matched control never selects proactive exploration and never reaches that branch.
+//
+// Chain: calm needs + diversification profile -> proactive ExploreLocation emission/selection -> travel commit -> arrival at novel branch.
+#[test]
+fn golden_s107_proactive_diversification_discovers_novel_place() {
+    let diversified = run_proactive_discovery_scenario(Seed([219; 32]), true);
+    let control = run_proactive_discovery_scenario(Seed([220; 32]), false);
+
+    assert_eq!(
+        diversified.selected_proactive_goals.first().copied(),
+        Some((Tick(1), PLACE_PROACTIVE_SOUTH)),
+        "the diversified run should first select proactive exploration toward the highest-novelty branch; outcome={diversified:?}"
+    );
+    assert!(
+        diversified.reached_south,
+        "the diversified run should complete travel to the novel branch; outcome={diversified:?}"
+    );
+    assert!(
+        control.selected_proactive_goals.is_empty(),
+        "the control run should never select proactive exploration without the profile; outcome={control:?}"
+    );
+    assert!(
+        !control.reached_south,
+        "without the diversification profile, the matched control should not reach the novel branch; outcome={control:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 344: Need Pressure Vetoes Proactive Motivation
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Travel, Perception
+// GoalKinds: ExploreLocation
+// ActionDomains: Travel
+// Places: ExplorationStart, ExplorationFrontier
+// Principles: 7, 14, 22
+//
+// Setup: A hungry exploration run reuses the standard need-driven frontier setup, but also adds a `DiversificationProfile`. The frontier remains the only lawful exploration path.
+//
+// Proves: high need pressure suppresses proactive exploration specifically, while lawful need-driven exploration still appears.
+//
+// Chain: high hunger pressure + diversification profile -> proactive veto -> need-driven ExploreLocation remains generated/selected.
+#[test]
+fn golden_s107_need_slack_veto_suppresses_proactive_exploration() {
+    let mut h = build_exploration_harness(Seed([221; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agent = exploration_agent(&mut h, "Hungry Diversifier");
+    set_agent_diversification_profile(
+        &mut h,
+        agent,
+        DiversificationProfile {
+            base_curiosity: pm(900),
+            comfort_threshold: pm(450),
+            curiosity_buildup_rate: pm(250),
+            exploration_cooldown_ticks: 6,
+            familiarity_per_visit: pm(150),
+            familiarity_recovery_per_tick: pm(2),
+            familiarity_floor: pm(50),
+            max_exploration_hops: 2,
+        },
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_START,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let mut saw_need_driven_exploration = false;
+    for _ in 0..8 {
+        h.step_once();
+        let tick = processed_tick(&h);
+        assert!(
+            !planning_trace_has_generated_proactive_exploration(&h, agent, tick),
+            "high need pressure should veto proactive exploration emission on every planning tick; tick={tick:?}; traces={:#?}",
+            h.driver
+                .trace_sink()
+                .expect("decision tracing should be enabled")
+                .traces_for(agent)
+        );
+        saw_need_driven_exploration |= any_generated_need_driven_exploration(&h, agent);
+    }
+
+    assert!(
+        saw_need_driven_exploration,
+        "the veto scenario should still exercise lawful need-driven exploration rather than removing exploration entirely"
+    );
+    assert!(
+        selected_proactive_exploration_goals(&h, agent).is_empty(),
+        "high need pressure should prevent proactive exploration selection as well as emission"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 345: Proactive Cooldown Spaces Repeated Exploration
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Travel, Perception
+// GoalKinds: ExploreLocation
+// ActionDomains: Travel
+// Places: ProactiveHome, ProactiveEast, ProactiveNorth, ProactiveSouth
+// Principles: 7, 14, 22
+//
+// Setup: A calm agent with a short proactive cooldown starts knowing only ProactiveHome in a branching topology with several novel targets.
+//
+// Proves: the run produces repeated proactive exploration selections, and the selection ticks stay spaced by at least the configured cooldown.
+//
+// Chain: calm needs + diversification profile -> proactive selection -> authoritative cooldown stamp -> later proactive selection after cooldown.
+#[test]
+fn golden_s107_cooldown_spaces_proactive_exploration_attempts() {
+    let mut h = build_harness_with_topology(Seed([222; 32]), build_proactive_branch_topology());
+    h.driver.enable_tracing();
+
+    let agent = comfortable_proactive_agent(&mut h, "Cooldown Scout");
+    let cooldown_ticks = 4;
+    set_agent_diversification_profile(
+        &mut h,
+        agent,
+        DiversificationProfile {
+            base_curiosity: pm(900),
+            comfort_threshold: pm(450),
+            curiosity_buildup_rate: pm(250),
+            exploration_cooldown_ticks: cooldown_ticks,
+            familiarity_per_visit: pm(150),
+            familiarity_recovery_per_tick: pm(2),
+            familiarity_floor: pm(50),
+            max_exploration_hops: 2,
+        },
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_PROACTIVE_HOME,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    for _ in 0..18 {
+        h.step_once();
+    }
+
+    let proactive_ticks = selected_proactive_exploration_goals(&h, agent);
+    assert!(
+        proactive_ticks.len() >= 2,
+        "the cooldown scenario should produce repeated proactive exploration selections; traces={:#?}",
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .traces_for(agent)
+    );
+    for pair in proactive_ticks.windows(2) {
+        let [(first_tick, _), (second_tick, _)] = pair else {
+            continue;
+        };
+        assert!(
+            second_tick.0.saturating_sub(first_tick.0) >= u64::from(cooldown_ticks),
+            "consecutive proactive selections should respect the configured cooldown; proactive_ticks={proactive_ticks:?}"
+        );
+    }
 }

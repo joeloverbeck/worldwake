@@ -1,6 +1,6 @@
 # S104SURBASREC-006: Rebuild golden test coverage (Layers 1-3)
 
-**Status**: PENDING
+**Status**: 🚫 NOT IMPLEMENTED
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: None
@@ -116,3 +116,11 @@ Each new `golden_survival_*.rs` file should include its own local `mod golden_ha
 4. `cargo test -p worldwake-ai -- golden_survival_determinism` — Layer 3 determinism
 5. `cargo test -p worldwake-ai` — full AI crate suite
 6. `cargo clippy --workspace --all-targets -- -D warnings` — clean
+
+## Outcome
+
+Archived as NOT IMPLEMENTED on 2026-04-17 per explicit user direction.
+
+- No Layer 1, Layer 2, or Layer 3 rebuild work was implemented from this ticket.
+- The survival-baseline recovery effort closed with the landed triage, profile-gating cleanup, authored baseline scenario, planner cleanup, and Layer 0 golden proof from archived tickets `S104SURBASREC-001` through `S104SURBASREC-005` and `S104SURBASREC-007`.
+- The broader golden rebuild described here was intentionally not pursued further.

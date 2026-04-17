@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 342: Waste Decay Reaches A Bounded Steady State
 
-- Source: `golden_item_decay.rs:63`
+- Source: `golden_item_decay.rs:66`
 - Systems: Needs, AI, ItemDecay
 - GoalKinds: Relieve
 - ActionDomains: Needs

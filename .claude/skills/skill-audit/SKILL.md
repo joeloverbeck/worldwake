@@ -88,12 +88,20 @@ Output this structure to the conversation (do not write to a file):
    - **Why it fits**: <how this aligns with the skill's stated intent>
    - **Suggestion**: <proposed addition>
 
+## Not Exercised This Session
+
+[Optional section. Omit entirely when all skill steps and branches were exercised. Otherwise list one-line bullets naming skill steps or branches that the session did not trigger — this surfaces coverage gaps without speculating about them as issues.]
+
+- <one-line description of skill step or branch not exercised>
+
 ## Summary
 
 **Total**: N issues, N improvements, N features (N findings total) — N CRITICAL, N HIGH, N MEDIUM, N LOW
 ```
 
 Double-check severity counts against findings before presenting. If a correction is needed after presenting, strike the incorrect line and restate.
+
+**Optional `recommended` tag**: Append ` — recommended` to the title line of any finding you want included when the user says "implement recommended." Untagged findings are treated as optional and excluded from "implement recommended" scope (but still included when the user says "implement all"). Example: `1. **[MEDIUM]** Tighten batching threshold — recommended`. If no findings are tagged, "recommended" falls back to "all" per the follow-up-implementation rule.
 
 If a finding's conclusion is that no change is needed (the current behavior is sufficient, or the gap is too minor to act on), append "— no change needed" to the Suggestion line. This marks the finding as informational and excludes it from "implement all/recommended" scope during follow-up implementation.
 
@@ -108,7 +116,7 @@ If a finding's conclusion is that no change is needed (the current behavior is s
 
   **Re-evaluation**: If the codebase or the target skill file changed between the audit report and the follow-up request, re-evaluate each finding against the current state. Discard obsolete findings, adapt shifted ones, and renumber survivors before applying edits.
 
-  **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding. If the user requests all findings be implemented (e.g., "implement all", "implement recommended suggestions", "implement everything"), skip dependency checking and apply all edits in document order. Treat "recommended" as "all" unless the audit report explicitly distinguished recommended from optional findings. Findings that the audit report explicitly marks as "no change needed" or "no change — existing behavior is sufficient" are excluded from "all" and "recommended" scope.
+  **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding. If the user requests all findings be implemented (e.g., "implement all", "implement everything"), skip dependency checking and apply all edits in document order. If the user requests "recommended" (e.g., "implement recommended suggestions"), select only findings whose title line is tagged `— recommended`; if no findings are tagged, fall back to "all." Findings that the audit report explicitly marks as "no change needed" or "no change — existing behavior is sufficient" are excluded from "all" and "recommended" scope.
 
   **Edit ordering**: Apply edits in document order (top to bottom) to minimize line-number shifts invalidating later edits. If applying an earlier finding renders a later finding moot (e.g., the target text no longer exists), skip the moot finding and note it in the post-edit verification as "superseded by finding N." If an Edit call fails because a prior edit changed the target text, re-read the file to find the updated text and retry with the corrected `old_string`. If an edit inserts a new numbered step, renumber all subsequent steps and verify that the output summary or other sections referencing step numbers are updated accordingly. When an edit inserts or removes a numbered item, scan preceding edits in the same batch for cross-references to the shifted numbers and fix them in the same edit or immediately after.
 
@@ -119,7 +127,7 @@ If a finding's conclusion is that no change is needed (the current behavior is s
   **Post-edit verification**: After all edits are applied, re-read all edited files (the main SKILL.md and any reference files that were modified) and verify as a single pass:
   1. **No overlap or contradiction** — edits don't conflict with each other
   2. **Cross-references valid**:
-     - (a) **Numbering continuity** — step, phase, and section numbers are sequential with no gaps or duplicates. For files with many numbered references, use pattern search (e.g., grep for `Step [0-9]`, `### [0-9]`) to confirm; for smaller files, a visual scan suffices. Adapt grep patterns to the target skill's convention (numbered items, lettered sub-steps, or markdown headers).
+     - (a) **Numbering continuity** — step, phase, and section numbers are sequential with no gaps or duplicates. If the file has >150 lines OR >10 numbered references across multiple levels, prefer grep pattern search (e.g., grep for `Step [0-9]`, `### [0-9]`) to confirm; otherwise a visual scan suffices. Adapt grep patterns to the target skill's convention (numbered items, lettered sub-steps, or markdown headers).
      - (b) **File paths valid** — all referenced file paths still exist and point to correct targets.
      - (c) **New cross-references** — references introduced by new text point to content that actually exists. When the target skill uses nested numbering (sub-steps within steps), verify that cross-references disambiguate between levels (e.g., "Step 1, sub-step 5" vs. "Step 5").
      - (d) **Overview diagrams** — high-level overviews that become slightly inaccurate due to new branching logic are acceptable if the detailed step text handles the nuance. Note the discrepancy but do not force-update overview text that would become harder to scan.

@@ -25,6 +25,8 @@ Completed Phase 7 specs:
 - `S102: Frontier-Aware Need-Driven Exploration` — archived at [archive/specs/S102-frontier-aware-exploration.md](/home/joeloverbeck/projects/worldwake/archive/specs/S102-frontier-aware-exploration.md). Landed the exploration follow-on for repeated acquisition budget exhaustion, multi-hop BFS frontier selection, exploration-chain belief reinforcement, per-agent exploration profile tuning, authored scenario support, and end-to-end golden coverage plus generated golden-doc refresh.
 - `S105: Observation Salience Filtering` — archived at [archive/specs/S105-observation-salience-filtering.md](/home/joeloverbeck/projects/worldwake/archive/specs/S105-observation-salience-filtering.md). Landed `PerceptionProfile.observation_budget` with authored-input compatibility, deterministic same-place observation priority plus budget truncation in `collect_direct_local_observation_batch`, focused unit proof for non-place truncation / need-based non-Waste boosting, and Scenario 341 golden coverage for bounded waste visibility under reduced observation budgets.
 - `S106: Ground Item Decay` — archived at [archive/specs/S106-ground-item-decay.md](/home/joeloverbeck/projects/worldwake/archive/specs/S106-ground-item-decay.md). Landed `GroundSince`, persisted `CommodityDecayMap`, `EventTag::ItemDecay`, `SystemId::ItemDecay`, live decay archival after `EvidenceDecay`, and Scenario 342 golden proof of bounded Waste steady state plus regenerated golden inventory/detail docs.
+- `S107: Proactive Diversification Exploration` — archived at [archive/specs/S107-proactive-diversification.md](/home/joeloverbeck/projects/worldwake/archive/specs/S107-proactive-diversification.md). Landed `DiversificationProfile`, passive place-visit tracking, proactive `ExploreLocation` emission/ranking with need-slack and cooldown gating, authored scenario support, and golden exploration coverage plus refreshed generated golden docs.
+- `S104: Survival Baseline Recovery` — archived at [archive/specs/S104-survival-baseline-recovery.md](/home/joeloverbeck/projects/worldwake/archive/specs/S104-survival-baseline-recovery.md). Landed the survival-baseline recovery slice: golden triage, TellProfile profile-gating cleanup, the authored `survival-baseline.ron` scenario, planner cleanup for the remaining survival-path `ProduceCommodity` budget exhaustion, and the Layer 0 survival golden proof. The later Layer 1–3 rebuild wave was intentionally not pursued.
 
 Completed adjunct specs:
 - `S67: Golden E2E Gaps — S59` archived at [archive/specs/S67-golden-gaps-S59.md](/home/joeloverbeck/projects/worldwake/archive/specs/S67-golden-gaps-S59.md).
@@ -219,21 +221,21 @@ S99 ✅ archived
 ### Adjunct Wave: Survival Baseline Recovery
 
 Derived from starvation diagnostic (`reports/needs-starvation-diagnostic.md`) which revealed that agents
-cannot satisfy basic needs in realistic 1440-tick simulations despite passing 349 golden tests.
-Root cause: golden tests pre-wire success conditions in sterile environments, never testing whether agents
-can bootstrap survival from realistic starting conditions.
+could not satisfy basic needs in realistic 1440-tick simulations despite passing 349 golden tests.
+Root cause: golden tests pre-wired success conditions in sterile environments, never testing whether agents
+could bootstrap survival from realistic starting conditions.
 
-**Prerequisite for all Phase 7 consequence-carrier specs (S60–S66)**: survival baseline must be proven
+**Resolved prerequisite for Phase 7 consequence-carrier specs (S60–S66)**: the survival baseline was proven
 before adding more gameplay complexity.
 
 ```text
-S103 (independent, parallel)
-S104 (blocks S60–S66)
+S103 ✅ archived
+S104 ✅ archived
 ```
 
-**Wave**:
-- **S103**: Belief Claim Deduplication and Amortized Pruning — performance fix for S101 belief system (independent, can proceed in parallel with S104)
-- **S104**: Survival Baseline Recovery — golden test triage, profile-gating cleanup, survival baseline scenario, golden test rebuild from survival-capable agents
+**Completed wave**:
+- **S103**: ✅ COMPLETED — Belief Claim Deduplication and Amortized Pruning — performance fix for the S101 belief system.
+- **S104**: ✅ COMPLETED — archived at [archive/specs/S104-survival-baseline-recovery.md](/home/joeloverbeck/projects/worldwake/archive/specs/S104-survival-baseline-recovery.md). Landed golden triage, profile-gating cleanup, the authored survival baseline scenario, survival-path planner cleanup, and the Layer 0 survival regression proof; the draft Layer 1–3 rebuild was intentionally not pursued.
 
 ### Adjunct Wave: Perception and Item Lifecycle
 
@@ -261,11 +263,11 @@ ant colony scouting) validated proactive diversification as a well-established m
 population-level resource resilience through per-agent curiosity variation.
 
 ```text
-S107 (independent, no deps)
+S107 ✅ archived
 ```
 
-**Wave**:
-- **S107**: Proactive Diversification Exploration — `DiversificationProfile` per-agent component, per-place visit tracking in belief store, need-slack-gated proactive `ExploreLocation` emission, familiarity-based target selection, commitment margins for thrashing prevention
+**Completed wave**:
+- **S107**: ✅ COMPLETED — archived at [archive/specs/S107-proactive-diversification.md](/home/joeloverbeck/projects/worldwake/archive/specs/S107-proactive-diversification.md). Landed `DiversificationProfile`, passive place-visit tracking in `AgentBeliefStore`, proactive `ExploreLocation` emission/ranking with need-slack and cooldown gating, authored scenario support, and `golden_exploration.rs` coverage for proactive discovery, need-pressure veto, and cooldown spacing.
 
 ### Phase 7 Gate
 

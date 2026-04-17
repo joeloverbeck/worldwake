@@ -1,6 +1,6 @@
 # S107: Proactive Diversification Exploration
 
-**Status**: DRAFT
+**Status**: ✅ COMPLETED
 
 ## Summary
 
@@ -397,7 +397,7 @@ This spec modifies candidate emission (new `emit_proactive_exploration_candidate
 4. **`BestEffort` action start** — Pass. `ExploreLocation` uses existing travel actions; no new action type.
 5. **`handle_plan_failure`** — Pass. Replanning logic is GoalKind-agnostic for ExploreLocation.
 6. **Payload revalidation** — N/A. `ExploreLocation` does not use planner-synthesized payloads.
-7. **Golden tests** — Recheck existing exploration-related goldens after the type migration. On the live branch, `golden_exploration.rs` needs explicit `ExplorationMotivation::NeedDriven(...)` wrapper updates, while `golden_survival_baseline.rs` and `golden_survival_scattered.rs` compile unchanged because their `ExploreLocation` assertions stay wildcard-based. New golden tests are still required for proactive diversification scenarios.
+7. **Golden tests** — Exploration-related goldens were updated in `golden_exploration.rs`. The live branch now includes explicit `ExplorationMotivation::NeedDriven(...)` wrapper updates plus proactive diversification scenarios covering profile-driven discovery, need-slack veto, and cooldown spacing; `golden_survival_baseline.rs` and `golden_survival_scattered.rs` remain wildcard-based and compile unchanged.
 
 ## Section H: FND-01 Analysis
 
@@ -493,3 +493,26 @@ Items 1-4 are covered by H.1-H.4. Remaining items:
 | Existing Exploration (S80/S102) | Independent pathways — cannot fire simultaneously | Via disjoint need-pressure gates |
 
 No direct system-to-system calls. All interaction through shared ECS state.
+
+## Outcome
+
+Completed on 2026-04-17.
+
+- Landed `DiversificationProfile` and `LastProactiveExplorationTick` in `worldwake-core`, plus `ExplorationMotivation` on `GoalKind::ExploreLocation`.
+- Added proactive-diversification belief-view carriage, authored scenario support, and passive place-visit tracking through the S107 ticket chain.
+- Made proactive `ExploreLocation` emission/ranking live in `worldwake-ai`, including novelty-from-visit-history target selection, need-slack veto, and cooldown stamping on proactive commitment.
+- Added end-to-end golden coverage in `crates/worldwake-ai/tests/golden_exploration.rs` for profile-driven proactive discovery, need-pressure veto, and cooldown spacing, then refreshed the generated golden inventory/docs.
+
+## Deviations
+
+- The implementation decomposed into the archived `S107PRODIV-001` through `S107PRODIV-007` ticket chain rather than landing as one patch.
+- The golden coverage landed on the existing `golden_exploration.rs` owner surface instead of a dedicated new `golden_proactive_diversification.rs` file.
+- The live familiarity and curiosity arithmetic was corrected during implementation to match `Permille` semantics rather than the draft’s stale `/ 1000` accumulation snippets.
+
+## Verification Result
+
+- Passed `cargo test --workspace --no-run`
+- Passed focused `worldwake-core`, `worldwake-sim`, `worldwake-cli`, and `worldwake-ai` commands across the `S107PRODIV-001` through `S107PRODIV-007` ticket chain
+- Passed `cargo test -p worldwake-ai`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

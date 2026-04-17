@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 75
+- Scenario blocks: 78
 - Contributing golden test files: 13
-- Associated tests: 89
+- Associated tests: 92
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -180,7 +180,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 133: Ignorance-Driven Frontier Exploration
 
-- Source: `golden_exploration.rs:480`
+- Source: `golden_exploration.rs:669`
 - Systems: AI, Needs, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -195,7 +195,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 134: Known Satisfaction Path Suppresses Exploration
 
-- Source: `golden_exploration.rs:543`
+- Source: `golden_exploration.rs:732`
 - Systems: AI, Needs, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -210,7 +210,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 135: Consecutive Exploration Cap Suppresses Re-Emission
 
-- Source: `golden_exploration.rs:607`
+- Source: `golden_exploration.rs:796`
 - Systems: AI, Needs, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: N/A
@@ -225,7 +225,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 136: Arrival Perception Unlocks Concrete Relief
 
-- Source: `golden_exploration.rs:654`
+- Source: `golden_exploration.rs:843`
 - Systems: AI, Needs, Travel, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -240,7 +240,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 337: Budget Exhaustion Unlocks Frontier Exploration
 
-- Source: `golden_exploration.rs:780`
+- Source: `golden_exploration.rs:969`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
 - ActionDomains: Travel, Production
@@ -255,7 +255,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 338: Multi-Hop Frontier Discovery Composes Across Rounds
 
-- Source: `golden_exploration.rs:951`
+- Source: `golden_exploration.rs:1140`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -270,7 +270,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 339: Arrival Boost Preserves The Exploration Chain
 
-- Source: `golden_exploration.rs:1163`
+- Source: `golden_exploration.rs:1352`
 - Systems: AI, Travel, Perception, Needs, Production
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel, Perception
@@ -285,7 +285,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 340: Need Satisfaction Lazily Resets Exhaustion State
 
-- Source: `golden_exploration.rs:1212`
+- Source: `golden_exploration.rs:1401`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
 - ActionDomains: Travel, Production, Needs
@@ -298,9 +298,54 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: repeated budget exhaustion -> exploration unlock -> local relief ->
 
+### Scenario 343: Diversification Profile Unlocks Proactive Discovery
+
+- Source: `golden_exploration.rs:1595`
+- Systems: AI, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ProactiveHome, ProactiveEast, ProactiveNorth, ProactiveSouth
+- Principles: 7, 14, 22
+
+**Setup**: Two otherwise identical calm runs start with only a belief about ProactiveHome. The diversified run has a `DiversificationProfile`; the control run does not. No survival-pressure goals are active.
+
+**Proves**: the diversified run selects and completes proactive exploration to the novel branch place, while the matched control never selects proactive exploration and never reaches that branch.
+
+**Cross-system chain**: calm needs + diversification profile -> proactive ExploreLocation emission/selection -> travel commit -> arrival at novel branch.
+
+### Scenario 344: Need Pressure Vetoes Proactive Motivation
+
+- Source: `golden_exploration.rs:1634`
+- Systems: AI, Needs, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ExplorationStart, ExplorationFrontier
+- Principles: 7, 14, 22
+
+**Setup**: A hungry exploration run reuses the standard need-driven frontier setup, but also adds a `DiversificationProfile`. The frontier remains the only lawful exploration path.
+
+**Proves**: high need pressure suppresses proactive exploration specifically, while lawful need-driven exploration still appears.
+
+**Cross-system chain**: high hunger pressure + diversification profile -> proactive veto -> need-driven ExploreLocation remains generated/selected.
+
+### Scenario 345: Proactive Cooldown Spaces Repeated Exploration
+
+- Source: `golden_exploration.rs:1704`
+- Systems: AI, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ProactiveHome, ProactiveEast, ProactiveNorth, ProactiveSouth
+- Principles: 7, 14, 22
+
+**Setup**: A calm agent with a short proactive cooldown starts knowing only ProactiveHome in a branching topology with several novel targets.
+
+**Proves**: the run produces repeated proactive exploration selections, and the selection ticks stay spaced by at least the configured cooldown.
+
+**Cross-system chain**: calm needs + diversification profile -> proactive selection -> authoritative cooldown stamp -> later proactive selection after cooldown.
+
 ### Scenario 342: Waste Decay Reaches A Bounded Steady State
 
-- Source: `golden_item_decay.rs:63`
+- Source: `golden_item_decay.rs:66`
 - Systems: Needs, AI, ItemDecay
 - GoalKinds: Relieve
 - ActionDomains: Needs

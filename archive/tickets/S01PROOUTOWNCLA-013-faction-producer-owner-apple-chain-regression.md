@@ -1,6 +1,6 @@
 # S01PROOUTOWNCLA-013: Restore faction-owned producer-owner apple consumption chain
 
-**Status**: PENDING
+**Status**: 🚫 NOT IMPLEMENTED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — ownership/AI consumption path under producer-owned output
@@ -87,3 +87,11 @@ If the current scenario fixture or milestone logic is stale rather than producti
 3. `cargo test -p worldwake-ai --test golden_production`
 4. `cargo test -p worldwake-ai`
 5. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Archived as NOT IMPLEMENTED on 2026-04-17 per explicit user direction.
+
+- No production or test changes were made for this ticket.
+- The producer-owner regression remained unimplemented and was not reassessed further in this archival pass.
+- Existing archived tickets `S01PROOUTOWNCLA-009` through `S01PROOUTOWNCLA-011` still document the earlier producer-owner substrate that landed.
