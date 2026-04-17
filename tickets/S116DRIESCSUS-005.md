@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `AgentDef` field + `spawn_agent` application
-**Deps**: S116DRIESCSUS-002
+**Deps**: archive/tickets/S116DRIESCSUS-002.md
 
 ## Problem
 
@@ -14,7 +14,7 @@ Spec S116 D6 requires scenarios to be able to configure `DriveEscalationProfile`
 
 1. `AgentDef` at `crates/worldwake-cli/src/scenario/types.rs:70-140` holds 30+ `Option<T>` profile fields, each annotated `#[serde(default)]`. `DriveThresholds` already appears as a direct RON-typed field at line 109 — same shape applies to `DriveEscalationProfile` (no `EntityId` references).
 2. `spawn_agent()` in `crates/worldwake-cli/src/scenario/mod.rs` uses the `unwrap_or_default()` pattern for universal components. Expected call site: wherever `DriveThresholds` is applied via `set_component_drive_thresholds` (grep-confirmed during implementation).
-3. `DriveEscalationProfile` contains `BTreeMap<HomeostaticNeedId, DriveEscalationParams>` + `DriveEscalationParams` — all primitive + `Permille` + enum. Direct RON deserialization works without a `*Def` wrapper.
+3. `DriveEscalationProfile` contains `BTreeMap<HomeostaticNeedId, DriveEscalationParams>` + `DriveEscalationParams` — all primitive + enum + scalar wrapper values, no `EntityId` references. Direct RON deserialization works without a `*Def` wrapper.
 4. Existing scenario RON files under `scenarios/*.ron` omit the new field — `#[serde(default)]` keeps them valid. No mass-update is required for existing scenarios.
 5. Intended layer: CLI/scenario-loading layer. No engine runtime change.
 

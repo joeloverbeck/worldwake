@@ -123,10 +123,11 @@ pub struct DriveEscalationParams {
     /// Applied as `multiplier_permille = min(cap, 1000 + ticks_over_start * growth_per_tick)`.
     /// Example: `Permille(10)` = 1% growth per tick over the start threshold.
     pub growth_per_tick: Permille,
-    /// Hard cap on the multiplier in permille. E.g., `Permille(3000)` = 3×.
+    /// Hard cap on the multiplier in permille units. E.g.,
+    /// `MultiplierPermille(3000)` = 3×.
     /// Defensive upper bound only; physical relief is expected to reset the
     /// counter well before the cap fires.
-    pub max_multiplier: Permille,
+    pub max_multiplier: MultiplierPermille,
 }
 
 impl DriveEscalationProfile {
@@ -136,7 +137,7 @@ impl DriveEscalationProfile {
 }
 ```
 
-Universal per the Agent Profile Scenario Contract (CLAUDE.md §5): every agent's motive scoring consults it. `Default` impl gives engine-wide defaults: `start_after_ticks: 100`, `growth_per_tick: Permille(10)`, `max_multiplier: Permille(3000)`. Individual scenarios may override per-need.
+Universal per the Agent Profile Scenario Contract (CLAUDE.md §5): every agent's motive scoring consults it. `Default` impl gives engine-wide defaults: `start_after_ticks: 100`, `growth_per_tick: Permille(10)`, `max_multiplier: MultiplierPermille(3000)`. Individual scenarios may override per-need.
 
 Register the component in `component_tables.rs` with `insert_drive_escalation_profile` / `get_drive_escalation_profile` / `has_drive_escalation_profile` / `iter_drive_escalation_profile` following the `DriveThresholds` pattern. Add save/load round-trip coverage.
 
@@ -146,15 +147,15 @@ Add a pure helper in the same module (used by `ranking.rs`):
 pub fn escalation_multiplier(
     ticks_over_critical: u32,
     params: DriveEscalationParams,
-) -> Permille {
+) -> MultiplierPermille {
     if ticks_over_critical <= params.start_after_ticks {
-        return Permille::new_unchecked(1000);
+        return MultiplierPermille::new_unchecked(1000);
     }
     let over_start = ticks_over_critical - params.start_after_ticks;
     let raw = 1000u32
         .saturating_add(over_start.saturating_mul(u32::from(params.growth_per_tick.value())));
     let capped = raw.min(u32::from(params.max_multiplier.value())).min(u32::from(u16::MAX));
-    Permille::new_unchecked(capped as u16)
+    MultiplierPermille::new_unchecked(capped as u16)
 }
 ```
 
@@ -319,7 +320,7 @@ No system calls another directly. No cross-crate imperative dispatch. No new Sys
 
 1. **Interaction with planner margin-based commitment (S74)**: The multiplier can change mid-plan as the counter increments. Mitigation: the counter updates at most once per tick, at `SystemId::Needs`, which runs before the agent's ranking pass — margin-based commitment already tolerates per-tick motive changes.
 2. **Interaction with Obligation Satiation (S96)**: Satiation dampens obligation motive; escalation amplifies homeostatic-need motive. The two apply to disjoint goal categories and compose cleanly.
-3. **Default parameter calibration against existing goldens**: The default (`start_after_ticks=100`, `growth_per_tick=10`, `max_multiplier=3000`) must not destabilize `survival-baseline.ron` or `survival-scattered.ron`. **Acceptance criterion**: default parameters must leave per-agent wash-count, eat-count, drink-count, and sleep-count distributions on those two scenarios within ±10% of the current golden fixtures, and must not introduce any new `MAX_CRITICAL_RUN_TICKS` violations. If empirical re-runs breach this band, tighten the default before landing; document the calibration choice in the ticket.
+3. **Default parameter calibration against existing goldens**: The default (`start_after_ticks=100`, `growth_per_tick=10`, `max_multiplier=3000` multiplier-permille = 3×) must not destabilize `survival-baseline.ron` or `survival-scattered.ron`. **Acceptance criterion**: default parameters must leave per-agent wash-count, eat-count, drink-count, and sleep-count distributions on those two scenarios within ±10% of the current golden fixtures, and must not introduce any new `MAX_CRITICAL_RUN_TICKS` violations. If empirical re-runs breach this band, tighten the default before landing; document the calibration choice in the ticket.
 4. **Escalation on `Fatigue`**: Fatigue relief is sleep, which is already a commonly-chosen goal. Unlikely to change fatigue behavior meaningfully. Verify as part of the calibration re-run above.
 5. **Wash water-possession bottleneck**: Noted in Motivating Evidence. Escalation raises Wash's ranked score but does not guarantee the agent holds water at the right moment. The D8 target of 300 accepts this limit. A follow-up spec may change `wash_preconditions` (e.g., accept co-located water without possession, or add an `AcquireCommodity(Water, purpose=Wash)` sub-goal precedence rule under active dirtiness escalation).
 

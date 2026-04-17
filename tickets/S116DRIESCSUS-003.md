@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `needs_system` (authoritative maintenance of `DeprivationExposure` + emission of `EventTag::Escalation`)
-**Deps**: S116DRIESCSUS-001, S116DRIESCSUS-002
+**Deps**: archive/tickets/S116DRIESCSUS-001.md, archive/tickets/S116DRIESCSUS-002.md
 
 ## Problem
 
@@ -76,7 +76,7 @@ fn emit_escalation_begin(
     event_log: &mut EventLog,
     agent: EntityId,
     need: HomeostaticNeedId,
-    multiplier: Permille,
+    multiplier: MultiplierPermille,
     tick: Tick,
 ) { /* WorldTxn with tags { System, Escalation }, action_name formatted string, target agent */ }
 

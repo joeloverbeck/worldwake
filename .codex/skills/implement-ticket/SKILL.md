@@ -32,6 +32,8 @@ Load `references/reassessment-checks.md`. For planner-root, snapshot-completenes
 
 Load `references/mismatch-handling.md` when reassessment exposes a contradiction, risky ticket/code divergence, or a user decision that requires 1-3-1.
 
+If reassessment changes a shared API, type contract, schema shape, or cross-ticket assumption, update any still-active dependent tickets/spec references in the same family before implementing or closing out the current ticket.
+
 ### 4. Extract the implementation scope
 
 Load `references/scope-extraction.md` when the owned edit surface, dependency boundary, or honest verification scope is not already clear from reassessment and ticket classification.
@@ -43,6 +45,8 @@ Load `references/implementation-discipline.md` when implementation begins or whe
 ### 6. Verify at the right boundary
 
 Run the narrowest correct verification first, then broaden.
+
+Prefer sequential `cargo` verification runs unless there is a concrete reason to parallelize them; this keeps cargo-lock contention, attribution, and close-out evidence truthful.
 
 Load `references/verification.md`.
 

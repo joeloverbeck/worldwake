@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `BeliefView` / `PerAgentBeliefView` accessors, `RankingContext`, `drive_score`, `relevant_self_consume_factors`, `RankedDriveMotiveInput` decision-trace field
-**Deps**: S116DRIESCSUS-002
+**Deps**: archive/tickets/S116DRIESCSUS-002.md
 
 ## Problem
 
@@ -15,7 +15,7 @@ Spec S116 requires motive-score multipliers applied at read time in `ranking.rs`
 1. Ranking entry points (grepped 2026-04-17): `motive_score` at `crates/worldwake-ai/src/ranking.rs:585`; `drive_score` at ranking.rs:1167; `score_product` at ranking.rs:1288; `relevant_self_consume_factors` at ranking.rs:1234.
 2. `RankingContext<'a>` at ranking.rs:342 is populated in `RankingContext::new` at ranking.rs:362 from `view: &'a dyn GoalBeliefView`. Existing fields read from the view include `needs`, `thresholds`, `exploration_profile`, `diversification_profile`, `last_proactive_exploration_tick`, `satiation_profile`, `obligation_tracker`. Two new fields follow the same pattern.
 3. `BeliefView` trait at `crates/worldwake-sim/src/belief_view.rs:194-195` declares `homeostatic_needs` and `drive_thresholds`. Extended trait `PerAgentBeliefView` at `per_agent_belief_view.rs:459-465` implements both. Test doubles live at `belief_view.rs:1871-1876` and `goal_model.rs:3533-3537` (AI-side mock). Two new accessors `deprivation_exposure` and `drive_escalation_profile` mirror this shape.
-4. Decision-trace carrier: `RankedDriveMotiveInput { drive, pressure, weight, score, relief_per_unit, recovery_relevant }` — constructed in `relevant_self_consume_factors` (ranking.rs:1188-1198) and via `drive_provenance_from_inputs`. Adding `escalation_multiplier: Permille` as the seventh field is the extension point.
+4. Decision-trace carrier: `RankedDriveMotiveInput { drive, pressure, weight, score, relief_per_unit, recovery_relevant }` — constructed in `relevant_self_consume_factors` (ranking.rs:1188-1198) and via `drive_provenance_from_inputs`. Adding `escalation_multiplier: MultiplierPermille` as the seventh field is the extension point.
 5. `RankedDriveKind` → `HomeostaticNeedId` mapping: `RankedDriveKind::Hunger → HomeostaticNeedId::Hunger` etc. Both enums cover the same 5 domain concepts; a `From` impl or match helper is the translation site.
 6. Intended verification layer (precision rule 2): AI / belief-view / planning-layer logic. No authoritative-system change.
 7. Pre-S116 behavior must be exactly reproduced when exposure = None, profile = Default, and counter = 0 (multiplier = 1000 permille = identity). This is the principal regression guard — verified by the D9 neutrality unit test.
@@ -34,9 +34,9 @@ Spec S116 requires motive-score multipliers applied at read time in `ranking.rs`
 
 1. Multiplier neutrality when `ticks <= start_after_ticks` → focused unit test: `drive_score` returns pre-S116 value (regression guard).
 2. Linear growth past `start_after_ticks` → focused unit test: multiplier = 2000 permille doubles the `drive_score` output.
-3. Saturation at `max_multiplier` → focused unit test: multiplier plateaus at cap regardless of further counter growth.
+3. Saturation at `max_multiplier` → focused unit test: multiplier-scale value plateaus at cap regardless of further counter growth.
 4. Self-consume factor path covered → focused unit test: `relevant_self_consume_factors` emits `DriveFactor` with matching `escalation_multiplier` for hunger.
-5. Decision trace surfaces the new field → focused test that constructs a `RankedDriveMotiveInput` under active escalation and asserts `escalation_multiplier > Permille(1000)`.
+5. Decision trace surfaces the new field → focused test that constructs a `RankedDriveMotiveInput` under active escalation and asserts `escalation_multiplier > MultiplierPermille::IDENTITY`.
 6. Ranking is AI-layer logic (precision rule 2) — authoritative-layer verification is the job of tickets 003 (counter maintenance) and 006 (goldens), not this ticket.
 
 ## What to Change
@@ -102,13 +102,13 @@ Call sites at ranking.rs:607-621 (Sleep → Fatigue, Relieve → Bladder, Wash �
 
 ### 5. Multiplier application in `relevant_self_consume_factors`
 
-Modify `relevant_self_consume_factors` at ranking.rs:1234-1271 to compute the multiplier per `DriveFactor` using the factor's `drive → HomeostaticNeedId` mapping, and attach it to the factor (add an `escalation_multiplier: Permille` field on the private `DriveFactor` struct at ranking.rs:402-409).
+Modify `relevant_self_consume_factors` at ranking.rs:1234-1271 to compute the multiplier per `DriveFactor` using the factor's `drive → HomeostaticNeedId` mapping, and attach it to the factor (add an `escalation_multiplier: MultiplierPermille` field on the private `DriveFactor` struct at ranking.rs:402-409).
 
 Downstream at ranking.rs:1194 where `RankedDriveMotiveInput` is constructed from a `DriveFactor`, copy `escalation_multiplier` through. Apply the multiplier to the final `score` returned to the caller the same way `drive_score` does.
 
 ### 6. Decision-trace field
 
-Add `pub escalation_multiplier: Permille` to `RankedDriveMotiveInput` (typically in `crates/worldwake-ai/src/decision_trace.rs` or wherever `RankedDriveMotiveInput` is defined). Populate in all construction sites — the two in `relevant_self_consume_factors` plus any within `drive_provenance_from_inputs`. For non-drive goal kinds that do not read a homeostatic counter (e.g., `GoalKind::Patrol`, `GoalKind::EngageHostile`), the multiplier is `Permille::new_unchecked(1000)` (neutral).
+Add `pub escalation_multiplier: MultiplierPermille` to `RankedDriveMotiveInput` (typically in `crates/worldwake-ai/src/decision_trace.rs` or wherever `RankedDriveMotiveInput` is defined). Populate in all construction sites — the two in `relevant_self_consume_factors` plus any within `drive_provenance_from_inputs`. For non-drive goal kinds that do not read a homeostatic counter (e.g., `GoalKind::Patrol`, `GoalKind::EngageHostile`), the multiplier is `MultiplierPermille::IDENTITY` (neutral).
 
 ### 7. `RankedDriveKind → HomeostaticNeedId` helper
 
@@ -135,8 +135,8 @@ Add four new unit tests in `ranking.rs`'s `#[cfg(test)] mod tests` block:
 
 - `drive_score_preserves_pre_s116_motive_when_counter_below_start_after` — constructs a `RankingContext` with exposure = default (counter = 0) and asserts `drive_score` output matches a hand-computed `score_product(weight, pressure)`.
 - `drive_score_doubles_when_multiplier_is_2000_permille` — constructs a counter value past `start_after_ticks` sized to produce multiplier ≈ 2000 permille, asserts output is approximately `2 * score_product(weight, pressure)`.
-- `drive_score_saturates_at_max_multiplier` — runs counter well past the cap-hitting value, asserts output ≈ `score_product(weight, pressure) * max_multiplier / 1000`.
-- `relevant_self_consume_factors_attaches_escalation_multiplier_to_hunger_factor` — constructs a hunger-dominant context with active escalation, asserts the emitted `DriveFactor` (or `RankedDriveMotiveInput`) carries `escalation_multiplier > Permille(1000)`.
+- `drive_score_saturates_at_max_multiplier` — runs counter well past the cap-hitting value, asserts output ≈ `score_product(weight, pressure) * max_multiplier.value() / 1000`.
+- `relevant_self_consume_factors_attaches_escalation_multiplier_to_hunger_factor` — constructs a hunger-dominant context with active escalation, asserts the emitted `DriveFactor` (or `RankedDriveMotiveInput`) carries `escalation_multiplier > MultiplierPermille::IDENTITY`.
 
 ## Files to Touch
 
@@ -165,7 +165,7 @@ Add four new unit tests in `ranking.rs`'s `#[cfg(test)] mod tests` block:
 
 1. `score_product(weight, pressure)` remains `u32 = weight * pressure` — unchanged signature, unchanged arithmetic.
 2. When `context.exposure` is `None` or `ticks_at_critical(need) <= params.start_after_ticks`, motive scores are bit-identical to pre-S116.
-3. Decision-trace `RankedDriveMotiveInput` carries `escalation_multiplier` for every drive-driven goal motive input. Non-drive goals carry `Permille(1000)` (neutral).
+3. Decision-trace `RankedDriveMotiveInput` carries `escalation_multiplier` for every drive-driven goal motive input. Non-drive goals carry `MultiplierPermille::IDENTITY` (neutral).
 4. No authoritative-world-state mutation in this ticket.
 
 ## Test Plan

@@ -65,7 +65,7 @@ Follow the harness/assertion pattern already used in `golden_survival_contested.
 
 Re-run `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` locally. Record per-agent action-count distributions (wash, eat, drink, sleep). Compare to the current fixtures' numbers (extracted from `reports/scenario-analysis-report.md` and prior golden archives where available).
 
-If per-agent counts drift outside ±10%, tune `DriveEscalationProfile::default()` constants (`start_after_ticks`, `growth_per_tick`, `max_multiplier`) in `crates/worldwake-core/src/drive_escalation_profile.rs` (landed by ticket 002) and re-run. Document the chosen defaults and the empirical justification as a comment on the `Default` impl.
+If per-agent counts drift outside ±10%, tune `DriveEscalationProfile::default()` constants (`start_after_ticks`, `growth_per_tick`, `max_multiplier`) in `crates/worldwake-core/src/drive_escalation_profile.rs` (landed by ticket 002) and re-run. Here `max_multiplier` is a multiplier-scale cap in permille units, not a `Permille` pressure value. Document the chosen defaults and the empirical justification as a comment on the `Default` impl.
 
 ## Files to Touch
 

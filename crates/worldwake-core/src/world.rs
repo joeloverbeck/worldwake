@@ -6,21 +6,21 @@ use crate::{
     CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityDecayMap, CommodityKind,
     CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
     ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
-    DemandMemory, DeprivationExposure, DisposalProfile, DiversificationProfile, DriveThresholds,
-    EntityAllocator, EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId,
-    ExecutionBudget, ExpectationStore, ExplorationProfile, FactionData, GroundSince,
-    HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
-    JusticeDispositionProfile, KnownRecipes, LastProactiveExplorationTick, LastSeenMemory,
-    LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, NoticeContent,
-    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, OfficeForceProfile,
-    OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet,
-    PlaceVisibilityProfile, PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy,
-    ProvenanceEntry, PursuitProfile, Quantity, RecordData, RelationTables, ResourceSource,
-    RouteExperience, SaleListing, SceneEvidence, SourceReliability, StockAssignment,
-    StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick,
-    Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
-    component_schema::with_component_schema_entries,
+    DemandMemory, DeprivationExposure, DisposalProfile, DiversificationProfile,
+    DriveEscalationProfile, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
+    EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
+    FactionData, GroundSince, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
+    IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastProactiveExplorationTick,
+    LastSeenMemory, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+    NoticeContent, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
+    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag,
+    PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
+    ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, RecordData,
+    RelationTables, ResourceSource, RouteExperience, SaleListing, SceneEvidence, SourceReliability,
+    StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
+    WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -202,6 +202,10 @@ impl World {
             world
                 .insert_component_communication_profile(entity, CommunicationProfile::default())?;
             world.insert_component_preference_profile(entity, PreferenceProfile::default())?;
+            world.insert_component_drive_escalation_profile(
+                entity,
+                DriveEscalationProfile::default(),
+            )?;
             Ok(())
         })
     }

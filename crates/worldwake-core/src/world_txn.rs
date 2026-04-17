@@ -1991,13 +1991,14 @@ mod tests {
     use crate::{
         AcquisitionExhaustionTracker, AgentBeliefStore, ArtifactPostingProfile, BeliefStoreDiff,
         BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory, CognitiveProfile,
-        CommunicationProfile, DemandMemory, DisposalProfile, EpistemicDispositionProfile,
-        ExecutionBudget, ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
-        InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
-        IntentionDispositionProfile, MerchandiseProfile, ObligationSatiationProfile, OfficeData,
-        OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
-        PerceptionSource, PreferenceProfile, RecordData, RecordEntryId, RecordKind,
-        SubstitutePreferences, SuccessionLaw, TellProfile, TradeDispositionProfile, UtilityProfile,
+        CommunicationProfile, DemandMemory, DisposalProfile, DriveEscalationProfile,
+        EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, FactionData,
+        FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+        InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile,
+        ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState,
+        PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, PreferenceProfile,
+        RecordData, RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
+        TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2491,6 +2492,14 @@ mod tests {
                     component_kind: ComponentKind::ExecutionBudget,
                     before: None,
                     after: ComponentValue::ExecutionBudget(ExecutionBudget::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::DriveEscalationProfile,
+                    before: None,
+                    after: ComponentValue::DriveEscalationProfile(
+                        DriveEscalationProfile::default(),
+                    ),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

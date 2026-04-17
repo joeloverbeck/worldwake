@@ -16,6 +16,7 @@ use crate::{
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     disposal::DisposalProfile,
     diversification::{DiversificationProfile, LastProactiveExplorationTick},
+    drive_escalation_profile::DriveEscalationProfile,
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
     evidence::SceneEvidence,
