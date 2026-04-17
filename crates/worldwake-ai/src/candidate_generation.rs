@@ -5245,6 +5245,7 @@ mod tests {
                     told_beliefs: BTreeMap::new(),
                     heard_beliefs: BTreeMap::new(),
                     asked_witnesses: BTreeMap::new(),
+                    place_visits: BTreeMap::new(),
                     institutional_beliefs,
                 },
             );

@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 74
-- Contributing golden test files: 12
-- Associated tests: 88
+- Scenario blocks: 75
+- Contributing golden test files: 13
+- Associated tests: 89
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -297,6 +297,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the authoritative hunger exhaustion counter stays non-zero while the
 
 **Cross-system chain**: repeated budget exhaustion -> exploration unlock -> local relief ->
+
+### Scenario 342: Waste Decay Reaches A Bounded Steady State
+
+- Source: `golden_item_decay.rs:63`
+- Systems: Needs, AI, ItemDecay
+- GoalKinds: Relieve
+- ActionDomains: Needs
+- Places: ForestPath
+- Principles: 4, 10, 11, 26
+
+**Setup**: Two AI agents start at ForestPath, an outdoor place where `relieve_wilderness` is lawful. Hunger, thirst, and fatigue are inert; only bladder rises, so the repeated self-care loop is local wilderness relief rather than travel to a latrine. Waste decay is configured to 200 ticks and the run continues for 400 ticks.
+
+**Proves**: repeated Waste production through the live AI loop no longer grows without bound. `ItemDecay` archives older Waste, emits the decay tags, and preserves conservation via `wilderness_relief_events - item_decay_events == live_waste_lots` at authoritative checkpoints.
+
+**Cross-system chain**: bladder escalation -> GoalKind::Relieve -> committed `relieve_wilderness` -> Waste lot on ground -> `ItemDecay` archives Waste at the 200-tick threshold -> live Waste count stays bounded to the active decay window instead of accumulating forever.
 
 ### Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 
@@ -757,7 +772,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 148: Survival Baseline Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_baseline.rs:340`
+- Source: `golden_survival_baseline.rs:343`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -772,7 +787,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 149: Survival Baseline Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_baseline.rs:396`
+- Source: `golden_survival_baseline.rs:399`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -787,7 +802,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 150: Survival Baseline Explorer Discovers Fertile Fields Orchard
 
-- Source: `golden_survival_baseline.rs:423`
+- Source: `golden_survival_baseline.rs:426`
 - Systems: AI, Exploration, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -802,7 +817,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 151: Survival Baseline Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_baseline.rs:457`
+- Source: `golden_survival_baseline.rs:460`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -817,7 +832,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 152: Survival Baseline Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_baseline.rs:487`
+- Source: `golden_survival_baseline.rs:490`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -832,7 +847,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_scattered.rs:348`
+- Source: `golden_survival_scattered.rs:349`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -847,7 +862,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 154: Scattered Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_scattered.rs:407`
+- Source: `golden_survival_scattered.rs:408`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -862,7 +877,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 155: Isolated Agent Reaches A Food Source From Ravine Shelter
 
-- Source: `golden_survival_scattered.rs:435`
+- Source: `golden_survival_scattered.rs:436`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -877,7 +892,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 156: Scattered Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_scattered.rs:466`
+- Source: `golden_survival_scattered.rs:467`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -892,7 +907,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 157: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_scattered.rs:499`
+- Source: `golden_survival_scattered.rs:500`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production

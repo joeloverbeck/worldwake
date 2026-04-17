@@ -52,7 +52,17 @@ pub struct AgentBeliefStore {
     pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub heard_beliefs: BTreeMap<TellMemoryKey, HeardBeliefMemory>,
     pub asked_witnesses: BTreeMap<AskWitnessMemoryKey, AskWitnessMemory>,
+    #[serde(default)]
+    pub place_visits: BTreeMap<EntityId, PlaceVisitRecord>,
     pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
+}
+
+/// Tracks an agent's visit history for a believed place.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct PlaceVisitRecord {
+    pub ticks_present: u32,
+    pub last_arrival_tick: Tick,
+    pub visit_count: u16,
 }
 
 impl AgentBeliefStore {
@@ -1033,6 +1043,8 @@ pub struct BeliefStoreDiff {
     pub heard_beliefs_removed: Vec<TellMemoryKey>,
     pub asked_witnesses_set: Vec<(AskWitnessMemoryKey, AskWitnessMemory)>,
     pub asked_witnesses_removed: Vec<AskWitnessMemoryKey>,
+    pub place_visits_set: Vec<(EntityId, PlaceVisitRecord)>,
+    pub place_visits_removed: Vec<EntityId>,
     pub entity_claims_set: Vec<(EntityId, Vec<EntityBeliefClaim>)>,
     pub entity_claims_removed: Vec<EntityId>,
     pub institutional_beliefs_set: Vec<(InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>)>,
@@ -1070,6 +1082,10 @@ impl BeliefStoreDiff {
         let asked_witnesses_removed =
             diff_btree_map_removed(&before.asked_witnesses, &after.asked_witnesses);
 
+        let place_visits_set = diff_btree_map_set(&before.place_visits, &after.place_visits);
+        let place_visits_removed =
+            diff_btree_map_removed(&before.place_visits, &after.place_visits);
+
         let entity_claims_set = diff_btree_map_set(&before.entity_claims, &after.entity_claims);
         let entity_claims_removed =
             diff_btree_map_removed(&before.entity_claims, &after.entity_claims);
@@ -1091,6 +1107,8 @@ impl BeliefStoreDiff {
             heard_beliefs_removed,
             asked_witnesses_set,
             asked_witnesses_removed,
+            place_visits_set,
+            place_visits_removed,
             entity_claims_set,
             entity_claims_removed,
             institutional_beliefs_set,
@@ -1148,6 +1166,13 @@ impl BeliefStoreDiff {
             result.asked_witnesses.insert(key, memory);
         }
 
+        for id in &self.place_visits_removed {
+            result.place_visits.remove(id);
+        }
+        for (id, record) in self.place_visits_set {
+            result.place_visits.insert(id, record);
+        }
+
         for id in &self.entity_claims_removed {
             result.entity_claims.remove(id);
         }
@@ -1179,6 +1204,8 @@ impl BeliefStoreDiff {
             && self.heard_beliefs_removed.is_empty()
             && self.asked_witnesses_set.is_empty()
             && self.asked_witnesses_removed.is_empty()
+            && self.place_visits_set.is_empty()
+            && self.place_visits_removed.is_empty()
             && self.entity_claims_set.is_empty()
             && self.entity_claims_removed.is_empty()
             && self.institutional_beliefs_set.is_empty()
@@ -2540,12 +2567,12 @@ mod tests {
         AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
         BelievedActivity, BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry,
         BelievedEvidenceState, HeardBeliefDisposition, HeardBeliefMemory, MismatchKind,
-        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus,
-        SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
-        SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
-        belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        compute_activation, derive_entity_summary, recipient_knowledge_status, salience_boost,
-        share_equivalent, to_shared_belief_snapshot,
+        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, PlaceVisitRecord,
+        RecipientKnowledgeStatus, SharedInstitutionalBelief, SharedTellState, SocialObservation,
+        SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
+        ToldBeliefMemory, belief_confidence, build_believed_entity_state,
+        build_observed_entity_snapshot, compute_activation, derive_entity_summary,
+        recipient_knowledge_status, salience_boost, share_equivalent, to_shared_belief_snapshot,
     };
     use crate::{
         ActionDefId, ActionDomain, BelievedArtifactState, BelievedBountyTerms,
@@ -2996,6 +3023,7 @@ mod tests {
         assert!(store.told_beliefs.is_empty());
         assert!(store.heard_beliefs.is_empty());
         assert!(store.asked_witnesses.is_empty());
+        assert!(store.place_visits.is_empty());
         assert!(store.institutional_beliefs.is_empty());
     }
 
@@ -5570,6 +5598,14 @@ mod tests {
             950,
         ));
         store.update_entity(entity(1), sample_state(7, 2));
+        store.place_visits.insert(
+            entity(49),
+            PlaceVisitRecord {
+                ticks_present: 12,
+                last_arrival_tick: Tick(9),
+                visit_count: 3,
+            },
+        );
         store.institutional_beliefs.insert(
             InstitutionalBeliefKey::OfficeHolderOf { office: entity(50) },
             vec![sample_institutional_belief(12)],
@@ -7018,6 +7054,14 @@ mod tests {
         AskWitnessMemory { asked_tick: tick }
     }
 
+    fn make_place_visit_record(tick: Tick) -> PlaceVisitRecord {
+        PlaceVisitRecord {
+            ticks_present: tick.0 as u32,
+            last_arrival_tick: tick,
+            visit_count: (tick.0 as u16).max(1),
+        }
+    }
+
     fn make_institutional_key(office_slot: u32) -> InstitutionalBeliefKey {
         InstitutionalBeliefKey::OfficeHolderOf {
             office: entity(office_slot),
@@ -7207,6 +7251,25 @@ mod tests {
     }
 
     #[test]
+    fn belief_store_diff_roundtrip_place_visits() {
+        let mut before = AgentBeliefStore::new();
+        before
+            .place_visits
+            .insert(entity(1), make_place_visit_record(Tick(1)));
+
+        let mut after = before.clone();
+        after.place_visits.remove(&entity(1));
+        after
+            .place_visits
+            .insert(entity(2), make_place_visit_record(Tick(2)));
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.place_visits_removed.len(), 1);
+        assert_eq!(diff.place_visits_set.len(), 1);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
     fn belief_store_diff_roundtrip_entity_claims() {
         let mut before = AgentBeliefStore::new();
         before
@@ -7281,6 +7344,9 @@ mod tests {
             .asked_witnesses
             .insert(make_ask_witness_key(1), make_ask_witness_memory(Tick(1)));
         before
+            .place_visits
+            .insert(entity(1), make_place_visit_record(Tick(1)));
+        before
             .entity_claims
             .insert(entity(1), vec![make_entity_claim(1, Tick(1))]);
         before.institutional_beliefs.insert(
@@ -7303,6 +7369,9 @@ mod tests {
         after
             .asked_witnesses
             .insert(make_ask_witness_key(3), make_ask_witness_memory(Tick(5)));
+        after
+            .place_visits
+            .insert(entity(2), make_place_visit_record(Tick(5)));
         after
             .entity_claims
             .insert(entity(2), vec![make_entity_claim(2, Tick(5))]);

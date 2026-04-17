@@ -1,6 +1,6 @@
 # S106: Ground Item Decay
 
-**Status**: DRAFT
+**Status**: COMPLETED
 
 ## Summary
 
@@ -269,3 +269,28 @@ The decay system itself is the dampener: each commodity kind has a concrete time
 5. **Conservation test**: At every checkpoint tick, verify using `verify_live_lot_conservation` and `verify_authoritative_conservation` (conservation.rs) that `items_created - items_archived == live_item_count`.
 
 6. **Regression**: All existing golden tests must pass. Default decay values (Waste: 200, Apple: 720) must not interfere with existing test scenarios (which typically run < 200 ticks or have pre-placed items that should not decay during the test window).
+
+## Outcome
+
+Completed on 2026-04-17.
+
+- Landed the full S106 substrate and runtime path across `worldwake-core`, `worldwake-sim`, `worldwake-systems`, and `worldwake-cli`: `GroundSince`, persisted `CommodityDecayMap`, `EventTag::ItemDecay`, `SystemId::ItemDecay`, live `item_decay_system`, and scenario/default decay configuration.
+- Corrected the original GroundSince lifecycle assumption during implementation so loose-ground state is synchronized from the full relation-derived predicate, not only `set_ground_location`.
+- Added the end-to-end proof layer in `worldwake-ai` with Scenario 342 in `golden_item_decay.rs`, plus regenerated golden inventory/detail docs for the new scenario coverage.
+
+## Deviations
+
+- The drafted golden proof surface originally assumed a latrine-oriented setup and a direct archived-commodity total. The landed golden instead keeps agents at an outdoor place so repeated `relieve_wilderness` is the lawful action path, and proves conservation through `WildernessRelief` and `ItemDecay` event counts against live authoritative Waste totals.
+- The original ticket decomposition split the work across 001–004; the archived ticket chain now carries the detailed per-slice reassessment and verification history, while this spec records only the final delivered contract.
+
+## Verification Results
+
+- Passed `cargo test -p worldwake-core ground_since`
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo test -p worldwake-systems item_decay`
+- Passed `cargo test -p worldwake-systems`
+- Passed `cargo test -p worldwake-ai golden_waste_decay_reaches_steady_state`
+- Passed `cargo test -p worldwake-ai`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

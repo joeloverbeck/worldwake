@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 12
-- Files contributing `golden_*` tests: 12
-- Total `golden_*` tests: 88
+- Golden test files: 13
+- Files contributing `golden_*` tests: 13
+- Total `golden_*` tests: 89
 
 ## Per-File Inventory
 
@@ -17,6 +17,7 @@ Do not hand-edit it.
 | `golden_ai_decisions.rs` | 13 |
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 8 |
+| `golden_item_decay.rs` | 1 |
 | `golden_merchant_selling.rs` | 9 |
 | `golden_offices.rs` | 12 |
 | `golden_perception_exposure.rs` | 7 |
@@ -67,6 +68,10 @@ Do not hand-edit it.
 - `golden_s102_multi_hop_frontier_discovery`
 - `golden_s102_exploration_chain_belief_persistence`
 - `golden_s102_counter_reset_on_need_satisfaction`
+
+### `golden_item_decay.rs`
+
+- `golden_waste_decay_reaches_steady_state`
 
 ### `golden_merchant_selling.rs`
 

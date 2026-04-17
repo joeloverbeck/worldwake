@@ -15,6 +15,7 @@ use crate::{
     },
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     disposal::DisposalProfile,
+    diversification::{DiversificationProfile, LastProactiveExplorationTick},
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
     evidence::SceneEvidence,
@@ -145,9 +146,10 @@ mod tests {
         ContentionQueue, ControlSource, DeadAt, DeprivationExposure, DeprivationKind,
         DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, ItemLot,
         KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, PatrolProfile, PatrolRoute,
-        Permille, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        ProvenanceEntry, Quantity, ResourceSource, Tick, TravelEdgeId, UniqueItem, UniqueItemKind,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        Permille, PlaceVisitRecord, ProductionJob, ProductionOutputOwner,
+        ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource, Tick,
+        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
         belief::{
             AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, PerceptionProfile,
             PerceptionSource, TellProfile,
@@ -234,6 +236,14 @@ mod tests {
             told_beliefs: BTreeMap::new(),
             heard_beliefs: BTreeMap::new(),
             asked_witnesses: BTreeMap::new(),
+            place_visits: BTreeMap::from([(
+                entity(28),
+                PlaceVisitRecord {
+                    ticks_present: 8,
+                    last_arrival_tick: Tick(6),
+                    visit_count: 2,
+                },
+            )]),
             institutional_beliefs: BTreeMap::from([(
                 crate::InstitutionalBeliefKey::OfficeHolderOf { office: entity(24) },
                 vec![crate::BelievedInstitutionalClaim {

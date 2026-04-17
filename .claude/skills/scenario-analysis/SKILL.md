@@ -42,6 +42,7 @@ Check for:
 - **Agents without perception_profile**: Agents without `perception_profile` have severely limited observation capacity and may be effectively blind to ground items.
 - **Locations without reachable food/water**: For each place with agents, trace travel edges to check whether food and water sources are reachable within a reasonable hop count (2-3 hops). Flag isolated locations with no food/water access.
 - **Agents without water access for washing**: Wash requires possessed Water (not a facility). Check whether agents can reach a water source (Well, River, or other water-producing facility) to harvest Water for washing. Flag agents with no reachable water source within 2-3 travel hops.
+- **Agents with disabled social profiles**: Check `tell_profile.max_tell_candidates`. If zero for all agents, note as pre-flight observation: "Social interaction disabled — smell 9 (Social Isolation) is expected by design." This avoids false reporting during Layer 1.
 
 Report findings as "Pre-flight Warnings" in the report's Run Summary section. Do not gate the observer run on pre-flight results — these are informational only.
 
@@ -104,7 +105,14 @@ The dump has 7 sections:
 After reading Sections 1, 2, and 3, evaluate whether any agent has any need above 750 permille for 100+ consecutive ticks (from Section 2 "Ticks above 750 permille" and Section 3 Smell 5/6 flags).
 
 **If NO agent meets this threshold** (healthy scenario):
-1. Perform lightweight extraction: read Section 5 (beliefs), Section 6 (end-state), and grep Section 7 for `Plan search outcomes`, `Goals selected`, and `Final affordances`. Optionally read Section 4 last events for perception pattern analysis. This gives enough data for meaningful Layer 1 and Layer 3 analysis without requiring the full Section 7 deep-dive protocol.
+1. Perform lightweight extraction using this protocol (a reduced version of the full Section 7 reading protocol):
+   1. Grep `Tick breakdown` and `Plan search outcomes` — planning health baseline
+   2. `bash grep 'Goals selected' <dump>` — goal types (too long for Grep tool)
+   3. Grep `Failed plan attempts` with `-A 5` — any planning failures
+   4. Grep `Blocked desires` with `-A 5` — may be absent; skip if not found
+   5. Grep `Final affordances` with `-A 15` — available actions at end of sim
+   6. Read Section 5 (beliefs) and Section 6 (end-state) in full
+   7. Optionally read Section 4 last events — check whether Discovery events dominate (>50% of the last 100 events), which signals perception bloat from ground item accumulation (Waste, consumed item remnants). If so, note the affected location(s) and cross-reference with Section 6 place contents.
 2. Run Layer 1 (lighter — smells unlikely to be severe) and Layer 3 (always runs — detection gaps matter even in healthy scenarios).
 3. Skip Layer 2 entirely (no needs failures to diagnose).
 4. Use the Healthy Scenario Report Template.
@@ -123,7 +131,7 @@ Analyze the dump for all 10 smell categories. For each, state whether the smell 
 1. **Redundant Perception** — Agent observes the same unchanged entity repeatedly. Suggests overly broad perception or belief never updating.
 
 2. **Action Loops** — Agent repeats the same action sequence (not patrol) without progress. Cross-reference with Section 7's decision timeline to see what the planner was selecting during the loop period. Also look for:
-   - **Behavioral collapse**: agents settling into a minimal-action pattern (e.g., only sleep+relieve) for extended periods. Section 2 includes pre-computed behavioral transition markers — use these as starting points, then verify against Section 7 Decision timeline bins.
+   - **Behavioral collapse**: agents settling into a minimal-action pattern (e.g., only sleep+relieve) for extended periods. Section 2 includes pre-computed behavioral transition markers — use these as starting points, then verify against Section 7 Decision timeline bins. Behavioral transitions in the last 100 ticks of the simulation with all needs below 300 permille are typically end-of-simulation artifacts — sleep is the correct low-urgency default. Note but do not escalate unless needs were rising at the time of the transition.
    - **Degenerate plan loops**: Section 7 shows the same goal selected repeatedly with plans found but 0 actions executed. Grep for `GoalSatisfied\[steps=0` — if an agent has hundreds of these across multiple 100-tick bins, it confirms a degenerate plan loop.
    - **Affordance-reporting gaps**: if an action type appears frequently in the action timeline but is absent from all affordance snapshots, note this discrepancy in Cross-Cutting Patterns.
 
@@ -317,6 +325,8 @@ Scan the trace data for problematic behaviors that are NOT caught by any of the 
 - **Asymmetric agent outcomes**: Agents with identical profiles and similar starting conditions have vastly different outcomes — suggests hidden sensitivity to initial placement or stochastic choices.
 - **Dead-end exploration**: ExploreLocation succeeds (agent visits new places) but never leads to resource discovery because the explored places are also resource-poor.
 - **Action timing pathology**: Agent executes correct actions but at wrong times (e.g., eating when hunger is low, sleeping when fatigue is low) suggesting priority inversion.
+- **Geographic convergence**: All or most agents settle at the same subset of locations, leaving other places effectively unused. Compare Section 2 location ticks across agents — if 2+ agents spend >60% of ticks at the same location(s) while other places get <5%, the scenario's spatial design may be collapsing to a dominant corridor. This is a scenario design signal, not necessarily an agent bug.
+- **Single-source resource dependency**: All consumption of a commodity type (food, water) comes from one resource source when alternatives exist in the scenario. Compare action counts (harvest types) against scenario resource_sources. If an entire commodity class is sourced from one facility while agents have recipes for unused alternatives, agents lack resilience to disruption.
 
 For each detected gap, document:
 - **Pattern name**: Short descriptive label

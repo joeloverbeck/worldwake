@@ -70,6 +70,19 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 
 Cross-reference with existing scenarios (`scenarios/*.ron`) for structural conventions.
 
+## Candidate Scoring Architecture
+
+**Trigger**: Spec proposes scoring/utility computation for candidate emission (e.g., drive scores, priority weights, utility factors).
+
+**Verify the spec's scoring model matches the actual emission-vs-ranking architecture**:
+
+1. Emitters call `emit_candidate_with_trace` which produces `GroundedGoal` — a struct with `GoalKey`, `OpportunityAnchor`, and evidence sets. There is **no score field** on `GroundedGoal`.
+2. Ranking happens separately in `crates/worldwake-ai/src/ranking.rs` via `motive_score` computation.
+3. Specs that embed scoring/utility computation in the emitter (e.g., computing a `drive_score` and attaching it to a candidate struct) are architectural mismatches — flag as Issues.
+4. Emitters determine **whether** to emit (gate logic: thresholds, vetoes, cooldowns). Ranking determines **relative priority** among emitted candidates.
+
+If the spec proposes utility gates (emit only if utility > 0), that belongs in the emitter. If the spec proposes priority/ranking formulas, those belong in `ranking.rs` via `motive_score`.
+
 ## New Enum Variant on Cross-Crate Enum
 
 **Trigger**: Spec extends an enum used across multiple crates.

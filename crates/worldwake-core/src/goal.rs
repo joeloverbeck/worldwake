@@ -14,6 +14,12 @@ pub enum CommodityPurpose {
     RecipeInput(RecipeId),
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum ExplorationMotivation {
+    NeedDriven(HomeostaticNeedId),
+    Proactive,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum GoalKind {
     ConsumeOwnedCommodity {
@@ -247,8 +253,8 @@ impl From<&GoalKind> for GoalKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, TellTopic,
-        ViolationId,
+        CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind, OpportunityAnchor,
+        OpportunityKey, TellTopic, ViolationId,
     };
     use crate::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
@@ -778,6 +784,20 @@ mod tests {
         let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn exploration_motivation_roundtrips_through_bincode() {
+        let motivation = ExplorationMotivation::NeedDriven(HomeostaticNeedId::Thirst);
+
+        let bytes = bincode::serialize(&motivation).unwrap();
+        let roundtrip: ExplorationMotivation = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, motivation);
+        assert_eq!(
+            ExplorationMotivation::Proactive,
+            ExplorationMotivation::Proactive
+        );
     }
 
     #[test]
