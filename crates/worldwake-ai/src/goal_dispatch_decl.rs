@@ -74,13 +74,7 @@ const ACQUIRE_OPS: &[PlannerOpKind] = &[
 ];
 const SLEEP_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep];
 const RELIEVE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Relieve, PlannerOpKind::Travel];
-const WASH_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Wash,
-    PlannerOpKind::Travel,
-    PlannerOpKind::Trade,
-    PlannerOpKind::Harvest,
-    PlannerOpKind::MoveCargo,
-];
+const WASH_OPS: &[PlannerOpKind] = &[PlannerOpKind::Wash, PlannerOpKind::Travel];
 const FREE_CARRY_CAPACITY_OPS: &[PlannerOpKind] = &[PlannerOpKind::DropItem];
 const ENGAGE_HOSTILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];
 const RAID_TARGET_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];

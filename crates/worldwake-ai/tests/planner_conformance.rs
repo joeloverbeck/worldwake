@@ -511,14 +511,31 @@ fn conformance_wash() {
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
-    let water_lot = give_commodity(
-        &mut ch.h.world,
-        &mut ch.h.event_log,
-        agent,
-        VILLAGE_SQUARE,
-        CommodityKind::Water,
-        Quantity(3),
-    );
+    let (wash_basin, well) = {
+        let mut txn = new_txn(&mut ch.h.world, 0);
+        let basin = txn.create_entity(worldwake_core::EntityKind::Facility);
+        let source = txn.create_entity(worldwake_core::EntityKind::Facility);
+        txn.set_ground_location(basin, VILLAGE_SQUARE).unwrap();
+        txn.set_ground_location(source, VILLAGE_SQUARE).unwrap();
+        txn.set_component_workstation_marker(
+            basin,
+            worldwake_core::WorkstationMarker(worldwake_core::WorkstationTag::WashBasin),
+        )
+        .unwrap();
+        txn.set_component_resource_source(
+            source,
+            worldwake_core::ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(3),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut ch.h.event_log);
+        (basin, source)
+    };
     seed_actor_local_beliefs(
         &mut ch.h.world,
         &mut ch.h.event_log,
@@ -540,7 +557,10 @@ fn conformance_wash() {
         &goal,
         semantics,
         initial_state,
-        &[PlanningEntityRef::Authoritative(water_lot)],
+        &[
+            PlanningEntityRef::Authoritative(wash_basin),
+            PlanningEntityRef::Authoritative(well),
+        ],
         None,
     )
     .expect("wash transition should produce Some");
@@ -556,7 +576,7 @@ fn conformance_wash() {
             .unwrap()
             .dirtiness;
     // Wash may take several ticks depending on metabolism profile.
-    ch.run_action_to_completion(agent, "wash", vec![water_lot], None, 30);
+    ch.run_action_to_completion(agent, "wash", vec![wash_basin, well], None, 30);
     let handler_after =
         ch.h.world
             .get_component_homeostatic_needs(agent)

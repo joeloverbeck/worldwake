@@ -11,18 +11,17 @@ use worldwake_core::{
     AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy, BelievedEntityState,
     BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile, CombatProfile,
     CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ContentionGrant,
-    ControlSource, DemandObservation, DeprivationExposure, DisposalProfile,
-    DiversificationProfile, DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId,
-    EntityKind, ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastProactiveExplorationTick, LastSeenMemory, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
-    OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
-    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
-    load_of_entity,
+    ControlSource, DemandObservation, DeprivationExposure, DisposalProfile, DiversificationProfile,
+    DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
+    ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
+    LastProactiveExplorationTick, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, Permille, PlaceTag,
+    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
+    ResourceSource, RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
+    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
+    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, World, Wound,
+    danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -471,13 +470,21 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
 
     fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
         (agent == self.agent)
-            .then(|| self.world.get_component_deprivation_exposure(agent).copied())
+            .then(|| {
+                self.world
+                    .get_component_deprivation_exposure(agent)
+                    .copied()
+            })
             .flatten()
     }
 
     fn drive_escalation_profile(&self, agent: EntityId) -> Option<DriveEscalationProfile> {
         (agent == self.agent)
-            .then(|| self.world.get_component_drive_escalation_profile(agent).cloned())
+            .then(|| {
+                self.world
+                    .get_component_drive_escalation_profile(agent)
+                    .cloned()
+            })
             .flatten()
     }
 

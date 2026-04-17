@@ -24,8 +24,8 @@ use worldwake_core::{
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
     ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
-    Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile,
-    ViolationKind, belief_confidence, escalation_multiplier, failure_ratio_permille,
+    Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
+    belief_confidence, escalation_multiplier, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 

@@ -856,7 +856,9 @@ pub fn planner_only_candidates(
         .collect::<Vec<_>>();
     let pick_up = semantics_table
         .iter()
-        .filter(|(_, semantics)| semantics.transition_kind == PlannerTransitionKind::PickUpGroundLot)
+        .filter(|(_, semantics)| {
+            semantics.transition_kind == PlannerTransitionKind::PickUpGroundLot
+        })
         .flat_map(|(def_id, _)| {
             actor_place
                 .into_iter()

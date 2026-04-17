@@ -13,8 +13,8 @@ use worldwake_core::{
     CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
     ExplorationProfile, KnownRecipes, LastProactiveExplorationTick, LoadUnits, MerchandiseProfile,
     PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy, ResourceSource,
-    Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-    WorkstationMarker, World, WorldTxn, default_commodity_decay_map, hash_world,
+    Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
+    World, WorldTxn, default_commodity_decay_map, hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -345,7 +345,10 @@ fn spawn_agent(
     txn.set_component_deprivation_exposure(agent_id, DeprivationExposure::default())?;
     let thresholds = agent_def.drive_thresholds.unwrap_or_default();
     txn.set_component_drive_thresholds(agent_id, thresholds)?;
-    let drive_escalation_profile = agent_def.drive_escalation_profile.clone().unwrap_or_default();
+    let drive_escalation_profile = agent_def
+        .drive_escalation_profile
+        .clone()
+        .unwrap_or_default();
     txn.set_component_drive_escalation_profile(agent_id, drive_escalation_profile)?;
     let metabolism = agent_def.metabolism_profile.unwrap_or_default();
     txn.set_component_metabolism_profile(agent_id, metabolism)?;
@@ -604,8 +607,8 @@ mod tests {
         HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
         LastProactiveExplorationTick, LastSeenMemory, LoadUnits, MultiplierPermille,
         ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
-        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
-        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
+        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
         ViolationDispositionProfile, WorkstationTag, default_commodity_decay_map,
     };
 

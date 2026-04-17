@@ -872,7 +872,12 @@ mod tests {
         }
     }
 
-    fn remember(view: &mut StubBeliefView, actor: EntityId, entity: EntityId, belief: BelievedEntityState) {
+    fn remember(
+        view: &mut StubBeliefView,
+        actor: EntityId,
+        entity: EntityId,
+        belief: BelievedEntityState,
+    ) {
         view.known_entity_beliefs
             .entry(actor)
             .or_default()

@@ -730,32 +730,51 @@ fn golden_wash_action() {
         },
     );
 
-    give_commodity(
+    let _wash_basin = place_workstation(
         &mut h.world,
         &mut h.event_log,
-        agent,
         VILLAGE_SQUARE,
-        CommodityKind::Water,
-        Quantity(1),
+        WorkstationTag::WashBasin,
+        ProductionOutputOwner::Actor,
+    );
+    let water_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::Well,
+        ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(2),
+            max_quantity: Quantity(2),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
     );
 
     let initial_dirtiness = h.agent_dirtiness(agent);
-    let initial_water = h.agent_commodity_qty(agent, CommodityKind::Water);
-    let initial_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
+    let initial_source = h
+        .world
+        .get_component_resource_source(water_source)
+        .expect("wash scenario should have a local water source")
+        .available_quantity;
     let mut washed = false;
 
     for _tick in 0..80 {
         h.step_once();
 
-        let current_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
+        let current_source = h
+            .world
+            .get_component_resource_source(water_source)
+            .expect("wash scenario should retain its local water source")
+            .available_quantity;
+
         assert!(
-            current_water_total <= initial_water_total,
-            "Water lots should not increase during washing: initial={initial_water_total}, now={current_water_total}"
+            current_source <= initial_source,
+            "Local wash water should not increase during washing: initial={initial_source}, now={current_source}"
         );
 
-        if h.agent_commodity_qty(agent, CommodityKind::Water) < initial_water
-            && h.agent_dirtiness(agent) < initial_dirtiness
-        {
+        if current_source < initial_source && h.agent_dirtiness(agent) < initial_dirtiness {
             washed = true;
             break;
         }
@@ -763,9 +782,12 @@ fn golden_wash_action() {
 
     assert!(
         washed,
-        "Agent should wash when dirtiness is high and water is locally controlled; initial_dirtiness={initial_dirtiness}, final_dirtiness={}, initial_water={initial_water}, final_water={}",
+        "Agent should wash when dirtiness is high and a local basin plus water source are available; initial_dirtiness={initial_dirtiness}, final_dirtiness={}, initial_source={initial_source}, final_source={}",
         h.agent_dirtiness(agent),
-        h.agent_commodity_qty(agent, CommodityKind::Water)
+        h.world
+            .get_component_resource_source(water_source)
+            .expect("wash scenario should retain its local water source")
+            .available_quantity
     );
 }
 

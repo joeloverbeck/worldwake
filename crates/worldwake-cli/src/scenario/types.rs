@@ -12,10 +12,10 @@ use worldwake_core::{
     DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
     EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
     IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, MetabolismProfile,
-    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille,
-    PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
-    TellProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile,
+    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.

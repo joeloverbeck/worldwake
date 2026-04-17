@@ -496,7 +496,8 @@ impl PlanningSnapshot {
                 )
             })
             .collect();
-        let places = build_snapshot_places(view, actor, &included_places, &entities, evidence_entities);
+        let places =
+            build_snapshot_places(view, actor, &included_places, &entities, evidence_entities);
         let actor_known_social_observations = view.known_social_observations(actor);
         let actor_confidence_policy = view.belief_confidence_policy(actor);
         let content_edges = entities
@@ -1205,9 +1206,7 @@ fn collect_entities(
                     (belief.last_known_place == Some(*place)).then_some((*entity, belief))
                 })
                 .filter_map(|(entity, belief)| {
-                    let kind = belief
-                        .believed_kind
-                        .or_else(|| view.entity_kind(entity))?;
+                    let kind = belief.believed_kind.or_else(|| view.entity_kind(entity))?;
                     filter.includes(kind, belief.alive).then_some(entity)
                 })
                 .collect::<Vec<_>>()
@@ -2488,8 +2487,10 @@ mod tests {
         );
         view.adjacent
             .insert(believed_place, vec![(place_a, NonZeroU32::new(1).unwrap())]);
-        view.adjacent
-            .insert(authoritative_place, vec![(place_a, NonZeroU32::new(1).unwrap())]);
+        view.adjacent.insert(
+            authoritative_place,
+            vec![(place_a, NonZeroU32::new(1).unwrap())],
+        );
         view.known_entity_beliefs.insert(
             actor,
             vec![(

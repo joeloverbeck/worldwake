@@ -1,6 +1,6 @@
 # S116DRIESCSUS-010: Canonicalize the authoritative water-access contract for wash
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-systems` wash validation, matching AI/runtime fallout, focused action/planner coverage
@@ -89,3 +89,37 @@ Add focused runtime and AI tests that prove the chosen contract directly before 
 2. `cargo test -p worldwake-systems needs`
 3. `cargo test -p worldwake-ai`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Outcome amended: 2026-04-17
+
+Completed on 2026-04-17.
+
+- Replaced the old portable-water `wash` rule in `crates/worldwake-systems/src/needs_actions.rs` with one concrete local facility contract: wash now requires a `WorkstationTag::WashBasin` facility plus a co-located `ResourceSource { commodity: Water, available_quantity >= 1 }` facility, and execution decrements that authoritative source directly.
+- Removed the old held-water Wash path from `crates/worldwake-ai/src/candidate_generation.rs`, `crates/worldwake-ai/src/goal_dispatch_decl.rs`, `crates/worldwake-ai/src/goal_model.rs`, `crates/worldwake-ai/src/search/candidates.rs`, and `crates/worldwake-ai/src/failure_handling.rs`, so the planner now reasons against the same basin-plus-source contract as runtime.
+- Updated planner/runtime parity coverage in `crates/worldwake-ai/tests/planner_conformance.rs`, focused AI tests in `candidate_generation.rs`, `goal_model.rs`, and `search/tests.rs`, and focused runtime tests in `needs_actions.rs`.
+- Updated the downstream `golden_wash_action` proof in `crates/worldwake-ai/tests/golden_ai_decisions.rs` so the existing golden now asserts the shipped local-basin-plus-source wash contract instead of the removed held-water path.
+- Updated active ticket `tickets/S116DRIESCSUS-006.md` so its dependency story and wash assumptions now point at the active `010` contract change instead of the removed direct-possession rule.
+
+## Deviations
+
+- Reassessment selected one concrete local contract rather than preserving a dual path. Wash no longer accepts "held water" as a second lawful alias; the canonical answer is now "local wash basin plus local water source."
+- The acceptance command `cargo test -p worldwake-ai` now fails only in the still-active `S116DRIESCSUS-006` golden owner (`crates/worldwake-ai/tests/golden_drive_escalation.rs`), whose scenario/assertions still need retuning against the newly landed wash contract. The lower-layer `010` code and the existing non-S116 wash golden both pass.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib needs_actions::tests::wash_consumes_local_water_source_and_clears_dirtiness -- --exact`
+- Passed `cargo test -p worldwake-systems --lib needs_actions::tests::wash_accepts_local_basin_and_water_source -- --exact`
+- Passed `cargo test -p worldwake-systems --lib needs_actions::tests::wash_rejects_water_source_without_wash_basin -- --exact`
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::wash_requires_dirtiness_and_local_wash_access -- --exact`
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::wash_emits_when_basin_and_local_water_source_are_believed -- --exact`
+- Passed `cargo test -p worldwake-ai --lib goal_model::tests::wash_returns_places_with_basin_and_water_source_belief -- --exact`
+- Passed `cargo test -p worldwake-ai --lib search::tests::search_wash_finds_travel_then_wash_plan_at_believed_access_place -- --exact`
+- Passed `cargo test -p worldwake-ai --lib search::tests::search_local_wash_candidates_require_basin_and_water_source -- --exact`
+- Passed `cargo test -p worldwake-ai --test planner_conformance conformance_wash -- --exact`
+- Passed `cargo test -p worldwake-systems --lib needs_actions`
+- Passed `cargo test -p worldwake-ai --lib`
+- Passed `cargo test -p worldwake-ai --test golden_ai_decisions golden_wash_action -- --exact`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Ran `cargo test -p worldwake-ai`; it failed only in the still-active `crates/worldwake-ai/tests/golden_drive_escalation.rs` assertions owned by `S116DRIESCSUS-006`

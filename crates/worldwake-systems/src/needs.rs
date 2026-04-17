@@ -556,7 +556,7 @@ mod tests {
             .iter()
             .map(|event_id| {
                 event_log
-                        .get(*event_id)
+                    .get(*event_id)
                     .unwrap()
                     .action_name()
                     .unwrap()

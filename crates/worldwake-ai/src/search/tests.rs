@@ -934,18 +934,6 @@ fn harvest_apple_recipe_variant(name: &str, output_quantity: u32) -> RecipeDefin
     }
 }
 
-fn harvest_water_recipe() -> RecipeDefinition {
-    RecipeDefinition {
-        name: "Harvest Water".to_string(),
-        inputs: vec![],
-        outputs: vec![(CommodityKind::Water, Quantity(1))],
-        work_ticks: NonZeroU32::new(3).unwrap(),
-        required_workstation_tag: Some(WorkstationTag::Well),
-        required_tool_kinds: vec![],
-        body_cost_per_tick: BodyCostPerTick::new(pm(3), pm(2), pm(5), pm(0), pm(1)),
-    }
-}
-
 fn bake_bread_recipe() -> RecipeDefinition {
     RecipeDefinition {
         name: "Bake Bread".to_string(),
@@ -3527,11 +3515,11 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
 }
 
 #[test]
-fn search_wash_finds_harvest_then_wash_plan_at_believed_basin_place() {
+fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
     let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
     let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
     let mut world = World::new(build_prototype_world()).unwrap();
-    let (actor, _wash_basin, well) = {
+    let (actor, wash_basin, well) = {
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -3585,8 +3573,7 @@ fn search_wash_finds_harvest_then_wash_plan_at_believed_basin_place() {
         (actor, wash_basin, well)
     };
 
-    let mut recipes = RecipeRegistry::new();
-    recipes.register(harvest_water_recipe());
+    let recipes = RecipeRegistry::new();
     sync_all_beliefs(&mut world, actor, Tick(1));
 
     let (registry, handlers) = build_registry_with_recipes(&recipes);
@@ -3594,7 +3581,7 @@ fn search_wash_finds_harvest_then_wash_plan_at_believed_basin_place() {
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Wash),
-        evidence_entities: BTreeSet::from([well]),
+        evidence_entities: BTreeSet::from([wash_basin, well]),
         evidence_places: BTreeSet::from([orchard_farm]),
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
@@ -3631,31 +3618,35 @@ fn search_wash_finds_harvest_then_wash_plan_at_believed_basin_place() {
                     .any(|candidate| candidate.op_kind == Some(PlannerOpKind::Wash))
             });
             panic!(
-                "wash should find a lawful harvest-then-wash plan at a believed basin place; result={other:?}; root={root:?}; saw_wash={saw_wash}"
+                "wash should find a lawful travel-then-wash plan at a believed basin/source place; result={other:?}; root={root:?}; saw_wash={saw_wash}"
             );
         }
     };
 
-    assert!(
-        plan.steps.iter().any(|step| step.op_kind == PlannerOpKind::Harvest),
-        "wash plan should include harvesting water before washing: {plan:?}"
-    );
-    assert!(
-        plan.steps.iter().any(|step| step.op_kind == PlannerOpKind::MoveCargo),
-        "wash plan should pick up harvested water before washing: {plan:?}"
-    );
     assert_eq!(
         plan.steps.last().map(|step| step.op_kind),
         Some(PlannerOpKind::Wash)
     );
+    assert!(
+        plan.steps
+            .iter()
+            .all(|step| step.op_kind != PlannerOpKind::Harvest),
+        "wash should no longer require harvest under the facility-mediated contract: {plan:?}"
+    );
+    assert!(
+        plan.steps
+            .iter()
+            .all(|step| step.op_kind != PlannerOpKind::MoveCargo),
+        "wash should no longer require picking up water under the facility-mediated contract: {plan:?}"
+    );
 }
 
 #[test]
-fn search_wash_candidates_include_hypothetical_local_water_after_pickup() {
+fn search_local_wash_candidates_require_basin_and_water_source() {
     let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
     let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
     let mut world = World::new(build_prototype_world()).unwrap();
-    let (actor, well) = {
+    let (actor, wash_basin, well) = {
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -3706,11 +3697,10 @@ fn search_wash_candidates_include_hypothetical_local_water_after_pickup() {
         .unwrap();
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
-        (actor, well)
+        (actor, wash_basin, well)
     };
 
-    let mut recipes = RecipeRegistry::new();
-    recipes.register(harvest_water_recipe());
+    let recipes = RecipeRegistry::new();
     sync_all_beliefs(&mut world, actor, Tick(1));
 
     let (registry, handlers) = build_registry_with_recipes(&recipes);
@@ -3718,7 +3708,7 @@ fn search_wash_candidates_include_hypothetical_local_water_after_pickup() {
     let goal = GroundedGoal {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Wash),
-        evidence_entities: BTreeSet::from([well]),
+        evidence_entities: BTreeSet::from([wash_basin, well]),
         evidence_places: BTreeSet::from([orchard_farm]),
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
@@ -3731,11 +3721,6 @@ fn search_wash_candidates_include_hypothetical_local_water_after_pickup() {
     );
     let reasoning = ProfileFixture::default();
     let root = root_node(&snapshot, &goal, &recipes, &reasoning);
-    let harvest_id = registry
-        .iter()
-        .find(|def| def.name.starts_with("harvest:"))
-        .map(|def| def.id)
-        .expect("harvest action should exist");
     let relevant_defs = relevant_action_defs(&goal, &semantics_table);
     let local_node = SearchNode {
         state: root.state.clone().move_actor_to(orchard_farm),
@@ -3760,94 +3745,20 @@ fn search_wash_candidates_include_hypothetical_local_water_after_pickup() {
         None,
         None,
     );
-    let harvest_candidate = local_candidates
-        .iter()
-        .find(|candidate| candidate.def_id == harvest_id)
-        .cloned()
-        .expect("harvest candidate should exist at believed basin place");
-    let (_, harvested) = build_successor(
-        &goal,
-        &semantics_table,
-        &registry,
-        &local_node,
-        &harvest_candidate,
-        &recipes,
-        &reasoning,
-    )
-    .expect("harvest successor should exist");
-    let harvest_candidates = search_candidates(
-        &goal,
-        &harvested,
-        candidate_search_context(
-            &semantics_table,
-            &registry,
-            &handlers,
-            &BlockedIntentMemory::default(),
-            Tick(0),
-            &relevant_defs,
-        ),
-        None,
-        None,
-        None,
-    );
-
     assert!(
-        harvest_candidates.iter().any(|candidate| {
-            semantics_table
-                .get(&candidate.def_id)
-                .is_some_and(|semantics| semantics.op_kind == PlannerOpKind::MoveCargo)
-        }),
-        "harvest should expose a move-cargo pickup path for the hypothetical water lot"
-    );
-    let pickup_candidate = harvest_candidates
-        .iter()
-        .find(|candidate| {
-            semantics_table
-                .get(&candidate.def_id)
-                .is_some_and(|semantics| semantics.op_kind == PlannerOpKind::MoveCargo)
-                && matches!(
-                    candidate.planning_targets.as_slice(),
-                    [PlanningEntityRef::Hypothetical(_)]
-                )
-        })
-        .cloned()
-        .expect("pickup candidate for hypothetical harvested water should exist");
-    let (_, picked_up) = build_successor(
-        &goal,
-        &semantics_table,
-        &registry,
-        &harvested,
-        &pickup_candidate,
-        &recipes,
-        &reasoning,
-    )
-    .expect("pickup successor should exist");
-    let candidates = search_candidates(
-        &goal,
-        &picked_up,
-        candidate_search_context(
-            &semantics_table,
-            &registry,
-            &handlers,
-            &BlockedIntentMemory::default(),
-            Tick(0),
-            &relevant_defs,
-        ),
-        None,
-        None,
-        None,
-    );
-    assert!(
-        candidates.iter().any(|candidate| {
+        local_candidates.iter().any(|candidate| {
             semantics_table
                 .get(&candidate.def_id)
                 .is_some_and(|semantics| semantics.op_kind == PlannerOpKind::Wash)
                 && matches!(
                     candidate.planning_targets.as_slice(),
-                    [PlanningEntityRef::Hypothetical(_)]
+                    [
+                        PlanningEntityRef::Authoritative(target0),
+                        PlanningEntityRef::Authoritative(target1)
+                    ] if *target0 == wash_basin && *target1 == well
                 )
         }),
-        "wash candidates should include a hypothetical directly possessed water lot after pickup"
+        "local wash candidates should directly target the basin and local water source"
     );
 }
 

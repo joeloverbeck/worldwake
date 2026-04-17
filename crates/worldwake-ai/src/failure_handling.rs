@@ -124,7 +124,7 @@ fn derive_blocking_fact(
                 return fact;
             }
         }
-        PlannerOpKind::Consume | PlannerOpKind::Wash | PlannerOpKind::Heal => {
+        PlannerOpKind::Consume | PlannerOpKind::Heal => {
             if let Some(fact) = classify_input_failure(view, agent, goal_key, step) {
                 return fact;
             }
@@ -134,7 +134,8 @@ fn derive_blocking_fact(
                 return BlockingFact::CombatTooRisky;
             }
         }
-        PlannerOpKind::Patrol
+        PlannerOpKind::Wash
+        | PlannerOpKind::Patrol
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::EstablishCamp
@@ -377,7 +378,6 @@ fn classify_input_failure(
     step: &PlannedStep,
 ) -> Option<BlockingFact> {
     let commodity = match step.op_kind {
-        PlannerOpKind::Wash => Some(CommodityKind::Water),
         PlannerOpKind::Heal => Some(CommodityKind::Medicine),
         PlannerOpKind::Consume => goal_key.commodity,
         PlannerOpKind::Travel
@@ -416,7 +416,8 @@ fn classify_input_failure(
         | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
         | PlannerOpKind::PostBounty
-        | PlannerOpKind::PostNotice => None,
+        | PlannerOpKind::PostNotice
+        | PlannerOpKind::Wash => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))

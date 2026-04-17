@@ -2662,13 +2662,7 @@ fn emit_wash_goal(
         return;
     }
 
-    if let Some(mut evidence) =
-        local_controlled_commodity_evidence(ctx.view, ctx.agent, ctx.place, CommodityKind::Water)
-    {
-        if let Some(place) = ctx.place {
-            evidence.places.insert(place);
-        }
-        let mut trace = EvidenceTrace::default();
+    for (candidate_place, evidence, mut trace) in wash_access_opportunities(ctx) {
         if ctx.tracing_enabled {
             trace
                 .knowledge_path
@@ -2677,36 +2671,15 @@ fn emit_wash_goal(
                     need: HomeostaticNeedId::Dirtiness,
                     permille: needs.dirtiness,
                 });
-        }
-        emit_candidate_with_trace(
-            candidates,
-            diagnostics,
-            GoalKind::Wash,
-            ctx.place
-                .map_or(OpportunityAnchor::None, OpportunityAnchor::Place),
-            evidence,
-            trace,
-        );
-        return;
-    }
-
-    for (candidate_place, evidence, mut trace) in wash_acquisition_opportunities(ctx) {
-        if ctx.tracing_enabled {
             trace
                 .knowledge_path
-                .self_knowledge
-                .push(SelfKnowledgeProvenance::NeedLevel {
-                    need: HomeostaticNeedId::Dirtiness,
-                    permille: needs.dirtiness,
-                });
-            trace.knowledge_path.entity_beliefs.extend(
-                belief_provenance_for_contributors(
+                .entity_beliefs
+                .extend(belief_provenance_for_contributors(
                     ctx.view,
                     ctx.agent,
                     &trace.contributors,
                     CommodityKind::Water,
-                ),
-            );
+                ));
         }
         emit_candidate_with_trace(
             candidates,
@@ -2719,7 +2692,7 @@ fn emit_wash_goal(
     }
 }
 
-fn wash_acquisition_opportunities(
+fn wash_access_opportunities(
     ctx: &GenerationContext<'_>,
 ) -> Vec<(EntityId, Evidence, EvidenceTrace)> {
     let Some(origin) = ctx.place else {
@@ -2739,22 +2712,48 @@ fn wash_acquisition_opportunities(
                 return None;
             }
 
-            let (mut evidence, trace) = acquisition_path_evidence_at_place(
-                ctx.view,
-                ctx.agent,
-                candidate_place,
-                CommodityKind::Water,
-                ctx.recipes,
-                ctx.travel_horizon,
-                AcquisitionSearchOptions {
-                    include_recipes: true,
-                    visited_commodities: &BTreeSet::new(),
-                },
-            )?;
+            let (mut evidence, mut trace) =
+                local_wash_access_evidence_at_place(ctx.view, candidate_place)?;
             evidence.places.insert(candidate_place);
+            for basin in wash_basins {
+                evidence.entities.insert(basin);
+                trace.contributor(
+                    CandidateEvidenceKind::RecipeWorkstation,
+                    candidate_place,
+                    basin,
+                );
+            }
             Some((candidate_place, evidence, trace))
         })
         .collect()
+}
+
+fn local_wash_access_evidence_at_place(
+    view: &dyn GoalBeliefView,
+    place: EntityId,
+) -> Option<(Evidence, EvidenceTrace)> {
+    let mut evidence = Evidence::default();
+    let mut trace = EvidenceTrace::default();
+
+    let water_sources = view
+        .resource_sources_at(place, CommodityKind::Water)
+        .into_iter()
+        .filter(|source| {
+            view.resource_source(*source)
+                .is_some_and(|resource| resource.available_quantity >= Quantity(1))
+        })
+        .collect::<Vec<_>>();
+    if water_sources.is_empty() {
+        return None;
+    }
+
+    evidence.places.insert(place);
+    for source in water_sources {
+        evidence.entities.insert(source);
+        trace.contributor(CandidateEvidenceKind::ResourceSource, place, source);
+    }
+
+    Some((evidence, trace))
 }
 
 fn emit_reduce_danger_goal(
@@ -8236,24 +8235,31 @@ mod tests {
     }
 
     #[test]
-    fn wash_requires_dirtiness_and_local_water() {
+    fn wash_requires_dirtiness_and_local_wash_access() {
         let agent = entity(1);
         let place = entity(10);
-        let water = entity(20);
+        let basin = entity(20);
+        let well = entity(21);
         let mut view = TestBeliefView::default();
         view.alive.insert(agent);
         view.effective_places.insert(agent, place);
         view.homeostatic_needs.insert(agent, dirtiness(450));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
-        view.entity_kinds.insert(water, EntityKind::ItemLot);
-        view.effective_places.insert(water, place);
-        view.direct_possessions.insert(agent, vec![water]);
-        view.direct_possessors.insert(water, agent);
-        view.lot_commodities.insert(water, CommodityKind::Water);
-        view.controllable.insert((agent, water));
-        view.commodity_quantities
-            .insert((agent, CommodityKind::Water), Quantity(1));
+        view.workstations
+            .insert((place, WorkstationTag::WashBasin), vec![basin]);
+        view.resource_sources.insert(
+            well,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(1),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        view.sources_at
+            .insert((place, CommodityKind::Water), vec![well]);
 
         let candidates = generate_candidates(
             &view,
@@ -8265,22 +8271,21 @@ mod tests {
 
         assert!(contains_goal(&candidates, GoalKind::Wash));
 
-        let mut no_water_view = view;
-        no_water_view.direct_possessions.clear();
-        no_water_view.controllable.clear();
-        no_water_view.commodity_quantities.clear();
-        let no_water_candidates = generate_candidates(
-            &no_water_view,
+        let mut no_source_view = view;
+        no_source_view.sources_at.clear();
+        no_source_view.resource_sources.clear();
+        let no_source_candidates = generate_candidates(
+            &no_source_view,
             agent,
             &BlockedIntentMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
-        assert!(!contains_goal(&no_water_candidates, GoalKind::Wash));
+        assert!(!contains_goal(&no_source_candidates, GoalKind::Wash));
     }
 
     #[test]
-    fn wash_emits_when_basin_and_water_procurement_are_believed() {
+    fn wash_emits_when_basin_and_local_water_source_are_believed() {
         let agent = entity(1);
         let origin = entity(10);
         let bathhouse = entity(11);
@@ -8308,22 +8313,12 @@ mod tests {
         view.resource_sources.insert(well, source.clone());
         view.sources_at
             .insert((bathhouse, CommodityKind::Water), vec![well]);
-        view.known_recipes.insert(agent, vec![RecipeId(0)]);
-        view.unique_item_counts
-            .insert((agent, UniqueItemKind::SimpleTool), 1);
-
-        let mut recipes = RecipeRegistry::new();
-        recipes.register(sample_recipe(
-            vec![(CommodityKind::Water, Quantity(1))],
-            Vec::new(),
-            WorkstationTag::Well,
-        ));
 
         let candidates = generate_candidates(
             &view,
             agent,
             &BlockedIntentMemory::default(),
-            &recipes,
+            &RecipeRegistry::new(),
             Tick(5),
         );
 

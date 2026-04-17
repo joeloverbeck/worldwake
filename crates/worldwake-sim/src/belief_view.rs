@@ -9,18 +9,17 @@ use worldwake_core::{
     ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
     BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim, CognitiveProfile,
     CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
-    CommodityValuationProfile, ContentionGrant, DeprivationExposure, DemandObservation,
+    CommodityValuationProfile, ContentionGrant, DemandObservation, DeprivationExposure,
     DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
-    EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile,
-    HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
-    Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, RouteExperience,
-    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
+    EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile, HomeostaticNeedId,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
+    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile,
+    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
+    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 pub trait GoalSpatialBeliefView {
@@ -1845,9 +1844,9 @@ mod tests {
         AgentBeliefStore, CauseRef, CommodityConsumableProfile, CommodityKind, ControlSource,
         DemandObservation, DeprivationExposure, DiversificationProfile, DriveEscalationProfile,
         DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeedId, HomeostaticNeeds,
-        LastProactiveExplorationTick, LoadUnits, PatrolProfile, Permille, Quantity,
-        ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
-        WorldTxn, build_prototype_world,
+        LastProactiveExplorationTick, LoadUnits, PatrolProfile, Permille, Quantity, ResourceSource,
+        Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
     };
 
     struct StubGoalBeliefView;
