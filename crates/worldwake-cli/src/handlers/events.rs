@@ -287,6 +287,7 @@ mod tests {
                 last_seen_memory: None,
                 obligation_satiation_profile: None,
                 drive_thresholds: None,
+                drive_escalation_profile: None,
                 metabolism_profile: None,
                 disposal_profile: None,
                 exploration_profile: None,

@@ -1,6 +1,6 @@
 # S116DRIESCSUS-005: Scenario integration — AgentDef.drive_escalation_profile
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `AgentDef` field + `spawn_agent` application
@@ -61,6 +61,7 @@ Position: immediately after the `DriveThresholds` application for adjacency.
 
 - `crates/worldwake-cli/src/scenario/types.rs` (modify — add field + import)
 - `crates/worldwake-cli/src/scenario/mod.rs` (modify — add `set_component_drive_escalation_profile` call in `spawn_agent`)
+- `crates/worldwake-cli/src/display.rs` and `crates/worldwake-cli/src/handlers/*.rs` test modules (modify — exhaustive `AgentDef` scenario literals gain the new optional field)
 
 ## Out of Scope
 
@@ -93,3 +94,23 @@ Position: immediately after the `DriveThresholds` application for adjacency.
 1. `cargo test -p worldwake-cli scenario`
 2. `cargo test -p worldwake-cli`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-17.
+
+- Added `drive_escalation_profile: Option<DriveEscalationProfile>` to `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs`, preserving omission compatibility through `#[serde(default)]`.
+- Extended `spawn_agent()` in `crates/worldwake-cli/src/scenario/mod.rs` so every spawned agent gets `set_component_drive_escalation_profile(...)`, using the scenario override when present and `DriveEscalationProfile::default()` otherwise.
+- Added focused parser/bootstrap proof: `types.rs` now proves explicit RON deserialization plus omission-as-`None`, and `scenario/mod.rs` now proves both default universal seeding and explicit override application.
+- Absorbed the real same-crate exhaustive-literal fallout across CLI display/handler test scenario builders so `AgentDef` remains exhaustive everywhere the crate manually constructs scenarios.
+
+## Deviations
+
+- Reassessment confirmed this was still a CLI-owned ticket, but not strictly a two-file patch: adding the new `AgentDef` field caused expected same-crate constructor fallout in display/handler test modules that manually build exhaustive `AgentDef` literals.
+- The live universal-profile contract is already enforced in `spawn_agent()` through explicit component writes, so the truthful default-fallback proof was a spawn-world assertion in `scenario/mod.rs`, not only a parser-only test.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli scenario`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
