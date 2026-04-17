@@ -29,6 +29,7 @@ How to verify implementation at the right boundary (Step 6).
 - If a focused failing proof exposes a real production contradiction in a ticket marked test-only, update the ticket sections that define scope before continuing.
 - When a ticket fixes a repeated pattern across multiple call sites, run a post-implementation pattern sweep (e.g., grep for the unfixed pattern) to confirm no sites were missed.
 - When workspace-wide verification fails on files outside the ticket's owned surface (e.g., untracked binaries, pre-existing lint failures), verify the failure is unrelated by running scoped to the ticket's owned crates. Record the pre-existing failure and the scoped-pass result in the ticket Outcome.
+- When broader verification is blocked by a pre-existing unrelated dirty or untracked file, non-semantic lint/format cleanup needed to complete CI-style verification is acceptable, but still record that file as unrelated pre-existing fallout and do not imply the unrelated feature work was completed.
 - When broader verification fails on a golden in the same domain or planner path as the ticket's owned behavior, do one contract-level triage pass before labeling it unrelated.
 
 ```bash

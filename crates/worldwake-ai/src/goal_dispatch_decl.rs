@@ -77,6 +77,8 @@ const RELIEVE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Relieve, PlannerOpKind::T
 const WASH_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Wash,
     PlannerOpKind::Travel,
+    PlannerOpKind::Trade,
+    PlannerOpKind::Harvest,
     PlannerOpKind::MoveCargo,
 ];
 const FREE_CARRY_CAPACITY_OPS: &[PlannerOpKind] = &[PlannerOpKind::DropItem];
@@ -311,7 +313,7 @@ static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: WASH_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Dirtiness),
-    feasibility_strategy: FeasibilityStrategy::CommodityPresenceCheck,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };

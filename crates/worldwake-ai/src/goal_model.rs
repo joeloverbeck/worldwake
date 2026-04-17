@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
-    EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
-    LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind,
-    SuccessionLaw, Tick, WorkstationTag, belief_confidence,
+    EntityId, EntityKind, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind,
+    InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS, Permille,
+    PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick, WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
@@ -768,6 +768,35 @@ impl GoalKindPlannerExt for GoalKind {
                     requested_quantity: Quantity(1),
                 })))
             }
+            PlannerOpKind::Harvest => {
+                let Some(workstation) = targets.first().copied() else {
+                    return Err(GoalPayloadOverrideError::MissingTarget);
+                };
+                let Some(actor_place) = state.effective_place(actor) else {
+                    return Err(GoalPayloadOverrideError::MissingActorPlace);
+                };
+                if state.effective_place(workstation) != Some(actor_place) {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+                let Some(payload) = def.payload.as_harvest() else {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                };
+                if state.workstation_tag(workstation) != Some(payload.required_workstation_tag) {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+                let requested_commodity = match self {
+                    GoalKind::AcquireCommodity { commodity, .. }
+                    | GoalKind::RestockCommodity { commodity }
+                    | GoalKind::ConsumeOwnedCommodity { commodity } => *commodity,
+                    GoalKind::TreatWounds { .. } => CommodityKind::Medicine,
+                    GoalKind::Wash => CommodityKind::Water,
+                    _ => return Err(GoalPayloadOverrideError::UnsupportedGoal),
+                };
+                if payload.output_commodity != requested_commodity {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+                Ok(Some(def.payload.clone()))
+            }
             PlannerOpKind::Investigate => match self {
                 GoalKind::InvestigateViolation { violation_id, .. } => {
                     Ok(Some(ActionPayload::Investigate(InvestigateActionPayload {
@@ -1179,12 +1208,19 @@ impl GoalKindPlannerExt for GoalKind {
             },
             PlannerOpKind::Harvest => {
                 if let Some(harvest) = payload_override.and_then(ActionPayload::as_harvest) {
-                    let current = state.commodity_quantity(actor, harvest.output_commodity);
-                    state.with_commodity_quantity(
-                        actor,
+                    let mut next = state;
+                    let hypothetical =
+                        next.spawn_hypothetical_lot(EntityKind::ItemLot, harvest.output_commodity);
+                    let hypothetical_ref = PlanningEntityRef::Hypothetical(hypothetical);
+                    next = next.set_quantity_ref(
+                        hypothetical_ref,
                         harvest.output_commodity,
-                        Quantity(current.0.saturating_add(harvest.output_quantity.0)),
-                    )
+                        harvest.output_quantity,
+                    );
+                    if let Some(place) = next.effective_place(actor) {
+                        next = next.move_entity_ref(hypothetical_ref, place);
+                    }
+                    next
                 } else {
                     state
                 }
@@ -2277,7 +2313,27 @@ impl GroundedGoal {
                 GoalKind::AcquireCommodity { .. }
                 | GoalKind::ConsumeOwnedCommodity { .. }
                 | GoalKind::RestockCommodity { .. }
+                | GoalKind::Wash
                 | GoalKind::TreatWounds { .. } => {
+                    if !matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
+                    if self.evidence_entities.len() != 1 {
+                        return RootCandidateSynthesis::TargetDerivationFailed;
+                    }
+                    RootCandidateSynthesis::Targets(
+                        self.evidence_entities.iter().copied().collect(),
+                    )
+                }
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::Harvest => match &self.key.kind {
+                GoalKind::AcquireCommodity { .. }
+                | GoalKind::RestockCommodity { .. }
+                | GoalKind::Wash => {
                     if !matches!(
                         def.targets.as_slice(),
                         [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
@@ -2474,7 +2530,8 @@ mod tests {
     };
     use crate::{
         CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics,
-        PlannerTransitionKind, PlanningState, ProfileFixture, build_planning_snapshot,
+        PlannerTransitionKind, PlanningEntityRef, PlanningState, ProfileFixture,
+        build_planning_snapshot,
         build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     };
@@ -5794,7 +5851,7 @@ mod tests {
     }
 
     #[test]
-    fn harvest_step_updates_hypothetical_commodity_quantity() {
+    fn harvest_step_creates_hypothetical_ground_output_without_crediting_actor_inventory() {
         let (view, actor, _seller) = base_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
         let base_state = PlanningState::new(&snapshot);
@@ -5818,7 +5875,43 @@ mod tests {
 
         assert_eq!(
             advanced.commodity_quantity(actor, CommodityKind::Apple),
-            Quantity(3)
+            Quantity(0)
+        );
+    }
+
+    #[test]
+    fn harvest_step_spawns_hypothetical_ground_output_lot_at_actor_place() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::Wash;
+
+        let advanced = goal.apply_planner_step(
+            base_state,
+            PlannerOpKind::Harvest,
+            &[],
+            Some(&ActionPayload::Harvest(HarvestActionPayload {
+                recipe_id: RecipeId(4),
+                required_workstation_tag: WorkstationTag::Well,
+                output_commodity: CommodityKind::Water,
+                output_quantity: Quantity(2),
+                required_tool_kinds: Vec::new(),
+            })),
+        );
+
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+        let actor_place = advanced.effective_place_ref(actor_ref);
+        let lots = actor_place
+            .into_iter()
+            .flat_map(|place| advanced.hypothetical_ground_lot_refs_at_place(place))
+            .collect::<Vec<_>>();
+        assert!(
+            lots.iter().any(|lot| {
+                advanced.item_lot_commodity_ref(*lot) == Some(CommodityKind::Water)
+                    && advanced.commodity_quantity_ref(*lot, CommodityKind::Water) == Quantity(2)
+                    && advanced.direct_possessor_ref(*lot).is_none()
+            }),
+            "harvest should create a hypothetical ground water lot at the actor place for downstream pick-up and wash planning"
         );
     }
 
@@ -5842,7 +5935,7 @@ mod tests {
     }
 
     #[test]
-    fn acquire_self_consume_goal_is_satisfied_after_hypothetical_harvest() {
+    fn acquire_self_consume_goal_is_not_satisfied_before_pickup_after_hypothetical_harvest() {
         let (view, actor, _seller) = base_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
         let base_state = PlanningState::new(&snapshot);
@@ -5866,7 +5959,7 @@ mod tests {
             })),
         );
 
-        assert!(goal.is_satisfied(&advanced));
+        assert!(!goal.is_satisfied(&advanced));
     }
 
     #[test]

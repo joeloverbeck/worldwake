@@ -8,7 +8,7 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, BlockedIntentMemory, ContentionStatus, EntityId, GoalKind, Tick,
+    ActionDefId, BlockedIntentMemory, CommodityKind, ContentionStatus, EntityId, GoalKind, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, FacilityBeliefView,
@@ -648,7 +648,8 @@ fn goal_synthesized_candidates(
     existing_candidates: &[SearchCandidate],
 ) -> Vec<SearchCandidate> {
     let actor_place = state.effective_place(state.snapshot().actor());
-    relevant_defs
+    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
+    let mut synthesized = relevant_defs
         .iter()
         .filter(|def_id| {
             !existing_candidates
@@ -677,6 +678,63 @@ fn goal_synthesized_candidates(
                 | RootCandidateSynthesis::UnsupportedGoalOp
                 | RootCandidateSynthesis::TargetDerivationFailed => None,
             }
+        })
+        .collect::<Vec<_>>();
+
+    if goal.key.kind == GoalKind::Wash && let Some(place) = actor_place {
+        synthesized.extend(
+            synthesize_local_wash_candidates(
+                state,
+                actor_ref,
+                place,
+                registry,
+                semantics_table,
+                relevant_defs,
+            ),
+        );
+    }
+
+    synthesized
+}
+
+fn synthesize_local_wash_candidates(
+    state: &PlanningState<'_>,
+    actor_ref: PlanningEntityRef,
+    place: EntityId,
+    registry: &ActionDefRegistry,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    relevant_defs: &BTreeSet<ActionDefId>,
+) -> Vec<SearchCandidate> {
+    let local_water_lots = state.local_controlled_lot_refs_for(actor_ref, place, CommodityKind::Water);
+    if local_water_lots.is_empty() {
+        return Vec::new();
+    }
+
+    relevant_defs
+        .iter()
+        .filter_map(|def_id| {
+            let def = registry.get(*def_id)?;
+            let semantics = semantics_table.get(def_id)?;
+            (semantics.op_kind == PlannerOpKind::Wash
+                && matches!(
+                    def.targets.as_slice(),
+                    [worldwake_sim::TargetSpec::EntityDirectlyPossessedByActor { .. }]
+                ))
+            .then_some((*def_id, *semantics))
+        })
+        .flat_map(|(def_id, _)| {
+            local_water_lots.iter().copied().map(move |target| SearchCandidate {
+                def_id,
+                authoritative_targets: match target {
+                    PlanningEntityRef::Authoritative(entity) => vec![entity],
+                    PlanningEntityRef::Hypothetical(_) => Vec::new(),
+                },
+                planning_targets: vec![target],
+                payload_override: None,
+                planner_only: false,
+                trace_index: None,
+                expansion_trace_index: None,
+            })
         })
         .collect()
 }

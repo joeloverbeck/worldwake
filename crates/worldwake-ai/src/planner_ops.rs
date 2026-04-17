@@ -423,10 +423,7 @@ fn apply_pick_up_transition<'snapshot>(
     payload_override: Option<&ActionPayload>,
 ) -> Option<HypotheticalTransition<'snapshot>> {
     let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
-    let lot_ref = match targets.first().copied()? {
-        PlanningEntityRef::Authoritative(lot) => PlanningEntityRef::Authoritative(lot),
-        PlanningEntityRef::Hypothetical(_) => return None,
-    };
+    let lot_ref = targets.first().copied()?;
     if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
         return None;
     }
@@ -478,7 +475,9 @@ fn apply_pick_up_transition<'snapshot>(
         let mut state = state.set_quantity_ref(lot_ref, commodity, remaining_quantity);
         let hypothetical_id = state.spawn_hypothetical_lot(EntityKind::ItemLot, commodity);
         let hypothetical_ref = PlanningEntityRef::Hypothetical(hypothetical_id);
+        let actor_place = state.effective_place_ref(actor_ref);
         state = state
+            .move_entity_ref(hypothetical_ref, actor_place?)
             .set_quantity_ref(hypothetical_ref, commodity, requested_quantity)
             .move_lot_ref_to_holder(hypothetical_ref, actor_ref, commodity, requested_quantity);
 
@@ -507,7 +506,9 @@ fn apply_pick_up_transition<'snapshot>(
     let mut state = state.set_quantity_ref(lot_ref, commodity, remaining_quantity);
     let hypothetical_id = state.spawn_hypothetical_lot(EntityKind::ItemLot, commodity);
     let hypothetical_ref = PlanningEntityRef::Hypothetical(hypothetical_id);
+    let actor_place = state.effective_place_ref(actor_ref);
     state = state
+        .move_entity_ref(hypothetical_ref, actor_place?)
         .set_quantity_ref(hypothetical_ref, commodity, moved_quantity)
         .move_lot_ref_to_holder(hypothetical_ref, actor_ref, commodity, moved_quantity);
 
@@ -833,7 +834,8 @@ pub fn planner_only_candidates(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
 ) -> Vec<PlannerSyntheticCandidate> {
     let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
-    semantics_table
+    let actor_place = state.effective_place_ref(actor_ref);
+    let put_down = semantics_table
         .iter()
         .filter(|(_, semantics)| {
             semantics.transition_kind == PlannerTransitionKind::PutDownGroundLot
@@ -851,7 +853,23 @@ pub fn planner_only_candidates(
                 })
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let pick_up = semantics_table
+        .iter()
+        .filter(|(_, semantics)| semantics.transition_kind == PlannerTransitionKind::PickUpGroundLot)
+        .flat_map(|(def_id, _)| {
+            actor_place
+                .into_iter()
+                .flat_map(|place| state.hypothetical_ground_lot_refs_at_place(place))
+                .map(|target| PlannerSyntheticCandidate {
+                    def_id: *def_id,
+                    targets: vec![target],
+                    payload_override: None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    put_down.into_iter().chain(pick_up).collect()
 }
 
 #[must_use]
