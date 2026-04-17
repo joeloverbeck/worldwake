@@ -18,13 +18,13 @@ use std::{
 };
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
-    CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey,
-    GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, NoticeTopic, ObligationExecutionTracker,
-    ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
-    Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
-    belief_confidence, failure_ratio_permille,
+    CommunicationClass, DiversificationProfile, DriveThresholds, EntityId, ExpectationBasis,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation,
+    ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
+    ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor, OpportunityKey,
+    PerceptionSource, Permille, Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick,
+    UtilityProfile, ViolationKind, belief_confidence, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -347,6 +347,8 @@ struct RankingContext<'a> {
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
     exploration_profile: Option<ExplorationProfile>,
+    diversification_profile: Option<DiversificationProfile>,
+    last_proactive_exploration_tick: Option<Tick>,
     satiation_profile: ObligationSatiationProfile,
     obligation_tracker: ObligationExecutionTracker,
     has_clotted_wounds: bool,
@@ -382,6 +384,8 @@ impl<'a> RankingContext<'a> {
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
             exploration_profile: view.exploration_profile(agent),
+            diversification_profile: view.diversification_profile(agent),
+            last_proactive_exploration_tick: view.last_proactive_exploration_tick(agent),
             satiation_profile,
             obligation_tracker,
             has_clotted_wounds: has_clotted_wounds(view, agent),
@@ -717,15 +721,47 @@ fn exploration_motive(context: &RankingContext<'_>, motivating_need: Exploration
     let Some(needs) = context.needs else {
         return 0;
     };
-    let Some(profile) = context.exploration_profile else {
-        return 0;
-    };
-    let ExplorationMotivation::NeedDriven(need_id) = motivating_need else {
-        return 0;
-    };
-    u32::from(profile.curiosity_weight.value())
-        .saturating_mul(u32::from(need_pressure_for_id(needs, need_id).value()))
-        / 1000
+    match motivating_need {
+        ExplorationMotivation::NeedDriven(need_id) => {
+            let Some(profile) = context.exploration_profile else {
+                return 0;
+            };
+            u32::from(profile.curiosity_weight.value())
+                .saturating_mul(u32::from(need_pressure_for_id(needs, need_id).value()))
+                / 1000
+        }
+        ExplorationMotivation::Proactive => {
+            let Some(profile) = context.diversification_profile else {
+                return 0;
+            };
+            let max_need = needs.max_value();
+            if max_need > profile.comfort_threshold.value() {
+                return 0;
+            }
+            let need_slack = Permille::new_unchecked(1000u16.saturating_sub(max_need));
+            let curiosity_pressure = proactive_curiosity_pressure(
+                context.current_tick,
+                context.last_proactive_exploration_tick,
+                profile,
+            );
+            u32::from(profile.base_curiosity.value())
+                .saturating_mul(u32::from(curiosity_pressure.value()))
+                .saturating_mul(u32::from(need_slack.value()))
+                / 1_000_000
+        }
+    }
+}
+
+fn proactive_curiosity_pressure(
+    current_tick: Tick,
+    last_proactive_tick: Option<Tick>,
+    profile: DiversificationProfile,
+) -> Permille {
+    let ticks_since = last_proactive_tick
+        .map_or(current_tick.0, |tick| current_tick.0.saturating_sub(tick.0))
+        .min(1000);
+    let raw = ticks_since.saturating_mul(u64::from(profile.curiosity_buildup_rate.value()));
+    Permille::new_unchecked(raw.min(1000) as u16)
 }
 
 fn need_pressure_for_id(needs: HomeostaticNeeds, need_id: HomeostaticNeedId) -> Permille {
@@ -1741,17 +1777,18 @@ mod tests {
         BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         CommodityValuationProfile, DemandObservation, DemandObservationReason, DeprivationKind,
-        DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
-        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, NoticeTopic, ObligationExecutionTracker,
-        ObligationSatiationProfile, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
-        PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity,
-        RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
-        RouteExperience, SourceKey, SourceReliability, TellTopic, TheftDispositionProfile,
-        TheftFacts, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        ViolationId, ViolationKind, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
+        DiversificationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
+        EpistemicDispositionProfile, ExpectationBasis, ExpectationId, ExpectationRecord,
+        ExpectationState, ExpectationStore, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+        JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile,
+        OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        PreferenceProfile, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation,
+        ReliabilityRecord, ResourceSource, RewardSource, RightKind, RouteExperience, SourceKey,
+        SourceReliability, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
+        WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -1768,6 +1805,8 @@ mod tests {
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         exploration_profiles: BTreeMap<EntityId, worldwake_core::ExplorationProfile>,
+        diversification_profiles: BTreeMap<EntityId, DiversificationProfile>,
+        last_proactive_exploration_ticks: BTreeMap<EntityId, Tick>,
         obligation_satiation_profiles: BTreeMap<EntityId, ObligationSatiationProfile>,
         obligation_execution_trackers: BTreeMap<EntityId, ObligationExecutionTracker>,
         confidence_policies: BTreeMap<EntityId, BeliefConfidencePolicy>,
@@ -1869,6 +1908,12 @@ mod tests {
             agent: EntityId,
         ) -> Option<worldwake_core::ExplorationProfile> {
             self.exploration_profiles.get(&agent).copied()
+        }
+        fn diversification_profile(&self, agent: EntityId) -> Option<DiversificationProfile> {
+            self.diversification_profiles.get(&agent).copied()
+        }
+        fn last_proactive_exploration_tick(&self, agent: EntityId) -> Option<Tick> {
+            self.last_proactive_exploration_ticks.get(&agent).copied()
         }
         fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
             self.obligation_satiation_profiles
@@ -6729,39 +6774,49 @@ mod tests {
     }
 
     #[test]
-    fn explore_location_proactive_motive_stays_zero_until_proactive_ranking_lands() {
+    fn explore_location_proactive_motive_uses_curiosity_buildup_and_need_slack() {
         let agent = entity(1);
         let target_place = entity(10);
         let mut view = base_view(agent);
         view.needs.insert(
             agent,
             HomeostaticNeeds::new(
-                Permille::new(700).unwrap(),
+                Permille::new(300).unwrap(),
                 Permille::new(0).unwrap(),
                 Permille::new(0).unwrap(),
                 Permille::new(0).unwrap(),
                 Permille::new(0).unwrap(),
             ),
         );
-        view.exploration_profiles.insert(
+        view.diversification_profiles.insert(
             agent,
-            worldwake_core::ExplorationProfile {
-                curiosity_weight: Permille::new(600).unwrap(),
-                ..worldwake_core::ExplorationProfile::default()
+            DiversificationProfile {
+                base_curiosity: Permille::new(600).unwrap(),
+                comfort_threshold: Permille::new(450).unwrap(),
+                curiosity_buildup_rate: Permille::new(5).unwrap(),
+                exploration_cooldown_ticks: 60,
+                familiarity_per_visit: Permille::new(150).unwrap(),
+                familiarity_recovery_per_tick: Permille::new(2).unwrap(),
+                familiarity_floor: Permille::new(50).unwrap(),
+                max_exploration_hops: 3,
             },
         );
+        view.last_proactive_exploration_ticks
+            .insert(agent, Tick(100));
 
-        let outcome = rank(
+        let ranked = rank(
             &[goal(GoalKind::ExploreLocation {
                 target_place,
                 motivating_need: worldwake_core::ExplorationMotivation::Proactive,
             })],
             &view,
             agent,
-            current_tick(),
+            Tick(200),
             &utility(),
-        );
+        )
+        .into_ranked();
 
-        assert!(outcome.into_ranked().is_empty());
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].motive_score, 210);
     }
 }

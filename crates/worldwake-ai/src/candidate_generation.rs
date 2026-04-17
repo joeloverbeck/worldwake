@@ -28,16 +28,17 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
     BelievedInstitutionalClaim, BlockedIntentMemory, BountyTarget, BountyTerms, CommodityKind,
-    CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey, GoalKind,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
-    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
-    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
-    UtilityProfile, ViolationId, ViolationKind, ViolationMemory, classify_communication,
-    current_institutional_belief_topics, load_per_unit,
-    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
+    CommodityPurpose, DiversificationProfile, DriveThresholds, EligibilityRule, EntityId,
+    EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation,
+    GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
+    OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
+    ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
+    Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
+    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
+    ViolationKind, ViolationMemory, classify_communication, current_institutional_belief_topics,
+    load_per_unit, social_observation_is_redundant_for_listener,
+    tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
     GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
@@ -274,6 +275,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         needs,
         &mut pending_acquisition_exhaustion_resets,
     );
+    emit_proactive_exploration_candidates(&mut candidates, &mut diagnostics, &ctx, needs);
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
@@ -2432,6 +2434,65 @@ fn goal_is_self_care_fallback(goal_kind: GoalKind) -> bool {
     )
 }
 
+fn emit_proactive_exploration_candidates(
+    candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+    needs: Option<HomeostaticNeeds>,
+) {
+    let Some(needs) = needs else {
+        return;
+    };
+    let Some(profile) = ctx.view.diversification_profile(ctx.agent) else {
+        return;
+    };
+
+    let max_need = needs.max_value();
+    if max_need > profile.comfort_threshold.value() {
+        return;
+    }
+
+    let last_proactive_tick = ctx.view.last_proactive_exploration_tick(ctx.agent);
+    if last_proactive_tick.is_some_and(|last_tick| {
+        ctx.current_tick.0.saturating_sub(last_tick.0)
+            < u64::from(profile.exploration_cooldown_ticks)
+    }) {
+        return;
+    }
+
+    let curiosity_pressure =
+        proactive_curiosity_pressure(ctx.current_tick, last_proactive_tick, profile);
+    if curiosity_pressure.value() == 0 {
+        return;
+    }
+
+    let need_slack = Permille::new_unchecked(1000u16.saturating_sub(max_need));
+    let Some((target_place, novelty)) = select_proactive_target(ctx, profile) else {
+        return;
+    };
+
+    let utility_raw = u64::from(profile.base_curiosity.value())
+        .saturating_mul(u64::from(curiosity_pressure.value()))
+        .saturating_mul(u64::from(need_slack.value()))
+        .saturating_mul(u64::from(novelty.value()))
+        / 1_000_000_000;
+    if utility_raw == 0 {
+        return;
+    }
+
+    emit_candidate_with_trace(
+        candidates,
+        diagnostics,
+        GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: ExplorationMotivation::Proactive,
+        },
+        OpportunityAnchor::Place(target_place),
+        Evidence::with_place(target_place),
+        EvidenceTrace::default(),
+    );
+}
+
 fn emit_need_driven_candidates(
     candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
@@ -4304,6 +4365,31 @@ fn select_exploration_target(
         .map(|(_, _, _, place)| place)
 }
 
+fn select_proactive_target(
+    ctx: &GenerationContext<'_>,
+    profile: DiversificationProfile,
+) -> Option<(EntityId, Permille)> {
+    let origin = ctx.place?;
+    let belief_store = ctx.view.agent_belief_store(ctx.agent)?;
+
+    exploration_candidate_places(ctx.view, ctx.agent, profile.max_exploration_hops)
+        .into_keys()
+        .filter(|candidate_place| *candidate_place != origin)
+        .filter_map(|candidate_place| {
+            let travel_ticks = min_travel_ticks_via_view(ctx.view, origin, candidate_place)?;
+            if travel_ticks > u32::from(ctx.travel_horizon) {
+                return None;
+            }
+            let novelty = proactive_novelty(
+                belief_store.place_visits.get(&candidate_place),
+                ctx.current_tick,
+                profile,
+            );
+            Some((candidate_place, novelty))
+        })
+        .max_by_key(|(candidate_place, novelty)| (novelty.value(), *candidate_place))
+}
+
 fn exploration_candidate_places(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -4339,6 +4425,49 @@ fn exploration_candidate_places(
     }
 
     candidates
+}
+
+fn proactive_curiosity_pressure(
+    current_tick: Tick,
+    last_proactive_tick: Option<Tick>,
+    profile: DiversificationProfile,
+) -> Permille {
+    let ticks_since = last_proactive_tick
+        .map_or(current_tick.0, |tick| current_tick.0.saturating_sub(tick.0))
+        .min(1000);
+    let raw = ticks_since.saturating_mul(u64::from(profile.curiosity_buildup_rate.value()));
+    Permille::new_unchecked(raw.min(1000) as u16)
+}
+
+fn proactive_familiarity(
+    record: &PlaceVisitRecord,
+    current_tick: Tick,
+    profile: DiversificationProfile,
+) -> Permille {
+    let visit_familiarity = u64::from(record.visit_count)
+        .saturating_mul(u64::from(profile.familiarity_per_visit.value()))
+        .min(1000) as u16;
+    let ticks_away = current_tick.0.saturating_sub(record.last_arrival_tick.0);
+    let recovery = ticks_away
+        .saturating_mul(u64::from(profile.familiarity_recovery_per_tick.value()))
+        .min(1000) as u16;
+    Permille::new_unchecked(visit_familiarity)
+        .saturating_sub(Permille::new_unchecked(recovery))
+        .max(profile.familiarity_floor)
+}
+
+fn proactive_novelty(
+    record: Option<&PlaceVisitRecord>,
+    current_tick: Tick,
+    profile: DiversificationProfile,
+) -> Permille {
+    record.map_or(Permille::new_unchecked(1000), |record| {
+        Permille::new_unchecked(1000).saturating_sub(proactive_familiarity(
+            record,
+            current_tick,
+            profile,
+        ))
+    })
 }
 
 fn known_place_observations(
@@ -5004,6 +5133,7 @@ mod tests {
         AcquisitionSearchOptions, BeliefGateOptions, CandidateGenerationDiagnostics,
         GenerationContext, belief_gated_places, deliverable_quantity, emit_produce_goals,
         emit_restock_goals, generate_candidates, generate_candidates_with_travel_horizon,
+        proactive_curiosity_pressure, proactive_familiarity, proactive_novelty,
     };
     use crate::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
@@ -5030,12 +5160,12 @@ mod tests {
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
         LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
         NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource,
-        Permille, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
-        ResourceSource, RewardSource, RightKind, SharedTellState, SocialObservation,
-        SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
+        Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
+        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+        RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
+        SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic,
+        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        UtilityProfile, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
@@ -6099,6 +6229,46 @@ mod tests {
         )
     }
 
+    fn setup_proactive_exploration_view(
+        current_tick: Tick,
+    ) -> (TestBeliefView, EntityId, EntityId, EntityId, EntityId) {
+        let agent = entity(1);
+        let current_place = entity(10);
+        let known_place = entity(11);
+        let frontier_place = entity(12);
+
+        let mut view = TestBeliefView {
+            current_tick,
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, current_place);
+        view.entities_at.insert(current_place, vec![agent]);
+        view.adjacent_places
+            .insert(current_place, vec![known_place]);
+        view.adjacent_places
+            .insert(known_place, vec![current_place, frontier_place]);
+        view.adjacent_places
+            .insert(frontier_place, vec![known_place]);
+        view.homeostatic_needs.insert(agent, hunger(300));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.beliefs.insert(
+            agent,
+            vec![(
+                known_place,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Place),
+                    last_known_place: None,
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        (view, agent, current_place, known_place, frontier_place)
+    }
+
     #[test]
     fn test_belief_view_exposes_diversification_accessors() {
         let agent = entity(1);
@@ -6125,6 +6295,44 @@ mod tests {
         assert_eq!(
             worldwake_sim::GoalBeliefView::last_proactive_exploration_tick(&view, agent),
             Some(Tick(77))
+        );
+    }
+
+    #[test]
+    fn proactive_familiarity_scales_with_visits_recovers_over_time_and_respects_floor() {
+        let profile = DiversificationProfile {
+            familiarity_per_visit: pm(150),
+            familiarity_recovery_per_tick: pm(10),
+            familiarity_floor: pm(60),
+            ..DiversificationProfile::default()
+        };
+        let record = PlaceVisitRecord {
+            ticks_present: 5,
+            last_arrival_tick: Tick(90),
+            visit_count: 3,
+        };
+
+        assert_eq!(proactive_familiarity(&record, Tick(90), profile), pm(450));
+        assert_eq!(proactive_familiarity(&record, Tick(120), profile), pm(150));
+        assert_eq!(proactive_familiarity(&record, Tick(200), profile), pm(60));
+        assert_eq!(proactive_novelty(Some(&record), Tick(90), profile), pm(550));
+        assert_eq!(proactive_novelty(None, Tick(90), profile), pm(1000));
+    }
+
+    #[test]
+    fn proactive_curiosity_pressure_accumulates_and_clamps() {
+        let profile = DiversificationProfile {
+            curiosity_buildup_rate: pm(12),
+            ..DiversificationProfile::default()
+        };
+
+        assert_eq!(
+            proactive_curiosity_pressure(Tick(10), Some(Tick(0)), profile),
+            pm(120)
+        );
+        assert_eq!(
+            proactive_curiosity_pressure(Tick(500), None, profile),
+            pm(1000)
         );
     }
 
@@ -16004,6 +16212,136 @@ mod tests {
             super::exploration_candidate_places(&view, agent, 6),
             BTreeMap::from([(origin, Some(Tick(100))), (one_hop, None), (two_hop, None),])
         );
+    }
+
+    #[test]
+    fn generate_candidates_emits_proactive_exploration_for_comfortable_agent() {
+        let (mut view, agent, _current_place, known_place, frontier_place) =
+            setup_proactive_exploration_view(Tick(200));
+        view.diversification_profiles.insert(
+            agent,
+            DiversificationProfile {
+                base_curiosity: pm(600),
+                comfort_threshold: pm(450),
+                curiosity_buildup_rate: pm(5),
+                exploration_cooldown_ticks: 60,
+                familiarity_per_visit: pm(150),
+                familiarity_recovery_per_tick: pm(2),
+                familiarity_floor: pm(50),
+                max_exploration_hops: 3,
+            },
+        );
+        view.belief_stores
+            .get_mut(&agent)
+            .unwrap()
+            .place_visits
+            .insert(
+                known_place,
+                PlaceVisitRecord {
+                    ticks_present: 3,
+                    last_arrival_tick: Tick(195),
+                    visit_count: 2,
+                },
+            );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(200),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::ExploreLocation {
+                target_place: frontier_place,
+                motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+            }
+        ));
+    }
+
+    #[test]
+    fn generate_candidates_skip_proactive_exploration_when_need_or_cooldown_gate_fails() {
+        let (mut high_need_view, agent, _current_place, _known_place, _frontier_place) =
+            setup_proactive_exploration_view(Tick(200));
+        let profile = DiversificationProfile {
+            base_curiosity: pm(600),
+            comfort_threshold: pm(450),
+            curiosity_buildup_rate: pm(5),
+            exploration_cooldown_ticks: 60,
+            familiarity_per_visit: pm(150),
+            familiarity_recovery_per_tick: pm(2),
+            familiarity_floor: pm(50),
+            max_exploration_hops: 3,
+        };
+        high_need_view.homeostatic_needs.insert(agent, hunger(500));
+        high_need_view
+            .diversification_profiles
+            .insert(agent, profile);
+
+        let high_need_candidates = generate_candidates(
+            &high_need_view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(200),
+        );
+
+        assert!(!high_need_candidates.iter().any(|candidate| matches!(
+            candidate.key.kind,
+            GoalKind::ExploreLocation {
+                motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+                ..
+            }
+        )));
+
+        let (mut cooldown_view, agent, _current_place, _known_place, _frontier_place) =
+            setup_proactive_exploration_view(Tick(200));
+        cooldown_view
+            .diversification_profiles
+            .insert(agent, profile);
+        cooldown_view
+            .last_proactive_exploration_ticks
+            .insert(agent, Tick(180));
+
+        let cooldown_candidates = generate_candidates(
+            &cooldown_view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(200),
+        );
+
+        assert!(!cooldown_candidates.iter().any(|candidate| matches!(
+            candidate.key.kind,
+            GoalKind::ExploreLocation {
+                motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn generate_candidates_skip_proactive_exploration_without_diversification_profile() {
+        let (view, agent, _current_place, _known_place, _frontier_place) =
+            setup_proactive_exploration_view(Tick(200));
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockedIntentMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(200),
+        );
+
+        assert!(!candidates.iter().any(|candidate| matches!(
+            candidate.key.kind,
+            GoalKind::ExploreLocation {
+                motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+                ..
+            }
+        )));
     }
 
     #[test]

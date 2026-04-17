@@ -173,13 +173,13 @@ fn compute_familiarity(
 ) -> Permille {
     // Base familiarity from visit history (clamped to Permille range)
     let raw_visit = u32::from(record.visit_count)
-        * u32::from(profile.familiarity_per_visit.value()) / 1000;
+        * u32::from(profile.familiarity_per_visit.value());
     let visit_familiarity = Permille::new_unchecked(raw_visit.min(1000) as u16);
 
     // Time-based recovery (familiarity decays with absence)
     let ticks_away = current_tick.0.saturating_sub(record.last_arrival_tick.0);
     let raw_recovery = (ticks_away as u32)
-        * u32::from(profile.familiarity_recovery_per_tick.value()) / 1000;
+        * u32::from(profile.familiarity_recovery_per_tick.value());
     let recovery = Permille::new_unchecked(raw_recovery.min(1000) as u16);
 
     // Effective familiarity: base minus recovery, floored
@@ -238,19 +238,14 @@ fn emit_proactive_exploration_candidates(
         .map(|t| ctx.current_tick.0.saturating_sub(t.0) as u32)
         .unwrap_or(ctx.current_tick.0 as u32);
     let raw_curiosity = ticks_since_explore
-        * u32::from(profile.curiosity_buildup_rate.value()) / 1000;
+        * u32::from(profile.curiosity_buildup_rate.value());
     let curiosity_pressure = Permille::new_unchecked(raw_curiosity.min(1000) as u16);
 
     // Gate 4: Need slack scaling (multiplicative dampener)
     let need_slack = Permille::new_unchecked(1000u16.saturating_sub(max_need));
 
     // Select target: highest-novelty believed place within hop limit
-    let Some(exploration_profile) = ctx.view.exploration_profile(ctx.agent) else {
-        return;
-    };
-    let Some((target_place, novelty)) = select_proactive_target(
-        ctx, &profile, exploration_profile,
-    ) else {
+    let Some((target_place, novelty)) = select_proactive_target(ctx, &profile) else {
         return;
     };
 
@@ -320,7 +315,6 @@ Reuses the existing BFS frontier machinery from `exploration_candidate_places()`
 fn select_proactive_target(
     ctx: &GenerationContext<'_>,
     profile: &DiversificationProfile,
-    exploration_profile: ExplorationProfile,
 ) -> Option<(EntityId, Permille)> {
     // Reuse BFS frontier with max_exploration_hops as depth limit
     let candidates = exploration_candidate_places(

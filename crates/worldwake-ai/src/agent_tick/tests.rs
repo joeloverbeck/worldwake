@@ -6082,6 +6082,50 @@ fn exploration_counter_increments_when_explore_goal_is_adopted() {
 }
 
 #[test]
+fn proactive_exploration_commit_updates_last_proactive_tick() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let mut txn = new_txn(&mut harness.world, 1);
+    txn.set_component_exploration_profile(
+        harness.actor,
+        ExplorationProfile {
+            consecutive_exploration_count: 0,
+            ..ExplorationProfile::default()
+        },
+    )
+    .unwrap();
+    txn.set_component_last_proactive_exploration_tick(
+        harness.actor,
+        worldwake_core::LastProactiveExplorationTick(None),
+    )
+    .unwrap();
+    commit_txn(txn);
+
+    let active_goal = worldwake_core::ActiveGoal {
+        goal_key: GoalKey::from(GoalKind::ExploreLocation {
+            target_place: entity(99),
+            motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+        }),
+        adopted_at: Tick(5),
+    };
+
+    update_exploration_counter_for_adopted_goal(
+        &mut harness.world,
+        &mut harness.event_log,
+        harness.actor,
+        Some(&active_goal),
+        Tick(5),
+    )
+    .unwrap();
+
+    assert_eq!(
+        harness
+            .world
+            .get_component_last_proactive_exploration_tick(harness.actor),
+        Some(&worldwake_core::LastProactiveExplorationTick(Some(Tick(5))))
+    );
+}
+
+#[test]
 fn exploration_counter_resets_when_non_explore_goal_is_adopted() {
     let mut harness = Harness::new(ControlSource::Ai);
     let mut txn = new_txn(&mut harness.world, 1);

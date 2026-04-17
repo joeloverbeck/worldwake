@@ -44,8 +44,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockingFact, CauseRef, CognitiveProfile, ContentionIntents,
-    ControlSource, EntityId, ExecutionBudget, IntentionFrame, Tick, VisibilitySpec, WitnessData,
-    WorldTxn,
+    ControlSource, EntityId, ExecutionBudget, IntentionFrame, LastProactiveExplorationTick, Tick,
+    VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -1022,10 +1022,16 @@ pub(super) fn update_exploration_counter_for_adopted_goal(
         return Ok(());
     };
 
+    let mut proactive_commit_tick = None;
     match active_goal.goal_key.kind {
-        worldwake_core::GoalKind::ExploreLocation { .. } => {
+        worldwake_core::GoalKind::ExploreLocation {
+            motivating_need, ..
+        } => {
             profile.consecutive_exploration_count =
                 profile.consecutive_exploration_count.saturating_add(1);
+            if motivating_need == worldwake_core::ExplorationMotivation::Proactive {
+                proactive_commit_tick = Some(tick);
+            }
         }
         _ => {
             profile.consecutive_exploration_count = 0;
@@ -1043,6 +1049,13 @@ pub(super) fn update_exploration_counter_for_adopted_goal(
     );
     txn.set_component_exploration_profile(agent, profile)
         .map_err(|error| TickInputError::new(error.to_string()))?;
+    if let Some(proactive_commit_tick) = proactive_commit_tick {
+        txn.set_component_last_proactive_exploration_tick(
+            agent,
+            LastProactiveExplorationTick(Some(proactive_commit_tick)),
+        )
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    }
     let _ = txn.commit(event_log);
     Ok(())
 }

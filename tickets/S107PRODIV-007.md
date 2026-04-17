@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — tests only
-**Deps**: archive/tickets/S107PRODIV-005.md, S107PRODIV-006
+**Deps**: archive/tickets/S107PRODIV-005.md, archive/tickets/S107PRODIV-006.md
 
 ## Problem
 

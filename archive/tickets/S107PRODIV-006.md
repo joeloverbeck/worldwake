@@ -1,6 +1,6 @@
 # S107PRODIV-006: Proactive exploration candidate emission — emit, select, familiarity/novelty
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new candidate emitter in worldwake-ai, LastProactiveExplorationTick update
@@ -18,7 +18,13 @@ The core proactive exploration logic: when an agent has a `DiversificationProfil
 4. `HomeostaticNeeds::max_value() -> u16` at `needs.rs:55` — returns highest need value across all five needs. Used for need-slack veto.
 5. `GenerationContext` at `candidate_generation.rs:147` — holds `view`, `agent`, `place`, `travel_horizon`, `blocked`, `recipes`, `current_tick`, etc.
 6. `agent_belief_store` accessor on GoalBeliefView at `belief_view.rs:91` — returns `Option<&AgentBeliefStore>`, giving access to `place_visits`.
-7. `LastProactiveExplorationTick` must be updated when a proactive ExploreLocation goal is committed. This update point needs to be identified — likely in the agent tick when a goal transitions to committed state. Grep for `consecutive_exploration_count` update to find the analog.
+7. `update_exploration_counter_for_adopted_goal` in `crates/worldwake-ai/src/agent_tick/mod.rs` is the live commitment hook. It already updates `ExplorationProfile.consecutive_exploration_count` for all `ExploreLocation` goals and is the honest place to stamp `LastProactiveExplorationTick(Some(tick))` for `ExplorationMotivation::Proactive`.
+8. `ranking.rs` still intentionally leaves proactive exploration inert: `exploration_motive(...)` returns `0` for `ExplorationMotivation::Proactive`, and the focused test is `explore_location_proactive_motive_stays_zero_until_proactive_ranking_lands`. This ticket owns flipping that behavior live.
+
+- `Already landed`: `ExplorationMotivation`, `DiversificationProfile` / `LastProactiveExplorationTick` belief accessors, `AgentBeliefStore.place_visits`, and CLI spawn wiring from tickets 002-005.
+- `Still live`: proactive `ExploreLocation` emission/selection in `candidate_generation.rs`, proactive ranking in `ranking.rs`, and proactive commitment timestamp updates in `agent_tick/mod.rs`.
+- `New fallout`: focused unit coverage in the existing `candidate_generation.rs`, `ranking.rs`, and `agent_tick/tests.rs` modules.
+- `No-change cited files`: none.
 
 ## Architecture Check
 
@@ -69,13 +75,14 @@ Find where `consecutive_exploration_count` is incremented (in agent_tick or goal
 
 ### 6. Handle ExplorationMotivation::Proactive in ranking
 
-In `crates/worldwake-ai/src/ranking.rs`, ensure `motive_score` for `ExploreLocation` with `Proactive` motivation returns a reasonable score. The simplest approach: proactive exploration gets a lower base score than need-driven, since it's comfort-gated and should yield to survival goals.
+In `crates/worldwake-ai/src/ranking.rs`, make `motive_score` for `ExploreLocation` with `Proactive` motivation live using the already-exposed diversification carrier and cooldown/buildup context, replacing the current explicit zero-motive placeholder test.
 
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify) — familiarity/novelty functions, target selection, emitter, wire into generate_candidates
 - `crates/worldwake-ai/src/ranking.rs` (modify) — handle Proactive motivation in motive_score
 - `crates/worldwake-ai/src/agent_tick/mod.rs` (modify) — update LastProactiveExplorationTick on goal commitment
+- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify) — focused commitment timestamp proof
 
 ## Out of Scope
 
@@ -116,3 +123,26 @@ In `crates/worldwake-ai/src/ranking.rs`, ensure `motive_score` for `ExploreLocat
 1. `cargo test -p worldwake-ai -- proactive`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-17.
+
+- Added proactive exploration helpers in `candidate_generation.rs`: curiosity buildup, familiarity/novelty derivation, proactive target selection, and proactive `ExploreLocation` emission gated by comfort threshold, cooldown, and nonzero utility.
+- Made proactive exploration rankable in `ranking.rs` using `DiversificationProfile.base_curiosity`, curiosity buildup since the last proactive commitment, and current need slack instead of the previous zero-motive placeholder.
+- Extended `update_exploration_counter_for_adopted_goal` to stamp `LastProactiveExplorationTick(Some(tick))` when a proactive exploration goal is adopted, while preserving the existing consecutive exploration counter path for all `ExploreLocation` goals.
+- Added focused proofs in the existing `candidate_generation.rs`, `ranking.rs`, and `agent_tick/tests.rs` modules for proactive emission, familiarity recovery, curiosity buildup, proactive motive scoring, and commitment timestamp updates.
+
+## Deviations
+
+- The active spec's drafted familiarity and curiosity snippets divided per-visit / per-tick accumulation by `1000`, which would quantize to zero under the landed default profile values. The implementation and active spec were corrected to the direct per-visit / per-tick interpretation that matches the ticket's stated linear accumulation contract and the live default magnitudes.
+- Proactive target selection landed directly on `DiversificationProfile.max_exploration_hops` and the existing belief/travel-horizon boundary. The drafted `exploration_profile` input in the active spec snippet was removed because it was not part of the live proactive contract.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::generate_candidates_emits_proactive_exploration_for_comfortable_agent -- --exact`
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::proactive_familiarity_scales_with_visits_recovers_over_time_and_respects_floor -- --exact`
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::explore_location_proactive_motive_uses_curiosity_buildup_and_need_slack -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::proactive_exploration_commit_updates_last_proactive_tick -- --exact`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
