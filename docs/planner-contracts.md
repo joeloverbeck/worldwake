@@ -71,6 +71,27 @@ The planner does not get to read authoritative runtime state directly. If succes
 
 For dynamic action durations, the authoritative planner-local inventory is [`PlannerDurationDependency`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planner_duration_contract.rs). This is the single source of truth for planner-supported non-fixed duration dependencies.
 
+### Entity admission and the belief barrier
+
+Remote entity visibility has a separate contract from place-topology visibility.
+
+The governing symbols are:
+
+- [`PlanningSnapshot::build_with_blocked_facility_uses()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
+- [`collect_entities()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
+- [`build_snapshot_entity()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
+- [`build_snapshot_places()`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planning_snapshot.rs)
+
+The contract is:
+
+- The actor's current place remains an authoritative planner-visible local surface. Co-located entities can enter the snapshot from authoritative runtime state because they are part of the actor's immediate local world.
+- Remote places inside travel horizon do not grant omniscient remote entity visibility. Remote entities must enter the snapshot through remembered entity beliefs or explicit grounded evidence, not raw `entities_at(place)` truth alone.
+- If a remote entity is admitted through belief carriage, snapshot fields that already exist on `BelievedEntityState` such as place, alive state, inventory, workstation tag, resource source, wounds, and courage must preserve the believed values instead of silently replacing them with authoritative runtime values.
+- Explicit grounded evidence may still force a remote entity into the snapshot, but that is the evidence carrier doing the work. It is not a second general remote-entity fallback.
+- Place topology is still broader than entity visibility. The planner may know adjacent places from the authoritative travel graph without automatically knowing which facilities, items, corpses, or offices currently occupy them.
+
+When reassessing a planner ticket, state separately whether the issue is about place-topology inclusion, remote entity admission, or belief-backed field carriage. Do not collapse those into one generic "snapshot completeness" claim.
+
 ### Current duration dependency inventory
 
 The live inventory is:

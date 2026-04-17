@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (tests + scenario fixture)
-**Deps**: archive/tickets/S116DRIESCSUS-003.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-005.md
+**Deps**: archive/tickets/S116DRIESCSUS-003.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-005.md, archive/tickets/S116DRIESCSUS-008.md
 
 ## Problem
 
@@ -21,6 +21,10 @@ Spec S116 D7 requires three new goldens proving escalation behavior end-to-end, 
 5. Calibration acceptance band (spec Risks #3): default parameters must leave per-agent wash/eat/drink/sleep counts on `survival-baseline.ron` and `survival-scattered.ron` within ±10% of the current golden fixtures, and must not introduce any new `MAX_CRITICAL_RUN_TICKS=400` violations on contested.
 6. Intended verification layer (precision rule 3): Golden E2E coverage. Runtime `agent_tick` with full action registries required — not a local needs-only harness. Agents must travel, possess water, wash, eat, drink, sleep.
 7. Shared boundary under audit: the full escalation pipeline — `needs_system` counter maintenance (ticket 003), ranking multiplier application (ticket 004), scenario-defined profile (ticket 005). Goldens validate that all three cooperate to break the wash-cycle starvation dynamic.
+8. Spec drift: the parent spec's D8 (`golden_survival_contested` bound tightening) is now split into active ticket `S116DRIESCSUS-007`, and D9 unit motive-math coverage already landed in archived ticket `S116DRIESCSUS-002.md`. This ticket remains a golden/scenario ticket; it does not re-own ranking unit tests or contested-bound tightening.
+9. Live `GoalKind::Wash` admission is split across boundaries: candidate generation still admits Wash from dirtiness plus directly possessed local water (`crates/worldwake-ai/src/candidate_generation.rs`, `wash_requires_dirtiness_and_local_water`), while planner-relevant Wash destinations still come from believed `WorkstationTag::WashBasin` places (`crates/worldwake-ai/src/goal_model.rs`, `GoalKind::Wash.goal_relevant_places`). Focused proof confirmed the planner may still rank/select Wash as the top goal without a believed basin, but it does not successfully find or commit a Wash plan through search. For the belief-only golden, the honest invariant is therefore "no found/committed Wash plan without a believed wash-basin place," not "Wash never appears anywhere in trace data."
+10. Calibration proof surface is existing authored survival goldens plus command-backed observation, not a second duplicate assertion layer. The honest current-ticket obligation is to rerun `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested`, confirm no retune is required, and record that result in closeout unless focused reruns expose a real default-calibration regression.
+11. Separate planner-boundary concern: `PlanningSnapshot::collect_entities()` in `crates/worldwake-ai/src/planning_snapshot.rs` currently admits authoritative remote entities at included places, which may expose planner-visible facilities without belief carriage. That concern is now tracked explicitly in active ticket `S116DRIESCSUS-008`; this ticket does not own the planner snapshot repair itself.
 
 ## Architecture Check
 
@@ -31,11 +35,9 @@ Spec S116 D7 requires three new goldens proving escalation behavior end-to-end, 
 ## Verification Layers
 
 1. Wash-cycle under priority override → golden `dirtiness_wash_cycle_under_priority_override` asserts each agent performs ≥ 4 wash cycles over 800 ticks and each agent's max consecutive dirtiness-critical run is < 250 ticks. Authoritative proof surface: action-trace `Wash` commit count + event-log `DeprivationExposure.dirtiness_critical_ticks` reset pattern.
-2. Belief-only planning preserved under escalation → golden `escalation_respects_belief_only_planning` asserts the agent never plans `GoalKind::Wash` (decision-trace proof) when no belief supports a wash-capable facility, yet the escalation multiplier still grows to cap (unit-level exposure read proof — forced via test harness). FND-14 guard.
+2. Belief-only planning preserved under escalation → golden `escalation_respects_belief_only_planning` asserts no found `GoalKind::Wash` plan or committed `wash` action appears when no believed wash-basin place exists, while authoritative `DeprivationExposure.dirtiness_critical_ticks` still grows past `start_after_ticks`. FND-14 guard.
 3. Escalation fades through physical relief → golden `escalation_fades_after_relief` asserts `DeprivationExposure::ticks_at_critical(HomeostaticNeedId::Dirtiness) == 0` within 1 tick of `dirtiness < critical`, and an `EventTag::Escalation` end event with canonical `action_name` is present on the transition tick.
-4. Baseline survival behavior preserved → existing `golden_survival_baseline` passes with per-agent wash/eat/drink/sleep counts within ±10% of current fixtures. If drift is outside the band, retune defaults before this ticket closes.
-5. Scattered survival behavior preserved → existing `golden_survival_scattered` passes under the same ±10% band.
-6. Contested survival regression → existing `golden_survival_contested` still passes with its current `MAX_CRITICAL_RUN_TICKS=400` bound. Tightening to 300 is ticket 007.
+4. Baseline/scattered/contested calibration verification → existing `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` rerun cleanly after the new golden/scenario lands. If those reruns expose a real default-calibration regression, retune defaults in the owning core component and record the deviation; otherwise leave production defaults untouched and capture the no-retune result in closeout.
 
 ## What to Change
 
@@ -56,7 +58,7 @@ Document in a leading scenario comment: the lawful competing affordances exclude
 Create `crates/worldwake-ai/tests/golden_drive_escalation.rs` with the three goldens:
 
 - `dirtiness_wash_cycle_under_priority_override` — drives the new RON scenario, asserts ≥ 4 wash commits per agent and `max_consecutive_critical_dirtiness_ticks < 250`.
-- `escalation_respects_belief_only_planning` — constructs an agent with empty wash-facility beliefs, forces dirtiness above critical via wilderness relief for 400 ticks, asserts zero `GoalKind::Wash` plans and that the exposure counter grows past `start_after_ticks`.
+- `escalation_respects_belief_only_planning` — constructs an agent with no believed wash-basin place, forces dirtiness above critical via wilderness relief for 400 ticks, asserts no successful `GoalKind::Wash` plan or committed `wash` action appears and that the exposure counter grows past `start_after_ticks`.
 - `escalation_fades_after_relief` — drives a scenario with co-located wash water, forces initial dirtiness above critical, lets agent wash, asserts counter reset within 1 tick and `EventTag::Escalation` end event present on the reset tick.
 
 Follow the harness/assertion pattern already used in `golden_survival_contested.rs`.
@@ -65,17 +67,18 @@ Follow the harness/assertion pattern already used in `golden_survival_contested.
 
 Re-run `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` locally. Record per-agent action-count distributions (wash, eat, drink, sleep). Compare to the current fixtures' numbers (extracted from `reports/scenario-analysis-report.md` and prior golden archives where available).
 
-If per-agent counts drift outside ±10%, tune `DriveEscalationProfile::default()` constants (`start_after_ticks`, `growth_per_tick`, `max_multiplier`) in `crates/worldwake-core/src/drive_escalation_profile.rs` (landed by ticket 002) and re-run. Here `max_multiplier` is a multiplier-scale cap in permille units, not a `Permille` pressure value. Document the chosen defaults and the empirical justification as a comment on the `Default` impl.
+If those reruns expose a real default-calibration regression, tune `DriveEscalationProfile::default()` constants (`start_after_ticks`, `growth_per_tick`, `max_multiplier`) in `crates/worldwake-core/src/drive_escalation_profile.rs` (landed by ticket 002) and re-run. Here `max_multiplier` is a multiplier-scale cap in permille units, not a `Permille` pressure value. If no regression appears, leave production defaults untouched and record the no-retune result in closeout.
 
 ## Files to Touch
 
 - `scenarios/drive-escalation-wash-priority.ron` (new)
 - `crates/worldwake-ai/tests/golden_drive_escalation.rs` (new)
-- `crates/worldwake-core/src/drive_escalation_profile.rs` (modify only if calibration requires re-tuning defaults — otherwise untouched)
+- `crates/worldwake-core/src/drive_escalation_profile.rs` (modify only if calibration reruns expose a real default regression — otherwise untouched)
 
 ## Out of Scope
 
 - Tightening `golden_survival_contested::MAX_CRITICAL_RUN_TICKS` to 300 — ticket 007.
+- Ranking/unit motive-math coverage from spec D9 — already delivered in archived ticket `S116DRIESCSUS-002`.
 - Water-possession bottleneck follow-up (`wash_preconditions`) — separate spec.
 - Multi-need escalation emergence scenarios beyond dirtiness — the three named goldens exercise the full pipeline; additional coverage is a later ticket if emergent gaps surface.
 
@@ -84,10 +87,10 @@ If per-agent counts drift outside ±10%, tune `DriveEscalationProfile::default()
 ### Tests That Must Pass
 
 1. `dirtiness_wash_cycle_under_priority_override` — ≥ 4 wash commits per agent; `max_consecutive_critical_dirtiness_ticks < 250` per agent.
-2. `escalation_respects_belief_only_planning` — zero `GoalKind::Wash` plans; exposure counter ≥ `start_after_ticks + 1`.
+2. `escalation_respects_belief_only_planning` — no found `GoalKind::Wash` plan or committed `wash` action without a believed wash-basin place; exposure counter ≥ `start_after_ticks + 1`.
 3. `escalation_fades_after_relief` — counter reset within 1 tick of sub-critical; `EventTag::Escalation` end event present at the transition tick.
-4. `golden_survival_baseline` — existing assertions pass; per-agent action counts within ±10% of current fixtures.
-5. `golden_survival_scattered` — same.
+4. `golden_survival_baseline` — existing assertions pass after the new golden/scenario lands.
+5. `golden_survival_scattered` — existing assertions pass after the new golden/scenario lands.
 6. `golden_survival_contested` — existing assertions pass under current `MAX_CRITICAL_RUN_TICKS=400`.
 7. Existing suite: `cargo test -p worldwake-ai`.
 
@@ -102,7 +105,7 @@ If per-agent counts drift outside ±10%, tune `DriveEscalationProfile::default()
 ### New/Modified Tests
 
 1. `crates/worldwake-ai/tests/golden_drive_escalation.rs` — 3 new goldens.
-2. `scenarios/drive-escalation-wash-priority.ron` — new fixture scenario for golden 1.
+2. `scenarios/drive-escalation-wash-priority.ron` — new fixture scenario for golden 1 and the authored co-located wash-water relief path reused by golden 3.
 
 ### Commands
 

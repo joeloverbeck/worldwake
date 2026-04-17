@@ -6452,6 +6452,13 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&resource_entity).cloned();
+        remember_entity(
+            &mut view,
+            actor,
+            resource_entity,
+            believed_entity_state_at(place_b, Tick(1), believed_source),
+        );
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6525,6 +6532,13 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&resource_entity).cloned();
+        remember_entity(
+            &mut view,
+            actor,
+            resource_entity,
+            believed_entity_state_at(place_b, Tick(1), believed_source),
+        );
         // Merchant at place_c
         let merchant = entity(30);
         view.alive.insert(merchant);
@@ -6542,6 +6556,12 @@ mod tests {
             .insert(merchant, sample_trade_disposition_profile());
         view.commodity_quantities
             .insert((merchant, CommodityKind::Bread), Quantity(2));
+        let mut merchant_belief = believed_entity_state_at(place_c, Tick(1), None);
+        merchant_belief.believed_kind = Some(EntityKind::Agent);
+        merchant_belief
+            .last_known_inventory
+            .insert(CommodityKind::Bread, Quantity(2));
+        remember_entity(&mut view, actor, merchant, merchant_belief);
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6565,6 +6585,9 @@ mod tests {
         view.kinds.insert(target, EntityKind::Agent);
         view.effective_places.insert(target, place_b);
         view.entities_at.entry(place_b).or_default().push(target);
+        let mut target_belief = believed_entity_state_at(place_b, Tick(1), None);
+        target_belief.believed_kind = Some(EntityKind::Agent);
+        remember_entity(&mut view, actor, target, target_belief);
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6581,6 +6604,10 @@ mod tests {
         view.kinds.insert(corpse, EntityKind::Agent);
         view.effective_places.insert(corpse, place_c);
         view.entities_at.entry(place_c).or_default().push(corpse);
+        let mut corpse_belief = believed_entity_state_at(place_c, Tick(1), None);
+        corpse_belief.believed_kind = Some(EntityKind::Agent);
+        corpse_belief.alive = false;
+        remember_entity(&mut view, actor, corpse, corpse_belief);
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6667,7 +6694,7 @@ mod tests {
     }
 
     #[test]
-    fn wash_returns_places_with_wash_basins() {
+    fn wash_ignores_unbelieved_remote_wash_basin() {
         let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
         let basin = entity(50);
         view.alive.insert(basin);
@@ -6680,8 +6707,47 @@ mod tests {
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
         let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
+        assert!(places.is_empty());
+        assert!(!places.contains(&place_a));
+    }
+
+    #[test]
+    fn wash_returns_places_with_wash_basin_belief() {
+        let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
+        let basin = entity(50);
+        view.alive.insert(basin);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.effective_places.insert(basin, place_c);
+        view.entities_at.entry(place_c).or_default().push(basin);
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                basin,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Facility),
+                    last_known_place: Some(place_c),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: Some(WorkstationTag::WashBasin),
+                    resource_source: None,
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    believed_evidence: None,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(4),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
+                },
+            )],
+        );
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
         assert_eq!(places, vec![place_c]);
-        // Actor's own place (place_a) should NOT appear — no basin there.
         assert!(!places.contains(&place_a));
     }
 
@@ -6750,6 +6816,10 @@ mod tests {
         view.effective_places.insert(forge, place_b);
         view.entities_at.entry(place_b).or_default().push(forge);
         view.workstation_tags.insert(forge, WorkstationTag::Forge);
+        let mut forge_belief = believed_entity_state_at(place_b, Tick(1), None);
+        forge_belief.believed_kind = Some(EntityKind::UniqueItem);
+        forge_belief.workstation_tag = Some(WorkstationTag::Forge);
+        remember_entity(&mut view, actor, forge, forge_belief);
         let mut recipes = worldwake_sim::RecipeRegistry::new();
         let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
             name: "Smelt Iron".to_string(),
@@ -6804,6 +6874,12 @@ mod tests {
             .insert(medicine, CommodityKind::Medicine);
         view.commodity_quantities
             .insert((medicine, CommodityKind::Medicine), Quantity(1));
+        let mut medicine_belief = believed_entity_state_at(place_b, Tick(1), None);
+        medicine_belief.believed_kind = Some(EntityKind::ItemLot);
+        medicine_belief
+            .last_known_inventory
+            .insert(CommodityKind::Medicine, Quantity(1));
+        remember_entity(&mut view, actor, medicine, medicine_belief);
 
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6896,6 +6972,12 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let mut loose_medicine_belief = believed_entity_state_at(place_b, Tick(1), None);
+        loose_medicine_belief.believed_kind = Some(EntityKind::ItemLot);
+        loose_medicine_belief
+            .last_known_inventory
+            .insert(CommodityKind::Medicine, Quantity(1));
+        remember_entity(&mut view, actor, loose_medicine, loose_medicine_belief);
 
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6930,6 +7012,11 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&wheat_field).cloned();
+        let mut wheat_field_belief =
+            believed_entity_state_at(place_b, Tick(1), believed_source);
+        wheat_field_belief.believed_kind = Some(EntityKind::Place);
+        remember_entity(&mut view, actor, wheat_field, wheat_field_belief);
 
         let mut recipes = RecipeRegistry::new();
         let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
@@ -7010,6 +7097,11 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&wheat_field).cloned();
+        let mut wheat_field_belief =
+            believed_entity_state_at(place_b, Tick(1), believed_source);
+        wheat_field_belief.believed_kind = Some(EntityKind::Place);
+        remember_entity(&mut view, actor, wheat_field, wheat_field_belief);
 
         let mut recipes = RecipeRegistry::new();
         let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
@@ -7063,6 +7155,11 @@ mod tests {
                     last_regeneration_tick: None,
                 },
             );
+            let believed_source = view.resource_sources.get(&field).cloned();
+            let mut field_belief =
+                believed_entity_state_at(place, Tick(1), believed_source);
+            field_belief.believed_kind = Some(EntityKind::Place);
+            remember_entity(&mut view, actor, field, field_belief);
         }
 
         let mut recipes = RecipeRegistry::new();
@@ -7111,6 +7208,11 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&wheat_field).cloned();
+        let mut wheat_field_belief =
+            believed_entity_state_at(place_b, Tick(1), believed_source);
+        wheat_field_belief.believed_kind = Some(EntityKind::Place);
+        remember_entity(&mut view, actor, wheat_field, wheat_field_belief);
 
         let mut recipes = RecipeRegistry::new();
         recipes.register(worldwake_sim::RecipeDefinition {
@@ -8670,6 +8772,18 @@ mod tests {
                 worldwake_core::PerceptionSource::DirectObservation,
             )
         }
+    }
+
+    fn remember_entity(
+        view: &mut TestBeliefView,
+        actor: EntityId,
+        entity: EntityId,
+        belief: BelievedEntityState,
+    ) {
+        view.known_entity_beliefs
+            .entry(actor)
+            .or_default()
+            .push((entity, belief));
     }
 
     fn set_office_jurisdiction(

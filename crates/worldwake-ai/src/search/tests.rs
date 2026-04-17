@@ -888,6 +888,18 @@ fn believed_entity_state_at(
     }
 }
 
+fn remember_entity(
+    view: &mut TestBeliefView,
+    actor: EntityId,
+    entity: EntityId,
+    belief: BelievedEntityState,
+) {
+    view.known_entity_beliefs
+        .entry(actor)
+        .or_default()
+        .push((entity, belief));
+}
+
 fn combat_belief_at(place: EntityId, observed_tick: Tick) -> BelievedEntityState {
     let mut state = believed_entity_state_at(place, observed_tick, None);
     state.believed_activity = Some(worldwake_core::BelievedActivity {
@@ -983,6 +995,31 @@ fn insert_consumable_lot(
         .insert((lot, commodity), Quantity(1));
     view.consumable_profiles
         .insert(lot, commodity.spec().consumable_profile.unwrap());
+    let mut belief = BelievedEntityState {
+        believed_kind: Some(EntityKind::ItemLot),
+        last_known_place: Some(place),
+        last_known_inventory: BTreeMap::from([(commodity, Quantity(1))]),
+        workstation_tag: None,
+        resource_source: None,
+        alive: true,
+        wounds: Vec::new(),
+        last_known_courage: None,
+        believed_activity: None,
+        believed_artifact: None,
+        believed_contention: None,
+        believed_evidence: None,
+        ..BelievedEntityState::single_observation_defaults(
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        )
+    };
+    if view.effective_places.get(&actor) == Some(&place) {
+        belief.last_known_place = Some(place);
+    }
+    view.known_entity_beliefs
+        .entry(actor)
+        .or_default()
+        .push((lot, belief));
     entities_at_place.push(lot);
 }
 
@@ -1258,6 +1295,12 @@ fn search_returns_travel_then_consume_for_adjacent_food() {
     view.lot_commodities.insert(bread, CommodityKind::Bread);
     view.commodity_quantities
         .insert((bread, CommodityKind::Bread), Quantity(1));
+    let mut bread_belief = believed_entity_state_at(field, Tick(1), None);
+    bread_belief.believed_kind = Some(EntityKind::ItemLot);
+    bread_belief
+        .last_known_inventory
+        .insert(CommodityKind::Bread, Quantity(1));
+    remember_entity(&mut view, actor, bread, bread_belief);
     view.carry_capacities.insert(actor, LoadUnits(10));
     view.consumable_profiles.insert(
         bread,
@@ -2361,6 +2404,9 @@ fn cargo_search_finds_pickup_then_travel_plan() {
             home_facility: Some(facility),
         },
     );
+    let mut facility_belief = believed_entity_state_at(destination, Tick(1), None);
+    facility_belief.believed_kind = Some(EntityKind::Facility);
+    remember_entity(&mut view, actor, facility, facility_belief);
     view.demand_memory.insert(
         actor,
         vec![DemandObservation {
@@ -2457,6 +2503,9 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
             home_facility: Some(facility),
         },
     );
+    let mut facility_belief = believed_entity_state_at(destination, Tick(1), None);
+    facility_belief.believed_kind = Some(EntityKind::Facility);
+    remember_entity(&mut view, actor, facility, facility_belief);
     view.demand_memory.insert(
         actor,
         vec![DemandObservation {
@@ -2563,6 +2612,12 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
             home_facility: Some(facility),
         },
     );
+    let mut facility_belief = believed_entity_state_at(destination, Tick(1), None);
+    facility_belief.believed_kind = Some(EntityKind::Facility);
+    remember_entity(&mut view, actor, facility, facility_belief);
+    let mut container_belief = believed_entity_state_at(destination, Tick(1), None);
+    container_belief.believed_kind = Some(EntityKind::Container);
+    remember_entity(&mut view, actor, stock_container, container_belief);
     view.stock_storage_policies.insert(
         facility,
         worldwake_core::StockStoragePolicy {
@@ -5432,6 +5487,12 @@ fn build_branching_care_view() -> (
         medicine,
         LoadUnits(worldwake_core::load_per_unit(CommodityKind::Medicine).0),
     );
+    let mut medicine_belief = believed_entity_state_at(medicine_place, Tick(1), None);
+    medicine_belief.believed_kind = Some(EntityKind::ItemLot);
+    medicine_belief
+        .last_known_inventory
+        .insert(CommodityKind::Medicine, Quantity(1));
+    remember_entity(&mut view, actor, medicine, medicine_belief);
 
     (
         view,
@@ -5452,6 +5513,15 @@ fn build_local_medicine_remote_patient_view()
     view.entities_at
         .insert(current_place, vec![actor, medicine]);
     view.entities_at.insert(medicine_place, Vec::new());
+    if let Some((_, belief)) = view
+        .known_entity_beliefs
+        .entry(actor)
+        .or_default()
+        .iter_mut()
+        .find(|(entity, _)| *entity == medicine)
+    {
+        belief.last_known_place = Some(current_place);
+    }
     (view, actor, patient, current_place, patient_place)
 }
 
@@ -12010,6 +12080,12 @@ fn travel_action_uses_destination_as_place_for_blocker_check() {
     view.lot_commodities.insert(bread, CommodityKind::Bread);
     view.commodity_quantities
         .insert((bread, CommodityKind::Bread), Quantity(1));
+    let mut bread_belief = believed_entity_state_at(field, Tick(1), None);
+    bread_belief.believed_kind = Some(EntityKind::ItemLot);
+    bread_belief
+        .last_known_inventory
+        .insert(CommodityKind::Bread, Quantity(1));
+    remember_entity(&mut view, actor, bread, bread_belief);
     view.carry_capacities.insert(actor, LoadUnits(10));
     view.consumable_profiles.insert(
         bread,
