@@ -223,6 +223,39 @@ impl AgentBeliefStore {
         self.asked_witnesses.insert(key, memory);
     }
 
+    pub fn record_place_visit(&mut self, place: EntityId, current_tick: Tick) -> bool {
+        let record = match self.place_visits.entry(place) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(PlaceVisitRecord {
+                    ticks_present: 0,
+                    last_arrival_tick: current_tick,
+                    visit_count: 1,
+                });
+                return true;
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
+
+        if record.last_arrival_tick == current_tick {
+            return false;
+        }
+
+        let expected_continuation_tick = record
+            .last_arrival_tick
+            .0
+            .saturating_add(u64::from(record.ticks_present))
+            .saturating_add(1);
+        if current_tick.0 == expected_continuation_tick {
+            record.ticks_present = record.ticks_present.saturating_add(1);
+            return true;
+        }
+
+        record.ticks_present = 0;
+        record.last_arrival_tick = current_tick;
+        record.visit_count = record.visit_count.saturating_add(1);
+        true
+    }
+
     pub fn record_institutional_belief(
         &mut self,
         key: InstitutionalBeliefKey,
@@ -3025,6 +3058,58 @@ mod tests {
         assert!(store.asked_witnesses.is_empty());
         assert!(store.place_visits.is_empty());
         assert!(store.institutional_beliefs.is_empty());
+    }
+
+    #[test]
+    fn record_place_visit_inserts_new_place_with_arrival_tick() {
+        let mut store = AgentBeliefStore::new();
+        let place = entity(22);
+
+        assert!(store.record_place_visit(place, Tick(7)));
+        assert_eq!(
+            store.place_visits.get(&place),
+            Some(&PlaceVisitRecord {
+                ticks_present: 0,
+                last_arrival_tick: Tick(7),
+                visit_count: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn record_place_visit_increments_presence_on_contiguous_tick() {
+        let mut store = AgentBeliefStore::new();
+        let place = entity(23);
+
+        assert!(store.record_place_visit(place, Tick(7)));
+        assert!(store.record_place_visit(place, Tick(8)));
+        assert!(store.record_place_visit(place, Tick(9)));
+        assert_eq!(
+            store.place_visits.get(&place),
+            Some(&PlaceVisitRecord {
+                ticks_present: 2,
+                last_arrival_tick: Tick(7),
+                visit_count: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn record_place_visit_resets_presence_and_increments_visit_count_on_return() {
+        let mut store = AgentBeliefStore::new();
+        let place = entity(24);
+
+        assert!(store.record_place_visit(place, Tick(7)));
+        assert!(store.record_place_visit(place, Tick(8)));
+        assert!(store.record_place_visit(place, Tick(12)));
+        assert_eq!(
+            store.place_visits.get(&place),
+            Some(&PlaceVisitRecord {
+                ticks_present: 0,
+                last_arrival_tick: Tick(12),
+                visit_count: 2,
+            })
+        );
     }
 
     #[test]

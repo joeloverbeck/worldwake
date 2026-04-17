@@ -190,6 +190,7 @@ Load `references/implementation-discipline.md`.
 
 When the clean fix requires extracting a helper out of an existing module into a neutral shared location, explicitly sweep sibling and transitive import sites for the old module path before relying on compile fallout alone. Shared-helper extraction often leaves behind stale `use crate::old_module::helper` assumptions even when the owned behavioral change is otherwise correct.
 When a new component or metadata field is derivable from authoritative post-state plus the current tick, prefer a single sync helper over bespoke set/clear branches at each call site. Reuse that helper across every mutation path that can enter or leave the invariant so later lifecycle fallout changes the predicate in one place instead of many.
+For passive perception/belief tickets where the owned invariant is “the agent is currently at place X this tick” or similar per-tick occupancy state, verify that the sync point is not accidentally gated on non-empty observation batches, co-located subjects, successful perception rolls, or event-derived updates. If the invariant should advance every lawful tick, keep its update path outside those optional batch/result guards.
 
 ### 6. Verify at the right boundary
 

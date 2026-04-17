@@ -271,7 +271,10 @@ fn observe_passive_local_entities(
             .get_component_homeostatic_needs(agent)
             .copied()
             .unwrap_or_default();
-        let Some(batch) = collect_direct_local_observation_batch(
+        let mut store = base_store;
+        let mut store_changed = store.record_place_visit(place, tick);
+
+        if let Some(batch) = collect_direct_local_observation_batch(
             world,
             agent,
             place,
@@ -279,38 +282,39 @@ fn observe_passive_local_entities(
             tick,
             effective_fidelity,
             rng,
-            &base_store,
+            &store,
             needs,
             &profile,
-        ) else {
-            continue;
-        };
-
-        let mut store = base_store;
-        apply_direct_local_observation_batch(
-            event_log,
-            DiscoveryContext {
+        ) {
+            apply_direct_local_observation_batch(
+                event_log,
+                DiscoveryContext {
+                    tick,
+                    observer: agent,
+                    place: Some(batch.place),
+                },
+                &mut store,
+                &batch,
+                &profile,
+                needs,
+            );
+            let doctrine_changed = project_local_bandit_rally_doctrine(
+                world,
+                agent,
+                batch.place,
                 tick,
-                observer: agent,
-                place: Some(batch.place),
-            },
-            &mut store,
-            &batch,
-            &profile,
-            needs,
-        );
-        let doctrine_changed = project_local_bandit_rally_doctrine(
-            world,
-            agent,
-            batch.place,
-            tick,
-            &mut store,
-            &profile,
-        );
-        if !batch.observed_snapshots.is_empty() || doctrine_changed {
+                &mut store,
+                &profile,
+            );
+            if !batch.observed_snapshots.is_empty() || doctrine_changed {
+                store_changed = true;
+            }
+            batches.insert(agent, batch);
+        }
+
+        if store_changed {
             updated_stores.insert(agent, store);
         }
-        batches.insert(agent, batch);
     }
 
     batches
@@ -5512,6 +5516,86 @@ mod tests {
         assert!(!events[0].observation_passed);
         assert_eq!(events[0].effective_fidelity, 0);
         assert!(events[0].institutional_claims.is_empty());
+    }
+
+    #[test]
+    fn passive_perception_updates_place_visits_across_return_cycle() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let home = places[0];
+        let away = world.topology().neighbors(home)[0];
+
+        let observer = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, home).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            observer
+        };
+
+        let mut event_log = EventLog::new();
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        let run_tick = |tick: u64, world: &mut World, event_log: &mut EventLog| {
+            let mut rng = DeterministicRng::new(Seed([tick as u8; 32]));
+            perception_system(SystemExecutionContext {
+                world,
+                event_log,
+                rng: &mut rng,
+                active_actions: &active_actions,
+                action_defs: &action_defs,
+                politics_trace: None,
+                perception_trace: None,
+                tick: Tick(tick),
+                system_id: SystemId::Perception,
+            })
+            .unwrap();
+        };
+
+        run_tick(2, &mut world, &mut event_log);
+        run_tick(3, &mut world, &mut event_log);
+
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_ground_location(observer, away).unwrap();
+            let _ = txn.commit(&mut event_log);
+        }
+        run_tick(4, &mut world, &mut event_log);
+        run_tick(5, &mut world, &mut event_log);
+
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.set_ground_location(observer, home).unwrap();
+            let _ = txn.commit(&mut event_log);
+        }
+        run_tick(6, &mut world, &mut event_log);
+
+        let visits = &world
+            .get_component_agent_belief_store(observer)
+            .unwrap()
+            .place_visits;
+        assert_eq!(
+            visits.get(&home),
+            Some(&worldwake_core::PlaceVisitRecord {
+                ticks_present: 0,
+                last_arrival_tick: Tick(6),
+                visit_count: 2,
+            })
+        );
+        assert_eq!(
+            visits.get(&away),
+            Some(&worldwake_core::PlaceVisitRecord {
+                ticks_present: 1,
+                last_arrival_tick: Tick(4),
+                visit_count: 1,
+            })
+        );
     }
 
     #[test]
