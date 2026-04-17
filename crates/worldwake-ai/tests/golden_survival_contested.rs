@@ -448,6 +448,7 @@ fn assert_survival_action_coverage(agent_name: &str, actions: &BTreeSet<String>)
 // replans toward alternate well or waits for regen -> repeated self-care
 // completes within bounded critical runs.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn all_agents_survive_1440_ticks() {
     let observation = run_survival_contested();
 
@@ -505,6 +506,7 @@ fn all_agents_survive_1440_ticks() {
 // and replan under contention -> committed action traces for all five
 // survival families across all four agents.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn all_agents_perform_survival_actions() {
     let observation = run_survival_contested();
 
@@ -538,6 +540,7 @@ fn all_agents_perform_survival_actions() {
 // dirtied when a peer consumes water -> replan toward alternate source via
 // S102 frontier-aware exploration -> drink commit at the alternate place.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn both_water_sources_are_used() {
     let observation = run_survival_contested();
 
@@ -579,6 +582,7 @@ fn both_water_sources_are_used() {
 // through Central Crossing -> arrival at East Orchard or West Grainfield
 // on both camp sides.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn both_camp_sides_reach_food() {
     let observation = run_survival_contested();
 
@@ -615,6 +619,7 @@ fn both_camp_sides_reach_food() {
 // chokepoint topology + contention -> survival plans complete within
 // budget -> no BudgetExhausted.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn no_budget_exhaustion_on_survival_goals() {
     let observation = run_survival_contested();
 
@@ -648,6 +653,7 @@ fn no_budget_exhaustion_on_survival_goals() {
 // replan to the alternate source -> idle windows only occur with low
 // needs -> zero stuck idle windows.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn no_stuck_idle_windows_with_elevated_needs() {
     let observation = run_survival_contested();
 

@@ -1,0 +1,42 @@
+# Family-per-matrix-workflow convention: add scenarios to the matrix below; create a
+# new golden-<family>.yml when a new scenario family lands (combat, trade, exploration, …).
+# See docs/plans/2026-04-17-per-family-golden-scenario-workflows-design.md.
+name: Golden Survival
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+concurrency:
+  group: golden-survival-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenario:
+    name: golden-survival / ${{ matrix.scenario }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [baseline, contested, scattered]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: golden-survival-${{ matrix.scenario }}
+
+      - name: Run golden_survival_${{ matrix.scenario }}
+        run: cargo test --release -p worldwake-ai --test golden_survival_${{ matrix.scenario }} -- --ignored --test-threads=1

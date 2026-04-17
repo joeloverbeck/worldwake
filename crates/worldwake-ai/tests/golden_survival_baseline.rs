@@ -359,6 +359,7 @@ fn assert_survival_action_coverage(agent_name: &str, actions: &BTreeSet<String>)
 // and water -> repeated self-care actions keep critical runs bounded -> no
 // deaths by tick 1440.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn all_agents_survive_1440_ticks() {
     let observation = run_survival_baseline();
 
@@ -414,6 +415,7 @@ fn all_agents_survive_1440_ticks() {
 // Chain: varied initial needs and authored place affordances -> repeated
 // self-care planning -> committed action traces for all five survival families.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn all_agents_perform_survival_actions() {
     let observation = run_survival_baseline();
 
@@ -443,6 +445,7 @@ fn all_agents_perform_survival_actions() {
 // under survival pressure -> arrival/perception at Fertile Fields -> orchard
 // source retained in Agent B's belief store.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn explorer_discovers_food_source() {
     let observation = run_survival_baseline();
 
@@ -476,6 +479,7 @@ fn explorer_discovers_food_source() {
 // -> authored baseline self-care plans stay executable -> no traced
 // `BudgetExhausted` attempt on survival goals.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn no_budget_exhaustion_on_survival_goals() {
     let observation = run_survival_baseline();
 
@@ -508,6 +512,7 @@ fn no_budget_exhaustion_on_survival_goals() {
 // are always planned when needs are elevated -> idle windows only occur when
 // no pressing goal exists -> zero stuck idle windows with elevated needs.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn no_stuck_idle_windows_with_elevated_needs() {
     let observation = run_survival_baseline();
 

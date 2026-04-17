@@ -368,6 +368,7 @@ fn assert_survival_action_coverage(agent_name: &str, actions: &BTreeSet<String>)
 // resources -> travel with metabolism cost -> repeated self-care under
 // spatial pressure -> no deaths by tick 1440.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn all_agents_survive_1440_ticks() {
     let observation = run_survival_scattered();
 
@@ -424,6 +425,7 @@ fn all_agents_survive_1440_ticks() {
 // agents explore and commute -> committed action traces for all five
 // survival families across all three agents.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn all_agents_perform_survival_actions() {
     let observation = run_survival_scattered();
 
@@ -453,6 +455,7 @@ fn all_agents_perform_survival_actions() {
 // need pressure -> multi-hop travel through chokepoint graph -> arrival at
 // a food-producing location.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn isolated_agent_reaches_food_source() {
     let observation = run_survival_scattered();
 
@@ -486,6 +489,7 @@ fn isolated_agent_reaches_food_source() {
 // Chain: travel-branch cap (4) + 640 planner expansions + chokepoint topology
 // -> survival plans complete within budget -> no BudgetExhausted.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn no_budget_exhaustion_on_survival_goals() {
     let observation = run_survival_scattered();
 
@@ -517,6 +521,7 @@ fn no_budget_exhaustion_on_survival_goals() {
 // always planned when needs elevated -> idle windows only with low needs ->
 // zero stuck idle windows.
 #[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn no_stuck_idle_windows_with_elevated_needs() {
     let observation = run_survival_scattered();
 
