@@ -524,12 +524,14 @@ fn authoritative_schema_includes_expected_shared_e09_e12_and_e14_components_and_
         thirst_critical_ticks,
         fatigue_critical_ticks,
         bladder_critical_ticks,
+        dirtiness_critical_ticks,
     } = DeprivationExposure::default();
     let _ = (
         hunger_critical_ticks,
         thirst_critical_ticks,
         fatigue_critical_ticks,
         bladder_critical_ticks,
+        dirtiness_critical_ticks,
     );
 
     let MetabolismProfile {

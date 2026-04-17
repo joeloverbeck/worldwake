@@ -893,6 +893,7 @@ mod tests {
             thirst_critical_ticks: 5,
             fatigue_critical_ticks: 7,
             bladder_critical_ticks: 11,
+            dirtiness_critical_ticks: 13,
         }
     }
 

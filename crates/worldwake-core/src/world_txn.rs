@@ -4100,12 +4100,14 @@ mod tests {
             thirst_critical_ticks: 2,
             fatigue_critical_ticks: 3,
             bladder_critical_ticks: 4,
+            dirtiness_critical_ticks: 5,
         };
         let after = DeprivationExposure {
             hunger_critical_ticks: 10,
             thirst_critical_ticks: 20,
             fatigue_critical_ticks: 30,
             bladder_critical_ticks: 40,
+            dirtiness_critical_ticks: 50,
         };
         world
             .insert_component_deprivation_exposure(agent, before)

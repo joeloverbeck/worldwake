@@ -18,6 +18,7 @@ pub enum EventTag {
     Social,
     Coercion,
     Discovery,
+    Escalation,
     Patrol,
     Crime,
     Combat,
@@ -43,7 +44,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 26] = [
+    const ALL_EVENT_TAGS: [EventTag; 27] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -57,6 +58,7 @@ mod tests {
         EventTag::Social,
         EventTag::Coercion,
         EventTag::Discovery,
+        EventTag::Escalation,
         EventTag::Patrol,
         EventTag::Crime,
         EventTag::Combat,
@@ -79,7 +81,7 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 26);
+        assert_eq!(ALL_EVENT_TAGS.len(), 27);
     }
 
     #[test]

@@ -634,6 +634,7 @@ mod tests {
                 thirst_critical_ticks: 2,
                 fatigue_critical_ticks: 3,
                 bladder_critical_ticks: 4,
+                dirtiness_critical_ticks: 5,
             }),
             ComponentValue::MetabolismProfile(MetabolismProfile::default()),
             ComponentValue::CarryCapacity(CarryCapacity(LoadUnits(14))),

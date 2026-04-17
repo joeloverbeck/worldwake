@@ -268,6 +268,7 @@ fn update_exposure(
             needs.bladder,
             thresholds.bladder.critical(),
         ),
+        dirtiness_critical_ticks: exposure.dirtiness_critical_ticks,
     }
 }
 
@@ -785,6 +786,7 @@ mod tests {
                 thirst_critical_ticks: 5,
                 fatigue_critical_ticks: 6,
                 bladder_critical_ticks: 7,
+                dirtiness_critical_ticks: 8,
             },
             metabolism(0, 0, 0, 0, 0),
             thresholds,
@@ -810,6 +812,7 @@ mod tests {
                 thirst_critical_ticks: 6,
                 fatigue_critical_ticks: 7,
                 bladder_critical_ticks: 8,
+                dirtiness_critical_ticks: 8,
             })
         );
     }
@@ -860,6 +863,7 @@ mod tests {
                 thirst_critical_ticks: 5,
                 fatigue_critical_ticks: 6,
                 bladder_critical_ticks: 7,
+                dirtiness_critical_ticks: 8,
             },
             metabolism(0, 0, 0, 0, 0),
             thresholds,
@@ -880,7 +884,10 @@ mod tests {
 
         assert_eq!(
             world.get_component_deprivation_exposure(agent),
-            Some(&DeprivationExposure::default())
+            Some(&DeprivationExposure {
+                dirtiness_critical_ticks: 8,
+                ..DeprivationExposure::default()
+            })
         );
     }
 

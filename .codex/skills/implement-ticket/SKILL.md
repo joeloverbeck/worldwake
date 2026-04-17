@@ -30,15 +30,15 @@ Load `references/reassessment-checks.md`. For planner-root, snapshot-completenes
 
 ### 3. Handle mismatches explicitly
 
-Load `references/mismatch-handling.md`.
+Load `references/mismatch-handling.md` when reassessment exposes a contradiction, risky ticket/code divergence, or a user decision that requires 1-3-1.
 
 ### 4. Extract the implementation scope
 
-Load `references/scope-extraction.md`.
+Load `references/scope-extraction.md` when the owned edit surface, dependency boundary, or honest verification scope is not already clear from reassessment and ticket classification.
 
 ### 5. Implement with Worldwake discipline
 
-Load `references/implementation-discipline.md`.
+Load `references/implementation-discipline.md` when implementation begins or when reassessment shows a non-mechanical change that needs extra guardrails.
 
 ### 6. Verify at the right boundary
 
