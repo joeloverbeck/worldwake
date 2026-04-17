@@ -11,16 +11,17 @@ use worldwake_core::{
     AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy, BelievedEntityState,
     BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile, CombatProfile,
     CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ContentionGrant,
-    ControlSource, DemandObservation, DisposalProfile, DriveThresholds, EffectiveRight, EntityId,
-    EntityKind, ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, Permille, PlaceTag,
-    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
-    ResourceSource, RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
-    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, World, Wound,
-    danger_ratio_permille, is_incapacitated, load_of_entity,
+    ControlSource, DemandObservation, DisposalProfile, DiversificationProfile, DriveThresholds,
+    EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeedId,
+    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastProactiveExplorationTick,
+    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
+    ObligationSatiationProfile, OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity,
+    RecipeId, RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
+    load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -493,6 +494,23 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
         (agent == self.agent)
             .then(|| self.world.get_component_exploration_profile(agent).copied())
             .flatten()
+    }
+
+    fn diversification_profile(&self, agent: EntityId) -> Option<DiversificationProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_diversification_profile(agent).copied())
+            .flatten()
+    }
+
+    fn last_proactive_exploration_tick(&self, agent: EntityId) -> Option<Tick> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_last_proactive_exploration_tick(agent)
+                    .copied()
+            })
+            .flatten()
+            .and_then(|LastProactiveExplorationTick(tick)| tick)
     }
 
     fn acquisition_exhaustion_count(&self, agent: EntityId, need: HomeostaticNeedId) -> u8 {

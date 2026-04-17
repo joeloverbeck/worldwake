@@ -1,6 +1,6 @@
 # S107PRODIV-003: GoalBeliefView accessors for diversification state
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new GoalBeliefView trait methods and test-belief-view wiring
@@ -15,6 +15,7 @@ The AI crate needs to read `DiversificationProfile` and `LastProactiveExploratio
 1. `GoalBeliefView` trait at `crates/worldwake-sim/src/belief_view.rs:70-417`. Existing accessor pattern: `fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile>` at line 200. `RuntimeBeliefView` at line 864. `PerAgentBeliefView` at `per_agent_belief_view.rs:45`.
 2. `AgentBeliefStore.place_visits`, omitted-field serde compatibility, and `BeliefStoreDiff` support already landed in `S107PRODIV-001`; this ticket no longer owns core belief-store shape changes.
 3. `agent_belief_store` accessor exists on GoalBeliefView (line 91) returning `Option<&AgentBeliefStore>` — the AI crate can already access `place_visits` through this existing accessor. Dedicated `diversification_profile` and `last_proactive_exploration_tick` accessors are still needed for component access.
+4. Live trait fallout is broader than the original draft implied. Multiple AI-side `TestBeliefView`/`MockView` harnesses implement `GoalBeliefView` directly or indirectly through `RuntimeBeliefView`, so compile fallout may touch focused AI test files beyond `candidate_generation.rs` even though the production boundary remains the same.
 
 ## Architecture Check
 
@@ -43,13 +44,14 @@ Add component lookups delegating to the ECS store, following the existing `explo
 
 ### 3. Update TestBeliefView
 
-In test infrastructure, add fields and trait impl for the new accessors so AI crate tests can mock these values.
+In test infrastructure, add fields and trait impl for the new accessors so AI crate tests can mock these values. Treat `candidate_generation.rs` as the primary harness named by the spec, then fix any additional compile-fallout harnesses that implement the same trait surface.
 
 ## Files to Touch
 
 - `crates/worldwake-sim/src/belief_view.rs` (modify) — add 2 trait methods + impls
 - `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify) — implement forwarding
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify) — add fields to TestBeliefView if defined there
+- `crates/worldwake-ai/src/*` focused test harness files as compile fallout demands — update any `GoalBeliefView` test doubles that must satisfy the new accessor surface
 
 ## Out of Scope
 
@@ -73,6 +75,7 @@ In test infrastructure, add fields and trait impl for the new accessors so AI cr
 1. GoalBeliefView accessors follow the established component-lookup pattern
 2. AI-side access to `place_visits` continues through the existing `agent_belief_store` accessor, not a duplicate dedicated method
 3. No behavioral changes — accessors are wiring only
+4. Any AI test-harness fallout is trait-surface maintenance, not a scope expansion into proactive behavior
 
 ## Test Plan
 
@@ -80,9 +83,28 @@ In test infrastructure, add fields and trait impl for the new accessors so AI cr
 
 1. `crates/worldwake-sim/src/belief_view.rs` — accessor tests with mock data
 2. `crates/worldwake-ai/src/candidate_generation.rs` — TestBeliefView wiring coverage if that harness owns the new accessor surface
+3. Additional AI harness files only if compile fallout requires trait-impl updates
 
 ### Commands
 
 1. `cargo test -p worldwake-sim`
 2. `cargo test -p worldwake-ai --lib --no-run`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-17.
+
+- Added `diversification_profile` and `last_proactive_exploration_tick` to both `GoalBeliefView` and `ProfileBeliefView` in [`crates/worldwake-sim/src/belief_view.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/belief_view.rs), and wired the runtime blanket impl through the existing profile boundary.
+- Implemented authoritative forwarding in [`crates/worldwake-sim/src/per_agent_belief_view.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/per_agent_belief_view.rs) so the acting agent can read `DiversificationProfile` directly and `LastProactiveExplorationTick` as `Option<Tick>`.
+- Updated the primary AI test harness in [`crates/worldwake-ai/src/candidate_generation.rs`](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/candidate_generation.rs) with concrete storage and trait wiring for the new accessor pair.
+- Reassessment proved the wider AI fallout stayed compile-only for this slice; no additional harness files required edits after the runtime blanket impl was updated.
+
+## Verification Result
+
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo test -p worldwake-sim per_agent_goal_belief_view_exposes_diversification_components`
+- Passed `cargo test -p worldwake-ai test_belief_view_exposes_diversification_accessors`
+- Passed `cargo test -p worldwake-sim`
+- Passed `cargo test -p worldwake-ai --lib --no-run`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

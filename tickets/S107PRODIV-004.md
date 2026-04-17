@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — new visit-tracking logic in perception/location system
-**Deps**: S107PRODIV-003
+**Deps**: archive/tickets/S107PRODIV-003.md
 
 ## Problem
 

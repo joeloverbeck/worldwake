@@ -28,15 +28,15 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
     BelievedInstitutionalClaim, BlockedIntentMemory, BountyTarget, BountyTerms, CommodityKind,
-    CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey, GoalKind,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
-    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
-    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
-    UtilityProfile, ViolationId, ViolationKind, ViolationMemory, classify_communication,
-    current_institutional_belief_topics, load_per_unit,
+    CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey,
+    GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
+    OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, ProofRequirement,
+    PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData,
+    RecordKind, RewardSource, RightKind, SocialObservation, SocialObservationDetail, TellTopic,
+    TheftFacts, Tick, UtilityProfile, ViolationId, ViolationKind, ViolationMemory,
+    classify_communication, current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
@@ -5022,14 +5022,15 @@ mod tests {
         BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
         BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
-        DemandObservation, DemandObservationReason, DisposalProfile, DriveThresholds,
-        EffectiveRight, EligibilityRule, EntityId, EntityKind, EpistemicDispositionProfile,
-        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
-        OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        DemandObservation, DemandObservationReason, DisposalProfile, DiversificationProfile,
+        DriveThresholds, EffectiveRight, EligibilityRule, EntityId, EntityKind,
+        EpistemicDispositionProfile, ExpectationBasis, ExpectationId, ExpectationRecord,
+        ExpectationState, ExpectationStore, ExplorationProfile, GoalKey, GoalKind,
+        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource,
+        Permille,
         ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, Quantity,
         RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
         RewardSource, RightKind, SharedTellState, SocialObservation, SocialObservationDetail,
@@ -5084,6 +5085,8 @@ mod tests {
         utility_profiles: BTreeMap<EntityId, UtilityProfile>,
         artifact_posting_profiles: BTreeMap<EntityId, ArtifactPostingProfile>,
         exploration_profiles: BTreeMap<EntityId, ExplorationProfile>,
+        diversification_profiles: BTreeMap<EntityId, DiversificationProfile>,
+        last_proactive_exploration_ticks: BTreeMap<EntityId, Tick>,
         acquisition_exhaustion_counts: BTreeMap<(EntityId, HomeostaticNeedId), u8>,
         cognitive_profiles: BTreeMap<EntityId, CognitiveProfile>,
         disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
@@ -5169,6 +5172,8 @@ mod tests {
                 utility_profiles: BTreeMap::new(),
                 artifact_posting_profiles: BTreeMap::new(),
                 exploration_profiles: BTreeMap::new(),
+                diversification_profiles: BTreeMap::new(),
+                last_proactive_exploration_ticks: BTreeMap::new(),
                 acquisition_exhaustion_counts: BTreeMap::new(),
                 cognitive_profiles: BTreeMap::new(),
                 disposal_profiles: BTreeMap::new(),
@@ -5334,6 +5339,14 @@ mod tests {
 
         fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
             self.exploration_profiles.get(&agent).copied()
+        }
+
+        fn diversification_profile(&self, agent: EntityId) -> Option<DiversificationProfile> {
+            self.diversification_profiles.get(&agent).copied()
+        }
+
+        fn last_proactive_exploration_tick(&self, agent: EntityId) -> Option<Tick> {
+            self.last_proactive_exploration_ticks.get(&agent).copied()
         }
 
         fn acquisition_exhaustion_count(&self, agent: EntityId, need: HomeostaticNeedId) -> u8 {
@@ -6085,6 +6098,35 @@ mod tests {
             &RecipeRegistry::new(),
             Tick(100),
         )
+    }
+
+    #[test]
+    fn test_belief_view_exposes_diversification_accessors() {
+        let agent = entity(1);
+        let mut view = TestBeliefView::default();
+        let profile = DiversificationProfile {
+            base_curiosity: pm(520),
+            comfort_threshold: pm(360),
+            curiosity_buildup_rate: pm(12),
+            exploration_cooldown_ticks: 11,
+            familiarity_per_visit: pm(140),
+            familiarity_recovery_per_tick: pm(6),
+            familiarity_floor: pm(90),
+            max_exploration_hops: 5,
+        };
+
+        view.diversification_profiles.insert(agent, profile);
+        view.last_proactive_exploration_ticks
+            .insert(agent, Tick(77));
+
+        assert_eq!(
+            worldwake_sim::GoalBeliefView::diversification_profile(&view, agent),
+            Some(profile)
+        );
+        assert_eq!(
+            worldwake_sim::GoalBeliefView::last_proactive_exploration_tick(&view, agent),
+            Some(Tick(77))
+        );
     }
 
     #[test]
