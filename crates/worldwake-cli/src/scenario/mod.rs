@@ -11,10 +11,10 @@ use std::path::Path;
 use types::ScenarioDef;
 use worldwake_core::{
     CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
-    ExplorationProfile, KnownRecipes, LoadUnits, MerchandiseProfile, PatrolRoute, Place,
-    ProductionOutputOwner, ProductionOutputOwnershipPolicy, ResourceSource, Seed, Tick, Topology,
-    TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn,
-    hash_world,
+    ExplorationProfile, KnownRecipes, LastProactiveExplorationTick, LoadUnits, MerchandiseProfile,
+    PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy, ResourceSource,
+    Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
+    World, WorldTxn, default_commodity_decay_map, hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -109,6 +109,11 @@ pub fn spawn_scenario(def: &ScenarioDef) -> Result<SpawnedSimulation, ScenarioEr
 
     let topology = build_topology(def, &mut names, &mut place_names)?;
     let mut world = World::new(topology)?;
+    world.set_commodity_decay(
+        def.commodity_decay
+            .clone()
+            .unwrap_or_else(default_commodity_decay_map),
+    );
     let mut event_log = EventLog::new();
 
     spawn_entities(
@@ -351,11 +356,21 @@ fn spawn_agent(
             .map_or_else(ExplorationProfile::default, |profile| ExplorationProfile {
                 curiosity_weight: profile.curiosity_weight,
                 need_activation_threshold: profile.need_activation_threshold,
+                frontier_depth: profile.frontier_depth,
+                acquisition_failure_threshold: profile.acquisition_failure_threshold,
+                exploration_arrival_boost: profile.exploration_arrival_boost,
                 max_consecutive_explorations: profile.max_consecutive_explorations,
                 visit_lookback_ticks: profile.visit_lookback_ticks,
                 consecutive_exploration_count: 0,
             });
     txn.set_component_exploration_profile(agent_id, exploration)?;
+    if let Some(profile) = agent_def.diversification_profile {
+        txn.set_component_diversification_profile(agent_id, profile)?;
+        txn.set_component_last_proactive_exploration_tick(
+            agent_id,
+            LastProactiveExplorationTick(None),
+        )?;
+    }
     let carry = agent_def
         .carry_capacity
         .unwrap_or(DEFAULT_AGENT_CARRY_CAPACITY);
@@ -580,14 +595,15 @@ mod tests {
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
         ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity, CognitiveProfile,
-        CommodityKind, CommodityValuationProfile, CommunicationProfile,
-        ContentionDispositionProfile, ControlSource, DisposalProfile, DriveThresholds,
-        EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
-        IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-        ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
-        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
-        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WorkstationTag,
+        CommodityDecayMap, CommodityKind, CommodityValuationProfile, CommunicationProfile,
+        ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
+        DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
+        HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+        LastProactiveExplorationTick, LastSeenMemory, LoadUnits, ObligationSatiationProfile,
+        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceVisibilityProfile,
+        PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
+        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
+        WorkstationTag, default_commodity_decay_map,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -616,6 +632,7 @@ mod tests {
             metabolism_profile: None,
             disposal_profile: None,
             exploration_profile: None,
+            diversification_profile: None,
             carry_capacity: None,
             theft_disposition: None,
             justice_disposition: None,
@@ -644,6 +661,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         }
     }
@@ -672,6 +690,32 @@ mod tests {
     }
 
     #[test]
+    fn test_spawn_minimal_scenario_uses_default_commodity_decay() {
+        let spawned = spawn_scenario(&minimal_def()).unwrap();
+
+        assert_eq!(
+            spawned.state.world().commodity_decay(),
+            &default_commodity_decay_map()
+        );
+    }
+
+    #[test]
+    fn test_spawn_scenario_applies_explicit_commodity_decay_override() {
+        let mut def = minimal_def();
+        def.commodity_decay = Some(CommodityDecayMap::from([(
+            CommodityKind::Waste,
+            NonZeroU32::new(17).unwrap(),
+        )]));
+
+        let spawned = spawn_scenario(&def).unwrap();
+
+        assert_eq!(
+            spawned.state.world().commodity_decay(),
+            &CommodityDecayMap::from([(CommodityKind::Waste, NonZeroU32::new(17).unwrap())])
+        );
+    }
+
+    #[test]
     fn test_spawn_agents_at_places() {
         let def = ScenarioDef {
             seed: 1,
@@ -695,6 +739,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -736,6 +781,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -766,6 +812,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -801,6 +848,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -835,6 +883,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -884,6 +933,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -931,6 +981,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -977,6 +1028,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1029,6 +1081,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1083,6 +1136,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1132,6 +1186,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(5),
                 capacity: Quantity(20),
             }],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1190,6 +1245,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1246,6 +1302,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(2),
                 capacity: Quantity(20),
             }],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1305,6 +1362,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(3),
                 capacity: Quantity(15),
             }],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1387,6 +1445,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1423,6 +1482,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1497,6 +1557,59 @@ mod tests {
             world.get_component_artifact_posting_profile(agent),
             Some(&ArtifactPostingProfile::default())
         );
+        assert_eq!(world.get_component_diversification_profile(agent), None);
+        assert_eq!(
+            world.get_component_last_proactive_exploration_tick(agent),
+            None
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_with_diversification_profile_sets_runtime_components() {
+        let profile = DiversificationProfile {
+            base_curiosity: Permille::new(400).unwrap(),
+            comfort_threshold: Permille::new(450).unwrap(),
+            curiosity_buildup_rate: Permille::new(5).unwrap(),
+            exploration_cooldown_ticks: 60,
+            familiarity_per_visit: Permille::new(150).unwrap(),
+            familiarity_recovery_per_tick: Permille::new(2).unwrap(),
+            familiarity_floor: Permille::new(50).unwrap(),
+            max_exploration_hops: 3,
+        };
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                diversification_profile: Some(profile),
+                ..minimal_agent("Scout", "Town", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            commodity_decay: None,
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_diversification_profile(agent),
+            Some(&profile)
+        );
+        assert_eq!(
+            world.get_component_last_proactive_exploration_tick(agent),
+            Some(&LastProactiveExplorationTick(None))
+        );
     }
 
     #[test]
@@ -1522,6 +1635,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1564,6 +1678,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1583,10 +1698,12 @@ mod tests {
     #[test]
     fn test_spawn_agent_with_profile_overrides() {
         let custom_perception = PerceptionProfile {
-            entity_memory_capacity: 4,
-            entity_claim_capacity: 6,
-            memory_retention_ticks: 16,
-            infrastructure_retention_ticks: 160,
+            entity_activation_threshold: Permille::new(250).unwrap(),
+            claim_confidence_threshold: Permille::new(50).unwrap(),
+            observation_buffer_capacity: 4,
+            observation_budget: 7,
+            need_salience_boost: Permille::new(500).unwrap(),
+            need_salience_urgency_threshold: Permille::new(500).unwrap(),
             observation_fidelity: Permille::new(900).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 9,
@@ -1596,6 +1713,9 @@ mod tests {
         let custom_exploration = ExplorationProfileDef {
             curiosity_weight: Permille::new(275).unwrap(),
             need_activation_threshold: Permille::new(350).unwrap(),
+            frontier_depth: 4,
+            acquisition_failure_threshold: 6,
+            exploration_arrival_boost: Permille::new(650).unwrap(),
             max_consecutive_explorations: 5,
             visit_lookback_ticks: 17,
         };
@@ -1668,6 +1788,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1682,6 +1803,7 @@ mod tests {
             world.get_component_perception_profile(agent),
             Some(&custom_perception)
         );
+        assert_eq!(custom_perception.observation_budget, 7);
         assert_eq!(
             world.get_component_drive_thresholds(agent),
             Some(&custom_thresholds)
@@ -1691,6 +1813,9 @@ mod tests {
             Some(&worldwake_core::ExplorationProfile {
                 curiosity_weight: Permille::new(275).unwrap(),
                 need_activation_threshold: Permille::new(350).unwrap(),
+                frontier_depth: 4,
+                acquisition_failure_threshold: 6,
+                exploration_arrival_boost: Permille::new(650).unwrap(),
                 max_consecutive_explorations: 5,
                 visit_lookback_ticks: 17,
                 consecutive_exploration_count: 0,
@@ -1721,6 +1846,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1812,6 +1938,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 
@@ -1918,6 +2045,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
 

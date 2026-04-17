@@ -5,7 +5,7 @@ use worldwake_core::{
     EntityId, EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, PerceptionProfile,
     PerceptionSource, Permille, RecipientKnowledgeStatus, SocialObservationDetail, TellMemoryKey,
-    TellProfile, TellTopic, ToldBeliefMemory, ViolationKind, VisibilitySpec, World, WorldTxn,
+    TellProfile, TellTopic, Tick, ToldBeliefMemory, ViolationKind, VisibilitySpec, World, WorldTxn,
     classify_communication, current_institutional_belief_topics,
     institutional_claim_same_memory_lane, institutional_claim_subject_entity,
     institutional_knowledge_chain_len, share_equivalent,
@@ -609,7 +609,8 @@ fn commit_tell(
                     transferred.source = degrade_source(speaker, speaker_belief.source);
                     let existing = listener_beliefs.get_entity(&subject).cloned();
                     let should_update_entity = existing.as_ref().is_none_or(|existing| {
-                        existing.observed_tick < speaker_belief.observed_tick
+                        existing.last_observed_tick().unwrap_or(Tick(0))
+                            < speaker_belief.last_observed_tick().unwrap_or(Tick(0))
                             || !share_equivalent(existing, &to_shared_belief_snapshot(&transferred))
                     });
                     if should_update_entity {
@@ -618,10 +619,19 @@ fn commit_tell(
                             &transferred,
                             existing.as_ref(),
                             txn.tick(),
-                            Some(speaker_belief.observed_tick),
+                            speaker_belief.last_observed_tick(),
+                            listener_perception.observation_buffer_capacity,
                             &listener_perception.confidence_policy,
                         );
-                        listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
+                        let listener_needs = txn
+                            .get_component_homeostatic_needs(listener)
+                            .copied()
+                            .unwrap_or_default();
+                        listener_beliefs.prune_decayed_beliefs(
+                            &listener_perception,
+                            txn.tick(),
+                            &listener_needs,
+                        );
                         accepted_any = true;
                         belief_delta =
                             merge_tell_delta_kind(belief_delta, TellBeliefDeltaKind::EntityBelief);
@@ -654,7 +664,15 @@ fn commit_tell(
                                     })?;
                             }
                         }
-                        listener_beliefs.enforce_capacity(&listener_perception, txn.tick());
+                        let listener_needs = txn
+                            .get_component_homeostatic_needs(listener)
+                            .copied()
+                            .unwrap_or_default();
+                        listener_beliefs.prune_decayed_beliefs(
+                            &listener_perception,
+                            txn.tick(),
+                            &listener_needs,
+                        );
                         accepted_any = true;
                         belief_delta = merge_tell_delta_kind(
                             belief_delta,
@@ -1497,8 +1515,7 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(observed_tick),
-            source,
+            ..BelievedEntityState::single_observation_defaults(Tick(observed_tick), source)
         }
     }
 
@@ -1904,7 +1921,7 @@ mod tests {
     }
 
     #[test]
-    fn tell_commit_transfers_direct_observation_as_report_and_preserves_tick() {
+    fn tell_commit_transfers_direct_observation_as_report_and_refreshes_presentation_tick() {
         let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
             tell_test_setup(PerceptionSource::DirectObservation);
         let instance = tell_instance(tell_id, speaker, listener, subject);
@@ -1913,7 +1930,7 @@ mod tests {
 
         let listener_store = world.get_component_agent_belief_store(listener).unwrap();
         let transferred = listener_store.get_entity(&subject).unwrap();
-        assert_eq!(transferred.observed_tick, Tick(2));
+        assert_eq!(transferred.last_observed_tick(), Some(Tick(8)));
         assert_eq!(
             transferred.source,
             PerceptionSource::Report {
@@ -2338,9 +2355,14 @@ mod tests {
                 prior_summary.as_ref(),
                 Tick(7),
                 Some(Tick(2)),
+                listener_profile.observation_buffer_capacity,
                 &listener_profile.confidence_policy,
             );
-            listener_store.enforce_capacity(&listener_profile, Tick(7));
+            listener_store.prune_decayed_beliefs(
+                &listener_profile,
+                Tick(7),
+                &HomeostaticNeeds::new_sated(),
+            );
 
             let mut direct_belief = build_believed_entity_state(
                 &world,
@@ -2531,7 +2553,7 @@ mod tests {
     }
 
     #[test]
-    fn tell_commit_enforces_listener_memory_capacity() {
+    fn tell_commit_preserves_listener_entities_above_activation_threshold() {
         let (defs, handlers, tell_id, mut world, _place, speaker, listener, subject) =
             tell_test_setup(PerceptionSource::DirectObservation);
         let older_subject = {
@@ -2563,15 +2585,17 @@ mod tests {
             txn.set_component_perception_profile(
                 listener,
                 PerceptionProfile {
-                    entity_memory_capacity: 1,
-                    entity_claim_capacity: 8,
-                    memory_retention_ticks: 100,
-                    infrastructure_retention_ticks: 1000,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),
                     institutional_memory_capacity: 20,
                     consultation_speed_factor: Permille::new(500).unwrap(),
                     contradiction_tolerance: Permille::new(300).unwrap(),
+                    entity_activation_threshold: Permille::new(100).unwrap(),
+                    claim_confidence_threshold: Permille::new(50).unwrap(),
+                    observation_buffer_capacity: 5,
+                    observation_budget: 24,
+                    need_salience_boost: Permille::new(500).unwrap(),
+                    need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 },
             )
             .unwrap();
@@ -2587,9 +2611,9 @@ mod tests {
             listener_store.get_entity(&subject).unwrap().believed_kind,
             Some(EntityKind::Agent)
         );
-        assert!(listener_store.get_entity(&older_subject).is_none());
+        assert!(listener_store.get_entity(&older_subject).is_some());
         assert!(listener_store.get_entity(&subject).is_some());
-        assert_eq!(listener_store.known_entities.len(), 1);
+        assert_eq!(listener_store.known_entities.len(), 2);
     }
 
     #[test]
@@ -3077,63 +3101,22 @@ mod tests {
             vec![
                 (
                     subject_a,
-                    BelievedEntityState {
-                        believed_kind: None,
-                        last_known_place: Some(entity(30)),
-                        last_known_inventory: std::collections::BTreeMap::default(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        observed_tick: Tick(2),
-                        source: PerceptionSource::DirectObservation,
-                    },
+                    believed_state(2, entity(30), PerceptionSource::DirectObservation),
                 ),
                 (
                     subject_b,
-                    BelievedEntityState {
-                        believed_kind: None,
-                        last_known_place: Some(entity(31)),
-                        last_known_inventory: std::collections::BTreeMap::default(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        observed_tick: Tick(4),
-                        source: PerceptionSource::Report {
+                    believed_state(
+                        4,
+                        entity(31),
+                        PerceptionSource::Report {
                             from: entity(77),
                             chain_len: 2,
                         },
-                    },
+                    ),
                 ),
                 (
                     subject_c,
-                    BelievedEntityState {
-                        believed_kind: None,
-                        last_known_place: Some(entity(32)),
-                        last_known_inventory: std::collections::BTreeMap::default(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        observed_tick: Tick(6),
-                        source: PerceptionSource::Inference,
-                    },
+                    believed_state(6, entity(32), PerceptionSource::Inference),
                 ),
             ],
         );
@@ -3376,101 +3359,30 @@ mod tests {
             vec![
                 (
                     subject_a,
-                    BelievedEntityState {
-                        believed_kind: None,
-                        last_known_place: Some(entity(30)),
-                        last_known_inventory: std::collections::BTreeMap::default(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        observed_tick: Tick(3),
-                        source: PerceptionSource::DirectObservation,
-                    },
+                    believed_state(3, entity(30), PerceptionSource::DirectObservation),
                 ),
                 (
                     subject_b,
-                    BelievedEntityState {
-                        believed_kind: None,
-                        last_known_place: Some(entity(31)),
-                        last_known_inventory: std::collections::BTreeMap::default(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        observed_tick: Tick(9),
-                        source: PerceptionSource::Report {
+                    believed_state(
+                        9,
+                        entity(31),
+                        PerceptionSource::Report {
                             from: entity(80),
                             chain_len: 2,
                         },
-                    },
+                    ),
                 ),
                 (
                     subject_c,
-                    BelievedEntityState {
-                        believed_kind: None,
-                        last_known_place: Some(entity(32)),
-                        last_known_inventory: std::collections::BTreeMap::default(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        observed_tick: Tick(9),
-                        source: PerceptionSource::Inference,
-                    },
+                    believed_state(9, entity(32), PerceptionSource::Inference),
                 ),
                 (
                     subject_d,
-                    BelievedEntityState {
-                        believed_kind: None,
-                        last_known_place: Some(entity(33)),
-                        last_known_inventory: std::collections::BTreeMap::default(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        observed_tick: Tick(7),
-                        source: PerceptionSource::Rumor { chain_len: 3 },
-                    },
+                    believed_state(7, entity(33), PerceptionSource::Rumor { chain_len: 3 }),
                 ),
                 (
                     subject_e,
-                    BelievedEntityState {
-                        believed_kind: None,
-                        last_known_place: Some(entity(34)),
-                        last_known_inventory: std::collections::BTreeMap::default(),
-                        workstation_tag: None,
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        observed_tick: Tick(5),
-                        source: PerceptionSource::Rumor { chain_len: 1 },
-                    },
+                    believed_state(5, entity(34), PerceptionSource::Rumor { chain_len: 1 }),
                 ),
             ],
         );
@@ -3508,22 +3420,7 @@ mod tests {
             speaker,
             vec![(
                 subject,
-                BelievedEntityState {
-                    believed_kind: None,
-                    last_known_place: Some(entity(30)),
-                    last_known_inventory: std::collections::BTreeMap::default(),
-                    workstation_tag: None,
-                    resource_source: None,
-                    alive: true,
-                    wounds: Vec::new(),
-                    last_known_courage: None,
-                    believed_activity: None,
-                    believed_artifact: None,
-                    believed_contention: None,
-                    believed_evidence: None,
-                    observed_tick: Tick(3),
-                    source: PerceptionSource::DirectObservation,
-                },
+                believed_state(3, entity(30), PerceptionSource::DirectObservation),
             )],
         );
 
@@ -3595,22 +3492,7 @@ mod tests {
             speaker,
             vec![(
                 office,
-                BelievedEntityState {
-                    believed_kind: None,
-                    last_known_place: Some(place),
-                    last_known_inventory: std::collections::BTreeMap::new(),
-                    workstation_tag: None,
-                    resource_source: None,
-                    alive: true,
-                    wounds: Vec::new(),
-                    last_known_courage: None,
-                    believed_activity: None,
-                    believed_artifact: None,
-                    believed_contention: None,
-                    believed_evidence: None,
-                    observed_tick: Tick(9),
-                    source: PerceptionSource::DirectObservation,
-                },
+                believed_state(9, place, PerceptionSource::DirectObservation),
             )],
         );
 

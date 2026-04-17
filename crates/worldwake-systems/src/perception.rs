@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, CauseRef, ComponentDelta,
-    ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload, EventTag,
-    EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
+    AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, CauseRef, CommodityKind,
+    ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload,
+    EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, MismatchKind, NoticeTopic, ObservationContext, PendingEvent,
     PerceptionSource, Permille, RelationDelta, RelationValue, SocialObservation,
     SocialObservationDetail, SocialObservationKind, StateDelta, TheftFacts, VisibilitySpec,
@@ -221,7 +221,11 @@ fn process_witness_event(
         });
     }
 
-    store.enforce_capacity(&profile, tick);
+    let needs = world
+        .get_component_homeostatic_needs(witness)
+        .copied()
+        .unwrap_or_default();
+    store.prune_decayed_beliefs(&profile, tick, &needs);
 }
 
 fn observe_passive_local_entities(
@@ -263,7 +267,14 @@ fn observe_passive_local_entities(
             action_defs,
         )
         .value();
-        let Some(batch) = collect_direct_local_observation_batch(
+        let needs = world
+            .get_component_homeostatic_needs(agent)
+            .copied()
+            .unwrap_or_default();
+        let mut store = base_store;
+        let mut store_changed = store.record_place_visit(place, tick);
+
+        if let Some(batch) = collect_direct_local_observation_batch(
             world,
             agent,
             place,
@@ -271,35 +282,39 @@ fn observe_passive_local_entities(
             tick,
             effective_fidelity,
             rng,
-            &base_store,
-        ) else {
-            continue;
-        };
-
-        let mut store = base_store;
-        apply_direct_local_observation_batch(
-            event_log,
-            DiscoveryContext {
+            &store,
+            needs,
+            &profile,
+        ) {
+            apply_direct_local_observation_batch(
+                event_log,
+                DiscoveryContext {
+                    tick,
+                    observer: agent,
+                    place: Some(batch.place),
+                },
+                &mut store,
+                &batch,
+                &profile,
+                needs,
+            );
+            let doctrine_changed = project_local_bandit_rally_doctrine(
+                world,
+                agent,
+                batch.place,
                 tick,
-                observer: agent,
-                place: Some(batch.place),
-            },
-            &mut store,
-            &batch,
-            &profile,
-        );
-        let doctrine_changed = project_local_bandit_rally_doctrine(
-            world,
-            agent,
-            batch.place,
-            tick,
-            &mut store,
-            &profile,
-        );
-        if !batch.observed_snapshots.is_empty() || doctrine_changed {
+                &mut store,
+                &profile,
+            );
+            if !batch.observed_snapshots.is_empty() || doctrine_changed {
+                store_changed = true;
+            }
+            batches.insert(agent, batch);
+        }
+
+        if store_changed {
             updated_stores.insert(agent, store);
         }
-        batches.insert(agent, batch);
     }
 
     batches
@@ -357,6 +372,9 @@ fn observe_active_actions(
     }
 
     for (agent, batch) in direct_local_batches {
+        let Some(profile) = world.get_component_perception_profile(*agent).copied() else {
+            continue;
+        };
         let Some(base_store) = updated_stores
             .get(agent)
             .cloned()
@@ -383,13 +401,18 @@ fn observe_active_actions(
                 None => None,
             };
 
-            if store.update_believed_activity(subject, next_activity) {
+            if store.update_believed_activity(
+                subject,
+                next_activity,
+                tick,
+                &profile.confidence_policy,
+            ) {
                 changed = true;
             }
         }
 
         for subject in &batch.noticed_missing_subjects {
-            if store.clear_believed_activity(subject) {
+            if store.clear_believed_activity(subject, tick, &profile.confidence_policy) {
                 changed = true;
             }
 
@@ -405,7 +428,12 @@ fn observe_active_actions(
                     .is_some_and(|def| def.domain == worldwake_core::ActionDomain::Travel);
                 if is_travel
                     && let Some(destination) = instance.targets.first().copied()
-                    && store.update_departure_projection(subject, destination, tick)
+                    && store.update_departure_projection(
+                        subject,
+                        destination,
+                        tick,
+                        &profile.confidence_policy,
+                    )
                 {
                     changed = true;
                 }
@@ -428,12 +456,26 @@ fn collect_direct_local_observation_batch(
     observation_fidelity: u16,
     rng: &mut worldwake_sim::DeterministicRng,
     store: &AgentBeliefStore,
+    needs: worldwake_core::HomeostaticNeeds,
+    profile: &worldwake_core::PerceptionProfile,
 ) -> Option<DirectLocalObservationBatch> {
     let mut observed_snapshots = BTreeMap::new();
-    for &entity in colocated_entities {
-        if entity == observer {
-            continue;
-        }
+    let mut prioritized_entities = colocated_entities
+        .iter()
+        .copied()
+        .filter(|entity| *entity != observer)
+        .map(|entity| {
+            (
+                compute_observation_priority(world, entity, &needs, profile),
+                entity,
+            )
+        })
+        .collect::<Vec<_>>();
+    prioritized_entities
+        .sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    prioritized_entities.truncate(usize::from(profile.observation_budget));
+
+    for (_, entity) in prioritized_entities {
         if !passes_observation_check(observation_fidelity, rng) {
             continue;
         }
@@ -480,12 +522,45 @@ fn collect_direct_local_observation_batch(
     })
 }
 
+fn compute_observation_priority(
+    world: &World,
+    entity: EntityId,
+    needs: &worldwake_core::HomeostaticNeeds,
+    profile: &worldwake_core::PerceptionProfile,
+) -> u16 {
+    let item_need_boost = || -> u16 {
+        if needs.max_value() < profile.need_salience_urgency_threshold.value() {
+            return 0;
+        }
+        (u32::from(needs.max_value()) * u32::from(profile.need_salience_boost.value()) / 1000)
+            as u16
+    };
+
+    match world.entity_kind(entity) {
+        Some(EntityKind::Agent) => 900,
+        Some(EntityKind::Place) => 800,
+        Some(EntityKind::Facility) => 700,
+        Some(EntityKind::UniqueItem) => 600,
+        Some(EntityKind::Office) => 550,
+        Some(EntityKind::Container) => 500,
+        Some(EntityKind::Faction) => 450,
+        Some(EntityKind::Record | EntityKind::SocialArtifact) => 400,
+        Some(EntityKind::ItemLot) => match world.get_component_item_lot(entity) {
+            Some(lot) if lot.commodity == CommodityKind::Waste => 100,
+            Some(_) => 300 + item_need_boost(),
+            None => 300,
+        },
+        None => 0,
+    }
+}
+
 fn apply_direct_local_observation_batch(
     event_log: &mut EventLog,
     context: DiscoveryContext,
     store: &mut AgentBeliefStore,
     batch: &DirectLocalObservationBatch,
     profile: &worldwake_core::PerceptionProfile,
+    needs: worldwake_core::HomeostaticNeeds,
 ) {
     for (subject, snapshot) in &batch.observed_snapshots {
         record_observed_snapshot(
@@ -507,7 +582,7 @@ fn apply_direct_local_observation_batch(
     }
 
     if !batch.observed_snapshots.is_empty() {
-        store.enforce_capacity(profile, context.tick);
+        store.prune_decayed_beliefs(profile, context.tick, &needs);
     }
 }
 
@@ -539,7 +614,8 @@ fn record_observed_snapshot(
         snapshot,
         prior.as_ref(),
         context.tick,
-        Some(snapshot.observed_tick),
+        snapshot.last_observed_tick(),
+        notice_context.profile.observation_buffer_capacity,
         &notice_context.profile.confidence_policy,
     );
 }
@@ -1186,15 +1262,17 @@ mod tests {
 
     fn profile(fidelity: u16) -> PerceptionProfile {
         PerceptionProfile {
-            entity_memory_capacity: 8,
-            entity_claim_capacity: 8,
-            memory_retention_ticks: 32,
-            infrastructure_retention_ticks: 320,
             observation_fidelity: Permille::new(fidelity).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,
             consultation_speed_factor: Permille::new(500).unwrap(),
             contradiction_tolerance: Permille::new(300).unwrap(),
+            entity_activation_threshold: Permille::new(100).unwrap(),
+            claim_confidence_threshold: Permille::new(50).unwrap(),
+            observation_buffer_capacity: 5,
+            observation_budget: 24,
+            need_salience_boost: Permille::new(500).unwrap(),
+            need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
     }
 
@@ -1589,7 +1667,7 @@ mod tests {
             .expect("observer should believe current place without scene evidence");
         assert_eq!(belief.last_known_place, None);
         assert_eq!(belief.believed_evidence, None);
-        assert_eq!(belief.observed_tick, Tick(3));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(3)));
         assert_eq!(belief.source, PerceptionSource::DirectObservation);
     }
 
@@ -1736,7 +1814,7 @@ mod tests {
             .unwrap()
             .get_entity(&place)
             .expect("observer should still know current place");
-        assert_eq!(belief.observed_tick, Tick(5));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(5)));
         assert_eq!(belief.believed_evidence, None);
     }
 
@@ -2067,7 +2145,7 @@ mod tests {
             Some(destination),
             "departure-direction projection should update last_known_place to travel destination"
         );
-        assert_eq!(believed.observed_tick, Tick(3));
+        assert_eq!(believed.last_observed_tick(), Some(Tick(3)));
         assert_eq!(believed.source, PerceptionSource::DirectObservation);
     }
 
@@ -2151,8 +2229,8 @@ mod tests {
             txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
                 .unwrap();
             let mut observer_profile = profile(1000);
-            observer_profile.entity_memory_capacity = 16;
-            observer_profile.entity_claim_capacity = 16;
+            observer_profile.entity_activation_threshold = Permille::new(50).unwrap();
+            observer_profile.observation_buffer_capacity = 8;
             txn.set_component_perception_profile(observer, observer_profile)
                 .unwrap();
             let bread = txn
@@ -2207,7 +2285,7 @@ mod tests {
             Some(&Quantity(2))
         );
         assert!(believed.alive);
-        assert_eq!(believed.observed_tick, Tick(3));
+        assert_eq!(believed.last_observed_tick(), Some(Tick(3)));
         assert_eq!(believed.source, PerceptionSource::DirectObservation);
         let claims = beliefs
             .get_entity_claims(&target)
@@ -2237,8 +2315,8 @@ mod tests {
             txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
                 .unwrap();
             let mut observer_profile = profile(1000);
-            observer_profile.entity_memory_capacity = 16;
-            observer_profile.entity_claim_capacity = 16;
+            observer_profile.entity_activation_threshold = Permille::new(50).unwrap();
+            observer_profile.observation_buffer_capacity = 8;
             txn.set_component_perception_profile(observer, observer_profile)
                 .unwrap();
             let bread = txn
@@ -2290,6 +2368,210 @@ mod tests {
             claims
                 .iter()
                 .any(|claim| claim.aspect == EntityBeliefAspect::Alive)
+        );
+    }
+
+    #[test]
+    fn passive_local_observation_applies_budget_priority_to_non_place_entities() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, other_agent, facilities, waste_lots) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let other_agent = txn.create_agent("Other Agent", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(other_agent, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_homeostatic_needs(observer, HomeostaticNeeds::new_sated())
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.observation_budget = 10;
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+
+            let facilities = (0..2)
+                .map(|_| {
+                    let facility = txn.create_entity(EntityKind::Facility);
+                    txn.set_ground_location(facility, place).unwrap();
+                    facility
+                })
+                .collect::<Vec<_>>();
+            let waste_lots = (0..30)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Waste, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, other_agent, facilities, waste_lots)
+        };
+
+        let observer_profile = world
+            .get_component_perception_profile(observer)
+            .copied()
+            .unwrap();
+        let needs = world
+            .get_component_homeostatic_needs(observer)
+            .copied()
+            .unwrap();
+        let base_store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .unwrap_or_default();
+        let colocated_entities = world.entities_effectively_at(place);
+        let mut rng = DeterministicRng::new(Seed([0x61; 32]));
+
+        let batch = super::collect_direct_local_observation_batch(
+            &world,
+            observer,
+            place,
+            &colocated_entities,
+            Tick(2),
+            1000,
+            &mut rng,
+            &base_store,
+            needs,
+            &observer_profile,
+        )
+        .expect("budgeted same-place observation should produce a batch");
+
+        assert!(
+            batch.observed_snapshots.contains_key(&place),
+            "place observation should remain separate from the budgeted entity set"
+        );
+        let observed_non_place_entities = batch
+            .observed_snapshots
+            .keys()
+            .copied()
+            .filter(|entity| *entity != place)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            observed_non_place_entities.len(),
+            usize::from(observer_profile.observation_budget)
+        );
+        assert!(
+            batch.observed_snapshots.contains_key(&other_agent),
+            "other colocated agents should outrank waste"
+        );
+        for facility in &facilities {
+            assert!(
+                batch.observed_snapshots.contains_key(facility),
+                "facilities should outrank waste under the observation budget"
+            );
+        }
+
+        let retained_waste = waste_lots
+            .iter()
+            .copied()
+            .filter(|lot| batch.observed_snapshots.contains_key(lot))
+            .collect::<Vec<_>>();
+        assert_eq!(retained_waste.len(), 7);
+        assert_eq!(
+            retained_waste,
+            waste_lots[..7].to_vec(),
+            "same-priority waste lots should be selected by lowest EntityId"
+        );
+    }
+
+    #[test]
+    fn passive_local_observation_boosts_non_waste_item_lots_when_needs_are_urgent() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let urgent_needs = HomeostaticNeeds::new(
+            Permille::new(800).unwrap(),
+            Permille::ZERO,
+            Permille::ZERO,
+            Permille::ZERO,
+            Permille::ZERO,
+        );
+        let (observer, apple_lots, waste_lots) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_homeostatic_needs(observer, urgent_needs)
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.observation_budget = 8;
+            observer_profile.need_salience_urgency_threshold = Permille::new(400).unwrap();
+            observer_profile.need_salience_boost = Permille::new(500).unwrap();
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+
+            let apple_lots = (0..5)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Apple, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let waste_lots = (0..10)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Waste, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, apple_lots, waste_lots)
+        };
+
+        let observer_profile = world
+            .get_component_perception_profile(observer)
+            .copied()
+            .unwrap();
+        let base_store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .unwrap_or_default();
+        let colocated_entities = world.entities_effectively_at(place);
+        let mut rng = DeterministicRng::new(Seed([0x62; 32]));
+
+        let batch = super::collect_direct_local_observation_batch(
+            &world,
+            observer,
+            place,
+            &colocated_entities,
+            Tick(2),
+            1000,
+            &mut rng,
+            &base_store,
+            urgent_needs,
+            &observer_profile,
+        )
+        .expect("urgent-need observation should produce a batch");
+
+        let retained_apples = apple_lots
+            .iter()
+            .copied()
+            .filter(|lot| batch.observed_snapshots.contains_key(lot))
+            .collect::<Vec<_>>();
+        let retained_waste = waste_lots
+            .iter()
+            .copied()
+            .filter(|lot| batch.observed_snapshots.contains_key(lot))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            retained_apples, apple_lots,
+            "urgent non-waste item lots should fill the budget before waste"
+        );
+        assert_eq!(retained_waste.len(), 3);
+        assert_eq!(
+            retained_waste,
+            waste_lots[..3].to_vec(),
+            "remaining budget should admit only the lowest-EntityId waste lots"
         );
     }
 
@@ -2984,7 +3266,7 @@ mod tests {
     }
 
     #[test]
-    fn memory_capacity_evicts_older_beliefs_after_new_observation() {
+    fn new_observation_does_not_hard_cap_existing_entity_beliefs() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
         let (observer, older_target, newer_target) = {
@@ -3011,8 +3293,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, store)
@@ -3020,15 +3304,17 @@ mod tests {
             txn.set_component_perception_profile(
                 observer,
                 PerceptionProfile {
-                    entity_memory_capacity: 1,
-                    entity_claim_capacity: 8,
-                    memory_retention_ticks: 32,
-                    infrastructure_retention_ticks: 320,
                     observation_fidelity: Permille::new(1000).unwrap(),
                     confidence_policy: BeliefConfidencePolicy::default(),
                     institutional_memory_capacity: 20,
                     consultation_speed_factor: Permille::new(500).unwrap(),
                     contradiction_tolerance: Permille::new(300).unwrap(),
+                    entity_activation_threshold: Permille::new(100).unwrap(),
+                    claim_confidence_threshold: Permille::new(50).unwrap(),
+                    observation_buffer_capacity: 5,
+                    observation_budget: 24,
+                    need_salience_boost: Permille::new(500).unwrap(),
+                    need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 },
             )
             .unwrap();
@@ -3069,7 +3355,7 @@ mod tests {
         .unwrap();
 
         let beliefs = world.get_component_agent_belief_store(observer).unwrap();
-        assert!(beliefs.get_entity(&older_target).is_none());
+        assert!(beliefs.get_entity(&older_target).is_some());
         assert!(beliefs.get_entity(&newer_target).is_some());
     }
 
@@ -3125,7 +3411,7 @@ mod tests {
             })
             .expect("passive same-place observation should capture already-present local entities");
         assert_eq!(target_belief.last_known_place, Some(place));
-        assert_eq!(target_belief.observed_tick, Tick(3));
+        assert_eq!(target_belief.last_observed_tick(), Some(Tick(3)));
         assert_eq!(target_belief.source, PerceptionSource::DirectObservation);
     }
 
@@ -3276,8 +3562,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -3360,8 +3648,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -3443,8 +3733,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4104,8 +4396,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4173,8 +4467,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4275,8 +4571,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4335,8 +4633,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4430,8 +4730,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4529,8 +4831,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4625,8 +4929,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -4756,8 +5062,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(2),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(2),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(observer, beliefs)
@@ -5208,6 +5516,86 @@ mod tests {
         assert!(!events[0].observation_passed);
         assert_eq!(events[0].effective_fidelity, 0);
         assert!(events[0].institutional_claims.is_empty());
+    }
+
+    #[test]
+    fn passive_perception_updates_place_visits_across_return_cycle() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let home = places[0];
+        let away = world.topology().neighbors(home)[0];
+
+        let observer = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, home).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            observer
+        };
+
+        let mut event_log = EventLog::new();
+        let action_defs = ActionDefRegistry::new();
+        let active_actions = BTreeMap::new();
+
+        let run_tick = |tick: u64, world: &mut World, event_log: &mut EventLog| {
+            let mut rng = DeterministicRng::new(Seed([tick as u8; 32]));
+            perception_system(SystemExecutionContext {
+                world,
+                event_log,
+                rng: &mut rng,
+                active_actions: &active_actions,
+                action_defs: &action_defs,
+                politics_trace: None,
+                perception_trace: None,
+                tick: Tick(tick),
+                system_id: SystemId::Perception,
+            })
+            .unwrap();
+        };
+
+        run_tick(2, &mut world, &mut event_log);
+        run_tick(3, &mut world, &mut event_log);
+
+        {
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_ground_location(observer, away).unwrap();
+            let _ = txn.commit(&mut event_log);
+        }
+        run_tick(4, &mut world, &mut event_log);
+        run_tick(5, &mut world, &mut event_log);
+
+        {
+            let mut txn = new_txn(&mut world, 6);
+            txn.set_ground_location(observer, home).unwrap();
+            let _ = txn.commit(&mut event_log);
+        }
+        run_tick(6, &mut world, &mut event_log);
+
+        let visits = &world
+            .get_component_agent_belief_store(observer)
+            .unwrap()
+            .place_visits;
+        assert_eq!(
+            visits.get(&home),
+            Some(&worldwake_core::PlaceVisitRecord {
+                ticks_present: 0,
+                last_arrival_tick: Tick(6),
+                visit_count: 2,
+            })
+        );
+        assert_eq!(
+            visits.get(&away),
+            Some(&worldwake_core::PlaceVisitRecord {
+                ticks_present: 1,
+                last_arrival_tick: Tick(4),
+                visit_count: 1,
+            })
+        );
     }
 
     #[test]

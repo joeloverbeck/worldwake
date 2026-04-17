@@ -1,23 +1,24 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader, ArtifactPostingProfile, BanditCamp,
-    BanditFactionPolicy, BlockedIntentMemory, BountyTerms, CarryCapacity, CognitiveProfile,
-    CombatProfile, CombatStance, CommodityKind, CommodityValuationProfile, CommunicationProfile,
-    ComponentTables, ComponentValue, Container, ContentionDispositionProfile, ContentionIntents,
-    ContentionPolicy, ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DisposalProfile,
-    DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
-    EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
-    FactionData, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame,
-    ItemLot, JusticeDispositionProfile, KnownRecipes, LastSeenMemory, LoadUnits, LotOperation,
-    MerchandiseProfile, MetabolismProfile, Name, NoticeContent, ObligationExecutionTracker,
-    ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-    PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PlaceVisibilityProfile,
-    PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
-    PursuitProfile, Quantity, RecordData, RelationTables, ResourceSource, RouteExperience,
-    SaleListing, SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy,
-    SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick, Topology,
-    TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
+    AcquisitionExhaustionTracker, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader,
+    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockedIntentMemory, BountyTerms,
+    CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityDecayMap, CommodityKind,
+    CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
+    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
+    DemandMemory, DeprivationExposure, DisposalProfile, DiversificationProfile, DriveThresholds,
+    EntityAllocator, EntityId, EntityKind, EntityMeta, EpistemicDispositionProfile, EventId,
+    ExecutionBudget, ExpectationStore, ExplorationProfile, FactionData, GroundSince,
+    HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
+    JusticeDispositionProfile, KnownRecipes, LastProactiveExplorationTick, LastSeenMemory,
+    LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name, NoticeContent,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, OfficeForceProfile,
+    OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet,
+    PlaceVisibilityProfile, PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy,
+    ProvenanceEntry, PursuitProfile, Quantity, RecordData, RelationTables, ResourceSource,
+    RouteExperience, SaleListing, SceneEvidence, SourceReliability, StockAssignment,
+    StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick,
+    Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
     component_schema::with_component_schema_entries,
 };
@@ -124,6 +125,7 @@ pub struct World {
     components: ComponentTables,
     relations: RelationTables,
     topology: Topology,
+    commodity_decay: CommodityDecayMap,
 }
 
 impl World {
@@ -138,7 +140,17 @@ impl World {
             components: ComponentTables::default(),
             relations: RelationTables::default(),
             topology,
+            commodity_decay: CommodityDecayMap::default(),
         })
+    }
+
+    #[must_use]
+    pub const fn commodity_decay(&self) -> &CommodityDecayMap {
+        &self.commodity_decay
+    }
+
+    pub fn set_commodity_decay(&mut self, commodity_decay: CommodityDecayMap) {
+        self.commodity_decay = commodity_decay;
     }
 
     pub(crate) fn create_entity(&mut self, kind: EntityKind, tick: Tick) -> EntityId {
@@ -168,6 +180,10 @@ impl World {
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
+            world.insert_component_acquisition_exhaustion_tracker(
+                entity,
+                AcquisitionExhaustionTracker::default(),
+            )?;
             world.insert_component_exploration_profile(entity, ExplorationProfile::default())?;
             world.insert_component_obligation_satiation_profile(
                 entity,
@@ -630,15 +646,16 @@ mod tests {
         CommodityKind, CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory,
         DeprivationExposure, DeprivationKind, DisposalProfile, DriveThresholds, EffectiveRight,
         EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData, FactionPurpose,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim, InstitutionalRecordEntry, ItemLot,
-        JusticeDispositionProfile, KnownRecipes, LoadUnits, LotOperation, MerchandiseProfile,
-        MetabolismProfile, Name, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-        PatrolRoute, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, ProductionJob,
-        ProvenanceEntry, PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind,
-        ReservationId, ReservationRecord, ResourceSource, RightKind, SubstitutePreferences,
-        SuccessionLaw, TellProfile, TheftDispositionProfile, Tick, TickRange, Topology,
-        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, WorldError, Wound, WoundCause, WoundList, build_prototype_world,
+        GroundSince, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
+        InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits,
+        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
+        OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
+        Permille, Place, PlaceTag, PlaceVisitRecord, ProductionJob, ProvenanceEntry,
+        PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
+        ReservationRecord, ResourceSource, RightKind, SubstitutePreferences, SuccessionLaw,
+        TellProfile, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
+        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError,
+        Wound, WoundCause, WoundList, build_prototype_world,
         test_utils::{
             sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -723,8 +740,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(9),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(9),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
         AgentBeliefStore {
@@ -735,6 +754,14 @@ mod tests {
             told_beliefs: BTreeMap::new(),
             heard_beliefs: BTreeMap::new(),
             asked_witnesses: BTreeMap::new(),
+            place_visits: BTreeMap::from([(
+                entity(92),
+                PlaceVisitRecord {
+                    ticks_present: 5,
+                    last_arrival_tick: Tick(8),
+                    visit_count: 2,
+                },
+            )]),
             institutional_beliefs: BTreeMap::from([(
                 crate::InstitutionalBeliefKey::OfficeHolderOf { office: entity(89) },
                 vec![crate::BelievedInstitutionalClaim {
@@ -756,15 +783,17 @@ mod tests {
 
     fn sample_perception_profile() -> PerceptionProfile {
         PerceptionProfile {
-            entity_memory_capacity: 12,
-            entity_claim_capacity: 12,
-            memory_retention_ticks: 48,
-            infrastructure_retention_ticks: 480,
             observation_fidelity: Permille::new(875).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,
             consultation_speed_factor: Permille::new(500).unwrap(),
             contradiction_tolerance: Permille::new(300).unwrap(),
+            entity_activation_threshold: Permille::new(100).unwrap(),
+            claim_confidence_threshold: Permille::new(50).unwrap(),
+            observation_buffer_capacity: 5,
+            observation_budget: 24,
+            need_salience_boost: Permille::new(500).unwrap(),
+            need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
     }
 
@@ -2056,7 +2085,9 @@ mod tests {
         world.set_ground_location(container, place).unwrap();
         world.put_into_container(item, container).unwrap();
 
-        let report = world.prepare_entity_for_archive(container).unwrap();
+        let report = world
+            .prepare_entity_for_archive(container, Tick(3))
+            .unwrap();
         assert!(report.is_ready_for_archive());
         assert_eq!(
             report,
@@ -2073,9 +2104,13 @@ mod tests {
         );
         assert_eq!(world.direct_container(item), None);
         assert_eq!(world.effective_place(item), Some(place));
+        assert_eq!(
+            world.get_component_ground_since(item),
+            Some(&GroundSince(Tick(3)))
+        );
         assert_eq!(world.archive_dependencies(container).unwrap(), Vec::new());
 
-        world.archive_entity(container, Tick(3)).unwrap();
+        world.archive_entity(container, Tick(4)).unwrap();
 
         assert!(world.is_archived(container));
     }
@@ -2109,7 +2144,7 @@ mod tests {
         );
 
         assert_eq!(
-            world.prepare_entity_for_archive(faction).unwrap(),
+            world.prepare_entity_for_archive(faction, Tick(9)).unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![
                     crate::ArchivePreparationAction {
@@ -2197,7 +2232,7 @@ mod tests {
         );
 
         assert_eq!(
-            world.prepare_entity_for_archive(claimant).unwrap(),
+            world.prepare_entity_for_archive(claimant, Tick(7)).unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
                     dependency: crate::ArchiveDependency {
@@ -2210,7 +2245,9 @@ mod tests {
             }
         );
         assert_eq!(
-            world.prepare_entity_for_archive(controller).unwrap(),
+            world
+                .prepare_entity_for_archive(controller, Tick(8))
+                .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
                     dependency: crate::ArchiveDependency {
@@ -2254,7 +2291,7 @@ mod tests {
         )]);
         assert_eq!(
             world
-                .prepare_entity_for_archive_with_policy(container, &policy)
+                .prepare_entity_for_archive_with_policy(container, Tick(6), &policy)
                 .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
@@ -2304,7 +2341,7 @@ mod tests {
             Err(WorldError::InvalidOperation(_))
         ));
         assert!(matches!(
-            world.prepare_entity_for_archive_with_policy(container, &policy),
+            world.prepare_entity_for_archive_with_policy(container, Tick(5), &policy),
             Err(WorldError::InvalidOperation(_))
         ));
         assert_eq!(world.direct_container(item), Some(container));
@@ -2331,7 +2368,7 @@ mod tests {
 
         assert_eq!(
             world
-                .prepare_entity_for_archive_with_policy(root, &policy)
+                .prepare_entity_for_archive_with_policy(root, Tick(4), &policy)
                 .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
@@ -2386,7 +2423,7 @@ mod tests {
 
         assert_eq!(
             world
-                .prepare_entity_for_archive_with_policy(current_owner, &policy)
+                .prepare_entity_for_archive_with_policy(current_owner, Tick(7), &policy)
                 .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
@@ -2403,7 +2440,7 @@ mod tests {
 
         assert_eq!(
             world
-                .prepare_entity_for_archive_with_policy(current_holder, &policy)
+                .prepare_entity_for_archive_with_policy(current_holder, Tick(8), &policy)
                 .unwrap(),
             crate::ArchivePreparationReport {
                 applied: vec![crate::ArchivePreparationAction {
@@ -2435,10 +2472,36 @@ mod tests {
         )]);
 
         assert!(matches!(
-            world.prepare_entity_for_archive_with_policy(owner, &policy),
+            world.prepare_entity_for_archive_with_policy(owner, Tick(4), &policy),
             Err(WorldError::InvalidOperation(_))
         ));
         assert_eq!(world.owner_of(item), Some(owner));
+    }
+
+    #[test]
+    fn prepare_entity_for_archive_drop_possessions_stamps_ground_since() {
+        let mut world = World::new(test_topology()).unwrap();
+        let holder = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(1), Tick(2))
+            .unwrap();
+        let place = entity(5);
+
+        world.set_ground_location(holder, place).unwrap();
+        world.set_ground_location(item, place).unwrap();
+        world.set_possessor(item, holder).unwrap();
+
+        let report = world.prepare_entity_for_archive(holder, Tick(9)).unwrap();
+
+        assert!(report.is_ready_for_archive());
+        assert_eq!(world.possessor_of(item), None);
+        assert_eq!(world.effective_place(item), Some(place));
+        assert_eq!(
+            world.get_component_ground_since(item),
+            Some(&GroundSince(Tick(9)))
+        );
     }
 
     #[test]
@@ -6618,6 +6681,8 @@ mod tests {
         assert_eq!(world.query_item_lot().count(), 0);
         assert_eq!(world.entities_with_unique_item().count(), 0);
         assert_eq!(world.query_unique_item().count(), 0);
+        assert_eq!(world.entities_with_ground_since().count(), 0);
+        assert_eq!(world.query_ground_since().count(), 0);
         assert_eq!(world.entities_with_container().count(), 0);
         assert_eq!(world.query_container().count(), 0);
         assert_eq!(world.entities_with_name_and_agent_data().count(), 0);
@@ -6711,6 +6776,7 @@ mod tests {
         assert_eq!(world.count_with_blocked_intent_memory(), 1);
         assert_eq!(world.count_with_item_lot(), 0);
         assert_eq!(world.count_with_unique_item(), 0);
+        assert_eq!(world.count_with_ground_since(), 0);
         assert_eq!(world.count_with_container(), 0);
     }
 
@@ -6813,6 +6879,7 @@ mod tests {
             assert_eq!(world.get_component_drive_thresholds(place_id), None);
             assert_eq!(world.get_component_item_lot(place_id), None);
             assert_eq!(world.get_component_unique_item(place_id), None);
+            assert_eq!(world.get_component_ground_since(place_id), None);
             assert_eq!(world.get_component_container(place_id), None);
         }
     }

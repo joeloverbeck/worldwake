@@ -1194,9 +1194,9 @@ fn observed_tick_for(
     entity: EntityId,
     known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
 ) -> Tick {
-    known_entity_beliefs
-        .get(&entity)
-        .map_or(Tick(0), |belief| belief.observed_tick)
+    known_entity_beliefs.get(&entity).map_or(Tick(0), |belief| {
+        belief.last_observed_tick().unwrap_or(Tick(0))
+    })
 }
 
 fn included_entities_contains(
@@ -1666,8 +1666,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(observed_tick),
-            source: worldwake_core::PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(observed_tick),
+                worldwake_core::PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -2317,8 +2319,10 @@ mod tests {
                             believed_artifact: None,
                             believed_contention: None,
                             believed_evidence: None,
-                            observed_tick: Tick(6),
-                            source: worldwake_core::PerceptionSource::DirectObservation,
+                            ..BelievedEntityState::single_observation_defaults(
+                                Tick(6),
+                                worldwake_core::PerceptionSource::DirectObservation,
+                            )
                         }),
                     ),
                     told_tick: Tick(7),

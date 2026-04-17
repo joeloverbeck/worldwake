@@ -43,6 +43,7 @@ pub mod control;
 pub mod crime;
 pub mod delta;
 pub mod disposal;
+pub mod diversification;
 pub mod drives;
 pub mod entity;
 pub mod entity_belief_claim;
@@ -98,15 +99,15 @@ pub use belief::{
     BeliefStoreDiff, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
     BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState,
     HeardBeliefDisposition, HeardBeliefMemory, MismatchKind, ObservedEntitySnapshot,
-    PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus, SharedBeliefSnapshot,
-    SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
-    SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
-    belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-    current_institutional_belief_topics, institutional_claim_same_memory_lane,
-    institutional_claim_subject_entity, institutional_knowledge_chain_len,
-    recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
-    social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
-    to_shared_belief_snapshot,
+    PerceptionProfile, PerceptionSource, PlaceVisitRecord, RecipientKnowledgeStatus,
+    SharedBeliefSnapshot, SharedInstitutionalBelief, SharedTellState, SocialObservation,
+    SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
+    ToldBeliefMemory, belief_confidence, build_believed_entity_state,
+    build_observed_entity_snapshot, current_institutional_belief_topics,
+    institutional_claim_same_memory_lane, institutional_claim_subject_entity,
+    institutional_knowledge_chain_len, recipient_knowledge_status, share_equivalent,
+    social_observation_is_redundant_for_listener, social_observation_is_relayable,
+    tell_subject_is_directly_observable_by_listener, to_shared_belief_snapshot,
 };
 pub use blocked_intent::{
     BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
@@ -140,6 +141,7 @@ pub use delta::{
     RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
 pub use disposal::DisposalProfile;
+pub use diversification::{DiversificationProfile, LastProactiveExplorationTick};
 pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBeliefClaim};
@@ -159,9 +161,11 @@ pub use experience::{
     EdgeExperience, PreferenceProfile, ReliabilityRecord, RouteExperience, SourceKey,
     SourceReliability, danger_ratio_permille, failure_ratio_permille,
 };
-pub use exploration::ExplorationProfile;
+pub use exploration::{AcquisitionExhaustionTracker, ExplorationProfile};
 pub use factions::{FactionData, FactionPurpose};
-pub use goal::{CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey};
+pub use goal::{
+    CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey,
+};
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use institutional::{
     BelievedInstitutionalClaim, InstitutionalBeliefKey, InstitutionalBeliefRead,
@@ -175,10 +179,10 @@ pub use intention_frame::{
     IntentionFrame, SuspensionReason,
 };
 pub use items::{
-    CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
-    CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,
-    ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
-    UniqueItemPhysicalProfile,
+    CombatWeaponProfile, CommodityConsumableProfile, CommodityDecayMap, CommodityKind,
+    CommodityKindSpec, CommodityPhysicalProfile, CommodityTreatmentProfile, Container, GroundSince,
+    ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
+    UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
 };
 pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,

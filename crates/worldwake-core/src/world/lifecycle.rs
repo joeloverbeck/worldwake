@@ -1,7 +1,7 @@
 use super::World;
 use crate::{
     ArchiveDependency, ArchiveDependencyKind, EntityId, EntityKind, Permille, ReservationRecord,
-    WorldError,
+    Tick, WorldError,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -260,21 +260,23 @@ impl World {
     pub(crate) fn prepare_entity_for_archive(
         &mut self,
         entity: EntityId,
+        tick: Tick,
     ) -> Result<ArchivePreparationReport, WorldError> {
-        self.prepare_entity_for_archive_with_policy(entity, &ArchivePreparationPolicy::all())
+        self.prepare_entity_for_archive_with_policy(entity, tick, &ArchivePreparationPolicy::all())
     }
 
     #[allow(dead_code)]
     pub(crate) fn prepare_entity_for_archive_with_policy(
         &mut self,
         entity: EntityId,
+        tick: Tick,
         policy: &ArchivePreparationPolicy,
     ) -> Result<ArchivePreparationReport, WorldError> {
         let plan = self.plan_entity_archive_preparation_with_policy(entity, policy)?;
         let mut applied = Vec::with_capacity(plan.actions.len());
 
         for action in plan.actions {
-            self.apply_archive_resolution(entity, &action.dependency, action.resolution)?;
+            self.apply_archive_resolution(entity, &action.dependency, action.resolution, tick)?;
             applied.push(action);
         }
 
@@ -290,15 +292,16 @@ impl World {
         entity: EntityId,
         dependency: &ArchiveDependency,
         resolution: ArchiveResolution,
+        tick: Tick,
     ) -> Result<(), WorldError> {
         self.validate_archive_resolution(entity, dependency.kind, resolution)?;
 
         match (dependency.kind, resolution) {
             (ArchiveDependencyKind::ContainsEntities, _) => {
-                self.apply_containment_resolution(entity, resolution)
+                self.apply_containment_resolution(entity, resolution, tick)
             }
             (ArchiveDependencyKind::PossessesEntities, _) => {
-                self.apply_possession_resolution(&dependency.dependents, resolution)
+                self.apply_possession_resolution(&dependency.dependents, resolution, tick)
             }
             (ArchiveDependencyKind::OwnsEntities, _) => {
                 self.apply_ownership_resolution(&dependency.dependents, resolution)
@@ -363,11 +366,13 @@ impl World {
         &mut self,
         entity: EntityId,
         resolution: ArchiveResolution,
+        tick: Tick,
     ) -> Result<(), WorldError> {
         match resolution {
             ArchiveResolution::DetachContentsToGround => {
                 for child in self.direct_contents_of(entity) {
                     self.remove_from_container(child)?;
+                    self.sync_ground_since(child, tick)?;
                 }
                 Ok(())
             }
@@ -378,6 +383,7 @@ impl World {
                         &mut self.relations.contents_of,
                         descendant,
                     );
+                    self.sync_ground_since(descendant, tick)?;
                 }
                 Ok(())
             }
@@ -393,17 +399,20 @@ impl World {
         &mut self,
         dependents: &[EntityId],
         resolution: ArchiveResolution,
+        tick: Tick,
     ) -> Result<(), WorldError> {
         match resolution {
             ArchiveResolution::DropPossessions => {
                 for possessed in dependents {
                     self.clear_possessor(*possessed)?;
+                    self.sync_ground_since(*possessed, tick)?;
                 }
                 Ok(())
             }
             ArchiveResolution::TransferPossessionsTo(target) => {
                 for possessed in dependents {
                     self.set_possessor(*possessed, target)?;
+                    self.sync_ground_since(*possessed, tick)?;
                 }
                 Ok(())
             }

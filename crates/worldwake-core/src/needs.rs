@@ -24,6 +24,10 @@ pub enum HomeostaticNeedId {
     Dirtiness,
 }
 
+impl HomeostaticNeedId {
+    pub const VARIANT_COUNT: usize = 5;
+}
+
 impl HomeostaticNeeds {
     #[must_use]
     pub const fn new(
@@ -45,6 +49,14 @@ impl HomeostaticNeeds {
     #[must_use]
     pub const fn new_sated() -> Self {
         Self::new(pm(0), pm(0), pm(0), pm(0), pm(0))
+    }
+
+    #[must_use]
+    pub fn max_value(&self) -> u16 {
+        let max = self.hunger.value().max(self.thirst.value());
+        let max = max.max(self.fatigue.value());
+        let max = max.max(self.bladder.value());
+        max.max(self.dirtiness.value())
     }
 }
 
@@ -70,21 +82,37 @@ impl Component for DeprivationExposure {}
 /// Per-agent physiology parameters that drive metabolism and recovery.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MetabolismProfile {
+    /// Hunger increase per tick during normal activity.
     pub hunger_rate: Permille,
+    /// Thirst increase per tick during normal activity.
     pub thirst_rate: Permille,
+    /// Fatigue increase per tick during normal activity.
     pub fatigue_rate: Permille,
+    /// Bladder pressure increase per tick during normal activity.
     pub bladder_rate: Permille,
+    /// Dirtiness increase per tick during normal activity.
     pub dirtiness_rate: Permille,
+    /// Fatigue decrease per tick while resting or sleeping.
     pub rest_efficiency: Permille,
+    /// Ticks at critical hunger before starvation consequences begin.
     pub starvation_tolerance_ticks: NonZeroU32,
+    /// Ticks at critical thirst before dehydration consequences begin.
     pub dehydration_tolerance_ticks: NonZeroU32,
+    /// Ticks at critical fatigue before the agent collapses.
     pub exhaustion_collapse_ticks: NonZeroU32,
+    /// Ticks at critical bladder pressure before an accident occurs.
     pub bladder_accident_tolerance_ticks: NonZeroU32,
+    /// Duration in ticks to complete a toilet action.
     pub toilet_ticks: NonZeroU32,
+    /// Duration in ticks to complete a washing action.
     pub wash_ticks: NonZeroU32,
+    /// Multiplier applied to fatigue rate while traveling.
     pub travel_fatigue_multiplier: Permille,
+    /// Multiplier applied to thirst rate while traveling.
     pub travel_thirst_multiplier: Permille,
+    /// Multiplier applied to bladder rate while traveling.
     pub travel_bladder_multiplier: Permille,
+    /// Additional dirtiness incurred when relieving oneself in the wilderness rather than at a proper facility.
     pub wilderness_relief_dirtiness_penalty: Permille,
 }
 
@@ -134,24 +162,24 @@ impl Component for MetabolismProfile {}
 
 impl Default for MetabolismProfile {
     fn default() -> Self {
-        Self::new(
-            pm(2),
-            pm(3),
-            pm(2),
-            pm(4),
-            pm(1),
-            pm(20),
-            nz(480),
-            nz(240),
-            nz(120),
-            nz(40),
-            nz(8),
-            nz(12),
-            pm(0),
-            pm(0),
-            pm(0),
-            pm(0),
-        )
+        Self {
+            hunger_rate: pm(2),
+            thirst_rate: pm(3),
+            fatigue_rate: pm(2),
+            bladder_rate: pm(4),
+            dirtiness_rate: pm(1),
+            rest_efficiency: pm(20),
+            starvation_tolerance_ticks: nz(480),
+            dehydration_tolerance_ticks: nz(240),
+            exhaustion_collapse_ticks: nz(120),
+            bladder_accident_tolerance_ticks: nz(40),
+            toilet_ticks: nz(8),
+            wash_ticks: nz(12),
+            travel_fatigue_multiplier: pm(0),
+            travel_thirst_multiplier: pm(0),
+            travel_bladder_multiplier: pm(0),
+            wilderness_relief_dirtiness_penalty: pm(0),
+        }
     }
 }
 
@@ -209,7 +237,8 @@ const fn nz(value: u32) -> NonZeroU32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        BodyCostPerTick, DeprivationExposure, HomeostaticNeeds, MetabolismProfile, nz, pm,
+        BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds,
+        MetabolismProfile, nz, pm,
     };
     use crate::{Permille, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
@@ -230,6 +259,23 @@ mod tests {
         assert_eq!(needs.bladder, Permille::new(0).unwrap());
         assert_eq!(needs.dirtiness, Permille::new(0).unwrap());
         assert_eq!(needs, HomeostaticNeeds::default());
+    }
+
+    #[test]
+    fn homeostatic_need_id_variant_count_matches_enum() {
+        assert_eq!(HomeostaticNeedId::VARIANT_COUNT, 5);
+    }
+
+    #[test]
+    fn homeostatic_needs_max_value_returns_highest_need() {
+        let needs = HomeostaticNeeds::new(pm(10), pm(875), pm(120), pm(640), pm(500));
+
+        assert_eq!(needs.max_value(), 875);
+    }
+
+    #[test]
+    fn homeostatic_needs_max_value_all_zero() {
+        assert_eq!(HomeostaticNeeds::new_sated().max_value(), 0);
     }
 
     #[test]

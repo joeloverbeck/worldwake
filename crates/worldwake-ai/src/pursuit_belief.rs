@@ -52,7 +52,7 @@ pub fn pursuit_target_belief(
         target,
         believed_place,
         source: state.source,
-        observed_tick: state.observed_tick,
+        observed_tick: state.last_observed_tick().unwrap_or(Tick(0)),
     })
 }
 
@@ -105,8 +105,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: observed,
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                observed,
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -349,6 +351,9 @@ mod tests {
 
         let ptb = pursuit_target_belief(&view, ACTOR, TARGET).unwrap();
         assert_eq!(ptb.source, state.source);
-        assert_eq!(ptb.observed_tick, state.observed_tick);
+        assert_eq!(
+            ptb.observed_tick,
+            state.last_observed_tick().unwrap_or(Tick(0))
+        );
     }
 }

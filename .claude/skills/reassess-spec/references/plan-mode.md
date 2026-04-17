@@ -14,7 +14,7 @@ If plan mode is active:
 
 **Plan file structure** (condensed action list for Step 7 execution — not a re-presentation of the conversational report):
 - **Context**: Which spec, why it's being reassessed, classification type
-- **Approved Changes**: Compact action items organized by Issues Fixed / Improvements Applied / Additions Incorporated. Each item: severity tag + one-line summary of what to change + affected deliverable number. Omit the full evidence and reasoning — the conversational report (Step 6) carries that.
+- **Approved Changes**: Compact action items organized by Issues Fixed / Improvements Applied / Additions Incorporated. Each item: severity tag + one-line summary of what to change + affected deliverable number or section name. For question-resolved changes, append the resolution rationale in parentheses (e.g., "per Q1: pragmatic approximation chosen because agents still must physically travel"). Omit the full evidence and reasoning for non-question items — the conversational report (Step 6) carries that.
 - **Critical Files**: Paths of files to be modified
 - **Verification**: How to confirm the updated spec is correct after writing
 

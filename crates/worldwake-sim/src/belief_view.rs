@@ -10,15 +10,16 @@ use worldwake_core::{
     BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim, CognitiveProfile,
     CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
     CommodityValuationProfile, ContentionGrant, DemandObservation, DisposalProfile,
-    DriveThresholds, EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
-    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
-    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
+    DiversificationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
+    ExpectationStore, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
+    Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
 };
 
 pub trait GoalSpatialBeliefView {
@@ -199,6 +200,18 @@ pub trait GoalBeliefView {
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
         let _ = agent;
         None
+    }
+    fn diversification_profile(&self, agent: EntityId) -> Option<DiversificationProfile> {
+        let _ = agent;
+        None
+    }
+    fn last_proactive_exploration_tick(&self, agent: EntityId) -> Option<Tick> {
+        let _ = agent;
+        None
+    }
+    fn acquisition_exhaustion_count(&self, agent: EntityId, need: HomeostaticNeedId) -> u8 {
+        let _ = (agent, need);
+        0
     }
     fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
         let _ = agent;
@@ -454,6 +467,18 @@ pub trait ProfileBeliefView {
     fn exploration_profile(&self, agent: EntityId) -> Option<ExplorationProfile> {
         let _ = agent;
         None
+    }
+    fn diversification_profile(&self, agent: EntityId) -> Option<DiversificationProfile> {
+        let _ = agent;
+        None
+    }
+    fn last_proactive_exploration_tick(&self, agent: EntityId) -> Option<Tick> {
+        let _ = agent;
+        None
+    }
+    fn acquisition_exhaustion_count(&self, agent: EntityId, need: HomeostaticNeedId) -> u8 {
+        let _ = (agent, need);
+        0
     }
     fn obligation_satiation_profile(&self, agent: EntityId) -> ObligationSatiationProfile {
         let _ = agent;
@@ -1259,6 +1284,28 @@ where
         ProfileBeliefView::exploration_profile(self, agent)
     }
 
+    fn diversification_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::DiversificationProfile> {
+        ProfileBeliefView::diversification_profile(self, agent)
+    }
+
+    fn last_proactive_exploration_tick(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::Tick> {
+        ProfileBeliefView::last_proactive_exploration_tick(self, agent)
+    }
+
+    fn acquisition_exhaustion_count(
+        &self,
+        agent: worldwake_core::EntityId,
+        need: worldwake_core::HomeostaticNeedId,
+    ) -> u8 {
+        ProfileBeliefView::acquisition_exhaustion_count(self, agent, need)
+    }
+
     fn obligation_satiation_profile(
         &self,
         agent: worldwake_core::EntityId,
@@ -1765,9 +1812,10 @@ mod tests {
     };
     use worldwake_core::{
         AgentBeliefStore, CauseRef, CommodityConsumableProfile, CommodityKind, ControlSource,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeeds,
-        LoadUnits, PatrolProfile, Permille, Quantity, ResourceSource, Tick, UniqueItemKind,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        DemandObservation, DiversificationProfile, DriveThresholds, EntityId, EntityKind, EventLog,
+        HomeostaticNeedId, HomeostaticNeeds, LastProactiveExplorationTick, LoadUnits,
+        PatrolProfile, Permille, Quantity, ResourceSource, Tick, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };
 
     struct StubGoalBeliefView;
@@ -1840,6 +1888,24 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::ExplorationProfile> {
             None
+        }
+
+        fn diversification_profile(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::DiversificationProfile> {
+            None
+        }
+
+        fn last_proactive_exploration_tick(
+            &self,
+            _agent: EntityId,
+        ) -> Option<worldwake_core::Tick> {
+            None
+        }
+
+        fn acquisition_exhaustion_count(&self, _agent: EntityId, _need: HomeostaticNeedId) -> u8 {
+            0
         }
     }
 
@@ -2104,5 +2170,96 @@ mod tests {
 
         assert_eq!(GoalBeliefView::expectation_store(&view, agent), None);
         assert_eq!(GoalBeliefView::last_seen_memory(&view, agent), None);
+    }
+
+    #[test]
+    fn goal_belief_view_acquisition_exhaustion_count_defaults_to_zero() {
+        let view = StubGoalBeliefView;
+        let agent = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+
+        assert_eq!(
+            ProfileBeliefView::acquisition_exhaustion_count(
+                &view,
+                agent,
+                HomeostaticNeedId::Hunger
+            ),
+            0
+        );
+        assert_eq!(
+            GoalBeliefView::acquisition_exhaustion_count(&view, agent, HomeostaticNeedId::Hunger),
+            0
+        );
+    }
+
+    #[test]
+    fn goal_belief_view_diversification_defaults_return_none() {
+        let view = StubGoalBeliefView;
+        let agent = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+
+        assert_eq!(GoalBeliefView::diversification_profile(&view, agent), None);
+        assert_eq!(
+            GoalBeliefView::last_proactive_exploration_tick(&view, agent),
+            None
+        );
+    }
+
+    #[test]
+    fn per_agent_goal_belief_view_exposes_diversification_components() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_agent_belief_store(actor, AgentBeliefStore::default())
+                .unwrap();
+            txn.set_component_diversification_profile(
+                actor,
+                DiversificationProfile {
+                    base_curiosity: Permille::new(610).unwrap(),
+                    comfort_threshold: Permille::new(320).unwrap(),
+                    curiosity_buildup_rate: Permille::new(9).unwrap(),
+                    exploration_cooldown_ticks: 19,
+                    familiarity_per_visit: Permille::new(160).unwrap(),
+                    familiarity_recovery_per_tick: Permille::new(4).unwrap(),
+                    familiarity_floor: Permille::new(70).unwrap(),
+                    max_exploration_hops: 7,
+                },
+            )
+            .unwrap();
+            txn.set_component_last_proactive_exploration_tick(
+                actor,
+                LastProactiveExplorationTick(Some(Tick(42))),
+            )
+            .unwrap();
+            commit_txn(txn);
+            actor
+        };
+
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            GoalBeliefView::diversification_profile(&view, actor),
+            Some(DiversificationProfile {
+                base_curiosity: Permille::new(610).unwrap(),
+                comfort_threshold: Permille::new(320).unwrap(),
+                curiosity_buildup_rate: Permille::new(9).unwrap(),
+                exploration_cooldown_ticks: 19,
+                familiarity_per_visit: Permille::new(160).unwrap(),
+                familiarity_recovery_per_tick: Permille::new(4).unwrap(),
+                familiarity_floor: Permille::new(70).unwrap(),
+                max_exploration_hops: 7,
+            })
+        );
+        assert_eq!(
+            GoalBeliefView::last_proactive_exploration_tick(&view, actor),
+            Some(Tick(42))
+        );
     }
 }

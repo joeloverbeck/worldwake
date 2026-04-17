@@ -7,15 +7,15 @@ Scenarios: 5
 
 ### Scenario 126: Remote Travel To Resource Under Local Scarcity
 
-- Source: `golden_simulation_gaps.rs:370`
+- Source: `golden_simulation_gaps.rs:373`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
 - Places: VillageSquare, OrchardFarm
 - Principles: 7, 14, 20
 - Primary tests: `golden_remote_travel_when_local_supply_exhausted`
-- Replay tests: `golden_remote_travel_when_local_supply_exhausted_replays_deterministically`
-- All tests: `golden_remote_travel_when_local_supply_exhausted`, `golden_remote_travel_when_local_supply_exhausted_replays_deterministically`
+- Replay tests: None
+- All tests: `golden_remote_travel_when_local_supply_exhausted`
 
 **Setup**: One agent at VillageSquare with critical hunger and no local food. OrchardFarm has an apple source, and the agent starts with seeded beliefs about both the place and the remote source.
 
@@ -25,15 +25,15 @@ Scenarios: 5
 
 ### Scenario 127: Idle Cap Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:406`
+- Source: `golden_simulation_gaps.rs:399`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Sleep, Relieve, AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
 - Places: VillageSquare, OrchardFarm
 - Principles: 8, 20, 22
 - Primary tests: `golden_max_idle_under_remote_resource_scarcity`
-- Replay tests: `golden_max_idle_under_remote_resource_scarcity_replays_deterministically`
-- All tests: `golden_max_idle_under_remote_resource_scarcity`, `golden_max_idle_under_remote_resource_scarcity_replays_deterministically`
+- Replay tests: None
+- All tests: `golden_max_idle_under_remote_resource_scarcity`
 
 **Setup**: One agent at VillageSquare with moderate hunger, thirst, fatigue, and bladder pressure. Local food and water are absent; OrchardFarm holds both apples and remote water, while local self-care affordances remain lawful. The agent starts with seeded beliefs about the remote resources.
 
@@ -43,15 +43,15 @@ Scenarios: 5
 
 ### Scenario 130: Multi-Agent Convergence Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:659`
+- Source: `golden_simulation_gaps.rs:642`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Travel, Production, Needs
 - Places: VillageSquare, OrchardFarm
 - Principles: 7, 8, 20
 - Primary tests: `golden_multi_agent_convergence`
-- Replay tests: `golden_multi_agent_convergence_replays_deterministically`
-- All tests: `golden_multi_agent_convergence`, `golden_multi_agent_convergence_replays_deterministically`
+- Replay tests: None
+- All tests: `golden_multi_agent_convergence`
 
 **Setup**: Three agents begin at VillageSquare with elevated hunger and thirst, but no local food or water. OrchardFarm holds both apple and water harvest sources, and each agent starts with explicit beliefs about the remote place and both resource carriers plus the needed harvest recipes.
 
@@ -61,15 +61,15 @@ Scenarios: 5
 
 ### Scenario 131: Death Traceability Under Unmet Needs
 
-- Source: `golden_simulation_gaps.rs:1019`
+- Source: `golden_simulation_gaps.rs:1007`
 - Systems: Needs, Wounds, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Needs
 - Places: VillageSquare
 - Principles: 4, 10, 20
 - Primary tests: `golden_death_traceability`
-- Replay tests: `golden_death_traceability_replays_deterministically`
-- All tests: `golden_death_traceability`, `golden_death_traceability_replays_deterministically`
+- Replay tests: None
+- All tests: `golden_death_traceability`
 
 **Setup**: One agent begins at VillageSquare with critical hunger, no local food or water, no remote resource beliefs, and no recipe knowledge. A shortened starvation tolerance makes deprivation wounds accumulate to a fatal wound load within the scenario budget.
 
@@ -79,15 +79,15 @@ Scenarios: 5
 
 ### Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
 
-- Source: `golden_simulation_gaps.rs:1056`
+- Source: `golden_simulation_gaps.rs:1034`
 - Systems: Production, Needs, AI
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Needs
 - Places: OrchardFarm
 - Principles: 3, 8, 26
 - Primary tests: `golden_harvest_to_consume`
-- Replay tests: `golden_harvest_to_consume_replays_deterministically`
-- All tests: `golden_harvest_to_consume`, `golden_harvest_to_consume_replays_deterministically`
+- Replay tests: None
+- All tests: `golden_harvest_to_consume`
 
 **Setup**: Two agents begin co-located with an orchard row and a well at OrchardFarm. One knows only Harvest Water and starts critically thirsty; the other knows only Harvest Apples and starts critically hungry. Direct local beliefs are seeded so the scenario isolates harvest-to-consume execution rather than perception/discovery lag.
 

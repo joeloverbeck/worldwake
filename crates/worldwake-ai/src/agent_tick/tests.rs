@@ -95,6 +95,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         max_candidates_to_plan: reasoning.max_candidates_to_plan,
         max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
         max_plan_depth: reasoning.max_plan_depth,
+        max_travel_candidates_per_expansion: CognitiveProfile::default()
+            .max_travel_candidates_per_expansion,
         snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
         max_node_expansions: reasoning.max_node_expansions,
         switch_margin: reasoning.switch_margin,
@@ -106,7 +108,6 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
         max_snapshot_entities_per_place: CognitiveProfile::default()
             .max_snapshot_entities_per_place,
-        speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
         landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
         use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
     }
@@ -864,10 +865,12 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, Entit
         txn.set_component_perception_profile(
             actor,
             PerceptionProfile {
-                entity_memory_capacity: 12,
-                entity_claim_capacity: 12,
-                memory_retention_ticks: 64,
-                infrastructure_retention_ticks: 640,
+                entity_activation_threshold: Permille::new(125).unwrap(),
+                claim_confidence_threshold: Permille::new(50).unwrap(),
+                observation_buffer_capacity: 12,
+                observation_budget: 24,
+                need_salience_boost: Permille::new(500).unwrap(),
+                need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,
@@ -972,10 +975,12 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
         txn.set_component_perception_profile(
             actor,
             PerceptionProfile {
-                entity_memory_capacity: 12,
-                entity_claim_capacity: 12,
-                memory_retention_ticks: 4,
-                infrastructure_retention_ticks: 40,
+                entity_activation_threshold: Permille::new(158).unwrap(),
+                claim_confidence_threshold: Permille::new(50).unwrap(),
+                observation_buffer_capacity: 12,
+                observation_budget: 24,
+                need_salience_boost: Permille::new(500).unwrap(),
+                need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,
@@ -3839,7 +3844,7 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
 }
 
 #[test]
-fn perception_refresh_preserves_remote_seller_belief_within_infrastructure_window() {
+fn perception_refresh_preserves_remote_seller_belief_above_activation_threshold() {
     let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
@@ -3869,7 +3874,7 @@ fn perception_refresh_preserves_remote_seller_belief_within_infrastructure_windo
         .unwrap();
     assert!(
         store.get_entity(&seller).is_some(),
-        "alive remote seller beliefs should survive refreshes within infrastructure_retention_ticks"
+        "alive remote seller beliefs should survive refreshes while activation stays above threshold"
     );
     assert_eq!(
         store
@@ -3884,7 +3889,7 @@ fn perception_refresh_preserves_remote_seller_belief_within_infrastructure_windo
 }
 
 #[test]
-fn perception_refresh_evicts_expired_remote_acquisition_belief_after_infrastructure_window() {
+fn perception_refresh_evicts_remote_acquisition_belief_below_activation_threshold() {
     let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
@@ -3914,7 +3919,7 @@ fn perception_refresh_evicts_expired_remote_acquisition_belief_after_infrastruct
         .unwrap();
     assert!(
         store.get_entity(&seller).is_none(),
-        "expired remote seller belief should be evicted after infrastructure_retention_ticks elapses"
+        "expired remote seller belief should be evicted once activation falls below threshold"
     );
     let local_belief = store
         .get_entity(&local_witness)
@@ -3930,7 +3935,7 @@ fn perception_refresh_evicts_expired_remote_acquisition_belief_after_infrastruct
                 purpose: CommodityPurpose::SelfConsume,
             }
         ),
-        "once retention enforcement prunes the stale remote seller, the acquire goal must disappear"
+        "once activation pruning removes the stale remote seller, the acquire goal must disappear"
     );
 }
 
@@ -4721,7 +4726,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
     let mut jc = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
-    let (_, initial_valid, initial_continued, _, initial_selection) =
+    let (_, initial_valid, initial_continued, _, initial_selection, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
             &harness.scheduler,
@@ -4810,7 +4815,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
 
     let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
     let mut jc2 = None;
-    let (continued_step, continued_valid, plan_continued, _, continuation_selection) =
+    let (continued_step, continued_valid, plan_continued, _, continuation_selection, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
             &harness.scheduler,
@@ -5397,10 +5402,12 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
         txn.set_component_perception_profile(
             harness.actor,
             PerceptionProfile {
-                entity_memory_capacity: 32,
-                entity_claim_capacity: 32,
-                memory_retention_ticks: 240,
-                infrastructure_retention_ticks: 2400,
+                entity_activation_threshold: Permille::new(64).unwrap(),
+                claim_confidence_threshold: Permille::new(50).unwrap(),
+                observation_buffer_capacity: 32,
+                observation_budget: 24,
+                need_salience_boost: Permille::new(500).unwrap(),
+                need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 observation_fidelity: Permille::new(1000).unwrap(),
                 confidence_policy: BeliefConfidencePolicy::default(),
                 institutional_memory_capacity: 20,
@@ -6048,7 +6055,9 @@ fn exploration_counter_increments_when_explore_goal_is_adopted() {
     let active_goal = worldwake_core::ActiveGoal {
         goal_key: GoalKey::from(GoalKind::ExploreLocation {
             target_place: entity(99),
-            motivating_need: HomeostaticNeedId::Hunger,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Hunger,
+            ),
         }),
         adopted_at: Tick(5),
     };
@@ -6069,6 +6078,50 @@ fn exploration_counter_increments_when_explore_goal_is_adopted() {
             .unwrap()
             .consecutive_exploration_count,
         2
+    );
+}
+
+#[test]
+fn proactive_exploration_commit_updates_last_proactive_tick() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let mut txn = new_txn(&mut harness.world, 1);
+    txn.set_component_exploration_profile(
+        harness.actor,
+        ExplorationProfile {
+            consecutive_exploration_count: 0,
+            ..ExplorationProfile::default()
+        },
+    )
+    .unwrap();
+    txn.set_component_last_proactive_exploration_tick(
+        harness.actor,
+        worldwake_core::LastProactiveExplorationTick(None),
+    )
+    .unwrap();
+    commit_txn(txn);
+
+    let active_goal = worldwake_core::ActiveGoal {
+        goal_key: GoalKey::from(GoalKind::ExploreLocation {
+            target_place: entity(99),
+            motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+        }),
+        adopted_at: Tick(5),
+    };
+
+    update_exploration_counter_for_adopted_goal(
+        &mut harness.world,
+        &mut harness.event_log,
+        harness.actor,
+        Some(&active_goal),
+        Tick(5),
+    )
+    .unwrap();
+
+    assert_eq!(
+        harness
+            .world
+            .get_component_last_proactive_exploration_tick(harness.actor),
+        Some(&worldwake_core::LastProactiveExplorationTick(Some(Tick(5))))
     );
 }
 

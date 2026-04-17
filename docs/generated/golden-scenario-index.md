@@ -9,9 +9,51 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 160
-- Contributing golden test files: 26
-- Associated tests: 339
+- Scenario blocks: 84
+- Contributing golden test files: 14
+- Associated tests: 98
+
+### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
+
+- Source: `golden_activation_decay.rs:315`
+- Systems: Perception
+- ActionDomains: N/A
+- Places: VillageSquare, OrchardFarm
+- Principles: 3, 7, 15, 16, 18
+
+**Setup**: An inert observer at `VillageSquare` starts with one direct-observation belief about a
+
+**Proves**: The activation-decay boundary stays faithful to the landed S101 helper contract: a
+
+**Cross-system chain**: seeded direct belief -> no re-observation refresh -> threshold-edge retention -> first
+
+### Scenario 146: Need Salience Extends Item Retention But Not Facility Retention
+
+- Source: `golden_activation_decay.rs:353`
+- Systems: Perception
+- ActionDomains: N/A
+- Places: VillageSquare, OrchardFarm
+- Principles: 3, 7, 15, 16, 18, 22
+
+**Setup**: An urgently hungry inert observer at `VillageSquare` starts with two remote
+
+**Proves**: The live salience boost extends retention only for the item belief. The facility belief
+
+**Cross-system chain**: seeded stale item + facility beliefs -> urgent hunger retained in agent state ->
+
+### Scenario 147: Claim Confidence Threshold Prunes Stale Reports Before Fresh Reports
+
+- Source: `golden_activation_decay.rs:391`
+- Systems: Perception, Social Information
+- ActionDomains: N/A
+- Places: VillageSquare, OrchardFarm
+- Principles: 3, 7, 15, 16, 18
+
+**Setup**: A listener at `VillageSquare` starts with two report-backed beliefs about remote
+
+**Proves**: Stale report claims are pruned from both `entity_claims` and the derived summary, while
+
+**Cross-system chain**: report-backed claim ingestion -> confidence decays with claimed-event age -> stale claim
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
@@ -42,24 +84,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: unrelated bread consumption -> runtime dirty observation -> goal-aware invalidation check -> frontier exhaustion preserved.
 
-### Scenario 1c: Exhausted Opportunity Falls Through To Sibling Source
-
-- Source: `golden_ai_decisions.rs:318`
-- Systems: Needs, AI, Production, Travel
-- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
-- ActionDomains: Needs, Transport
-- Places: VillageSquare, GeneralStore
-- Principles: 12, 18, 19, 25
-
-**Setup**: One critically hungry agent at Village Square knows two lawful loose bread lots: one local at Village Square and one remote at General Store. Runtime state is seeded with a frontier-exhausted `OpportunityKey` for the local lot opportunity.
-
-**Proves**: Candidate generation still emits both concrete opportunities, but planning suppresses only the exhausted local opportunity and selects the sibling remote opportunity instead. The agent then follows the remote pick-up/eat branch and reduces hunger without consuming the local lot.
-
-**Cross-system chain**: seeded exhausted local opportunity -> candidate generation emits both lots -> planning suppresses only the exhausted local branch -> remote opportunity selected -> remote pick-up -> eat -> hunger relief.
-
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:546`
+- Source: `golden_ai_decisions.rs:311`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -74,7 +101,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 5: Blocked Intent Memory with TTL Expiry
 
-- Source: `golden_ai_decisions.rs:659`
+- Source: `golden_ai_decisions.rs:424`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -88,7 +115,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:775`
+- Source: `golden_ai_decisions.rs:543`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -102,7 +129,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1980`
+- Source: `golden_ai_decisions.rs:1359`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -115,540 +142,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: unsatisfiable top need -> planner exhausts thirst-relief candidates -> falls back to hunger-relief -> agent eats or sleeps.
 
-### Scenario 2c-self: Wounded agent self-treats with medicine
-
-- Source: `golden_care.rs:829`
-- Systems: AI, Care, Combat
-- GoalKinds: TreatWounds(self)
-- ActionDomains: Care
-- Places: VillageSquare
-- Principles: 7
-
-**Setup**: Single wounded agent with own Medicine(1) at VillageSquare.
-
-**Proves**: Self-care is lawful. Agent emits TreatWounds{patient: self}, consumes medicine, and reduces wound load.
-
-**Cross-system chain**: Wound state -> TreatWounds{self} goal -> heal action -> medicine consumed -> wound severity reduced.
-
-### Scenario 2c-self-acquire: Wounded agent acquires ground medicine, self-treats
-
-- Source: `golden_care.rs:935`
-- Systems: AI, Care, Transport, Combat
-- GoalKinds: TreatWounds(self)
-- ActionDomains: Care, Transport
-- Places: VillageSquare
-
-**Setup**: Wounded agent with no medicine. Ground Medicine(1) at same place.
-
-**Proves**: Agent picks up ground medicine and self-treats. Self-care acquisition path works through planner resolve of pick_up before heal.
-
-**Cross-system chain**: Wound state -> TreatWounds{self} goal -> pick_up ground medicine -> heal action -> wound reduced.
-
-### Scenario 2c-report: Indirect wound report does NOT trigger care goal
-
-- Source: `golden_care.rs:1023`
-- Systems: AI, Care, Perception
-- GoalKinds: TreatWounds(other)
-- ActionDomains: Care
-- Places: VillageSquare, OrchardFarm
-- Principles: 7
-
-**Setup**: Observer at VillageSquare with Medicine(1). Wounded patient at OrchardFarm. Observer has Report-sourced wound belief only.
-
-**Proves**: Report-sourced beliefs do NOT trigger TreatWounds — only DirectObservation does (Principle 7 locality). Observer does not consume medicine or travel to patient.
-
-**Cross-system chain**: Report belief about wounds -> direct-observation gate rejects -> no TreatWounds candidate generated -> medicine unconsumed.
-
-### Scenario 2c-invalidation: Care goal invalidates when patient self-heals
-
-- Source: `golden_care.rs:1130`
-- Systems: AI, Care, Combat
-- GoalKinds: TreatWounds(other), TreatWounds(self)
-- ActionDomains: Care
-- Places: VillageSquare
-
-**Setup**: Patient with Medicine(1) and healer without medicine, co-located. Patient can self-treat.
-
-**Proves**: Patient self-heals. Healer's TreatWounds{patient} goal is satisfied when patient pain reaches zero. Healer never acquires medicine. Also proves pre-start wound disappearance -> StartFailed + blocked intent.
-
-**Cross-system chain**: Patient self-treats -> pain zero -> healer goal satisfied and drops. Or: healer selects TreatWounds -> wounds disappear -> StartFailed -> blocked-intent memory.
-
-### Scenario 8b: Corpse Burial
-
-- Source: `golden_combat.rs:756`
-- Systems: AI, Corpse, Conservation
-- GoalKinds: BuryCorpse
-- ActionDomains: Corpse
-- Places: VillageSquare
-- Principles: Conservation, Unique Location
-
-**Setup**: Dead agent and living burier at VillageSquare with GravePlot facility. No competing pressure.
-
-**Proves**: BuryCorpse emitted through AI. Burial creates grave container. Corpse in containment, no longer loot-targetable.
-
-**Cross-system chain**: Local corpse + grave plot -> BuryCorpse goal -> bury action -> containment-based inaccessibility.
-
-### Scenario 7f: ReduceDanger Defensive Mitigation
-
-- Source: `golden_combat.rs:1467`
-- Systems: AI, Combat, Conservation
-- GoalKinds: ReduceDanger, EngageHostile
-- ActionDomains: Combat
-- Places: VillageSquare
-- Principles: Belief-Only Planning, Agent Symmetry
-
-**Setup**: Two sated agents. Attacker hostile, defender purely reactive (no outgoing hostility).
-
-**Proves**: Attacker opens combat via EngageHostile. Defender observes live attack pressure and enters ReduceDanger (defend stance), not proactive EngageHostile.
-
-**Cross-system chain**: Outgoing hostility -> attack action -> danger signal -> ReduceDanger -> defensive mitigation.
-
-### Scenario 7g: Wound Bleed, Clotting, and Natural Recovery
-
-- Source: `golden_combat.rs:1686`
-- Systems: Combat, Needs
-- GoalKinds: (none direct)
-- ActionDomains: Combat
-- Places: VillageSquare
-- Principles: Concrete State Over Abstract Scores, Feedback Dampening
-
-**Setup**: Sated agent with one injected bleeding wound (severity pm(50), bleed_rate pm(100)).
-
-**Proves**: Wound progresses through authoritative combat tick. Severity rises while bleeding. Recovery doesn't begin until bleed_rate=0. Once clotted and physiology below thresholds, severity falls and wound pruned.
-
-**Cross-system chain**: Wound state -> combat-system bleed progression -> natural clotting -> physiology-gated recovery -> wound pruning.
-
-### Scenario 30: Recovery-Aware Priority Boost Eats Before Wash
-
-- Source: `golden_combat.rs:1722`
-- Systems: AI, Needs, Combat
-- GoalKinds: ConsumeOwnedCommodity, Wash
-- ActionDomains: Needs
-- Places: VillageSquare
-- Principles: Concrete State Over Abstract Scores, Maximal Emergence
-
-**Setup**: Agent with clotted wound, hunger=High, dirtiness=High, bread and water. Wash has higher initial motive score. Recovery-aware promotion lifts eat to Critical.
-
-**Proves**: Recovery-aware promotion lifts eat from High to Critical over wash. Eating drops hunger below recovery gate. Wound severity begins decreasing through natural recovery.
-
-**Cross-system chain**: Clotted wound + High hunger -> recovery-aware promotion -> eat over wash -> hunger relief opens recovery gate -> wound severity reduction.
-
-### Scenario 8: Death Cascade and Opportunistic Loot
-
-- Source: `golden_combat.rs:1759`
-- Systems: Needs, Combat, Corpse, Conservation
-- GoalKinds: LootCorpse
-- ActionDomains: Corpse
-- Places: VillageSquare
-- Principles: Conservation, Append-Only Event Log
-
-**Setup**: Fragile victim (wound_capacity pm(200), existing starvation wound) with 5 coins. Healthy Looter co-located.
-
-**Proves**: Victim dies from deprivation. Looter opportunistically loots within 100 ticks. Coin conservation holds.
-
-**Cross-system chain**: Metabolism -> deprivation -> wound infliction -> death -> corpse -> loot goal -> loot action.
-
-### Scenario 8c: Loot Suppression Under Self-Care Pressure
-
-- Source: `golden_combat.rs:1812`
-- Systems: Needs, AI, Corpse, Conservation
-- GoalKinds: LootCorpse, ConsumeOwnedCommodity
-- ActionDomains: Corpse, Needs
-- Places: VillageSquare
-- Principles: Conservation, Maximal Emergence
-
-**Setup**: Hungry scavenger (pm(800)) with bread, co-located corpse with coins.
-
-**Proves**: While hunger >= High, scavenger never gains corpse coins. Eats first. After hunger relief, loots corpse. Conservation holds.
-
-**Cross-system chain**: High hunger + corpse -> loot suppression -> eat -> hunger relief -> suppression lift -> loot.
-
-### Scenario 8d: Death While Traveling
-
-- Source: `golden_combat.rs:1849`
-- Systems: Needs, AI, Travel, Combat, Conservation
-- GoalKinds: AcquireCommodity(SelfConsume)
-- ActionDomains: Travel, Needs
-- Places: BanditCamp, ForestPath
-- Principles: Conservation, Unique Location
-
-**Setup**: Fragile traveler at BanditCamp with critical hunger, 5 coins. Dies before reaching food source.
-
-**Proves**: Traveler enters multi-hop travel. Dies from deprivation before destination. Body at concrete intermediate place (ForestPath), not destination. Coin conservation holds.
-
-**Cross-system chain**: Hunger -> distant acquire -> travel departure -> deprivation -> death at intermediate place.
-
-### Scenario 7c: Hostility-Driven Living Combat
-
-- Source: `golden_combat.rs:1885`
-- Systems: AI, Combat, Conservation
-- GoalKinds: EngageHostile
-- ActionDomains: Combat
-- Places: VillageSquare
-- Principles: Conservation, Determinism
-
-**Setup**: Two sated agents with concrete hostility relation. Stronger attacker; both carry coin.
-
-**Proves**: Attacker generates hostile-engagement goal. Defender responds through live combat loop. Wounds inflicted. Seed sensitivity produces different outcomes. Conservation holds.
-
-**Cross-system chain**: Hostility -> hostile-engagement goal -> attack action -> wound infliction -> defender response.
-
-### Scenario S03a: Multi-Corpse Loot Binding
-
-- Source: `golden_combat.rs:1943`
-- Systems: AI, Corpse, Conservation
-- GoalKinds: LootCorpse
-- ActionDomains: Corpse
-- Places: VillageSquare
-- Principles: Conservation, Determinism
-
-**Setup**: Two dead agents (CorpseA with Coin(5), CorpseB with Bread(3)) and sated Looter.
-
-**Proves**: LootCorpse for both corpses. matches_binding filters to selected target. Sequential looting. Conservation holds.
-
-**Cross-system chain**: LootCorpse candidates -> ranking -> matches_binding -> sequential loot -> both looted.
-
-### Scenario S03b: Bury Suppressed Under Stress
-
-- Source: `golden_combat.rs:2153`
-- Systems: Needs, AI, Corpse, Production
-- GoalKinds: BuryCorpse, ConsumeOwnedCommodity
-- ActionDomains: Corpse, Needs
-- Places: VillageSquare
-- Principles: Maximal Emergence, Concrete State Over Abstract Scores
-
-**Setup**: Dead agent with GravePlot. Burier with hunger=pm(800) (>= High=pm(750)) and Bread(1).
-
-**Proves**: Hunger >= High suppresses BuryCorpse. Agent eats. Hunger drops, suppression lifts. Agent buries corpse.
-
-**Cross-system chain**: High hunger -> BuryCorpse suppression -> eat -> hunger relief -> suppression lift -> burial.
-
-### Scenario S03c: Suppression Then Binding Combined
-
-- Source: `golden_combat.rs:2335`
-- Systems: Needs, AI, Corpse, Conservation
-- GoalKinds: LootCorpse, ConsumeOwnedCommodity
-- ActionDomains: Corpse, Needs
-- Places: VillageSquare
-- Principles: Conservation, Maximal Emergence
-
-**Setup**: Two corpses (Coin(5), Coin(3)), hungry scavenger (pm(800)) with Bread(1).
-
-**Proves**: Hunger suppresses both LootCorpse goals. Eats first. Suppression lifts. matches_binding selects correct target. Sequential loot. Conservation holds.
-
-**Cross-system chain**: High hunger -> loot suppression -> eat -> relief -> matches_binding -> sequential loot.
-
-### Scenario 101: Corpse Contention Projects Visible Queue And Grant State
-
-- Source: `golden_combat.rs:2600`
-- Systems: Combat, Contention, Perception, AI
-- GoalKinds: LootCorpse
-- ActionDomains: Corpse
-- Places: VillageSquare
-- Principles: 7, 8, 9, 20
-
-**Setup**: Two hungry looters and one dead bread-carrying corpse share VillageSquare. The corpse carries explicit contention state and more bread than one looter can carry in a single loot commit.
-
-**Proves**: corpse looting resolves through real queue/grant state, the waiting actor can perceive that contention state locally, and the second looter is promoted after the first partial loot commit.
-
-**Cross-system chain**: contested corpse loot -> first grant -> second waiter queued -> local believed contention projection -> first partial loot commit -> second grant -> second partial loot commit.
-
-### Scenario 89: Unreachable Workstation Suppresses Indirect Firewood Value
-
-- Source: `golden_commodity_opportunity.rs:155`
-- Systems: AI ranking/candidate generation, belief-facing trade valuation
-- GoalKinds: AcquireCommodity(RecipeInput)
-- ActionDomains: Trade, Production
-- Places: VillageSquare
-
-**Setup**: same hungry baker and known recipe, but no reachable mill is believed.
-
-**Proves**: AI does not generate the recipe-input firewood goal and trade
-
-### Scenario 90: No Known Recipe Prevents Indirect Firewood Motive
-
-- Source: `golden_commodity_opportunity.rs:183`
-- Systems: AI ranking/candidate generation, belief-facing trade valuation
-- GoalKinds: AcquireCommodity(RecipeInput)
-- ActionDomains: Trade, Production
-- Places: VillageSquare
-
-**Setup**: same hungry baker and reachable mill, but the baker does not know Bake Bread.
-
-**Proves**: AI does not generate the recipe-input firewood goal and trade
-
-### Scenario 6: Deterministic Replay Fidelity
-
-- Source: `golden_determinism.rs:139`
-- Systems: All
-- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
-- ActionDomains: Needs, Production, Travel
-- Places: VillageSquare, OrchardFarm
-
-**Setup**: Two hungry agents at Village Square. Alice has bread. Orchard Farm has apples. Run 50 ticks with same seed twice. Includes save/load round-trip test at tick 20 with resumed AI controller.
-
-**Proves**: Identical seeds produce identical StateHash for world and event log. Full-stack determinism (ChaCha8Rng, BTreeMap ordering, no floats). Save/load round-trip preserves scheduler, RNG, and controller state.
-
-**Cross-system chain**: Full simulation -> identical world/event-log hashes across runs. Save at tick 20 -> load -> fresh AI controller -> identical continuation.
-
-### Scenario S02: World Runs Without Observers (Principle 6)
-
-- Source: `golden_determinism.rs:202`
-- Systems: Needs, Production, Travel, Enterprise, Trade, AI, Conservation
-- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume), RestockCommodity
-- ActionDomains: Needs, Production, Travel
-- Places: VillageSquare, OrchardFarm, GeneralStore
-- Principles: 6
-
-**Setup**: Four agents across three places for 200 ticks under full AI loop. Farmer (hungry, orchard), Merchant (enterprise-focused, MerchandiseProfile), Villager (hungry+thirsty, bread+water), Wanderer (thirsty+fatigued).
-
-**Proves**: World hash differs from initial after 200 ticks. Event log grows by 20+ events. No deaths. Per-tick conservation for Bread, Water, Coin. At least one transit and one consumption. 200-tick multi-agent determinism.
-
-**Cross-system chain**: Needs -> AI -> action, Production -> harvest, Travel -> movement, Enterprise -> restock. Conservation across 200 ticks of multi-system interaction. Proves Principle 6 (world runs without observers).
-
-### Scenario S21-005: Save/Load Preserves Promoted Commitments
-
-- Source: `golden_determinism.rs:559`
-- Systems: Needs, Production, Travel, AI
-- GoalKinds: AcquireCommodity(SelfConsume)
-- ActionDomains: Travel, Production, Needs
-- Places: VillageSquare, OrchardFarm (7-tick multi-leg route)
-
-**Setup**: A hungry agent at Village Square with food available only at Orchard Farm. The agent must travel (7 ticks across 3 legs). We save mid-travel, load, and assert that ActiveGoal, IntentionFrame, and ContentionIntents survive the round-trip.
-
-**Proves**: Promoted causal runtime state (S21-001..004) is preserved by save/load. The agent continues its journey rather than restarting.
-
-**Cross-system chain**: AI decides to travel → mid-travel save → load → commitment preserved → agent continues journey → reaches destination.
-
-### Scenario S22-007: Save/load verification for IntentionFrame and
-
-- Source: `golden_determinism.rs:774`
-
-### Scenario 104: Save/Load Preserves Generalized Contention World And Belief State
-
-- Source: `golden_determinism.rs:1017`
-- Systems: SaveLoad, Contention, Perception
-- GoalKinds: LootCorpse
-- ActionDomains: Corpse
-- Places: VillageSquare
-- Principles: 8, 9, 12
-
-**Setup**: a dead bread-carrying corpse has real contention policy, one active grant, one queued waiter, and one observing agent with a direct `BelievedContentionState`.
-
-**Proves**: generalized contention world state and its projected local belief survive save/load round-trip without drift.
-
-**Cross-system chain**: contention state projected into belief -> save -> load -> same queue, same policy, same believed contention state.
-
-### Scenario 44: Wounded Politician Enterprise vs Care Priority
-
-- Source: `golden_emergent.rs:513`
-- Systems: Care, Politics, AI, Succession
-- GoalKinds: TreatWounds, ClaimOffice
-- ActionDomains: Care, Social
-- Places: VillageSquare
-- Principles: 3, 20, 24
-
-**Proves**: multi-system emergence — a wounded agent observes a corpse carrying
-
-### Scenario 45: Combat Death Triggers Force Succession
-
-- Source: `golden_emergent.rs:1241`
-- Systems: Combat, Politics, AI
-- GoalKinds: EngageHostile
-- ActionDomains: Combat, Social
-- Places: VillageSquare
-- Principles: 1, 9, 24
-
-### Scenario 46: Social Tell Propagates Political Knowledge
-
-- Source: `golden_emergent.rs:1586`
-- Systems: PressForceClaim (two claimants), Force-Control State Machine (contested state detection), Perception (witness observes contested political event), Institutional Belief Projection (ForceControl belief with `contested: true`), Travel, Social Tell, Belief Store (remote belief with contested flag), action tracing, deterministic replay
-- GoalKinds: ShareBelief
-- ActionDomains: Social, Generic
-- Places: VillageSquare, OrchardFarm
-- Principles: 1, 3, 7, 13
-
-**Setup**: Force-law office ("War Chief") at VillageSquare, no eligibility rules. A (human) claims first and becomes sole controller. B (human) then claims, creating contested state (office_controller == None). C (AI, social_weight=pm(600)) witnesses at VillageSquare. D (passive) at OrchardFarm.
-
-**Proves**: The `contested: true` flag from a multi-claimant force office is concrete information that propagates physically through the world via witness C traveling to remote listener D and committing a Tell. D cannot learn without the physical carrier arriving (P7).
-
-**Cross-system chain**: A press_force_claim -> A becomes controller -> B press_force_claim -> contested state (controller cleared) -> C acquires ForceControl belief with contested=true -> C relocates to OrchardFarm -> C tells D -> D learns ForceControllerOf with contested=true.
-
-### Scenario 35: Same-Place Concurrent Violations Stay Distinct
-
-- Source: `golden_emergent.rs:4261`
-- Systems: Perception, AI, Generic Actions
-- GoalKinds: InvestigateViolation
-- ActionDomains: Generic
-- Places: VillageSquare, OrchardFarm
-- Principles: 7, 9, 15
-
-### Scenario 36: Entity Missing Triggers Investigation
-
-- Source: `golden_emergent.rs:4641`
-- Systems: Perception, AI, Generic Actions
-- GoalKinds: InvestigateViolation
-- ActionDomains: Generic
-- Places: VillageSquare, OrchardFarm
-- Principles: 7, 9, 15
-
-### Scenario 37: Theft Leads Owner To Local Suspected Theft Discovery
-
-- Source: `golden_emergent.rs:4876`
-- Systems: Transport, Perception, AI, Generic Actions
-- GoalKinds: StealItem, InvestigateViolation
-- ActionDomains: Transport, Generic, Travel
-- Places: VillageSquare, GeneralStore, CommonHouse
-- Principles: 3, 7, 12, 15
-
-### Scenario 38: Witnessed Theft Enables Accusation Chain
-
-- Source: `golden_emergent.rs:5257`
-- Systems: Transport, Perception, Social Tell, AI, Institutions
-- GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
-- ActionDomains: Transport, Social, Travel
-- Places: VillageSquare, RulersHall
-- Principles: 1, 7, 13, 16, 21, 23
-
-### Scenario 39: Traceability Explains Stale Fine Branch
-
-- Source: `golden_emergent.rs:5691`
-- Systems: AI, Institutions, Justice, Action Trace
-- GoalKinds: PunishAccused
-- ActionDomains: Social
-- Places: RulersHall, GeneralStore
-- Principles: 3, 12, 24, 27
-
-### Scenario 40: Supply Depletion Enables ShareBelief
-
-- Source: `golden_emergent.rs:5995`
-- Systems: Perception, AI, Generic Actions, Social Tell
-- GoalKinds: ShareBelief, InvestigateViolation
-- ActionDomains: Generic, Social
-- Places: VillageSquare
-- Principles: 1, 7, 12, 15
-
-### Scenario 42: Witness Deterrence Suppresses Theft Candidate
-
-- Source: `golden_emergent.rs:6278`
-- Systems: AI, Perception, Needs
-- GoalKinds: ConsumeOwnedCommodity (NOT StealItem)
-- ActionDomains: Needs
-- Places: VillageSquare, GeneralStore
-- Principles: 1, 10, 24
-
-### Scenario 41: Exile Punishment When Fine Is Not Locally Collectible
-
-- Source: `golden_emergent.rs:6534`
-- Systems: Transport, Perception, Social Tell, AI, Institutions
-- GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
-- ActionDomains: Transport, Social, Travel
-- Places: VillageSquare, GeneralStore, RulersHall
-- Principles: 1, 7, 21, 22, 23, 24
-
-### Scenario 110: Jurisdiction-Gated Punishment
-
-- Source: `golden_emergent.rs:7400`
-- GoalKinds: PunishAccused
-- ActionDomains: Social
-- Places: RulersHall, GeneralStore
-- Principles: 7, 12, 14, 24
-
-### Scenario 111: Secondary-Jurisdiction Punishment Away From Office Seat
-
-- Source: `golden_emergent.rs:7451`
-- GoalKinds: PunishAccused
-- ActionDomains: Social
-- Places: RulersHall, GeneralStore
-- Principles: 7, 23, 24, 26
-
-### Scenario 43: Dual Discovery Converges Without Double Accusation
-
-- Source: `golden_emergent.rs:7491`
-- Systems: Transport, Perception, Social Tell, AI, Institutions
-- GoalKinds: StealItem, InvestigateViolation, ShareBelief, Accuse
-- ActionDomains: Transport, Social, Travel
-- Places: VillageSquare, GeneralStore, RulersHall, CommonHouse
-- Principles: 1, 7, 13, 16, 24
-
-### Scenario 120: Overdue Expectation Drives Search
-
-- Source: `golden_expectation.rs:609`
-- Systems: ExpectationCheck, AI, Travel, SearchPlace
-- GoalKinds: SearchForMissing
-- ActionDomains: Travel, Epistemic
-- Places: VillageSquare, OrchardFarm
-- Principles: 1, 3, 7, 8, 12, 17
-
-**Setup**: A searcher at VillageSquare holds one active RoutineReturn expectation for a passive subject expected at OrchardFarm, with deadline_tick=0 and grace_ticks=0 so ExpectationCheck makes it overdue after the opening tick. The searcher has ViolationDispositionProfile and PerceptionProfile; the subject is held at OrchardFarm with ControlSource::None so the scenario isolates expectation-driven search rather than unrelated autonomous motion.
-
-**Proves**: ExpectationCheck transitions the record to Overdue, AI generates and selects SearchForMissing, the selected plan includes remote travel and search_place at OrchardFarm, and the final search resolves the expectation to FoundSafe while updating LastSeenMemory locally.
-
-**Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue transition -> SearchForMissing candidate and plan selection -> travel commit -> search_place commit -> ExpectationStore resolution and LastSeenMemory update.
-
-### Scenario 121: Report Missing Creates Institutional Record Then Searches
-
-- Source: `golden_expectation.rs:643`
-- Systems: ExpectationCheck, AI, ReportMissing, ViolationMemory, OfficeRegister, Travel, SearchPlace
-- GoalKinds: ReportMissing, SearchForMissing
-- ActionDomains: Social, Travel, Epistemic
-- Places: VillageSquare, OrchardFarm
-- Principles: 1, 3, 7, 8, 12, 17
-
-**Setup**: A reporter at VillageSquare holds one active RoutineReturn expectation for a passive subject expected back at VillageSquare, while the reporter's LastSeenMemory still points to OrchardFarm. A unique OfficeRegister exists at VillageSquare, and the reporter uses a utility profile that makes the opening overdue response prefer reporting over immediate searching.
-
-**Proves**: Once ExpectationCheck makes the record overdue, AI generates both ReportMissing and SearchForMissing, selects report_missing first, records EntityMissing plus MissingPersonStatus at the expected-place OfficeRegister, then suppresses duplicate ReportMissing while continuing into the search path and eventually finding the subject at OrchardFarm.
-
-**Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue transition -> dual ReportMissing/SearchForMissing generation -> report_missing commit -> ViolationMemory + OfficeRegister MissingPersonStatus update -> ReportMissing suppression with SearchForMissing retained -> travel/search_place -> ExpectationStore resolution and LastSeenMemory update.
-
-### Scenario 122: Escort Wounded Entity to Safety
-
-- Source: `golden_expectation.rs:879`
-- Systems: AI, Travel, EscortToSafety
-- GoalKinds: EscortToSafety
-- ActionDomains: Care, Travel
-- Places: VillageSquare + adjacent destination
-- Principles: 1, 3, 8, 10, 20
-
-**Setup**: An escorter at VillageSquare with high care_weight knows about a wounded co-located entity via Report-sourced beliefs (not DirectObservation, so TreatWounds candidate is suppressed and EscortToSafety is isolated). The topology provides at least one adjacent reachable destination. The wounded entity has ControlSource::None to isolate escort behavior.
-
-**Proves**: AI candidate generation emits EscortToSafety when the agent believes a co-located entity is wounded, the planner selects it and produces a valid plan, the escort_to_safety action commits, and both actor and charge arrive at the destination (co-location binding).
-
-**Cross-system chain**: Wounded entity observation -> EscortToSafety candidate generation -> plan selection -> escort_to_safety action -> co-located travel -> commit -> both entities at destination.
-
-### Scenario 124: AskAboutPerson as Progress Barrier Within SearchForMissing
-
-- Source: `golden_expectation.rs:1080`
-- Systems: ExpectationCheck, AI, AskAboutPerson, Travel, SearchPlace
-- GoalKinds: SearchForMissing
-- ActionDomains: Epistemic, Travel
-- Places: VillageSquare, OrchardFarm
-- Principles: 1, 7, 14, 15, 17, 20
-
-**Setup**: A searcher at VillageSquare holds one active RoutineReturn expectation for a passive subject expected at OrchardFarm, with deadline_tick=0 and grace_ticks=0 so ExpectationCheck makes it overdue quickly. The searcher has no initial LastSeenMemory for the subject, so SearchPlace at OrchardFarm is unreachable without learning the location first. A witness at VillageSquare (ControlSource::None) has LastSeenMemory recording the subject at OrchardFarm. The subject is at OrchardFarm with ControlSource::None.
-
-**Proves**: AskAboutPerson functions as a progress barrier for SearchForMissing. The planner selects AskAboutPerson as a terminal step when the searcher is co-located with a witness who has relevant last-seen info. After the ask commits, the searcher's LastSeenMemory is updated with hearsay provenance (P15: knowledge travels physically through testimony). Replanning with updated beliefs directs search to OrchardFarm (P14: planner uses accessible belief state, not witness knowledge). The full chain demonstrates emergent multi-cycle information gathering (P1) driven by violated expectation (P17).
-
-**Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue transition -> SearchForMissing candidate -> AskAboutPerson progress barrier terminal -> ask_about_person commit -> LastSeenMemory hearsay transfer -> SearchForMissing replan with updated last_seen -> travel to OrchardFarm -> search_place commit -> ExpectationStore resolution FoundSafe.
-
-### Scenario 125: ReportFound After Search Resolution
-
-- Source: `golden_expectation.rs:1307`
-- Systems: ExpectationCheck, AI, Travel, SearchPlace, ReportFound, OfficeRegister
-- GoalKinds: SearchForMissing, ReportFound
-- ActionDomains: Travel, Epistemic, Social
-- Places: VillageSquare, OrchardFarm
-- Principles: 1, 3, 7, 10, 17, 20
-
-**Setup**: A searcher at VillageSquare holds one active RoutineReturn expectation for a passive subject expected at OrchardFarm, with deadline_tick=0 and grace_ticks=0. The searcher has LastSeenMemory pointing to OrchardFarm. An OfficeRegister exists at OrchardFarm. The subject is at OrchardFarm with ControlSource::None.
-
-**Proves**: After SearchForMissing resolves the expectation via search_place at OrchardFarm (FoundSafe), the resolved state drives a new GoalKind::ReportFound candidate (P10: aftermath creates future hooks). The planner selects ReportFound as a progress-barrier terminal at OrchardFarm and commits report_found, writing MissingPersonStatus::FoundSafe to the local OfficeRegister (P17: violated expectation drives institutional response). The full chain demonstrates emergent multi-goal sequencing through state transitions (P1), not scripted chains.
-
-**Cross-system chain**: ExpectationStore Active -> ExpectationCheck Overdue -> SearchForMissing candidate -> travel to OrchardFarm -> search_place commit -> ExpectationStore Resolved(FoundSafe) -> ReportFound candidate -> report_found commit -> OfficeRegister MissingPersonStatus::FoundSafe.
-
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
-- Source: `golden_experience_preferences.rs:533`
+- Source: `golden_experience_preferences.rs:536`
 - Systems: Travel, learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -660,7 +156,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 
-- Source: `golden_experience_preferences.rs:567`
+- Source: `golden_experience_preferences.rs:560`
 - Systems: Travel, interrupt/abort, learned route experience, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -672,7 +168,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 
-- Source: `golden_experience_preferences.rs:598`
+- Source: `golden_experience_preferences.rs:581`
 - Systems: learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -684,7 +180,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 133: Ignorance-Driven Frontier Exploration
 
-- Source: `golden_exploration.rs:211`
+- Source: `golden_exploration.rs:669`
 - Systems: AI, Needs, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -699,7 +195,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 134: Known Satisfaction Path Suppresses Exploration
 
-- Source: `golden_exploration.rs:274`
+- Source: `golden_exploration.rs:732`
 - Systems: AI, Needs, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -714,7 +210,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 135: Consecutive Exploration Cap Suppresses Re-Emission
 
-- Source: `golden_exploration.rs:338`
+- Source: `golden_exploration.rs:796`
 - Systems: AI, Needs, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: N/A
@@ -729,7 +225,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 136: Arrival Perception Unlocks Concrete Relief
 
-- Source: `golden_exploration.rs:385`
+- Source: `golden_exploration.rs:843`
 - Systems: AI, Needs, Travel, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -742,217 +238,129 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: unmet need + frontier belief -> exploration travel -> arrival perception -> source belief acquisition -> concrete self-care plan.
 
-### Scenario 20: Apple Stockout → Carrier Reroute → Supply Chain Disruption
+### Scenario 337: Budget Exhaustion Unlocks Frontier Exploration
 
-- Source: `golden_integration.rs:82`
-- Systems: Needs, Trade, Travel, Combat, Production
-- GoalKinds: ConsumeOwnedCommodity, RestockCommodity, AcquireCommodity
-- ActionDomains: Needs, Trade, Travel, Combat (≥ 4 required)
-- Places: Market, Farm, BanditRoad, SafeRoute, RemoteOrchard (5-place topology)
-- Principles: 4, 7, 10, 12, 14
+- Source: `golden_exploration.rs:969`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
+- ActionDomains: Travel, Production
+- Places: Trail, Village
+- Principles: 14, 20, 22
 
-**Setup**: Market: Merchant with MerchandiseProfile selling Apples (10 stock). Consumer with high hunger (pm(600)) and coins. Farm: OrchardRow workstation + ResourceSource(Apple, capacity 20). BanditRoad: 2 bandits with BanditCamp. Routes: Market↔BanditRoad↔Farm (short, 3+3=6 ticks) Market↔SafeRoute↔Farm (long, 5+5=10 ticks) RemoteOrchard: connected to Farm (topology richness).
+**Setup**: A hungry agent at Trail already believes there is a lawful apple
 
-**Proves**: Stockout → restock goal → carrier travel → bandit interception → cargo loss → consumer replan emerges from general rules, not scenario-specific handlers. All 4+ ActionDomains exercised.
+**Proves**: repeated `BudgetExhausted` acquire attempts increment the
 
-**Cross-system chain**: consumer buys+eats apples → merchant stock reaches 0 → merchant generates RestockCommodity → travels to Farm via BanditRoad (shortest) → bandits attack → cargo at risk → consumer replans when apples unavailable.
+**Cross-system chain**: known remote relief path -> repeated budget exhaustion -> stored
 
-### Scenario 27: Controlled Agent Death
+### Scenario 338: Multi-Hop Frontier Discovery Composes Across Rounds
 
-- Source: `golden_integration.rs:1053`
-- Systems: Combat, AI, Needs
-- GoalKinds: EngageHostile
-- ActionDomains: Combat
-- Places: Alpha (custom 1-place world)
-- Principles: 4, 9, 10
+- Source: `golden_exploration.rs:1140`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Production
+- Places: Forest, Village, Fields
+- Principles: 7, 14, 20, 22
 
-**Setup**: Minimal 1-place world. Agent A is Human with low wound_capacity (pm(200)). Attacker is Ai with high unarmed_wound_severity (pm(400)) and fast attacks (2-tick). Attacker is hostile to Agent A, ensuring EngageHostile. Both are sated to prevent needs-driven distractions.
+**Setup**: A hungry agent starts in Forest, knows only Forest, and has
 
-**Proves**: Human-controlled agent death leaves persistent identity (Principle 4). World continues advancing post-death (Principle 9). No inputs are processed for the dead agent. ControllerState clears or changes. No resurrection mechanism exists.
+**Proves**: exploration first selects Village, later selects Fields, and arrival
 
-**Cross-system chain**: hostility -> EngageHostile -> attack action -> wound accumulation -> wound_load >= wound_capacity -> DeadAt -> world continues -> no further inputs for dead agent.
+**Cross-system chain**: start-place belief -> ranked multi-hop frontier search -> first-hop
 
-### Scenario 28: Pursuit Across Information Boundary
+### Scenario 339: Arrival Boost Preserves The Exploration Chain
 
-- Source: `golden_integration.rs:1316`
-- Systems: Transport, Perception, Social Tell, AI, Institutions
-- GoalKinds: StealItem, ShareBelief, Accuse, PunishAccused
-- ActionDomains: Transport, Social (≥ 2 required)
-- Places: Market, Storehouse, Tavern, GuardPost (4-place topology)
-- Principles: 1, 7, 10, 14, 16
+- Source: `golden_exploration.rs:1352`
+- Systems: AI, Travel, Perception, Needs, Production
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel, Perception
+- Places: Forest, Village, Inn
+- Principles: 7, 14, 15, 22
 
-**Setup**: Storehouse: Owner with owned Apple lots. Thief. Bystander. Market: Witness (relocates to GuardPost after observation). Tavern: empty (topology richness). GuardPost: Justice authority with JusticeDispositionProfile.
+**Setup**: Two otherwise identical dirtiness-driven runs differ only in
 
-**Proves**: 1. Information staleness causes honest pursuit failure: bandit arrives at Crossroads, finds target absent, records ViolationKind::EntityMissing. 2. Pursuit bounded by PursuitProfile.max_pursuit_travel_ticks — bandit does not chase beyond 8 travel ticks from initial observation. 3. No teleportation: all movement through physical TravelEdge traversal. 4. Belief-only planning (Principle 14): bandit acts on believed state. 5. Cross-domain event coverage: ≥ 3 ActionDomain values exercised.
+**Proves**: the boosted run records a stronger Village place belief on arrival,
 
-**Cross-system chain**: thief steals apples at Storehouse → witness may observe → witness tells authority at GuardPost → authority accuses → authority punishes (fine or exile).
+**Cross-system chain**: first-hop exploration arrival -> boosted place belief retention ->
 
-### Scenario 50: Bandit Camp Destruction → Diaspora → Reconstitution →
+### Scenario 340: Need Satisfaction Lazily Resets Exhaustion State
 
-- Source: `golden_integration.rs:2884`
-- Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI, Production
-- GoalKinds: EngageHostile, RegroupWithFaction, EstablishBanditCamp, RaidTarget, ShareBelief, RestockCommodity
-- ActionDomains: Combat, Generic, Travel, Social, Production
-- Places: T22ROldCamp, T22RRallyGlen, T22RMarket, T22RSafeRoute, T22RFarm, T22RDownstream
-- Principles: 1, 3, 7, 12, 14, 17, 25
+- Source: `golden_exploration.rs:1401`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
+- ActionDomains: Travel, Production, Needs
+- Places: Trail, Village
+- Principles: 3, 20, 22
 
-**Setup**: Six-place topology with two routes between Market and Farm: a short route through RallyGlen (4 ticks) and a safe route through SafeRoute (8 ticks). Bandits occupy OldCamp with rally doctrine pointing to RallyGlen. Guards at OldCamp will attack. Merchant at Market sells apples with a restock demand observation. Farm has apple source. A traveler with apples and a witness wait at Market.
+**Setup**: Same as Scenario 337, but the run continues through local apple
 
-**Proves**: 1. Camp destruction → diaspora → regrouping → EstablishBanditCamp at rally point is a continuous emergent chain. 2. Raids from the reconstituted camp location are lawful combat from new-camp faction entities, not old-camp remnants. 3. Merchant route adaptation is belief-driven (Principle 14): the merchant reroutes only after receiving danger information via social tell, not from any omniscient danger cache. 4. Conservation holds for all commodity types throughout the chain.
+**Proves**: the authoritative hunger exhaustion counter stays non-zero while the
 
-**Cross-system chain**: guard attack -> camp destruction -> bandit flee -> regroup at rally -> establish new camp -> traveler arrives -> raid at rally -> witness observes -> witness tells merchant -> merchant reroutes via safe route -> downstream supply delay.
+**Cross-system chain**: repeated budget exhaustion -> exploration unlock -> local relief ->
 
-### Scenario 105: Social artifact bounty lifecycle closes canonically
+### Scenario 343: Diversification Profile Unlocks Proactive Discovery
 
-- Source: `golden_integration.rs:5335`
-- Systems: Social artifact actions, Perception, AI, Travel, Combat
-- GoalKinds: FulfillBounty
-- ActionDomains: Social, Travel, Combat
-- Places: S45 Town Square, S45 Wilderness
-- Principles: 4, 7, 14, 20, 25
+- Source: `golden_exploration.rs:1595`
+- Systems: AI, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ProactiveHome, ProactiveEast, ProactiveNorth, ProactiveSouth
+- Principles: 7, 14, 22
 
-**Setup**: Human issuer at Town Square posts an elimination bounty with a real 10-coin reward lot and `SelfReport` proof. AI hunter starts co-located with the posting, already believes the target lives in Wilderness, and has high enterprise weight. The target is a non-moving hostile at Wilderness.
+**Setup**: Two otherwise identical calm runs start with only a belief about ProactiveHome. The diversified run has a `DiversificationProfile`; the control run does not. No survival-pressure goals are active.
 
-**Proves**: Posted bounties are real first-class world entities that can be perceived, pursued from belief, fulfilled through ordinary combat/travel, and claimed for a conserved reward transfer without a quest-only shortcut.
+**Proves**: the diversified run selects and completes proactive exploration to the novel branch place, while the matched control never selects proactive exploration and never reaches that branch.
 
-**Cross-system chain**: post_bounty -> local perception updates believed_artifact -> FulfillBounty selected -> travel to target belief -> attack kills target -> travel to claim place -> claim_bounty transfers reward -> bounty fulfilled.
+**Cross-system chain**: calm needs + diversification profile -> proactive ExploreLocation emission/selection -> travel commit -> arrival at novel branch.
 
-### Scenario 106: Expired bounty stays visible but no longer generates pursuit
+### Scenario 344: Need Pressure Vetoes Proactive Motivation
 
-- Source: `golden_integration.rs:5373`
-- Systems: Social artifact actions, pre-action artifact lifecycle, Perception, AI
-- GoalKinds: FulfillBounty
-- ActionDomains: Social
-- Places: S45 Town Square
-- Principles: 7, 8, 9, 14, 25
+- Source: `golden_exploration.rs:1634`
+- Systems: AI, Needs, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ExplorationStart, ExplorationFrontier
+- Principles: 7, 14, 22
 
-**Setup**: Human issuer posts a short-lived elimination bounty at Town Square. Observer stands co-located with perception but `ControlSource::None` until after the expiry tick, then resumes AI control once the artifact is already expired and still present in the world.
+**Setup**: A hungry exploration run reuses the standard need-driven frontier setup, but also adds a `DiversificationProfile`. The frontier remains the only lawful exploration path.
 
-**Proves**: Expiration is authoritative world timing, not a late cleanup. The expired artifact remains perceivable as world state, but `FulfillBounty` does not regenerate once the observer returns to the AI pipeline.
+**Proves**: high need pressure suppresses proactive exploration specifically, while lawful need-driven exploration still appears.
 
-**Cross-system chain**: post_bounty -> pre-action expiry tick flips ArtifactState::Expired -> observer perceives expired belief -> AI resumes -> no bounty candidate.
+**Cross-system chain**: high hunger pressure + diversification profile -> proactive veto -> need-driven ExploreLocation remains generated/selected.
 
-### Scenario 108: Delivery bounty closes through cargo movement and later claim
+### Scenario 345: Proactive Cooldown Spaces Repeated Exploration
 
-- Source: `golden_integration.rs:5410`
-- Systems: Social artifact actions, Perception, AI, Travel, Transport
-- GoalKinds: FulfillBounty, MoveCargo
-- ActionDomains: Social, Travel, Transport
-- Places: S45 Town Square, S45 Granary, S45 Issuer Home
-- Principles: 4, 7, 14, 25, 26
+- Source: `golden_exploration.rs:1704`
+- Systems: AI, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ProactiveHome, ProactiveEast, ProactiveNorth, ProactiveSouth
+- Principles: 7, 14, 22
 
-**Setup**: Human issuer at Town Square posts a delivery bounty for 3 Grain to Granary with a real 10-coin reserved reward lot and claim place at Issuer Home. AI courier starts co-located with the posting and already controls a local grain lot, but stays non-AI until the posted bounty is perceived.
+**Setup**: A calm agent with a short proactive cooldown starts knowing only ProactiveHome in a branching topology with several novel targets.
 
-**Proves**: Delivery bounties are not decorative claim shells. A perceived bounty can drive ordinary cargo movement to the destination, leave the delivered lot behind there, and only then unlock the later `claim_bounty` reward transfer at a different claim place.
+**Proves**: the run produces repeated proactive exploration selections, and the selection ticks stay spaced by at least the configured cooldown.
 
-**Cross-system chain**: post_bounty -> local perception updates believed_artifact -> FulfillBounty selected -> travel to delivery destination -> delivered grain remains at destination -> travel to claim place -> claim_bounty transfers reward -> bounty fulfilled.
+**Cross-system chain**: calm needs + diversification profile -> proactive selection -> authoritative cooldown stamp -> later proactive selection after cooldown.
 
-### Scenario 107: Threat-warning notice flips the next route choice
+### Scenario 342: Waste Decay Reaches A Bounded Steady State
 
-- Source: `golden_integration.rs:5450`
-- Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
-- GoalKinds: AcquireCommodity(SelfConsume)
-- ActionDomains: Social, Travel, Production
-- Places: S45 Market, S45 Warned Road, S45 Safe Route, S45 Orchard
-- Principles: 7, 14, 18, 25
+- Source: `golden_item_decay.rs:66`
+- Systems: Needs, AI, ItemDecay
+- GoalKinds: Relieve
+- ActionDomains: Needs
+- Places: ForestPath
+- Principles: 4, 10, 11, 26
 
-**Setup**: Hungry traveler at Market knows the Orchard apple source and would normally take the shorter route through Warned Road. A human issuer posts a `ThreatWarning` notice at Market for Warned Road while the traveler is still non-AI but perceiving locally.
+**Setup**: Two AI agents start at ForestPath, an outdoor place where `relieve_wilderness` is lawful. Hunger, thirst, and fatigue are inert; only bladder rises, so the repeated self-care loop is local wilderness relief rather than travel to a latrine. Waste decay is configured to 200 ticks and the run continues for 400 ticks.
 
-**Proves**: Notices are not decorative snapshots. Local perception captures the warning as `believed_artifact`, and that belief changes the next search- selected travel branch through the live route-threat surface.
+**Proves**: repeated Waste production through the live AI loop no longer grows without bound. `ItemDecay` archives older Waste, emits the decay tags, and preserves conservation via `wilderness_relief_events - item_decay_events == live_waste_lots` at authoritative checkpoints.
 
-**Cross-system chain**: post_notice -> local perception stores believed_artifact warning -> AI resumes with same orchard knowledge -> apple-acquisition planning reroutes from the shorter warned road to the safer branch.
-
-### Scenario 112: Autonomous institutional bounty posts from consulted accusation
-
-- Source: `golden_integration.rs:5488`
-- Systems: Social artifact actions, Beliefs, AI, Offices
-- GoalKinds: PostBounty
-- ActionDomains: Social
-- Places: S45 Town Square, S45 Wilderness
-- Principles: 7, 14, 23, 25
-
-**Setup**: AI magistrate holds an office at Town Square with non-zero `bounty_posting_weight`, real office treasury coins, and a consulted crime- register accusation belief against an accused poacher in the office's jurisdiction. No manual action request is used.
-
-**Proves**: Autonomous artifact issuance is live end to end for the first institutional bounty family. A consulted accusation belief plus matching jurisdiction rights can produce a selected `PostBounty` goal, commit `post_bounty`, and materialize an active bounty artifact through the normal AI pipeline.
-
-**Cross-system chain**: consulted accusation belief -> AI selects PostBounty -> post_bounty commits -> active bounty entity exists with institutional treasury terms.
-
-### Scenario 113: Autonomous threat-warning notice reroutes later travel
-
-- Source: `golden_integration.rs:5527`
-- Systems: Social artifact actions, Perception, Beliefs, AI, Travel, Production
-- GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
-- ActionDomains: Social, Travel, Production
-- Places: S45 Market, S45 Warned Road, S45 Safe Route, S45 Orchard
-- Principles: 1, 7, 14, 25
-
-**Setup**: AI issuer at Market has non-zero `notice_posting_weight` and a live remembered hostile belief at Warned Road. The issuer autonomously posts a `ThreatWarning` notice at Market about Warned Road while the traveler is still non-AI but perceiving locally at Market.
-
-**Proves**: Autonomous notice issuance now closes the remaining S51 notice path honestly. The issuer can lawfully select and commit `PostNotice` for a warned place distinct from the posting place, and the downstream traveler later reroutes away from the shorter warned branch through the existing local artifact-belief and route-threat path.
-
-**Cross-system chain**: remembered danger belief -> AI selects PostNotice -> post_notice commits at Market -> traveler locally perceives believed_artifact warning -> AI resumes with same orchard knowledge -> apple-acquisition planning reroutes from Warned Road to Safe Route.
-
-### Scenario 137: Autonomous threat-warning expiry bounds active notice population
-
-- Source: `golden_integration.rs:5568`
-- Systems: Social artifact actions, artifact lifecycle, Beliefs, AI
-- GoalKinds: PostNotice
-- ActionDomains: Social
-- Places: S45 Market, S45 Warned Road
-- Principles: 7, 11, 14, 25
-
-**Setup**: AI issuer at Market has non-zero `notice_posting_weight`, a persistent hostile belief at Warned Road, and an explicit short `ArtifactPostingProfile` override so the warning TTL is only 4 ticks.
-
-**Proves**: TTL-backed autonomous notice posting closes the remaining bounded- population loop end to end. Repeated `post_notice` commits materialize expiring notice artifacts with non-`None` expiries, earlier notices age into `ArtifactState::Expired`, and the active notice population at the posting place stays bounded by the short TTL instead of growing forever.
-
-**Cross-system chain**: persistent danger belief -> repeated AI `PostNotice` selection -> `post_notice` commits with expiry -> lifecycle flips earlier notices to `Expired` -> later notices reappear after expiry while active count stays bounded over time.
-
-### Scenario 114: Theft evidence persists, is perceived locally, and decays
-
-- Source: `golden_integration.rs:5608`
-- Systems: Transport, Perception, Evidence decay, AI
-- GoalKinds: InvestigateViolation
-- ActionDomains: Transport, Travel, Generic
-- Places: VillageSquare, CommonHouse, GeneralStore
-- Principles: 3, 7, 10, 14, 18
-
-**Setup**: an AI thief at VillageSquare steals owned bread from a real container,
-
-**Proves**: S52's evidence substrate is live end to end without over-claiming
-
-### Scenario 21: Ruler Death → Office Vacancy → Patrol Gap → Route Predation
-
-- Source: `golden_long_scenarios.rs:68`
-- Systems: Succession, Combat, AI, Needs, Patrol, Trade, Travel
-- GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, EngageHostile
-- ActionDomains: Combat, Social, Travel, Needs (≥ 4 required)
-- Places: RulersHall, Market, GateRoad, BanditForest, GuardPost, Farm
-- Principles: 4, 7, 10, 12, 14
-
-**Setup**: 6-place topology. Ruler holds office at RulersHall, killed at tick 0. 2 claimants with faction membership and enterprise_weight compete for the vacant office. 3 guards with PatrolRoute covering GateRoad abandon patrol when political goals outrank patrol_motive_weight during vacancy. 2 bandits at BanditForest with BanditCamp. Merchant at Market with goods.
-
-**Proves**: Office vacancy caused by ruler death → guard political distraction → patrol gap at GateRoad → bandit predation on merchant → supply disruption. All consequences emerge from general rules, not scenario- specific triggers. Cross-domain coverage ≥ 4.
-
-**Cross-system chain**: ruler death -> vacancy_since set -> guards generate ClaimOffice/ SupportCandidate competing with Patrol -> guards leave GateRoad -> patrol gap ≥ 100 ticks -> bandit encounters merchant -> combat at GateRoad -> cargo loss or merchant injury -> succession completes within 2880 ticks.
-
-### Scenario 33: Office Vacancy → Patrol Gap → Crime Opportunity → Recovery
-
-- Source: `golden_long_scenarios.rs:1063`
-- Systems: Succession, Combat, AI, Patrol, Transport, Perception, Travel
-- GoalKinds: ClaimOffice, SupportCandidateForOffice, Patrol, StealItem
-- ActionDomains: Combat, Social, Travel, Transport, Epistemic (≥ 5 required)
-- Places: RulersHall, Market, Road, Farm, GuardPost
-- Principles: 4, 7, 8, 10, 11, 12, 14
-
-**Setup**: 5-place topology. Ruler holds office at RulersHall, killed at tick 0. 2 guards with PatrolRoute covering Market and Road abandon patrol when political goals outrank patrol_motive_weight during vacancy. 1 thief at Road with high witness_risk_penalty (pm(900)) is fully deterred by any guard presence. Merchant at Market with owned goods on the ground.
-
-**Proves**: Full vacancy→crime→recovery feedback loop with physical dampener: ruler death → vacancy → guard political distraction → patrol gap → theft during vacancy → succession completes → guard patrol resumes → theft suppressed post-recovery. The dampener (succession → patrol return → crime suppression) is physical, not a numeric clamp (Principle 11).
-
-**Cross-system chain**: ruler death -> vacancy_since set -> guards generate ClaimOffice/ SupportCandidate competing with Patrol -> guards leave Market -> thief StealItem during vacancy (effective_motive=800 with 0 witnesses) -> succession completes -> guard returns to Market -> thief effective_motive drops to 0 (800-900=0) -> StealItem suppressed post-recovery.
+**Cross-system chain**: bladder escalation -> GoalKind::Relieve -> committed `relieve_wilderness` -> Waste lot on ground -> `ItemDecay` archives Waste at the 200-tick threshold -> live Waste count stays bounded to the active decay window instead of accumulating forever.
 
 ### Scenario 75: Displayed Lot Retains SaleListing Through Presence Cycle
 
-- Source: `golden_merchant_selling.rs:389`
+- Source: `golden_merchant_selling.rs:355`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - ActionDomains: Trade
@@ -962,7 +370,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 76: Buyer Trades Against Listed Lot
 
-- Source: `golden_merchant_selling.rs:467`
+- Source: `golden_merchant_selling.rs:425`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity, SellCommodity
 - ActionDomains: Trade
@@ -972,7 +380,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 77: Unlisted Stock Not Sellable
 
-- Source: `golden_merchant_selling.rs:577`
+- Source: `golden_merchant_selling.rs:527`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -980,27 +388,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: buyer cannot discover or trade unlisted merchant stock
 
-### Scenario 78: Loose Home Stock Is Staged Before Sell Goal Settles
-
-- Source: `golden_merchant_selling.rs:652`
-- Systems: Trade, AI
-- GoalKinds: SellCommodity
-- ActionDomains: Trade
-- Principles: P1, P4, P8
-
-**Proves**: loose home stock is stored and staged into a listed facility lot before SellCommodity settles; merchant does not enter an immediate futile staff_market cycle when no buyer is present
-
-### Scenario 79: Deterministic Replay Preserves Listing Behavior
-
-- Source: `golden_merchant_selling.rs:791`
-- Systems: Trade, AI
-- Principles: P2
-
-**Proves**: identical seeds produce identical world and event log hashes
-
 ### Scenario 79b: Unstage Round Trip Preserves Storage Contract
 
-- Source: `golden_merchant_selling.rs:888`
+- Source: `golden_merchant_selling.rs:679`
 - Systems: Trade, AI
 - ActionDomains: Trade
 - Principles: P4, P24
@@ -1009,7 +399,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
 
-- Source: `golden_merchant_selling.rs:912`
+- Source: `golden_merchant_selling.rs:693`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -1017,19 +407,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: buyer evidence references only listed lots, not unlisted merchant stock
 
-### Scenario 81: Merchant Emits SellCommodity at Home Market
-
-- Source: `golden_merchant_selling.rs:980`
-- Systems: Trade, AI
-- GoalKinds: SellCommodity
-- ActionDomains: Trade
-- Principles: P1, P6
-
-**Proves**: SellCommodity candidate emitted via decision trace
-
 ### Scenario 82: Seller Departure Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:1084`
+- Source: `golden_merchant_selling.rs:761`
 - Systems: Trade
 - Principles: P3, P7
 
@@ -1037,52 +417,24 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 83: Dead Seller Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:1141`
+- Source: `golden_merchant_selling.rs:818`
 - Systems: Trade
 - Principles: P3, P4
 
 **Proves**: SaleListing pruned within one tick of seller death
 
-### Scenario 84: Remote Merchant Travels to Home Market to Sell
-
-- Source: `golden_merchant_selling.rs:1213`
-- Systems: Trade, AI
-- GoalKinds: SellCommodity
-- ActionDomains: Trade, Travel
-- Principles: P1, P6
-
-**Proves**: merchant at remote place plans Travel + StaffMarket to reach home_facility
-
 ### Scenario 85: Demand Memory Raises Sell Ranking
 
-- Source: `golden_merchant_selling.rs:1330`
+- Source: `golden_merchant_selling.rs:890`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
 
 **Proves**: demand memory boosts SellCommodity motive above baseline without overpowering self-care
 
-### Scenario 86: Planning State Preserves Listing Determinism
-
-- Source: `golden_merchant_selling.rs:1402`
-- Systems: Trade, AI
-- Principles: P2
-
-**Proves**: identical seeds produce identical plan search results for merchant scenarios
-
-### Scenario 95: Side-Benefit Selection Prefers Home Market Combined Trip
-
-- Source: `golden_merchant_selling.rs:1419`
-- Systems: Trade, AI, Needs
-- GoalKinds: AcquireCommodity, SellCommodity
-- ActionDomains: Travel, Trade
-- Principles: P1, P3, P20, P22
-
-**Proves**: a remote merchant with equal primary bread opportunities prefers the home-market seller because the selected path also carries a lawful SellCommodity side benefit at that destination; after acquisition the merchant stages firewood for sale there without a second market trip
-
 ### Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `golden_merchant_selling.rs:1784`
+- Source: `golden_merchant_selling.rs:962`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)
@@ -1096,7 +448,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 
-- Source: `golden_offices.rs:29`
+- Source: `golden_offices.rs:20`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1109,20 +461,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: Enterprise weight -> ClaimOffice candidate -> DeclareSupport plan -> action execution -> succession resolution -> office installation.
 
-### Scenario 11b: Deterministic Replay
-
-- Source: `golden_offices.rs:154`
-- Systems: Succession, AI, Political actions
-- GoalKinds: ClaimOffice
-- Places: VillageSquare
-
-**Setup**: Same as Scenario 11, run twice with identical seed.
-
-**Proves**: Two runs with the same seed produce identical world and event-log hashes. World state differs from initial.
-
 ### Scenario 12: Competing Claims with Loyal Supporter
 
-- Source: `golden_offices.rs:192`
+- Source: `golden_offices.rs:148`
 - Systems: Succession, AI, Political actions
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1137,7 +478,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 
-- Source: `golden_offices.rs:418`
+- Source: `golden_offices.rs:377`
 - Systems: Bribe, Succession, AI, Conservation
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1152,7 +493,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:665`
+- Source: `golden_offices.rs:624`
 - Systems: Threaten, Succession, AI
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -1167,7 +508,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:966`
+- Source: `golden_offices.rs:925`
 - Systems: Travel, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1182,7 +523,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:1079`
+- Source: `golden_offices.rs:1038`
 - Systems: AI, Travel, Succession, Political actions, Perception
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -1195,39 +536,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: No office belief -> no political candidate generation -> explicit reported belief update -> ClaimOffice candidate -> travel to jurisdiction -> DeclareSupport -> succession resolution.
 
-### Scenario 73: Remote Record Travel + Consultation + Political Action
-
-- Source: `golden_offices.rs:1295`
-- Systems: AI, Travel, ConsultRecord, Succession, Political actions
-- GoalKinds: ClaimOffice
-- ActionDomains: Travel, Generic
-- Places: OrchardFarm, RulersHall, VillageSquare, EastFieldTrail, SouthGate
-- Principles: 7, 8, 12, 24
-
-**Setup**: Claimant at OrchardFarm with unknown office-holder belief. Office at VillageSquare but vacancy entry only in remote OfficeRegister at RulersHall.
-
-**Proves**: ClaimOffice generated despite unknown office-holder belief. Selected plan routes to RulersHall first for consult_record, then returns for DeclareSupport. Institutional belief transitions Unknown -> Certain(None) via RecordConsultation. Distinct from S15 (known vacancy) and S16 (no belief).
-
-**Cross-system chain**: Unknown office-holder belief + known remote register -> ClaimOffice candidate -> travel to RulersHall -> consult_record -> institutional belief update -> return to VillageSquare -> DeclareSupport -> succession installation.
-
-### Scenario 34: Knowledge Asymmetry Race
-
-- Source: `golden_offices.rs:1595`
-- Systems: AI, ConsultRecord, Succession, Political actions
-- GoalKinds: ClaimOffice
-- ActionDomains: Generic
-- Places: VillageSquare
-- Principles: 8, 12, 20, 24
-
-**Setup**: Two co-located claimants at VillageSquare. Informed claimant has Certain(None) office-holder belief. Uninformed must consult local register (consultation_ticks=12, speed_factor=pm(500) -> 6 ticks).
-
-**Proves**: Both generate ClaimOffice at tick 0. Informed selects direct DeclareSupport; uninformed selects ConsultRecord -> DeclareSupport. Informed commits declare_support first. Uninformed loses succession window. Competitive outcome emerges from knowledge state + duration cost (Principle 20).
-
-**Cross-system chain**: Same office + same ambition + different belief certainty -> informed direct DeclareSupport vs uninformed consult_record duration -> succession installs informed claimant first.
-
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1959`
+- Source: `golden_offices.rs:1242`
 - Systems: Needs, AI, Succession, Political actions
 - GoalKinds: ClaimOffice, ConsumeOwnedCommodity
 - ActionDomains: Needs, Generic
@@ -1242,7 +553,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:2161`
+- Source: `golden_offices.rs:1432`
 - Systems: Factions, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1255,24 +566,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: Faction membership + believed vacant office -> AI eligibility gate on ClaimOffice -> only lawful claimant plans DeclareSupport -> succession installs eligible holder.
 
-### Scenario 19: Force Succession Requires Explicit Claim And Installs Sole Controller
-
-- Source: `golden_offices.rs:2322`
-- Systems: AI, Force-claim actions, Force-control succession
-- GoalKinds: ClaimOffice
-- ActionDomains: Generic
-- Places: VillageSquare
-- Principles: 3, 8, 10, 24
-
-**Setup**: Vacant Force-law office at VillageSquare. Single ambitious eligible agent with ordinary office knowledge.
-
-**Proves**: AI generates ClaimOffice and selects press_force_claim plan (not DeclareSupport). Agent becomes office_controller, then installs as holder only after uncontested hold delay. No declare_support commits occur.
-
-**Cross-system chain**: Believed vacant Force-law office -> ClaimOffice candidate -> press_force_claim execution -> controller establishment -> uncontested hold delay -> office installation.
-
 ### Scenario 71: Contested Force Claim Resolves Only After Yield
 
-- Source: `golden_offices.rs:2707`
+- Source: `golden_offices.rs:1593`
 - Systems: Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -1287,7 +583,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
-- Source: `golden_offices.rs:2972`
+- Source: `golden_offices.rs:1845`
 - Systems: Force-control succession, Tell, Perception
 - GoalKinds: ClaimOffice, ShareBelief
 - ActionDomains: Generic, Social
@@ -1302,7 +598,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 109: Vacancy notice unlocks political action without record consult
 
-- Source: `golden_offices.rs:3272`
+- Source: `golden_offices.rs:2132`
 - Systems: Social artifact actions, Perception, Institutional beliefs, AI, Political actions, Succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Social, Generic
@@ -1315,89 +611,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: post_notice -> local perception stores believed_artifact vacancy -> institutional belief becomes Certain(None) via DirectObservation -> AI generates ClaimOffice -> declare_support commits without consult_record -> succession installs claimant.
 
-### Scenario 52: Patrol Cycle Wraps Route
-
-- Source: `golden_patrol.rs:296`
-- Systems: AI, Travel, Patrol
-- GoalKinds: Patrol
-- ActionDomains: Travel, Generic
-- Places: VillageSquare, GuardPost
-- Principles: 8, 20, 21
-
-**Setup**: One guard at VillageSquare with a two-waypoint patrol route [VillageSquare, GuardPost].
-
-**Proves**: The guard selects patrol, completes patrol dwell, travels to the next waypoint, patrols again, and continues alternating after the route wraps.
-
-**Cross-system chain**: Patrol candidate -> plan selection -> patrol commit -> travel -> patrol commit -> authoritative route wrap -> continued alternating patrol.
-
-### Scenario 53: Patrol Interruption Preserves Waypoint Until Resume
-
-- Source: `golden_patrol.rs:330`
-- Systems: AI, Needs, Patrol
-- GoalKinds: Patrol, ConsumeOwnedCommodity
-- ActionDomains: Generic, Needs
-- Places: GuardPost
-- Principles: 8, 20, 21
-
-**Setup**: One guard is already patrolling at GuardPost with bread in inventory. Hunger is raised to the critical band after patrol starts.
-
-**Proves**: Patrol is interrupted for self-care, `current_index` does not advance during the interruption, and the guard later resumes patrol from the same waypoint before advancing.
-
-### Scenario 54: Patrol Belief Urgency Scales From Local Crime And Vacancy
-
-- Source: `golden_patrol.rs:480`
-- Systems: AI, Patrol, Institutional beliefs
-- GoalKinds: Patrol
-- ActionDomains: Generic
-- Places: VillageSquare
-- Principles: 7, 14, 20
-
-**Setup**: Two comparable guards share the same patrol route and profile. Only one holds a local suspected-theft memory and a vacancy belief for an office on the patrol jurisdiction.
-
-**Proves**: The informed guard's patrol motive is higher at the decision-trace layer without any authoritative world-state shortcut.
-
-### Scenario 55: Patrol Route Adaptation Retargets After Local Report
-
-- Source: `golden_patrol.rs:600`
-- Systems: Patrol adaptation, AI, Travel
-- GoalKinds: Patrol
-- ActionDomains: Travel, Generic
-- Places: VillageSquare, SouthGate, GeneralStore
-- Principles: 7, 20, 24
-
-**Setup**: One guard has a baseline patrol route but already holds a local suspected-theft social observation for GeneralStore.
-
-**Proves**: The authoritative patrol system adapts the route from the guard's local report, and later AI selection retargets patrol to the adapted place.
-
-### Scenario 56: Patrol Locality Requires Guard-Local Report
-
-- Source: `golden_patrol.rs:696`
-- Systems: Patrol adaptation, AI
-- GoalKinds: Patrol
-- ActionDomains: Generic
-- Places: VillageSquare, SouthGate, GeneralStore
-- Principles: 7, 14, 20
-
-**Setup**: Another agent holds a theft report for GeneralStore, but the guard does not. The guard has the same baseline patrol route and profile.
-
-**Proves**: The guard's motive remains baseline and the route does not adapt from another agent's memory or from authoritative truth alone.
-
-### Scenario 57: Patrol-Driven Crime Discovery Chain
-
-- Source: `golden_patrol.rs:787`
-- Systems: AI, Travel, Patrol, Perception, Investigation
-- GoalKinds: Patrol, InvestigateViolation
-- ActionDomains: Travel, Generic
-- Places: VillageSquare, GeneralStore
-- Principles: 1, 7, 14, 17
-
-**Setup**: One guard patrols between VillageSquare and GeneralStore. The guard begins with a stale direct belief that a bread lot is at GeneralStore. Before the guard arrives there, the lot is lawfully relocated to a different non-local place the guard cannot currently observe.
-
-**Proves**: Patrol creates lawful arrival, local perception detects the violated expectation as `EntityMissing`, AI selects `InvestigateViolation`, and the investigation records `WitnessedAbsence` without upgrading the incident to `SuspectedTheft` for a non-owner investigator.
-
 ### Scenario 116: Concealment Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:295`
+- Source: `golden_perception_exposure.rs:412`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -1411,7 +627,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 117: Fatigue Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:336`
+- Source: `golden_perception_exposure.rs:453`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -1425,7 +641,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 118: Attention Cost Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:377`
+- Source: `golden_perception_exposure.rs:494`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -1439,7 +655,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 119: Multiplicative Stacking
 
-- Source: `golden_perception_exposure.rs:403`
+- Source: `golden_perception_exposure.rs:520`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -1453,21 +669,35 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 128: Perception Forms Beliefs About Resource Sources
 
-- Source: `golden_perception_exposure.rs:429`
+- Source: `golden_perception_exposure.rs:546`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: OrchardFarm
 - Principles: 7, 14, 15, 16
 
-**Setup**: An AI observer with `entity_memory_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
+**Setup**: An AI observer with `observation_buffer_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
 
-**Proves**: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed memory capacity.
+**Proves**: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed the observation-history buffer width.
 
-**Cross-system chain**: same-place observation -> belief recording -> `enforce_capacity()` eviction -> retained infrastructure beliefs.
+**Cross-system chain**: same-place repeated observation -> activation refresh -> retained infrastructure beliefs without a hard entity-count clamp.
+
+### Scenario 341: Observation Budget Prioritizes Agents And Facilities Over Waste
+
+- Source: `golden_perception_exposure.rs:584`
+- Systems: Perception
+- ActionDomains: N/A
+- Places: OrchardFarm
+- Principles: 7, 11, 14, 20, 26
+
+**Setup**: Two human-controlled observers with `observation_budget = 12` remain co-located at `OrchardFarm` for 20 ticks with two facility-backed resource sources and forty competing waste lots on the ground.
+
+**Proves**: Reduced-budget passive perception still retains the other agent and both facilities for each observer while deterministic truncation keeps retained waste beliefs bounded to the same low-priority subset instead of all forty lots.
+
+**Cross-system chain**: same-place passive perception -> priority sort by entity kind -> budget truncation -> belief-store retention of agents/facilities with bounded waste subset.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 
-- Source: `golden_planner_pathology.rs:671`
+- Source: `golden_planner_pathology.rs:673`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Production, Needs
@@ -1482,7 +712,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
 
-- Source: `golden_planner_pathology.rs:794`
+- Source: `golden_planner_pathology.rs:796`
 - Systems: Needs, AI, Production
 - GoalKinds: FreeCarryCapacity
 - ActionDomains: Needs, Production
@@ -1497,7 +727,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 144: Obligation satiation allows survival needs to override posting
 
-- Source: `golden_planner_pathology.rs:906`
+- Source: `golden_planner_pathology.rs:908`
 - Systems: Social artifact actions, Needs, AI, Perception
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs
@@ -1510,244 +740,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: remembered hostile belief -> repeated PostNotice commits append obligation tracker state -> ranking dampens saturated notice motive -> self-care commits become competitive -> guard survives.
 
-### Scenario 3: Resource Contention with Conservation
-
-- Source: `golden_production.rs:2902`
-- Systems: Needs, Production, Travel, Conservation
-- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
-- ActionDomains: Needs, Production, Travel
-- Places: VillageSquare, GeneralStore
-
-**Setup**: Two critically hungry agents at Village Square. Alice has 1 bread. Orchard Farm has apples.
-
-**Proves**: Both agents act concurrently. Commodity totals never increase. Per-tick conservation enforced.
-
-**Cross-system chain**: Concurrent hunger pressure -> goal generation -> action execution -> conservation verification.
-
-### Scenario 3b: Observed Harvest Competition Redirects To Remote Sibling
-
-- Source: `golden_production.rs:3057`
-- Systems: Perception, Production, Travel, AI
-- GoalKinds: ProduceCommodity
-- ActionDomains: Production, Travel
-- Places: VillageSquare, OrchardFarm
-- Principles: 7, 12, 20, 27
-
-**Setup**: Occupant and Observer start at VillageSquare with two lawful orchard production opportunities: one local, one remote. Occupant starts the local harvest first. Observer is re-enabled on the next tick after local perception can lawfully record Occupant's active production.
-
-**Proves**: The current S35 architecture is locality-preserving. Observer's believed local activity discounts the occupied VillageSquare production opportunity without suppressing it, and high `activity_awareness_weight` redirects selection to the remote OrchardFarm sibling opportunity.
-
-**Cross-system chain**: local active harvest -> perceived `BelievedActivity` -> `agents_active_at(place, Production, None)` -> competition discount on the occupied local production opportunity -> remote sibling selected -> travel and remote harvest execution.
-
-### Scenario 102: Departed Waiter Pruned From Facility Queue
-
-- Source: `golden_production.rs:3204`
-- Systems: Contention, Travel, Production
-- GoalKinds: RestockCommodity
-- ActionDomains: Production, Travel
-- Places: OrchardFarm, VillageSquare
-- Principles: 8, 9, 20
-
-**Setup**: one actor holds the facility grant while two hungry waiters queue. The queue head then leaves the place through lawful travel before promotion.
-
-**Proves**: queue membership is tied to real co-location. A departed waiter is pruned from the authoritative queue and the next local waiter is promoted.
-
-**Cross-system chain**: grant holder blocks facility -> two waiters queue -> head departs -> queue prune -> next waiter promoted.
-
-### Scenario 4: Materialization Barrier Chain
-
-- Source: `golden_production.rs:3341`
-- Systems: Production, Transport, Needs, AI
-- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
-- ActionDomains: Production, Transport, Needs
-- Places: OrchardFarm
-
-**Setup**: Agent at Orchard Farm, critically hungry, no food. OrchardRow with 20 apples.
-
-**Proves**: Harvest -> ground lots materialize -> replan -> pick-up -> replan -> eat. Longest emergent chain. Conservation: never exceeds 20.
-
-**Cross-system chain**: Harvest -> materialization on ground -> replan -> pick-up -> replan -> eat.
-
-### Scenario 6b: Multi-Recipe Craft Path
-
-- Source: `golden_production.rs:3545`
-- Systems: Production, Transport, Needs, AI
-- GoalKinds: ProduceCommodity, ConsumeOwnedCommodity
-- ActionDomains: Production, Transport, Needs
-- Places: VillageSquare
-
-**Setup**: Agent with 1 firewood, knows 3 recipes. Mill workstation at Village Square.
-
-**Proves**: Selects bake bread recipe. Crafting consumes firewood, produces bread. Agent eats. Conservation verified.
-
-**Cross-system chain**: Recipe selection -> craft action -> output materialization -> replan -> eat.
-
-### Scenario 103: Unique-Item Race Rejection Redirects To Local Alternative
-
-- Source: `golden_production.rs:3719`
-- Systems: Transport, Contention, Production, AI
-- GoalKinds: AcquireCommodity(SelfConsume)
-- ActionDomains: Transport, Production
-- Places: OrchardFarm
-- Principles: 8, 9, 20, 21
-
-**Setup**: a ground unique tool and a local orchard share OrchardFarm. One actor claims the tool through `pick_up`; a second AI actor attempts the same `pick_up` request and is rejected by the race-mode contention grant.
-
-**Proves**: the losing actor records a structured `contention_rejected` start failure and then replans to a lawful local harvest alternative rather than acting on the already-claimed item.
-
-**Cross-system chain**: winner pick_up grant -> loser `contention_rejected` -> next AI tick sees start failure -> local harvest selected -> hunger relief.
-
-### Scenario 3f: Faction-Owned Production — Member vs Outsider
-
-- Source: `golden_production.rs:3779`
-- Systems: Production, Ownership, Factions, AI, Travel, Needs, Conservation
-- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
-- ActionDomains: Production, Travel, Transport, Needs
-- Places: OrchardFarm, VillageSquare
-- Principles: (faction institutional delegation)
-
-**Setup**: Faction-owned orchard at Orchard Farm (ProducerOwner policy). Member Kael and outsider Wren both hungry.
-
-**Proves**: Harvest output owned by faction. Member picks up via institutional delegation. Outsider is blocked strongly enough to abandon the orchard. Conservation holds.
-
-**Cross-system chain**: ProducerOwner policy -> faction-owned output -> member pickup / outsider blocked -> outsider departure from the faction orchard.
-
-### Scenario 123: Goal Switch Clears Contention Queue Entry
-
-- Source: `golden_production.rs:4050`
-- Systems: Contention, Production, Needs, AI, Travel
-- GoalKinds: AcquireCommodity(SelfConsume), Sleep
-- ActionDomains: Production, Needs, Travel
-- Places: OrchardFarm
-- Principles: 8, 21, 26
-
-**Setup**: Grant holder blocks exclusive orchard workstation. Hungry agent queues behind the holder. Fatigue metabolism outpaces hunger, eventually driving a competing need above the production motive.
-
-**Proves**: When an agent revises its commitment from a contention-queued goal to a competing need (P21), the stale queue entry is pruned via state-mediated intent cleanup (P26), preserving P8 contention correctness. Simulation completes without DuplicateActor panic.
-
-**Cross-system chain**: hunger -> acquire apple -> queue for facility -> fatigue rises -> competing goal wins -> goal switch -> intent clear -> prune waiter.
-
-### Scenario 68: Bandit witnesses traveler leave, pursues, attacks
-
-- Source: `golden_pursuit.rs:340`
-- Systems: Perception, AI, Travel, Combat
-- GoalKinds: RaidTarget
-- ActionDomains: Travel, Combat
-- Places: PLACE_A (Hideout), PLACE_B (Crossroads)
-- Principles: 1, 3, 7, 14, 20, 21
-
-**Setup**: Bandit and traveler start co-located at Hideout (PLACE_A). Traveler carries 5 coins (raid motive). Bandit has PursuitProfile with min_location_confidence=500, max_pursuit_travel_ticks=10. Travel from A→B takes 2 ticks. Needs are sated; no competing goals.
-
-**Proves**: 1. Remote pursuit emerges from perception → belief → candidate → plan search → travel → attack without any chase script. 2. Attack occurs only at real co-location — no synthesized combat. 3. Pursuit is belief-backed: bandit uses observed departure direction, not omniscient target position.
-
-**Cross-system chain**: co-location observation -> traveler departs -> perception updates belief -> RaidTarget candidate emitted -> Travel+Attack plan -> travel to B -> attack at B -> traveler wounded.
-
-### Scenario 69: Bandit pursues stale target, arrival failure
-
-- Source: `golden_pursuit.rs:478`
-- Systems: Perception, AI, Travel
-- GoalKinds: RaidTarget
-- ActionDomains: Travel
-- Places: PLACE_A (Hideout), PLACE_B (Crossroads), PLACE_C (Haven)
-- Principles: 1, 3, 7, 14, 21
-
-**Setup**: Three places (A↔B↔C). Bandit and traveler co-located at A. Traveler departs to B, bandit observes. Traveler continues to C before bandit arrives at B. Bandit arrives at B — target absent.
-
-**Proves**: 1. Arrival at stale location produces honest failure, not omniscient continuation to C. 2. BlockingFact::TargetGone is recorded, feeding BlockedIntentMemory. 3. Bandit replans normally after the failed pursuit.
-
-**Cross-system chain**: co-location observation -> traveler departs to B -> perception belief -> pursuit plan Travel(A→B)+Attack -> traveler moves on to C -> bandit arrives at B -> target absent -> TargetGone blocker -> honest replan.
-
-### Scenario 70: Combat → flee → re-pursue
-
-- Source: `golden_pursuit.rs:619`
-- Systems: Perception, AI, Travel, Combat
-- GoalKinds: RaidTarget, EngageHostile
-- ActionDomains: Travel, Combat
-- Places: PLACE_A (Hideout), PLACE_B (Crossroads)
-- Principles: 1, 3, 7, 14, 20, 21
-
-**Setup**: Two places (A↔B, 2-tick travel). Bandit and traveler start co-located at A. Initial combat begins — bandit attacks. Traveler (human-controlled) flees to B after taking a wound. Bandit observes departure direction and initiates fresh pursuit to B, bounded by travel budget and confidence.
-
-**Proves**: 1. After combat, fresh departure observation can trigger a new pursuit cycle (combat → flee → observe → pursue). 2. Re-pursuit is bounded by PursuitProfile parameters. 3. If traveler is at B on arrival, a second engagement occurs.
-
-**Cross-system chain**: co-location -> combat -> traveler flees to B -> perception observes departure -> fresh belief about B -> new RaidTarget candidate -> Travel(A→B)+Attack plan -> second engagement at B.
-
-### Scenario 97: Search Depth Drives Multi-Step Plan Divergence
-
-- Source: `golden_reasoning_diversity.rs:288`
-- Systems: Production, AI, Travel
-- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
-- ActionDomains: Production, Travel, Needs
-- Places: VillageSquare, OrchardFarm
-- Principles: 20
-
-**Setup**: Two isolated harness runs share the same baker, recipe registry, remote firewood input, beliefs, and RNG seed. The only difference is `CognitiveProfile.max_node_expansions`: tight budget `2` vs default.
-
-**Proves**: Per-agent reasoning style changes which multi-step plan search can actually select. The default budget finds the remote input -> return -> craft chain, while the tight budget fails to select that plan from the same tick-0 planning boundary.
-
-**Cross-system chain**: Shared initial state -> same candidates generated -> search budget caps expansion depth -> default run finds remote craft plan -> tight run fails to select the same plan.
-
-### Scenario 141: Landmark Depth Changes Two-Phase Trace Shape Without Breaking Planning
-
-- Source: `golden_reasoning_diversity.rs:388`
-- Systems: Production, AI, Travel
-- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
-- ActionDomains: Production, Travel, Needs
-- Places: VillageSquare, OrchardFarm
-- Principles: 20, 22
-
-**Setup**: Two isolated harness runs share the same baker, recipe registry, remote firewood input, beliefs, and RNG seed. The only difference is `CognitiveProfile.landmark_extraction_depth`: disabled `0` versus default.
-
-**Proves**: Landmark-depth diversity changes two-phase planner guidance and trace metadata without breaking the live remote-input craft plan. The default run extracts landmarks and preferred candidates; the zero-depth run degrades gracefully to zero landmark counts while still selecting the lawful remote pickup -> return -> craft plan.
-
-**Cross-system chain**: Shared initial state -> same remote production need -> depth-driven landmark extraction difference -> divergent planner trace guidance -> both runs still produce the same lawful remote craft plan family.
-
-### Scenario 129: Utility Profiles Diverge Under Identical Self-Care Pressure
-
-- Source: `golden_reasoning_diversity.rs:540`
-- Systems: Needs, AI
-- GoalKinds: ConsumeOwnedCommodity
-- ActionDomains: Needs
-- Places: VillageSquare
-- Principles: 20, 22
-
-**Setup**: Two AI agents share the same place, the same critical hunger/thirst state, and the same owned local bread+water substrate. Only their `UtilityProfile` weights differ: hunger-driven versus thirst-driven.
-
-**Proves**: UtilityProfile divergence alone changes both the tick-0 selected self-care goal and the first started self-care action: `eat` versus `drink`.
-
-### Scenario 31: Stress with Frequent Disruptions
-
-- Source: `golden_resilience.rs:23`
-- Systems: Needs, Production, Trade, Combat, Travel, Social, Politics, Perception
-- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, RestockCommodity, ShareBelief, ClaimOffice, StealItem, Patrol, Harvest, Craft
-- ActionDomains: Needs, Trade, Travel, Combat, Production, Social, Transport
-- Places: T30Hub, T30Market, T30Farm, T30Forge, T30Barracks, T30RulersHall, T30Forest, T30BanditCamp, T30Road, T30Orchard
-- Principles: 3, 4, 6, 7, 8, 10, 12, 14, 26
-
-**Setup**: Reuses T30's 10-place topology and 20-agent population. Every 100 ticks, one random disruption is injected via WorldTxn: kill an agent, destroy an item lot, remove a workstation tag, or teleport an agent. Disruption type is selected deterministically from DeterministicRng for reproducibility. Runs 2880 ticks (2 in-game days) with 28 disruptions total.
-
-**Proves**: The full simulation stack handles arbitrary mid-run disruptions gracefully. All per-tick invariants (conservation, needs bounds, dead agent inactivity, unique placement, tick monotonicity, causal link integrity) hold despite disruptions. Save/load roundtrip at end produces identical hash. No panics.
-
-**Cross-system chain**: autonomous agents + periodic disruptions (death, destruction, removal, teleportation) -> AI replanning around changed state -> invariants hold every tick despite arbitrary state mutations.
-
-### Scenario 32: Long Replay Consistency
-
-- Source: `golden_resilience.rs:286`
-- Systems: Needs, Production, Trade, Combat, Travel, Social, Politics, Perception
-- GoalKinds: ConsumeOwnedCommodity, AcquireCommodity, RestockCommodity, ShareBelief, ClaimOffice, StealItem, Patrol, Harvest, Craft
-- ActionDomains: Needs, Trade, Travel, Combat, Production, Social, Transport
-- Places: T30Hub, T30Market, T30Farm, T30Forge, T30Barracks, T30RulersHall, T30Forest, T30BanditCamp, T30Road, T30Orchard
-- Principles: 3, 4, 6, 12
-
-**Setup**: Reuses T30's 10-place topology and 20-agent population. A continuous 1440-tick run records (hash_world, hash_event_log) at every 100-tick checkpoint. A split run saves at tick 720, loads the snapshot, and continues for another 720 ticks, recording the same checkpoints.
-
-**Proves**: Save/load mid-run preserves all world meaning (Principle 12). Deterministic execution: same seed + same inputs = identical StateHash at every checkpoint, whether run continuously or split across a serialization boundary. No state leakage through save/load.
-
-**Cross-system chain**: seed -> continuous 1440-tick run -> checkpoint hashes vs seed -> 720 ticks -> save_to_bytes -> load_from_bytes -> 720 ticks -> checkpoint hashes must match exactly at every 100-tick boundary.
-
 ### Scenario 126: Remote Travel To Resource Under Local Scarcity
 
-- Source: `golden_simulation_gaps.rs:370`
+- Source: `golden_simulation_gaps.rs:373`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -1762,7 +757,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 127: Idle Cap Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:406`
+- Source: `golden_simulation_gaps.rs:399`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Sleep, Relieve, AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -1777,7 +772,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 130: Multi-Agent Convergence Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:659`
+- Source: `golden_simulation_gaps.rs:642`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Travel, Production, Needs
@@ -1792,7 +787,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 131: Death Traceability Under Unmet Needs
 
-- Source: `golden_simulation_gaps.rs:1019`
+- Source: `golden_simulation_gaps.rs:1007`
 - Systems: Needs, Wounds, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Needs
@@ -1807,7 +802,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
 
-- Source: `golden_simulation_gaps.rs:1056`
+- Source: `golden_simulation_gaps.rs:1034`
 - Systems: Production, Needs, AI
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Needs
@@ -1820,175 +815,245 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: local resource-source beliefs + recipe knowledge -> harvest plan -> committed harvest action -> committed consume action -> lower thirst/hunger.
 
-### Scenario 2e: Social Belief Sharing, Conversation Memory, Locality, and Discovery
+### Scenario 148: Survival Baseline Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_social.rs:530`
-- Systems: Perception, Conversation memory, Tell, AI, Travel
-- GoalKinds: ShareBelief, ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
-- ActionDomains: Social, Needs, Travel
-- Places: VillageSquare, OrchardFarm
-- Principles: 7, 20
+- Source: `golden_survival_baseline.rs:343`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: Riverside Camp, Fertile Fields, Forest Clearing, Hillside Shelter
+- Principles: 1, 6, 22, 31
 
-**Setup**: Fourteen focused scenarios: autonomous tell, survival suppression, 3-agent relay chains, stale belief replan, skeptical listener rejection, bystander witnessing, entity-missing discovery, told-memory suppression, re-tell after belief change, re-tell after memory expiry, decision-trace social re-enablement, chain-length filtering, social_weight diversity, and rumor -> wasted-trip -> discovery lifecycle.
+**Setup**: Load the authored `survival-baseline.ron` scenario and run the real
 
-**Proves**: Speakers autonomously select ShareBelief and relay information. Hunger suppresses gossip. Relay chains degrade provenance. Told-memory suppresses unchanged repeats. Belief change or expiry re-enables telling. Chain-length filtering prevents infinite gossip. social_weight diversity (Principle 20) produces distinct social behavior including zero-motive filtering. Bystanders witness without receiving belief content (Principle 7).
+**Proves**: all authored agents remain alive and none of the five tracked needs
 
-**Cross-system chain**: Belief + conversation memory -> ShareBelief candidate -> Tell -> report propagation -> listener replan. Resend lifecycle: Tell -> told-memory -> omission -> belief change or expiry -> re-enable -> second Tell.
+**Cross-system chain**: authored survival substrate -> exploration/perception discovers food
 
-### Scenario 98: Alarm survives critical stress while gossip is suppressed
+### Scenario 149: Survival Baseline Exercises All Five Self-Care Action Families
 
-- Source: `golden_social.rs:2493`
+- Source: `golden_survival_baseline.rs:399`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: Riverside Camp, Fertile Fields, Forest Clearing, Hillside Shelter
+- Principles: 3, 6, 31
 
-### Scenario 99: Gossip acceptance diverges by listener CommunicationProfile
+**Setup**: Run the authored survival baseline for 1440 ticks and collect action
 
-- Source: `golden_social.rs:2675`
+**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions in
 
-### Scenario 100: Alarm relays through a critically stressed intermediary
+**Cross-system chain**: varied initial needs and authored place affordances -> repeated
 
-- Source: `golden_social.rs:2850`
+### Scenario 150: Survival Baseline Explorer Discovers Fertile Fields Orchard
 
-### Scenario 115: Contradictory location claims coexist and direct observation wins
+- Source: `golden_survival_baseline.rs:426`
+- Systems: AI, Exploration, Perception, Production
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Production, Needs
+- Places: Riverside Camp, Fertile Fields
+- Principles: 1, 6, 14, 31
 
-- Source: `golden_social.rs:3058`
+**Setup**: Agent B starts at Riverside Camp in the authored survival baseline
 
-### Scenario 88: Full Supply Chain Negotiated Restock To Consumption
+**Proves**: Agent B reaches Fertile Fields and retains a belief about the
 
-- Source: `golden_supply_chain.rs:1969`
-- Systems: Enterprise, Travel, Production, Trade, Needs, Conservation
-- GoalKinds: RestockCommodity, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
-- ActionDomains: Production, Travel, Trade, Needs
-- Places: GeneralStore, OrchardFarm
+**Cross-system chain**: no authored seeded food knowledge -> exploration candidate selected
 
-**Setup**: enterprise-focused merchant at GeneralStore with a real home facility,
+### Scenario 151: Survival Baseline Avoids Budget Exhaustion On Survival Goals
 
-**Proves**: merchant restocks into home-facility custody, consumer then discovers
+- Source: `golden_survival_baseline.rs:460`
+- Systems: AI, Search, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
+- ActionDomains: Needs, Travel, Production
+- Places: Riverside Camp, Fertile Fields, Forest Clearing, Hillside Shelter
+- Principles: 6, 14, 31
 
-### Scenario 22: Bandit Camp Destruction Chain
+**Setup**: Run the authored survival baseline with decision tracing enabled and
 
-- Source: `golden_t22_bandit_camp_destruction.rs:1980`
-- Systems: Combat, Perception, Beliefs, AI, Travel, Production
-- GoalKinds: ReduceDanger, RegroupWithFaction, AcquireCommodity(SelfConsume)
-- ActionDomains: Combat, Generic, Production, Travel
-- Places: HomeMarket, BanditRoad, BanditCamp, SafeFarm, RallyGlen
-- Principles: 1, 4, 7, 12, 17, 25
+**Proves**: no survival-goal planning attempt in the baseline ends in
 
-**Setup**: A custom five-place topology makes the danger-cost flip legible. Bandits occupy an active camp with faction policy and rally doctrine. Two otherwise identical hungry travelers hold the same source and threat beliefs. One plans immediately under fresh danger beliefs; one stays inactive until those same beliefs age to zero confidence. External guards attack the camp, survivors disperse, regroup, and re-establish camp at a rally glen.
+**Cross-system chain**: cleaned survival candidate/planner surface from `S104SURBASREC-007`
 
-**Proves**: 1. Rally doctrine is acquired locally at the active camp and not by remote faction members. 2. External attack can break camp cohesion, produce abandonment, and leave concrete aftermath. 3. Survivors can later select RegroupWithFaction, travel, and re-establish camp elsewhere. 4. Fresh danger beliefs steer food acquisition toward the safe source, while stale beliefs later reopen the shorter abandoned-camp route.
+### Scenario 152: Survival Baseline Has No Stuck Idle Windows With Elevated Needs
 
-**Cross-system chain**: active camp -> local rally belief -> external attack -> death / departure -> abandonment -> regroup travel -> establish camp -> stale danger decay -> downstream travel-route reversal.
+- Source: `golden_survival_baseline.rs:490`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: Riverside Camp, Fertile Fields, Forest Clearing, Hillside Shelter
+- Principles: 6, 22, 31
 
-### Scenario 47: Pressure-Driven Raid Emergence
+**Setup**: Run the authored survival baseline for 1440 ticks and track idle
 
-- Source: `golden_t22_bandit_camp_destruction.rs:2024`
-- Systems: Needs, AI, Combat, Loot, Conservation
-- GoalKinds: RaidTarget, LootCorpse, AcquireCommodity(SelfConsume)
-- ActionDomains: Combat, Corpse, Production, Travel
-- Places: S47BanditCamp, S47RoadJunction, S47SafeVillage
-- Principles: 1, 4, 7, 17, 24
+**Proves**: no agent is idle for 20+ consecutive ticks while any need exceeds
 
-**Setup**: Hungry bandits occupy a camp with a nearly empty bread supply and a local orchard row as the lawful non-raid alternative. A traveler carrying apples reaches the camp through an ordinary travel request. The raid should emerge only after co-location and local loot visibility make `RaidTarget` more valuable than the background harvest path.
+**Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
 
-**Proves**: 1. `RaidTarget` is a proactive offensive path for co-located non-faction prey. 2. The raid resolves through ordinary `attack` and `loot` actions. 3. Local harvest remains lawful before prey arrives, so the raid is emergent rather than scripted.
+### Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
 
-**Cross-system chain**: scarce camp supplies -> non-raid self-supply behavior -> traveler arrives with visible food -> RaidTarget generated/selected -> attack commit -> corpse loot.
+- Source: `golden_survival_contested.rs:421`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: North Camp, South Camp, Forest Glade, Central Crossing, Stone Well, Spring Basin, East Orchard, West Grainfield
+- Principles: 1, 6, 7, 10, 22, 31
 
-### Scenario 48: Raid-Belief Economic Cascade
+**Setup**: Load the authored `survival-contested.ron` scenario and run the real
 
-- Source: `golden_t22_bandit_camp_destruction.rs:2063`
-- Systems: Combat, Perception, Beliefs, Social Tell, Enterprise, Travel, AI
-- GoalKinds: RaidTarget, ShareBelief, RestockCommodity
-- ActionDomains: Combat, Social, Travel, Production
-- Places: S48Market, S48DangerousRoad, S48BanditCamp, S48SafeRoute, S48RemoteFarm
-- Principles: 3, 7, 12, 14
+**Proves**: all four agents remain alive and none of the five tracked needs
 
-**Setup**: Bandits raid a traveler at a dangerous road while a witness observes. The witness then reaches the market through ordinary travel and relays the danger belief to an otherwise idle merchant who already knows a lawful remote apple source. After the tell commits, the merchant's next restock plan should prefer the longer safe route instead of the shorter dangerous road.
+**Cross-system chain**: aligned starting needs -> concurrent demand at low-capacity wells ->
 
-**Proves**: 1. Witnessed raid danger can propagate through the generic `tell` path. 2. Merchant route adaptation happens only after lawful information transfer. 3. The route flip is planner-local perceived travel cost, not authoritative edge state.
+### Scenario 159: Contested Survival Exercises All Five Self-Care Action Families
 
-**Cross-system chain**: raid -> witness combat belief -> witness travel to market -> tell -> merchant danger belief -> safe-route restock selection.
+- Source: `golden_survival_contested.rs:488`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: all 8 contested-scenario places
+- Principles: 3, 6, 7, 31
 
-### Scenario 49: Wound-Dampened Raid Spiral
+**Setup**: Run the authored survival contested scenario for 1440 ticks and
 
-- Source: `golden_t22_bandit_camp_destruction.rs:2102`
-- Systems: Combat, Wounds, AI, Needs
-- GoalKinds: RaidTarget, ConsumeOwnedCommodity
-- ActionDomains: Combat, Needs, Travel
-- Places: S49BanditCamp, S49RoadJunction
-- Principles: 1, 3, 8, 17
+**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions
 
-**Setup**: A single hungry bandit at camp faces three travelers arriving one at a time with visible food. The first two arrivals should still be raided, producing accumulating concrete wounds on the bandit. Once those wounds pass the faction flee threshold after courage scaling, the third arrival should no longer generate or select `RaidTarget`.
+**Cross-system chain**: contested resources + chokepoint topology -> agents explore, queue,
 
-**Proves**: 1. Repeated raid combat produces concrete wound accumulation on the raider. 2. The bandit can still raid before crossing the wound deterrence threshold. 3. After threshold crossing, `RaidTarget` disappears without introducing a cooldown or hidden alias path.
+### Scenario 160: Contested Survival Draws From Both Water Sources Across The Run
 
-**Cross-system chain**: raid opportunity -> attack commit -> wound accumulation -> second raid -> threshold crossed -> third prey arrives -> RaidTarget omitted.
-
-### Scenario 2b: Buyer-Driven Trade Acquisition
-
-- Source: `golden_trade.rs:1684`
-- Systems: Needs, AI, Trade, Conservation
+- Source: `golden_survival_contested.rs:517`
+- Systems: AI, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
-- ActionDomains: Trade, Needs
-- Places: VillageSquare
+- ActionDomains: Needs, Travel, Production
+- Places: Stone Well, Spring Basin
+- Principles: 1, 6, 7, 10, 31
 
-**Setup**: Hungry buyer and sated seller co-located at VillageSquare. Seller advertises bread via MerchandiseProfile; buyer holds coins.
+**Setup**: Run the authored survival contested scenario and record the place
 
-**Proves**: Buyer generates AcquireCommodity from hunger. Planner resolves through local trade barrier. Trade transfers bread and coins. Buyer consumes acquired bread. Bread and coin conservation holds.
+**Proves**: at least one agent draws from Stone Well AND at least one agent
 
-**Cross-system chain**: Need pressure -> seller discovery via MerchandiseProfile -> planner trade barrier -> trade valuation/exchange -> consumption.
+**Cross-system chain**: aligned demand -> capacity saturation at nearest well -> belief
 
-### Scenario 2d: Merchant Restock and Return to Home Market
+### Scenario 161: Contested Survival Has Both Camp Sides Reach A Food Source
 
-- Source: `golden_trade.rs:1719`
-- Systems: Enterprise, Travel, Production, Transport, Conservation
-- GoalKinds: RestockCommodity, MoveCargo
-- ActionDomains: Production, Travel, Transport
-- Places: GeneralStore, OrchardFarm
+- Source: `golden_survival_contested.rs:560`
+- Systems: AI, Exploration, Perception, Travel
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Needs
+- Places: East Orchard, West Grainfield
+- Principles: 1, 6, 7, 14, 31
 
-**Setup**: Merchant at General Store with MerchandiseProfile(Apple), zero stock, remembered unmet demand. Orchard Farm has apple ResourceSource.
+**Setup**: Agents A and B start at North Camp; C and D start at South Camp.
 
-**Proves**: Merchant generates RestockCommodity{Apple} from concrete demand. Travels to Orchard Farm, harvests, returns stock to General Store. Destination-local controlled stock satisfies restock delivery.
+**Proves**: at least one North-side agent reaches a food-producing place AND
 
-**Cross-system chain**: Demand memory -> enterprise restock signal -> multi-leg travel -> harvest/materialization -> cargo return to home market.
+**Cross-system chain**: hunger rising -> exploration drive activated -> multi-hop travel
 
-### Scenario 2f: Carrier Delivers To Facility Without Becoming Seller
+### Scenario 162: Contested Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_trade.rs:1754`
-- Systems: Travel, Transport, Trade, Conservation
-- ActionDomains: Travel, Transport, Trade
-- Places: VillageSquare, GeneralStore
+- Source: `golden_survival_contested.rs:596`
+- Systems: AI, Search, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
+- ActionDomains: Needs, Travel, Production
+- Places: all 8 contested-scenario places
+- Principles: 6, 14, 31
 
-**Setup**: faction-owned merchant facility at GeneralStore; merchant and carrier are both guild members. Carrier possesses faction-owned apples at VillageSquare, travels to GeneralStore, stores them in the facility, leaves, and the merchant stages the delivered stock.
+**Setup**: Run the authored survival contested scenario with decision tracing
 
-**Proves**: non-selling carrier delivery can place stock into facility custody without transferring seller identity to the carrier.
+**Proves**: no non-Wash survival-goal planning attempt ends in
 
-### Scenario 74: Local Trade Start Failure Recovers via Production Fallback
+**Cross-system chain**: preserved travel-branch cap (4) + 640 planner expansions +
 
-- Source: `golden_trade.rs:1785`
-- Systems: AI, Trade, Production, Travel, Conservation
-- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
-- ActionDomains: Trade, Production, Travel, Needs
-- Places: VillageSquare, OrchardFarm
+### Scenario 163: Contested Survival Has No Stuck Idle Windows With Elevated Needs
 
-**Setup**: Two hungry buyers target one edible stock unit. Loser records StartFailed on stale trade start.
+- Source: `golden_survival_contested.rs:629`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: all 8 contested-scenario places
+- Principles: 6, 7, 22, 31
 
-**Proves**: Losing buyer records lawful StartFailed. Next AI tick clears stale local trade branch. Recovery through distant production fallback.
+**Setup**: Run the authored survival contested scenario for 1440 ticks and
 
-**Cross-system chain**: Two buyers -> stale trade start -> StartFailed -> next AI tick clears branch -> travel to remote production -> harvest -> eat.
+**Proves**: no agent is idle for 40+ consecutive ticks while any need exceeds
 
-### Scenario 94: Trade Rejection Reweights Seller Choice
+**Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
 
-- Source: `golden_trade.rs:1828`
-- Systems: AI, Trade, Needs
-- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
-- ActionDomains: Trade, Travel, Needs
-- Places: VillageSquare, GeneralStore
+### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
-**Setup**: Hungry buyer knows two bread sellers. The local VillageSquare seller stays listed but rejects an underfunded trade. A remote GeneralStore seller remains lawful for the same commodity.
+- Source: `golden_survival_scattered.rs:349`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: Hilltop Camp, Woodland Clearing, Ravine Shelter, River Crossing, Orchard Hollow, Lowland Farm
+- Principles: 1, 6, 7, 22, 31
 
-**Proves**: Trade rejection records `SourceReliability` on the rejecting seller. The next planning pass still sees the local seller as a live candidate, but applies a seller-specific reliability discount and reroutes to the remote seller. The buyer then completes the remote bread acquisition and eats.
+**Setup**: Load the authored `survival-scattered.ron` scenario and run the real
 
-**Cross-system chain**: local trade rejection -> source-reliability memory -> next-tick seller reranking -> remote trade -> consumption.
+**Proves**: all authored agents remain alive and none of the five tracked needs
+
+**Cross-system chain**: authored adversarial topology -> exploration discovers scattered
+
+### Scenario 154: Scattered Survival Exercises All Five Self-Care Action Families
+
+- Source: `golden_survival_scattered.rs:408`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: all 7 scattered scenario places
+- Principles: 3, 6, 7, 31
+
+**Setup**: Run the authored survival scattered scenario for 1440 ticks and
+
+**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions
+
+**Cross-system chain**: spatially separated resource affordances + travel metabolism ->
+
+### Scenario 155: Isolated Agent Reaches A Food Source From Ravine Shelter
+
+- Source: `golden_survival_scattered.rs:436`
+- Systems: AI, Exploration, Perception, Travel
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
+- ActionDomains: Travel, Needs
+- Places: Ravine Shelter -> Woodland Clearing -> Orchard Hollow | River Crossing -> Lowland Farm
+- Principles: 1, 6, 7, 14, 31
+
+**Setup**: Agent B starts at Ravine Shelter, 5 ticks from Woodland Clearing
+
+**Proves**: Agent B reaches Orchard Hollow or Lowland Farm (the only food
+
+**Cross-system chain**: isolated start with no seeded food knowledge -> exploration under
+
+### Scenario 156: Scattered Survival Avoids Budget Exhaustion On Survival Goals
+
+- Source: `golden_survival_scattered.rs:467`
+- Systems: AI, Search, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
+- ActionDomains: Needs, Travel, Production
+- Places: all 6 scattered scenario places
+- Principles: 6, 14, 31
+
+**Setup**: Run the authored survival scattered scenario with decision tracing
+
+**Proves**: no non-Wash survival-goal planning attempt ends in
+
+**Cross-system chain**: travel-branch cap (4) + 640 planner expansions + chokepoint topology
+
+### Scenario 157: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
+
+- Source: `golden_survival_scattered.rs:500`
+- Systems: AI, Needs, Travel, Production, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Needs, Travel, Production
+- Places: all 7 scattered scenario places
+- Principles: 6, 7, 22, 31
+
+**Setup**: Run the authored survival scattered scenario for 1440 ticks and
+
+**Proves**: no agent is idle for 30+ consecutive ticks while any need exceeds
+
+**Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
 
 ### Scenario 58: Travel Need Escalation
 

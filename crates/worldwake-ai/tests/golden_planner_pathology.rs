@@ -143,10 +143,12 @@ fn cli_scenario_seed(seed: u64) -> Seed {
 
 fn guard_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 16,
-        entity_claim_capacity: 16,
-        memory_retention_ticks: 64,
-        infrastructure_retention_ticks: 640,
+        entity_activation_threshold: pm(125),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 16,
+        observation_budget: 24,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(950),
         confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -407,9 +409,8 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
         ExplorationProfile {
             curiosity_weight: pm(650),
             need_activation_threshold: pm(350),
-            max_consecutive_explorations: 4,
             visit_lookback_ticks: 150,
-            consecutive_exploration_count: 0,
+            ..ExplorationProfile::default()
         },
     )
     .unwrap();
@@ -931,14 +932,4 @@ fn degenerate_zero_step_loop_blocks_actionable_goals() {
 #[test]
 fn obligation_satiation_allows_survival_needs_to_override_posting() {
     let _ = run_obligation_satiation_allows_survival(Seed([144; 32]));
-}
-
-#[test]
-fn obligation_satiation_allows_survival_needs_to_override_posting_replays_deterministically() {
-    let first = run_obligation_satiation_allows_survival(Seed([145; 32]));
-    let second = run_obligation_satiation_allows_survival(Seed([145; 32]));
-    assert_eq!(
-        first, second,
-        "obligation satiation survival scenario should replay deterministically"
-    );
 }

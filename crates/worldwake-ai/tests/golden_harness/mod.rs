@@ -955,8 +955,10 @@ pub fn seed_known_office_at_place(
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: tick,
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                tick,
+                PerceptionSource::DirectObservation,
+            )
         },
     );
 }
@@ -1644,10 +1646,12 @@ mod tests {
             ..TellProfile::default()
         };
         let perception_profile = PerceptionProfile {
-            entity_memory_capacity: 5,
-            entity_claim_capacity: 5,
-            memory_retention_ticks: 17,
-            infrastructure_retention_ticks: 170,
+            entity_activation_threshold: pm(242),
+            claim_confidence_threshold: pm(50),
+            observation_buffer_capacity: 5,
+            observation_budget: 24,
+            need_salience_boost: pm(500),
+            need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(600),
             confidence_policy: worldwake_core::BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,
@@ -1757,7 +1761,8 @@ mod tests {
         );
 
         let mut newer = earlier.clone();
-        newer.observed_tick = Tick(4);
+        newer.presentation_tick_count = 0;
+        newer.push_presentation_tick(Tick(4), 8);
         newer.last_known_place = Some(ORCHARD_FARM);
         newer.last_known_inventory = BTreeMap::from([(CommodityKind::Apple, Quantity(9))]);
         seed_belief(
@@ -1811,7 +1816,8 @@ mod tests {
         );
 
         let mut older = newer.clone();
-        older.observed_tick = Tick(7);
+        older.presentation_tick_count = 0;
+        older.push_presentation_tick(Tick(7), 8);
         older.last_known_place = Some(VILLAGE_SQUARE);
         older.last_known_inventory = BTreeMap::from([(CommodityKind::Apple, Quantity(2))]);
         seed_belief(&mut h.world, &mut h.event_log, agent, subject, older);
@@ -1850,7 +1856,7 @@ mod tests {
             PerceptionSource::DirectObservation,
         );
 
-        assert_eq!(belief.observed_tick, Tick(6));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(6)));
         assert_eq!(belief.source, PerceptionSource::DirectObservation);
         assert_eq!(agent_belief_about(&h.world, agent, subject), Some(&belief));
     }

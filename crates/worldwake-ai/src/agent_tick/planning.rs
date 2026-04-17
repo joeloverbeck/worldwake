@@ -1,4 +1,5 @@
 use crate::GoalKindPlannerExt;
+use crate::candidate_generation::relieved_needs_for_commodity;
 use crate::decision_trace::{
     BindingRejection, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
     PlannedStepSummary, RankedGoalSummary, SameGoalPlanningStopReason, SameGoalPlanningTrace,
@@ -57,6 +58,15 @@ impl CandidatePlanSearch {
         }
     }
 }
+
+type PlanningStepTraceResult = (
+    Option<PlannedStep>,
+    Option<bool>,
+    bool,
+    Option<PlanSearchTrace>,
+    Option<SelectionTrace>,
+    BTreeSet<worldwake_core::HomeostaticNeedId>,
+);
 
 fn found_plan_blocks_later_goals(plan: &PlannedPlan) -> bool {
     match plan.terminal_kind {
@@ -603,11 +613,21 @@ fn record_exhausted_goals(
     plans: &[CandidatePlanSearch],
     tick: Tick,
     cognitive: &CognitiveProfile,
-) {
+) -> BTreeSet<worldwake_core::HomeostaticNeedId> {
+    let mut pending_tracker_increments = BTreeSet::new();
     for plan in plans {
         match &plan.result {
             crate::PlanSearchResult::BudgetExhausted { .. }
             | crate::PlanSearchResult::FrontierExhausted { .. } => {
+                if matches!(plan.result, crate::PlanSearchResult::BudgetExhausted { .. })
+                    && let Some(commodity) = plan
+                        .opportunity
+                        .goal_key
+                        .kind
+                        .target_commodity(recipe_registry)
+                {
+                    pending_tracker_increments.extend(relieved_needs_for_commodity(commodity));
+                }
                 let (invalidation_conditions, baseline) = derive_invalidation_conditions(
                     &plan.opportunity.goal_key.kind,
                     agent,
@@ -649,6 +669,7 @@ fn record_exhausted_goals(
             }
         }
     }
+    pending_tracker_increments
 }
 
 fn has_pending_budget_retry(runtime: &AgentDecisionRuntime, current_tick: Tick) -> bool {
@@ -782,7 +803,7 @@ pub(super) fn plan_and_validate_next_step(
             );
 
             // Record newly exhausted goals for next tick.
-            record_exhausted_goals(
+            let _ = record_exhausted_goals(
                 runtime,
                 &view,
                 agent,
@@ -850,7 +871,7 @@ pub(super) fn plan_and_validate_next_step(
 
 /// Wrapper around `plan_and_validate_next_step` that also captures trace data.
 ///
-/// Returns `(next_step, valid, plan_continued, plan_search_trace, selection_trace)`.
+/// Returns `(next_step, valid, plan_continued, plan_search_trace, selection_trace, pending_tracker_increments)`.
 #[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
@@ -878,13 +899,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     tracing: bool,
     previous_goal: Option<worldwake_core::GoalKey>,
     recipe_registry: &RecipeRegistry,
-) -> (
-    Option<PlannedStep>,
-    Option<bool>,
-    bool,
-    Option<PlanSearchTrace>,
-    Option<SelectionTrace>,
-) {
+) -> PlanningStepTraceResult {
     if !tracing {
         let (step, valid) = plan_and_validate_next_step(
             world,
@@ -907,7 +922,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             action_handlers,
             recipe_registry,
         );
-        return (step, valid, false, None, None);
+        return (step, valid, false, None, None, BTreeSet::new());
     }
 
     // Traced path: inline the logic to capture intermediate results.
@@ -926,6 +941,7 @@ pub(super) fn plan_and_validate_next_step_traced(
         snapshot_continuation: None,
     };
     let mut plan_continued = false;
+    let mut pending_tracker_increments = BTreeSet::new();
 
     let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
     if should_plan {
@@ -976,6 +992,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                         plan_continued,
                         Some(plan_search_trace),
                         Some(selection_trace),
+                        BTreeSet::new(),
                     );
                 }
             }
@@ -1016,7 +1033,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             &runtime.exhaustion_cache,
         );
 
-        record_exhausted_goals(
+        pending_tracker_increments = record_exhausted_goals(
             runtime,
             &view,
             agent,
@@ -1177,6 +1194,7 @@ pub(super) fn plan_and_validate_next_step_traced(
         plan_continued,
         Some(plan_search_trace),
         Some(selection_trace),
+        pending_tracker_increments,
     )
 }
 
@@ -1275,15 +1293,16 @@ mod tests {
         search::SearchTraceMetadata,
     };
     use std::collections::{BTreeMap, BTreeSet};
+    use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, CauseRef, CognitiveProfile, CommodityKind, CommodityPurpose,
-        ControlSource, EventLog, ExecutionBudget, HomeostaticNeeds, MerchandiseProfile, Permille,
-        Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-        World, WorldTxn, build_prototype_world,
+        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind,
+        CommodityPurpose, ControlSource, EventLog, ExecutionBudget, HomeostaticNeeds,
+        MerchandiseProfile, Permille, Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::{
-        ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeRegistry, Scheduler,
-        SystemManifest,
+        ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeDefinition,
+        RecipeRegistry, Scheduler, SystemManifest,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -1326,6 +1345,8 @@ mod tests {
             max_candidates_to_plan: reasoning.max_candidates_to_plan,
             max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
+            max_travel_candidates_per_expansion: CognitiveProfile::default()
+                .max_travel_candidates_per_expansion,
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
             switch_margin: reasoning.switch_margin,
@@ -1337,7 +1358,6 @@ mod tests {
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
                 .max_snapshot_entities_per_place,
-            speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
             landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
             use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         }
@@ -1504,6 +1524,26 @@ mod tests {
             competition_discount: None,
             feasibility: FeasibilityHint::Likely,
         }
+    }
+
+    fn bread_recipe_registry() -> (RecipeRegistry, worldwake_core::RecipeId) {
+        let mut recipes = RecipeRegistry::new();
+        let recipe_id = recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(1).unwrap(),
+            ),
+        });
+        (recipes, recipe_id)
     }
 
     #[test]
@@ -2492,7 +2532,7 @@ mod tests {
         let mut frame = None;
         let mut facility_intents = worldwake_core::ContentionIntents::default();
 
-        let (_, _, _, plan_search_trace, _) = super::plan_and_validate_next_step_traced(
+        let (_, _, _, plan_search_trace, _, _) = super::plan_and_validate_next_step_traced(
             &world,
             &scheduler,
             &mut runtime,
@@ -2918,7 +2958,7 @@ mod tests {
         )];
         let (world, agent, _) = setup_agent_world();
         let view = PerAgentBeliefView::from_world(agent, &world);
-        record_exhausted_goals(
+        let tracker_increments = record_exhausted_goals(
             &mut runtime,
             &view,
             agent,
@@ -2926,6 +2966,10 @@ mod tests {
             &plans,
             Tick(9),
             &cognitive(&ProfileFixture::default()),
+        );
+        assert_eq!(
+            tracker_increments,
+            BTreeSet::from([worldwake_core::HomeostaticNeedId::Hunger])
         );
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
@@ -2968,7 +3012,7 @@ mod tests {
                 expansions_used: 12,
             },
         )];
-        record_exhausted_goals(
+        let _ = record_exhausted_goals(
             &mut runtime,
             &view,
             agent,
@@ -2991,6 +3035,39 @@ mod tests {
             vec![(CommodityKind::Bread, Quantity(2))]
         );
         assert_eq!(entry.baseline.position, Some(place));
+    }
+
+    #[test]
+    fn record_exhausted_goals_emits_hunger_increment_for_budget_exhausted_produce_goal() {
+        let (recipes, recipe_id) = bread_recipe_registry();
+        let goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
+            anchor: OpportunityAnchor::None,
+        };
+        let mut runtime = AgentDecisionRuntime::default();
+        let plans = vec![searched_plan(
+            goal,
+            PlanSearchResult::BudgetExhausted {
+                expansions_used: 12,
+            },
+        )];
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        let tracker_increments = record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &recipes,
+            &plans,
+            Tick(9),
+            &cognitive(&ProfileFixture::default()),
+        );
+
+        assert_eq!(
+            tracker_increments,
+            BTreeSet::from([worldwake_core::HomeostaticNeedId::Hunger])
+        );
     }
 
     #[test]
@@ -3021,7 +3098,7 @@ mod tests {
         let (world, agent, _) = setup_agent_world();
         let view = PerAgentBeliefView::from_world(agent, &world);
 
-        record_exhausted_goals(
+        let _ = record_exhausted_goals(
             &mut runtime,
             &view,
             agent,
@@ -3075,7 +3152,7 @@ mod tests {
         let (world, agent, _) = setup_agent_world();
         let view = PerAgentBeliefView::from_world(agent, &world);
 
-        record_exhausted_goals(
+        let _ = record_exhausted_goals(
             &mut runtime,
             &view,
             agent,
@@ -3111,7 +3188,7 @@ mod tests {
         let (world, agent, _) = setup_agent_world();
         let view = PerAgentBeliefView::from_world(agent, &world);
 
-        record_exhausted_goals(
+        let tracker_increments = record_exhausted_goals(
             &mut runtime,
             &view,
             agent,
@@ -3120,6 +3197,7 @@ mod tests {
             Tick(9),
             &cognitive(&ProfileFixture::default()),
         );
+        assert!(tracker_increments.is_empty());
 
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
         assert_eq!(entry.retry_state, ExhaustionRetryState::FrontierExhausted);

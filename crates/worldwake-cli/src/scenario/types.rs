@@ -7,15 +7,15 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile,
+    ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile, CommodityDecayMap,
     CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile, ControlSource,
-    DisposalProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-    ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastSeenMemory, MetabolismProfile, ObligationSatiationProfile, PatrolProfile,
-    PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
-    Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, items::CommodityKind,
-    topology::PlaceTag,
+    DisposalProfile, DiversificationProfile, DriveThresholds, EpistemicDispositionProfile,
+    ExecutionBudget, ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile,
+    JusticeDispositionProfile, LastSeenMemory, MetabolismProfile, ObligationSatiationProfile,
+    PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile,
+    PursuitProfile, Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -33,6 +33,8 @@ pub struct ScenarioDef {
     pub facilities: Vec<FacilityDef>,
     #[serde(default)]
     pub resource_sources: Vec<ResourceSourceDef>,
+    #[serde(default)]
+    pub commodity_decay: Option<CommodityDecayMap>,
     /// Ticks between checkpoint snapshots for event log compaction.
     /// Default: 50. Set to 0 to disable compaction.
     #[serde(default = "default_compaction_interval")]
@@ -112,6 +114,8 @@ pub struct AgentDef {
     #[serde(default)]
     pub exploration_profile: Option<ExplorationProfileDef>,
     #[serde(default)]
+    pub diversification_profile: Option<DiversificationProfile>,
+    #[serde(default)]
     pub carry_capacity: Option<CarryCapacity>,
     #[serde(default)]
     pub theft_disposition: Option<TheftDispositionProfile>,
@@ -167,8 +171,26 @@ pub struct PatrolRouteDef {
 pub struct ExplorationProfileDef {
     pub curiosity_weight: Permille,
     pub need_activation_threshold: Permille,
+    #[serde(default = "default_exploration_frontier_depth")]
+    pub frontier_depth: u16,
+    #[serde(default = "default_exploration_acquisition_failure_threshold")]
+    pub acquisition_failure_threshold: u8,
+    #[serde(default = "default_exploration_arrival_boost")]
+    pub exploration_arrival_boost: Permille,
     pub max_consecutive_explorations: u8,
     pub visit_lookback_ticks: u32,
+}
+
+const fn default_exploration_frontier_depth() -> u16 {
+    2
+}
+
+const fn default_exploration_acquisition_failure_threshold() -> u8 {
+    3
+}
+
+fn default_exploration_arrival_boost() -> Permille {
+    Permille::new_unchecked(500)
 }
 
 /// An item lot to place in the world.
@@ -240,9 +262,97 @@ mod tests {
         assert_eq!(def.agents[0].name, "Alice");
         assert_eq!(def.agents[0].location, "Village");
         assert_eq!(def.agents[0].control, ControlSource::Human);
+        assert_eq!(def.agents[0].diversification_profile, None);
         assert!(def.items.is_empty());
         assert!(def.facilities.is_empty());
         assert!(def.resource_sources.is_empty());
+        assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_deserializes_diversification_profile() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (
+                    name: "Alice",
+                    location: "Village",
+                    control: Human,
+                    diversification_profile: (
+                        base_curiosity: 400,
+                        comfort_threshold: 450,
+                        curiosity_buildup_rate: 5,
+                        exploration_cooldown_ticks: 60,
+                        familiarity_per_visit: 150,
+                        familiarity_recovery_per_tick: 2,
+                        familiarity_floor: 50,
+                        max_exploration_hops: 3,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(
+            def.agents[0].diversification_profile,
+            Some(DiversificationProfile {
+                base_curiosity: Permille::new(400).unwrap(),
+                comfort_threshold: Permille::new(450).unwrap(),
+                curiosity_buildup_rate: Permille::new(5).unwrap(),
+                exploration_cooldown_ticks: 60,
+                familiarity_per_visit: Permille::new(150).unwrap(),
+                familiarity_recovery_per_tick: Permille::new(2).unwrap(),
+                familiarity_floor: Permille::new(50).unwrap(),
+                max_exploration_hops: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn test_scenario_def_perception_profile_defaults_observation_budget_when_omitted() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (
+                    name: "Bob",
+                    location: "Village",
+                    control: Ai,
+                    perception_profile: (
+                        entity_activation_threshold: 204,
+                        claim_confidence_threshold: 50,
+                        observation_buffer_capacity: 6,
+                        need_salience_boost: 500,
+                        need_salience_urgency_threshold: 500,
+                        observation_fidelity: 900,
+                        confidence_policy: (
+                            direct_observation_base: 980,
+                            report_base: 820,
+                            rumor_base: 610,
+                            inference_base: 430,
+                            report_chain_penalty: 45,
+                            rumor_chain_penalty: 120,
+                            staleness_penalty_per_tick: 4,
+                        ),
+                        institutional_memory_capacity: 14,
+                        consultation_speed_factor: 600,
+                        contradiction_tolerance: 250,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let perception = def.agents[0]
+            .perception_profile
+            .expect("perception profile should deserialize");
+
+        assert_eq!(perception.observation_budget, 24);
     }
 
     #[test]
@@ -311,10 +421,12 @@ mod tests {
                         market_presence_ticks: 30,
                     ),
                     perception_profile: (
-                        entity_memory_capacity: 6,
-                        entity_claim_capacity: 9,
-                        memory_retention_ticks: 24,
-                        infrastructure_retention_ticks: 240,
+                        entity_activation_threshold: 204,
+                        claim_confidence_threshold: 50,
+                        observation_buffer_capacity: 6,
+                        observation_budget: 7,
+                        need_salience_boost: 500,
+                        need_salience_urgency_threshold: 500,
                         observation_fidelity: 900,
                         confidence_policy: (
                             direct_observation_base: 980,
@@ -422,8 +534,10 @@ mod tests {
         assert!(bob.trade_disposition.is_some());
         assert!(bob.perception_profile.is_some());
         let perception = bob.perception_profile.unwrap();
-        assert_eq!(perception.entity_memory_capacity, 6);
-        assert_eq!(perception.entity_claim_capacity, 9);
+        assert_eq!(perception.entity_activation_threshold.value(), 204);
+        assert_eq!(perception.claim_confidence_threshold.value(), 50);
+        assert_eq!(perception.observation_buffer_capacity, 6);
+        assert_eq!(perception.observation_budget, 7);
         assert!(bob.drive_thresholds.is_some());
         assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
         assert_eq!(
@@ -431,6 +545,9 @@ mod tests {
             Some(ExplorationProfileDef {
                 curiosity_weight: Permille::new(275).unwrap(),
                 need_activation_threshold: Permille::new(350).unwrap(),
+                frontier_depth: 2,
+                acquisition_failure_threshold: 3,
+                exploration_arrival_boost: Permille::new(500).unwrap(),
                 max_consecutive_explorations: 5,
                 visit_lookback_ticks: 17,
             })
@@ -465,6 +582,50 @@ mod tests {
         assert_eq!(def.facilities[0].workstation, WorkstationTag::Forge);
         assert_eq!(def.resource_sources.len(), 1);
         assert_eq!(def.resource_sources[0].capacity, Quantity(20));
+    }
+
+    #[test]
+    fn test_scenario_def_commodity_decay_omitted_field_stays_none() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+
+        assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_commodity_decay_deserializes_when_present() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+            ],
+            commodity_decay: {
+                Waste: 200,
+                Apple: 720,
+            },
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+
+        assert_eq!(
+            def.commodity_decay,
+            Some(CommodityDecayMap::from([
+                (CommodityKind::Apple, NonZeroU32::new(720).unwrap()),
+                (CommodityKind::Waste, NonZeroU32::new(200).unwrap()),
+            ]))
+        );
     }
 
     #[test]
@@ -509,6 +670,9 @@ mod tests {
                     exploration_profile: (
                         curiosity_weight: 275,
                         need_activation_threshold: 350,
+                        frontier_depth: 4,
+                        acquisition_failure_threshold: 6,
+                        exploration_arrival_boost: 650,
                         max_consecutive_explorations: 5,
                         visit_lookback_ticks: 17,
                         consecutive_exploration_count: 1,
@@ -529,6 +693,39 @@ mod tests {
                 .to_string()
                 .contains("Unexpected field named `consecutive_exploration_count`"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_exploration_profile_def_defaults_new_fields_when_omitted() {
+        let ron_str = r#"(
+            seed: 7,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (
+                    name: "Scout",
+                    location: "Village",
+                    control: Ai,
+                    exploration_profile: (
+                        curiosity_weight: 275,
+                        need_activation_threshold: 350,
+                        max_consecutive_explorations: 5,
+                        visit_lookback_ticks: 17,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let exploration = def.agents[0].exploration_profile.unwrap();
+
+        assert_eq!(exploration.frontier_depth, 2);
+        assert_eq!(exploration.acquisition_failure_threshold, 3);
+        assert_eq!(
+            exploration.exploration_arrival_boost,
+            Permille::new(500).unwrap()
         );
     }
 
@@ -617,7 +814,6 @@ mod tests {
                         initial_cooldown_ticks: 4,
                         max_cooldown_ticks: 64,
                         max_snapshot_entities_per_place: 50,
-                        speculative_acquisition: true,
                         landmark_extraction_depth: 3,
                     ),
                 ),
@@ -635,7 +831,7 @@ mod tests {
             CognitiveProfile::default().max_candidates_per_expansion
         );
         assert_eq!(cognitive.max_plan_depth, 10);
-        assert!(cognitive.speculative_acquisition);
+        assert_eq!(cognitive.max_travel_candidates_per_expansion, None);
         assert_eq!(cognitive.landmark_extraction_depth, 3);
     }
 

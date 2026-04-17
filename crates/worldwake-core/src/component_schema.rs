@@ -830,6 +830,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                acquisition_exhaustion_trackers,
+                AcquisitionExhaustionTracker,
+                insert_acquisition_exhaustion_tracker,
+                get_acquisition_exhaustion_tracker,
+                get_acquisition_exhaustion_tracker_mut,
+                remove_acquisition_exhaustion_tracker,
+                has_acquisition_exhaustion_tracker,
+                iter_acquisition_exhaustion_trackers,
+                insert_component_acquisition_exhaustion_tracker,
+                get_component_acquisition_exhaustion_tracker,
+                get_component_acquisition_exhaustion_tracker_mut,
+                remove_component_acquisition_exhaustion_tracker,
+                has_component_acquisition_exhaustion_tracker,
+                entities_with_acquisition_exhaustion_tracker,
+                query_acquisition_exhaustion_tracker,
+                count_with_acquisition_exhaustion_tracker,
+                "AcquisitionExhaustionTracker",
+                |kind| kind == EntityKind::Agent,
+                AcquisitionExhaustionTracker,
+                crate::AcquisitionExhaustionTracker,
+                set_component_acquisition_exhaustion_tracker,
+                clear_component_acquisition_exhaustion_tracker,
+                txn_simple_set
+            }
+            {
                 exploration_profiles,
                 ExplorationProfile,
                 insert_exploration_profile,
@@ -852,6 +877,56 @@ macro_rules! with_component_schema_entries {
                 crate::ExplorationProfile,
                 set_component_exploration_profile,
                 clear_component_exploration_profile,
+                txn_simple_set
+            }
+            {
+                diversification_profiles,
+                DiversificationProfile,
+                insert_diversification_profile,
+                get_diversification_profile,
+                get_diversification_profile_mut,
+                remove_diversification_profile,
+                has_diversification_profile,
+                iter_diversification_profiles,
+                insert_component_diversification_profile,
+                get_component_diversification_profile,
+                get_component_diversification_profile_mut,
+                remove_component_diversification_profile,
+                has_component_diversification_profile,
+                entities_with_diversification_profile,
+                query_diversification_profile,
+                count_with_diversification_profile,
+                "DiversificationProfile",
+                |kind| kind == EntityKind::Agent,
+                DiversificationProfile,
+                crate::DiversificationProfile,
+                set_component_diversification_profile,
+                clear_component_diversification_profile,
+                txn_simple_set
+            }
+            {
+                last_proactive_exploration_ticks,
+                LastProactiveExplorationTick,
+                insert_last_proactive_exploration_tick,
+                get_last_proactive_exploration_tick,
+                get_last_proactive_exploration_tick_mut,
+                remove_last_proactive_exploration_tick,
+                has_last_proactive_exploration_tick,
+                iter_last_proactive_exploration_ticks,
+                insert_component_last_proactive_exploration_tick,
+                get_component_last_proactive_exploration_tick,
+                get_component_last_proactive_exploration_tick_mut,
+                remove_component_last_proactive_exploration_tick,
+                has_component_last_proactive_exploration_tick,
+                entities_with_last_proactive_exploration_tick,
+                query_last_proactive_exploration_tick,
+                count_with_last_proactive_exploration_tick,
+                "LastProactiveExplorationTick",
+                |kind| kind == EntityKind::Agent,
+                LastProactiveExplorationTick,
+                crate::LastProactiveExplorationTick,
+                set_component_last_proactive_exploration_tick,
+                clear_component_last_proactive_exploration_tick,
                 txn_simple_set
             }
             {
@@ -1738,6 +1813,31 @@ macro_rules! with_component_schema_entries {
                 set_component_unique_item_unused,
                 clear_component_unique_item_unused,
                 no_txn_simple_set
+            }
+            {
+                ground_since,
+                GroundSince,
+                insert_ground_since,
+                get_ground_since,
+                get_ground_since_mut,
+                remove_ground_since,
+                has_ground_since,
+                iter_ground_since,
+                insert_component_ground_since,
+                get_component_ground_since,
+                get_component_ground_since_mut,
+                remove_component_ground_since,
+                has_component_ground_since,
+                entities_with_ground_since,
+                query_ground_since,
+                count_with_ground_since,
+                "GroundSince",
+                |kind| kind == EntityKind::ItemLot || kind == EntityKind::UniqueItem,
+                GroundSince,
+                crate::GroundSince,
+                set_component_ground_since,
+                clear_component_ground_since,
+                txn_simple_set
             }
             {
                 containers,

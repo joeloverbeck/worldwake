@@ -866,6 +866,7 @@ dependencies = [
  "bincode",
  "blake3",
  "serde",
+ "worldwake-cli",
  "worldwake-core",
  "worldwake-sim",
  "worldwake-systems",

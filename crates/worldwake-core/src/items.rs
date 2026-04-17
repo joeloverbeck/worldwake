@@ -332,6 +332,23 @@ pub struct UniqueItem {
 
 impl Component for UniqueItem {}
 
+/// Ticks-to-decay for commodity kinds resting loose on the ground.
+pub type CommodityDecayMap = BTreeMap<CommodityKind, NonZeroU32>;
+
+#[must_use]
+pub fn default_commodity_decay_map() -> CommodityDecayMap {
+    BTreeMap::from([
+        (CommodityKind::Waste, nz(200)),
+        (CommodityKind::Apple, nz(720)),
+    ])
+}
+
+/// Tick when an item most recently became a loose ground item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GroundSince(pub Tick);
+
+impl Component for GroundSince {}
+
 /// Deterministic storage and admission policy for container entities.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Container {
@@ -357,10 +374,10 @@ const fn nz(value: u32) -> NonZeroU32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CombatWeaponProfile, CommodityConsumableProfile, CommodityKind, CommodityKindSpec,
-        CommodityPhysicalProfile, CommodityTreatmentProfile, Container, ItemLot, LotOperation,
-        ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind, UniqueItemKindSpec,
-        UniqueItemPhysicalProfile,
+        CombatWeaponProfile, CommodityConsumableProfile, CommodityDecayMap, CommodityKind,
+        CommodityKindSpec, CommodityPhysicalProfile, CommodityTreatmentProfile, Container,
+        GroundSince, ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem,
+        UniqueItemKind, UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
     };
     use crate::{EntityId, EventId, LoadUnits, Permille, Quantity, Tick, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
@@ -409,6 +426,17 @@ mod tests {
     fn unique_item_component_bounds() {
         fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
         assert_component_bounds::<UniqueItem>();
+    }
+
+    #[test]
+    fn ground_since_component_bounds() {
+        fn assert_component_bounds<T: Component + Eq + PartialEq>() {}
+        assert_component_bounds::<GroundSince>();
+    }
+
+    #[test]
+    fn commodity_decay_map_trait_bounds() {
+        assert_struct_bounds::<CommodityDecayMap>();
     }
 
     #[test]
@@ -609,6 +637,36 @@ mod tests {
         let roundtrip: UniqueItem = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, item);
+    }
+
+    #[test]
+    fn ground_since_roundtrips_through_bincode() {
+        let ground_since = GroundSince(Tick(42));
+
+        let bytes = bincode::serialize(&ground_since).unwrap();
+        let roundtrip: GroundSince = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, ground_since);
+    }
+
+    #[test]
+    fn default_commodity_decay_map_contains_expected_defaults() {
+        assert_eq!(
+            default_commodity_decay_map(),
+            BTreeMap::from([
+                (CommodityKind::Apple, NonZeroU32::new(720).unwrap()),
+                (CommodityKind::Waste, NonZeroU32::new(200).unwrap()),
+            ])
+        );
+    }
+
+    #[test]
+    fn commodity_decay_map_roundtrips_through_bincode() {
+        let map = default_commodity_decay_map();
+        let bytes = bincode::serialize(&map).unwrap();
+        let roundtrip: CommodityDecayMap = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, map);
     }
 
     #[test]

@@ -14,6 +14,12 @@ pub enum CommodityPurpose {
     RecipeInput(RecipeId),
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum ExplorationMotivation {
+    NeedDriven(HomeostaticNeedId),
+    Proactive,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum GoalKind {
     ConsumeOwnedCommodity {
@@ -114,7 +120,7 @@ pub enum GoalKind {
     },
     ExploreLocation {
         target_place: EntityId,
-        motivating_need: HomeostaticNeedId,
+        motivating_need: ExplorationMotivation,
     },
     StealItem {
         target_item: EntityId,
@@ -247,8 +253,8 @@ impl From<&GoalKind> for GoalKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, TellTopic,
-        ViolationId,
+        CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind, OpportunityAnchor,
+        OpportunityKey, TellTopic, ViolationId,
     };
     use crate::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
@@ -759,7 +765,7 @@ mod tests {
         let target_place = entity_id(23, 3);
         let key = GoalKey::from(GoalKind::ExploreLocation {
             target_place,
-            motivating_need: HomeostaticNeedId::Thirst,
+            motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Thirst),
         });
 
         assert_eq!(key.commodity, None);
@@ -771,13 +777,27 @@ mod tests {
     fn explore_location_goal_roundtrips_through_bincode() {
         let goal = GoalKind::ExploreLocation {
             target_place: entity_id(23, 4),
-            motivating_need: HomeostaticNeedId::Hunger,
+            motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
         };
 
         let bytes = bincode::serialize(&goal).unwrap();
         let roundtrip: GoalKind = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
+    }
+
+    #[test]
+    fn exploration_motivation_roundtrips_through_bincode() {
+        let motivation = ExplorationMotivation::NeedDriven(HomeostaticNeedId::Thirst);
+
+        let bytes = bincode::serialize(&motivation).unwrap();
+        let roundtrip: ExplorationMotivation = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, motivation);
+        assert_eq!(
+            ExplorationMotivation::Proactive,
+            ExplorationMotivation::Proactive
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
     EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
-    LoadUnits, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw,
+    LoadUnits, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick,
     WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
@@ -147,7 +147,9 @@ pub(crate) fn grounded_goal_epistemic_subjects(
                 .known_entity_beliefs(actor)
                 .into_iter()
                 .find_map(|(known, belief)| (known == *entity).then_some(belief))?;
-            let staleness_ticks = current_tick.0.saturating_sub(belief.observed_tick.0);
+            let staleness_ticks = current_tick
+                .0
+                .saturating_sub(belief.last_observed_tick().unwrap_or(Tick(0)).0);
             if belief_confidence(&belief.source, staleness_ticks, &policy)
                 >= profile.stale_evidence_barrier_threshold
             {
@@ -1459,9 +1461,9 @@ impl GoalKindPlannerExt for GoalKind {
                 None => state.effective_place(actor).into_iter().collect(),
             },
             GoalKind::EscortToSafety { destination, .. } => vec![*destination],
+            GoalKind::Wash => places_with_workstation(state, WorkstationTag::WashBasin),
             GoalKind::ReportFound { .. }
             | GoalKind::Sleep
-            | GoalKind::Wash
             | GoalKind::ReduceDanger
             | GoalKind::SupportCandidateForOffice { .. } => Vec::new(),
             GoalKind::FreeCarryCapacity => state.effective_place(actor).into_iter().collect(),
@@ -2515,6 +2517,8 @@ mod tests {
             max_candidates_to_plan: reasoning.max_candidates_to_plan,
             max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
+            max_travel_candidates_per_expansion: CognitiveProfile::default()
+                .max_travel_candidates_per_expansion,
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
             switch_margin: reasoning.switch_margin,
@@ -2526,7 +2530,6 @@ mod tests {
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
                 .max_snapshot_entities_per_place,
-            speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
             landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
             use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         }
@@ -6642,13 +6645,32 @@ mod tests {
     }
 
     #[test]
-    fn wash_returns_empty() {
+    fn wash_returns_empty_without_wash_basins() {
         let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
         let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
         assert!(places.is_empty());
+    }
+
+    #[test]
+    fn wash_returns_places_with_wash_basins() {
+        let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
+        let basin = entity(50);
+        view.alive.insert(basin);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.effective_places.insert(basin, place_c);
+        view.entities_at.entry(place_c).or_default().push(basin);
+        view.workstation_tags
+            .insert(basin, WorkstationTag::WashBasin);
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_c]);
+        // Actor's own place (place_a) should NOT appear — no basin there.
+        assert!(!places.contains(&place_a));
     }
 
     #[test]
@@ -7334,7 +7356,9 @@ mod tests {
             },
             GoalKind::ExploreLocation {
                 target_place: place_b,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             },
             GoalKind::StealItem {
                 target_item: entity(97),
@@ -7428,7 +7452,9 @@ mod tests {
             },
             GoalKind::ExploreLocation {
                 target_place: place_b,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             },
             GoalKind::Patrol { place: place_b },
             GoalKind::StealItem {
@@ -7462,7 +7488,9 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::ExploreLocation {
             target_place: place_a,
-            motivating_need: HomeostaticNeedId::Hunger,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Hunger,
+            ),
         };
 
         assert!(goal.is_satisfied(&state));
@@ -7476,7 +7504,9 @@ mod tests {
         let target_place = entity(99);
         let goal = GoalKind::ExploreLocation {
             target_place,
-            motivating_need: HomeostaticNeedId::Hunger,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Hunger,
+            ),
         };
 
         assert!(!goal.is_satisfied(&state));
@@ -8623,8 +8653,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick,
-            source: worldwake_core::PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                observed_tick,
+                worldwake_core::PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -9606,8 +9638,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -9671,8 +9705,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -9917,8 +9953,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -9994,8 +10032,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -10077,8 +10117,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(1),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(1),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );

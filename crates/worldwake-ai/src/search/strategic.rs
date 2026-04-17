@@ -865,8 +865,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(1),
-            source: worldwake_core::PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(1),
+                worldwake_core::PerceptionSource::DirectObservation,
+            )
         }
     }
 

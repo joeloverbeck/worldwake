@@ -17,8 +17,11 @@ impl Component for ArtifactHeader {}
 /// Per-agent defaults for artifact TTL when posting notices and bounties.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ArtifactPostingProfile {
+    /// Default time-to-live in ticks for threat warning notice artifacts.
     pub threat_warning_ttl: u64,
+    /// Default time-to-live in ticks for office vacancy notice artifacts.
     pub office_vacancy_ttl: u64,
+    /// Default time-to-live in ticks for bounty artifacts.
     pub bounty_ttl: u64,
 }
 

@@ -7,9 +7,13 @@ use serde::{Deserialize, Serialize};
 /// repeated execution within a recent window.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ObligationSatiationProfile {
+    /// Number of obligation executions within the lookback window before satiation dampening begins.
     pub satiation_threshold: u32,
+    /// Lookback window in ticks over which recent obligation executions are counted.
     pub window_ticks: u32,
+    /// Motive weight decay applied per execution above the satiation threshold.
     pub decay_per_execution: Permille,
+    /// Minimum motive weight that satiation decay cannot reduce below.
     pub satiation_floor: Permille,
 }
 

@@ -21,8 +21,11 @@ pub enum EpistemicSubject {
 /// Per-agent parameters governing deliberate epistemic behavior.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EpistemicDispositionProfile {
+    /// Staleness level at which a grounded goal inserts an epistemic barrier requiring evidence refresh.
     pub stale_evidence_barrier_threshold: Permille,
+    /// Duration in ticks for an ask-witness action.
     pub witness_query_duration_ticks: NonZeroU32,
+    /// How long (in ticks) the agent remembers a previous ask-witness attempt to avoid redundant queries.
     pub ask_memory_retention_ticks: u32,
 }
 

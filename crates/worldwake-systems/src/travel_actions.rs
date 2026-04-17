@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, EdgeExperience, EntityId, EntityKind, EventLog, EventTag,
-    EventView, Permille, Tick, TravelEdgeId, VisibilitySpec, WorldTxn,
+    EventView, GoalKind, Permille, Tick, TravelEdgeId, VisibilitySpec, WorldTxn,
+    build_believed_entity_state,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
@@ -293,7 +294,64 @@ fn commit_travel(
     .map_err(|err| ActionError::InternalError(err.to_string()))?;
     let hostile = had_combat_during_travel(event_log, instance.actor, departure_tick, current_tick);
     record_route_experience(txn, instance.actor, edge_id, current_tick, hostile)?;
+    reinforce_exploration_arrival_belief(instance.actor, destination, current_tick, txn)?;
     Ok(CommitOutcome::empty())
+}
+
+fn reinforce_exploration_arrival_belief(
+    actor: EntityId,
+    destination: EntityId,
+    current_tick: Tick,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let Some(active_goal) = txn.get_component_active_goal(actor).copied() else {
+        return Ok(());
+    };
+    let GoalKind::ExploreLocation { target_place, .. } = active_goal.goal_key.kind else {
+        return Ok(());
+    };
+    if target_place != destination {
+        return Ok(());
+    }
+
+    let boost = txn
+        .get_component_exploration_profile(actor)
+        .copied()
+        .unwrap_or_default()
+        .exploration_arrival_boost;
+    if boost == Permille::ZERO {
+        return Ok(());
+    }
+
+    let mut beliefs = txn
+        .get_component_agent_belief_store(actor)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::InternalError(format!("actor {actor} lacks AgentBeliefStore"))
+        })?;
+
+    let belief = beliefs
+        .known_entities
+        .entry(destination)
+        .or_insert_with(|| {
+            build_believed_entity_state(
+                txn,
+                destination,
+                current_tick,
+                worldwake_core::PerceptionSource::DirectObservation,
+            )
+            .expect("travel destinations must build believed place state")
+        });
+    let buffer_capacity = u8::try_from(belief.presentation_ticks.len()).unwrap_or(u8::MAX);
+    let synthetic_ticks = ((u32::from(boost.value()) * u32::from(buffer_capacity)) / 1000)
+        .min(u32::from(u8::MAX)) as u8;
+    for _ in 0..synthetic_ticks {
+        belief.push_presentation_tick(current_tick, buffer_capacity);
+    }
+
+    txn.set_component_agent_belief_store(actor, beliefs)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    Ok(())
 }
 
 fn abort_travel(
@@ -328,10 +386,11 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, CauseRef, Container, ControlSource, EdgeExperience, EventLog,
-        EventPayload, EventView, EvidenceKind, InTransitOnEdge, LoadUnits, MetabolismProfile,
-        PendingEvent, PerceptionSource, Place, PreferenceProfile, Quantity, RouteExperience, Seed,
-        Tick, Topology, TravelEdge, WitnessData, World, build_believed_entity_state,
+        ActiveGoal, AgentBeliefStore, CauseRef, Container, ControlSource, EdgeExperience, EventLog,
+        EventPayload, EventView, EvidenceKind, ExplorationProfile, GoalKey, GoalKind,
+        HomeostaticNeedId, InTransitOnEdge, LoadUnits, MetabolismProfile, PendingEvent,
+        PerceptionSource, Place, PreferenceProfile, Quantity, RouteExperience, Seed, Tick,
+        Topology, TravelEdge, WitnessData, World, build_believed_entity_state,
     };
     use worldwake_sim::{
         ActionExecutionAuthority, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -544,6 +603,43 @@ mod tests {
         .unwrap();
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn complete_travel_action(
+        world: &mut World,
+        log: &mut EventLog,
+        active_actions: &mut BTreeMap<ActionInstanceId, ActionInstance>,
+        rng: &mut DeterministicRng,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+        instance_id: ActionInstanceId,
+    ) -> TickOutcome {
+        for tick in [6, 7] {
+            assert_eq!(
+                tick_travel_action(
+                    world,
+                    log,
+                    active_actions,
+                    rng,
+                    defs,
+                    handlers,
+                    instance_id,
+                    tick,
+                ),
+                TickOutcome::Continuing
+            );
+        }
+        tick_travel_action(
+            world,
+            log,
+            active_actions,
+            rng,
+            defs,
+            handlers,
+            instance_id,
+            8,
+        )
+    }
+
     fn emit_combat_event(
         log: &mut EventLog,
         tick: u64,
@@ -577,6 +673,32 @@ mod tests {
     fn set_route_experience(world: &mut World, actor: EntityId, route: RouteExperience) {
         let mut txn = new_txn(world, 2);
         txn.set_component_route_experience(actor, route).unwrap();
+        commit_txn(txn);
+    }
+
+    fn set_active_goal(world: &mut World, actor: EntityId, goal: GoalKind) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_active_goal(
+            actor,
+            ActiveGoal {
+                goal_key: GoalKey::from(goal),
+                adopted_at: Tick(2),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    fn set_exploration_profile(world: &mut World, actor: EntityId, profile: ExplorationProfile) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_exploration_profile(actor, profile)
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    fn set_belief_store(world: &mut World, actor: EntityId, store: AgentBeliefStore) {
+        let mut txn = new_txn(world, 2);
+        txn.set_component_agent_belief_store(actor, store).unwrap();
         commit_txn(txn);
     }
 
@@ -789,6 +911,272 @@ mod tests {
         assert_eq!(world.effective_place(actor), Some(destination));
         assert_eq!(world.effective_place(bag), Some(destination));
         assert_eq!(world.effective_place(bread), Some(destination));
+    }
+
+    #[test]
+    fn explore_location_travel_pushes_synthetic_presentation_ticks() {
+        let (mut world, actor, _, _, _, destination) = setup_world();
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+
+        set_active_goal(
+            &mut world,
+            actor,
+            GoalKind::ExploreLocation {
+                target_place: destination,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
+            },
+        );
+        set_exploration_profile(
+            &mut world,
+            actor,
+            ExplorationProfile {
+                exploration_arrival_boost: Permille::new(500).unwrap(),
+                ..ExplorationProfile::default()
+            },
+        );
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(
+            destination,
+            build_believed_entity_state(
+                &world,
+                destination,
+                Tick(2),
+                PerceptionSource::DirectObservation,
+            )
+            .unwrap(),
+        );
+        set_belief_store(&mut world, actor, beliefs);
+
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+        assert!(matches!(
+            complete_travel_action(
+                &mut world,
+                &mut log,
+                &mut active_actions,
+                &mut rng,
+                &defs,
+                &handlers,
+                instance_id,
+            ),
+            TickOutcome::Committed { .. }
+        ));
+
+        let belief = world
+            .get_component_agent_belief_store(actor)
+            .unwrap()
+            .get_entity(&destination)
+            .unwrap();
+        assert_eq!(belief.presentation_tick_count, 5);
+        assert_eq!(
+            belief.presentation_ticks[..5],
+            [Tick(2), Tick(8), Tick(8), Tick(8), Tick(8)]
+        );
+    }
+
+    #[test]
+    fn non_explore_travel_does_not_push_synthetic_presentation_ticks() {
+        let (mut world, actor, _, _, _, destination) = setup_world();
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+
+        set_active_goal(&mut world, actor, GoalKind::Sleep);
+        set_exploration_profile(
+            &mut world,
+            actor,
+            ExplorationProfile {
+                exploration_arrival_boost: Permille::new(500).unwrap(),
+                ..ExplorationProfile::default()
+            },
+        );
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(
+            destination,
+            build_believed_entity_state(
+                &world,
+                destination,
+                Tick(2),
+                PerceptionSource::DirectObservation,
+            )
+            .unwrap(),
+        );
+        set_belief_store(&mut world, actor, beliefs);
+
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+        let _ = complete_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+        );
+
+        let belief = world
+            .get_component_agent_belief_store(actor)
+            .unwrap()
+            .get_entity(&destination)
+            .unwrap();
+        assert_eq!(belief.presentation_tick_count, 1);
+        assert_eq!(belief.presentation_ticks[0], Tick(2));
+    }
+
+    #[test]
+    fn zero_exploration_arrival_boost_is_no_op() {
+        let (mut world, actor, _, _, _, destination) = setup_world();
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+
+        set_active_goal(
+            &mut world,
+            actor,
+            GoalKind::ExploreLocation {
+                target_place: destination,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
+            },
+        );
+        set_exploration_profile(
+            &mut world,
+            actor,
+            ExplorationProfile {
+                exploration_arrival_boost: Permille::ZERO,
+                ..ExplorationProfile::default()
+            },
+        );
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(
+            destination,
+            build_believed_entity_state(
+                &world,
+                destination,
+                Tick(2),
+                PerceptionSource::DirectObservation,
+            )
+            .unwrap(),
+        );
+        set_belief_store(&mut world, actor, beliefs);
+
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+        let _ = complete_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+        );
+
+        let belief = world
+            .get_component_agent_belief_store(actor)
+            .unwrap()
+            .get_entity(&destination)
+            .unwrap();
+        assert_eq!(belief.presentation_tick_count, 1);
+        assert_eq!(belief.presentation_ticks[0], Tick(2));
+    }
+
+    #[test]
+    fn explore_location_travel_seeds_destination_belief_before_applying_boost() {
+        let (mut world, actor, _, _, _, destination) = setup_world();
+        let (defs, handlers, _) = setup_registries();
+        let mut log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = test_rng();
+
+        set_active_goal(
+            &mut world,
+            actor,
+            GoalKind::ExploreLocation {
+                target_place: destination,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
+            },
+        );
+        set_exploration_profile(
+            &mut world,
+            actor,
+            ExplorationProfile {
+                exploration_arrival_boost: Permille::new(500).unwrap(),
+                ..ExplorationProfile::default()
+            },
+        );
+        set_belief_store(&mut world, actor, AgentBeliefStore::new());
+
+        let instance_id = start_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            actor,
+            destination,
+        );
+        let _ = complete_travel_action(
+            &mut world,
+            &mut log,
+            &mut active_actions,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+        );
+
+        let belief = world
+            .get_component_agent_belief_store(actor)
+            .unwrap()
+            .get_entity(&destination)
+            .unwrap();
+        assert_eq!(belief.believed_kind, Some(EntityKind::Place));
+        assert_eq!(belief.last_known_place, None);
+        assert_eq!(belief.presentation_tick_count, 5);
+        assert_eq!(
+            belief.presentation_ticks[..5],
+            [Tick(8), Tick(8), Tick(8), Tick(8), Tick(8)]
+        );
     }
 
     #[test]

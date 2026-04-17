@@ -49,7 +49,18 @@ pub fn evaluate_interrupt(
         };
     }
 
-    let Some(challenger) = best_challenger(active_goal, ranked_candidates) else {
+    let effective_active_goal = effective_active_goal(runtime, active_goal, jc);
+
+    if current_action_interruptibility == Interruptibility::InterruptibleWithPenalty
+        && ranked_candidates.first().is_some_and(|candidate| {
+            candidate.priority_class == GoalPriorityClass::Critical
+                && Some(candidate.grounded.key) == effective_active_goal
+        })
+    {
+        return InterruptDecision::NoInterrupt;
+    }
+
+    let Some(challenger) = best_challenger(effective_active_goal, ranked_candidates) else {
         return InterruptDecision::NoInterrupt;
     };
 
@@ -57,7 +68,7 @@ pub fn evaluate_interrupt(
         Interruptibility::NonInterruptible => InterruptDecision::NoInterrupt,
         Interruptibility::InterruptibleWithPenalty => interrupt_with_penalty(challenger),
         Interruptibility::FreelyInterruptible => interrupt_freely(
-            active_goal,
+            effective_active_goal,
             runtime,
             jc,
             challenger,
@@ -68,6 +79,16 @@ pub fn evaluate_interrupt(
             *decision_context,
         ),
     }
+}
+
+fn effective_active_goal(
+    runtime: &AgentDecisionRuntime,
+    active_goal: Option<GoalKey>,
+    jc: Option<&IntentionFrame>,
+) -> Option<GoalKey> {
+    active_goal
+        .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
+        .or_else(|| jc.map(|frame| frame.goal))
 }
 
 fn interrupt_with_penalty(challenger: &RankedGoal) -> InterruptDecision {
@@ -828,6 +849,61 @@ mod tests {
             InterruptDecision::InterruptForReplan {
                 trigger: InterruptTrigger::SuperiorSameClassPlan,
             }
+        );
+    }
+
+    #[test]
+    fn penalty_interrupt_ignores_current_plan_goal_when_active_goal_component_is_missing() {
+        let current_goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let current_goal_key = GoalKey::from(current_goal);
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(PlannedPlan::new(
+                opportunity(current_goal_key),
+                current_goal_key,
+                vec![crate::PlannedStep {
+                    def_id: ActionDefId(1),
+                    targets: vec![crate::PlanningEntityRef::Authoritative(entity(1))],
+                    payload_override: None,
+                    op_kind: crate::PlannerOpKind::Harvest,
+                    estimated_ticks: 6,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                }],
+                crate::PlanTerminalKind::GoalSatisfied,
+            )),
+            dirty: crate::DirtySet::default(),
+            last_priority_class: Some(GoalPriorityClass::Critical),
+            ..AgentDecisionRuntime::default()
+        };
+        let challengers = vec![
+            ranked(current_goal, GoalPriorityClass::Critical, 1_000),
+            ranked(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::Low,
+                10,
+            ),
+        ];
+
+        assert_eq!(
+            evaluate_interrupt(
+                &runtime,
+                None,
+                None,
+                Interruptibility::InterruptibleWithPenalty,
+                &challengers,
+                None,
+                true,
+                default_switch_margin(),
+                default_switch_margin(),
+                &dummy_context(),
+            ),
+            InterruptDecision::NoInterrupt
         );
     }
 

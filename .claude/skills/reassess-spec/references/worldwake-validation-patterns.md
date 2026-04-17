@@ -28,6 +28,8 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 5. `Default` impl if universal
 6. `*Def` wrapper type if component contains `EntityId` references
 
+**Note**: Runtime-only components (not scenario-definable, always start at defaults) still require `component_schema.rs` registration and `create_agent()` insertion. The only exempt items are transient local variables that are never stored as ECS components. If the spec calls it a "component" and proposes `create_agent()` insertion, registration is mandatory.
+
 ## New Component Read by AI Crate
 
 **Trigger**: Spec adds a component that candidate generation, ranking, or planning needs to read.
@@ -36,8 +38,8 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 
 1. `GoalBeliefView` accessor — new method on trait in `crates/worldwake-sim/src/belief_view.rs`
 2. `RuntimeBeliefView` impl — backing implementation
-3. `impl_goal_belief_view!` macro — forwarding the new method
-4. Crate list — `worldwake-sim` must be listed as needing changes
+3. `impl_goal_belief_view!` macro or blanket impl — forwarding the new method
+4. Crate list — `worldwake-sim` must appear in the spec's Crates section (GoalBeliefView and component traits live there)
 
 ## New Action Type
 
@@ -51,6 +53,35 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 4. `classify_action_def` match arm in `crates/worldwake-ai/src/planner_ops.rs`
 5. Affordance query — how the planner discovers this action is available
 6. `Authoritative-to-AI Impact Rule` checklist (CLAUDE.md) if modifying preconditions
+
+## New Scenario Design
+
+**Trigger**: Spec creates or redesigns a `.ron` scenario file.
+
+**Verify the spec addresses**:
+
+1. All `WorkstationTag` values exist as enum variants (`crates/worldwake-core/src/production.rs`)
+2. All `PlaceTag` values exist as enum variants (`crates/worldwake-core/src/topology.rs`). Note: `PlaceTag` (place-level property) and `WorkstationTag` (facility-level) are distinct — do not conflate them
+3. Recipe names match the action registry format: Title Case with spaces (e.g., `"Harvest Grain"`, not `HarvestGrain`)
+4. `AgentDef` fields match current definition in `crates/worldwake-cli/src/scenario/types.rs`
+5. Commodity names match `CommodityKind` enum variants
+6. If the scenario claims survival coverage, all `HomeostaticNeedId` variants (Hunger, Thirst, Fatigue, Bladder, Dirtiness) have satisfiable action paths given the proposed places, facilities, and tags
+7. Action preconditions are satisfiable: check that each need-satisfaction action's required facility, tag, or possession constraint is met by at least one reachable place in the scenario
+
+Cross-reference with existing scenarios (`scenarios/*.ron`) for structural conventions.
+
+## Candidate Scoring Architecture
+
+**Trigger**: Spec proposes scoring/utility computation for candidate emission (e.g., drive scores, priority weights, utility factors).
+
+**Verify the spec's scoring model matches the actual emission-vs-ranking architecture**:
+
+1. Emitters call `emit_candidate_with_trace` which produces `GroundedGoal` — a struct with `GoalKey`, `OpportunityAnchor`, and evidence sets. There is **no score field** on `GroundedGoal`.
+2. Ranking happens separately in `crates/worldwake-ai/src/ranking.rs` via `motive_score` computation.
+3. Specs that embed scoring/utility computation in the emitter (e.g., computing a `drive_score` and attaching it to a candidate struct) are architectural mismatches — flag as Issues.
+4. Emitters determine **whether** to emit (gate logic: thresholds, vetoes, cooldowns). Ranking determines **relative priority** among emitted candidates.
+
+If the spec proposes utility gates (emit only if utility > 0), that belongs in the emitter. If the spec proposes priority/ranking formulas, those belong in `ranking.rs` via `motive_score`.
 
 ## New Enum Variant on Cross-Crate Enum
 

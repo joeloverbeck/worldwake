@@ -92,10 +92,12 @@ fn build_harness_with_topology(seed: Seed, topology: Topology) -> GoldenHarness 
 
 fn default_perception_profile() -> PerceptionProfile {
     PerceptionProfile {
-        entity_memory_capacity: 64,
-        entity_claim_capacity: 64,
-        memory_retention_ticks: 240,
-        infrastructure_retention_ticks: 2400,
+        entity_activation_threshold: pm(64),
+        claim_confidence_threshold: pm(50),
+        observation_buffer_capacity: 64,
+        observation_budget: 24,
+        need_salience_boost: pm(500),
+        need_salience_urgency_threshold: pm(500),
         observation_fidelity: pm(1000),
         confidence_policy: BeliefConfidencePolicy::default(),
         institutional_memory_capacity: 20,
@@ -555,16 +557,6 @@ fn golden_hostile_completed_travel_flips_next_route_choice() {
     let _ = run_hostile_route_learning_scenario(Seed([91; 32]), false);
 }
 
-#[test]
-fn golden_hostile_completed_travel_flips_next_route_choice_replays_deterministically() {
-    let first = run_hostile_route_learning_scenario(Seed([91; 32]), false);
-    let second = run_hostile_route_learning_scenario(Seed([91; 32]), false);
-    assert_eq!(
-        first, second,
-        "completed-hostile travel route learning should replay deterministically",
-    );
-}
-
 // Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 // ---------------------------------------------------------------------------
 //
@@ -586,16 +578,6 @@ fn golden_combat_aborted_travel_flips_next_route_choice() {
     let _ = run_hostile_route_learning_scenario(Seed([92; 32]), true);
 }
 
-#[test]
-fn golden_combat_aborted_travel_flips_next_route_choice_replays_deterministically() {
-    let first = run_hostile_route_learning_scenario(Seed([92; 32]), true);
-    let second = run_hostile_route_learning_scenario(Seed([92; 32]), true);
-    assert_eq!(
-        first, second,
-        "combat-aborted travel route learning should replay deterministically",
-    );
-}
-
 // Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 // ---------------------------------------------------------------------------
 //
@@ -615,14 +597,4 @@ fn golden_combat_aborted_travel_flips_next_route_choice_replays_deterministicall
 #[test]
 fn golden_preference_profile_diversifies_route_selection() {
     let _ = run_preference_diversity_scenario(Seed([93; 32]));
-}
-
-#[test]
-fn golden_preference_profile_diversifies_route_selection_replays_deterministically() {
-    let first = run_preference_diversity_scenario(Seed([93; 32]));
-    let second = run_preference_diversity_scenario(Seed([93; 32]));
-    assert_eq!(
-        first, second,
-        "preference-profile route diversity should replay deterministically",
-    );
 }

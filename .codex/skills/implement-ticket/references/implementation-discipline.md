@@ -41,3 +41,12 @@ Worldwake-specific coding rules for Step 5.
 23. When adding a new candidate emitter for a domain that already has active goal families, verify the new goal does not cause goal-switching collisions with existing goals for the same target entity. Run existing golden suites for that domain first.
 24. When a goal generates as a candidate with nonzero motive but is never selected, diagnose in order: (a) `compute_motive` returns > 0, (b) `synthesized_root_candidate_targets` provides a root candidate, (c) `is_progress_barrier` identifies the terminal op, (d) `build_payload_override` succeeds, (e) `estimate_duration` returns `Some`.
 25. When adding a new `GoalKind` variant, use the compiler to surface exhaustive-match sites, but also sweep runtime-reachable surfaces: `GoalDispatchKey` enum + `ALL` array + `from_goal_kind`, `goal_kind_discriminant` in ranking.rs, `feasibility.rs` strategy-goal match, `format_goal_kind` in display.rs, and shared signal/motive helpers. Consider `cargo build --workspace` first for compiler errors, then grep for the closest existing sibling to find runtime-only sites.
+
+## Helper extraction and shared sync helpers
+
+26. When the clean fix requires extracting a helper out of an existing module into a neutral shared location, explicitly sweep sibling and transitive import sites for the old module path before relying on compile fallout alone. Shared-helper extraction often leaves behind stale `use crate::old_module::helper` assumptions even when the owned behavioral change is otherwise correct.
+27. When a new component or metadata field is derivable from authoritative post-state plus the current tick, prefer a single sync helper over bespoke set/clear branches at each call site. Reuse that helper across every mutation path that can enter or leave the invariant so later lifecycle fallout changes the predicate in one place instead of many.
+
+## Passive perception and per-tick occupancy
+
+28. For passive perception/belief tickets where the owned invariant is "the agent is currently at place X this tick" or similar per-tick occupancy state, verify that the sync point is not accidentally gated on non-empty observation batches, co-located subjects, successful perception rolls, or event-derived updates. If the invariant should advance every lawful tick, keep its update path outside those optional batch/result guards.

@@ -2051,8 +2051,10 @@ mod tests {
                     }),
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(4),
-                    source: PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(4),
+                        PerceptionSource::DirectObservation,
+                    )
                 },
             );
             txn.set_component_agent_belief_store(claimant, beliefs)

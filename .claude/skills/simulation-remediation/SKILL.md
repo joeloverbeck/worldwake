@@ -14,11 +14,11 @@ Read the simulation observer report and propose concrete remediations for each f
 /simulation-remediation
 ```
 
-No arguments. Always reads from `reports/simulation-observer-report.md`.
+No arguments. Always reads from `reports/scenario-analysis-report.md`.
 
 ## Expected Input Format
 
-The observer report (produced by `/simulation-observer`) must contain:
+The scenario analysis report (produced by `/scenario-analysis`) must contain:
 - **Findings** with severity levels: NONE, LOW, MEDIUM, HIGH, CRITICAL
 - **Trace Quality Assessment** table with columns: ID, Limitation, Classification (Actionable / Acceptable trade-off), Rationale
 - **Cross-Cutting Patterns** section identifying systemic issues across findings
@@ -31,9 +31,9 @@ Follow these steps in order. Do not skip any step.
 
 ### Step 1: Read Observer Report
 
-Read `reports/simulation-observer-report.md`.
+Read `reports/scenario-analysis-report.md`.
 
-**Hard gate**: If the file does not exist, tell the user to run `/simulation-observer` first and stop.
+**Hard gate**: If the file does not exist, tell the user to run `/scenario-analysis` first and stop.
 
 ### Step 2: Read Context
 
@@ -105,7 +105,7 @@ Write `reports/simulation-remediation.md` with this structure:
 ```markdown
 # Simulation Remediation Proposals
 
-Source report: `reports/simulation-observer-report.md`
+Source report: `reports/scenario-analysis-report.md`
 Generated: [date]
 
 ## Context

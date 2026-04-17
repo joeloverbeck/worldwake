@@ -28,7 +28,9 @@ fn place_threat_estimate_from_memory(
         .map(|belief| {
             belief_confidence(
                 &belief.source,
-                current_tick.0.saturating_sub(belief.observed_tick.0),
+                current_tick
+                    .0
+                    .saturating_sub(belief.last_observed_tick().unwrap_or(Tick(0)).0),
                 &confidence_policy,
             )
             .value()
@@ -249,8 +251,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick,
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                observed_tick,
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -299,8 +303,10 @@ mod tests {
             }),
             believed_contention: None,
             believed_evidence: None,
-            observed_tick,
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                observed_tick,
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 

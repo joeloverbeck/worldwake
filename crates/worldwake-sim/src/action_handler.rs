@@ -362,6 +362,9 @@ pub enum ActionAbortRequestReason {
         sale_lot: EntityId,
         seller: EntityId,
     },
+    ViolationNoLongerActive {
+        violation_id: u64,
+    },
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]

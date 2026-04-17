@@ -7,16 +7,27 @@ use std::num::NonZeroU32;
 /// Per-agent combat and bodily resilience parameters.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CombatProfile {
+    /// Maximum total wound severity the agent can sustain before death.
     pub wound_capacity: Permille,
+    /// Wound severity level at which the agent becomes incapacitated.
     pub incapacitation_threshold: Permille,
+    /// Base melee attack proficiency.
     pub attack_skill: Permille,
+    /// Base guarding proficiency when protecting a location or entity.
     pub guard_skill: Permille,
+    /// Defensive bonus applied when the agent is in a defend stance.
     pub defend_bonus: Permille,
+    /// Innate resistance to wound bleeding; higher values slow bleed rate.
     pub natural_clot_resistance: Permille,
+    /// Innate wound healing rate per tick without medical treatment.
     pub natural_recovery_rate: Permille,
+    /// Wound severity inflicted by unarmed attacks.
     pub unarmed_wound_severity: Permille,
+    /// Bleed rate inflicted by unarmed attacks.
     pub unarmed_bleed_rate: Permille,
+    /// Duration in ticks for an unarmed attack action.
     pub unarmed_attack_ticks: NonZeroU32,
+    /// Duration in ticks for maintaining a defensive stance.
     pub defend_stance_ticks: NonZeroU32,
 }
 

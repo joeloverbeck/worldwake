@@ -123,7 +123,7 @@ When a decision trace proves the selected outcome but still does not expose the 
 
 - `strict_request_records_resolution_rejection_without_start_attempt` in `crates/worldwake-sim/src/tick_step.rs` is the focused proof that a request can be rejected before start.
 - `best_effort_stale_request_records_start_failure_when_affordance_no_longer_matches` in `crates/worldwake-sim/src/tick_step.rs` is the focused proof that a request can bind first and then still hit authoritative `StartFailed`.
-- `golden_care_pre_start_wound_disappearance_records_blocker` and `golden_local_trade_start_failure_recovers_via_production_fallback` in `crates/worldwake-ai/tests/` are golden examples of the later start-failure and reconciliation boundary, not proof of pre-start rejection.
+- Existing `golden_*` tests under `crates/worldwake-ai/tests/` that assert `ActionTraceKind::StartFailed` are examples of the later start-failure and reconciliation boundary, not proof of pre-start rejection.
 
 ### Recoverable Authoritative Start Failure
 

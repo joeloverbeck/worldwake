@@ -17,8 +17,11 @@ pub enum CommunicationClass {
 /// Per-agent parameters controlling communication acceptance by class.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommunicationProfile {
+    /// Probability of accepting alarm-class communications (urgent safety warnings).
     pub alarm_acceptance: Permille,
+    /// Probability of accepting testimony-class communications (direct observations from others).
     pub testimony_acceptance: Permille,
+    /// Probability of accepting gossip-class communications (secondhand social information).
     pub gossip_acceptance: Permille,
 }
 
@@ -158,8 +161,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(10),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(10),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
 
@@ -188,8 +193,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(13),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(13),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
 
@@ -218,8 +225,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(16),
-                source: PerceptionSource::Rumor { chain_len: 2 },
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(16),
+                    PerceptionSource::Rumor { chain_len: 2 },
+                )
             },
         );
 

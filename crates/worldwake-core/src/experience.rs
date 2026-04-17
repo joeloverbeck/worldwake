@@ -120,12 +120,18 @@ impl SourceReliability {
     }
 }
 
+/// Per-agent experience-based route and source preference parameters.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PreferenceProfile {
+    /// Weight applied to danger-history when evaluating travel routes.
     pub route_caution_weight: Permille,
+    /// Weight applied to past reliability when choosing resource sources.
     pub source_trust_weight: Permille,
+    /// Maximum number of route experience entries the agent retains.
     pub route_memory_capacity: u32,
+    /// Maximum number of source reliability entries the agent retains.
     pub source_memory_capacity: u32,
+    /// How long (in ticks) experience memory entries are retained before expiry.
     pub memory_retention_ticks: u64,
 }
 

@@ -348,6 +348,8 @@ mod tests {
             max_candidates_to_plan: reasoning.max_candidates_to_plan,
             max_candidates_per_expansion: CognitiveProfile::default().max_candidates_per_expansion,
             max_plan_depth: reasoning.max_plan_depth,
+            max_travel_candidates_per_expansion: CognitiveProfile::default()
+                .max_travel_candidates_per_expansion,
             snapshot_travel_horizon: reasoning.snapshot_travel_horizon,
             max_node_expansions: reasoning.max_node_expansions,
             switch_margin: reasoning.switch_margin,
@@ -359,7 +361,6 @@ mod tests {
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
                 .max_snapshot_entities_per_place,
-            speculative_acquisition: CognitiveProfile::default().speculative_acquisition,
             landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
             use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         }

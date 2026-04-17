@@ -7,7 +7,7 @@ Scenarios: 3
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 
-- Source: `golden_planner_pathology.rs:671`
+- Source: `golden_planner_pathology.rs:673`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Production, Needs
@@ -25,7 +25,7 @@ Scenarios: 3
 
 ### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
 
-- Source: `golden_planner_pathology.rs:794`
+- Source: `golden_planner_pathology.rs:796`
 - Systems: Needs, AI, Production
 - GoalKinds: FreeCarryCapacity
 - ActionDomains: Needs, Production
@@ -43,15 +43,15 @@ Scenarios: 3
 
 ### Scenario 144: Obligation satiation allows survival needs to override posting
 
-- Source: `golden_planner_pathology.rs:906`
+- Source: `golden_planner_pathology.rs:908`
 - Systems: Social artifact actions, Needs, AI, Perception
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs
 - Places: DustyTrail, HearthstoneInn
 - Principles: 3, 7, 11, 22, 26
 - Primary tests: `obligation_satiation_allows_survival_needs_to_override_posting`
-- Replay tests: `obligation_satiation_allows_survival_needs_to_override_posting_replays_deterministically`
-- All tests: `obligation_satiation_allows_survival_needs_to_override_posting`, `obligation_satiation_allows_survival_needs_to_override_posting_replays_deterministically`
+- Replay tests: None
+- All tests: `obligation_satiation_allows_survival_needs_to_override_posting`
 
 **Setup**: A guard first directly observes a hostile at Dusty Trail, then starts the scenario window at Hearthstone Inn with local Bread and Water, critical hunger/thirst, `notice_posting_weight=900`, and the default obligation satiation profile. The remembered combat belief keeps a remote `ThreatWarning` notice branch lawful without reintroducing co-located combat as a competing explanation.
 

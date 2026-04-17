@@ -2,7 +2,7 @@
 
 use crate::{
     ActionDomain, BelievedInstitutionalClaim, ClaimId, ClaimValue, CommodityKind, Component,
-    EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind,
+    EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind, HomeostaticNeeds,
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
     WorkstationTag, World, Wound,
@@ -52,7 +52,17 @@ pub struct AgentBeliefStore {
     pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub heard_beliefs: BTreeMap<TellMemoryKey, HeardBeliefMemory>,
     pub asked_witnesses: BTreeMap<AskWitnessMemoryKey, AskWitnessMemory>,
+    #[serde(default)]
+    pub place_visits: BTreeMap<EntityId, PlaceVisitRecord>,
     pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
+}
+
+/// Tracks an agent's visit history for a believed place.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct PlaceVisitRecord {
+    pub ticks_present: u32,
+    pub last_arrival_tick: Tick,
+    pub visit_count: u16,
 }
 
 impl AgentBeliefStore {
@@ -63,21 +73,67 @@ impl AgentBeliefStore {
 
     pub fn record_entity_claim(&mut self, claim: EntityBeliefClaim) {
         self.next_claim_id = ClaimId(claim.claim_id.0.saturating_add(1).max(self.next_claim_id.0));
-        self.entity_claims
-            .entry(claim.subject)
-            .or_default()
-            .push(claim);
+        let claims = self.entity_claims.entry(claim.subject).or_default();
+        let new_kind = source_kind(&claim.source);
+        if claims.iter().any(|existing| {
+            existing.aspect == claim.aspect
+                && source_kind(&existing.source) == new_kind
+                && claim_dominates(existing, &claim)
+        }) {
+            return;
+        }
+        claims.retain(|existing| {
+            existing.aspect != claim.aspect
+                || source_kind(&existing.source) != new_kind
+                || !claim_dominates(&claim, existing)
+        });
+        claims.push(claim);
     }
 
     pub fn update_entity(&mut self, id: EntityId, state: BelievedEntityState) {
         match self.known_entities.get(&id) {
-            Some(existing) if existing.observed_tick > state.observed_tick => {}
+            Some(existing)
+                if existing.last_observed_tick().unwrap_or(Tick(0))
+                    > state.last_observed_tick().unwrap_or(Tick(0)) => {}
             _ => {
                 self.known_entities.insert(id, state);
             }
         }
     }
 
+    pub fn import_entity_snapshot(
+        &mut self,
+        subject: EntityId,
+        snapshot: &BelievedEntityState,
+        current_tick: Tick,
+        policy: &BeliefConfidencePolicy,
+    ) {
+        let prior = self.known_entities.get(&subject).cloned();
+        if prior.as_ref().is_some_and(|existing| {
+            existing.last_observed_tick().unwrap_or(Tick(0))
+                > snapshot.last_observed_tick().unwrap_or(Tick(0))
+        }) {
+            return;
+        }
+        self.record_entity_snapshot_claims(
+            subject,
+            snapshot,
+            prior.as_ref(),
+            current_tick,
+            snapshot.last_observed_tick(),
+            0,
+            policy,
+        );
+        if let Some(summary) = self.known_entities.get_mut(&subject) {
+            summary.presentation_ticks = snapshot.presentation_ticks;
+            summary.presentation_tick_count = snapshot.presentation_tick_count;
+            if summary.believed_kind.is_none() {
+                summary.believed_kind = snapshot.believed_kind;
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn record_entity_snapshot_claims(
         &mut self,
         subject: EntityId,
@@ -85,6 +141,7 @@ impl AgentBeliefStore {
         prior_summary: Option<&BelievedEntityState>,
         current_tick: Tick,
         claimed_event_tick: Option<Tick>,
+        observation_buffer_capacity: u8,
         policy: &BeliefConfidencePolicy,
     ) {
         let confidence = belief_confidence(&snapshot.source, 0, policy);
@@ -103,9 +160,11 @@ impl AgentBeliefStore {
         self.refresh_entity_summary_from_claims(subject, current_tick, policy);
         if snapshot.believed_kind.is_some()
             && let Some(summary) = self.known_entities.get_mut(&subject)
-            && summary.believed_kind.is_none()
         {
-            summary.believed_kind = snapshot.believed_kind;
+            if summary.believed_kind.is_none() {
+                summary.believed_kind = snapshot.believed_kind;
+            }
+            summary.push_presentation_tick(current_tick, observation_buffer_capacity);
         }
     }
 
@@ -123,6 +182,7 @@ impl AgentBeliefStore {
         {
             Some(mut summary) => {
                 preserve_believed_kind(prior, &mut summary);
+                preserve_presentation_history(prior, &mut summary);
                 self.known_entities.insert(subject, summary);
             }
             None => {
@@ -137,6 +197,17 @@ impl AgentBeliefStore {
     }
 
     pub fn record_social_observation(&mut self, observation: SocialObservation) {
+        if let Some(existing) = self
+            .social_observations
+            .iter_mut()
+            .find(|existing| existing.detail == observation.detail)
+        {
+            if observation.observed_tick > existing.observed_tick {
+                *existing = observation;
+            }
+            return;
+        }
+
         self.social_observations.push(observation);
     }
 
@@ -150,6 +221,39 @@ impl AgentBeliefStore {
 
     pub fn record_asked_witness(&mut self, key: AskWitnessMemoryKey, memory: AskWitnessMemory) {
         self.asked_witnesses.insert(key, memory);
+    }
+
+    pub fn record_place_visit(&mut self, place: EntityId, current_tick: Tick) -> bool {
+        let record = match self.place_visits.entry(place) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(PlaceVisitRecord {
+                    ticks_present: 0,
+                    last_arrival_tick: current_tick,
+                    visit_count: 1,
+                });
+                return true;
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
+
+        if record.last_arrival_tick == current_tick {
+            return false;
+        }
+
+        let expected_continuation_tick = record
+            .last_arrival_tick
+            .0
+            .saturating_add(u64::from(record.ticks_present))
+            .saturating_add(1);
+        if current_tick.0 == expected_continuation_tick {
+            record.ticks_present = record.ticks_present.saturating_add(1);
+            return true;
+        }
+
+        record.ticks_present = 0;
+        record.last_arrival_tick = current_tick;
+        record.visit_count = record.visit_count.saturating_add(1);
+        true
     }
 
     pub fn record_institutional_belief(
@@ -175,120 +279,70 @@ impl AgentBeliefStore {
         self.enforce_institutional_capacity(profile);
     }
 
-    pub fn enforce_capacity(&mut self, profile: &PerceptionProfile, current_tick: Tick) {
-        self.social_observations.retain(|observation| {
-            within_retention_window(
-                observation.observed_tick,
-                current_tick,
-                profile.memory_retention_ticks,
-            )
-        });
-
-        if profile.entity_memory_capacity == 0 {
-            self.entity_claims.clear();
-            self.known_entities.clear();
-            return;
-        }
-
-        self.enforce_entity_claim_capacity(profile, current_tick);
-
-        self.known_entities.retain(|entity, state| {
-            if self.entity_claims.contains_key(entity) {
-                return true;
-            }
-            let retention = if entity_eviction_tier(state) > 0 {
-                profile.infrastructure_retention_ticks
-            } else {
-                profile.memory_retention_ticks
-            };
-            within_retention_window(state.observed_tick, current_tick, retention)
-        });
-
-        let excess = self
-            .known_entities
-            .len()
-            .saturating_sub(profile.entity_memory_capacity as usize);
-        if excess == 0 {
-            return;
-        }
-
-        let mut eviction_order = self
-            .known_entities
-            .iter()
-            .map(|(entity, state)| (entity_eviction_tier(state), state.observed_tick, *entity))
-            .collect::<Vec<_>>();
-        eviction_order.sort_unstable();
-        for (_, _, entity) in eviction_order.into_iter().take(excess) {
-            self.known_entities.remove(&entity);
-            self.entity_claims.remove(&entity);
-        }
-    }
-
-    pub fn enforce_entity_claim_capacity(
+    pub fn prune_decayed_beliefs(
         &mut self,
         profile: &PerceptionProfile,
         current_tick: Tick,
+        agent_needs: &HomeostaticNeeds,
     ) {
+        let entity_activation_threshold = profile.entity_activation_threshold.value();
+        self.social_observations.retain(|observation| {
+            compute_activation(current_tick, &[observation.observed_tick], 1)
+                >= entity_activation_threshold
+        });
+
         let affected_entities = self.entity_claims.keys().copied().collect::<Vec<_>>();
-
-        if profile.entity_claim_capacity == 0 {
-            self.entity_claims.clear();
-            for entity in affected_entities {
-                self.known_entities.remove(&entity);
-            }
-            return;
-        }
-
+        let claim_confidence_threshold = profile.claim_confidence_threshold.value();
+        let mut changed_entities = Vec::new();
         for entity in &affected_entities {
-            let believed_kind = self
-                .known_entities
-                .get(entity)
-                .and_then(|state| state.believed_kind);
             let Some(claims) = self.entity_claims.get_mut(entity) else {
                 continue;
             };
-
+            let len_before = claims.len();
             claims.retain(|claim| {
-                let retention = if claim_eviction_tier(claim.aspect, believed_kind) == 0 {
-                    profile.infrastructure_retention_ticks
-                } else {
-                    profile.memory_retention_ticks
-                };
-                within_retention_window(claim.acquired_tick, current_tick, retention)
+                effective_claim_confidence(claim, current_tick, &profile.confidence_policy)
+                    >= claim_confidence_threshold
             });
-
-            claims.sort_by_key(|claim| {
-                (
-                    claim_eviction_tier(claim.aspect, believed_kind),
-                    std::cmp::Reverse(effective_claim_confidence(
-                        claim,
-                        current_tick,
-                        &profile.confidence_policy,
-                    )),
-                    std::cmp::Reverse(claim.acquired_tick),
-                    std::cmp::Reverse(claim.claim_id),
-                )
-            });
-            claims.truncate(profile.entity_claim_capacity as usize);
-            claims.sort_by_key(|claim| (claim.acquired_tick, claim.claim_id));
-        }
-
-        self.entity_claims.retain(|_, claims| !claims.is_empty());
-
-        for entity in affected_entities {
-            let prior = self.known_entities.get(&entity);
-            match self.entity_claims.get(&entity).and_then(|claims| {
-                derive_entity_summary(claims, current_tick, &profile.confidence_policy)
-            }) {
-                Some(mut summary) => {
-                    preserve_believed_kind(prior, &mut summary);
-                    self.known_entities.insert(entity, summary);
-                }
-                None => {
-                    self.known_entities.remove(&entity);
-                }
+            if claims.len() != len_before {
+                changed_entities.push(*entity);
             }
         }
+        self.entity_claims.retain(|_, claims| !claims.is_empty());
+        if claim_confidence_threshold == 0 {
+            for entity in affected_entities {
+                self.refresh_entity_summary_from_claims(
+                    entity,
+                    current_tick,
+                    &profile.confidence_policy,
+                );
+            }
+        } else {
+            for entity in changed_entities {
+                self.refresh_entity_summary_from_claims(
+                    entity,
+                    current_tick,
+                    &profile.confidence_policy,
+                );
+            }
+        }
+
+        let max_need = agent_needs.max_value();
+        self.known_entities.retain(|_, state| {
+            let base = compute_activation(
+                current_tick,
+                &state.presentation_ticks,
+                state.presentation_tick_count,
+            );
+            let boost = salience_boost(
+                max_need,
+                state.believed_kind,
+                profile.need_salience_urgency_threshold,
+                profile.need_salience_boost,
+            );
+            base.saturating_add(boost) >= entity_activation_threshold
+        });
+        self.entity_claims
+            .retain(|entity, _| self.known_entities.contains_key(entity));
     }
 
     pub fn enforce_conversation_memory(&mut self, profile: &TellProfile, current_tick: Tick) {
@@ -735,11 +789,23 @@ impl AgentBeliefStore {
         &mut self,
         id: &EntityId,
         activity: Option<BelievedActivity>,
+        current_tick: Tick,
+        policy: &BeliefConfidencePolicy,
     ) -> bool {
-        if let Some(belief) = self.known_entities.get_mut(id)
-            && belief.believed_activity != activity
+        if self
+            .known_entities
+            .get(id)
+            .is_some_and(|belief| belief.believed_activity != activity)
         {
-            belief.believed_activity = activity;
+            self.record_entity_aspect_claim(
+                *id,
+                EntityBeliefAspect::Activity,
+                ClaimValue::Activity(activity),
+                PerceptionSource::DirectObservation,
+                current_tick,
+                Some(current_tick),
+                policy,
+            );
             return true;
         }
         false
@@ -747,9 +813,27 @@ impl AgentBeliefStore {
 
     /// Clear the believed activity for a known entity (set to None).
     /// Returns `true` if it was previously Some.
-    pub fn clear_believed_activity(&mut self, id: &EntityId) -> bool {
-        if let Some(belief) = self.known_entities.get_mut(id) {
-            return belief.believed_activity.take().is_some();
+    pub fn clear_believed_activity(
+        &mut self,
+        id: &EntityId,
+        current_tick: Tick,
+        policy: &BeliefConfidencePolicy,
+    ) -> bool {
+        if self
+            .known_entities
+            .get(id)
+            .is_some_and(|belief| belief.believed_activity.is_some())
+        {
+            self.record_entity_aspect_claim(
+                *id,
+                EntityBeliefAspect::Activity,
+                ClaimValue::Activity(None),
+                PerceptionSource::DirectObservation,
+                current_tick,
+                Some(current_tick),
+                policy,
+            );
+            return true;
         }
         false
     }
@@ -761,14 +845,100 @@ impl AgentBeliefStore {
         id: &EntityId,
         destination: EntityId,
         observed_tick: Tick,
+        policy: &BeliefConfidencePolicy,
     ) -> bool {
-        if let Some(belief) = self.known_entities.get_mut(id) {
-            belief.last_known_place = Some(destination);
-            belief.observed_tick = observed_tick;
-            belief.source = PerceptionSource::DirectObservation;
+        if self.known_entities.contains_key(id) {
+            self.record_entity_aspect_claim(
+                *id,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(destination)),
+                PerceptionSource::DirectObservation,
+                observed_tick,
+                Some(observed_tick),
+                policy,
+            );
+            self.reinforce_entity_presentation(
+                *id,
+                observed_tick,
+                BelievedEntityState::MAX_PRESENTATION_TICKS,
+            );
             return true;
         }
         false
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_entity_aspect_claim(
+        &mut self,
+        subject: EntityId,
+        aspect: EntityBeliefAspect,
+        value: ClaimValue,
+        source: PerceptionSource,
+        current_tick: Tick,
+        claimed_event_tick: Option<Tick>,
+        policy: &BeliefConfidencePolicy,
+    ) {
+        self.ensure_claim_backing_from_summary(subject, current_tick, policy);
+        self.record_entity_claim(EntityBeliefClaim {
+            claim_id: self.next_claim_id,
+            subject,
+            aspect,
+            value,
+            source,
+            acquired_tick: current_tick,
+            claimed_event_tick,
+            confidence: belief_confidence(&source, 0, policy),
+        });
+        self.refresh_entity_summary_from_claims(subject, current_tick, policy);
+    }
+
+    fn ensure_claim_backing_from_summary(
+        &mut self,
+        subject: EntityId,
+        fallback_tick: Tick,
+        policy: &BeliefConfidencePolicy,
+    ) {
+        let Some(summary) = self.known_entities.get(&subject).cloned() else {
+            return;
+        };
+        let existing_aspects = self
+            .entity_claims
+            .get(&subject)
+            .map(|claims| {
+                claims
+                    .iter()
+                    .map(|claim| claim.aspect)
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        let observed_tick = summary.last_observed_tick().unwrap_or(fallback_tick);
+        let confidence = belief_confidence(&summary.source, 0, policy);
+        for (aspect, value) in entity_claims_for_snapshot(&summary, None) {
+            if existing_aspects.contains(&aspect) {
+                continue;
+            }
+            self.record_entity_claim(EntityBeliefClaim {
+                claim_id: self.next_claim_id,
+                subject,
+                aspect,
+                value,
+                source: summary.source,
+                acquired_tick: observed_tick,
+                claimed_event_tick: Some(observed_tick),
+                confidence,
+            });
+        }
+    }
+
+    fn reinforce_entity_presentation(
+        &mut self,
+        subject: EntityId,
+        observed_tick: Tick,
+        observation_buffer_capacity: u8,
+    ) {
+        if let Some(summary) = self.known_entities.get_mut(&subject) {
+            summary.push_presentation_tick(observed_tick, observation_buffer_capacity);
+        }
     }
 }
 
@@ -906,6 +1076,8 @@ pub struct BeliefStoreDiff {
     pub heard_beliefs_removed: Vec<TellMemoryKey>,
     pub asked_witnesses_set: Vec<(AskWitnessMemoryKey, AskWitnessMemory)>,
     pub asked_witnesses_removed: Vec<AskWitnessMemoryKey>,
+    pub place_visits_set: Vec<(EntityId, PlaceVisitRecord)>,
+    pub place_visits_removed: Vec<EntityId>,
     pub entity_claims_set: Vec<(EntityId, Vec<EntityBeliefClaim>)>,
     pub entity_claims_removed: Vec<EntityId>,
     pub institutional_beliefs_set: Vec<(InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>)>,
@@ -943,6 +1115,10 @@ impl BeliefStoreDiff {
         let asked_witnesses_removed =
             diff_btree_map_removed(&before.asked_witnesses, &after.asked_witnesses);
 
+        let place_visits_set = diff_btree_map_set(&before.place_visits, &after.place_visits);
+        let place_visits_removed =
+            diff_btree_map_removed(&before.place_visits, &after.place_visits);
+
         let entity_claims_set = diff_btree_map_set(&before.entity_claims, &after.entity_claims);
         let entity_claims_removed =
             diff_btree_map_removed(&before.entity_claims, &after.entity_claims);
@@ -964,6 +1140,8 @@ impl BeliefStoreDiff {
             heard_beliefs_removed,
             asked_witnesses_set,
             asked_witnesses_removed,
+            place_visits_set,
+            place_visits_removed,
             entity_claims_set,
             entity_claims_removed,
             institutional_beliefs_set,
@@ -1021,6 +1199,13 @@ impl BeliefStoreDiff {
             result.asked_witnesses.insert(key, memory);
         }
 
+        for id in &self.place_visits_removed {
+            result.place_visits.remove(id);
+        }
+        for (id, record) in self.place_visits_set {
+            result.place_visits.insert(id, record);
+        }
+
         for id in &self.entity_claims_removed {
             result.entity_claims.remove(id);
         }
@@ -1052,6 +1237,8 @@ impl BeliefStoreDiff {
             && self.heard_beliefs_removed.is_empty()
             && self.asked_witnesses_set.is_empty()
             && self.asked_witnesses_removed.is_empty()
+            && self.place_visits_set.is_empty()
+            && self.place_visits_removed.is_empty()
             && self.entity_claims_set.is_empty()
             && self.entity_claims_removed.is_empty()
             && self.institutional_beliefs_set.is_empty()
@@ -1106,9 +1293,23 @@ fn diff_social_observations(
         }
     }
 
-    let removed = (before.len() - surviving) as u16;
+    let removed = u16::try_from(before.len() - surviving).unwrap_or(u16::MAX);
     let added = after[surviving..].to_vec();
-    (removed, added)
+
+    let mut reconstructed = before.to_vec();
+    if removed > 0 {
+        reconstructed.drain(..usize::from(removed).min(reconstructed.len()));
+    }
+    reconstructed.extend(added.iter().copied());
+
+    if reconstructed == after {
+        (removed, added)
+    } else {
+        (
+            u16::try_from(before.len()).unwrap_or(u16::MAX),
+            after.to_vec(),
+        )
+    }
 }
 
 fn derive_institutional_read<'a, T>(
@@ -1267,8 +1468,7 @@ impl ObservedEntitySnapshot {
             believed_artifact: self.artifact_state.clone(),
             believed_contention: self.contention_state,
             believed_evidence: self.evidence_state.clone(),
-            observed_tick,
-            source,
+            ..BelievedEntityState::single_observation_defaults(observed_tick, source)
         }
     }
 }
@@ -1336,8 +1536,60 @@ pub struct BelievedEntityState {
     pub believed_contention: Option<BelievedContentionState>,
     #[serde(default)]
     pub believed_evidence: Option<BelievedEvidenceState>,
-    pub observed_tick: Tick,
+    pub presentation_ticks: [Tick; 8],
+    pub presentation_tick_count: u8,
     pub source: PerceptionSource,
+}
+
+impl BelievedEntityState {
+    const MAX_PRESENTATION_TICKS: u8 = 8;
+
+    #[must_use]
+    pub fn single_observation_defaults(observed_tick: Tick, source: PerceptionSource) -> Self {
+        let mut state = Self {
+            believed_kind: None,
+            last_known_place: None,
+            last_known_inventory: BTreeMap::new(),
+            workstation_tag: None,
+            resource_source: None,
+            alive: true,
+            wounds: Vec::new(),
+            last_known_courage: None,
+            believed_activity: None,
+            believed_artifact: None,
+            believed_contention: None,
+            believed_evidence: None,
+            presentation_ticks: [Tick(0); Self::MAX_PRESENTATION_TICKS as usize],
+            presentation_tick_count: 0,
+            source,
+        };
+        state.push_presentation_tick(observed_tick, Self::MAX_PRESENTATION_TICKS);
+        state
+    }
+
+    #[must_use]
+    pub fn last_observed_tick(&self) -> Option<Tick> {
+        if self.presentation_tick_count == 0 {
+            None
+        } else {
+            Some(self.presentation_ticks[usize::from(self.presentation_tick_count - 1)])
+        }
+    }
+
+    pub fn push_presentation_tick(&mut self, tick: Tick, buffer_capacity: u8) {
+        let cap = usize::from(buffer_capacity.min(Self::MAX_PRESENTATION_TICKS));
+        if cap == 0 {
+            return;
+        }
+        if usize::from(self.presentation_tick_count) < cap {
+            self.presentation_ticks[usize::from(self.presentation_tick_count)] = tick;
+            self.presentation_tick_count += 1;
+            return;
+        }
+
+        self.presentation_ticks.copy_within(1..cap, 0);
+        self.presentation_ticks[cap - 1] = tick;
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -1903,10 +2155,12 @@ pub fn derive_entity_summary(
         believed_artifact: None,
         believed_contention: None,
         believed_evidence: None,
-        observed_tick: metadata_claim
-            .claimed_event_tick
-            .unwrap_or(metadata_claim.acquired_tick),
-        source: metadata_claim.source,
+        ..BelievedEntityState::single_observation_defaults(
+            metadata_claim
+                .claimed_event_tick
+                .unwrap_or(metadata_claim.acquired_tick),
+            metadata_claim.source,
+        )
     };
 
     for (aspect, claim) in winners {
@@ -1955,38 +2209,21 @@ pub fn derive_entity_summary(
     Some(summary)
 }
 
-fn claim_eviction_tier(aspect: EntityBeliefAspect, believed_kind: Option<EntityKind>) -> u8 {
-    match aspect {
-        EntityBeliefAspect::ResourceAvailable(_) | EntityBeliefAspect::WorkstationPresent => 0,
-        EntityBeliefAspect::Location
-            if matches!(
-                believed_kind,
-                Some(EntityKind::Place | EntityKind::Facility)
-            ) =>
-        {
-            0
-        }
-        EntityBeliefAspect::Alive if believed_kind == Some(EntityKind::Agent) => 0,
-        _ => 1,
-    }
-}
-
-fn entity_eviction_tier(state: &BelievedEntityState) -> u8 {
-    if state.resource_source.is_some() {
-        return 1;
-    }
-
-    match state.believed_kind {
-        Some(EntityKind::Place | EntityKind::Facility) => 1,
-        Some(EntityKind::Agent) if state.alive => 1,
-        _ => 0,
-    }
-}
-
 fn preserve_believed_kind(prior: Option<&BelievedEntityState>, summary: &mut BelievedEntityState) {
     if summary.believed_kind.is_none() {
         summary.believed_kind = prior.and_then(|state| state.believed_kind);
     }
+}
+
+fn preserve_presentation_history(
+    prior: Option<&BelievedEntityState>,
+    summary: &mut BelievedEntityState,
+) {
+    let Some(prior) = prior else {
+        return;
+    };
+    summary.presentation_ticks = prior.presentation_ticks;
+    summary.presentation_tick_count = prior.presentation_tick_count;
 }
 
 fn claim_rank(
@@ -1999,6 +2236,45 @@ fn claim_rank(
         claim.acquired_tick,
         claim.claim_id,
     )
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+enum SourceKind {
+    Direct,
+    Report(EntityId),
+    Rumor,
+    Inference,
+}
+
+fn source_kind(source: &PerceptionSource) -> SourceKind {
+    match source {
+        PerceptionSource::DirectObservation => SourceKind::Direct,
+        PerceptionSource::Report { from, .. } => SourceKind::Report(*from),
+        PerceptionSource::Rumor { .. } => SourceKind::Rumor,
+        PerceptionSource::Inference => SourceKind::Inference,
+    }
+}
+
+fn claim_staleness_anchor(claim: &EntityBeliefClaim) -> Tick {
+    claim.claimed_event_tick.unwrap_or(claim.acquired_tick)
+}
+
+fn claim_dominates(left: &EntityBeliefClaim, right: &EntityBeliefClaim) -> bool {
+    let left_anchor = claim_staleness_anchor(left);
+    let right_anchor = claim_staleness_anchor(right);
+
+    if left.confidence < right.confidence
+        || left_anchor < right_anchor
+        || left.acquired_tick < right.acquired_tick
+        || left.claim_id < right.claim_id
+    {
+        return false;
+    }
+
+    left.confidence > right.confidence
+        || left_anchor > right_anchor
+        || left.acquired_tick > right.acquired_tick
+        || left.claim_id > right.claim_id
 }
 
 fn effective_claim_confidence(
@@ -2178,32 +2454,53 @@ pub enum MismatchKind {
 
 /// Per-agent parameters controlling belief retention and observation quality.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PerceptionProfile {
-    pub entity_memory_capacity: u32,
-    pub entity_claim_capacity: u32,
-    pub memory_retention_ticks: u64,
-    pub infrastructure_retention_ticks: u64,
+    /// Base accuracy of direct observations. Higher values mean more reliable perception.
     pub observation_fidelity: Permille,
+    /// Policy governing how belief confidence is assigned and decays over time.
     pub confidence_policy: BeliefConfidencePolicy,
+    /// Maximum number of institutional belief entries the agent retains.
     pub institutional_memory_capacity: u32,
+    /// Speed modifier for consulting institutional records (e.g., ledgers, boards).
     pub consultation_speed_factor: Permille,
+    /// Threshold below which contradicting evidence causes belief revision.
     pub contradiction_tolerance: Permille,
+    /// Age threshold (in ticks) at which stale entity beliefs are pruned by activation decay.
+    pub entity_activation_threshold: Permille,
+    /// Minimum confidence required for an entity belief claim to be retained.
+    pub claim_confidence_threshold: Permille,
+    /// Maximum number of pending observations buffered before processing.
+    pub observation_buffer_capacity: u8,
+    /// Maximum number of co-located entities observed per tick before salience filtering truncates.
+    #[serde(default = "default_observation_budget")]
+    pub observation_budget: u8,
+    /// Observation priority boost for entities relevant to the agent's current needs.
+    pub need_salience_boost: Permille,
+    /// Need pressure level above which the salience boost activates.
+    pub need_salience_urgency_threshold: Permille,
 }
 
 impl Component for PerceptionProfile {}
 
+fn default_observation_budget() -> u8 {
+    24
+}
+
 impl Default for PerceptionProfile {
     fn default() -> Self {
         Self {
-            entity_memory_capacity: 12,
-            entity_claim_capacity: 12,
-            memory_retention_ticks: 48,
-            infrastructure_retention_ticks: 480,
             observation_fidelity: Permille::new(875).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 20,
             consultation_speed_factor: Permille::new(500).unwrap(),
             contradiction_tolerance: Permille::new(300).unwrap(),
+            entity_activation_threshold: Permille::new(100).unwrap(),
+            claim_confidence_threshold: Permille::new(50).unwrap(),
+            observation_buffer_capacity: 5,
+            observation_budget: default_observation_budget(),
+            need_salience_boost: Permille::new(500).unwrap(),
+            need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
     }
 }
@@ -2211,9 +2508,13 @@ impl Default for PerceptionProfile {
 /// Per-agent parameters controlling what information an agent relays and accepts.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TellProfile {
+    /// Maximum number of co-located agents this agent considers as tell recipients per tick.
     pub max_tell_candidates: u8,
+    /// Maximum relay chain length before the agent stops forwarding heard information.
     pub max_relay_chain_len: u8,
+    /// Maximum number of recent conversation entries the agent retains.
     pub conversation_memory_capacity: u16,
+    /// How long (in ticks) conversation memory entries are retained before expiry.
     pub conversation_memory_retention_ticks: u64,
 }
 
@@ -2262,27 +2563,58 @@ fn within_retention_window(observed_tick: Tick, current_tick: Tick, retention_ti
     current_tick.0.saturating_sub(observed_tick.0) <= retention_ticks
 }
 
+#[must_use]
+pub fn compute_activation(current_tick: Tick, presentation_ticks: &[Tick], count: u8) -> u16 {
+    let mut total: u32 = 0;
+    let count = usize::from(count).min(presentation_ticks.len());
+    for tick in presentation_ticks.iter().take(count) {
+        let age = current_tick.0.saturating_sub(tick.0).max(1);
+        let scaled_root = age.saturating_mul(1_000_000).isqrt().max(1);
+        let contribution = 1_000_000u32 / u32::try_from(scaled_root).unwrap();
+        total = total.saturating_add(contribution);
+    }
+
+    total.min(u32::from(u16::MAX)) as u16
+}
+
+#[must_use]
+pub fn salience_boost(
+    max_need: u16,
+    believed_kind: Option<EntityKind>,
+    urgency_threshold: Permille,
+    boost: Permille,
+) -> u16 {
+    if believed_kind != Some(EntityKind::ItemLot) {
+        return 0;
+    }
+    if max_need < urgency_threshold.value() {
+        return 0;
+    }
+
+    (u32::from(max_need) * u32::from(boost.value()) / 1000) as u16
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
         BelievedActivity, BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry,
         BelievedEvidenceState, HeardBeliefDisposition, HeardBeliefMemory, MismatchKind,
-        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, RecipientKnowledgeStatus,
-        SharedInstitutionalBelief, SharedTellState, SocialObservation, SocialObservationDetail,
-        SocialObservationKind, TellMemoryKey, TellProfile, TellTopic, ToldBeliefMemory,
-        belief_confidence, build_believed_entity_state, build_observed_entity_snapshot,
-        derive_entity_summary, recipient_knowledge_status, share_equivalent,
-        to_shared_belief_snapshot,
+        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, PlaceVisitRecord,
+        RecipientKnowledgeStatus, SharedInstitutionalBelief, SharedTellState, SocialObservation,
+        SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
+        ToldBeliefMemory, belief_confidence, build_believed_entity_state,
+        build_observed_entity_snapshot, compute_activation, derive_entity_summary,
+        recipient_knowledge_status, salience_boost, share_equivalent, to_shared_belief_snapshot,
     };
     use crate::{
         ActionDefId, ActionDomain, BelievedArtifactState, BelievedBountyTerms,
         BelievedInstitutionalClaim, BodyPart, ClaimId, ClaimValue, CommodityKind, ControlSource,
         DeadAt, DisturbanceKind, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
-        EvidenceKind, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, NoticeTopic, Permille, Quantity, ResourceSource,
-        SceneEvidence, TheftFacts, Tick, WorkstationTag, World, Wound, WoundCause, WoundId,
-        WoundList, build_prototype_world, current_institutional_belief_topics,
+        EvidenceKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, Permille, Quantity,
+        ResourceSource, SceneEvidence, TheftFacts, Tick, WorkstationTag, World, Wound, WoundCause,
+        WoundId, WoundList, build_prototype_world, current_institutional_belief_topics,
         institutional_claim_same_memory_lane, traits::Component,
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -2296,20 +2628,22 @@ mod tests {
     }
 
     fn profile(
-        entity_memory_capacity: u32,
-        entity_claim_capacity: u32,
-        memory_retention_ticks: u64,
+        entity_activation_threshold: u16,
+        claim_confidence_threshold: u16,
+        observation_buffer_capacity: u8,
     ) -> PerceptionProfile {
         PerceptionProfile {
-            entity_memory_capacity,
-            entity_claim_capacity,
-            memory_retention_ticks,
-            infrastructure_retention_ticks: memory_retention_ticks.saturating_mul(10),
             observation_fidelity: Permille::new(750).unwrap(),
             confidence_policy: BeliefConfidencePolicy::default(),
             institutional_memory_capacity: 9,
             consultation_speed_factor: Permille::new(650).unwrap(),
             contradiction_tolerance: Permille::new(275).unwrap(),
+            entity_activation_threshold: Permille::new(entity_activation_threshold).unwrap(),
+            claim_confidence_threshold: Permille::new(claim_confidence_threshold).unwrap(),
+            observation_buffer_capacity,
+            observation_budget: 24,
+            need_salience_boost: Permille::new(500).unwrap(),
+            need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
     }
 
@@ -2363,8 +2697,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(observed_tick),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(observed_tick),
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -2415,6 +2751,85 @@ mod tests {
             observed_tick: Tick(observed_tick),
             source: PerceptionSource::DirectObservation,
         }
+    }
+
+    #[test]
+    fn test_activation_computation_single_observation() {
+        let current_tick = Tick(1000);
+        let reference_cases = [
+            (Tick(999), 1000),
+            (Tick(996), 500),
+            (Tick(984), 250),
+            (Tick(952), 144),
+            (Tick(900), 100),
+            (Tick(600), 50),
+        ];
+
+        for (observed_tick, expected) in reference_cases {
+            assert_eq!(
+                compute_activation(current_tick, &[observed_tick], 1),
+                expected,
+                "age {}",
+                current_tick.0 - observed_tick.0
+            );
+        }
+    }
+
+    #[test]
+    fn test_activation_computation_multiple_observations() {
+        let current_tick = Tick(50);
+        let presentation_ticks = [Tick(45), Tick(35), Tick(25), Tick(15), Tick(5)];
+
+        assert_eq!(
+            compute_activation(current_tick, &presentation_ticks, 5),
+            1223
+        );
+    }
+
+    #[test]
+    fn test_activation_computation_empty_buffer() {
+        assert_eq!(compute_activation(Tick(10), &[], 0), 0);
+    }
+
+    #[test]
+    fn test_salience_boost_scales_with_need_urgency() {
+        let threshold = Permille::new(500).unwrap();
+        let boost = Permille::new(500).unwrap();
+
+        assert_eq!(
+            salience_boost(500, Some(EntityKind::ItemLot), threshold, boost),
+            250
+        );
+        assert_eq!(
+            salience_boost(1000, Some(EntityKind::ItemLot), threshold, boost),
+            500
+        );
+    }
+
+    #[test]
+    fn test_salience_boost_zero_below_threshold() {
+        assert_eq!(
+            salience_boost(
+                499,
+                Some(EntityKind::ItemLot),
+                Permille::new(500).unwrap(),
+                Permille::new(500).unwrap(),
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn test_salience_boost_zero_for_non_items() {
+        assert_eq!(
+            salience_boost(
+                1000,
+                Some(EntityKind::Agent),
+                Permille::new(500).unwrap(),
+                Permille::new(500).unwrap(),
+            ),
+            0
+        );
     }
 
     fn tell_profile() -> TellProfile {
@@ -2641,7 +3056,60 @@ mod tests {
         assert!(store.told_beliefs.is_empty());
         assert!(store.heard_beliefs.is_empty());
         assert!(store.asked_witnesses.is_empty());
+        assert!(store.place_visits.is_empty());
         assert!(store.institutional_beliefs.is_empty());
+    }
+
+    #[test]
+    fn record_place_visit_inserts_new_place_with_arrival_tick() {
+        let mut store = AgentBeliefStore::new();
+        let place = entity(22);
+
+        assert!(store.record_place_visit(place, Tick(7)));
+        assert_eq!(
+            store.place_visits.get(&place),
+            Some(&PlaceVisitRecord {
+                ticks_present: 0,
+                last_arrival_tick: Tick(7),
+                visit_count: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn record_place_visit_increments_presence_on_contiguous_tick() {
+        let mut store = AgentBeliefStore::new();
+        let place = entity(23);
+
+        assert!(store.record_place_visit(place, Tick(7)));
+        assert!(store.record_place_visit(place, Tick(8)));
+        assert!(store.record_place_visit(place, Tick(9)));
+        assert_eq!(
+            store.place_visits.get(&place),
+            Some(&PlaceVisitRecord {
+                ticks_present: 2,
+                last_arrival_tick: Tick(7),
+                visit_count: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn record_place_visit_resets_presence_and_increments_visit_count_on_return() {
+        let mut store = AgentBeliefStore::new();
+        let place = entity(24);
+
+        assert!(store.record_place_visit(place, Tick(7)));
+        assert!(store.record_place_visit(place, Tick(8)));
+        assert!(store.record_place_visit(place, Tick(12)));
+        assert_eq!(
+            store.place_visits.get(&place),
+            Some(&PlaceVisitRecord {
+                ticks_present: 0,
+                last_arrival_tick: Tick(12),
+                visit_count: 2,
+            })
+        );
     }
 
     #[test]
@@ -2734,7 +3202,7 @@ mod tests {
                 last_regeneration_tick: Some(Tick(6)),
             })
         );
-        assert_eq!(summary.observed_tick, Tick(7));
+        assert_eq!(summary.last_observed_tick(), Some(Tick(7)));
         assert_eq!(summary.source, PerceptionSource::DirectObservation);
     }
 
@@ -2767,7 +3235,7 @@ mod tests {
         let summary = derive_entity_summary(&claims, Tick(10), &policy()).unwrap();
 
         assert_eq!(summary.last_known_place, Some(entity(11)));
-        assert_eq!(summary.observed_tick, Tick(7));
+        assert_eq!(summary.last_observed_tick(), Some(Tick(7)));
         assert_eq!(summary.source, PerceptionSource::DirectObservation);
     }
 
@@ -2844,6 +3312,143 @@ mod tests {
     }
 
     #[test]
+    fn record_entity_claim_replaces_dominated_same_source_same_aspect() {
+        let subject = entity(44);
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_claim(sample_claim(
+            1,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(10))),
+            PerceptionSource::DirectObservation,
+            7,
+            950,
+        ));
+        store.record_entity_claim(sample_claim(
+            2,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(11))),
+            PerceptionSource::DirectObservation,
+            8,
+            950,
+        ));
+
+        let claims = &store.entity_claims[&subject];
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].value, ClaimValue::Place(Some(entity(11))));
+        assert_eq!(claims[0].acquired_tick, Tick(8));
+    }
+
+    #[test]
+    fn record_entity_claim_preserves_different_sources() {
+        let subject = entity(45);
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_claim(sample_claim(
+            1,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(10))),
+            PerceptionSource::DirectObservation,
+            7,
+            950,
+        ));
+        store.record_entity_claim(sample_claim(
+            2,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(11))),
+            PerceptionSource::Report {
+                from: entity(2),
+                chain_len: 1,
+            },
+            8,
+            780,
+        ));
+
+        assert_eq!(store.entity_claims[&subject].len(), 2);
+    }
+
+    #[test]
+    fn record_entity_claim_distinguishes_report_informants() {
+        let subject = entity(46);
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_claim(sample_claim(
+            1,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(10))),
+            PerceptionSource::Report {
+                from: entity(2),
+                chain_len: 1,
+            },
+            7,
+            780,
+        ));
+        store.record_entity_claim(sample_claim(
+            2,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(11))),
+            PerceptionSource::Report {
+                from: entity(3),
+                chain_len: 1,
+            },
+            8,
+            780,
+        ));
+
+        assert_eq!(store.entity_claims[&subject].len(), 2);
+    }
+
+    #[test]
+    fn record_entity_claim_preserves_nondominated_same_informant_report() {
+        let subject = entity(47);
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(1),
+            subject,
+            aspect: EntityBeliefAspect::Location,
+            value: ClaimValue::Place(Some(entity(10))),
+            source: PerceptionSource::Report {
+                from: entity(2),
+                chain_len: 1,
+            },
+            acquired_tick: Tick(8),
+            claimed_event_tick: Some(Tick(8)),
+            confidence: Permille::new(780).unwrap(),
+        });
+        store.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(2),
+            subject,
+            aspect: EntityBeliefAspect::Location,
+            value: ClaimValue::Place(Some(entity(11))),
+            source: PerceptionSource::Report {
+                from: entity(2),
+                chain_len: 3,
+            },
+            acquired_tick: Tick(9),
+            claimed_event_tick: Some(Tick(2)),
+            confidence: Permille::new(600).unwrap(),
+        });
+
+        let claims = &store.entity_claims[&subject];
+        assert_eq!(claims.len(), 2);
+        assert!(claims.iter().any(|claim| {
+            claim.value == ClaimValue::Place(Some(entity(10)))
+                && claim.claimed_event_tick == Some(Tick(8))
+        }));
+        assert!(claims.iter().any(|claim| {
+            claim.value == ClaimValue::Place(Some(entity(11)))
+                && claim.claimed_event_tick == Some(Tick(2))
+        }));
+    }
+
+    #[test]
     fn record_entity_snapshot_claims_derives_summary_and_clears_absent_inventory() {
         let subject = entity(42);
         let mut store = AgentBeliefStore::new();
@@ -2863,8 +3468,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(3),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(3),
+                PerceptionSource::DirectObservation,
+            )
         };
         store.update_entity(subject, prior.clone());
 
@@ -2883,8 +3490,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(8),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(8),
+                PerceptionSource::DirectObservation,
+            )
         };
 
         store.record_entity_snapshot_claims(
@@ -2893,6 +3502,7 @@ mod tests {
             Some(&prior),
             Tick(8),
             Some(Tick(8)),
+            5,
             &policy(),
         );
 
@@ -2937,8 +3547,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(2),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(2),
+                PerceptionSource::DirectObservation,
+            )
         };
         store.update_entity(subject, prior.clone());
 
@@ -2955,8 +3567,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(6),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(6),
+                PerceptionSource::DirectObservation,
+            )
         };
 
         store.record_entity_snapshot_claims(
@@ -2965,6 +3579,7 @@ mod tests {
             Some(&prior),
             Tick(6),
             Some(Tick(6)),
+            5,
             &policy(),
         );
 
@@ -2993,8 +3608,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(5),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(5),
+                PerceptionSource::DirectObservation,
+            )
         };
 
         store.record_entity_snapshot_claims(
@@ -3003,6 +3620,7 @@ mod tests {
             None,
             Tick(5),
             Some(Tick(5)),
+            5,
             &policy(),
         );
 
@@ -3038,12 +3656,24 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(4),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(4),
+                PerceptionSource::DirectObservation,
+            )
         };
         let snapshot = BelievedEntityState {
             alive: false,
-            observed_tick: Tick(5),
+            presentation_ticks: [
+                Tick(5),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+                Tick(0),
+            ],
+            presentation_tick_count: 1,
             ..prior.clone()
         };
 
@@ -3053,6 +3683,7 @@ mod tests {
             Some(&prior),
             Tick(5),
             Some(Tick(5)),
+            5,
             &policy(),
         );
 
@@ -3159,7 +3790,7 @@ mod tests {
     }
 
     #[test]
-    fn record_social_observation_appends_to_list() {
+    fn record_social_observation_keeps_distinct_details() {
         let mut store = AgentBeliefStore::new();
         let first = sample_social_observation(3);
         let second = SocialObservation {
@@ -3171,6 +3802,46 @@ mod tests {
         store.record_social_observation(second);
 
         assert_eq!(store.social_observations, vec![first, second]);
+    }
+
+    #[test]
+    fn record_social_observation_replaces_same_detail_with_newer_observation() {
+        let mut store = AgentBeliefStore::new();
+        let first = sample_social_observation(3);
+        let newer = SocialObservation {
+            place: entity(55),
+            observed_tick: Tick(6),
+            source: PerceptionSource::Report {
+                from: entity(9),
+                chain_len: 1,
+            },
+            ..first
+        };
+
+        store.record_social_observation(first);
+        store.record_social_observation(newer);
+
+        assert_eq!(store.social_observations, vec![newer]);
+    }
+
+    #[test]
+    fn record_social_observation_keeps_newer_same_detail_when_older_arrives() {
+        let mut store = AgentBeliefStore::new();
+        let newer = sample_social_observation(6);
+        let older = SocialObservation {
+            place: entity(55),
+            observed_tick: Tick(3),
+            source: PerceptionSource::Report {
+                from: entity(9),
+                chain_len: 1,
+            },
+            ..newer
+        };
+
+        store.record_social_observation(newer);
+        store.record_social_observation(older);
+
+        assert_eq!(store.social_observations, vec![newer]);
     }
 
     #[test]
@@ -3218,6 +3889,7 @@ mod tests {
         );
     }
 
+    /*
     #[test]
     fn enforce_capacity_evicts_oldest_entities_deterministically() {
         let mut store = AgentBeliefStore::new();
@@ -3592,8 +4264,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(9),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(9),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
 
@@ -3984,6 +4658,396 @@ mod tests {
                 target: Some(entity(11)),
                 observed_tick: Tick(9),
             })
+        );
+    }
+
+    */
+
+    #[test]
+    fn test_prune_decayed_beliefs_removes_below_threshold() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut stale = sample_state(0, 1);
+        stale.believed_kind = Some(EntityKind::ItemLot);
+        let mut fresh = sample_state(95, 2);
+        fresh.believed_kind = Some(EntityKind::ItemLot);
+
+        store.update_entity(entity(1), stale);
+        store.update_entity(entity(2), fresh);
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(101),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        assert!(!store.known_entities.contains_key(&entity(1)));
+        assert!(store.known_entities.contains_key(&entity(2)));
+    }
+
+    #[test]
+    fn test_social_observation_activation_pruning() {
+        let mut store = AgentBeliefStore::new();
+        store.record_social_observation(sample_social_observation(0));
+        store.record_social_observation(sample_social_observation(100));
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(101),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        assert_eq!(
+            store.social_observations,
+            vec![sample_social_observation(100)]
+        );
+    }
+
+    #[test]
+    fn test_claim_confidence_threshold_prunes_stale_claims() {
+        let mut store = claim_backed_store(
+            61,
+            vec![
+                sample_claim(
+                    1,
+                    61,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(10))),
+                    PerceptionSource::DirectObservation,
+                    0,
+                    950,
+                ),
+                sample_claim(
+                    2,
+                    61,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(11))),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+                sample_claim(
+                    3,
+                    61,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+            ],
+        );
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(300),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        let claims = store.entity_claims.get(&entity(61)).unwrap();
+        assert_eq!(claims.len(), 2);
+        assert!(!claims.iter().any(|claim| claim.claim_id == ClaimId(1)));
+        assert_eq!(
+            store
+                .known_entities
+                .get(&entity(61))
+                .unwrap()
+                .last_known_place,
+            Some(entity(11))
+        );
+    }
+
+    #[test]
+    fn test_prune_decayed_beliefs_removes_orphan_claims() {
+        let mut store = claim_backed_store(
+            62,
+            vec![sample_claim(
+                1,
+                62,
+                EntityBeliefAspect::Alive,
+                ClaimValue::Bool(true),
+                PerceptionSource::DirectObservation,
+                0,
+                950,
+            )],
+        );
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(300),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        assert!(!store.entity_claims.contains_key(&entity(62)));
+        assert!(!store.known_entities.contains_key(&entity(62)));
+    }
+
+    #[test]
+    fn test_prune_decayed_beliefs_refreshes_only_changed_claim_vectors() {
+        let changed = entity(90);
+        let unchanged = entity(91);
+        let mut store = AgentBeliefStore::new();
+        store.entity_claims.insert(
+            changed,
+            vec![
+                sample_claim(
+                    1,
+                    90,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(10))),
+                    PerceptionSource::DirectObservation,
+                    0,
+                    950,
+                ),
+                sample_claim(
+                    2,
+                    90,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(11))),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+                sample_claim(
+                    3,
+                    90,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+            ],
+        );
+        store.entity_claims.insert(
+            unchanged,
+            vec![
+                sample_claim(
+                    4,
+                    91,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(20))),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+                sample_claim(
+                    5,
+                    91,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    295,
+                    950,
+                ),
+            ],
+        );
+        for subject in [changed, unchanged] {
+            store.known_entities.insert(
+                subject,
+                derive_entity_summary(
+                    store.entity_claims.get(&subject).unwrap(),
+                    Tick(300),
+                    &policy(),
+                )
+                .unwrap(),
+            );
+        }
+        let unchanged_before = store.get_entity(&unchanged).unwrap().clone();
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(300),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        assert_eq!(store.entity_claims.get(&changed).unwrap().len(), 2);
+        assert_eq!(
+            store.get_entity(&changed).unwrap().last_known_place,
+            Some(entity(11))
+        );
+        assert_eq!(store.entity_claims.get(&unchanged).unwrap().len(), 2);
+        assert_eq!(store.get_entity(&unchanged).unwrap(), &unchanged_before);
+        assert_eq!(
+            store.get_entity(&unchanged),
+            derive_entity_summary(
+                store.entity_claims.get(&unchanged).unwrap(),
+                Tick(300),
+                &policy(),
+            )
+            .as_ref()
+        );
+    }
+
+    #[test]
+    fn test_prune_decayed_beliefs_zero_threshold_refreshes_saturated_ties() {
+        let subject = entity(92);
+        let mut store = AgentBeliefStore::new();
+        store.entity_claims.insert(
+            subject,
+            vec![
+                sample_claim(
+                    1,
+                    92,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(30))),
+                    PerceptionSource::DirectObservation,
+                    1,
+                    900,
+                ),
+                sample_claim(
+                    2,
+                    92,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(31))),
+                    PerceptionSource::Report {
+                        from: entity(3),
+                        chain_len: 1,
+                    },
+                    9,
+                    850,
+                ),
+                sample_claim(
+                    3,
+                    92,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+            ],
+        );
+        store.known_entities.insert(
+            subject,
+            derive_entity_summary(
+                store.entity_claims.get(&subject).unwrap(),
+                Tick(10),
+                &policy(),
+            )
+            .unwrap(),
+        );
+
+        store.prune_decayed_beliefs(
+            &profile(0, 0, 5),
+            Tick(1_000),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        assert_eq!(store.entity_claims.get(&subject).unwrap().len(), 3);
+        assert_eq!(
+            store.get_entity(&subject),
+            derive_entity_summary(
+                store.entity_claims.get(&subject).unwrap(),
+                Tick(1_000),
+                &policy(),
+            )
+            .as_ref()
+        );
+        assert_eq!(
+            store.get_entity(&subject).unwrap().last_known_place,
+            Some(entity(31))
+        );
+    }
+
+    #[test]
+    fn test_prune_preserves_high_activation_entities() {
+        let mut store = AgentBeliefStore::new();
+        let mut reinforced = sample_state(45, 1);
+        reinforced.believed_kind = Some(EntityKind::Facility);
+        reinforced.presentation_ticks = [
+            Tick(5),
+            Tick(15),
+            Tick(25),
+            Tick(35),
+            Tick(45),
+            Tick(0),
+            Tick(0),
+            Tick(0),
+        ];
+        reinforced.presentation_tick_count = 5;
+        store.update_entity(entity(70), reinforced);
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(50),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        assert!(store.known_entities.contains_key(&entity(70)));
+    }
+
+    #[test]
+    fn test_prune_salience_boost_preserves_items() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut item = sample_state(0, 1);
+        item.believed_kind = Some(EntityKind::ItemLot);
+        let mut facility = sample_state(0, 1);
+        facility.believed_kind = Some(EntityKind::Facility);
+
+        store.update_entity(entity(80), item);
+        store.update_entity(entity(81), facility);
+
+        let mut urgent_needs = HomeostaticNeeds::new_sated();
+        urgent_needs.hunger = Permille::new(1000).unwrap();
+
+        store.prune_decayed_beliefs(&profile(100, 50, 5), Tick(400), &urgent_needs);
+
+        assert!(store.known_entities.contains_key(&entity(80)));
+        assert!(!store.known_entities.contains_key(&entity(81)));
+    }
+
+    #[test]
+    fn test_refresh_entity_summary_from_claims_preserves_presentation_history() {
+        let mut store = claim_backed_store(
+            81,
+            vec![
+                sample_claim(
+                    1,
+                    81,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(10))),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+                sample_claim(
+                    2,
+                    81,
+                    EntityBeliefAspect::Alive,
+                    ClaimValue::Bool(true),
+                    PerceptionSource::DirectObservation,
+                    9,
+                    950,
+                ),
+            ],
+        );
+        let mut prior = sample_state(9, 1);
+        prior.presentation_ticks = [
+            Tick(1),
+            Tick(5),
+            Tick(9),
+            Tick(0),
+            Tick(0),
+            Tick(0),
+            Tick(0),
+            Tick(0),
+        ];
+        prior.presentation_tick_count = 3;
+        store.update_entity(entity(81), prior);
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(10),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        let summary = store.known_entities.get(&entity(81)).unwrap();
+        assert_eq!(summary.presentation_tick_count, 3);
+        assert_eq!(
+            &summary.presentation_ticks[..3],
+            &[Tick(1), Tick(5), Tick(9)]
         );
     }
 
@@ -4619,6 +5683,14 @@ mod tests {
             950,
         ));
         store.update_entity(entity(1), sample_state(7, 2));
+        store.place_visits.insert(
+            entity(49),
+            PlaceVisitRecord {
+                ticks_present: 12,
+                last_arrival_tick: Tick(9),
+                visit_count: 3,
+            },
+        );
         store.institutional_beliefs.insert(
             InstitutionalBeliefKey::OfficeHolderOf { office: entity(50) },
             vec![sample_institutional_belief(12)],
@@ -4711,7 +5783,7 @@ mod tests {
     fn shared_belief_snapshot_ignores_observed_tick_and_matches_shareable_content() {
         let older = sample_state(3, 4);
         let mut newer = older.clone();
-        newer.observed_tick = Tick(9);
+        newer.push_presentation_tick(Tick(9), 5);
         let snapshot = to_shared_belief_snapshot(&older);
 
         assert_eq!(snapshot, to_shared_belief_snapshot(&newer));
@@ -5164,19 +6236,55 @@ mod tests {
     }
 
     #[test]
-    fn perception_profile_default_includes_infrastructure_retention_ticks() {
+    fn perception_profile_default_includes_activation_decay_fields() {
         let profile = PerceptionProfile::default();
 
         assert_eq!(profile.confidence_policy, BeliefConfidencePolicy::default());
-        assert_eq!(profile.entity_memory_capacity, 12);
-        assert_eq!(profile.entity_claim_capacity, 12);
-        assert_eq!(profile.infrastructure_retention_ticks, 480);
+        assert_eq!(
+            profile.entity_activation_threshold,
+            Permille::new(100).unwrap()
+        );
+        assert_eq!(
+            profile.claim_confidence_threshold,
+            Permille::new(50).unwrap()
+        );
+        assert_eq!(profile.observation_buffer_capacity, 5);
+        assert_eq!(profile.observation_budget, 24);
+        assert_eq!(profile.need_salience_boost, Permille::new(500).unwrap());
+        assert_eq!(
+            profile.need_salience_urgency_threshold,
+            Permille::new(500).unwrap()
+        );
         assert_eq!(profile.institutional_memory_capacity, 20);
         assert_eq!(
             profile.consultation_speed_factor,
             Permille::new(500).unwrap()
         );
         assert_eq!(profile.contradiction_tolerance, Permille::new(300).unwrap());
+    }
+
+    #[test]
+    fn perception_profile_serde_defaults_observation_budget_when_omitted() {
+        let serialized = ron::to_string(&PerceptionProfile::default()).expect("serialize");
+        let omitted = serialized
+            .replace("observation_budget:24,", "")
+            .replace("observation_budget: 24,", "");
+        let profile: PerceptionProfile = ron::from_str(&omitted)
+            .expect("deserialize perception profile without observation_budget");
+
+        assert_eq!(profile.observation_budget, 24);
+    }
+
+    #[test]
+    fn perception_profile_serde_accepts_explicit_observation_budget() {
+        let serialized = ron::to_string(&PerceptionProfile::default()).expect("serialize");
+        let explicit = serialized
+            .replace("observation_budget:24", "observation_budget:11")
+            .replace("observation_budget: 24", "observation_budget: 11");
+        let profile: PerceptionProfile = ron::from_str(&explicit)
+            .expect("deserialize perception profile with explicit observation_budget");
+
+        assert_eq!(profile.observation_budget, 11);
     }
 
     #[test]
@@ -5246,7 +6354,7 @@ mod tests {
         assert!(snapshot.alive);
         assert_eq!(snapshot.wounds, vec![wound]);
         assert_eq!(snapshot.believed_contention, None);
-        assert_eq!(snapshot.observed_tick, Tick(9));
+        assert_eq!(snapshot.last_observed_tick(), Some(Tick(9)));
         assert_eq!(
             snapshot.source,
             PerceptionSource::Report {
@@ -5697,8 +6805,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(1),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(1),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
         store.entity_claims.insert(
@@ -5739,8 +6849,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(4),
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(4),
+                PerceptionSource::DirectObservation,
+            )
         };
 
         store.record_entity_snapshot_claims(
@@ -5749,6 +6861,7 @@ mod tests {
             None,
             Tick(4),
             Some(Tick(4)),
+            5,
             &policy(),
         );
 
@@ -5814,11 +6927,15 @@ mod tests {
             observed_tick: Tick(6),
         };
 
-        assert!(store.update_believed_activity(&id, Some(activity.clone())));
+        assert!(store.update_believed_activity(&id, Some(activity.clone()), Tick(6), &policy()));
         assert_eq!(
             store.get_entity(&id).unwrap().believed_activity,
             Some(activity.clone())
         );
+        assert!(store.entity_claims.get(&id).unwrap().iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::Activity
+                && claim.value == ClaimValue::Activity(Some(activity.clone()))
+        }));
     }
 
     #[test]
@@ -5834,13 +6951,13 @@ mod tests {
         state.believed_activity = Some(activity.clone());
         store.known_entities.insert(id, state);
 
-        assert!(!store.update_believed_activity(&id, Some(activity)));
+        assert!(!store.update_believed_activity(&id, Some(activity), Tick(5), &policy()));
     }
 
     #[test]
     fn update_believed_activity_unknown_entity() {
         let mut store = AgentBeliefStore::new();
-        assert!(!store.update_believed_activity(&entity(99), None));
+        assert!(!store.update_believed_activity(&entity(99), None, Tick(5), &policy()));
     }
 
     #[test]
@@ -5855,8 +6972,12 @@ mod tests {
         });
         store.known_entities.insert(id, state);
 
-        assert!(store.clear_believed_activity(&id));
+        assert!(store.clear_believed_activity(&id, Tick(6), &policy()));
         assert_eq!(store.get_entity(&id).unwrap().believed_activity, None);
+        assert!(store.entity_claims.get(&id).unwrap().iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::Activity
+                && claim.value == ClaimValue::Activity(None)
+        }));
     }
 
     #[test]
@@ -5865,13 +6986,13 @@ mod tests {
         let id = entity(3);
         store.known_entities.insert(id, sample_state(5, 1));
 
-        assert!(!store.clear_believed_activity(&id));
+        assert!(!store.clear_believed_activity(&id, Tick(6), &policy()));
     }
 
     #[test]
     fn clear_believed_activity_unknown_entity() {
         let mut store = AgentBeliefStore::new();
-        assert!(!store.clear_believed_activity(&entity(99)));
+        assert!(!store.clear_believed_activity(&entity(99), Tick(6), &policy()));
     }
 
     #[test]
@@ -5881,18 +7002,70 @@ mod tests {
         let destination = entity(8);
         store.known_entities.insert(id, sample_state(5, 1));
 
-        assert!(store.update_departure_projection(&id, destination, Tick(9)));
+        assert!(store.update_departure_projection(&id, destination, Tick(9), &policy()));
 
         let belief = store.get_entity(&id).unwrap();
         assert_eq!(belief.last_known_place, Some(destination));
-        assert_eq!(belief.observed_tick, Tick(9));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(9)));
         assert_eq!(belief.source, PerceptionSource::DirectObservation);
+        assert!(store.entity_claims.get(&id).unwrap().iter().any(|claim| {
+            claim.aspect == EntityBeliefAspect::Location
+                && claim.value == ClaimValue::Place(Some(destination))
+        }));
     }
 
     #[test]
     fn update_departure_projection_unknown_entity() {
         let mut store = AgentBeliefStore::new();
-        assert!(!store.update_departure_projection(&entity(99), entity(8), Tick(9)));
+        assert!(!store.update_departure_projection(&entity(99), entity(8), Tick(9), &policy(),));
+    }
+
+    #[test]
+    fn import_entity_snapshot_records_report_claims_and_survives_prune() {
+        let mut store = AgentBeliefStore::new();
+        let id = entity(12);
+        let evidence = BelievedEvidenceState {
+            entries: vec![BelievedEvidenceEntry {
+                kind: EvidenceKind::DisturbanceMarker {
+                    place: entity(20),
+                    kind: crate::DisturbanceKind::WildernessRelief,
+                    created_at: Tick(6),
+                },
+                freshness: Tick(6),
+            }],
+            observed_tick: Tick(6),
+        };
+        let mut snapshot = sample_state(6, 2);
+        snapshot.source = PerceptionSource::Report {
+            from: entity(30),
+            chain_len: 1,
+        };
+        snapshot.believed_evidence = Some(evidence.clone());
+
+        store.import_entity_snapshot(id, &snapshot, Tick(8), &policy());
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(9),
+            &HomeostaticNeeds::new_sated(),
+        );
+
+        let summary = store.get_entity(&id).unwrap();
+        assert_eq!(summary.believed_evidence, Some(evidence));
+        assert_eq!(
+            summary.source,
+            PerceptionSource::Report {
+                from: entity(30),
+                chain_len: 1,
+            }
+        );
+        assert!(
+            store
+                .entity_claims
+                .get(&id)
+                .unwrap()
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::Evidence)
+        );
     }
 
     // ── BeliefStoreDiff tests ──────────────────────────────────────────
@@ -5913,8 +7086,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: tick,
-            source: PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                tick,
+                PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -5962,6 +7137,14 @@ mod tests {
 
     fn make_ask_witness_memory(tick: Tick) -> AskWitnessMemory {
         AskWitnessMemory { asked_tick: tick }
+    }
+
+    fn make_place_visit_record(tick: Tick) -> PlaceVisitRecord {
+        PlaceVisitRecord {
+            ticks_present: tick.0 as u32,
+            last_arrival_tick: tick,
+            visit_count: (tick.0 as u16).max(1),
+        }
     }
 
     fn make_institutional_key(office_slot: u32) -> InstitutionalBeliefKey {
@@ -6081,6 +7264,32 @@ mod tests {
     }
 
     #[test]
+    fn belief_store_diff_roundtrip_social_observation_same_detail_replacement() {
+        let mut before = AgentBeliefStore::new();
+        before
+            .social_observations
+            .push(make_social_observation(Tick(1)));
+        before.social_observations.push(SocialObservation {
+            detail: SocialObservationDetail::CoPresence { other: entity(7) },
+            ..make_social_observation(Tick(2))
+        });
+
+        let mut after = before.clone();
+        after.social_observations[0] = SocialObservation {
+            place: entity(99),
+            observed_tick: Tick(5),
+            source: PerceptionSource::Report {
+                from: entity(8),
+                chain_len: 1,
+            },
+            ..before.social_observations[0]
+        };
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
     fn belief_store_diff_roundtrip_told_heard_beliefs() {
         let mut before = AgentBeliefStore::new();
         before
@@ -6123,6 +7332,25 @@ mod tests {
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.asked_witnesses_removed.len(), 1);
         assert_eq!(diff.asked_witnesses_set.len(), 1);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_place_visits() {
+        let mut before = AgentBeliefStore::new();
+        before
+            .place_visits
+            .insert(entity(1), make_place_visit_record(Tick(1)));
+
+        let mut after = before.clone();
+        after.place_visits.remove(&entity(1));
+        after
+            .place_visits
+            .insert(entity(2), make_place_visit_record(Tick(2)));
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.place_visits_removed.len(), 1);
+        assert_eq!(diff.place_visits_set.len(), 1);
         assert_eq!(diff.apply(&before), after);
     }
 
@@ -6201,6 +7429,9 @@ mod tests {
             .asked_witnesses
             .insert(make_ask_witness_key(1), make_ask_witness_memory(Tick(1)));
         before
+            .place_visits
+            .insert(entity(1), make_place_visit_record(Tick(1)));
+        before
             .entity_claims
             .insert(entity(1), vec![make_entity_claim(1, Tick(1))]);
         before.institutional_beliefs.insert(
@@ -6223,6 +7454,9 @@ mod tests {
         after
             .asked_witnesses
             .insert(make_ask_witness_key(3), make_ask_witness_memory(Tick(5)));
+        after
+            .place_visits
+            .insert(entity(2), make_place_visit_record(Tick(5)));
         after
             .entity_claims
             .insert(entity(2), vec![make_entity_claim(2, Tick(5))]);

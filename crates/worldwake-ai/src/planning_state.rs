@@ -2779,8 +2779,10 @@ mod tests {
             believed_artifact: None,
             believed_contention: None,
             believed_evidence: None,
-            observed_tick: Tick(observed_tick),
-            source: worldwake_core::PerceptionSource::DirectObservation,
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(observed_tick),
+                worldwake_core::PerceptionSource::DirectObservation,
+            )
         }
     }
 
@@ -3256,8 +3258,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(4),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(4),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -3401,8 +3405,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(7),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(7),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );
@@ -3432,8 +3438,10 @@ mod tests {
                             believed_artifact: None,
                             believed_contention: None,
                             believed_evidence: None,
-                            observed_tick: Tick(4),
-                            source: worldwake_core::PerceptionSource::DirectObservation,
+                            ..BelievedEntityState::single_observation_defaults(
+                                Tick(4),
+                                worldwake_core::PerceptionSource::DirectObservation,
+                            )
                         }),
                     ),
                     told_tick: Tick(6),
@@ -3501,8 +3509,10 @@ mod tests {
                     believed_artifact: None,
                     believed_contention: None,
                     believed_evidence: None,
-                    observed_tick: Tick(0),
-                    source: worldwake_core::PerceptionSource::DirectObservation,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(0),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
                 },
             )],
         );

@@ -72,7 +72,7 @@ const ACQUIRE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Craft,
     PlannerOpKind::MoveCargo,
 ];
-const SLEEP_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep, PlannerOpKind::Travel];
+const SLEEP_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep];
 const RELIEVE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Relieve, PlannerOpKind::Travel];
 const WASH_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Wash,
@@ -857,7 +857,9 @@ mod tests {
             GoalDispatchKey::Patrol => GoalKind::Patrol { place: destination },
             GoalDispatchKey::ExploreLocation => GoalKind::ExploreLocation {
                 target_place: destination,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             },
             GoalDispatchKey::StealItem => GoalKind::StealItem {
                 target_item: target,

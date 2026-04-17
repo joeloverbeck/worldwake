@@ -23,6 +23,7 @@ pub mod facility_queue;
 pub mod facility_queue_actions;
 mod inventory;
 pub mod investigate_actions;
+pub mod item_decay;
 pub mod justice_actions;
 pub mod needs;
 pub mod needs_actions;
@@ -64,6 +65,7 @@ pub use expectation_check::check_overdue_expectations;
 pub use facility_queue::contention_system;
 pub use facility_queue_actions::register_queue_for_facility_use_action;
 pub use investigate_actions::register_investigate_action;
+pub use item_decay::item_decay_system;
 pub use justice_actions::{register_accuse_action, register_exile_action, register_fine_action};
 pub use needs::needs_system;
 pub use needs_actions::register_needs_actions;
@@ -101,6 +103,7 @@ pub fn dispatch_table() -> SystemDispatchTable {
         bandit_camp_system,
         patrol_route_adaptation_system,
         evidence_decay_system,
+        item_decay_system,
         check_overdue_expectations,
         compact_event_log,
     ])

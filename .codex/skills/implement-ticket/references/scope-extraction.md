@@ -15,7 +15,7 @@ When the ticket inherits broader spec language, distinguish the end-state archit
 
 When the parent spec describes an eventual causal story but the current ticket only owns substrate or maintenance scaffolding, keep those separate explicitly. Narrow the ticket to the current owned mechanism and name the deferred downstream behavior.
 
-When a ticket bundles multiple deliverables and reassessment narrows the ticket to only one lawful slice, verify every removed deliverable is still owned by an existing active ticket. Create the follow-up ticket before coding if any removed deliverable has no live owner (see Section 3, Escalation decision tree for follow-up guidance).
+When a ticket bundles multiple deliverables and reassessment narrows the ticket to only one lawful slice, verify every removed deliverable is still owned by an existing active ticket. Create the follow-up ticket before coding if any removed deliverable has no live owner (see `mismatch-handling.md`, Escalation decision tree, for follow-up guidance).
 
 If the ticket's requested invariant exposes a production contradiction, correct the scope first.
 
@@ -30,7 +30,7 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 
 When shared types change, include the sweep surfaces from the reassessment checks ("Shared type, serialization, and persisted-shape sweep") in the task list.
 
-- Before editing, run a concrete constructor/shape sweep for the changed type across workspace crates (e.g., `rg -n 'BlockedIntent \{' crates`), then rerun after implementation.
+- Before editing, run a concrete constructor/shape sweep for the changed type across workspace crates (e.g., `rg -n 'BlockedIntent \{' crates`), then rerun after implementation. Treat raw grep hits as candidate sites only: confirm whether each hit is a full manual literal, a partial `..Default::default()` literal, or just a type/impl definition before broadening the patch list, and use compiler fallout to validate the remaining real edit surface.
 - For broad shared-struct shape changes, landing the shared type first and using sequential `cargo build` / `cargo test` compile failures to enumerate remaining fallout is acceptable.
 - After the first compile wave identifies pure missing-field fallout, a bounded mechanical patch across remaining literals is acceptable before rerunning compile verification.
 - Do not treat `cargo build --workspace` alone as exhaustive fallout enumeration for shared-shape changes. Test-only constructors, helper factories, and same-crate test modules can stay hidden until `--all-targets` compilation (e.g., `cargo clippy --workspace --all-targets -- -D warnings`). Include an all-targets verification pass before closing the ticket.

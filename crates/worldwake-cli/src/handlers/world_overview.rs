@@ -241,6 +241,7 @@ mod tests {
                     metabolism_profile: None,
                     disposal_profile: None,
                     exploration_profile: None,
+                    diversification_profile: None,
                     carry_capacity: None,
                     theft_disposition: None,
                     justice_disposition: None,
@@ -278,6 +279,7 @@ mod tests {
                     metabolism_profile: None,
                     disposal_profile: None,
                     exploration_profile: None,
+                    diversification_profile: None,
                     carry_capacity: None,
                     theft_disposition: None,
                     justice_disposition: None,
@@ -315,6 +317,7 @@ mod tests {
                     metabolism_profile: None,
                     disposal_profile: None,
                     exploration_profile: None,
+                    diversification_profile: None,
                     carry_capacity: None,
                     theft_disposition: None,
                     justice_disposition: None,
@@ -350,6 +353,7 @@ mod tests {
             ],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
         spawn_scenario(&def).unwrap()
@@ -369,6 +373,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            commodity_decay: None,
             compaction_interval: 0,
         };
         spawn_scenario(&def).unwrap()

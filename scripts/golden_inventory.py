@@ -19,7 +19,6 @@ SCENARIO_DETAILS_DIR = ROOT / "docs" / "generated" / "golden-scenario-details"
 _OLD_SCENARIO_MAP_PATH = ROOT / "docs" / "generated" / "golden-scenario-map.md"
 COVERAGE_OUTPUT_PATH = ROOT / "docs" / "generated" / "golden-coverage-matrix.md"
 DOCS_TO_VALIDATE = (
-    ROOT / "docs" / "golden-e2e-coverage.md",
     ROOT / "docs" / "golden-e2e-testing.md",
 )
 

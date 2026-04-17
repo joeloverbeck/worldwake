@@ -686,6 +686,9 @@ pub enum RootCandidateFilterReason {
         place: Option<EntityId>,
         blocking_fact: BlockingFact,
     },
+    TravelCandidateCap {
+        cap: u16,
+    },
 }
 
 /// Why payload synthesis failed for a root candidate.
@@ -778,6 +781,9 @@ pub enum ExpansionCandidateFilterReason {
     },
     TacticalGoalMismatch,
     TravelPrunedAwayFromGoal,
+    TravelCandidateCap {
+        cap: u16,
+    },
 }
 
 /// Why a relevant root operator never produced a concrete root candidate.

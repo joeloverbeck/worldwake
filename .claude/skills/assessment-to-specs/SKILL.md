@@ -83,6 +83,8 @@ For each proposal, validate the assessment's assumptions against the actual code
 
 When the proposal count is large (>5), use up to 3 Explore agents in parallel to validate different proposal groups simultaneously. Provide each agent with the proposals it should validate and the checklist above. Group proposals by codebase area (e.g., AI/planner proposals together, perception proposals together, ECS/core proposals together) so each agent can efficiently share grep context. If proposals span many areas, group by estimated validation complexity instead.
 
+**Verify critical agent negatives**: Explore agents can return confidently-wrong negatives — "type X does not exist," "field Y is missing," "no call sites for Z" — when the agent's grep strategy did not cover the call sites where those names actually live. Any agent negative that would flip a classification outcome ("reject as already addressed," "accept because missing," "reject as overlap") must be independently verified with a direct `Grep` before being used to classify the proposal. One or two verifications per audit is cheap; trusting a false negative can silently reject valid proposals or accept already-implemented ones. Agent positives (the type was found at file:line) are lower-risk but still warrant a spot-check when they drive a scope-down decision.
+
 #### Step 4: Auto-Detect Next S-Number
 
 Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. Increment by 1 for the first new spec. This is needed before presenting the triage report so that spec number assignments are concrete.
@@ -136,6 +138,8 @@ Omit classification sections that have 0 entries (e.g., skip the "Rejected" head
 If the user reclassifies proposals (e.g., "accept P5 too" or "reject P2"), update the triage accordingly and confirm the updated list.
 
 If the user corrects a foundational assumption (e.g., temporal context, assessment provenance, codebase state) that invalidates the overall triage — not just individual classifications — restart from Step 3 (Codebase Validation) with the corrected assumption. Present the corrected triage as a fresh report, not an incremental update. Note which assumption was corrected and how it changed the analysis.
+
+**Post-triage spec-granularity adjustments**: If the user responds to triage questions by changing the spec count — "fold spec S into a ticket under spec T," "split spec X into two," or "drop spec Y entirely" — apply the adjustment before Phase 2 begins and renumber sequentially from the auto-detected starting S-number (Step 4). A downgraded-to-ticket scope folds into whichever sibling spec best owns the same architectural surface, added as a concrete Deliverable block that names it as a ticket (not as a standalone spec). After renumbering: update the in-memory dependency graph that feeds Phase 3, update any spec-number references in pending question answers or scope-down notes, and re-print the final spec list with the new numbering so the user can confirm before spec writing begins. Do not leave gaps in the spec numbering (no S110 + S112 + S113 with S111 missing) — subsequent specs fill the vacated numbers.
 
 ---
 

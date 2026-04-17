@@ -335,6 +335,10 @@ fn commit_ask_witness(
                 instance.actor
             ))
         })?;
+    let actor_needs = txn
+        .get_component_homeostatic_needs(instance.actor)
+        .copied()
+        .unwrap_or_default();
 
     let mut actor_store = txn
         .get_component_agent_belief_store(instance.actor)
@@ -350,9 +354,14 @@ fn commit_ask_witness(
             from: target,
             chain_len: 1,
         };
-        actor_store.update_entity(*entity, transferred);
+        actor_store.import_entity_snapshot(
+            *entity,
+            &transferred,
+            txn.tick(),
+            &actor_perception.confidence_policy,
+        );
     }
-    actor_store.enforce_capacity(&actor_perception, txn.tick());
+    actor_store.prune_decayed_beliefs(&actor_perception, txn.tick(), &actor_needs);
     actor_store.record_asked_witness(
         ask_witness_memory_key(payload),
         AskWitnessMemory {
@@ -679,7 +688,7 @@ mod tests {
         let store = world.get_component_agent_belief_store(actor).unwrap();
         let belief = store.get_entity(&subject).unwrap();
         assert_eq!(belief.last_known_place, Some(other_place));
-        assert_eq!(belief.observed_tick, Tick(2));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(2)));
         assert_eq!(
             belief.source,
             PerceptionSource::Report {
@@ -720,7 +729,7 @@ mod tests {
 
         let store = world.get_component_agent_belief_store(actor).unwrap();
         let belief = store.get_entity(&subject).unwrap();
-        assert_eq!(belief.observed_tick, Tick(1));
+        assert_eq!(belief.last_observed_tick(), Some(Tick(1)));
         assert_eq!(belief.source, PerceptionSource::Rumor { chain_len: 1 });
         assert_eq!(
             store
@@ -912,7 +921,10 @@ mod tests {
         }
 
         let store = world.get_component_agent_belief_store(actor).unwrap();
-        assert_eq!(store.get_entity(&subject).unwrap().observed_tick, Tick(1));
+        assert_eq!(
+            store.get_entity(&subject).unwrap().last_observed_tick(),
+            Some(Tick(1))
+        );
         assert_eq!(
             store.ask_witness_memory(&ask_witness_memory_key(&payload), Tick(4), 12),
             None

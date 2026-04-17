@@ -40,12 +40,12 @@ use crate::{
     AgentDecisionRuntime, PlannerOpSemantics, build_semantics_table, frame_runtime_snapshot,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockingFact, CauseRef, CognitiveProfile, ContentionIntents,
-    ControlSource, EntityId, ExecutionBudget, IntentionFrame, Tick, VisibilitySpec, WitnessData,
-    WorldTxn,
+    ControlSource, EntityId, ExecutionBudget, IntentionFrame, LastProactiveExplorationTick, Tick,
+    VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -513,6 +513,15 @@ fn process_agent(
         },
         tracing,
     );
+    if !read_result.pending_acquisition_exhaustion_resets.is_empty() {
+        apply_acquisition_exhaustion_tracker_resets(
+            ctx.world,
+            ctx.event_log,
+            agent,
+            tick,
+            &read_result.pending_acquisition_exhaustion_resets,
+        )?;
+    }
     let ranked_candidates = read_result.ranked;
 
     // ── Deferred NoCriticalThreat evaluation ──
@@ -654,30 +663,45 @@ fn process_agent(
             })
             .collect();
 
-        let (next_step, next_step_valid, plan_continued, plan_search_trace, selection_trace) =
-            plan_and_validate_next_step_traced(
+        let (
+            next_step,
+            next_step_valid,
+            plan_continued,
+            plan_search_trace,
+            selection_trace,
+            pending_tracker_increments,
+        ) = plan_and_validate_next_step_traced(
+            ctx.world,
+            ctx.scheduler,
+            runtime,
+            &mut current_active_goal,
+            &mut current_frame,
+            &mut current_facility_intents,
+            agent,
+            &ranked_candidates,
+            &blocked_memory,
+            default_switch_margin,
+            frame_switch_margin,
+            utility.side_benefit_weight,
+            tick,
+            cognitive,
+            execution_budget,
+            semantics_table,
+            action_defs,
+            action_handlers,
+            tracing,
+            previous_goal,
+            ctx.recipe_registry,
+        );
+        if !pending_tracker_increments.is_empty() {
+            apply_acquisition_exhaustion_tracker_increments(
                 ctx.world,
-                ctx.scheduler,
-                runtime,
-                &mut current_active_goal,
-                &mut current_frame,
-                &mut current_facility_intents,
+                ctx.event_log,
                 agent,
-                &ranked_candidates,
-                &blocked_memory,
-                default_switch_margin,
-                frame_switch_margin,
-                utility.side_benefit_weight,
                 tick,
-                cognitive,
-                execution_budget,
-                semantics_table,
-                action_defs,
-                action_handlers,
-                tracing,
-                previous_goal,
-                ctx.recipe_registry,
-            );
+                &pending_tracker_increments,
+            )?;
+        }
 
         // ── Execution ──
         let mut execution_trace = if tracing {
@@ -998,10 +1022,16 @@ pub(super) fn update_exploration_counter_for_adopted_goal(
         return Ok(());
     };
 
+    let mut proactive_commit_tick = None;
     match active_goal.goal_key.kind {
-        worldwake_core::GoalKind::ExploreLocation { .. } => {
+        worldwake_core::GoalKind::ExploreLocation {
+            motivating_need, ..
+        } => {
             profile.consecutive_exploration_count =
                 profile.consecutive_exploration_count.saturating_add(1);
+            if motivating_need == worldwake_core::ExplorationMotivation::Proactive {
+                proactive_commit_tick = Some(tick);
+            }
         }
         _ => {
             profile.consecutive_exploration_count = 0;
@@ -1018,6 +1048,85 @@ pub(super) fn update_exploration_counter_for_adopted_goal(
         WitnessData::default(),
     );
     txn.set_component_exploration_profile(agent, profile)
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    if let Some(proactive_commit_tick) = proactive_commit_tick {
+        txn.set_component_last_proactive_exploration_tick(
+            agent,
+            LastProactiveExplorationTick(Some(proactive_commit_tick)),
+        )
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    }
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+fn apply_acquisition_exhaustion_tracker_resets(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    needs: &BTreeSet<worldwake_core::HomeostaticNeedId>,
+) -> Result<(), TickInputError> {
+    let Some(mut tracker) = world
+        .get_component_acquisition_exhaustion_tracker(agent)
+        .copied()
+    else {
+        return Ok(());
+    };
+    let mut changed = false;
+    for need in needs {
+        if tracker.count(*need) > 0 {
+            tracker.reset(*need);
+            changed = true;
+        }
+    }
+    if !changed {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.set_component_acquisition_exhaustion_tracker(agent, tracker)
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+fn apply_acquisition_exhaustion_tracker_increments(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    needs: &BTreeSet<worldwake_core::HomeostaticNeedId>,
+) -> Result<(), TickInputError> {
+    let Some(mut tracker) = world
+        .get_component_acquisition_exhaustion_tracker(agent)
+        .copied()
+    else {
+        return Ok(());
+    };
+
+    for need in needs {
+        tracker.increment(*need);
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.set_component_acquisition_exhaustion_tracker(agent, tracker)
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
     Ok(())

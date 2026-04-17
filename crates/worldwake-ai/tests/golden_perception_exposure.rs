@@ -114,6 +114,20 @@ struct ResourceSourceBeliefObservation {
     water_source_believed: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AgentObservationBudgetBeliefs {
+    sees_other: bool,
+    apple_source_believed: bool,
+    water_source_believed: bool,
+    retained_waste_entities: Vec<EntityId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ObservationBudgetBeliefObservation {
+    first: AgentObservationBudgetBeliefs,
+    second: AgentObservationBudgetBeliefs,
+}
+
 fn place_ground_lots(
     h: &mut GoldenHarness,
     place: EntityId,
@@ -179,9 +193,11 @@ fn run_perception_forms_resource_source_beliefs(seed: Seed) -> ResourceSourceBel
         &mut h.event_log,
         observer,
         PerceptionProfile {
-            entity_memory_capacity: 4,
-            entity_claim_capacity: 12,
-            memory_retention_ticks: 64,
+            entity_activation_threshold: pm(125),
+            claim_confidence_threshold: pm(50),
+            observation_buffer_capacity: 4,
+            need_salience_boost: pm(500),
+            need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(1000),
             ..PerceptionProfile::default()
         },
@@ -208,6 +224,107 @@ fn run_perception_forms_resource_source_beliefs(seed: Seed) -> ResourceSourceBel
         water_source_believed: store.known_entities.contains_key(&water_source),
         known_entities,
         retained_waste_entities,
+    }
+}
+
+fn run_observation_budget_priority(seed: Seed) -> ObservationBudgetBeliefObservation {
+    let mut h = GoldenHarness::new(seed);
+
+    let apple_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::OrchardRow,
+        ResourceSource {
+            commodity: CommodityKind::Apple,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let water_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        ORCHARD_FARM,
+        WorkstationTag::Well,
+        ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(4),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let waste_lots = place_ground_lots(&mut h, ORCHARD_FARM, CommodityKind::Waste, Quantity(1), 40);
+
+    let first = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "First Observer",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new_sated(),
+        stable_test_metabolism(),
+        worldwake_core::UtilityProfile::default(),
+    );
+    let second = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Second Observer",
+        ORCHARD_FARM,
+        HomeostaticNeeds::new_sated(),
+        stable_test_metabolism(),
+        worldwake_core::UtilityProfile::default(),
+    );
+    set_control_source(&mut h, first, ControlSource::Human, 0);
+    set_control_source(&mut h, second, ControlSource::Human, 0);
+
+    let perception_profile = PerceptionProfile {
+        observation_budget: 12,
+        observation_fidelity: pm(1000),
+        ..PerceptionProfile::default()
+    };
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, first, perception_profile);
+    set_agent_perception_profile(&mut h.world, &mut h.event_log, second, perception_profile);
+
+    for _ in 0..20 {
+        h.step_once();
+    }
+
+    let first_store = h
+        .world
+        .get_component_agent_belief_store(first)
+        .cloned()
+        .unwrap_or_else(worldwake_core::AgentBeliefStore::new);
+    let second_store = h
+        .world
+        .get_component_agent_belief_store(second)
+        .cloned()
+        .unwrap_or_else(worldwake_core::AgentBeliefStore::new);
+
+    ObservationBudgetBeliefObservation {
+        first: AgentObservationBudgetBeliefs {
+            sees_other: first_store.known_entities.contains_key(&second),
+            apple_source_believed: first_store.known_entities.contains_key(&apple_source),
+            water_source_believed: first_store.known_entities.contains_key(&water_source),
+            retained_waste_entities: waste_lots
+                .iter()
+                .copied()
+                .filter(|entity| first_store.known_entities.contains_key(entity))
+                .collect(),
+        },
+        second: AgentObservationBudgetBeliefs {
+            sees_other: second_store.known_entities.contains_key(&first),
+            apple_source_believed: second_store.known_entities.contains_key(&apple_source),
+            water_source_believed: second_store.known_entities.contains_key(&water_source),
+            retained_waste_entities: waste_lots
+                .iter()
+                .copied()
+                .filter(|entity| second_store.known_entities.contains_key(entity))
+                .collect(),
+        },
     }
 }
 
@@ -433,11 +550,11 @@ fn golden_modulation_stacks_multiplicatively_for_witnessed_event_fidelity() {
 // Places: OrchardFarm
 // Principles: 7, 14, 15, 16
 //
-// Setup: An AI observer with `entity_memory_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
+// Setup: An AI observer with `observation_buffer_capacity = 4` spends 50 ticks at `OrchardFarm` with two facility-backed resource sources (apple and water) and six competing waste lots on the ground.
 //
-// Proves: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed memory capacity.
+// Proves: The perception-to-belief pipeline retains both resource source entities in `AgentBeliefStore.known_entities` even when total perceived entities exceed the observation-history buffer width.
 //
-// Chain: same-place observation -> belief recording -> `enforce_capacity()` eviction -> retained infrastructure beliefs.
+// Chain: same-place repeated observation -> activation refresh -> retained infrastructure beliefs without a hard entity-count clamp.
 #[test]
 fn golden_perception_forms_resource_source_beliefs() {
     let observation = run_perception_forms_resource_source_beliefs(Seed([178; 32]));
@@ -450,14 +567,9 @@ fn golden_perception_forms_resource_source_beliefs() {
         observation.water_source_believed,
         "observer should retain the water source belief under capacity pressure; observation={observation:?}"
     );
-    assert_eq!(
-        observation.known_entities.len(),
-        4,
-        "memory capacity should bind so the scenario proves eviction under competition; observation={observation:?}"
-    );
     assert!(
-        observation.retained_waste_entities.len() < 6,
-        "not all waste lots should survive once capacity eviction runs; observation={observation:?}"
+        observation.known_entities.len() > 4,
+        "activation-based retention should not clamp known entities to the observation buffer width; observation={observation:?}"
     );
 }
 
@@ -467,4 +579,49 @@ fn golden_perception_forms_resource_source_beliefs_replays_deterministically() {
     let second = run_perception_forms_resource_source_beliefs(Seed([178; 32]));
 
     assert_eq!(first, second);
+}
+
+// Scenario 341: Observation Budget Prioritizes Agents And Facilities Over Waste
+//
+// Systems: Perception
+// ActionDomains: N/A
+// Places: OrchardFarm
+// Principles: 7, 11, 14, 20, 26
+//
+// Setup: Two human-controlled observers with `observation_budget = 12` remain co-located at `OrchardFarm` for 20 ticks with two facility-backed resource sources and forty competing waste lots on the ground.
+//
+// Proves: Reduced-budget passive perception still retains the other agent and both facilities for each observer while deterministic truncation keeps retained waste beliefs bounded to the same low-priority subset instead of all forty lots.
+//
+// Chain: same-place passive perception -> priority sort by entity kind -> budget truncation -> belief-store retention of agents/facilities with bounded waste subset.
+#[test]
+fn golden_observation_budget_prioritizes_agents_and_facilities_over_waste() {
+    let observation = run_observation_budget_priority(Seed([0x79; 32]));
+
+    assert!(
+        observation.first.sees_other,
+        "first observer should retain belief about the colocated second observer; observation={observation:?}"
+    );
+    assert!(
+        observation.second.sees_other,
+        "second observer should retain belief about the colocated first observer; observation={observation:?}"
+    );
+    assert!(
+        observation.first.apple_source_believed && observation.first.water_source_believed,
+        "first observer should retain both facility-backed resource sources under the observation budget; observation={observation:?}"
+    );
+    assert!(
+        observation.second.apple_source_believed && observation.second.water_source_believed,
+        "second observer should retain both facility-backed resource sources under the observation budget; observation={observation:?}"
+    );
+    assert_eq!(observation.first.retained_waste_entities.len(), 9);
+    assert_eq!(observation.second.retained_waste_entities.len(), 9);
+    assert!(
+        observation.first.retained_waste_entities.len() < 40
+            && observation.second.retained_waste_entities.len() < 40,
+        "deterministic truncation should bound retained waste beliefs well below the full clutter set; observation={observation:?}"
+    );
+    assert_eq!(
+        observation.first.retained_waste_entities, observation.second.retained_waste_entities,
+        "both observers should retain the same deterministic low-priority waste subset"
+    );
 }

@@ -438,7 +438,8 @@ impl<'w> WorldTxn<'w> {
         entity: EntityId,
         place: EntityId,
     ) -> Result<(), WorldError> {
-        self.record_placement_operation(entity, |world| world.set_ground_location(entity, place))
+        self.record_placement_operation(entity, |world| world.set_ground_location(entity, place))?;
+        self.sync_ground_since_component(entity)
     }
 
     pub fn put_into_container(
@@ -446,11 +447,15 @@ impl<'w> WorldTxn<'w> {
         entity: EntityId,
         container: EntityId,
     ) -> Result<(), WorldError> {
-        self.record_placement_operation(entity, |world| world.put_into_container(entity, container))
+        self.record_placement_operation(entity, |world| {
+            world.put_into_container(entity, container)
+        })?;
+        self.sync_ground_since_component(entity)
     }
 
     pub fn remove_from_container(&mut self, entity: EntityId) -> Result<(), WorldError> {
-        self.record_placement_operation(entity, |world| world.remove_from_container(entity))
+        self.record_placement_operation(entity, |world| world.remove_from_container(entity))?;
+        self.sync_ground_since_component(entity)
     }
 
     pub fn move_container_subtree(
@@ -464,7 +469,8 @@ impl<'w> WorldTxn<'w> {
     }
 
     pub fn set_in_transit(&mut self, entity: EntityId) -> Result<(), WorldError> {
-        self.record_placement_operation(entity, |world| world.set_in_transit(entity))
+        self.record_placement_operation(entity, |world| world.set_in_transit(entity))?;
+        self.sync_ground_since_component(entity)
     }
 
     pub fn try_reserve(
@@ -739,7 +745,7 @@ impl<'w> WorldTxn<'w> {
             RelationKind::PossessedBy,
             |entity, holder| RelationValue::PossessedBy { entity, holder },
         );
-        Ok(())
+        self.sync_ground_since_component(entity)
     }
 
     pub fn clear_possessor(&mut self, entity: EntityId) -> Result<(), WorldError> {
@@ -753,7 +759,7 @@ impl<'w> WorldTxn<'w> {
             RelationKind::PossessedBy,
             |entity, holder| RelationValue::PossessedBy { entity, holder },
         );
-        Ok(())
+        self.sync_ground_since_component(entity)
     }
 
     pub fn add_member(&mut self, member: EntityId, faction: EntityId) -> Result<(), WorldError> {
@@ -1114,6 +1120,15 @@ impl<'w> WorldTxn<'w> {
         debug_assert!(get(&self.staged_world, entity).is_none());
         debug_assert!(matches!(wrap(before).kind(), kind if kind == component_kind));
         Ok(())
+    }
+
+    fn sync_ground_since_component(&mut self, entity: EntityId) -> Result<(), WorldError> {
+        if let Some(ground_since) = self.staged_world.desired_ground_since(entity, self.tick)? {
+            self.set_component_ground_since(entity, ground_since)
+        } else {
+            self.clear_component_ground_since(entity)?;
+            Ok(())
+        }
     }
 
     with_component_schema_entries!(
@@ -1974,10 +1989,10 @@ fn observed_evidence_entities(evidence: &EvidenceRef) -> BTreeSet<EntityId> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        AgentBeliefStore, ArtifactPostingProfile, BeliefStoreDiff, BelievedEntityState,
-        BelievedInstitutionalClaim, BlockedIntentMemory, CognitiveProfile, CommunicationProfile,
-        DemandMemory, DisposalProfile, EpistemicDispositionProfile, ExecutionBudget,
-        ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
+        AcquisitionExhaustionTracker, AgentBeliefStore, ArtifactPostingProfile, BeliefStoreDiff,
+        BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory, CognitiveProfile,
+        CommunicationProfile, DemandMemory, DisposalProfile, EpistemicDispositionProfile,
+        ExecutionBudget, ExplorationProfile, FactionData, FactionPurpose, InstitutionalBeliefKey,
         InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
         IntentionDispositionProfile, MerchandiseProfile, ObligationSatiationProfile, OfficeData,
         OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
@@ -1992,7 +2007,7 @@ mod tests {
     };
     use crate::{
         BanditCamp, BanditFactionPolicy, CommodityKind, Container, ControlSource,
-        DeprivationExposure, EntityId, EntityKind, ExpectationStore, HomeostaticNeeds,
+        DeprivationExposure, EntityId, EntityKind, ExpectationStore, GroundSince, HomeostaticNeeds,
         LastSeenMemory, LoadUnits, LotOperation, Name, Permille, Place, PlaceTag,
         PlaceVisibilityProfile, Quantity, ReservationId, ReservationRecord, ResourceSource, Tick,
         TickRange, Topology, UniqueItemKind, World, WorldError,
@@ -2445,6 +2460,14 @@ mod tests {
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,
+                    component_kind: ComponentKind::AcquisitionExhaustionTracker,
+                    before: None,
+                    after: ComponentValue::AcquisitionExhaustionTracker(
+                        AcquisitionExhaustionTracker::default(),
+                    ),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
                     component_kind: ComponentKind::ExplorationProfile,
                     before: None,
                     after: ComponentValue::ExplorationProfile(ExplorationProfile::default()),
@@ -2879,8 +2902,160 @@ mod tests {
                         place: entity(5),
                     },
                 }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: item,
+                    component_kind: ComponentKind::GroundSince,
+                    before: None,
+                    after: ComponentValue::GroundSince(GroundSince(Tick(9))),
+                }),
             ]
         );
+    }
+
+    #[test]
+    fn ground_since_set_on_ground_placement() {
+        let mut world = World::new(test_topology()).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(1))
+            .unwrap();
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(10),
+            CauseRef::SystemTick(Tick(10)),
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+
+        txn.set_ground_location(item, entity(5)).unwrap();
+
+        assert_eq!(
+            txn.get_component_ground_since(item),
+            Some(&GroundSince(Tick(10)))
+        );
+    }
+
+    #[test]
+    fn ground_since_set_when_removed_from_container_to_ground() {
+        let mut world = World::new(test_topology()).unwrap();
+        let container = world.create_container(open_container(20), Tick(1)).unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Coin, Quantity(1), Tick(2))
+            .unwrap();
+        world.set_ground_location(container, entity(5)).unwrap();
+        world.put_into_container(item, container).unwrap();
+
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(10),
+            CauseRef::SystemTick(Tick(10)),
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+
+        txn.remove_from_container(item).unwrap();
+
+        assert_eq!(
+            txn.get_component_ground_since(item),
+            Some(&GroundSince(Tick(10)))
+        );
+    }
+
+    #[test]
+    fn ground_since_cleared_on_pickup() {
+        let mut world = World::new(test_topology()).unwrap();
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(2))
+            .unwrap();
+        world.set_ground_location(actor, entity(5)).unwrap();
+
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(10),
+            CauseRef::SystemTick(Tick(10)),
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.set_ground_location(item, entity(5)).unwrap();
+        txn.set_possessor(item, actor).unwrap();
+
+        assert_eq!(txn.get_component_ground_since(item), None);
+    }
+
+    #[test]
+    fn ground_since_resets_on_re_drop() {
+        let mut world = World::new(test_topology()).unwrap();
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(2))
+            .unwrap();
+        world.set_ground_location(actor, entity(5)).unwrap();
+
+        {
+            let mut txn = WorldTxn::new(
+                &mut world,
+                Tick(10),
+                CauseRef::SystemTick(Tick(10)),
+                None,
+                None,
+                VisibilitySpec::Hidden,
+                WitnessData::default(),
+            );
+            txn.set_ground_location(item, entity(5)).unwrap();
+            txn.set_possessor(item, actor).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(50),
+            CauseRef::SystemTick(Tick(50)),
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.clear_possessor(item).unwrap();
+
+        assert_eq!(
+            txn.get_component_ground_since(item),
+            Some(&GroundSince(Tick(50)))
+        );
+    }
+
+    #[test]
+    fn ground_since_not_set_for_inventory_items() {
+        let mut world = World::new(test_topology()).unwrap();
+        let actor = world
+            .create_agent("Aster", ControlSource::Ai, Tick(1))
+            .unwrap();
+        let item = world
+            .create_item_lot(CommodityKind::Bread, Quantity(2), Tick(2))
+            .unwrap();
+
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(10),
+            CauseRef::SystemTick(Tick(10)),
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.set_possessor(item, actor).unwrap();
+
+        assert_eq!(txn.get_component_ground_since(item), None);
     }
 
     #[test]
@@ -4640,8 +4815,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(12),
-                source: PerceptionSource::Inference,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(12),
+                    PerceptionSource::Inference,
+                )
             },
         );
 
@@ -4681,8 +4858,9 @@ mod tests {
             .copied()
             .unwrap();
         let mut after = before;
-        after.entity_memory_capacity += 3;
-        after.entity_claim_capacity += 5;
+        after.entity_activation_threshold = Permille::new(125).unwrap();
+        after.claim_confidence_threshold = Permille::new(75).unwrap();
+        after.observation_buffer_capacity = 7;
         after.observation_fidelity = Permille::new(990).unwrap();
 
         let mut txn = new_txn(&mut world);

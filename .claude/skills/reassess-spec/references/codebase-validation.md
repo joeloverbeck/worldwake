@@ -17,6 +17,7 @@ Grep for each type. Confirm existence and current shape (fields, members). Check
 - **Field existence and naming**: Flag fields the spec assumes but don't exist or have different names/types.
 - **Numeric type accuracy**: Verify assumed types match actual types (`u32` vs `Permille` vs `i32`). If a formula combines different numeric types, flag as LOW Improvement.
 - **Serialization**: If the spec proposes serializing a type, verify `Serialize`/`Deserialize` derives.
+- **Design table exhaustiveness**: If the spec includes a lookup table or mapping indexed by an enum (e.g., priority-per-EntityKind, handling-per-GoalKind), verify the table covers all current enum variants. Missing variants will require either explicit entries or a documented catch-all default.
 - **Hash functions**: If acceptance criteria reference hash functions, verify they exist and check input inclusion/exclusion.
 - **Field additions to non-ECS structs** (belief-layer, snapshot types): Check serde derives, `#[serde(default)]`, Default impl impact, and whether derivation/construction functions (e.g., `derive_entity_summary()`) can populate the new field from their inputs. If a derivation function reconstructs from a data source lacking the new field, flag the propagation gap as an Issue.
 
@@ -29,14 +30,28 @@ Grep for each function. Confirm signature, module location, and export status. L
 - **Data-surface compatibility**: For proposed shared helpers or unified abstractions, verify that the input type (e.g., `PlanningState`, `GoalBeliefView`, `GenerationContext`) is accessible at ALL intended call sites. Different pipeline stages may use different trait surfaces for the same underlying data. Flag when a helper's proposed data surface is not available at one or more call sites.
 - **Proposed modifications to existing functions**: Verify the function's parameters and local scope include variables the proposed code references. Flag out-of-scope variable usage as an Issue.
 - **Symbol partitioning** (splitting traits/enums): Verify the partition is complete (all symbols accounted for) and disjoint (no symbol in two categories). Verify stated counts match listed names. Use automated scripts for large sets (>20 symbols).
-- **Code example fidelity**: If the spec includes Before/After code snippets, verify they match the actual code's control flow structure (e.g., imperative loops vs. iterator chains, match arms vs. if-let chains). Style mismatches in code examples mislead implementers.
+- **Code example fidelity**: If the spec includes Before/After code snippets, verify they match the actual code's control flow structure (e.g., imperative loops vs. iterator chains, match arms vs. if-let chains). Style mismatches in code examples mislead implementers. For new system specs (type a) with proposed pseudocode, validate each API call against the nearest existing analog: if the spec says "follows the evidence_decay pattern," read the analog's actual function signature, constructor arguments, field names, and commit flow, then verify the pseudocode matches. Treat each function call, field access, method invocation, and constructor in proposed pseudocode as a codebase reference subject to the same validation as any other Step 3.3 reference.
 - **Runtime vs. test-only classification**: For deliverables that list specific code locations to modify, check whether each location is inside `#[cfg(test)]` or conditional compilation. Grep for `#[cfg(test)]` in each file to find the boundary line number, then classify each spec-referenced line as runtime (before boundary) or test-only (after boundary). If a deliverable frames test-only locations as runtime targets, flag as an Issue. If a deliverable mixes runtime and test locations without distinction, flag as an Improvement (separate runtime changes from test fixture updates).
 - **Reuse opportunities**: For each new function or trait method the spec proposes to create, grep the codebase for existing functions serving the same purpose. A proposed new method that duplicates existing functionality should be flagged as an Issue (prefer reuse) or Improvement (note the existing alternative).
+- **Pseudocode dependency completeness**: For each function call, type constructor, or method invocation in spec pseudocode, verify it either (a) exists in the codebase, or (b) is defined or proposed elsewhere in the spec as a new deliverable. Functions that are neither existing nor spec-defined are incomplete deliverables — flag as Issues.
+- **Proposed reuse fidelity**: When a spec claims to reuse an existing function, field, or mechanism, verify the reuse is semantically compatible. Read the existing implementation and compare its behavior (input filtering, edge cases, output semantics) against the spec's proposed usage. Flag semantic divergences that would require a new function or a modified version rather than direct reuse.
 - **Existing behavior overlap**: For deliverables that propose modifying existing functions, verify the proposed change isn't already implemented. If the current code already exhibits the described behavior (e.g., locality scoping via a trait implementation the spec doesn't acknowledge), flag as an Issue — the deliverable should either be eliminated, merged into a sibling deliverable, or rewritten as an explanatory note about existing behavior. This requires reading beyond the function signature into the implementation and its call chain. For proposed changes to functions called from multiple code paths, trace which paths are actually active for the spec's scenario. A function may exist and match the spec's description but never be reached in the described failure mode.
 
 ## 3.3A Output Format Fidelity
 
 For specs that propose new output or report sections in existing tooling (observer binary, CLI, diagnostic tools), verify the proposed format (section headers, delimiters, label conventions) matches the target file's existing formatting patterns. Grep for existing section markers and formatting conventions in the target file. Flag mismatches as Issues.
+
+## 3.3B Scenario Content Validation
+
+For specs that design new RON scenarios or propose specific scenario configurations, validate all proposed values against actual codebase definitions:
+
+- **WorkstationTag values**: Grep the `WorkstationTag` enum and confirm every proposed workstation exists as a variant.
+- **PlaceTag values**: Grep the `PlaceTag` enum and confirm every proposed place tag exists. Note the distinction between PlaceTags (place-level properties like `Latrine`, `Forest`) and WorkstationTags (facility-level like `Well`, `FieldPlot`).
+- **Recipe names**: Grep the action registry or existing scenarios for recipe name format. Worldwake uses Title Case with spaces (e.g., `"Harvest Grain"`, `"Harvest Apples"`), not camelCase or snake_case.
+- **AgentDef fields**: Cross-reference proposed agent profile fields against `AgentDef` in `crates/worldwake-cli/src/scenario/types.rs`.
+- **Commodity names**: Verify proposed commodity references against `CommodityKind` enum variants.
+- **Format conventions**: Cross-reference with existing scenarios (glob `scenarios/*.ron`) for structural conventions (facility definitions, resource source fields, agent profile structure).
+- **Need coverage**: If the scenario claims to prove survival or need satisfaction, verify it covers all `HomeostaticNeedId` variants and that the proposed facilities/tags can satisfy each need's action preconditions.
 
 ## 3.4 Dependencies (specs/tickets)
 
@@ -50,12 +65,13 @@ Skip sub-steps 5a-5g if the spec does not add fields to components, create new c
 - **5b. Trait bounds**: Check derive macros and trait bounds on types/enums the spec extends. Record constraints new additions must satisfy (`Copy`, `Serialize`, `Ord`).
   - **Derive propagation**: For new types with derives (`Hash`, `Ord`, `Copy`, etc.), verify all field types also derive those traits. Flag missing derives on embedded types as CRITICAL Issues.
   - **Derive widening**: If the spec shows a modified type with new derive attributes, compare against current derives. Note explicitly so implementers don't treat them as copy-paste artifacts.
-- **5c. Default and constructors**: For field additions, check `Default` impl and builder/constructor functions.
-- **5d. Downstream consumers**: For field type changes or removals, perform full downstream consumer analysis (3.6).
+- **5c. Default and constructors**: For field additions, check `Default` impl and builder/constructor functions. For field additions to components or structs that are deserialized from any external source (scenario files via RON, save state, replay state), verify the field has a serde default (`#[serde(default)]` or `#[serde(default = "...")]`) so existing serialized data continues to deserialize. Grep existing scenarios for the component name to confirm whether scenario deserialization is a concern. For belief store structs (e.g., `AgentBeliefStore`) and snapshot types, save/replay compatibility is always a concern — new fields need `#[serde(default)]`.
+- **5d. Downstream consumers**: For field type changes or removals, perform full downstream consumer analysis (3.6). For field removals specifically, also grep each removed field name across the workspace to find all direct usage sites — not just the type's consumers, but any code reading that specific field. This catches cases where sibling logic within the same function depends on the removed field (e.g., social observation pruning depending on `memory_retention_ticks` within `enforce_capacity`).
 - **5e. Scalar-to-collection migrations**: Grep for equality comparisons (`== field_value`) that would need `.contains()`.
 - **5f. Semantic overlap**: Two sub-checks:
   - *Spec-acknowledged overlap*: If the spec documents the relationship between a new field and an existing field, note "overlap acknowledged by spec" and skip the grep.
   - *Unacknowledged overlap*: Grep for semantically similar field names across all components. Also check functional overlap — fields serving the same purpose with different names. Flag as P28 migration candidates. For new components, apply the **novel-domain test**: a component is novel if no existing component serves the same downstream consequence (P5). Novel-domain components focus on functional overlap; domain-extension components also need field name similarity checks.
+- **5f-extra. Non-ECS runtime state overlap**: For new ECS components that track runtime state (counters, caches, trackers), also grep for similar tracking in non-ECS runtime structures (e.g., `AgentDecisionRuntime`, action handler state). Overlap between ECS and non-ECS tracking is a common source of confusion — flag it as an Improvement so the spec can acknowledge the relationship and explain why both are needed (e.g., different granularity).
 - **5g. EntityKind variant overlap**: Check whether existing enum variants overlap semantically with proposed additions. Flag empty/unused variants that fragment the same domain as P28 candidates.
 - **5h. Trait accessor propagation**: For new components read by the AI crate during candidate generation, goal ranking, or planning, check whether `GoalBeliefView` (`worldwake-sim/src/belief_view.rs`) or `BeliefView` needs a new accessor method. If so, flag the spec's crate list as needing update and note the `RuntimeBeliefView` impl and `GoalBeliefView` blanket impl forwarding required. This is a common pattern: new behavioral components almost always need a belief-view accessor for the AI crate to read them.
 
@@ -93,6 +109,8 @@ Grep active specs in `specs/` for references to this spec's deliverables. Note a
 
 For specs that include Cross-System Interactions or SystemFn Integration sections, verify each crate attribution: confirm the described behavior (commit handler, system function, ranking logic, etc.) actually resides in the named crate and module. Flag misattributed crates as Issues — these are prose claims about responsibility that drift when code moves between crates.
 
+Beyond crate attribution accuracy, evaluate whether each cross-system interaction is architecturally appropriate. A system reading another domain's profile (e.g., needs system reading ExplorationProfile) may indicate cross-concern coupling. Flag as Improvement with an alternative that keeps domain-awareness self-contained (e.g., moving the logic to the domain's own crate).
+
 ## 3.9 Behavioral Claim Validation
 
 For each claim about who reads/writes a type at runtime, grep all call sites and classify as runtime vs. test-only (`#[cfg(test)]`). Flag contradictions as CRITICAL. If technically wrong but safe (e.g., caller only reads current-tick data), note both the correction and safety argument.
@@ -101,7 +119,7 @@ For each claim about who reads/writes a type at runtime, grep all call sites and
 
 In plan mode, Explore agents are the primary validation mechanism (read-only, inherently compatible). Launch 2-3 agents organized by theme for specs with >10 references.
 
-For specs with many references, launch parallel Explore agents organized by theme (e.g., action/type references, AI/test references, dependencies/infrastructure). Choose themes to minimize cross-agent dependencies. Typical: 1 agent for 10-15 references with a single domain, 2-3 agents for 15+ references spanning multiple domains. Max 3 agents.
+For specs with many references, launch parallel Explore agents organized by theme (e.g., action/type references, AI/test references, dependencies/infrastructure). Choose themes to minimize cross-agent dependencies. Typical: 1 agent for 10-15 references with a single domain, 2-3 agents for 15+ references spanning multiple domains. Max 3 agents. For type (a) new system specs, 3 parallel agents is typical — the reference count and domain spread (AI crate, core types, belief/dependency infrastructure) usually justify full parallelism.
 
 Guidelines:
 - When agents validate code locations referenced by a spec's deliverables, instruct them to report the `#[cfg(test)]` boundary line number for each file so runtime vs. test classification can be done without follow-up reads.

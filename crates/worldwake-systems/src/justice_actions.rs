@@ -1220,8 +1220,10 @@ mod tests {
                 believed_artifact: None,
                 believed_contention: None,
                 believed_evidence: None,
-                observed_tick: Tick(tick),
-                source: PerceptionSource::DirectObservation,
+                ..BelievedEntityState::single_observation_defaults(
+                    Tick(tick),
+                    PerceptionSource::DirectObservation,
+                )
             },
         );
         let mut txn = new_txn(world, tick);
@@ -1395,15 +1397,17 @@ mod tests {
                     txn.set_component_perception_profile(
                         agent,
                         PerceptionProfile {
-                            entity_memory_capacity: 16,
-                            entity_claim_capacity: 16,
-                            memory_retention_ticks: 100,
-                            infrastructure_retention_ticks: 1000,
                             observation_fidelity: pm(1000),
                             confidence_policy: BeliefConfidencePolicy::default(),
                             institutional_memory_capacity: 16,
                             consultation_speed_factor: pm(1000),
                             contradiction_tolerance: pm(300),
+                            entity_activation_threshold: pm(100),
+                            claim_confidence_threshold: pm(50),
+                            observation_buffer_capacity: 5,
+                            observation_budget: 24,
+                            need_salience_boost: pm(500),
+                            need_salience_urgency_threshold: pm(500),
                         },
                     )
                     .unwrap();
