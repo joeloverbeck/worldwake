@@ -12422,7 +12422,9 @@ fn explore_location_search_finds_travel_plan_to_target_place() {
         anchor: worldwake_core::OpportunityAnchor::Place(target_place),
         key: GoalKey::from(GoalKind::ExploreLocation {
             target_place,
-            motivating_need: HomeostaticNeedId::Hunger,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Hunger,
+            ),
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([target_place]),

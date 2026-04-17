@@ -7356,7 +7356,9 @@ mod tests {
             },
             GoalKind::ExploreLocation {
                 target_place: place_b,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             },
             GoalKind::StealItem {
                 target_item: entity(97),
@@ -7450,7 +7452,9 @@ mod tests {
             },
             GoalKind::ExploreLocation {
                 target_place: place_b,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             },
             GoalKind::Patrol { place: place_b },
             GoalKind::StealItem {
@@ -7484,7 +7488,9 @@ mod tests {
         let state = PlanningState::new(&snapshot);
         let goal = GoalKind::ExploreLocation {
             target_place: place_a,
-            motivating_need: HomeostaticNeedId::Hunger,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Hunger,
+            ),
         };
 
         assert!(goal.is_satisfied(&state));
@@ -7498,7 +7504,9 @@ mod tests {
         let target_place = entity(99);
         let goal = GoalKind::ExploreLocation {
             target_place,
-            motivating_need: HomeostaticNeedId::Hunger,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Hunger,
+            ),
         };
 
         assert!(!goal.is_satisfied(&state));

@@ -857,7 +857,9 @@ mod tests {
             GoalDispatchKey::Patrol => GoalKind::Patrol { place: destination },
             GoalDispatchKey::ExploreLocation => GoalKind::ExploreLocation {
                 target_place: destination,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             },
             GoalDispatchKey::StealItem => GoalKind::StealItem {
                 target_item: target,

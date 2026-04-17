@@ -29,15 +29,15 @@ use worldwake_core::{
     ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
     BelievedInstitutionalClaim, BlockedIntentMemory, BountyTarget, BountyTerms, CommodityKind,
     CommodityPurpose, DriveThresholds, EligibilityRule, EntityId, EntityKind, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-    PunishmentKind, Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
-    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
-    ViolationKind, ViolationMemory, classify_communication, current_institutional_belief_topics,
-    load_per_unit, social_observation_is_redundant_for_listener,
-    tell_subject_is_directly_observable_by_listener,
+    ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey, GoalKind,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
+    OpportunityKey, PerceptionSource, ProofRequirement, PunishmentFineSelectionTrace,
+    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
+    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
+    UtilityProfile, ViolationId, ViolationKind, ViolationMemory, classify_communication,
+    current_institutional_belief_topics, load_per_unit,
+    social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
     GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
@@ -2408,7 +2408,7 @@ fn emit_exploration_candidates(
             diagnostics,
             GoalKind::ExploreLocation {
                 target_place,
-                motivating_need: need_id,
+                motivating_need: ExplorationMotivation::NeedDriven(need_id),
             },
             OpportunityAnchor::Place(target_place),
             Evidence::with_place(target_place),
@@ -15818,7 +15818,9 @@ mod tests {
             &candidates,
             GoalKind::ExploreLocation {
                 target_place: frontier_place,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             }
         ));
     }
@@ -16198,7 +16200,9 @@ mod tests {
             &candidates,
             GoalKind::ExploreLocation {
                 target_place: frontier_place,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             }
         ));
     }
@@ -16334,7 +16338,9 @@ mod tests {
             &candidates,
             GoalKind::ExploreLocation {
                 target_place: frontier_place,
-                motivating_need: HomeostaticNeedId::Dirtiness,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Dirtiness,
+                ),
             }
         ));
     }
@@ -16402,7 +16408,9 @@ mod tests {
                 matches!(
                     candidate.key.kind,
                     GoalKind::ExploreLocation {
-                        motivating_need: HomeostaticNeedId::Dirtiness,
+                        motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                            HomeostaticNeedId::Dirtiness,
+                        ),
                         ..
                     }
                 )
@@ -16483,7 +16491,9 @@ mod tests {
                 matches!(
                     candidate.key.kind,
                     GoalKind::ExploreLocation {
-                        motivating_need: HomeostaticNeedId::Dirtiness,
+                        motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                            HomeostaticNeedId::Dirtiness,
+                        ),
                         ..
                     }
                 )

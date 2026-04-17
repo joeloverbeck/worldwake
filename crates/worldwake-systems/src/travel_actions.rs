@@ -926,7 +926,9 @@ mod tests {
             actor,
             GoalKind::ExploreLocation {
                 target_place: destination,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             },
         );
         set_exploration_profile(
@@ -1059,7 +1061,9 @@ mod tests {
             actor,
             GoalKind::ExploreLocation {
                 target_place: destination,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             },
         );
         set_exploration_profile(
@@ -1126,7 +1130,9 @@ mod tests {
             actor,
             GoalKind::ExploreLocation {
                 target_place: destination,
-                motivating_need: HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    HomeostaticNeedId::Hunger,
+                ),
             },
         );
         set_exploration_profile(

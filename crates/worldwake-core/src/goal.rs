@@ -120,7 +120,7 @@ pub enum GoalKind {
     },
     ExploreLocation {
         target_place: EntityId,
-        motivating_need: HomeostaticNeedId,
+        motivating_need: ExplorationMotivation,
     },
     StealItem {
         target_item: EntityId,
@@ -765,7 +765,7 @@ mod tests {
         let target_place = entity_id(23, 3);
         let key = GoalKey::from(GoalKind::ExploreLocation {
             target_place,
-            motivating_need: HomeostaticNeedId::Thirst,
+            motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Thirst),
         });
 
         assert_eq!(key.commodity, None);
@@ -777,7 +777,7 @@ mod tests {
     fn explore_location_goal_roundtrips_through_bincode() {
         let goal = GoalKind::ExploreLocation {
             target_place: entity_id(23, 4),
-            motivating_need: HomeostaticNeedId::Hunger,
+            motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
         };
 
         let bytes = bincode::serialize(&goal).unwrap();

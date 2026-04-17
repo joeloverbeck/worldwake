@@ -19,11 +19,12 @@ use std::{
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
     CommunicationClass, DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId,
-    HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
-    NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, Quantity, RightKind, SourceKey, TellTopic,
-    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, failure_ratio_permille,
+    ExpectationRecord, ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey,
+    GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, NoticeTopic, ObligationExecutionTracker,
+    ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
+    Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
+    belief_confidence, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -712,16 +713,19 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
     }
 }
 
-fn exploration_motive(context: &RankingContext<'_>, motivating_need: HomeostaticNeedId) -> u32 {
+fn exploration_motive(context: &RankingContext<'_>, motivating_need: ExplorationMotivation) -> u32 {
     let Some(needs) = context.needs else {
         return 0;
     };
     let Some(profile) = context.exploration_profile else {
         return 0;
     };
-    u32::from(profile.curiosity_weight.value()).saturating_mul(u32::from(
-        need_pressure_for_id(needs, motivating_need).value(),
-    )) / 1000
+    let ExplorationMotivation::NeedDriven(need_id) = motivating_need else {
+        return 0;
+    };
+    u32::from(profile.curiosity_weight.value())
+        .saturating_mul(u32::from(need_pressure_for_id(needs, need_id).value()))
+        / 1000
 }
 
 fn need_pressure_for_id(needs: HomeostaticNeeds, need_id: HomeostaticNeedId) -> Permille {
@@ -6668,7 +6672,9 @@ mod tests {
         let ranked = rank(
             &[goal(GoalKind::ExploreLocation {
                 target_place,
-                motivating_need: worldwake_core::HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    worldwake_core::HomeostaticNeedId::Hunger,
+                ),
             })],
             &view,
             agent,
@@ -6707,7 +6713,9 @@ mod tests {
         let ranked = rank(
             &[goal(GoalKind::ExploreLocation {
                 target_place,
-                motivating_need: worldwake_core::HomeostaticNeedId::Hunger,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    worldwake_core::HomeostaticNeedId::Hunger,
+                ),
             })],
             &view,
             agent,
@@ -6718,5 +6726,42 @@ mod tests {
 
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].motive_score, 420);
+    }
+
+    #[test]
+    fn explore_location_proactive_motive_stays_zero_until_proactive_ranking_lands() {
+        let agent = entity(1);
+        let target_place = entity(10);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new(700).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        );
+        view.exploration_profiles.insert(
+            agent,
+            worldwake_core::ExplorationProfile {
+                curiosity_weight: Permille::new(600).unwrap(),
+                ..worldwake_core::ExplorationProfile::default()
+            },
+        );
+
+        let outcome = rank(
+            &[goal(GoalKind::ExploreLocation {
+                target_place,
+                motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+            })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(outcome.into_ranked().is_empty());
     }
 }

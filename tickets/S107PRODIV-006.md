@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new candidate emitter in worldwake-ai, LastProactiveExplorationTick update
-**Deps**: S107PRODIV-002, S107PRODIV-003, S107PRODIV-004
+**Deps**: archive/tickets/S107PRODIV-002.md, S107PRODIV-003, S107PRODIV-004
 
 ## Problem
 

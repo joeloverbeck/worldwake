@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new GoalBeliefView trait methods and test-belief-view wiring
-**Deps**: S107PRODIV-001
+**Deps**: archive/tickets/S107PRODIV-001.md
 
 ## Problem
 

@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — CLI/scenario layer only
-**Deps**: S107PRODIV-001
+**Deps**: archive/tickets/S107PRODIV-001.md
 
 ## Problem
 

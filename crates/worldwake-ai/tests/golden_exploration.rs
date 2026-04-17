@@ -8,10 +8,10 @@ use worldwake_ai::{
     PlanSearchOutcome, PlannerOpKind, PlanningPipelineTrace,
 };
 use worldwake_core::{
-    CommodityKind, EntityId, EventLog, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds,
-    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, Place, PlaceTag,
-    Quantity, ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile,
-    WorkstationTag, World,
+    CommodityKind, EntityId, EventLog, ExplorationMotivation, ExplorationProfile,
+    HomeostaticNeedId, HomeostaticNeeds, KnownRecipes, MetabolismProfile, PerceptionProfile,
+    PerceptionSource, Place, PlaceTag, Quantity, ResourceSource, Seed, Tick, Topology, TravelEdge,
+    TravelEdgeId, UtilityProfile, WorkstationTag, World,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
 
@@ -302,7 +302,7 @@ fn processed_tick(h: &GoldenHarness) -> Tick {
 fn exploration_goal(target_place: EntityId, motivating_need: HomeostaticNeedId) -> GoalKey {
     GoalKey::from(GoalKind::ExploreLocation {
         target_place,
-        motivating_need,
+        motivating_need: ExplorationMotivation::NeedDriven(motivating_need),
     })
 }
 
@@ -510,7 +510,7 @@ fn golden_exploration_triggers_on_need_and_ignorance() {
 
     let exploration_goal = GoalKey::from(GoalKind::ExploreLocation {
         target_place: PLACE_FRONTIER,
-        motivating_need: HomeostaticNeedId::Hunger,
+        motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
     });
 
     assert!(
@@ -701,7 +701,7 @@ fn golden_exploration_arrival_unlocks_beliefs_and_concrete_relief() {
 
     let exploration_goal = GoalKey::from(GoalKind::ExploreLocation {
         target_place: PLACE_FRONTIER,
-        motivating_need: HomeostaticNeedId::Hunger,
+        motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
     });
 
     let mut travel_committed = false;
@@ -1301,7 +1301,7 @@ fn golden_s102_counter_reset_on_need_satisfaction() {
 
     let explore_village_kind = GoalKind::ExploreLocation {
         target_place: PLACE_VILLAGE,
-        motivating_need: HomeostaticNeedId::Hunger,
+        motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
     };
     let mut saw_nonzero_tracker = false;
     let mut reset_tick = None;

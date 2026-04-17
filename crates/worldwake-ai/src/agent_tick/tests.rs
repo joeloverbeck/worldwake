@@ -6055,7 +6055,9 @@ fn exploration_counter_increments_when_explore_goal_is_adopted() {
     let active_goal = worldwake_core::ActiveGoal {
         goal_key: GoalKey::from(GoalKind::ExploreLocation {
             target_place: entity(99),
-            motivating_need: HomeostaticNeedId::Hunger,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Hunger,
+            ),
         }),
         adopted_at: Tick(5),
     };

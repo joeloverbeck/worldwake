@@ -305,9 +305,9 @@ pub enum ExplorationMotivation {
 - `crates/worldwake-ai/src/ranking.rs` — `motive_score` and priority class (5 sites)
 - `crates/worldwake-ai/src/candidate_generation.rs` — existing `emit_exploration_candidates` (8 sites)
 - `crates/worldwake-ai/src/feasibility.rs` — feasibility checks (1 site)
-- `crates/worldwake-ai/tests/golden_exploration.rs` — golden tests (19 sites)
-- `crates/worldwake-ai/tests/golden_survival_baseline.rs` — golden tests (3 sites)
-- `crates/worldwake-ai/tests/golden_survival_scattered.rs` — golden tests (3 sites)
+- `crates/worldwake-ai/tests/golden_exploration.rs` — explicit `ExploreLocation` literals/wrappers
+- `crates/worldwake-ai/tests/golden_survival_baseline.rs` — recheck for typed fallout; live branch wildcard assertions compile unchanged
+- `crates/worldwake-ai/tests/golden_survival_scattered.rs` — recheck for typed fallout; live branch wildcard assertions compile unchanged
 - `crates/worldwake-systems/src/travel_actions.rs` — travel action handling (4 sites)
 
 Most updates are mechanical: wrapping the existing `need_id` in `ExplorationMotivation::NeedDriven(need_id)` at emission sites, and adding `ExplorationMotivation::NeedDriven(need_id)` pattern destructuring at match sites. `ExplorationMotivation` must derive `Copy` (since `GoalKind` derives `Copy`).
@@ -403,7 +403,7 @@ This spec modifies candidate emission (new `emit_proactive_exploration_candidate
 4. **`BestEffort` action start** — Pass. `ExploreLocation` uses existing travel actions; no new action type.
 5. **`handle_plan_failure`** — Pass. Replanning logic is GoalKind-agnostic for ExploreLocation.
 6. **Payload revalidation** — N/A. `ExploreLocation` does not use planner-synthesized payloads.
-7. **Golden tests** — Must update existing `ExploreLocation` assertions in `golden_exploration.rs`, `golden_survival_baseline.rs`, and `golden_survival_scattered.rs` to use `ExplorationMotivation::NeedDriven(...)` wrapper. New golden tests added for proactive diversification scenarios.
+7. **Golden tests** — Recheck existing exploration-related goldens after the type migration. On the live branch, `golden_exploration.rs` needs explicit `ExplorationMotivation::NeedDriven(...)` wrapper updates, while `golden_survival_baseline.rs` and `golden_survival_scattered.rs` compile unchanged because their `ExploreLocation` assertions stay wildcard-based. New golden tests are still required for proactive diversification scenarios.
 
 ## Section H: FND-01 Analysis
 
