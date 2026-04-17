@@ -1,27 +1,27 @@
 # S116DRIESCSUS-004: Motive-scoring integration in ranking.rs with unit coverage
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — `BeliefView` / `PerAgentBeliefView` accessors, `RankingContext`, `drive_score`, `relevant_self_consume_factors`, `RankedDriveMotiveInput` decision-trace field
-**Deps**: archive/tickets/S116DRIESCSUS-002.md
+**Engine Changes**: Yes — `BeliefView` / `PerAgentBeliefView` accessors, `RankingContext`, `drive_score`, `relevant_self_consume_factors`, `RankedDriveMotiveInput` field in `goal_model.rs`, decision-trace fixture fallout
+**Deps**: archive/tickets/S116DRIESCSUS-002.md, archive/tickets/S116DRIESCSUS-003.md
 
 ## Problem
 
-Spec S116 requires motive-score multipliers applied at read time in `ranking.rs`, sourced from the authoritative `DeprivationExposure` counter (maintained by ticket 003 — but ticket 004 does not depend on ticket 003 because the multiplier is 1× when the counter hasn't been extended yet, preserving pre-S116 behavior). Decision traces must surface the per-need multiplier alongside `pressure` and `weight`. `score_product(weight, pressure)` must remain pure so decision traces keep weight × pressure legible; the multiplier is applied one layer up.
+Spec S116 requires motive-score multipliers applied at read time in `ranking.rs`, sourced from the authoritative `DeprivationExposure` counter and `DriveEscalationProfile`. With ticket 003 now landed locally, dirtiness and the other four homeostatic counters are live authoritative inputs rather than a future fallback path. Decision traces must surface the per-need multiplier alongside `pressure` and `weight`. `score_product(weight, pressure)` must remain pure so decision traces keep weight × pressure legible; the multiplier is applied one layer up.
 
 ## Assumption Reassessment (2026-04-17)
 
 1. Ranking entry points (grepped 2026-04-17): `motive_score` at `crates/worldwake-ai/src/ranking.rs:585`; `drive_score` at ranking.rs:1167; `score_product` at ranking.rs:1288; `relevant_self_consume_factors` at ranking.rs:1234.
 2. `RankingContext<'a>` at ranking.rs:342 is populated in `RankingContext::new` at ranking.rs:362 from `view: &'a dyn GoalBeliefView`. Existing fields read from the view include `needs`, `thresholds`, `exploration_profile`, `diversification_profile`, `last_proactive_exploration_tick`, `satiation_profile`, `obligation_tracker`. Two new fields follow the same pattern.
 3. `BeliefView` trait at `crates/worldwake-sim/src/belief_view.rs:194-195` declares `homeostatic_needs` and `drive_thresholds`. Extended trait `PerAgentBeliefView` at `per_agent_belief_view.rs:459-465` implements both. Test doubles live at `belief_view.rs:1871-1876` and `goal_model.rs:3533-3537` (AI-side mock). Two new accessors `deprivation_exposure` and `drive_escalation_profile` mirror this shape.
-4. Decision-trace carrier: `RankedDriveMotiveInput { drive, pressure, weight, score, relief_per_unit, recovery_relevant }` — constructed in `relevant_self_consume_factors` (ranking.rs:1188-1198) and via `drive_provenance_from_inputs`. Adding `escalation_multiplier: MultiplierPermille` as the seventh field is the extension point.
+4. Decision-trace carrier: `RankedDriveMotiveInput { drive, pressure, weight, score, relief_per_unit, recovery_relevant }` lives in `crates/worldwake-ai/src/goal_model.rs` and is constructed in `relevant_self_consume_factors` (ranking.rs:1188-1198) and via `drive_provenance_from_inputs`. Adding `escalation_multiplier: MultiplierPermille` there is the extension point; snapshot/test fallout may also touch `decision_trace.rs`.
 5. `RankedDriveKind` → `HomeostaticNeedId` mapping: `RankedDriveKind::Hunger → HomeostaticNeedId::Hunger` etc. Both enums cover the same 5 domain concepts; a `From` impl or match helper is the translation site.
 6. Intended verification layer (precision rule 2): AI / belief-view / planning-layer logic. No authoritative-system change.
 7. Pre-S116 behavior must be exactly reproduced when exposure = None, profile = Default, and counter = 0 (multiplier = 1000 permille = identity). This is the principal regression guard — verified by the D9 neutrality unit test.
 8. `score_product(weight, pressure) -> u32` stays pure per precision rule 6 and spec D4 — the multiplier is applied at the callers so decision trace shows raw `weight × pressure` alongside the multiplier as separate provenance inputs.
-9. Shared abstraction boundary under audit: the `RankedDriveMotiveInput` struct — it is the per-drive motive-scoring trace carrier, read by decision-trace consumers including `decision_trace.rs` snapshot emitters.
-10. Ticket does NOT depend on ticket 003: when ticket 004 lands before 003, the counter is permanently 0 for dirtiness and legacy for the other 4 needs, so `escalation_multiplier` returns 1000 permille for dirtiness and whatever the pre-existing counter says for the others. Behavior is backwards-compatible with pre-S116 motive math while the infrastructure is in place. Once ticket 003 lands, the counter starts contributing non-1× multipliers as designed.
+9. Shared abstraction boundary under audit: the `RankedDriveMotiveInput` struct in `goal_model.rs` — it is the per-drive motive-scoring trace carrier, read by downstream decision-trace consumers including `decision_trace.rs` snapshot emitters.
+10. Live dependency check: this implementation still only needs the profile API from ticket 002 to compile the ranking-side read path, but now that archived ticket 003 is landed locally it also provides the truthful dirtiness exposure behavior used by focused escalation tests. Closeout must not describe dirtiness escalation as a hypothetical pre-003 fallback path.
 
 ## Architecture Check
 
@@ -108,7 +108,7 @@ Downstream at ranking.rs:1194 where `RankedDriveMotiveInput` is constructed from
 
 ### 6. Decision-trace field
 
-Add `pub escalation_multiplier: MultiplierPermille` to `RankedDriveMotiveInput` (typically in `crates/worldwake-ai/src/decision_trace.rs` or wherever `RankedDriveMotiveInput` is defined). Populate in all construction sites — the two in `relevant_self_consume_factors` plus any within `drive_provenance_from_inputs`. For non-drive goal kinds that do not read a homeostatic counter (e.g., `GoalKind::Patrol`, `GoalKind::EngageHostile`), the multiplier is `MultiplierPermille::IDENTITY` (neutral).
+Add `pub escalation_multiplier: MultiplierPermille` to `RankedDriveMotiveInput` in `crates/worldwake-ai/src/goal_model.rs`. Populate in all construction sites — the direct-drive provenance path, the `relevant_self_consume_factors` path, and any snapshot/test literals. For non-drive goal kinds that do not read a homeostatic counter, the multiplier remains `MultiplierPermille::IDENTITY` (neutral).
 
 ### 7. `RankedDriveKind → HomeostaticNeedId` helper
 
@@ -144,11 +144,11 @@ Add four new unit tests in `ranking.rs`'s `#[cfg(test)] mod tests` block:
 - `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — trait + impl)
 - `crates/worldwake-ai/src/goal_model.rs` (modify — test mock around line 3533)
 - `crates/worldwake-ai/src/ranking.rs` (modify — `RankingContext`, `DriveFactor`, `drive_score`, `relevant_self_consume_factors`, `homeostatic_need_id_for_drive` helper, 4 new unit tests)
-- `crates/worldwake-ai/src/decision_trace.rs` (modify — `RankedDriveMotiveInput` field; path subject to live definition location)
+- `crates/worldwake-ai/src/decision_trace.rs` (modify only if fixture / snapshot literals need the extra field)
 
 ## Out of Scope
 
-- `needs_system` counter maintenance — ticket 003 (but this ticket does not depend on 003 — multiplier is identity when counter is 0).
+- `needs_system` counter maintenance — ticket 003.
 - Scenario RON integration — ticket 005.
 - Goldens — ticket 006.
 - Escalation for non-homeostatic drives (pain, danger) — spec non-goal.
@@ -181,3 +181,25 @@ Add four new unit tests in `ranking.rs`'s `#[cfg(test)] mod tests` block:
 2. `cargo test -p worldwake-ai`
 3. `cargo test -p worldwake-sim`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-17.
+
+- Extended the AI read surface so `GoalBeliefView` / `ProfileBeliefView` now expose `deprivation_exposure(...)` and `drive_escalation_profile(...)`, with the live per-agent implementation in `crates/worldwake-sim/src/per_agent_belief_view.rs` and matching stub/mock support in `belief_view.rs`, `goal_model.rs`, and ranking tests.
+- Extended `crates/worldwake-ai/src/ranking.rs` so `RankingContext` reads exposure/profile once, `drive_score(...)` applies the per-need escalation multiplier for direct drive goals, and self-consume motive scoring applies the same multiplier through `DriveFactor` without changing `score_product(...)`.
+- Added `escalation_multiplier: MultiplierPermille` to `RankedDriveMotiveInput` in `crates/worldwake-ai/src/goal_model.rs` and updated construction / fixture sites so decision-trace provenance now surfaces the multiplier separately from raw `weight * pressure`.
+- Added the four focused D9 unit tests for neutrality, 2x growth, saturation, and self-consume-factor attachment.
+
+## Deviations
+
+- Reassessment confirmed the live read boundary is `GoalBeliefView` forwarding into `ProfileBeliefView`, not a standalone world-backed `BeliefView` impl to edit directly. The implementation changed the shared profile/read surface once and relied on the existing forwarding layer.
+- `RankedDriveMotiveInput` already lives in `crates/worldwake-ai/src/goal_model.rs`; `crates/worldwake-ai/src/decision_trace.rs` only needed fixture fallout updates, not ownership changes.
+- With archived ticket `S116DRIESCSUS-003` now landed locally, the focused tests exercised truthful live escalation input rather than a hypothetical pre-003 identity-only dirtiness path. Closeout therefore records `003` as part of the live dependency stack for this run.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai ranking`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test -p worldwake-sim`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

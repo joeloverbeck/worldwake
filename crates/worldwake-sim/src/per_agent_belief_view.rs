@@ -11,9 +11,10 @@ use worldwake_core::{
     AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy, BelievedEntityState,
     BelievedInstitutionalClaim, CarryCapacity, CognitiveProfile, CombatProfile,
     CommodityConsumableProfile, CommodityKind, CommodityValuationProfile, ContentionGrant,
-    ControlSource, DemandObservation, DisposalProfile, DiversificationProfile, DriveThresholds,
-    EffectiveRight, EntityId, EntityKind, ExpectationStore, HomeostaticNeedId, HomeostaticNeeds,
-    InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    ControlSource, DemandObservation, DeprivationExposure, DisposalProfile,
+    DiversificationProfile, DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId,
+    EntityKind, ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LastProactiveExplorationTick, LastSeenMemory, LoadUnits,
     MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
     OfficeData, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
@@ -465,6 +466,18 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
         (agent == self.agent)
             .then(|| self.world.get_component_drive_thresholds(agent).copied())
+            .flatten()
+    }
+
+    fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_deprivation_exposure(agent).copied())
+            .flatten()
+    }
+
+    fn drive_escalation_profile(&self, agent: EntityId) -> Option<DriveEscalationProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_drive_escalation_profile(agent).cloned())
             .flatten()
     }
 

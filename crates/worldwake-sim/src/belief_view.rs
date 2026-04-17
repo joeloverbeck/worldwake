@@ -9,11 +9,12 @@ use worldwake_core::{
     ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
     BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim, CognitiveProfile,
     CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
-    CommodityValuationProfile, ContentionGrant, DemandObservation, DisposalProfile,
-    DiversificationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
-    ExpectationStore, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    CommodityValuationProfile, ContentionGrant, DeprivationExposure, DemandObservation,
+    DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
+    EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile,
+    HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
+    LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
     ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
     Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
     RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, RouteExperience,
@@ -193,6 +194,14 @@ pub trait GoalBeliefView {
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
+        let _ = agent;
+        None
+    }
+    fn drive_escalation_profile(&self, agent: EntityId) -> Option<DriveEscalationProfile> {
+        let _ = agent;
+        None
+    }
     fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
         let _ = agent;
         None
@@ -459,6 +468,14 @@ pub trait EntityBeliefView {
 pub trait ProfileBeliefView {
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
+        let _ = agent;
+        None
+    }
+    fn drive_escalation_profile(&self, agent: EntityId) -> Option<DriveEscalationProfile> {
+        let _ = agent;
+        None
+    }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
     fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
         let _ = agent;
@@ -1270,6 +1287,20 @@ where
         ProfileBeliefView::drive_thresholds(self, agent)
     }
 
+    fn deprivation_exposure(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::DeprivationExposure> {
+        ProfileBeliefView::deprivation_exposure(self, agent)
+    }
+
+    fn drive_escalation_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::DriveEscalationProfile> {
+        ProfileBeliefView::drive_escalation_profile(self, agent)
+    }
+
     fn disposal_profile(
         &self,
         agent: worldwake_core::EntityId,
@@ -1812,10 +1843,11 @@ mod tests {
     };
     use worldwake_core::{
         AgentBeliefStore, CauseRef, CommodityConsumableProfile, CommodityKind, ControlSource,
-        DemandObservation, DiversificationProfile, DriveThresholds, EntityId, EntityKind, EventLog,
-        HomeostaticNeedId, HomeostaticNeeds, LastProactiveExplorationTick, LoadUnits,
-        PatrolProfile, Permille, Quantity, ResourceSource, Tick, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        DemandObservation, DeprivationExposure, DiversificationProfile, DriveEscalationProfile,
+        DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeedId, HomeostaticNeeds,
+        LastProactiveExplorationTick, LoadUnits, PatrolProfile, Permille, Quantity,
+        ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World,
+        WorldTxn, build_prototype_world,
     };
 
     struct StubGoalBeliefView;
@@ -1873,6 +1905,14 @@ mod tests {
         }
 
         fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
+            None
+        }
+
+        fn deprivation_exposure(&self, _agent: EntityId) -> Option<DeprivationExposure> {
+            None
+        }
+
+        fn drive_escalation_profile(&self, _agent: EntityId) -> Option<DriveEscalationProfile> {
             None
         }
 

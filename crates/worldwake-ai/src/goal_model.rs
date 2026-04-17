@@ -15,8 +15,8 @@ use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
     EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
-    LoadUnits, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick,
-    WorkstationTag, belief_confidence,
+    LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind,
+    SuccessionLaw, Tick, WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
@@ -2230,6 +2230,7 @@ pub struct RankedDriveMotiveInput {
     pub pressure: Permille,
     pub weight: Permille,
     pub score: u32,
+    pub escalation_multiplier: MultiplierPermille,
     pub relief_per_unit: Permille,
     pub recovery_relevant: bool,
 }
@@ -2487,14 +2488,15 @@ mod tests {
         AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
         BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DemandObservationReason, DisposalProfile, DriveThresholds, EntityId,
-        EntityKind, EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget,
-        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, NoticeTopic, OfficeData, Permille, ProofRequirement, PunishmentKind,
-        Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource, RewardSource, SuccessionLaw,
-        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId,
-        VisibilitySpec, WorkstationTag, Wound,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DisposalProfile,
+        DriveEscalationProfile, DriveThresholds, EntityId, EntityKind,
+        EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget, HomeostaticNeedId,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        NoticeTopic, OfficeData, Permille, ProofRequirement, PunishmentKind, Quantity, RecipeId,
+        RecordEntryId, RecordKind, ResourceSource, RewardSource, SuccessionLaw, TellTopic, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec,
+        WorkstationTag, Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
     use worldwake_sim::PressForceClaimActionPayload;
@@ -3415,6 +3417,8 @@ mod tests {
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
+        exposures: BTreeMap<EntityId, DeprivationExposure>,
+        escalation_profiles: BTreeMap<EntityId, DriveEscalationProfile>,
         disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
@@ -3465,6 +3469,8 @@ mod tests {
                 entity_loads: BTreeMap::new(),
                 needs: BTreeMap::new(),
                 thresholds: BTreeMap::new(),
+                exposures: BTreeMap::new(),
+                escalation_profiles: BTreeMap::new(),
                 disposal_profiles: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
@@ -3535,6 +3541,12 @@ mod tests {
         }
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
+        }
+        fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
+            self.exposures.get(&agent).copied()
+        }
+        fn drive_escalation_profile(&self, agent: EntityId) -> Option<DriveEscalationProfile> {
+            self.escalation_profiles.get(&agent).cloned()
         }
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             Some(MetabolismProfile::default())
