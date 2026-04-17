@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (tests + scenario fixture)
-**Deps**: S116DRIESCSUS-003, S116DRIESCSUS-004, S116DRIESCSUS-005
+**Deps**: archive/tickets/S116DRIESCSUS-003.md, S116DRIESCSUS-004, S116DRIESCSUS-005
 
 ## Problem
 

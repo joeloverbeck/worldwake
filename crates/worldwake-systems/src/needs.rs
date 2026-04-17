@@ -2,8 +2,9 @@ use crate::contention_support::install_corpse_contention_state;
 use std::collections::BTreeMap;
 use worldwake_core::{
     BodyCostPerTick, BodyPart, CauseRef, CommodityKind, DeadAt, DeathCause, DeprivationExposure,
-    DeprivationKind, EventTag, HomeostaticNeedId, HomeostaticNeeds, Quantity, Tick, VisibilitySpec,
-    WitnessData, WorldTxn, Wound, WoundCause, WoundList, is_wound_load_fatal,
+    DeprivationKind, EventTag, HomeostaticNeedId, HomeostaticNeeds, MultiplierPermille, Quantity,
+    Tick, VisibilitySpec, WitnessData, WorldTxn, Wound, WoundCause, WoundList,
+    escalation_multiplier, is_wound_load_fatal,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionInstance, ActionInstanceId, SystemError, SystemExecutionContext,
@@ -29,6 +30,10 @@ pub fn needs_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> 
     let (death_updates, batched_updates): (Vec<_>, Vec<_>) = updates
         .into_iter()
         .partition(|update| update.death.is_some());
+    let batched_transitions: Vec<_> = batched_updates
+        .iter()
+        .flat_map(|update| update.escalation_transitions.iter().copied())
+        .collect();
 
     if !batched_updates.is_empty() {
         let mut txn = WorldTxn::new(
@@ -51,6 +56,7 @@ pub fn needs_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> 
     }
 
     for update in death_updates {
+        let transitions = update.escalation_transitions.clone();
         let mut txn = WorldTxn::new(
             world,
             tick,
@@ -66,9 +72,25 @@ pub fn needs_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> 
             .add_target(update.entity);
         apply_pending_update(&mut txn, update)?;
         let _ = txn.commit(event_log);
+        emit_escalation_transitions(world, event_log, tick, transitions);
     }
 
+    emit_escalation_transitions(world, event_log, tick, batched_transitions);
+
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct EscalationTransition {
+    entity: worldwake_core::EntityId,
+    need: HomeostaticNeedId,
+    kind: EscalationTransitionKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EscalationTransitionKind {
+    Begin { multiplier: MultiplierPermille },
+    End { duration_ticks: u32 },
 }
 
 struct PendingUpdate {
@@ -78,6 +100,7 @@ struct PendingUpdate {
     wound_list: Option<WoundList>,
     waste_place: Option<worldwake_core::EntityId>,
     death: Option<DeathCause>,
+    escalation_transitions: Vec<EscalationTransition>,
 }
 
 fn collect_updates(
@@ -111,7 +134,13 @@ fn collect_updates(
         if let Some(cost) = body_costs.get(&entity).copied() {
             next_needs = apply_action_body_cost(next_needs, cost);
         }
+        let escalation_profile = world
+            .get_component_drive_escalation_profile(entity)
+            .cloned()
+            .expect("agent must have DriveEscalationProfile");
         let mut next_exposure = update_exposure(exposure, next_needs, thresholds);
+        let escalation_transitions =
+            collect_escalation_transitions(entity, exposure, next_exposure, &escalation_profile);
         let (wound_list, waste_place) = apply_deprivation_consequences(
             world,
             entity,
@@ -141,11 +170,49 @@ fn collect_updates(
                 wound_list,
                 waste_place,
                 death,
+                escalation_transitions,
             });
         }
     }
 
     Ok(updates)
+}
+
+fn collect_escalation_transitions(
+    entity: worldwake_core::EntityId,
+    prev_exposure: DeprivationExposure,
+    next_exposure: DeprivationExposure,
+    profile: &worldwake_core::DriveEscalationProfile,
+) -> Vec<EscalationTransition> {
+    let mut transitions = Vec::new();
+
+    for need in HomeostaticNeedId::ALL {
+        let params = profile.params_for(need);
+        let prev_ticks = prev_exposure.ticks_at_critical(need);
+        let next_ticks = next_exposure.ticks_at_critical(need);
+        let was_escalating = prev_ticks > params.start_after_ticks;
+        let is_escalating = next_ticks > params.start_after_ticks;
+
+        if is_escalating && !was_escalating {
+            transitions.push(EscalationTransition {
+                entity,
+                need,
+                kind: EscalationTransitionKind::Begin {
+                    multiplier: escalation_multiplier(next_ticks, params),
+                },
+            });
+        } else if !is_escalating && was_escalating {
+            transitions.push(EscalationTransition {
+                entity,
+                need,
+                kind: EscalationTransitionKind::End {
+                    duration_ticks: prev_ticks,
+                },
+            });
+        }
+    }
+
+    transitions
 }
 
 fn apply_pending_update(txn: &mut WorldTxn<'_>, update: PendingUpdate) -> Result<(), SystemError> {
@@ -247,28 +314,73 @@ fn update_exposure(
     needs: HomeostaticNeeds,
     thresholds: worldwake_core::DriveThresholds,
 ) -> DeprivationExposure {
-    DeprivationExposure {
-        hunger_critical_ticks: critical_ticks(
-            exposure.hunger_critical_ticks,
-            needs.hunger,
-            thresholds.hunger.critical(),
-        ),
-        thirst_critical_ticks: critical_ticks(
-            exposure.thirst_critical_ticks,
-            needs.thirst,
-            thresholds.thirst.critical(),
-        ),
-        fatigue_critical_ticks: critical_ticks(
-            exposure.fatigue_critical_ticks,
-            needs.fatigue,
-            thresholds.fatigue.critical(),
-        ),
-        bladder_critical_ticks: critical_ticks(
-            exposure.bladder_critical_ticks,
-            needs.bladder,
-            thresholds.bladder.critical(),
-        ),
-        dirtiness_critical_ticks: exposure.dirtiness_critical_ticks,
+    let mut next_exposure = exposure;
+
+    for need in HomeostaticNeedId::ALL {
+        set_ticks_at_critical(
+            &mut next_exposure,
+            need,
+            critical_ticks(
+                exposure.ticks_at_critical(need),
+                needs.value(need),
+                thresholds.critical(need),
+            ),
+        );
+    }
+
+    next_exposure
+}
+
+fn set_ticks_at_critical(exposure: &mut DeprivationExposure, need: HomeostaticNeedId, ticks: u32) {
+    match need {
+        HomeostaticNeedId::Hunger => exposure.hunger_critical_ticks = ticks,
+        HomeostaticNeedId::Thirst => exposure.thirst_critical_ticks = ticks,
+        HomeostaticNeedId::Fatigue => exposure.fatigue_critical_ticks = ticks,
+        HomeostaticNeedId::Bladder => exposure.bladder_critical_ticks = ticks,
+        HomeostaticNeedId::Dirtiness => exposure.dirtiness_critical_ticks = ticks,
+    }
+}
+
+/// Hidden system event names:
+/// - `escalation_begin:{need:?}:{multiplier_permille}`
+/// - `escalation_end:{need:?}:{duration_ticks}`
+fn emit_escalation_transitions(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    tick: Tick,
+    transitions: Vec<EscalationTransition>,
+) {
+    for transition in transitions {
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::SystemTick(tick),
+            Some(transition.entity),
+            world.effective_place(transition.entity),
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::System)
+            .add_tag(EventTag::Escalation)
+            .add_target(transition.entity);
+
+        match transition.kind {
+            EscalationTransitionKind::Begin { multiplier } => {
+                txn.set_action_name(format!(
+                    "escalation_begin:{:?}:{}",
+                    transition.need,
+                    multiplier.value()
+                ));
+            }
+            EscalationTransitionKind::End { duration_ticks } => {
+                txn.set_action_name(format!(
+                    "escalation_end:{:?}:{}",
+                    transition.need, duration_ticks
+                ));
+            }
+        }
+
+        let _ = txn.commit(event_log);
     }
 }
 
@@ -436,6 +548,21 @@ mod tests {
         txn.set_ground_location(agent, place).unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn escalation_action_names(event_log: &EventLog) -> BTreeSet<String> {
+        event_log
+            .events_by_tag(EventTag::Escalation)
+            .iter()
+            .map(|event_id| {
+                event_log
+                        .get(*event_id)
+                    .unwrap()
+                    .action_name()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect()
     }
 
     fn seed_agent(
@@ -779,7 +906,7 @@ mod tests {
                 thresholds.thirst.critical(),
                 thresholds.fatigue.critical(),
                 thresholds.bladder.critical(),
-                pm(0),
+                thresholds.dirtiness.critical(),
             ),
             DeprivationExposure {
                 hunger_critical_ticks: 4,
@@ -812,7 +939,7 @@ mod tests {
                 thirst_critical_ticks: 6,
                 fatigue_critical_ticks: 7,
                 bladder_critical_ticks: 8,
-                dirtiness_critical_ticks: 8,
+                dirtiness_critical_ticks: 9,
             })
         );
     }
@@ -857,7 +984,7 @@ mod tests {
         seed_agent(
             &mut world,
             agent,
-            HomeostaticNeeds::new(pm(10), pm(10), pm(10), pm(10), pm(0)),
+            HomeostaticNeeds::new(pm(10), pm(10), pm(10), pm(10), pm(10)),
             DeprivationExposure {
                 hunger_critical_ticks: 4,
                 thirst_critical_ticks: 5,
@@ -884,10 +1011,186 @@ mod tests {
 
         assert_eq!(
             world.get_component_deprivation_exposure(agent),
+            Some(&DeprivationExposure::default())
+        );
+    }
+
+    #[test]
+    fn needs_system_emits_escalation_begin_when_dirtiness_counter_crosses_start_after() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        let thresholds = DriveThresholds::default();
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), thresholds.dirtiness.critical()),
+            DeprivationExposure {
+                dirtiness_critical_ticks: 100,
+                ..DeprivationExposure::default()
+            },
+            metabolism(0, 0, 0, 0, 0),
+            thresholds,
+        );
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([40; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        assert_eq!(event_log.events_by_tag(EventTag::Escalation).len(), 1);
+        let record = event_log
+            .get(event_log.events_by_tag(EventTag::Escalation)[0])
+            .unwrap();
+        assert_eq!(record.actor_id(), Some(agent));
+        assert_eq!(
+            record.action_name(),
+            Some("escalation_begin:Dirtiness:1010")
+        );
+        assert_eq!(record.visibility(), VisibilitySpec::Hidden);
+        assert!(record.tags().contains(&EventTag::System));
+        assert!(record.tags().contains(&EventTag::Escalation));
+        assert_eq!(
+            world.get_component_deprivation_exposure(agent),
             Some(&DeprivationExposure {
-                dirtiness_critical_ticks: 8,
+                dirtiness_critical_ticks: 101,
                 ..DeprivationExposure::default()
             })
+        );
+    }
+
+    #[test]
+    fn needs_system_emits_escalation_end_when_dirtiness_counter_resets() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(0)),
+            DeprivationExposure {
+                dirtiness_critical_ticks: 101,
+                ..DeprivationExposure::default()
+            },
+            metabolism(0, 0, 0, 0, 0),
+            DriveThresholds::default(),
+        );
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([41; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        assert_eq!(event_log.events_by_tag(EventTag::Escalation).len(), 1);
+        let record = event_log
+            .get(event_log.events_by_tag(EventTag::Escalation)[0])
+            .unwrap();
+        assert_eq!(record.actor_id(), Some(agent));
+        assert_eq!(record.action_name(), Some("escalation_end:Dirtiness:101"));
+        assert_eq!(
+            world.get_component_deprivation_exposure(agent),
+            Some(&DeprivationExposure::default())
+        );
+    }
+
+    #[test]
+    fn needs_system_does_not_emit_escalation_when_counter_below_start_after() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        let thresholds = DriveThresholds::default();
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), thresholds.dirtiness.critical()),
+            DeprivationExposure {
+                dirtiness_critical_ticks: 99,
+                ..DeprivationExposure::default()
+            },
+            metabolism(0, 0, 0, 0, 0),
+            thresholds,
+        );
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([42; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        assert!(event_log.events_by_tag(EventTag::Escalation).is_empty());
+        assert_eq!(
+            world.get_component_deprivation_exposure(agent),
+            Some(&DeprivationExposure {
+                dirtiness_critical_ticks: 100,
+                ..DeprivationExposure::default()
+            })
+        );
+    }
+
+    #[test]
+    fn needs_system_emits_distinct_escalation_events_for_multi_need_transitions_same_tick() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = spawn_agent(&mut world, 1, "Aster");
+        let thresholds = DriveThresholds::default();
+        seed_agent(
+            &mut world,
+            agent,
+            HomeostaticNeeds::new(
+                thresholds.hunger.critical(),
+                pm(0),
+                pm(0),
+                pm(0),
+                thresholds.dirtiness.critical(),
+            ),
+            DeprivationExposure {
+                hunger_critical_ticks: 100,
+                dirtiness_critical_ticks: 100,
+                ..DeprivationExposure::default()
+            },
+            metabolism(0, 0, 0, 0, 0),
+            thresholds,
+        );
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([43; 32]));
+
+        needs_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+        ))
+        .unwrap();
+
+        assert_eq!(event_log.events_by_tag(EventTag::Escalation).len(), 2);
+        assert_eq!(
+            escalation_action_names(&event_log),
+            BTreeSet::from([
+                "escalation_begin:Dirtiness:1010".to_string(),
+                "escalation_begin:Hunger:1010".to_string(),
+            ])
         );
     }
 

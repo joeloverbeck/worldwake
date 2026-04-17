@@ -1,6 +1,6 @@
 # S116DRIESCSUS-003: Extend needs_system for dirtiness counter and escalation event emission
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `needs_system` (authoritative maintenance of `DeprivationExposure` + emission of `EventTag::Escalation`)
@@ -22,6 +22,7 @@ Spec S116 requires `needs_system` to maintain `DeprivationExposure.dirtiness_cri
 5. Intended layer and harness: authoritative-system layer (`needs_system` owns `DeprivationExposure`); full action registries not required for unit coverage because this path does not call action handlers — only the emission path is exercised. Local needs-only harness is sufficient for new focused tests.
 6. `action_name` encoding for transition events: canonical strings `"escalation_begin:{need}:{multiplier_permille}"` and `"escalation_end:{need}:{duration_ticks}"` where `{need}` is `HomeostaticNeedId::as_str()`-style (or `Debug`-derived if no display helper exists). Decision: encode via `action_name` rather than introducing a new `StateDelta` variant — the latter is a larger cross-crate surface change outside this ticket's scope. Document the encoding in a doc-comment above the emission site so ticket 006's goldens can parse it.
 7. Shared abstraction boundary under audit: `EventPayload.action_name: Option<String>` + `tags: BTreeSet<EventTag>` as the transport for escalation transition semantics. This ticket makes the encoding canonical; later observer/golden code will decode it.
+8. Live `WorldTxn` already supports `set_action_name(...)`, `add_tag(...)`, `add_target(...)`, and hidden system-event commits. No new event carrier or typed `StateDelta` variant is needed or warranted here; the lawful implementation is a second hidden system event with empty state deltas emitted alongside the existing needs mutation transaction.
 
 ## Architecture Check
 
@@ -147,3 +148,29 @@ Use the existing local harness helpers in `needs.rs` (see `setup_world_with_need
 2. `cargo test -p worldwake-systems --test e09_needs_integration`
 3. `cargo test -p worldwake-core`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-17.
+
+- Extended `crates/worldwake-systems/src/needs.rs` so `update_exposure` now maintains all five homeostatic counters through a keyed `HomeostaticNeedId::ALL` loop, including `dirtiness_critical_ticks`.
+- Added escalation transition detection from `prev_exposure` to `next_exposure` using `DriveEscalationProfile::params_for(...)` plus `escalation_multiplier(...)`, and emitted hidden `EventTag::Escalation` system events with canonical `action_name` payloads.
+- Added four focused local tests for escalation begin, escalation end, non-emission below `start_after_ticks`, and simultaneous multi-need begin transitions, while extending the two existing deprivation-exposure tests to cover dirtiness.
+
+## Deviations
+
+- Reassessment confirmed the live event carrier is `WorldTxn.set_action_name(...)` plus tags/targets on a hidden system event, not a new structured `StateDelta` variant. The ticket stayed scoped to that canonical event-log surface.
+- The draft allowed either an `as_str()` helper or `Debug`-derived need token in the `action_name` encoding. Live code has no `HomeostaticNeedId::as_str()`, so the implementation uses the stable `Debug` token form (for example `Dirtiness`, `Hunger`).
+- The broadened `cargo test -p worldwake-systems needs` command does compile `e09_needs_integration.rs` while executing zero tests under the substring filter, so the exact integration-target command remained necessary and was run separately as the truthful proof for that surface.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib needs::tests::needs_system_increments_deprivation_exposure_at_critical_thresholds -- --exact`
+- Passed `cargo test -p worldwake-systems --lib needs::tests::needs_system_emits_escalation_begin_when_dirtiness_counter_crosses_start_after -- --exact`
+- Passed `cargo test -p worldwake-systems --lib needs::tests::needs_system_emits_escalation_end_when_dirtiness_counter_resets -- --exact`
+- Passed `cargo test -p worldwake-systems --lib needs::tests::needs_system_does_not_emit_escalation_when_counter_below_start_after -- --exact`
+- Passed `cargo test -p worldwake-systems --lib needs::tests::needs_system_emits_distinct_escalation_events_for_multi_need_transitions_same_tick -- --exact`
+- Passed `cargo test -p worldwake-systems needs`
+- Passed `cargo test -p worldwake-systems --test e09_needs_integration`
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
