@@ -26,11 +26,15 @@ Load `references/ticket-classification.md`.
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. If a dependency ticket has already been completed and archived, rewrite `Deps` to the live archived path instead of leaving a stale active-ticket reference. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
+When a ticket adds a runtime report, forensic surface, or other derived read-model type, verify the requested trait/derive surface up front on the live branch rather than trusting the ticket sketch. Check whether every nested field already satisfies the promised bounds (`Clone`, `Eq`, `Serialize`, `Deserialize`, etc.), and treat missing derives or stale field shapes as current-ticket scope before finalizing the file list.
+
 When a system ticket claims a new event-log, trace, or transition carrier, verify first whether the live canonical carrier is already ordinary `WorldTxn` event payload fields (`action_name`, tags, targets, visibility, witness data) before planning a new structured event path.
 
 Load `references/reassessment-checks.md`. For planner-root, snapshot-completeness, planner-traceability, or AI pipeline work, also load `references/reassessment-planner-ai.md`. For golden E2E or observer-motivated tickets, also load `references/reassessment-golden.md`.
 
 For belief-barrier or snapshot-admission tickets, explicitly classify each planner-visible carrier under audit as `authoritative local`, `belief-backed remote`, `explicit evidence`, or `out of scope` before changing code, so remote omniscience can be removed without accidentally stripping lawful local visibility.
+
+When a ticket or spec uses generic domain language such as “affordance presence”, “local support”, or “relevant local state”, bind that phrase to the exact live carrier before coding. If the branch uses concrete place tags, workstation markers, item lots, resource sources, or another existing convention rather than a dedicated helper/type named in the prose, record that narrowing and implement against the live carrier instead of inventing a new abstraction by default.
 
 ### 3. Handle mismatches explicitly
 
@@ -46,6 +50,13 @@ When repeated follow-up tickets in the same numbered family keep exposing the sa
 ### 4. Extract the implementation scope
 
 Load `references/scope-extraction.md` when the owned edit surface, dependency boundary, or honest verification scope is not already clear from reassessment and ticket classification.
+
+For derived forensic/report/read-model tickets, use this compact scope checklist before editing:
+- name the authoritative inputs and trace inputs the model is allowed to read
+- verify nested field trait support for the requested public type shape
+- confirm the deterministic ordering/storage rule (`BTree*`, stable `Vec` order, no float math)
+- separate bounded-capture/filtering policy from raw candidate collection
+- identify any same-crate type fallout needed to keep the requested API honest
 
 ### 5. Implement with Worldwake discipline
 

@@ -68,6 +68,7 @@ Before beginning Steps 2-3, classify the spec:
 **Hybrid specs**: Apply the union of applicable steps — use the most rigorous classification's checklist for shared steps. Common hybrids:
   - **(d)+(e)** (test triage with a bugfix): Steps 3.1-3.4 from both; 3.5-3.8 for bugfix deliverables only; 4.4 if bugfix touches candidate emission/preconditions; Section H only for bugfix deliverables.
   - **(b)+(d)** (system extension with golden tests): Full (b) checklist for production deliverables; (d) rules for test deliverables; 4.4 if any production deliverable modifies validation/emission.
+  - **(b)-tooling-only + (d)** (tooling/report/observer enhancement with test-support helpers): Steps 3.1-3.4 apply fully; 3.5-3.7 apply only if the spec extends cross-crate types or enums; 3.3A applies if the spec proposes new observer/CLI output; 3.8 still applies; skip 3.9; Section H updates only for new causal hooks. Check the "Dual-Use Read-Model Types" pattern in `references/worldwake-validation-patterns.md` if the spec proposes types shared between tests and a non-test crate.
   - **(a)+(d)** (new system with test infrastructure): Full (a) checklist; test deliverables validated per 3.1-3.4 only.
 
 **Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and not externally modified, Steps 2-3 may scope to only references affected by the triggering change. Step 1 still applies.

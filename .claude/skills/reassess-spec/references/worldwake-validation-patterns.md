@@ -92,3 +92,19 @@ If the spec proposes utility gates (emit only if utility > 0), that belongs in t
 1. Exhaustive match sites — grep for `match` on the enum across all crates
 2. Derive compatibility — new variant fields satisfy existing derives
 3. `#[allow(clippy::large_enum_variant)]` — check if new variant is significantly larger than existing ones
+
+## Dual-Use Read-Model Types
+
+**Trigger**: Spec proposes types, extractors, or report models that must be consumable from both `crates/*/tests/` and any non-test crate (e.g., the observer binary in `worldwake-cli`, a diagnostic CLI, or a future replay tool). Common signals: "shared observer code", "golden support or observer rendering", forensic/report/snapshot/diagnostic surfaces.
+
+**Rule**: Dual-use types MUST live in `src/` of the owning crate (typically `worldwake-ai/src/` or `worldwake-sim/src/`). Test modules under `crates/X/tests/` are not importable by sibling crates — placing dual-use types there forces later refactor when the observer, replay tool, or downstream consumer is added.
+
+**Verify the spec addresses**:
+
+1. Report/model types committed to `crates/<owner>/src/<module>.rs` with `pub` visibility and `lib.rs` re-export.
+2. Test-facing wrappers (assertion helpers, ignored-reproducer scaffolding) may remain under `crates/<owner>/tests/golden_harness/` composing over the runtime types — runtime types are authoritative, test wrappers are thin.
+3. Crate attribution in the spec's Crates section names the runtime module path, not `tests/support`.
+
+**Analog patterns already in repo**: `DecisionTraceSink` (`crates/worldwake-ai/src/decision_trace.rs`), `ActionTraceSink` (`crates/worldwake-sim/src/action_trace.rs`). Both are consumed by goldens AND the observer binary through runtime placement.
+
+**Flag as Issue**: Spec text that leaves placement ambiguous ("test/support or shared observer code") or picks `tests/` when observer reuse is desired. Recommend committing to runtime placement as part of the Issue finding.

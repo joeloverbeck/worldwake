@@ -1064,7 +1064,7 @@ pub struct SelectedPlanSearchProvenance {
 }
 
 /// Provenance for the final selected plan surface.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum SelectedPlanSource {
     SearchSelection,
     RetainedCurrentPlan,

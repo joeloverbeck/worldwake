@@ -22,6 +22,8 @@ Identify Foundation principles the spec should address but doesn't. Pay particul
 
 Record each issue with specific Foundation number and conflict.
 
+**CLAUDE.md invariants sub-check**: If the spec's deliverables or verification steps claim stable/reproducible/byte-identical output, stable iteration order, or replay equivalence, verify alignment with CLAUDE.md's Determinism invariant (`ChaCha8Rng`-seeded RNG, `BTreeMap`/`BTreeSet` in authoritative state, no floats, no wall-clock time). Flag deliverables that assert reproducibility but rely on `HashMap`/`HashSet` iteration order, float comparisons, system-time reads, or unsorted collection traversal. Record each violation as an Issue referencing the CLAUDE.md "Critical Invariants" section, not a Foundation principle.
+
 ## 4.4 Authoritative-to-AI Impact Rule
 
 If the spec modifies action preconditions, `validate_*` functions, affordance generation (`enumerate_*_payloads`), `can_exercise_control`, goal satisfaction (`is_satisfied`), or candidate emission functions (`emit_*_candidates`), verify all 7 CLAUDE.md checklist points: `get_affordances`, `generate_candidates`, `search_plan`, `BestEffort` action start, `handle_plan_failure`, payload revalidation (`with_payload_override_validator`), and golden test pass.

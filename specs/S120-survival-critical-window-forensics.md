@@ -10,30 +10,30 @@ Phase 7 Adjunct: Survival Stability Hardening. Status: Draft.
 
 ## Crates
 
-- `worldwake-ai` — reusable survival-forensics helper over decision traces, action traces, and authoritative per-tick state
-- `worldwake-cli` — optional observer/report rendering if the existing observer path is the best read-side home
+- `worldwake-ai` — new runtime module `crates/worldwake-ai/src/survival_forensics.rs` holding the report model and the per-tick window extractor; re-exported from `worldwake-ai/src/lib.rs`. Test-facing assertion wrappers stay under `crates/worldwake-ai/tests/golden_harness/mod.rs` and compose over the runtime types.
+- `worldwake-cli` — optional observer/report rendering (D6) consuming the runtime types from `worldwake-ai`
 - `worldwake-core` — no changes
 - `worldwake-sim` — no changes
 - `worldwake-systems` — no changes
 
 ## Dependencies
 
-- None.
+- None. S120 has no hard dependencies. Its window detector reads authored `DriveThresholds` and per-tick authoritative physiology state directly; it does not consume output from any other spec's detector.
 - Informs troubleshooting and maintenance of:
-  - `golden_survival_baseline.rs`
-  - `golden_survival_scattered.rs`
-  - `golden_survival_contested.rs`
-- Complements, but does not replace:
-  - `S117` observer smell detection
-  - `S118` stuck-detector precision
+  - `crates/worldwake-ai/tests/golden_survival_baseline.rs`
+  - `crates/worldwake-ai/tests/golden_survival_scattered.rs`
+  - `crates/worldwake-ai/tests/golden_survival_contested.rs`
+- Complements, but does not replace and does not depend on:
+  - `S117` observer smell detection — S117's `AcuteNeedSpike` (30–99 tick sub-threshold runs) and `MaintenanceStarvation` (relief-rate deficit over 200-tick windows) define different detection surfaces than S120's "need ≥ authored critical for N ticks" windows. An analyst can cross-reference an S117 anomaly with an S120 report, but S120 runs independently.
+  - `S118` stuck-detector precision — observer-side detector refinement, orthogonal to forensic window reporting.
 
 ## Motivating Evidence
 
 Implementation of the S116 survival ticket chain exposed a repeatable traceability gap:
 
-1. After the stale exact-opportunity fix in ticket `011`, the remaining baseline failure was a long-run authored-critical window, not a single-step planner contradiction.
+1. After the stale exact-opportunity fix in `archive/tickets/S116DRIESCSUS-011.md`, the remaining baseline failure was a long-run authored-critical window, not a single-step planner contradiction.
 2. Existing decision traces were strong enough to prove single-tick selection facts, but not strong enough to explain a 100–400 tick survival window without adding temporary ignored reproducers and local probe code.
-3. The eventual `Sleep` fix in ticket `012` required multiple rounds of ad hoc instrumentation just to distinguish stale-local opportunity bugs, ranking bias, threshold mismatch, and progress-barrier absence.
+3. The `Sleep` progress-barrier fix landed inside `archive/tickets/S116DRIESCSUS-012.md` required multiple rounds of ad hoc instrumentation just to distinguish stale-local opportunity bugs, ranking bias, threshold mismatch, and progress-barrier absence.
 
 The gap is not that the system lacks traces entirely. The gap is that there is no stable, reusable read-model for "why did this need stay above authored critical for this long?"
 
@@ -70,12 +70,14 @@ The gap is not that the system lacks traces entirely. The gap is that there is n
 
 ### D1: Critical-window report model
 
-Add a derived report type in `worldwake-ai` test/support or shared observer code:
+Add a derived, read-only report type in a new module `crates/worldwake-ai/src/survival_forensics.rs`, re-exported from `crates/worldwake-ai/src/lib.rs`. Placing it in `worldwake-ai/src/` — not under `tests/` — is deliberate: this mirrors how `DecisionTraceSink` and `ActionTraceSink` live as runtime types so both goldens (`worldwake-ai/tests/`) and the observer binary (`worldwake-cli/src/bin/observer.rs`) can consume the same model without duplicating it.
+
+The window is keyed on `HomeostaticNeedId` (physiology-domain identifier used by `HomeostaticNeeds`, `DriveThresholds`, and `DeprivationExposure`), not on the AI-crate `RankedDriveKind`. The window itself is a physiology fact; ranking-domain data appears through `RankedGoalSnapshot` inside each frame.
 
 ```rust
 pub struct CriticalWindowReport {
     pub agent: EntityId,
-    pub need: RankedDriveKind,
+    pub need: HomeostaticNeedId,
     pub start_tick: Tick,
     pub end_tick: Tick,
     pub threshold: Permille,
@@ -89,27 +91,54 @@ pub struct CriticalWindowFrame {
     pub selected_goal: Option<GoalKey>,
     pub selected_plan_source: Option<SelectedPlanSource>,
     pub top_competitors: Vec<RankedGoalSnapshot>,
-    pub active_action: Option<String>,
-    pub exhaustion_state: Option<String>,
-    pub blocker_summary: Option<String>,
+    pub active_action: Option<ActiveActionSummary>,
+    pub exhaustion_state: Option<ExhaustionSummary>,
+    pub blocker_summary: Option<BlockerSummary>,
     pub local_authoritative_summary: LocalSurvivalStateSummary,
+}
+
+pub struct RankedGoalSnapshot {
+    pub goal: GoalKey,
+    pub priority_class: GoalPriorityClass,
+    pub motive_score: u32,
+    pub provenance_family: Option<RankedGoalProvenanceFamily>,
+}
+
+pub struct ActiveActionSummary {
+    pub action_name: &'static str,
+    pub instance: ActionInstanceId,
+    pub started_at: Tick,
+}
+
+pub enum ExhaustionSummary {
+    FrontierExhausted { expansions_used: u16 },
+    BudgetExhausted { expansions_used: u16 },
+    Unsupported,
+}
+
+pub struct BlockerSummary {
+    pub blocker_count: u16,
+    pub top_blocker: Option<BlockerKey>,
 }
 ```
 
-`RankedGoalSnapshot` is a bounded derived shape containing:
-
-- `goal`
-- `priority_class`
-- `motive_score`
-- compact provenance string (or typed subset) needed for survival comparison
+Typed summary enums are preferred over `String` for exhaustion and blocker fields so that downstream consumers (goldens, observer, future CI gates) can pattern-match against them without parsing. `RankedGoalSnapshot` carries the compact typed subset needed for survival competitor comparison; the detailed `RankedGoalProvenance` stays in the decision-trace sink for deep drill-down.
 
 ### D2: Shared extractor for authored-critical windows
 
-Add a helper that:
+Add a helper in `crates/worldwake-ai/src/survival_forensics.rs` that:
 
-1. reads the agent's authored `DriveThresholds`
+1. reads the agent's authored `DriveThresholds` (via the belief-view / ECS accessor)
 2. finds maximal runs where a need stays `>= authored critical`
 3. returns the top-N longest windows or a specific requested window
+
+The helper runs independently of S117's anomaly detectors. S120's window definition is "need ≥ authored critical for N consecutive ticks"; S117's `AcuteNeedSpike` (30–99 tick sub-threshold) and `MaintenanceStarvation` (relief-rate deficit over 200-tick rolling windows) are different detection surfaces and neither subsumes the other. S120 does not consume S117 output.
+
+The helper extends (not duplicates) the existing `SurvivalNeedRunTracker` and `assert_authored_critical_runs` support at `crates/worldwake-ai/tests/golden_harness/mod.rs` (tracker at line 70, assertion at line 149). Today that tracker records only `{need}_current` and `{need}_max` tick counts; it does not retain `start_tick`/`end_tick` or per-window frames. The extension relationship is:
+
+- The runtime extractor (in `worldwake-ai/src/survival_forensics.rs`) becomes the authoritative producer of `CriticalWindowReport`. It extends the tracker's state with `start_tick` per need and emits a completed `CriticalWindowReport` when a run ends (or at run-end for runs still above critical).
+- `SurvivalNeedRunTracker` continues to be used by goldens to accumulate the report-building state tick by tick. Its existing `{need}_max` counters remain useful for the current max-run assertions, which stay valid.
+- The test-facing `assert_authored_critical_runs` helpers remain where they are; D5's new report-based assertions compose with them rather than replacing them.
 
 This helper becomes the canonical way to investigate long-run survival failures in goldens.
 
@@ -125,6 +154,8 @@ To keep reports legible and deterministic, capture:
 
 This avoids flooding while still showing causal changes.
 
+Capture regime: per-tick observation hook invoked from the golden harness (parallel to how `SurvivalNeedRunTracker::observe` is called every tick in the current survival goldens — see `crates/worldwake-ai/tests/golden_survival_baseline.rs:145`). The hook reads the already-populated `DecisionTraceSink` and `ActionTraceSink` for the current tick plus the current authoritative physiology components, producing a candidate frame; the extractor then applies the bounded-capture rules above to decide which candidate frames survive into the final report. Event-log replay is not required.
+
 ### D4: Local authoritative survival summary
 
 For each captured frame, include only the local authoritative state relevant to self-care diagnosis:
@@ -139,22 +170,23 @@ This summary exists to separate "planner failed despite local affordance" from "
 
 ### D5: Golden/test integration
 
-Add reusable assertion helpers so a failing survival golden can print a compact `CriticalWindowReport` directly from shared support instead of introducing bespoke ignored reproducers.
+Add reusable assertion helpers under `crates/worldwake-ai/tests/golden_harness/mod.rs` that consume the runtime report types from `worldwake-ai::survival_forensics`. A failing survival golden can print a compact `CriticalWindowReport` directly from shared support instead of introducing bespoke ignored reproducers.
 
 At minimum:
 
-- one focused test proving a `Sleep` authored-critical fatigue window reports `FrontierExhausted` / progress-barrier context correctly
-- one focused test proving a wash-vs-water competition window reports both competing goals and the selected winner
+1. **Fatigue / Sleep progress-barrier test**: a synthetic authored-critical fatigue window SHALL produce a `CriticalWindowReport` such that at least one frame has `exhaustion_state == Some(ExhaustionSummary::FrontierExhausted { .. })` AND at least one frame has `selected_goal` whose `GoalKey::kind` matches `GoalKind::Sleep` (or a `ranked_goal_provenance_family` indicating the Sleep family).
+2. **Wash-vs-water competition test**: a synthetic dirtiness authored-critical window SHALL produce a `CriticalWindowReport` such that at least one frame has `top_competitors` containing both a wash-family goal and a water-acquire-family goal, and `selected_goal` matches one of them (deterministic).
+3. **Bounded-capture determinism**: two runs of the same synthetic trace input SHALL produce byte-identical `CriticalWindowReport` vectors (via `PartialEq` or serialized comparison).
 
 ### D6: Optional observer/report rendering
 
-If the existing observer binary is the best consumer, add a new optional section such as:
+If the existing observer binary is the best consumer, add a new optional section:
 
-`Section 2.5 — Critical Window Forensics`
+`## Section 9 — Critical Window Forensics`
 
-It renders only when requested, and only for the top-N longest authored-critical windows in the run.
+This numbering follows the existing sequential `## Section N — Title` convention in `crates/worldwake-cli/src/bin/observer.rs` (sections 1–8 already defined, line 1278 onward). The new section renders only when requested, and only for the top-N longest authored-critical windows in the run. Because the report model lives in `worldwake-ai/src/survival_forensics.rs` (see D1), the observer can consume it via its existing `worldwake-ai` dependency — no crate-boundary refactor required.
 
-Observer integration is optional for the first landing if the shared golden-support surface is sufficient, but the report model should be designed so observer reuse is straightforward.
+Observer integration is optional for the first landing if the shared golden-support surface is sufficient, but the report model is designed so observer reuse is straightforward.
 
 ### D7: Documentation
 
@@ -162,12 +194,12 @@ Update `docs/golden-e2e-testing.md` and/or `docs/debugging-traces.md` to point s
 
 ## FND-01 Section H: Causal Hooks
 
-1. **Information-path analysis**: Inputs are existing decision traces, action traces, authored `DriveThresholds`, and authoritative local state snapshots. No new simulation information path is introduced.
-2. **Positive-feedback analysis**: None. The report is read-only and post hoc.
-3. **Concrete dampeners**: Bounded frame capture is the report dampener; it limits output volume without hiding causal changes.
+1. **Information-path analysis**: Inputs are existing decision traces (`DecisionTraceSink`), action traces (`ActionTraceSink`), authored `DriveThresholds`, per-tick `HomeostaticNeeds` values, and authoritative local-place state (water source / wash basin / sleep affordance / food source presence at the agent's effective place). All inputs are sampled through a per-tick observation hook invoked from the golden harness, the same way `SurvivalNeedRunTracker::observe` is called today. No new simulation information path is introduced; no agent planner reads this report.
+2. **Positive-feedback analysis**: None. The report is read-only and post hoc, and nothing in the simulation consumes it.
+3. **Concrete dampeners**: Bounded frame capture (D3) is the report dampener; it limits output volume without hiding causal changes.
 4. **Stored state vs. derived read-model**:
-   - **Stored/authored**: none beyond existing traces and scenario thresholds
-   - **Derived**: `CriticalWindowReport`, bounded frame summaries, local survival summaries
+   - **Stored/authored**: none beyond existing traces, scenario thresholds, `HomeostaticNeeds`, and `DeprivationExposure` (all authored or maintained by existing systems)
+   - **Derived**: `CriticalWindowReport`, `CriticalWindowFrame`, `RankedGoalSnapshot`, `ExhaustionSummary`, `BlockerSummary`, `ActiveActionSummary`, `LocalSurvivalStateSummary` — all computed on demand from the stored inputs above and discardable without changing world meaning (FND-27).
 
 ## SystemFn Integration
 
@@ -179,22 +211,23 @@ None.
 
 ## Cross-System Interactions
 
-- `worldwake-ai` extracts planner/decision-side facts.
-- Optional observer rendering reads the same derived report model.
-- No simulation system depends on the report.
+- `worldwake-ai::survival_forensics` extracts planner/decision-side facts and authoritative physiology snapshots into the derived report model.
+- `worldwake-ai/tests/golden_harness/mod.rs` wraps the runtime extractor with test-facing assertion helpers that compose with the existing `SurvivalNeedRunTracker` and `assert_authored_critical_runs` surfaces.
+- Optional `worldwake-cli` observer rendering (D6) reads the same derived report model through its existing `worldwake-ai` dependency.
+- No simulation system depends on the report. S117 and S118 do not consume it; S120 does not consume their output.
 
 ## Validation and Falsification
 
 ### Focused tests
 
-1. A synthetic fatigue-critical window with repeated `Sleep` planning reports the correct authored threshold and `FrontierExhausted` / progress-barrier transition.
-2. A synthetic thirst or dirtiness competition window reports both selected goal and top competitor with bounded provenance.
-3. Bounded frame selection remains deterministic for the same trace input.
+1. A synthetic fatigue-critical window with repeated `Sleep` planning reports the correct authored threshold and at least one frame with `exhaustion_state == Some(ExhaustionSummary::FrontierExhausted { .. })` and at least one frame whose `selected_goal` resolves to the `Sleep` goal family (D5.1).
+2. A synthetic thirst or dirtiness competition window reports both selected goal and top competitor through `RankedGoalSnapshot` with typed `provenance_family` (D5.2).
+3. Bounded frame selection is deterministic: two runs of the same synthetic trace input produce byte-identical `CriticalWindowReport` vectors (D5.3).
 
 ### Golden / integration tests
 
-4. Survival baseline golden support can emit a stable `CriticalWindowReport` for the longest authored-critical run when requested.
-5. A no-failure healthy run produces no critical-window report output unless explicitly asked for the top-N windows.
+4. `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` support can emit a stable `CriticalWindowReport` for the longest authored-critical run when requested, via the per-tick observation hook described in D3.
+5. A no-failure healthy run (no need ever crosses `authored_critical`) produces zero critical-window reports unless the caller explicitly requests the top-N windows, in which case the returned vector is empty.
 
 ## Outcome
 
