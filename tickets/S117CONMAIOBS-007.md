@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Observer-only
-**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `archive/tickets/S117CONMAIOBS-009.md`, `archive/tickets/S117CONMAIOBS-010.md`, `S117CONMAIOBS-013`, `specs/S117-convergence-maintenance-observer-smells.md`
+**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `archive/tickets/S117CONMAIOBS-009.md`, `archive/tickets/S117CONMAIOBS-010.md`, `archive/tickets/S117CONMAIOBS-013.md`, `S117CONMAIOBS-015`, `specs/S117-convergence-maintenance-observer-smells.md`
 
 ## Problem
 
@@ -168,4 +168,4 @@ Completed on 2026-04-18.
 - Passed `cargo test -p worldwake-cli`
 - Passed `cargo clippy --workspace --all-targets -- -D warnings`
 - Passed automated convergence baseline regression in `crates/worldwake-cli/tests/golden_observer_anomalies.rs`: `GEOGRAPHIC_CONVERGENCE` stays absent on `scenarios/survival-baseline.ron`
-- Remaining baseline regression is still failing outside convergence: the healthy baseline run emits corrected `MAINTENANCE_STARVATION` windows and `ACUTE_NEED_SPIKE` anomaly headers. The maintenance-only disposition completed in archived `S117CONMAIOBS-012.md`, and the acute/split-support disposition completed in `archive/tickets/S117CONMAIOBS-011.md`; the remaining implementation blocker is now `S117CONMAIOBS-013`
+- Remaining baseline regression is still failing outside convergence: the healthy baseline run emits corrected `MAINTENANCE_STARVATION` windows and `ACUTE_NEED_SPIKE` anomaly headers even though the restored authored survival selector now passes. The maintenance-only disposition completed in archived `S117CONMAIOBS-012.md`, the stale planner-ownership follow-up was closed in `archive/tickets/S117CONMAIOBS-013.md`, and the remaining blocker is now `S117CONMAIOBS-015`, which reconciles the observer baseline contract against the authored survival oracle before any new implementation ticket is chosen

@@ -706,7 +706,10 @@ fn format_local_survival_state_summary(
     world: &worldwake_core::World,
     summary: &LocalSurvivalStateSummary,
 ) -> String {
-    let place_name = entity_display_name(world, summary.place);
+    let place_name = summary
+        .place
+        .map(|place| entity_display_name(world, place))
+        .unwrap_or_else(|| "In transit".to_string());
     format!(
         "{}: water={}, wash={}, sleep={}, food={}",
         place_name,
@@ -1001,7 +1004,7 @@ fn place_survival_state_summary(
     });
 
     LocalSurvivalStateSummary {
-        place,
+        place: Some(place),
         water_source_present,
         wash_basin_present,
         sleep_affordance_present,
@@ -3458,9 +3461,7 @@ fn main() {
                 let Some(needs) = world.get_component_homeostatic_needs(*agent_id) else {
                     continue;
                 };
-                let Some(local_state) = LocalSurvivalStateSummary::capture(world, *agent_id) else {
-                    continue;
-                };
+                let local_state = LocalSurvivalStateSummary::capture(world, *agent_id);
                 let thresholds = world
                     .get_component_drive_thresholds(*agent_id)
                     .copied()
