@@ -1,9 +1,9 @@
 # S108PERACTBIN-002: Strictness gate at `resolve_affordance` with `ExactIdentityRequired` rejection
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — `resolve_affordance` refuses BestEffort synthesis when the action is `ExactIdentity` and the exact target was not reproduced; new `RequestResolutionRejectionReason::ExactIdentityRequired` variant; the rejection maps through `ActionStartFailureReason::from_action_error` to `BlockingFact::AssumptionFailed` pre-S109.
+**Engine Changes**: Yes — `resolve_affordance` now rejects underbound or malformed BestEffort exact-identity requests with `RequestResolutionRejectionReason::ExactIdentityRequired`, while fully bound stale exact-identity requests remain dispatchable to the existing authoritative start-time revalidation path; `worldwake-ai` classifies `ExactIdentityRequired` as `BlockingFact::AssumptionFailed` pre-S109.
 **Deps**: archive/tickets/S108PERACTBIN-001.md (needs `BindingStrictness`, `StrictnessGate`, `check_binding_strictness`, classified `ActionDef`s).
 
 ## Problem
@@ -148,8 +148,8 @@ Grep for `RequestResolutionRejectionReason::` across `crates/` to find every mat
 
 ### Invariants
 
-1. `resolve_affordance` never synthesizes a substitute affordance for an action whose `binding_strictness` is `ExactIdentity` when mode is `BestEffort`.
-2. The rejection surfaces through the existing `RequestResolutionOutcome::RejectedBeforeStart` trace path with reason `ExactIdentityRequired`, preserving trace fidelity (FND-29).
+1. `resolve_affordance` rejects underbound or malformed BestEffort exact-identity requests with `RequestResolutionRejectionReason::ExactIdentityRequired` instead of synthesizing a substitute affordance.
+2. Fully bound stale BestEffort exact-identity requests remain dispatchable through `BestEffortFallback` so the scheduler can perform authoritative start-time revalidation against the requested concrete target.
 3. Strict-mode behavior is unchanged: `check_binding_strictness` returns `SubstitutionAllowed` for Strict regardless of class, so Strict requests still fail with `NoMatchingAffordance` when enumeration produces no match.
 
 ## Test Plan
@@ -163,3 +163,28 @@ Grep for `RequestResolutionRejectionReason::` across `crates/` to find every mat
 1. `cargo test -p worldwake-sim tick_step::tests::resolve_affordance`
 2. `cargo test -p worldwake-sim`
 3. `cargo build --workspace && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Outcome amended: 2026-04-19
+
+Implemented the request-resolution strictness gate in `crates/worldwake-sim/src/tick_step.rs` and added `RequestResolutionRejectionReason::ExactIdentityRequired` in `crates/worldwake-sim/src/request_resolution_trace.rs`. The `RequestAction` input path now records `RejectedBeforeStart { reason: ExactIdentityRequired }` traces for underbound BestEffort exact-identity requests while preserving the existing best-effort start-failure path for fully bound stale requests, and `crates/worldwake-ai/src/failure_handling.rs` now classifies `ExactIdentityRequired` precondition detail as `BlockingFact::AssumptionFailed`.
+
+Focused `tick_step.rs` coverage now proves the shared strictness rule, strict-mode preservation, fungible fallback behavior, and the new exact-identity rejection path.
+
+## Deviations
+
+1. The literal ticket/spec wording said BestEffort synthesis should always refuse `ExactIdentity` fallback when the exact affordance is not reproduced. During mixed-layer verification that broke existing authoritative revalidation flows and downstream tests which rely on fully bound stale requests reaching start-time validation rather than dying at request resolution.
+2. The implemented contract is therefore narrower and more compatible: underbound or malformed BestEffort exact-identity requests are rejected at `resolve_affordance` with `ExactIdentityRequired`, but fully bound exact-identity requests remain dispatchable via `BestEffortFallback` so the scheduler can perform authoritative start-time revalidation against the requested concrete target.
+
+## Verification Result
+
+1. `cargo test -p worldwake-sim best_effort_underbound_exact_identity_request_records_resolution_rejection_without_start_attempt`
+2. `cargo test -p worldwake-sim resolve_affordance_best_effort_keeps_fully_bound_exact_identity_requests_dispatchable`
+3. `cargo test -p worldwake-sim`
+4. `cargo test -p worldwake-ai --test golden_item_decay golden_waste_decay_reaches_steady_state`
+5. `cargo test -p worldwake-ai --test golden_offices golden_vacancy_notice_unlocks_political_action_without_record_consult -- --exact`
+6. `cargo test -p worldwake-ai --test planner_conformance conformance_loot -- --exact`
+7. `cargo build --workspace`
+8. `cargo test --workspace`
+9. `cargo clippy --workspace --all-targets -- -D warnings`

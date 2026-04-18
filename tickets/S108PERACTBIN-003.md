@@ -14,7 +14,7 @@
 2. Fallback 1 (`revalidate_best_effort_payload_override_step`, lines 51–82): accept a planner-synthesized payload if `actor_constraints`, `preconditions`, and `payload_override_is_valid` all pass for the raw requested targets.
 3. Fallback 2 (`revalidate_exact_target_step`, lines 84–118): if the `ActionDef.targets` are ALL `TargetSpec::SpecificEntity(_)`, synthesize an `Affordance` from the step's targets and rerun `requested_affordance_matches`.
 
-Both fallbacks permit the revalidation to succeed against targets that the planner synthesized without going through affordance enumeration. That's exactly the same substitution permissiveness T-002 gates at dispatch. For `ExactIdentity` actions, these fallbacks must refuse, or `revalidate_next_step` would green-light a step that dispatch will then refuse — producing avoidable per-tick churn and weakening the failure surface.
+Both fallbacks permit the revalidation to succeed against targets that the planner synthesized without going through affordance enumeration. That's the same substitution permissiveness T-002 now narrows at dispatch. For `ExactIdentity` actions, these fallbacks must refuse, or `revalidate_next_step` would green-light a step that then survives to dispatch/start-time validation against a stale concrete target — producing avoidable per-tick churn and weakening the failure surface.
 
 Fallback 2 has partial pre-existing coverage: its all-`TargetSpec::SpecificEntity` precondition is a narrower subset of `ExactIdentity`. For actions like `loot` (which uses `TargetSpec::EntityAtActorPlace { kind: Agent }`) the fallback does NOT currently fire, so `ExactIdentity` gating via `check_binding_strictness` is the first authoritative gate there too.
 
@@ -30,7 +30,7 @@ Fallback 2 has partial pre-existing coverage: its all-`TargetSpec::SpecificEntit
 6. AI regression intended layer: runtime `agent_tick` revalidation boundary; local unit tests against `revalidate_next_step` are sufficient here. Goldens live in T-005.
 7. Not applicable — no ordering claim.
 8. Not applicable — no heuristic removal.
-9. First failure boundary for this path: plan revalidation (runs before request resolution on each tick). If revalidation returns `false`, the AI drops the step and replans — the request never reaches `resolve_affordance`. If revalidation returns `true` incorrectly (without the gate), dispatch's T-002 gate catches the `ExactIdentity` case a tick later. Covering both surfaces with the same predicate avoids the asymmetry.
+9. First failure boundary for this path: plan revalidation (runs before request resolution on each tick). If revalidation returns `false`, the AI drops the step and replans — the request never reaches `resolve_affordance`. If revalidation returns `true` incorrectly (without the gate), the stale step survives to sim dispatch and authoritative start-time validation a tick later. Covering both surfaces with the same predicate avoids that asymmetry.
 10. Not applicable.
 11. Not applicable.
 12. Not applicable.
@@ -40,7 +40,7 @@ Fallback 2 has partial pre-existing coverage: its all-`TargetSpec::SpecificEntit
 
 ## Architecture Check
 
-1. Single source of substitution policy. Both sim dispatch (T-002) and AI revalidation (this ticket) consult the same `check_binding_strictness` predicate over the same `ActionDef::binding_strictness` authoritative metadata (FND-26). Symmetric behavior on both surfaces avoids the one-tick-late catch-up where revalidation greenlights and dispatch refuses.
+1. Single source of substitution policy. Both sim dispatch (T-002) and AI revalidation (this ticket) consult the same `check_binding_strictness` predicate over the same `ActionDef::binding_strictness` authoritative metadata (FND-26). Shared classifier behavior on both surfaces avoids the one-tick-late catch-up where revalidation greenlights a stale step and the sim rejects it later at request resolution or authoritative start-time validation.
 2. No backward-compatibility shim (FND-28). The existing `revalidate_exact_target_step`'s all-`SpecificEntity` logic is retained as a fast path under the reassessed spec's Open Migration Work deferment; it is NOT promoted to authority. The authoritative gate is the strictness classifier.
 
 ## Verification Layers

@@ -563,6 +563,7 @@ fn classify_precondition_failure_detail(detail: &str) -> Option<BlockingFact> {
     if detail.contains("targetatactorplace")
         || detail.contains("targetdirectlypossessedbyactor")
         || detail.contains("targetgrounded")
+        || detail.contains("exactidentityrequired")
     {
         Some(BlockingFact::AssumptionFailed)
     } else {

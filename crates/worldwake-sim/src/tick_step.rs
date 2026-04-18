@@ -273,17 +273,50 @@ fn apply_input(
             let resolved = match resolution {
                 Ok(resolved) => resolved,
                 Err(reason) => {
+                    let action_name = lookup_action_name(services.action_defs, def_id);
                     runtime.record_request_resolution_trace(RequestResolutionTraceEvent {
                         tick,
                         sequence_in_tick: 0,
                         actor,
                         def_id,
-                        action_name: lookup_action_name(services.action_defs, def_id),
+                        action_name: action_name.clone(),
                         requested_targets: targets.clone(),
                         mode,
                         request: request_attempt,
                         outcome: RequestResolutionOutcome::RejectedBeforeStart { reason },
                     });
+                    if mode == crate::ActionRequestMode::BestEffort
+                        && reason == RequestResolutionRejectionReason::ExactIdentityRequired
+                    {
+                        let resolved_request = crate::ResolvedRequestTrace {
+                            attempt: request_attempt,
+                            binding: RequestBindingKind::BestEffortFallback,
+                        };
+                        let failure_reason = crate::ActionStartFailureReason::PreconditionFailed(
+                            "ExactIdentityRequired".to_string(),
+                        );
+                        runtime.scheduler.record_action_start_failure(
+                            crate::scheduler::ActionStartFailure {
+                                tick,
+                                actor,
+                                def_id,
+                                request: resolved_request,
+                                reason: failure_reason.clone(),
+                            },
+                        );
+                        runtime.record_action_trace(ActionTraceEvent::new(
+                            tick,
+                            actor,
+                            def_id,
+                            action_name,
+                            ActionTraceKind::StartFailed {
+                                reason: failure_reason.debug_summary(),
+                                request: resolved_request,
+                                legality: None,
+                            },
+                        ));
+                        return Ok(InputOutcome::default());
+                    }
                     return Err(TickStepError::RequestedAffordanceUnavailable {
                         actor,
                         def_id,
@@ -501,17 +534,43 @@ fn resolve_affordance(
         });
     let (mut affordance, binding) = match reproduced {
         Some(affordance) => (affordance, RequestBindingKind::ReproducedAffordance),
-        None if mode == crate::ActionRequestMode::BestEffort => (
-            crate::Affordance {
-                def_id,
-                actor,
-                bound_targets: targets.to_vec(),
-                payload_override: payload_override.clone(),
-                explanation: None,
-                contention_status: worldwake_core::ContentionStatus::Unmanaged,
-            },
-            RequestBindingKind::BestEffortFallback,
-        ),
+        None if mode == crate::ActionRequestMode::BestEffort => {
+            let payload_override_is_valid = payload_override.as_ref().is_some_and(|payload| {
+                (handler.payload_override_is_valid)(def, actor, targets, payload, &view)
+            });
+            let request_is_fully_bound = targets.len() == def.targets.len()
+                && (payload_override.is_none() || payload_override_is_valid);
+            if request_is_fully_bound {
+                (
+                    crate::Affordance {
+                        def_id,
+                        actor,
+                        bound_targets: targets.to_vec(),
+                        payload_override: payload_override.clone(),
+                        explanation: None,
+                        contention_status: worldwake_core::ContentionStatus::Unmanaged,
+                    },
+                    RequestBindingKind::BestEffortFallback,
+                )
+            } else {
+                match crate::check_binding_strictness(def, mode) {
+                    crate::StrictnessGate::ExactIdentityRequired => {
+                        return Err(RequestResolutionRejectionReason::ExactIdentityRequired);
+                    }
+                    crate::StrictnessGate::SubstitutionAllowed(_class) => (
+                        crate::Affordance {
+                            def_id,
+                            actor,
+                            bound_targets: targets.to_vec(),
+                            payload_override: payload_override.clone(),
+                            explanation: None,
+                            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+                        },
+                        RequestBindingKind::BestEffortFallback,
+                    ),
+                }
+            }
+        }
         None => return Err(RequestResolutionRejectionReason::NoMatchingAffordance),
     };
     affordance.payload_override = payload_override;
@@ -1235,6 +1294,57 @@ mod tests {
         registry
     }
 
+    fn reservation_action_registry_with_abort_start_binding_strictness(
+        binding_strictness: crate::BindingStrictness,
+    ) -> ActionDefRegistry {
+        let mut registry = ActionDefRegistry::new();
+        for def in reservation_action_registry().iter().cloned() {
+            let mut def = def;
+            if def.id == ActionDefId(4) {
+                def.binding_strictness = binding_strictness;
+            }
+            registry.register(def);
+        }
+        registry
+    }
+
+    fn target_bound_action_def(
+        id: ActionDefId,
+        binding_strictness: crate::BindingStrictness,
+    ) -> ActionDef {
+        ActionDef {
+            id,
+            name: format!("target-bound-{}", id.0),
+            domain: ActionDomain::Generic,
+            actor_constraints: vec![crate::Constraint::ActorAlive],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: vec![
+                Precondition::ActorAlive,
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetIsAgent(0),
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![
+                Precondition::ActorAlive,
+                Precondition::TargetExists(0),
+                Precondition::TargetAtActorPlace(0),
+                Precondition::TargetIsAgent(0),
+            ],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness,
+        }
+    }
+
     fn ordered_systems() -> SystemDispatchTable {
         SystemDispatchTable::from_handlers([record_system; crate::SystemId::ALL.len()])
     }
@@ -1586,7 +1696,9 @@ mod tests {
         let mut controller = ControllerState::with_entity(actor);
         let mut rng = DeterministicRng::new(Seed([10; 32]));
         let recipes = RecipeRegistry::new();
-        let defs = reservation_action_registry();
+        let defs = reservation_action_registry_with_abort_start_binding_strictness(
+            crate::BindingStrictness::FungibleEquivalentCommodity,
+        );
         let handlers = handler_registry();
         let mut action_trace = ActionTraceSink::new();
 
@@ -1679,7 +1791,9 @@ mod tests {
         let mut controller = ControllerState::with_entity(actor);
         let mut rng = DeterministicRng::new(Seed([12; 32]));
         let recipes = RecipeRegistry::new();
-        let defs = reservation_action_registry();
+        let defs = reservation_action_registry_with_abort_start_binding_strictness(
+            crate::BindingStrictness::FungibleEquivalentCommodity,
+        );
         let handlers = handler_registry();
         let mut action_trace = ActionTraceSink::new();
 
@@ -1763,7 +1877,9 @@ mod tests {
         let mut controller = ControllerState::with_entity(actor);
         let mut rng = DeterministicRng::new(Seed([14; 32]));
         let recipes = RecipeRegistry::new();
-        let defs = reservation_action_registry();
+        let defs = reservation_action_registry_with_abort_start_binding_strictness(
+            crate::BindingStrictness::FungibleEquivalentCommodity,
+        );
         let handlers = handler_registry();
         let mut action_trace = ActionTraceSink::new();
         let mut request_trace = RequestResolutionTraceSink::new();
@@ -2002,6 +2118,83 @@ mod tests {
     }
 
     #[test]
+    fn best_effort_underbound_exact_identity_request_records_resolution_rejection_without_start_attempt()
+     {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (
+            mut world,
+            mut event_log,
+            mut scheduler,
+            mut controller,
+            mut rng,
+            recipes,
+            defs,
+            handlers,
+        ) = build_state();
+        let actor = controlled_actor(&controller);
+        let mut request_trace = RequestResolutionTraceSink::new();
+        let mut defs = defs;
+        defs.register(target_bound_action_def(
+            ActionDefId(3),
+            crate::BindingStrictness::ExactIdentity,
+        ));
+
+        scheduler.input_queue_mut().enqueue(
+            Tick(0),
+            InputKind::RequestAction {
+                actor,
+                def_id: ActionDefId(3),
+                targets: Vec::new(),
+                payload_override: None,
+                mode: ActionRequestMode::BestEffort,
+                provenance: crate::RequestProvenance::External,
+            },
+        );
+
+        let result = step_tick(
+            &mut world,
+            &mut event_log,
+            &mut scheduler,
+            &mut controller,
+            &mut rng,
+            TickStepServices {
+                action_defs: &defs,
+                action_handlers: &handlers,
+                recipe_registry: &recipes,
+                systems: &SystemDispatchTable::canonical_noop(),
+                input_producer: None,
+                action_trace: None,
+                request_resolution_trace: Some(&mut request_trace),
+                politics_trace: None,
+                perception_trace: None,
+                institutional_knowledge_trace: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.inputs_processed, 1);
+        assert_eq!(result.actions_started, 0);
+        assert_eq!(scheduler.action_start_failures().len(), 1);
+        assert_eq!(scheduler.action_start_failures()[0].actor, actor);
+        assert_eq!(scheduler.action_start_failures()[0].def_id, ActionDefId(3));
+        assert_eq!(
+            scheduler.action_start_failures()[0].reason,
+            crate::ActionStartFailureReason::PreconditionFailed(
+                "ExactIdentityRequired".to_string(),
+            )
+        );
+        let request_events = request_trace.events_at(Tick(0));
+        assert_eq!(request_events.len(), 1);
+        assert_eq!(
+            request_events[0].outcome,
+            RequestResolutionOutcome::RejectedBeforeStart {
+                reason: RequestResolutionRejectionReason::ExactIdentityRequired,
+            }
+        );
+    }
+
+    #[test]
     fn strict_request_propagates_abort_requested_start_failure() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
@@ -2118,6 +2311,140 @@ mod tests {
     }
 
     #[test]
+    fn resolve_affordance_best_effort_keeps_fully_bound_exact_identity_requests_dispatchable() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (world, _event_log, _scheduler, controller, _rng, recipes, mut defs, handlers) =
+            build_state();
+        let actor = controlled_actor(&controller);
+        defs.register(target_bound_action_def(
+            ActionDefId(3),
+            crate::BindingStrictness::ExactIdentity,
+        ));
+
+        let resolved = resolve_affordance(
+            &world,
+            &recipes,
+            &defs,
+            &handlers,
+            RequestedAction {
+                actor,
+                def_id: ActionDefId(3),
+                targets: &[actor],
+                payload_override: None,
+                mode: ActionRequestMode::BestEffort,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(resolved.binding, RequestBindingKind::BestEffortFallback);
+        assert_eq!(resolved.affordance.bound_targets, vec![actor]);
+    }
+
+    #[test]
+    fn resolve_affordance_best_effort_reproduces_matching_fungible_affordance() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (mut world, _event_log, _scheduler, controller, _rng, recipes, mut defs, handlers) =
+            build_state();
+        let actor = controlled_actor(&controller);
+        let place = world.topology().place_ids().next().unwrap();
+        let target = spawn_agent(&mut world, 2, ControlSource::Ai);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(target, place).unwrap();
+            let _ = txn.commit(&mut EventLog::new());
+        }
+        defs.register(target_bound_action_def(
+            ActionDefId(3),
+            crate::BindingStrictness::FungibleEquivalentCommodity,
+        ));
+
+        let resolved = resolve_affordance(
+            &world,
+            &recipes,
+            &defs,
+            &handlers,
+            RequestedAction {
+                actor,
+                def_id: ActionDefId(3),
+                targets: &[target],
+                payload_override: None,
+                mode: ActionRequestMode::BestEffort,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(resolved.binding, RequestBindingKind::ReproducedAffordance);
+        assert_eq!(resolved.affordance.bound_targets, vec![target]);
+    }
+
+    #[test]
+    fn resolve_affordance_best_effort_allows_fungible_fallback_when_no_match_exists() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (world, _event_log, _scheduler, controller, _rng, recipes, mut defs, handlers) =
+            build_state();
+        let actor = controlled_actor(&controller);
+        defs.register(target_bound_action_def(
+            ActionDefId(3),
+            crate::BindingStrictness::FungibleEquivalentCommodity,
+        ));
+
+        let resolved = resolve_affordance(
+            &world,
+            &recipes,
+            &defs,
+            &handlers,
+            RequestedAction {
+                actor,
+                def_id: ActionDefId(3),
+                targets: &[actor],
+                payload_override: None,
+                mode: ActionRequestMode::BestEffort,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(resolved.binding, RequestBindingKind::BestEffortFallback);
+        assert_eq!(resolved.affordance.bound_targets, vec![actor]);
+    }
+
+    #[test]
+    fn resolve_affordance_strict_still_reports_no_matching_affordance() {
+        let _guard = test_lock().lock().unwrap();
+        reset_hooks();
+        let (world, _event_log, _scheduler, controller, _rng, recipes, mut defs, handlers) =
+            build_state();
+        let actor = controlled_actor(&controller);
+        defs.register(target_bound_action_def(
+            ActionDefId(3),
+            crate::BindingStrictness::ExactIdentity,
+        ));
+
+        let error = resolve_affordance(
+            &world,
+            &recipes,
+            &defs,
+            &handlers,
+            RequestedAction {
+                actor,
+                def_id: ActionDefId(3),
+                targets: &[actor],
+                payload_override: None,
+                mode: ActionRequestMode::Strict,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            RequestResolutionRejectionReason::NoMatchingAffordance
+        );
+    }
+
+    #[test]
     fn cancel_action_aborts_and_removes_matching_active_action() {
         let _guard = test_lock().lock().unwrap();
         reset_hooks();
@@ -2145,7 +2472,7 @@ mod tests {
                 provenance: crate::RequestProvenance::External,
             },
         );
-        step_tick(
+        let _result = step_tick(
             &mut world,
             &mut event_log,
             &mut scheduler,
@@ -2606,7 +2933,7 @@ mod tests {
             );
         }
 
-        step_tick(
+        let _result = step_tick(
             &mut world,
             &mut event_log,
             &mut scheduler,

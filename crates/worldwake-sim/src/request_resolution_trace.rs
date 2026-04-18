@@ -57,6 +57,7 @@ pub enum RequestResolutionRejectionReason {
     UnknownActionDef,
     MissingHandler,
     NoMatchingAffordance,
+    ExactIdentityRequired,
 }
 
 impl RequestResolutionTraceEvent {

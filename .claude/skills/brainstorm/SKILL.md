@@ -54,7 +54,9 @@ Next-steps menu (user chooses)
    - **implementation-adjacent**: Code changes that do not affect simulation behavior — developer tooling, documentation generators, build scripts, test infrastructure, doc comment enrichment, CLI cosmetics.
    - **non-implementation**: No code changes — process, workflow, strategy, skill design, tooling configuration.
 
-   After classifying, state the classification to the user in a single short sentence (e.g., "Topic classified as non-implementation — skipping FOUNDATIONS.md."). This gives the user a chance to redirect if the classification is wrong before it drives downstream decisions.
+   If the brainstorm is primarily one category but produces a secondary-category artifact (e.g., non-implementation doc + implementation-adjacent generator binary, or implementation-related spec + non-implementation workflow doc), state the primary classification AND name the secondary component explicitly (e.g., "Topic classified as non-implementation (primary: roadmap doc) with an implementation-adjacent secondary component (generator binary + generated file)"). Downstream sections (testing strategy, FOUNDATIONS alignment, deliverable classification in Step 5) apply per-component, not per-brainstorm — e.g., the primary-doc component skips FOUNDATIONS alignment while the secondary-binary component treats it as optional per the implementation-adjacent rule.
+
+   After classifying, state the classification to the user in a single short sentence (or, for hybrids, one sentence naming primary + secondary). This gives the user a chance to redirect if the classification is wrong before it drives downstream decisions.
 
 3. **If implementation-related OR if the topic directly concerns FOUNDATIONS.md principles**: Read `docs/FOUNDATIONS.md`. You will need it in Steps 3 and 4 to validate proposed approaches against architectural principles. For implementation-adjacent topics, reading FOUNDATIONS.md is optional — only read it if the topic touches engine architecture or component registration.
 
@@ -158,7 +160,7 @@ When triage produces **multiple deliverables** (N specs, N tickets, or a mix), t
 
 **Plan mode**: Skip per-section gates. Present key decisions in 1-2 messages with conversation-level checkpoints, then write to plan file. See plan-mode details at the end of this section.
 
-**Classification pivot check**: If the design reveals a deliverable type that differs from the Step 1 classification (e.g., "tooling configuration" now requires a new Rust crate, or a spec now includes live code changes), re-state the refined classification to the user before presenting Section 1 of the design. Downstream sections (testing strategy, FOUNDATIONS alignment) follow the refined classification.
+**Classification pivot check**: If the design reveals a deliverable type that differs from the Step 1 classification (e.g., "tooling configuration" now requires a new Rust crate, or a spec now includes live code changes) OR reveals a hybrid structure the Step 1 classification didn't name (primary category plus a secondary-category supporting artifact — e.g., non-implementation doc + implementation-adjacent generator binary), re-state the refined classification to the user before presenting Section 1 of the design. Downstream sections (testing strategy, FOUNDATIONS alignment) apply per-component when hybrid, not per-brainstorm.
 
 Once an approach is chosen, present the design **section by section**. Scale each section to its complexity — a sentence for trivial parts, up to 200 words for nuanced parts.
 
@@ -240,6 +242,8 @@ What would you like to do next?
 ```
 
 Use AskUserQuestion when its schema is already available in the session. Inline numbered options (as shown above) are an acceptable fallback when AskUserQuestion is deferred and fetching its schema would add friction. If the user picks an option that invokes another skill, invoke it. If they pick "done", end the session.
+
+**If the deliverable is a hand-authored documentation file** (e.g., `docs/<name>.md`, and the "implementation" is literally writing that markdown file rather than producing code): substitute option 3 with `Write the actual <target file path>`. If the design also includes a secondary-component generator binary or script (per the hybrid classification in Step 1), add `Scaffold the supporting tooling first, then write the doc` and `Do both together` as additional options. Keep option 4 (Done for now) unchanged. This mirrors the per-deliverable-type menu adjustments already documented for specs and skills.
 
 **If plan mode is active**: Call `ExitPlanMode` instead of presenting the next-steps menu. The user will direct next steps after approving the plan.
 
