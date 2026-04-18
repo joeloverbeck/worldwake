@@ -1322,8 +1322,9 @@ mod tests {
     use worldwake_core::{
         ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind,
         CommodityPurpose, ControlSource, EventLog, ExecutionBudget, HomeostaticNeeds,
-        MerchandiseProfile, Permille, Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        MerchandiseProfile, PerceptionSource, Permille, Place, Quantity, Tick, Topology,
+        TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeDefinition,
@@ -1439,6 +1440,36 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
+    }
+
+    /// Seed an agent's belief store with `BelievedEntityState` snapshots for the
+    /// given entities, mirroring what `perception_system` does for agents with a
+    /// `PerceptionProfile`. Needed for bare planner-unit tests where no
+    /// perception pipeline runs but the belief view must reflect the world.
+    fn seed_beliefs(
+        world: &mut World,
+        agent: worldwake_core::EntityId,
+        entities: &[worldwake_core::EntityId],
+        observed_tick: Tick,
+    ) {
+        let mut store = world
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .unwrap_or_default();
+        for entity in entities {
+            if let Some(state) = build_believed_entity_state(
+                world,
+                *entity,
+                observed_tick,
+                PerceptionSource::DirectObservation,
+            ) {
+                store.update_entity(*entity, state);
+            }
+        }
+        let mut txn = new_txn(world, observed_tick.0);
+        txn.set_component_agent_belief_store(agent, store)
+            .expect("agent belief store must be writable");
+        commit_txn(txn);
     }
 
     fn cargo_topology(
@@ -2527,6 +2558,7 @@ mod tests {
             commit_txn(txn);
             (agent, bread)
         };
+        seed_beliefs(&mut world, agent, &[bread, origin, market], Tick(1));
         let (defs, handlers, recipes) = build_full_registries();
         let semantics = build_semantics_table(&defs);
         let scheduler = Scheduler::new(SystemManifest::canonical());
@@ -2714,6 +2746,7 @@ mod tests {
             commit_txn(txn);
             (agent, bread)
         };
+        seed_beliefs(&mut world, agent, &[bread, origin, market, camp], Tick(1));
         let (defs, handlers, recipes) = build_full_registries();
         let semantics = build_semantics_table(&defs);
         let scheduler = Scheduler::new(SystemManifest::canonical());

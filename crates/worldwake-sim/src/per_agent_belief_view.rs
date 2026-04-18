@@ -265,16 +265,8 @@ impl<'w> PerAgentBeliefView<'w> {
             .flatten()
     }
 
-    fn has_authoritative_local_visibility(&self, entity: EntityId) -> bool {
-        let Some(agent_place) = self.world.effective_place(self.agent) else {
-            return false;
-        };
-        self.world.effective_place(entity) == Some(agent_place)
-    }
-
     fn knows_entity(&self, entity: EntityId) -> bool {
         entity == self.agent
-            || self.has_authoritative_local_visibility(entity)
             || self.world.possessor_of(entity) == Some(self.agent)
             || self.believed_entity(entity).is_some()
             || self
@@ -1235,19 +1227,6 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
                 .filter(|lot| lot.commodity == kind)
                 .map_or(Quantity(0), |lot| lot.quantity);
         }
-        if self.has_authoritative_local_visibility(holder) {
-            if let Some(lot) = self.world.get_component_item_lot(holder)
-                && lot.commodity == kind
-            {
-                return lot.quantity;
-            }
-            if let Some(source) = self.world.get_component_resource_source(holder)
-                && source.commodity == kind
-            {
-                return source.available_quantity;
-            }
-        }
-
         self.believed_entity(holder)
             .and_then(|state| state.last_known_inventory.get(&kind).copied())
             .unwrap_or(Quantity(0))
@@ -1574,7 +1553,7 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
 
 impl FacilityBeliefView for PerAgentBeliefView<'_> {
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
-        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
+        if entity == self.agent {
             return self
                 .world
                 .get_component_workstation_marker(entity)
@@ -1586,7 +1565,7 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
+        if entity == self.agent {
             return self.world.get_component_resource_source(entity).cloned();
         }
 
