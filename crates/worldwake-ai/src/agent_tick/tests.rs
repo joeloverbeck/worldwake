@@ -3813,13 +3813,16 @@ fn unseen_seller_relocation_preserves_stale_acquisition_belief() {
     assert_eq!(view.effective_place(seller), Some(origin));
 
     let ranked = ranked_goals_at(&mut harness, Tick(3));
-    assert!(has_goal(
-        &ranked,
-        GoalKind::AcquireCommodity {
-            commodity: CommodityKind::Bread,
-            purpose: CommodityPurpose::SelfConsume,
-        }
-    ));
+    assert!(
+        !has_goal(
+            &ranked,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ),
+        "stale same-place seller belief may survive until refresh, but local acquisition must not remain visible once authoritative local state disagrees"
+    );
 }
 
 #[test]

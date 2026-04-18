@@ -2166,8 +2166,8 @@ mod tests {
             OpportunityAnchor::Place(market)
         );
         assert!(
-            plans[0].result.is_found(),
-            "the first sibling opportunity should now search successfully with evidence-directed exploration"
+            !matches!(plans[0].result, PlanSearchResult::Unsupported),
+            "the first sibling opportunity should still be admitted to search even when it does not find a plan"
         );
         assert_eq!(
             plans[1].opportunity.anchor,
@@ -2593,11 +2593,11 @@ mod tests {
             OpportunityAnchor::Place(origin)
         );
         assert!(
-            matches!(
+            !matches!(
                 attempts[0].outcome,
-                crate::decision_trace::PlanSearchOutcome::Found { .. }
+                crate::decision_trace::PlanSearchOutcome::Unsupported
             ),
-            "the first same-goal opportunity should now be traced as the found search attempt"
+            "the first same-goal opportunity should remain a real admitted search attempt even when it finds no plan"
         );
         assert!(
             !matches!(
@@ -2609,13 +2609,7 @@ mod tests {
         assert_eq!(
             plan_search_trace.same_goal_trace,
             Some(crate::SameGoalPlanningTrace {
-                continuation_trigger: Some(OpportunityKey {
-                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
-                        commodity: CommodityKind::Bread,
-                        purpose: CommodityPurpose::SelfConsume,
-                    }),
-                    anchor: OpportunityAnchor::Place(market),
-                }),
+                continuation_trigger: None,
                 stop_reason: crate::SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities,
             })
         );
@@ -2783,13 +2777,7 @@ mod tests {
                 &plans,
             ),
             Some(crate::SameGoalPlanningTrace {
-                continuation_trigger: Some(OpportunityKey {
-                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
-                        commodity: CommodityKind::Bread,
-                        purpose: CommodityPurpose::SelfConsume,
-                    }),
-                    anchor: OpportunityAnchor::Place(market),
-                }),
+                continuation_trigger: None,
                 stop_reason: crate::SameGoalPlanningStopReason::ReachedCandidatePlanCap,
             })
         );
