@@ -11,10 +11,13 @@ use clap::Parser;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
-use worldwake_ai::AgentTickDriver;
 use worldwake_ai::decision_trace::{
     AffordanceSummary, AffordanceTrace, AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace,
     PlanSearchOutcome, TargetBeliefPresence,
+};
+use worldwake_ai::{
+    ActionTraceSnapshot, AgentTickDriver, CriticalWindowReport, ExhaustionSummary,
+    LocalSurvivalStateSummary, SurvivalForensicExtractor,
 };
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
@@ -39,6 +42,9 @@ struct ObserverCli {
     /// Output path for the observation dump
     #[arg(long, default_value = "reports/simulation-observer-dump.md")]
     output: PathBuf,
+    /// Number of longest authored-critical windows to render in Section 9 (0 disables the section)
+    #[arg(long, default_value_t = 3)]
+    critical_window_top_n: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -476,6 +482,237 @@ fn format_budget_exhaustion_snapshots(out: &mut String, snapshots: &[BudgetExhau
         }
         writeln!(out).unwrap();
     }
+}
+
+fn format_critical_window_forensics(
+    out: &mut String,
+    agents: &[(EntityId, String)],
+    world: &worldwake_core::World,
+    reports: &[CriticalWindowReport],
+    total_windows_detected: usize,
+) {
+    writeln!(out, "## Section 9 — Critical Window Forensics\n").unwrap();
+    if reports.is_empty() {
+        writeln!(out, "No authored-critical windows detected.\n").unwrap();
+        return;
+    }
+
+    writeln!(
+        out,
+        "Showing {} longest authored-critical windows out of {} detected.\n",
+        reports.len(),
+        total_windows_detected
+    )
+    .unwrap();
+
+    let agent_names = agents
+        .iter()
+        .map(|(agent, name)| (*agent, name.as_str()))
+        .collect::<BTreeMap<_, _>>();
+
+    for (idx, report) in reports.iter().enumerate() {
+        let agent_name = agent_names
+            .get(&report.agent)
+            .copied()
+            .unwrap_or("Unknown agent");
+        writeln!(
+            out,
+            "### Window {} — {} / {:?}\n",
+            idx + 1,
+            agent_name,
+            report.need
+        )
+        .unwrap();
+        writeln!(out, "**Agent**: {agent_name} ({})", report.agent).unwrap();
+        writeln!(out, "**Need**: {:?}", report.need).unwrap();
+        writeln!(
+            out,
+            "**Window**: tick {}..{}",
+            report.start_tick.0, report.end_tick.0
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Authored critical threshold**: {} per mille",
+            report.threshold.value()
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Peak need value**: {} per mille",
+            report.peak_value.value()
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Selected goals across captured frames**: {}",
+            summarize_selected_goals(report)
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Selected plan sources**: {}",
+            summarize_plan_sources(report)
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Exhaustion states**: {}",
+            summarize_exhaustion_states(report)
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Blocker summaries**: {}",
+            summarize_blocker_states(report)
+        )
+        .unwrap();
+        writeln!(out).unwrap();
+
+        writeln!(
+            out,
+            "| Tick | Need | Selected Goal | Plan Source | Top Competitors | Active Action | Exhaustion | Blocker | Local Summary |"
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "|------|------|---------------|-------------|-----------------|---------------|------------|---------|---------------|"
+        )
+        .unwrap();
+        for frame in &report.frames {
+            let selected_goal = frame
+                .selected_goal
+                .map_or_else(|| "-".to_string(), |goal| format!("{:?}", goal.kind));
+            let selected_plan_source = frame
+                .selected_plan_source
+                .map_or_else(|| "-".to_string(), |source| format!("{source:?}"));
+            let top_competitors = if frame.top_competitors.is_empty() {
+                "-".to_string()
+            } else {
+                frame
+                    .top_competitors
+                    .iter()
+                    .map(|competitor| format!("{:?}", competitor.goal.kind))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let active_action = frame.active_action.as_ref().map_or_else(
+                || "-".to_string(),
+                |action| format!("{}@{}", action.action_name, action.started_at.0),
+            );
+            writeln!(
+                out,
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                frame.tick.0,
+                frame.need_value.value(),
+                selected_goal,
+                selected_plan_source,
+                top_competitors,
+                active_action,
+                format_frame_exhaustion(frame.exhaustion_state.as_ref()),
+                format_frame_blocker(frame.blocker_summary.as_ref()),
+                format_local_survival_state_summary(world, &frame.local_authoritative_summary),
+            )
+            .unwrap();
+        }
+        writeln!(out).unwrap();
+    }
+}
+
+fn summarize_selected_goals(report: &CriticalWindowReport) -> String {
+    summarize_counts(
+        report
+            .frames
+            .iter()
+            .filter_map(|frame| frame.selected_goal.map(|goal| format!("{:?}", goal.kind))),
+    )
+}
+
+fn summarize_plan_sources(report: &CriticalWindowReport) -> String {
+    summarize_counts(report.frames.iter().filter_map(|frame| {
+        frame
+            .selected_plan_source
+            .map(|source| format!("{source:?}"))
+    }))
+}
+
+fn summarize_exhaustion_states(report: &CriticalWindowReport) -> String {
+    summarize_counts(
+        report
+            .frames
+            .iter()
+            .filter_map(|frame| frame.exhaustion_state.as_ref().map(format_exhaustion_state)),
+    )
+}
+
+fn summarize_blocker_states(report: &CriticalWindowReport) -> String {
+    summarize_counts(
+        report
+            .frames
+            .iter()
+            .filter_map(|frame| frame.blocker_summary.as_ref().map(format_blocker_summary)),
+    )
+}
+
+fn summarize_counts(values: impl IntoIterator<Item = String>) -> String {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for value in values {
+        *counts.entry(value).or_insert(0) += 1;
+    }
+    if counts.is_empty() {
+        return "none".to_string();
+    }
+    counts
+        .into_iter()
+        .map(|(label, count)| format!("{label} x{count}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_exhaustion_state(exhaustion: &ExhaustionSummary) -> String {
+    match exhaustion {
+        ExhaustionSummary::FrontierExhausted { expansions_used } => {
+            format!("frontier-exhausted (expansions_used={expansions_used})")
+        }
+        ExhaustionSummary::BudgetExhausted { expansions_used } => {
+            format!("budget-exhausted (expansions_used={expansions_used})")
+        }
+        ExhaustionSummary::Unsupported => "unsupported".to_string(),
+    }
+}
+
+fn format_blocker_summary(summary: &worldwake_ai::BlockerSummary) -> String {
+    match summary.top_blocker {
+        Some(blocker) => format!("{} blockers (top={blocker:?})", summary.blocker_count),
+        None => format!("{} blockers", summary.blocker_count),
+    }
+}
+
+fn format_frame_exhaustion(exhaustion: Option<&ExhaustionSummary>) -> String {
+    exhaustion.map_or_else(|| "-".to_string(), format_exhaustion_state)
+}
+
+fn format_frame_blocker(summary: Option<&worldwake_ai::BlockerSummary>) -> String {
+    summary.map_or_else(|| "-".to_string(), format_blocker_summary)
+}
+
+fn format_local_survival_state_summary(
+    world: &worldwake_core::World,
+    summary: &LocalSurvivalStateSummary,
+) -> String {
+    let place_name = entity_display_name(world, summary.place);
+    format!(
+        "{}: water={}, wash={}, sleep={}, food={}",
+        place_name,
+        yes_no(summary.water_source_present),
+        yes_no(summary.wash_basin_present),
+        yes_no(summary.sleep_affordance_present),
+        yes_no(summary.food_source_present)
+    )
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
 }
 
 // ---------------------------------------------------------------------------
@@ -1272,6 +1509,9 @@ fn format_report(
     world: &worldwake_core::World,
     driver: &AgentTickDriver,
     budget_exhaustion_snapshots: &[BudgetExhaustionSnapshot],
+    critical_window_section_enabled: bool,
+    critical_window_reports: &[CriticalWindowReport],
+    total_critical_window_count: usize,
 ) -> String {
     let mut out = String::new();
 
@@ -2111,6 +2351,17 @@ fn format_report(
     // Section 8: Budget Exhaustion Snapshots
     format_budget_exhaustion_snapshots(&mut out, budget_exhaustion_snapshots);
 
+    // Section 9: Critical Window Forensics
+    if critical_window_section_enabled {
+        format_critical_window_forensics(
+            &mut out,
+            agents,
+            world,
+            critical_window_reports,
+            total_critical_window_count,
+        );
+    }
+
     out
 }
 
@@ -2173,6 +2424,15 @@ fn main() {
     // Budget exhaustion snapshot collection
     let mut budget_exhaustion_snapshots: Vec<BudgetExhaustionSnapshot> = Vec::new();
     let mut budget_exhaustion_seen: BTreeSet<BudgetExhaustionKey> = BTreeSet::new();
+    let mut survival_forensics: BTreeMap<EntityId, SurvivalForensicExtractor> =
+        if cli.critical_window_top_n == 0 {
+            BTreeMap::new()
+        } else {
+            agents
+                .iter()
+                .map(|(agent_id, _)| (*agent_id, SurvivalForensicExtractor::new(*agent_id)))
+                .collect()
+        };
 
     // Create all trace sinks (persistent across all ticks)
     let mut action_trace = ActionTraceSink::new();
@@ -2277,7 +2537,6 @@ fn main() {
         }
 
         // Needs, location sampling, and idle tracking (read from world after tick)
-        let world = sim.world();
         for (agent_id, stats) in &mut agent_stats {
             // Needs
             let current_needs =
@@ -2312,6 +2571,46 @@ fn main() {
                 .iter()
                 .any(|e| !matches!(e.kind, ActionTraceKind::StartFailed { .. }));
             stats.record_idle_tick(had_action, current_tick.0, current_needs);
+        }
+
+        if !survival_forensics.is_empty() {
+            let decision_trace_sink = driver.trace_sink();
+            for (agent_id, extractor) in &mut survival_forensics {
+                let Some(needs) = world.get_component_homeostatic_needs(*agent_id) else {
+                    continue;
+                };
+                let Some(local_state) = LocalSurvivalStateSummary::capture(world, *agent_id) else {
+                    continue;
+                };
+                let thresholds = world
+                    .get_component_drive_thresholds(*agent_id)
+                    .copied()
+                    .unwrap_or_default();
+                let decision_trace =
+                    decision_trace_sink.and_then(|sink| sink.trace_at(*agent_id, current_tick));
+                let active_action = scheduler
+                    .active_actions()
+                    .values()
+                    .find(|instance| instance.actor == *agent_id);
+                let active_action_name = active_action
+                    .and_then(|instance| spawned.action_registries.defs.get(instance.def_id))
+                    .map(|def| def.name.as_str());
+                let action_snapshot = ActionTraceSnapshot::from_sink(
+                    *agent_id,
+                    current_tick,
+                    &action_trace,
+                    active_action,
+                    active_action_name,
+                );
+                extractor.observe(
+                    current_tick,
+                    needs,
+                    &thresholds,
+                    decision_trace,
+                    &action_snapshot,
+                    &local_state,
+                );
+            }
         }
 
         // Budget exhaustion snapshot collection
@@ -2438,6 +2737,18 @@ fn main() {
 
     eprintln!("Found {} anomalies. Writing report...", anomalies.len());
 
+    let all_critical_window_reports = survival_forensics
+        .into_values()
+        .flat_map(SurvivalForensicExtractor::finalize)
+        .collect::<Vec<_>>();
+    let critical_window_reports = SurvivalForensicExtractor::top_n_longest(
+        &all_critical_window_reports,
+        cli.critical_window_top_n,
+    )
+    .into_iter()
+    .cloned()
+    .collect::<Vec<_>>();
+
     let scenario_path_str = cli.scenario.display().to_string();
     let report = format_report(
         &scenario_path_str,
@@ -2453,6 +2764,9 @@ fn main() {
         sim.world(),
         &driver,
         &budget_exhaustion_snapshots,
+        cli.critical_window_top_n > 0,
+        &critical_window_reports,
+        all_critical_window_reports.len(),
     );
 
     // Ensure parent directory exists
@@ -2493,12 +2807,16 @@ mod tests {
         ExecutionTrace, PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace,
         SearchExpansionSummary, SelectionTrace, TargetBeliefPresence,
     };
-    use worldwake_ai::{AgentTickDriver, DirtySet};
+    use worldwake_ai::{
+        ActiveActionSummary, AgentTickDriver, BlockerSummary, CriticalWindowFrame,
+        CriticalWindowReport, DirtySet, ExhaustionSummary, GoalPriorityClass,
+        LocalSurvivalStateSummary, RankedGoalSnapshot, SelectedPlanSource,
+    };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, ControlSource, DeadAt,
         DeathCause, EntityId, EntityKind, EventLog, GoalKey, GoalKind, HomeostaticNeedId,
-        OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        OpportunityAnchor, Permille, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
         build_prototype_world,
     };
     use worldwake_sim::{
@@ -2701,6 +3019,50 @@ mod tests {
                 Tick(0),
                 PerceptionSource::DirectObservation,
             )
+        }
+    }
+
+    fn sample_local_survival_state_summary() -> LocalSurvivalStateSummary {
+        LocalSurvivalStateSummary {
+            place: entity(20),
+            water_source_present: true,
+            wash_basin_present: false,
+            sleep_affordance_present: true,
+            food_source_present: false,
+        }
+    }
+
+    fn sample_critical_window_report(agent: EntityId) -> CriticalWindowReport {
+        CriticalWindowReport {
+            agent,
+            need: HomeostaticNeedId::Fatigue,
+            start_tick: Tick(12),
+            end_tick: Tick(16),
+            threshold: Permille::new(900).expect("threshold"),
+            peak_value: Permille::new(940).expect("peak"),
+            frames: vec![CriticalWindowFrame {
+                tick: Tick(12),
+                need_value: Permille::new(940).expect("need value"),
+                selected_goal: Some(GoalKey::from(GoalKind::Sleep)),
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                top_competitors: vec![RankedGoalSnapshot {
+                    goal: GoalKey::from(GoalKind::Sleep),
+                    priority_class: GoalPriorityClass::Critical,
+                    motive_score: 940,
+                    provenance_family: None,
+                }],
+                active_action: Some(ActiveActionSummary {
+                    action_name: "sleep".to_string(),
+                    instance: ActionInstanceId(9),
+                    started_at: Tick(12),
+                }),
+                exhaustion_state: Some(ExhaustionSummary::FrontierExhausted { expansions_used: 7 }),
+                blocker_summary: Some(BlockerSummary {
+                    blocker_count: 2,
+                    top_blocker: None,
+                }),
+                local_authoritative_summary: sample_local_survival_state_summary(),
+            }],
         }
     }
 
@@ -3082,11 +3444,133 @@ mod tests {
             &world,
             &driver,
             &[],
+            false,
+            &[],
+            0,
         );
 
         assert!(
             report.contains("**Affordance changes** (tick 5): +harvest, -sleep (at Unknown#20)")
         );
+    }
+
+    #[test]
+    fn format_report_renders_critical_window_section_for_synthetic_report() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let agent = entity(1);
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            true,
+            &[sample_critical_window_report(agent)],
+            1,
+        );
+
+        assert!(report.contains("## Section 9 — Critical Window Forensics"));
+        assert!(report.contains("### Window 1 — Guard Theron / Fatigue"));
+        assert!(report.contains("**Selected goals across captured frames**: Sleep x1"));
+        assert!(
+            report.contains("**Exhaustion states**: frontier-exhausted (expansions_used=7) x1")
+        );
+        assert!(report.contains(
+            "| 12 | 940 | Sleep | SearchSelection | Sleep | sleep@12 | frontier-exhausted (expansions_used=7) | 2 blockers | Unknown#20: water=yes, wash=no, sleep=yes, food=no |"
+        ));
+    }
+
+    #[test]
+    fn format_report_renders_critical_window_empty_state() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let agent = entity(1);
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            true,
+            &[],
+            0,
+        );
+
+        assert!(report.contains("## Section 9 — Critical Window Forensics"));
+        assert!(report.contains("No authored-critical windows detected."));
+    }
+
+    #[test]
+    fn format_report_omits_critical_window_section_when_disabled() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let agent = entity(1);
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            false,
+            &[],
+            0,
+        );
+
+        assert!(!report.contains("## Section 9 — Critical Window Forensics"));
+    }
+
+    #[test]
+    fn format_report_keeps_section_9_after_section_8() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let agent = entity(1);
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            true,
+            &[sample_critical_window_report(agent)],
+            1,
+        );
+
+        let section_8 = report
+            .find("## Section 8 — Budget Exhaustion Snapshots")
+            .expect("section 8");
+        let section_9 = report
+            .find("## Section 9 — Critical Window Forensics")
+            .expect("section 9");
+        assert!(section_8 < section_9);
     }
 
     #[test]

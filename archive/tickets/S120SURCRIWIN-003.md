@@ -1,6 +1,6 @@
 # S120SURCRIWIN-003: Observer Section 9 — Critical Window Forensics rendering
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None — this ticket adds an optional rendering section to the observer binary; no simulation, planner, or agent-decision behavior changes. The observer itself is a passive read-only tool (FND-26).
@@ -18,7 +18,7 @@ The observer binary today ends at `## Section 8 — Budget Exhaustion Snapshots`
    - `crates/worldwake-cli/src/bin/observer.rs` — existing sections 1 through 8 render via `writeln!(out, "## Section N — ...")` markers at lines 1278, 1304, 1451, 1473, 1640, 1744, 1817, and 349 (Section 8). The file ends around line 2111+ after Section 8's budget-exhaustion rendering. Validated during `/reassess-spec` pass on 2026-04-18.
    - `worldwake-cli`'s `Cargo.toml` already depends on `worldwake-ai`, so `worldwake-ai::survival_forensics` is importable after `S120SURCRIWIN-001` lands.
 2. Spec reference: `specs/S120-survival-critical-window-forensics.md` D6 (lines 183–191) specifies `## Section 9 — Critical Window Forensics`. The reassessment confirmed section numbering follows sequential integers (1, 2, 3, ..., 8) — the original spec draft's "Section 2.5" suggestion was corrected to "Section 9" during reassessment per output-format-fidelity rules.
-3. Shared abstraction boundary: the observer consumes the same `CriticalWindowReport` type that golden goldens consume. The extraction path differs (observer replays from the saved event-log dump; goldens observe per-tick live), but the report model is identical — this is exactly the dual-use pattern the module placement in `S120SURCRIWIN-001` was designed for.
+3. Shared abstraction boundary: the observer consumes the same `CriticalWindowReport` type that golden tests consume. Reassessment against the live `observer.rs` loop showed the observer already has the same per-tick world, scheduler, decision-trace, and action-trace context that the golden harness uses, so the honest extraction path is live per-tick observation into `SurvivalForensicExtractor`, not a second replay-only path. The canonical report model remains identical across both consumers.
 13. Adjacent contradiction audit: S117's observer Section 3 anomaly detectors are independent of this section. S120 Section 9 renders forensic drill-down for top-N longest authored-critical windows; S117 Section 3 renders anomaly detections. Both may render in the same observer dump without coupling. This is the in-scope consequence captured in the spec's Dependencies section.
 
 ## Architecture Check
@@ -29,15 +29,15 @@ The observer binary today ends at `## Section 8 — Budget Exhaustion Snapshots`
 
 ## Verification Layers
 
-1. Section 9 renders correctly for a scenario with at least one authored-critical window → focused observer test constructing a minimal event-log dump with a synthetic window and asserting the Section 9 output matches an expected snippet.
-2. Section 9 is suppressed (zero output beyond an empty-state line, or entirely omitted per spec) for a healthy scenario → focused observer test with no authored-critical windows.
-3. Section numbering continuity → file-level grep assertion that Section 9 follows Section 8 in source order. No cross-layer mapping applies — observer is a pure read-only rendering surface.
+1. Section 9 renders correctly for a report set with at least one authored-critical window → focused `observer.rs` test constructs a synthetic `CriticalWindowReport` and asserts the Section 9 output matches an expected snippet.
+2. Section 9 renders an empty-state line for a healthy run with no authored-critical windows → focused `observer.rs` test passes an empty report slice.
+3. Section numbering continuity → focused `observer.rs` formatting test asserts Section 8 appears before Section 9 in rendered output. No cross-layer mapping applies — observer is a pure read-only rendering surface.
 
 ## What to Change
 
 ### 1. Extract observer-side window reports
 
-Add a helper at the observer side (local to the `observer.rs` binary or in a new `crates/worldwake-cli/src/observer/survival_forensics_view.rs` module) that replays the event-log dump into the same `SurvivalForensicExtractor::observe` calls the goldens use. Reuse the runtime extractor; do not re-implement detection.
+Add a helper at the observer side (local to the `observer.rs` binary unless the code grows materially) that feeds the existing per-tick observer loop into the same `SurvivalForensicExtractor::observe` calls the goldens use. Reuse the runtime extractor; do not re-implement detection or add a second replay-only extraction path.
 
 ### 2. Section 9 rendering
 
@@ -55,7 +55,7 @@ Top-N is configurable via an observer command-line flag (e.g., `--critical-windo
 
 ### 3. Observer-level focused tests
 
-Add `crates/worldwake-cli/tests/observer_critical_window_section.rs` covering:
+Add focused tests in `crates/worldwake-cli/src/bin/observer.rs` covering:
 - Section 9 renders for a synthetic dump containing one window (assert expected header + content)
 - Section 9 renders empty-state for a healthy dump
 - Section numbering sequence: Section 8 header appears before Section 9 header in the output
@@ -66,9 +66,8 @@ Not in this ticket — documentation of the new section's consumption contract b
 
 ## Files to Touch
 
-- `crates/worldwake-cli/src/bin/observer.rs` (modify — add Section 9 rendering block after Section 8)
-- `crates/worldwake-cli/src/observer/survival_forensics_view.rs` (new, optional — may be inlined into `observer.rs` if small)
-- `crates/worldwake-cli/tests/observer_critical_window_section.rs` (new)
+- `crates/worldwake-cli/src/bin/observer.rs` (modify — add Section 9 extraction/rendering block and focused tests)
+- `crates/worldwake-cli/src/observer/survival_forensics_view.rs` (new, optional — only if the helper surface stops being small enough to keep local)
 
 ## Out of Scope
 
@@ -82,7 +81,7 @@ Not in this ticket — documentation of the new section's consumption contract b
 
 ### Tests That Must Pass
 
-1. `cargo test -p worldwake-cli --test observer_critical_window_section` — focused observer test suite passes.
+1. `cargo test -p worldwake-cli --bin observer` — focused observer formatting tests pass, including the new Section 9 coverage.
 2. Existing observer regression tests (if any): `cargo test -p worldwake-cli` remains green.
 3. Existing suite: `cargo test --workspace` remains green.
 4. Lint: `cargo clippy --workspace --all-targets -- -D warnings` passes.
@@ -97,11 +96,32 @@ Not in this ticket — documentation of the new section's consumption contract b
 
 ### New/Modified Tests
 
-1. `crates/worldwake-cli/tests/observer_critical_window_section.rs` — focused observer rendering tests covering non-empty, empty-state, and section-order cases.
+1. `crates/worldwake-cli/src/bin/observer.rs` focused tests — observer rendering tests covering non-empty, empty-state, and section-order cases.
 
 ### Commands
 
-1. `cargo test -p worldwake-cli --test observer_critical_window_section` — targeted observer rendering tests.
+1. `cargo test -p worldwake-cli --bin observer` — targeted observer rendering tests.
 2. `cargo test -p worldwake-cli` — full CLI/observer test suite.
 3. `cargo clippy --workspace --all-targets -- -D warnings` — workspace lint (CI parity).
 4. `cargo test --workspace` — full regression sweep.
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Added live per-tick `SurvivalForensicExtractor` capture to `crates/worldwake-cli/src/bin/observer.rs`, reusing the observer's existing world, scheduler, decision-trace, and action-trace context rather than inventing a replay-only extraction path.
+- Added `--critical-window-top-n <N>` to the observer CLI with default `3`; `0` now disables Section 9 entirely, while enabled healthy runs render the empty-state line `No authored-critical windows detected.`.
+- Added `## Section 9 — Critical Window Forensics` rendering after Section 8, including per-window summaries for agent, need, tick span, authored threshold, peak value, selected-goal summary, selected plan source summary, typed exhaustion/blocker summaries, and a bounded frame table with local authoritative survival context.
+- Added four focused in-bin tests in `observer.rs` covering populated Section 9 output, empty-state rendering, explicit disablement, and section-order continuity.
+
+## Deviations
+
+- The focused proof lives in `crates/worldwake-cli/src/bin/observer.rs` instead of a new `crates/worldwake-cli/tests/observer_critical_window_section.rs` file. Reassessment against the live CLI boundary showed the owned seam is the local `format_report(...)` surface, and keeping the tests in-bin avoided inventing duplicate report-construction scaffolding for a small single-binary change.
+- `cargo test --workspace` remained truthful verification for this ticket, but the existing long-running `#[ignore]` survival scenarios in `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` still did not execute in that command. The command proved the workspace stayed green with those binaries compiled and their non-ignored tests passing.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --bin observer`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

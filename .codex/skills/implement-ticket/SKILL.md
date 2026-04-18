@@ -58,6 +58,8 @@ For derived forensic/report/read-model tickets, use this compact scope checklist
 - separate bounded-capture/filtering policy from raw candidate collection
 - identify any same-crate type fallout needed to keep the requested API honest
 
+For small CLI/tooling tickets that touch a single binary or local helper surface, explicitly check whether the honest focused proof belongs beside the owned function/module (for example in `src/bin/*.rs` tests) rather than in a new integration-test binary. If the ticket sketches a new `tests/*.rs` file but the live seam is a local formatter/helper inside one binary, narrow the test placement to that seam and record the deviation in the ticket closeout.
+
 ### 5. Implement with Worldwake discipline
 
 Load `references/implementation-discipline.md` when implementation begins or when reassessment shows a non-mechanical change that needs extra guardrails.
@@ -77,6 +79,8 @@ When a planner-boundary fix removes an unlawful omniscient carrier, expect depen
 ### 7. Close out the ticket honestly
 
 Load `references/closeout.md`.
+
+Before closing out, re-read any ticket claims about optional rendering, disabled flags, or suppressed sections and confirm the landed behavior matches those claims exactly. If the ticket distinguishes between “render empty-state” and “omit entirely when disabled,” make sure at least one focused assertion proves that exact disabled-path contract before marking the ticket complete.
 
 ### 8. Close the loop on the ticket
 
