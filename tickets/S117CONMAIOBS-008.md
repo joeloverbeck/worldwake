@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: `S117CONMAIOBS-007`, `specs/S117-convergence-maintenance-observer-smells.md`
+**Deps**: `archive/tickets/S117CONMAIOBS-007.md`, `specs/S117-convergence-maintenance-observer-smells.md`
 
 ## Problem
 
