@@ -217,7 +217,7 @@ Tick range: 0–1440
 
 thirst above critical threshold (850 permille) for 40 consecutive ticks (ticks 0–39), peak 850 permille. Below the 100-tick sustained-critical bar but within 17% of dehydration tolerance (240 ticks).
 
-Tick range: 99–195
+Tick range: 0–39
 ```
 
 ### D7: Section 2 supplementary subsections
@@ -225,7 +225,7 @@ Tick range: 99–195
 Add two small supplementary subsections to each agent's Section 2 block, immediately after the existing "Needs trajectory" / "Ticks above 750‰" / "Locations visited" / "Max consecutive idle ticks" blocks:
 
 - **"Maintenance rates"** table: per need, accumulation permille (window-total), relief permille (window-total), net balance. One row per need. Provides the analyst with raw data to check the `MaintenanceStarvation` detector without re-deriving it. Uses the same 200-tick rolling-window convention as D3; the reported row uses the whole-run totals.
-- **"Recipe usage"** table: per known recipe (from `KnownRecipes`), count of commits by that agent. Single line per recipe, in RecipeId order.
+- **"Recipe usage"** table: per known recipe (from `KnownRecipes`), count of commits by that agent. Single line per recipe, in `RecipeId` order. If the agent has commits for a registry-backed recipe that is no longer present in current `KnownRecipes`, include a deterministic ` (unknown)` row rather than dropping the historical count.
 
 Neither table requires new per-tick collection; both are aggregations over the `needs_samples` already collected for Section 2 and the action trace the observer already reads.
 

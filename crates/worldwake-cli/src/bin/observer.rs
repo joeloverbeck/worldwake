@@ -23,7 +23,7 @@ use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
     AgentBeliefStore, DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView,
-    HomeostaticNeedId, MetabolismProfile, RecipeId, Tick,
+    HomeostaticNeedId, KnownRecipes, MetabolismProfile, RecipeId, Tick,
 };
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
@@ -1101,6 +1101,16 @@ fn need_label(need: HomeostaticNeedId) -> &'static str {
     }
 }
 
+fn need_table_label(need: HomeostaticNeedId) -> &'static str {
+    match need {
+        HomeostaticNeedId::Hunger => "Hunger",
+        HomeostaticNeedId::Thirst => "Thirst",
+        HomeostaticNeedId::Fatigue => "Fatigue",
+        HomeostaticNeedId::Bladder => "Bladder",
+        HomeostaticNeedId::Dirtiness => "Dirtiness",
+    }
+}
+
 fn need_value(sample: &NeedsSample, need: HomeostaticNeedId) -> u16 {
     match need {
         HomeostaticNeedId::Hunger => sample.hunger,
@@ -1148,6 +1158,53 @@ fn maintenance_window_stats(samples: &[NeedsSample], need: HomeostaticNeedId) ->
         / samples.len() as u32;
 
     (accumulation, relief, avg)
+}
+
+fn compute_maintenance_rates(samples: &[NeedsSample]) -> [(HomeostaticNeedId, u32, u32, i64); 5] {
+    MAINTENANCE_STARVATION_NEEDS.map(|need| {
+        let mut accumulation = 0u32;
+        let mut relief = 0u32;
+        for pair in samples.windows(2) {
+            let delta =
+                i32::from(need_value(&pair[1], need)) - i32::from(need_value(&pair[0], need));
+            if delta > 0 {
+                accumulation += delta.cast_unsigned();
+            } else if delta < 0 {
+                relief += delta.unsigned_abs();
+            }
+        }
+        (
+            need,
+            accumulation,
+            relief,
+            i64::from(accumulation) - i64::from(relief),
+        )
+    })
+}
+
+fn render_maintenance_rates_table(samples: &[NeedsSample]) -> Option<String> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    let mut out = String::new();
+    writeln!(out, "**Maintenance rates** (‰)\n").unwrap();
+    writeln!(out, "| Need | Accumulation | Relief | Net |").unwrap();
+    writeln!(out, "|------|--------------|--------|-----|").unwrap();
+    for (need, accumulation, relief, net) in compute_maintenance_rates(samples) {
+        writeln!(
+            out,
+            "| {} | {} | {} | {} |",
+            need_table_label(need),
+            accumulation,
+            relief,
+            net
+        )
+        .unwrap();
+    }
+    writeln!(out).unwrap();
+
+    Some(out)
 }
 
 fn detect_maintenance_starvation(
@@ -1254,6 +1311,68 @@ fn agent_believes_recipe_facility_reachable(
     belief_store: &AgentBeliefStore,
 ) -> bool {
     recipe_facility_evidence_label(recipe, belief_store).is_some()
+}
+
+fn recipe_usage_rows(
+    agent_stats: &AgentStats,
+    known_recipes: Option<&KnownRecipes>,
+    registry: &RecipeRegistry,
+) -> Vec<(String, u32)> {
+    let mut rows = Vec::new();
+    let known_recipes = known_recipes.map(|known| &known.recipes);
+    let mut known_names = BTreeSet::new();
+
+    if let Some(recipe_ids) = known_recipes {
+        for recipe_id in recipe_ids {
+            let recipe_name = registry.get(*recipe_id).map_or_else(
+                || format!("Recipe#{} (unknown)", recipe_id.0),
+                |def| def.name.clone(),
+            );
+            let commits = registry
+                .get(*recipe_id)
+                .and_then(|def| agent_stats.actions_committed.get(&def.name).copied())
+                .unwrap_or(0);
+            known_names.insert(recipe_name.clone());
+            rows.push((recipe_name, commits));
+        }
+    }
+
+    for (action_name, commits) in &agent_stats.actions_committed {
+        if *commits == 0 || known_names.contains(action_name) {
+            continue;
+        }
+        let Some((recipe_id, _)) = registry.recipe_by_name(action_name) else {
+            continue;
+        };
+        if known_recipes.is_some_and(|recipes| recipes.contains(&recipe_id)) {
+            continue;
+        }
+        rows.push((format!("{action_name} (unknown)"), *commits));
+    }
+
+    rows
+}
+
+fn render_recipe_usage_table(
+    agent_stats: &AgentStats,
+    known_recipes: Option<&KnownRecipes>,
+    registry: &RecipeRegistry,
+) -> Option<String> {
+    let rows = recipe_usage_rows(agent_stats, known_recipes, registry);
+    if rows.is_empty() {
+        return None;
+    }
+
+    let mut out = String::new();
+    writeln!(out, "**Recipe usage**\n").unwrap();
+    writeln!(out, "| Recipe | Commits |").unwrap();
+    writeln!(out, "|--------|---------|").unwrap();
+    for (recipe_name, commits) in rows {
+        writeln!(out, "| {recipe_name} | {commits} |").unwrap();
+    }
+    writeln!(out).unwrap();
+
+    Some(out)
 }
 
 fn detect_recipe_monoculture(
@@ -2124,6 +2243,7 @@ fn format_report(
     event_log: &worldwake_core::EventLog,
     action_trace: &ActionTraceSink,
     perception_trace: &PerceptionTraceSink,
+    recipe_registry: &RecipeRegistry,
     world: &worldwake_core::World,
     driver: &AgentTickDriver,
     budget_exhaustion_snapshots: &[BudgetExhaustionSnapshot],
@@ -2294,6 +2414,18 @@ fn format_report(
                 writeln!(out, "| {place_id} | {ticks} |").unwrap();
             }
             writeln!(out).unwrap();
+        }
+
+        if let Some(table) = render_maintenance_rates_table(&stats.needs_samples) {
+            write!(out, "{table}").unwrap();
+        }
+
+        if let Some(table) = render_recipe_usage_table(
+            stats,
+            world.get_component_known_recipes(*agent_id),
+            recipe_registry,
+        ) {
+            write!(out, "{table}").unwrap();
         }
 
         // Idle tracking
@@ -3375,6 +3507,7 @@ fn main() {
         sim.event_log(),
         &action_trace,
         &perception_trace,
+        sim.recipe_registry(),
         sim.world(),
         &driver,
         &budget_exhaustion_snapshots,
@@ -3408,14 +3541,15 @@ mod tests {
     use super::{
         ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
         NeedsSample, PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots,
-        behavioral_transitions, committed_travel_ticks, death_summary_line,
-        detect_acute_need_spike, detect_geographic_convergence, detect_maintenance_starvation,
-        detect_recipe_monoculture, failed_plan_breakdown, failed_plan_candidates,
-        failed_plan_location, failed_plan_max_depth, failed_plan_outcome_label,
-        failed_plan_target_beliefs, final_affordance_snapshot, format_affordance_summary,
-        format_anomaly_header, format_behavioral_transition, format_death_cause, format_report,
-        need_medium_threshold, post_travel_affordance_snapshots, primary_satisfied_need,
-        unknown_location_entity_groups,
+        behavioral_transitions, committed_travel_ticks, compute_maintenance_rates,
+        death_summary_line, detect_acute_need_spike, detect_geographic_convergence,
+        detect_maintenance_starvation, detect_recipe_monoculture, failed_plan_breakdown,
+        failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
+        failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
+        format_affordance_summary, format_anomaly_header, format_behavioral_transition,
+        format_death_cause, format_report, need_medium_threshold, post_travel_affordance_snapshots,
+        primary_satisfied_need, recipe_usage_rows, render_maintenance_rates_table,
+        render_recipe_usage_table, unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
@@ -3434,9 +3568,9 @@ mod tests {
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, BelievedEntityState, BodyCostPerTick, CauseRef,
         CommodityKind, ControlSource, DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind,
-        EventLog, GoalKey, GoalKind, HomeostaticNeedId, MetabolismProfile, OpportunityAnchor,
-        Permille, Quantity, Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_prototype_world,
+        EventLog, GoalKey, GoalKind, HomeostaticNeedId, KnownRecipes, MetabolismProfile,
+        OpportunityAnchor, Permille, Quantity, Tick, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -4137,6 +4271,7 @@ mod tests {
     fn format_report_includes_affordance_change_lines() {
         let mut driver = AgentTickDriver::new();
         driver.enable_tracing();
+        let registry = RecipeRegistry::new();
         let agent = entity(1);
         let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
         let changed = affordance_trace(Some(entity(20)), &[("harvest", 2)]);
@@ -4161,6 +4296,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &registry,
             &world,
             &driver,
             &[],
@@ -4177,6 +4313,7 @@ mod tests {
     #[test]
     fn format_report_renders_critical_window_section_for_synthetic_report() {
         let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
         let agent = entity(1);
         let report = format_report(
             "scenario.ron",
@@ -4189,6 +4326,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &registry,
             &world,
             &AgentTickDriver::new(),
             &[],
@@ -4211,6 +4349,7 @@ mod tests {
     #[test]
     fn format_report_renders_critical_window_empty_state() {
         let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
         let agent = entity(1);
         let report = format_report(
             "scenario.ron",
@@ -4223,6 +4362,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &registry,
             &world,
             &AgentTickDriver::new(),
             &[],
@@ -4238,6 +4378,7 @@ mod tests {
     #[test]
     fn format_report_omits_critical_window_section_when_disabled() {
         let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
         let agent = entity(1);
         let report = format_report(
             "scenario.ron",
@@ -4250,6 +4391,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &registry,
             &world,
             &AgentTickDriver::new(),
             &[],
@@ -4264,6 +4406,7 @@ mod tests {
     #[test]
     fn format_report_keeps_section_9_after_section_8() {
         let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
         let agent = entity(1);
         let report = format_report(
             "scenario.ron",
@@ -4276,6 +4419,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &registry,
             &world,
             &AgentTickDriver::new(),
             &[],
@@ -4291,6 +4435,121 @@ mod tests {
             .find("## Section 9 — Critical Window Forensics")
             .expect("section 9");
         assert!(section_8 < section_9);
+    }
+
+    #[test]
+    fn test_compute_maintenance_rates_tracks_accumulation_and_relief() {
+        let samples = vec![
+            NeedsSample {
+                hunger: 0,
+                thirst: 0,
+                fatigue: 0,
+                bladder: 0,
+                dirtiness: 0,
+            },
+            NeedsSample {
+                hunger: 10,
+                thirst: 5,
+                fatigue: 0,
+                bladder: 0,
+                dirtiness: 3,
+            },
+            NeedsSample {
+                hunger: 4,
+                thirst: 9,
+                fatigue: 2,
+                bladder: 0,
+                dirtiness: 1,
+            },
+        ];
+
+        let rates = compute_maintenance_rates(&samples);
+
+        assert_eq!(rates[0], (HomeostaticNeedId::Hunger, 10, 6, 4));
+        assert_eq!(rates[1], (HomeostaticNeedId::Thirst, 9, 0, 9));
+        assert_eq!(rates[2], (HomeostaticNeedId::Fatigue, 2, 0, 2));
+        assert_eq!(rates[3], (HomeostaticNeedId::Bladder, 0, 0, 0));
+        assert_eq!(rates[4], (HomeostaticNeedId::Dirtiness, 3, 2, 1));
+    }
+
+    #[test]
+    fn test_recipe_usage_rows_iteration_order_is_deterministic() {
+        let mut registry = RecipeRegistry::new();
+        let grain_id = registry.register(sample_recipe(
+            "Harvest Grain",
+            vec![(CommodityKind::Grain, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(1))],
+            Some(WorkstationTag::FieldPlot),
+        ));
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("Harvest Grain".to_string(), 2);
+        stats
+            .actions_committed
+            .insert("Harvest Apples".to_string(), 5);
+        stats
+            .actions_committed
+            .insert("Harvest Water".to_string(), 3);
+        let known = KnownRecipes::with([grain_id, apple_id]);
+
+        let rows = recipe_usage_rows(&stats, Some(&known), &registry);
+
+        assert_eq!(
+            rows,
+            vec![
+                ("Harvest Grain".to_string(), 2),
+                ("Harvest Apples".to_string(), 5),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_maintenance_rates_table_renders_for_sampled_agent() {
+        let stats = agent_stats_with_dirtiness("Alice", &[10, 15, 12]);
+
+        let rendered =
+            render_maintenance_rates_table(&stats.needs_samples).expect("maintenance table");
+
+        assert!(rendered.contains("**Maintenance rates** (‰)"));
+        assert!(rendered.contains("| Need | Accumulation | Relief | Net |"));
+        assert!(rendered.contains("| Dirtiness | 5 | 3 | 2 |"));
+    }
+
+    #[test]
+    fn test_recipe_usage_table_renders_for_agent_with_known_recipes() {
+        let mut registry = RecipeRegistry::new();
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let grain_id = registry.register(sample_recipe(
+            "Harvest Grain",
+            vec![(CommodityKind::Grain, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(1))],
+            Some(WorkstationTag::FieldPlot),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("Harvest Apples".to_string(), 4);
+        let known = KnownRecipes::with([apple_id, grain_id]);
+
+        let rendered =
+            render_recipe_usage_table(&stats, Some(&known), &registry).expect("recipe table");
+
+        assert!(rendered.contains("**Recipe usage**"));
+        assert!(rendered.contains("| Recipe | Commits |"));
+        assert!(rendered.contains("| Harvest Apples | 4 |"));
+        assert!(rendered.contains("| Harvest Grain | 0 |"));
     }
 
     #[test]

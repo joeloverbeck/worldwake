@@ -57,6 +57,7 @@ For derived forensic/report/read-model tickets, use this compact scope checklist
 - confirm the deterministic ordering/storage rule (`BTree*`, stable `Vec` order, no float math)
 - separate bounded-capture/filtering policy from raw candidate collection
 - identify any same-crate type fallout needed to keep the requested API honest
+- when canonical names, classifications, or display rows depend on an existing registry/catalog, verify whether the live render/helper signature must accept that input explicitly instead of assuming the change is purely local `writeln!` fallout
 
 For small CLI/tooling tickets that touch a single binary or local helper surface, explicitly check whether the honest focused proof belongs beside the owned function/module (for example in `src/bin/*.rs` tests) rather than in a new integration-test binary. If the ticket sketches a new `tests/*.rs` file but the live seam is a local formatter/helper inside one binary, narrow the test placement to that seam and record the deviation in the ticket closeout.
 When the live proof seam or owned implementation boundary differs from the ticket's drafted sketch, record the exact landed seam in the ticket closeout instead of preserving the drafted shape in prose. Small/local tickets often land through a private extracted helper or a narrower same-file formatter/test seam even when the draft described a more direct in-place edit.
