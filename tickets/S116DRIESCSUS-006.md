@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (tests + scenario fixture)
-**Deps**: archive/tickets/S116DRIESCSUS-003.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-005.md, archive/tickets/S116DRIESCSUS-008.md, archive/tickets/S116DRIESCSUS-009.md, archive/tickets/S116DRIESCSUS-010.md, tickets/S116DRIESCSUS-011.md, archive/tickets/S116DRIESCSUS-012.md
+**Deps**: archive/tickets/S116DRIESCSUS-003.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-005.md, archive/tickets/S116DRIESCSUS-008.md, archive/tickets/S116DRIESCSUS-009.md, archive/tickets/S116DRIESCSUS-010.md, archive/tickets/S116DRIESCSUS-011.md, archive/tickets/S116DRIESCSUS-012.md
 
 ## Problem
 
@@ -26,8 +26,8 @@ Spec S116 D7 requires three new goldens proving escalation behavior end-to-end, 
 10. Calibration proof surface is existing authored survival goldens plus command-backed observation, not a second duplicate assertion layer. The honest current-ticket obligation is to rerun `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested`, confirm no retune is required, and record that result in closeout unless focused reruns expose a real default-calibration regression or a separate production contradiction.
 11. Separate planner-boundary concern: `PlanningSnapshot::collect_entities()` in `crates/worldwake-ai/src/planning_snapshot.rs` currently admits authoritative remote entities at included places, which may expose planner-visible facilities without belief carriage. That concern is now tracked explicitly in active ticket `S116DRIESCSUS-008`; this ticket does not own the planner snapshot repair itself.
 12. Live harness mismatch: the existing `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` tests are all `#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]` on this branch. Truthful calibration verification therefore requires running those binaries with `-- --ignored`; plain `cargo test --test ...` would only compile the binary and skip the owned assertions.
-13. Reassessment on 2026-04-18 exposed a separate production bug during calibration. In `golden_survival_baseline`, agents repeatedly selected exact `AcquireCommodity(SelfConsume)` opportunities that compiled to a root `MoveCargo` / `pick_up` step against stale believed current-place lots, then failed at runtime with `PreconditionFailed("TargetAtActorPlace(0)")`. That contradiction is now explicitly tracked in `tickets/S116DRIESCSUS-011.md`; this ticket does not own the planner/runtime repair itself.
-14. Follow-up reassessment after `011`'s local-authority repair shows the stale exact-target loop is gone, but `golden_survival_baseline::all_agents_survive_1440_ticks` still fails with a separate long hunger-critical run for Agent A. That residual calibration contradiction is now explicitly tracked in `tickets/S116DRIESCSUS-012.md`; this ticket should wait on both production follow-ups rather than absorbing either one silently.
+13. Reassessment on 2026-04-18 exposed a separate production bug during calibration. In `golden_survival_baseline`, agents repeatedly selected exact `AcquireCommodity(SelfConsume)` opportunities that compiled to a root `MoveCargo` / `pick_up` step against stale believed current-place lots, then failed at runtime with `PreconditionFailed("TargetAtActorPlace(0)")`. That contradiction is now explicitly tracked in archived [archive/tickets/S116DRIESCSUS-011.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-011.md); this ticket does not own the planner/runtime repair itself.
+14. Follow-up reassessment after `011`'s local-authority repair shows the stale exact-target loop is gone, but `golden_survival_baseline::all_agents_survive_1440_ticks` still fails with a separate long hunger-critical run for Agent A. That residual calibration contradiction is now explicitly tracked in archived [archive/tickets/S116DRIESCSUS-012.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-012.md); this ticket should wait on both production follow-ups rather than absorbing either one silently.
 
 ## Architecture Check
 
@@ -77,7 +77,7 @@ If those reruns expose a real default-calibration regression, tune `DriveEscalat
 - `scenarios/drive-escalation-wash-priority.ron` (new)
 - `crates/worldwake-ai/tests/golden_drive_escalation.rs` (new)
 - `crates/worldwake-core/src/drive_escalation_profile.rs` (modify only if calibration reruns expose a real default regression — otherwise untouched)
-- `tickets/S116DRIESCSUS-011.md` (new dependency ticket if calibration exposes a separate production contradiction)
+- `archive/tickets/S116DRIESCSUS-011.md` (archived dependency ticket for the separate planner/runtime contradiction exposed during calibration)
 
 ## Out of Scope
 

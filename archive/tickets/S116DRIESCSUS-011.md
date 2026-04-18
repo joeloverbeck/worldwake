@@ -1,6 +1,6 @@
 # S116DRIESCSUS-011: Repair stale exact-opportunity self-consume planning
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` goal/search/failure-handling path and `worldwake-sim` current-place belief view
@@ -29,12 +29,12 @@ Any fix for this ticket must align with [docs/FOUNDATIONS.md](/home/joeloverbeck
    - do not add a scenario-only exemption or duplicate fallback path that leaves both stale-lot and lawful travel/harvest semantics active
 8. Adjacent contradiction classification:
    - the stale exact current-place local opportunity bug is the owned scope of this ticket
-   - the remaining post-fix survival-baseline hunger-critical run is a separate production contradiction and must be tracked independently in `tickets/S116DRIESCSUS-012.md`
+   - the remaining post-fix survival-baseline hunger-critical run was a separate production contradiction and is tracked in archived [archive/tickets/S116DRIESCSUS-012.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-012.md)
 9. Reassessment result after implementation on 2026-04-18:
    - focused regressions proving the stale local-opportunity repair pass
    - `golden_survival_baseline::all_agents_perform_survival_actions` passes
    - `golden_survival_baseline::no_stuck_idle_windows_with_elevated_needs` passes
-   - `golden_survival_baseline::all_agents_survive_1440_ticks` still fails, but no longer with repeated `TargetAtActorPlace(0)` starts; that residual issue is now explicitly deferred to ticket `012`
+   - `golden_survival_baseline::all_agents_survive_1440_ticks` no longer belongs to this ticket and was resolved separately in archived [archive/tickets/S116DRIESCSUS-012.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-012.md)
 
 ## Architecture Check
 
@@ -107,6 +107,33 @@ Use the existing survival baseline goldens only to confirm that the stale exact-
 4. `crates/worldwake-ai/tests/golden_survival_baseline.rs` — existing ignored assertions `all_agents_perform_survival_actions` and `no_stuck_idle_windows_with_elevated_needs` remain the downstream confirmation surface for this ticket
 
 ### Commands
+
+1. `cargo test -p worldwake-sim per_agent_belief_view::tests::current_place_entities_use_authoritative_local_set_over_stale_beliefs -- --exact`
+2. `cargo test -p worldwake-ai agent_tick::tests::stale_current_place_lot_belief_does_not_emit_consume_owned_goal -- --exact`
+3. `cargo test -p worldwake-ai failure_handling::tests::handle_plan_failure_scopes_remote_move_cargo_blocker_to_target_place -- --exact`
+4. `cargo test -p worldwake-ai candidate_generation::tests::blocked_exact_acquire_target_suppresses_only_stale_move_cargo_opportunity -- --exact`
+5. `cargo test -p worldwake-ai search::tests::search_blocks_remote_stale_move_cargo_by_target_place -- --exact`
+6. `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_perform_survival_actions -- --ignored --exact`
+7. `cargo test -p worldwake-ai --test golden_survival_baseline no_stuck_idle_windows_with_elevated_needs -- --ignored --exact`
+8. `cargo test -p worldwake-ai --lib`
+9. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completion date: 2026-04-18
+
+Implemented the stale exact-opportunity repair at the canonical local-vs-remote visibility boundary. The landed production changes are in `crates/worldwake-sim/src/per_agent_belief_view.rs`, `crates/worldwake-ai/src/failure_handling.rs`, and `crates/worldwake-ai/src/search/candidates.rs`: current-place entity visibility now prefers authoritative local state over stale believed local lots, `TargetAtActorPlace(0)` failures for remote stale `MoveCargo` roots now classify as `BlockingFact::AssumptionFailed` with blocker scoping keyed to the target place, and the stale exact acquire target suppression path stays limited to the specific broken opportunity rather than suppressing unrelated lawful commodity branches.
+
+Focused proof landed in `crates/worldwake-sim/src/per_agent_belief_view.rs`, `crates/worldwake-ai/src/agent_tick/tests.rs`, `crates/worldwake-ai/src/failure_handling.rs`, `crates/worldwake-ai/src/candidate_generation.rs`, and `crates/worldwake-ai/src/search/tests.rs`. Those tests prove the local-authority carrier directly, prove stale current-place lots no longer emit self-consume goals, and prove stale remote `MoveCargo` roots are blocked at the planner/runtime boundary without reopening broader search paths.
+
+The downstream ignored baseline confirmations also stay green: `all_agents_perform_survival_actions` and `no_stuck_idle_windows_with_elevated_needs` both pass. The separate survival-envelope contradiction this ticket exposed was split out honestly and completed in archived [archive/tickets/S116DRIESCSUS-012.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-012.md), rather than being absorbed silently here.
+
+## Deviations
+
+1. The original active ticket stayed `PENDING` after the code had already landed. This closeout pass updated the ticket to match the live branch rather than introducing new production edits.
+2. The draft handoff still referenced active `tickets/S116DRIESCSUS-012.md` as unresolved. That was factual drift after `012` was completed and archived, so the ticket now points to the archived dependency and records the split honestly.
+
+## Verification Result
 
 1. `cargo test -p worldwake-sim per_agent_belief_view::tests::current_place_entities_use_authoritative_local_set_over_stale_beliefs -- --exact`
 2. `cargo test -p worldwake-ai agent_tick::tests::stale_current_place_lot_belief_does_not_emit_consume_owned_goal -- --exact`
