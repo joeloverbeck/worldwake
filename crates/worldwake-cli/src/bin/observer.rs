@@ -708,8 +708,7 @@ fn format_local_survival_state_summary(
 ) -> String {
     let place_name = summary
         .place
-        .map(|place| entity_display_name(world, place))
-        .unwrap_or_else(|| "In transit".to_string());
+        .map_or_else(|| "In transit".to_string(), |place| entity_display_name(world, place));
     format!(
         "{}: water={}, wash={}, sleep={}, food={}",
         place_name,
@@ -3913,7 +3912,7 @@ mod tests {
 
     fn sample_local_survival_state_summary() -> LocalSurvivalStateSummary {
         LocalSurvivalStateSummary {
-            place: entity(20),
+            place: Some(entity(20)),
             water_source_present: true,
             wash_basin_present: false,
             sleep_affordance_present: true,
