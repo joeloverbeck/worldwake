@@ -120,7 +120,7 @@ Report all 10 categories regardless of severity. NONE findings should be brief (
 
 ### Proposed New Smell Categories
 
-[For each MEDIUM+ gap, a concrete proposal as specified in the Layer 3 reference. If no new smells warranted, state "No new smell categories proposed — current coverage is adequate."]
+[For each MEDIUM+ gap, a concrete proposal as specified in the Layer 3 reference. Do not re-propose shipped S117 smells; use the graduation note in `layer-3-meta-analysis.md` as the boundary. If no new smells warranted, state "No new smell categories proposed — current coverage is adequate."]
 
 ---
 

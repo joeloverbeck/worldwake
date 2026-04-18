@@ -284,14 +284,14 @@ Derived from `/scenario-analysis` of `survival-contested.ron` (seed 306006, 1440
 
 ```text
 S116 ✅ archived
-S117 (observer, independent)
+S117 ✅ archived
 S118 (observer, independent)
 ```
 
 **Wave** (parallel, no deps among S116/S117/S118):
 
 - **S116**: ✅ COMPLETED — archived at [archive/specs/S116-drive-escalation-sustained-critical.md](/home/joeloverbeck/projects/worldwake/archive/specs/S116-drive-escalation-sustained-critical.md). Landed `DriveEscalationProfile`, extended `DeprivationExposure`, escalation transition event tagging from `needs_system`, motive-score multiplier integration in AI ranking, dedicated drive-escalation golden coverage, and the contested authored survival-bound tightening from 400 to 300.
-- **S117**: Convergence and Maintenance-Cycle Observer Smells — four new mechanical anomaly kinds in the observer binary (`GEOGRAPHIC_CONVERGENCE`, `MAINTENANCE_STARVATION`, `RECIPE_MONOCULTURE`, `ACUTE_NEED_SPIKE`), plus supplementary Section 2 maintenance-rate and recipe-usage tables. Observer-only; no simulation behavior change.
+- **S117**: ✅ COMPLETED — archived at [archive/specs/S117-convergence-maintenance-observer-smells.md](/home/joeloverbeck/projects/worldwake/archive/specs/S117-convergence-maintenance-observer-smells.md). Landed the four observer-side anomaly detectors (`GEOGRAPHIC_CONVERGENCE`, `MAINTENANCE_STARVATION`, `RECIPE_MONOCULTURE`, `ACUTE_NEED_SPIKE`), Section 2 maintenance-rate and recipe-usage tables, the compiled-binary golden suite plus fixtures, and the downstream scenario-analysis doc graduation; the live baseline contract keeps `GEOGRAPHIC_CONVERGENCE` absent on `survival-baseline.ron` while treating the broader smell surface as diagnostic rather than a health-oracle failure.
 - **S118**: Stuck-Agent Detector Precision — Active-Frame Exclusion — observer-only fix that excludes tick windows overlapping an open ActionStarted/ActionCommitted frame from the `STUCK_AGENT` idle counter. Eliminates the 26-tick wash+travel false positive observed on Agent C.
 
 Follow-up tickets (not specs): scenario weight rebalance for `survival-contested.ron`, belief-retention investigation for landmark facilities under memory pressure (pending mid-run belief snapshot capability).

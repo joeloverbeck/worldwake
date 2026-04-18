@@ -1,6 +1,6 @@
 # S117CONMAIOBS-008: Scenario-analysis skill documentation — graduate proposed smells to shipped
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None
@@ -18,6 +18,7 @@ The `/scenario-analysis` skill's reference files describe the observer's detecti
 4. `.claude/skills/scenario-analysis/references/report-templates.md` contains a "Proposed New Smell Categories" section at line 121 — documentation template; may benefit from a tightening edit but is not strictly required.
 5. Shared abstraction boundary under audit: the /scenario-analysis skill's documented detector-surface surface area — purely documentation, no code consumer.
 6. This is a documentation-only ticket; `Engine Changes: None` is honest. No simulation code, no observer code, no tests are modified.
+7. `archive/tickets/S117CONMAIOBS-015.md` narrowed the live baseline contract after the original S117 draft: `survival-baseline.ron` is not required to produce a globally smell-free observer dump. The skill docs should therefore present the new detectors as mechanical forensic signals, not as proof that the authored survival baseline is automatically unhealthy whenever they appear.
 
 ## Architecture Check
 
@@ -50,7 +51,7 @@ In "Step 6.4: Proposed New Smell Categories" (around line 79), add a leading not
 
 ### 3. Review `report-templates.md` (optional tightening)
 
-In the "Proposed New Smell Categories" section (around line 121), review the template phrasing. If the template implies smells 11/12/13 are still proposals, tighten it to point readers at `layer-3-meta-analysis.md` for the graduation note. Otherwise leave untouched.
+In the "Proposed New Smell Categories" section (around line 121), tighten the template so it points readers at `layer-3-meta-analysis.md` for the graduation note and does not encourage re-proposing shipped S117 smells.
 
 ### 4. No spec/ticket commit at the end
 
@@ -91,4 +92,24 @@ Per skill convention — leave changes for user review.
 
 1. `grep -c "GEOGRAPHIC_CONVERGENCE\|MAINTENANCE_STARVATION\|RECIPE_MONOCULTURE\|ACUTE_NEED_SPIKE" .claude/skills/scenario-analysis/references/layer-1-behavioral-smells.md` — expect `>= 4` (one match per label minimum).
 2. `grep -n "Graduated smells\|shipped as of S117" .claude/skills/scenario-analysis/references/layer-3-meta-analysis.md` — expect one match.
-3. `diff <(git show HEAD:.claude/skills/scenario-analysis/SKILL.md) .claude/skills/scenario-analysis/SKILL.md` — expect empty (no changes to the entry point).
+3. `grep -n "Do not re-propose shipped S117 smells\|layer-3-meta-analysis.md" .claude/skills/scenario-analysis/references/report-templates.md` — expect one match.
+4. `diff <(git show HEAD:.claude/skills/scenario-analysis/SKILL.md) .claude/skills/scenario-analysis/SKILL.md` — expect empty (no changes to the entry point).
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Updated `.claude/skills/scenario-analysis/references/layer-1-behavioral-smells.md` so the shipped S117 mechanical detectors appear in Known Pathology Signatures with short analyst guidance.
+- Added the graduation note to `.claude/skills/scenario-analysis/references/layer-3-meta-analysis.md` so future reports do not re-propose already shipped S117 smells.
+- Tightened `.claude/skills/scenario-analysis/references/report-templates.md` to point analysts back to the graduation note instead of treating shipped S117 smells as still-proposable.
+
+## Deviations
+
+- The draft treated the report-template edit as optional. Live reassessment showed a small tightening there was justified because `archive/tickets/S117CONMAIOBS-015.md` clarified that the observer anomaly surface is a forensic layer rather than a blanket unhealthy-baseline oracle; the template should not encourage re-proposals of already shipped smells.
+
+## Verification Result
+
+- Passed `grep -c "GEOGRAPHIC_CONVERGENCE\|MAINTENANCE_STARVATION\|RECIPE_MONOCULTURE\|ACUTE_NEED_SPIKE" .claude/skills/scenario-analysis/references/layer-1-behavioral-smells.md`
+- Passed `grep -n "Graduated smells\|shipped as of S117" .claude/skills/scenario-analysis/references/layer-3-meta-analysis.md`
+- Passed `grep -n "Do not re-propose shipped S117 smells\|layer-3-meta-analysis.md" .claude/skills/scenario-analysis/references/report-templates.md`
+- `diff <(git show HEAD:.claude/skills/scenario-analysis/SKILL.md) .claude/skills/scenario-analysis/SKILL.md` remains empty

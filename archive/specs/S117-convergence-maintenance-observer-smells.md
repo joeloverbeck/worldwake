@@ -1,5 +1,7 @@
 # S117: Convergence and Maintenance-Cycle Observer Smells
 
+**Status**: COMPLETED
+
 ## Summary
 
 Extend the observer binary with four new mechanical anomaly kinds that detect failure modes the current detector suite misses: agent population convergence on a single place, maintenance-need starvation (relief firing too infrequently relative to accumulation rate), single-source commodity dependency (recipe monoculture), and sub-threshold acute spikes (needs ≥ critical for 30–99 consecutive ticks, below the 100-tick sustained-critical bar). All four are read-only over authoritative event-log and component state. The spec also adjusts the existing `STUCK_AGENT` detector's stated tolerance note to match the refined precision behavior delivered by S118.
@@ -300,3 +302,23 @@ No simulation system consumes the observer's output. Cross-observer interactions
 3. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md` — diagnostic baseline rerun. `GEOGRAPHIC_CONVERGENCE` should stay absent on the healthy baseline, but the broader observer smell surface is not required to be globally empty while the authored survival oracle still passes. Use `crates/worldwake-ai/tests/golden_survival_baseline.rs` as the stronger survival-health contract for this scenario.
 4. `cargo clippy --workspace --all-targets -- -D warnings` — clean.
 5. `cargo test -p worldwake-cli` — full crate test suite passes (integration test `test_observer_mode_simulation_runs` at `tests/integration.rs:395` continues to pass).
+
+## Outcome
+
+- Completed: 2026-04-18
+- What changed:
+  - Landed the four observer-side anomaly detectors: `GEOGRAPHIC_CONVERGENCE`, `MAINTENANCE_STARVATION`, `RECIPE_MONOCULTURE`, and `ACUTE_NEED_SPIKE`.
+  - Added the supporting Section 2 maintenance-rate and recipe-usage tables in the observer report.
+  - Added the compiled-binary golden suite and committed scenario fixtures for the new detector family.
+  - Graduated the shipped S117 smells into the scenario-analysis reference docs via the follow-on documentation ticket chain.
+- Deviations from original plan:
+  - The live `GEOGRAPHIC_CONVERGENCE` contract landed with a split-support dampener so lawful single-source baseline routing does not false-positive on `survival-baseline.ron`.
+  - `MAINTENANCE_STARVATION` landed as one strongest real 200-tick window per `(agent, need)` with a high-threshold plus majority-unrelieved gate, replacing the earlier merged-window draft.
+  - The authored baseline contract was later reconciled: `survival-baseline.ron` is not required to be globally smell-free. `GEOGRAPHIC_CONVERGENCE` must stay absent there, but other observer stress smells remain diagnostic rather than health-oracle failures while the authored survival golden still passes.
+  - The recipe-monoculture implementation uses the live food-vs-water classification and final-belief-store gate established during ticket reassessment, rather than the original thirst-first draft wording.
+- Verification results:
+  - `cargo test -p worldwake-cli --test golden_observer_anomalies`
+  - `cargo test -p worldwake-cli`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo run -p worldwake-cli --bin observer -- scenarios/survival-contested.ron --ticks 1440 --output /tmp/contested-dump.md`
+  - `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
