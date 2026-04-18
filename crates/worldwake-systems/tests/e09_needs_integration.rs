@@ -343,7 +343,6 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
         pm(400).saturating_sub(profile.rest_efficiency)
     );
 
-    let origin_place = harness.place;
     let public_latrine = prototype_place_entity(PrototypePlace::PublicLatrine);
     let mut txn = new_txn(&mut harness.world, 4);
     txn.set_ground_location(harness.actor, public_latrine)
@@ -356,16 +355,13 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
     assert_eq!(actor_needs(&harness).bladder, pm(0));
     assert_eq!(waste_count_at_place(&harness), 1);
 
-    let mut txn = new_txn(&mut harness.world, 5);
-    txn.set_ground_location(harness.actor, origin_place)
-        .unwrap();
-    commit_txn(txn);
-    harness.place = origin_place;
-
-    harness.queue_action("wash", vec![water]);
-    harness.run_queued_action_to_completion(5);
-    assert_eq!(lot_quantity(&harness, water), Quantity(1));
-    assert_eq!(actor_needs(&harness).dirtiness, pm(0));
+    // Wash coverage is intentionally omitted here: the wash action's target
+    // spec was changed by S116DRIESCSUS-010 from an actor-possessed water
+    // ItemLot to two co-located Facility targets (WashBasin + resource
+    // source). The new contract is exercised by
+    // `golden_drive_escalation_wash_priority` and the wash-specific unit
+    // tests in `needs_actions::tests` rather than by this eat/drink/sleep/
+    // toilet integration test.
 }
 
 #[test]

@@ -265,8 +265,27 @@ impl<'w> PerAgentBeliefView<'w> {
             .flatten()
     }
 
+    /// True when the observing agent is physically co-located with `entity`.
+    ///
+    /// Used to gate observability of directly perceivable physical properties
+    /// of co-located entities (kind, item-lot commodity/quantity, workstation
+    /// tag, resource source, container contents). These are properties a
+    /// correct perception pipeline would necessarily deliver on the same tick.
+    ///
+    /// This helper MUST NOT be used to gate social/relational knowledge
+    /// (ownership, rights, institutional claims). Those require an explicit
+    /// belief entry under FND-14/FND-15 and are gated separately in
+    /// `believed_owner_of` and `believed_rights`.
+    fn has_authoritative_local_visibility(&self, entity: EntityId) -> bool {
+        let Some(agent_place) = self.world.effective_place(self.agent) else {
+            return false;
+        };
+        self.world.effective_place(entity) == Some(agent_place)
+    }
+
     fn knows_entity(&self, entity: EntityId) -> bool {
         entity == self.agent
+            || self.has_authoritative_local_visibility(entity)
             || self.world.possessor_of(entity) == Some(self.agent)
             || self.believed_entity(entity).is_some()
             || self
@@ -355,14 +374,24 @@ fn adjusted_travel_ticks(
 
 impl ControlBeliefView for PerAgentBeliefView<'_> {
     fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        let accessible =
-            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
+        // Ownership is a social fact (FND-14/FND-15). Co-location alone is
+        // insufficient — the observer must have an explicit belief entry,
+        // possess the entity, or be the entity itself. Reading authoritative
+        // owner data without a belief path would leak omniscient world state.
+        let accessible = entity == self.agent
+            || self.believed_entity(entity).is_some()
+            || self.world.possessor_of(entity) == Some(self.agent)
+            || self.world.owner_of(entity) == Some(self.agent);
         accessible.then(|| self.world.owner_of(entity)).flatten()
     }
 
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
-        let accessible =
-            self.knows_entity(entity) || self.world.owner_of(entity) == Some(self.agent);
+        // Effective rights are a social/jurisdictional fact (FND-14/FND-15).
+        // Require the same explicit-belief gate as `believed_owner_of`.
+        let accessible = entity == self.agent
+            || self.believed_entity(entity).is_some()
+            || self.world.possessor_of(entity) == Some(self.agent)
+            || self.world.owner_of(entity) == Some(self.agent);
         if !accessible {
             return Vec::new();
         }
@@ -1227,6 +1256,19 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
                 .filter(|lot| lot.commodity == kind)
                 .map_or(Quantity(0), |lot| lot.quantity);
         }
+        if self.has_authoritative_local_visibility(holder) {
+            if let Some(lot) = self.world.get_component_item_lot(holder)
+                && lot.commodity == kind
+            {
+                return lot.quantity;
+            }
+            if let Some(source) = self.world.get_component_resource_source(holder)
+                && source.commodity == kind
+            {
+                return source.available_quantity;
+            }
+        }
+
         self.believed_entity(holder)
             .and_then(|state| state.last_known_inventory.get(&kind).copied())
             .unwrap_or(Quantity(0))
@@ -1553,7 +1595,7 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
 
 impl FacilityBeliefView for PerAgentBeliefView<'_> {
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
-        if entity == self.agent {
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
             return self
                 .world
                 .get_component_workstation_marker(entity)
@@ -1565,7 +1607,7 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-        if entity == self.agent {
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
             return self.world.get_component_resource_source(entity).cloned();
         }
 
