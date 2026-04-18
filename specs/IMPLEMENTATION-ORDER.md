@@ -282,18 +282,34 @@ Constraint: the new scenario uses only the profile set already exercised by the 
 Derived from `/scenario-analysis` of `survival-contested.ron` (seed 306006, 1440 ticks) and the follow-up `/brainstorm` triage (2026-04-17). The scenario surfaced a structural wash-starvation equilibrium: all 4 agents had dirtiness >= 750 permille for 703–901 ticks because dirtiness_weight (625) loses motive scoring to hunger_weight (700–750) and the existing `MAX_CRITICAL_RUN_TICKS=400` golden tolerance knowingly encodes this deferred architectural concern. The brainstorm triage also identified four detection gaps in the observer anomaly suite (geographic convergence, maintenance-cycle starvation, recipe monoculture, sub-threshold acute spikes) and one precision gap in the `STUCK_AGENT` detector. Solutions split between one engine change (drive escalation) and two observer-only refinements.
 
 ```text
-S116 (engine, independent)
+S116 ✅ archived
 S117 (observer, independent)
 S118 (observer, independent)
 ```
 
 **Wave** (parallel, no deps among S116/S117/S118):
 
-- **S116**: Drive Escalation Under Sustained Critical Need — per-agent `DriveEscalationProfile` + `DriveEscalationTracker`, `drive_escalation_system` SystemFn between metabolism and planning, motive-score multiplier in AI goal ranking, new `EscalationBegan`/`EscalationEnded` event tags. Regression goldens plus a retrofit tightening `golden_survival_contested.rs::MAX_CRITICAL_RUN_TICKS` from 400 to 200.
+- **S116**: ✅ COMPLETED — archived at [archive/specs/S116-drive-escalation-sustained-critical.md](/home/joeloverbeck/projects/worldwake/archive/specs/S116-drive-escalation-sustained-critical.md). Landed `DriveEscalationProfile`, extended `DeprivationExposure`, escalation transition event tagging from `needs_system`, motive-score multiplier integration in AI ranking, dedicated drive-escalation golden coverage, and the contested authored survival-bound tightening from 400 to 300.
 - **S117**: Convergence and Maintenance-Cycle Observer Smells — four new mechanical anomaly kinds in the observer binary (`GEOGRAPHIC_CONVERGENCE`, `MAINTENANCE_STARVATION`, `RECIPE_MONOCULTURE`, `ACUTE_NEED_SPIKE`), plus supplementary Section 2 maintenance-rate and recipe-usage tables. Observer-only; no simulation behavior change.
 - **S118**: Stuck-Agent Detector Precision — Active-Frame Exclusion — observer-only fix that excludes tick windows overlapping an open ActionStarted/ActionCommitted frame from the `STUCK_AGENT` idle counter. Eliminates the 26-tick wash+travel false positive observed on Agent C.
 
 Follow-up tickets (not specs): scenario weight rebalance for `survival-contested.ron`, belief-retention investigation for landmark facilities under memory pressure (pending mid-run belief snapshot capability).
+
+### Adjunct Wave: Survival Stability Hardening
+
+Derived from the 2026-04-18 S116 implementation retrospective after tickets `S116DRIESCSUS-011` and `S116DRIESCSUS-012` exposed 2 distinct stability gaps on the live branch. First, survival goldens could drift away from authored scenario truth by hardcoding health-envelope constants outside the scenario's own `DriveThresholds` and intended invariants. Second, once a long-run authored-critical failure appeared, explaining it required ad hoc ignored reproducers instead of a stable causal read-model. The scenarios were not proven broadly unstable; the missing substrate was canonical proof carriage plus long-run survival forensics.
+
+```text
+S119 (independent)
+S120 (independent)
+S121 (soft depends on S119)
+```
+
+**Wave** (parallel, no hard deps):
+
+- **S119**: Authored Survival Health Contracts — add a shared scenario-authored `survival_health_contract` surface for survival scenarios so long-run goldens read authored-critical thresholds, idle-window bounds, and required self-care families from one canonical place instead of duplicating file-local constants.
+- **S120**: Survival Critical-Window Forensics — add a deterministic derived report for prolonged authored-critical runs showing selected goal, competitors, blocker/exhaustion state, and local authoritative survival state, so future regressions can be explained without one-off debug probes.
+- **S121**: Per-Need Survival Health Contracts — extend the S119 contract so contested/adversarial scenarios can author different critical-run bounds per need when one coarse global cap overstates unlike self-care families such as dirtiness under non-Wash-required scenarios.
 
 ### Phase 7 Gate
 

@@ -872,6 +872,18 @@ mod tests {
         }
     }
 
+    fn remember(
+        view: &mut StubBeliefView,
+        actor: EntityId,
+        entity: EntityId,
+        belief: BelievedEntityState,
+    ) {
+        view.known_entity_beliefs
+            .entry(actor)
+            .or_default()
+            .push((entity, belief));
+    }
+
     fn connect(view: &mut StubBeliefView, from: EntityId, to: EntityId, ticks: u32) {
         let ticks = NonZeroU32::new(ticks).unwrap();
         view.adjacent.entry(from).or_default().push((to, ticks));
@@ -991,10 +1003,17 @@ mod tests {
         );
         connect(&mut view, place_a, place_b, 3);
         connect(&mut view, place_b, place_c, 5);
-        view.known_entity_beliefs
-            .insert(actor, vec![(patient, belief(EntityKind::Agent, place_c))]);
+        let mut source_belief = belief(EntityKind::Facility, place_b);
+        source_belief.resource_source = view.resource_sources.get(&medicine_source).cloned();
+        remember(&mut view, actor, medicine_source, source_belief);
 
-        let snapshot = snapshot(&view, actor, 2);
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([patient]),
+            &BTreeSet::from([place_c]),
+            2,
+        );
         let goal = crate::GroundedGoal {
             key: worldwake_core::GoalKey::from(GoalKind::TreatWounds { patient }),
             anchor: OpportunityAnchor::Entity(patient),
@@ -1177,6 +1196,9 @@ mod tests {
             },
         );
         connect(&mut view, place_a, place_b, 7);
+        let mut source_belief = belief(EntityKind::Facility, place_b);
+        source_belief.resource_source = view.resource_sources.get(&source).cloned();
+        remember(&mut view, actor, source, source_belief);
 
         let snapshot = snapshot(&view, actor, 1);
         let goal = crate::GroundedGoal {
@@ -1242,6 +1264,9 @@ mod tests {
             },
         );
         connect(&mut view, place_a, place_b, 7);
+        let mut source_belief = belief(EntityKind::Facility, place_b);
+        source_belief.resource_source = view.resource_sources.get(&remote_source).cloned();
+        remember(&mut view, actor, remote_source, source_belief);
 
         let snapshot = snapshot(&view, actor, 1);
         let goal = crate::GroundedGoal {

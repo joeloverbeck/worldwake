@@ -1,6 +1,6 @@
 //! Shared drive-threshold schema used by physiology and AI.
 
-use crate::{Component, Permille};
+use crate::{Component, HomeostaticNeedId, Permille};
 use serde::{Deserialize, Serialize};
 
 /// Ordered urgency thresholds for a single drive or derived pressure.
@@ -87,6 +87,17 @@ impl DriveThresholds {
             danger,
         }
     }
+
+    #[must_use]
+    pub const fn critical(&self, need: HomeostaticNeedId) -> Permille {
+        match need {
+            HomeostaticNeedId::Hunger => self.hunger.critical(),
+            HomeostaticNeedId::Thirst => self.thirst.critical(),
+            HomeostaticNeedId::Fatigue => self.fatigue.critical(),
+            HomeostaticNeedId::Bladder => self.bladder.critical(),
+            HomeostaticNeedId::Dirtiness => self.dirtiness.critical(),
+        }
+    }
 }
 
 impl Component for DriveThresholds {}
@@ -112,7 +123,7 @@ const fn pm(value: u16) -> Permille {
 #[cfg(test)]
 mod tests {
     use super::{DriveThresholds, ThresholdBand, pm};
-    use crate::{Permille, traits::Component};
+    use crate::{HomeostaticNeedId, Permille, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
@@ -191,6 +202,32 @@ mod tests {
             assert!(band.medium() < band.high());
             assert!(band.high() < band.critical());
         }
+    }
+
+    #[test]
+    fn drive_thresholds_critical_reads_all_homeostatic_bands() {
+        let thresholds = DriveThresholds::default();
+
+        assert_eq!(
+            thresholds.critical(HomeostaticNeedId::Hunger),
+            thresholds.hunger.critical()
+        );
+        assert_eq!(
+            thresholds.critical(HomeostaticNeedId::Thirst),
+            thresholds.thirst.critical()
+        );
+        assert_eq!(
+            thresholds.critical(HomeostaticNeedId::Fatigue),
+            thresholds.fatigue.critical()
+        );
+        assert_eq!(
+            thresholds.critical(HomeostaticNeedId::Bladder),
+            thresholds.bladder.critical()
+        );
+        assert_eq!(
+            thresholds.critical(HomeostaticNeedId::Dirtiness),
+            thresholds.dirtiness.critical()
+        );
     }
 
     #[test]

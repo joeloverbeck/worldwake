@@ -51,6 +51,19 @@ When a golden test cares about the durable consequence (e.g., waste was created,
 
 Reference: Principle 3 (Concrete State Over Abstract Scores) in `docs/FOUNDATIONS.md`.
 
+## Survival Health Contracts
+
+Long-run survival goldens must read scenario-authored survival-health expectations from the scenario file itself rather than restating them as file-local constants.
+
+For survival scenarios such as `survival-baseline.ron`, `survival-scattered.ron`, and `survival-contested.ron`:
+
+- sustained-critical checks must compare against each agent's authored `DriveThresholds`
+- scenario-owned envelope bounds such as max authored-critical run length, idle-window limit, elevated-need floor, and required self-care families must come from the authored `survival_health_contract`
+- when one scenario needs unlike authored-critical bounds across need families, express that in the scenario contract itself via per-need overrides rather than weakening the whole survival envelope with a larger global cap
+- if a survival scenario does not define `survival_health_contract`, the golden should fail at the helper/guard boundary instead of silently inventing fallback constants
+
+This keeps the scenario author as the single source of truth for what "healthy" means and prevents goldens from drifting away from the live authored profile.
+
 ## Ordering Rules
 
 When a test needs ordering, state explicitly which ordering is the contract:

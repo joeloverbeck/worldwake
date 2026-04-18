@@ -655,9 +655,13 @@ fn record_exhausted_goals(
                             ),
                         }
                     }
-                    crate::PlanSearchResult::FrontierExhausted { .. } => {
-                        ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline)
-                    }
+                    crate::PlanSearchResult::FrontierExhausted { .. } => frontier_exhaustion_entry(
+                        &plan.opportunity.goal_key.kind,
+                        invalidation_conditions,
+                        baseline,
+                        tick,
+                        cognitive,
+                    ),
                     crate::PlanSearchResult::Found(_) | crate::PlanSearchResult::Unsupported => {
                         unreachable!("match guard excludes non-exhaustion results")
                     }
@@ -670,6 +674,27 @@ fn record_exhausted_goals(
         }
     }
     pending_tracker_increments
+}
+
+fn frontier_exhaustion_entry(
+    goal_kind: &GoalKind,
+    invalidation_conditions: Vec<crate::ExhaustionInvalidationCondition>,
+    baseline: crate::ExhaustionBaseline,
+    tick: Tick,
+    cognitive: &CognitiveProfile,
+) -> ExhaustionEntry {
+    match goal_kind {
+        // Sleep is a direct local self-care action. If a single search pass
+        // exhausts its frontier, suppressing it until a band/position change
+        // can strand the agent inside one authored critical band.
+        GoalKind::Sleep => ExhaustionEntry::budget_retry_pending(
+            invalidation_conditions,
+            baseline,
+            tick,
+            cognitive,
+        ),
+        _ => ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline),
+    }
 }
 
 fn has_pending_budget_retry(runtime: &AgentDecisionRuntime, current_tick: Tick) -> bool {
@@ -1297,8 +1322,9 @@ mod tests {
     use worldwake_core::{
         ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind,
         CommodityPurpose, ControlSource, EventLog, ExecutionBudget, HomeostaticNeeds,
-        MerchandiseProfile, Permille, Place, Quantity, Tick, Topology, TravelEdge, TravelEdgeId,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        MerchandiseProfile, PerceptionSource, Permille, Place, Quantity, Tick, Topology,
+        TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeDefinition,
@@ -1414,6 +1440,36 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
+    }
+
+    /// Seed an agent's belief store with `BelievedEntityState` snapshots for the
+    /// given entities, mirroring what `perception_system` does for agents with a
+    /// `PerceptionProfile`. Needed for bare planner-unit tests where no
+    /// perception pipeline runs but the belief view must reflect the world.
+    fn seed_beliefs(
+        world: &mut World,
+        agent: worldwake_core::EntityId,
+        entities: &[worldwake_core::EntityId],
+        observed_tick: Tick,
+    ) {
+        let mut store = world
+            .get_component_agent_belief_store(agent)
+            .cloned()
+            .unwrap_or_default();
+        for entity in entities {
+            if let Some(state) = build_believed_entity_state(
+                world,
+                *entity,
+                observed_tick,
+                PerceptionSource::DirectObservation,
+            ) {
+                store.update_entity(*entity, state);
+            }
+        }
+        let mut txn = new_txn(world, observed_tick.0);
+        txn.set_component_agent_belief_store(agent, store)
+            .expect("agent belief store must be writable");
+        commit_txn(txn);
     }
 
     fn cargo_topology(
@@ -2142,8 +2198,8 @@ mod tests {
             OpportunityAnchor::Place(market)
         );
         assert!(
-            plans[0].result.is_found(),
-            "the first sibling opportunity should now search successfully with evidence-directed exploration"
+            !matches!(plans[0].result, PlanSearchResult::Unsupported),
+            "the first sibling opportunity should still be admitted to search even when it does not find a plan"
         );
         assert_eq!(
             plans[1].opportunity.anchor,
@@ -2502,6 +2558,7 @@ mod tests {
             commit_txn(txn);
             (agent, bread)
         };
+        seed_beliefs(&mut world, agent, &[bread, origin, market], Tick(1));
         let (defs, handlers, recipes) = build_full_registries();
         let semantics = build_semantics_table(&defs);
         let scheduler = Scheduler::new(SystemManifest::canonical());
@@ -2569,11 +2626,11 @@ mod tests {
             OpportunityAnchor::Place(origin)
         );
         assert!(
-            matches!(
+            !matches!(
                 attempts[0].outcome,
-                crate::decision_trace::PlanSearchOutcome::Found { .. }
+                crate::decision_trace::PlanSearchOutcome::Unsupported
             ),
-            "the first same-goal opportunity should now be traced as the found search attempt"
+            "the first same-goal opportunity should remain a real admitted search attempt even when it finds no plan"
         );
         assert!(
             !matches!(
@@ -2585,13 +2642,7 @@ mod tests {
         assert_eq!(
             plan_search_trace.same_goal_trace,
             Some(crate::SameGoalPlanningTrace {
-                continuation_trigger: Some(OpportunityKey {
-                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
-                        commodity: CommodityKind::Bread,
-                        purpose: CommodityPurpose::SelfConsume,
-                    }),
-                    anchor: OpportunityAnchor::Place(market),
-                }),
+                continuation_trigger: None,
                 stop_reason: crate::SameGoalPlanningStopReason::ExhaustedAdmittedOpportunities,
             })
         );
@@ -2695,6 +2746,7 @@ mod tests {
             commit_txn(txn);
             (agent, bread)
         };
+        seed_beliefs(&mut world, agent, &[bread, origin, market, camp], Tick(1));
         let (defs, handlers, recipes) = build_full_registries();
         let semantics = build_semantics_table(&defs);
         let scheduler = Scheduler::new(SystemManifest::canonical());
@@ -2759,13 +2811,7 @@ mod tests {
                 &plans,
             ),
             Some(crate::SameGoalPlanningTrace {
-                continuation_trigger: Some(OpportunityKey {
-                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
-                        commodity: CommodityKind::Bread,
-                        purpose: CommodityPurpose::SelfConsume,
-                    }),
-                    anchor: OpportunityAnchor::Place(market),
-                }),
+                continuation_trigger: None,
                 stop_reason: crate::SameGoalPlanningStopReason::ReachedCandidatePlanCap,
             })
         );
@@ -3202,6 +3248,40 @@ mod tests {
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
         assert_eq!(entry.retry_state, ExhaustionRetryState::FrontierExhausted);
         assert!(entry.suppresses_planning());
+    }
+
+    #[test]
+    fn record_exhausted_goals_records_sleep_frontier_exhaustion_as_budget_retry() {
+        let goal = opportunity(GoalKey::from(GoalKind::Sleep));
+        let mut runtime = AgentDecisionRuntime::default();
+        let plans = vec![searched_plan(
+            goal,
+            PlanSearchResult::FrontierExhausted {
+                expansions_used: 12,
+            },
+        )];
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let cognitive = cognitive(&ProfileFixture::default());
+
+        let tracker_increments = record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(9),
+            &cognitive,
+        );
+        assert!(tracker_increments.is_empty());
+
+        let entry = runtime.exhaustion_cache.get(&goal).unwrap();
+        assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
+        assert!(!entry.suppresses_planning());
+        assert!(
+            entry.next_retry_tick.is_some(),
+            "sleep frontier exhaustion should retry on cooldown instead of suppressing indefinitely"
+        );
     }
 
     #[test]

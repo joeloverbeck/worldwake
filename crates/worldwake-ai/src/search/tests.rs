@@ -1,6 +1,6 @@
 use super::candidates::{
     CandidateSearchContext, CommodityFilterContext, apply_commodity_relevance_filter,
-    relevant_action_defs, root_candidate_trace_from_candidate,
+    candidate_blocked_by_place, relevant_action_defs, root_candidate_trace_from_candidate,
 };
 use super::{
     FrontierEntry, SearchCandidate, SearchNode, TacticalGoal, compare_search_nodes,
@@ -888,6 +888,18 @@ fn believed_entity_state_at(
     }
 }
 
+fn remember_entity(
+    view: &mut TestBeliefView,
+    actor: EntityId,
+    entity: EntityId,
+    belief: BelievedEntityState,
+) {
+    view.known_entity_beliefs
+        .entry(actor)
+        .or_default()
+        .push((entity, belief));
+}
+
 fn combat_belief_at(place: EntityId, observed_tick: Tick) -> BelievedEntityState {
     let mut state = believed_entity_state_at(place, observed_tick, None);
     state.believed_activity = Some(worldwake_core::BelievedActivity {
@@ -983,6 +995,31 @@ fn insert_consumable_lot(
         .insert((lot, commodity), Quantity(1));
     view.consumable_profiles
         .insert(lot, commodity.spec().consumable_profile.unwrap());
+    let mut belief = BelievedEntityState {
+        believed_kind: Some(EntityKind::ItemLot),
+        last_known_place: Some(place),
+        last_known_inventory: BTreeMap::from([(commodity, Quantity(1))]),
+        workstation_tag: None,
+        resource_source: None,
+        alive: true,
+        wounds: Vec::new(),
+        last_known_courage: None,
+        believed_activity: None,
+        believed_artifact: None,
+        believed_contention: None,
+        believed_evidence: None,
+        ..BelievedEntityState::single_observation_defaults(
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        )
+    };
+    if view.effective_places.get(&actor) == Some(&place) {
+        belief.last_known_place = Some(place);
+    }
+    view.known_entity_beliefs
+        .entry(actor)
+        .or_default()
+        .push((lot, belief));
     entities_at_place.push(lot);
 }
 
@@ -1258,6 +1295,12 @@ fn search_returns_travel_then_consume_for_adjacent_food() {
     view.lot_commodities.insert(bread, CommodityKind::Bread);
     view.commodity_quantities
         .insert((bread, CommodityKind::Bread), Quantity(1));
+    let mut bread_belief = believed_entity_state_at(field, Tick(1), None);
+    bread_belief.believed_kind = Some(EntityKind::ItemLot);
+    bread_belief
+        .last_known_inventory
+        .insert(CommodityKind::Bread, Quantity(1));
+    remember_entity(&mut view, actor, bread, bread_belief);
     view.carry_capacities.insert(actor, LoadUnits(10));
     view.consumable_profiles.insert(
         bread,
@@ -2199,6 +2242,106 @@ fn search_returns_pick_up_goal_satisfaction_for_local_unpossessed_food_lot() {
 }
 
 #[test]
+fn search_blocks_remote_stale_move_cargo_by_target_place() {
+    let actor = entity(1);
+    let home = entity(10);
+    let orchard = entity(11);
+    let bread = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, home, orchard, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(home, EntityKind::Place);
+    view.kinds.insert(orchard, EntityKind::Place);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, home);
+    view.effective_places.insert(bread, orchard);
+    view.entities_at.insert(home, vec![actor]);
+    view.entities_at.insert(orchard, vec![bread]);
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(bread, LoadUnits(1));
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.adjacent
+        .insert(home, vec![(orchard, NonZeroU32::new(1).unwrap())]);
+    view.adjacent
+        .insert(orchard, vec![(home, NonZeroU32::new(1).unwrap())]);
+
+    let (registry, _handlers) = build_registry();
+    let semantics_table = build_semantics_table(&registry);
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(orchard),
+        key: acquire_goal(CommodityKind::Bread).key,
+        evidence_entities: BTreeSet::from([bread]),
+        evidence_places: BTreeSet::from([orchard]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let node = SearchNode {
+        state: PlanningState::new(&snapshot),
+        steps: SharedVec::new(),
+        total_estimated_ticks: 0,
+        search_cost: 0,
+        tactical_barrier_reached: false,
+        heuristic_ticks: 0,
+    };
+    let candidate = SearchCandidate {
+        def_id: pick_up_id,
+        authoritative_targets: vec![bread],
+        planning_targets: vec![PlanningEntityRef::Authoritative(bread)],
+        payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+            quantity: Quantity(1),
+        })),
+        planner_only: false,
+        trace_index: None,
+        expansion_trace_index: None,
+    };
+    let mut blocked = BlockedIntentMemory::default();
+    blocked.record(BlockedIntent {
+        blocker_key: BlockerKey {
+            goal_key: goal.key,
+            place: Some(orchard),
+            target: Some(bread),
+            action_def: Some(pick_up_id),
+        },
+        blocking_fact: BlockingFact::AssumptionFailed,
+        diagnostic_context: None,
+        observed_tick: Tick(1),
+        expires_tick: Tick(20),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
+    });
+
+    assert_eq!(
+        candidate_blocked_by_place(
+            &candidate,
+            &goal,
+            &node,
+            &semantics_table,
+            &blocked,
+            Tick(5)
+        ),
+        Some((Some(orchard), BlockingFact::AssumptionFailed)),
+    );
+}
+
+#[test]
 fn search_returns_pick_up_goal_satisfaction_for_local_commodity_lot() {
     let actor = entity(1);
     let town = entity(10);
@@ -2361,6 +2504,9 @@ fn cargo_search_finds_pickup_then_travel_plan() {
             home_facility: Some(facility),
         },
     );
+    let mut facility_belief = believed_entity_state_at(destination, Tick(1), None);
+    facility_belief.believed_kind = Some(EntityKind::Facility);
+    remember_entity(&mut view, actor, facility, facility_belief);
     view.demand_memory.insert(
         actor,
         vec![DemandObservation {
@@ -2457,6 +2603,9 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
             home_facility: Some(facility),
         },
     );
+    let mut facility_belief = believed_entity_state_at(destination, Tick(1), None);
+    facility_belief.believed_kind = Some(EntityKind::Facility);
+    remember_entity(&mut view, actor, facility, facility_belief);
     view.demand_memory.insert(
         actor,
         vec![DemandObservation {
@@ -2563,6 +2712,12 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
             home_facility: Some(facility),
         },
     );
+    let mut facility_belief = believed_entity_state_at(destination, Tick(1), None);
+    facility_belief.believed_kind = Some(EntityKind::Facility);
+    remember_entity(&mut view, actor, facility, facility_belief);
+    let mut container_belief = believed_entity_state_at(destination, Tick(1), None);
+    container_belief.believed_kind = Some(EntityKind::Container);
+    remember_entity(&mut view, actor, stock_container, container_belief);
     view.stock_storage_policies.insert(
         facility,
         worldwake_core::StockStoragePolicy {
@@ -3456,6 +3611,254 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
     assert_eq!(
         plan.steps.last().map(|step| step.op_kind),
         Some(PlannerOpKind::Harvest)
+    );
+}
+
+#[test]
+fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
+    let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
+    let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, wash_basin, well) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Washer", ControlSource::Ai).unwrap();
+        let wash_basin = txn.create_entity(EntityKind::Facility);
+        let well = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(actor, village_square).unwrap();
+        txn.set_ground_location(wash_basin, orchard_farm).unwrap();
+        txn.set_ground_location(well, orchard_farm).unwrap();
+        txn.set_component_homeostatic_needs(
+            actor,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(700)),
+        )
+        .unwrap();
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+            .unwrap();
+        txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+            .unwrap();
+        txn.set_component_known_recipes(actor, KnownRecipes::with([RecipeId(0)]))
+            .unwrap();
+        txn.set_component_workstation_marker(
+            wash_basin,
+            WorkstationMarker(WorkstationTag::WashBasin),
+        )
+        .unwrap();
+        txn.set_component_workstation_marker(well, WorkstationMarker(WorkstationTag::Well))
+            .unwrap();
+        txn.set_component_resource_source(
+            well,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, wash_basin, well)
+    };
+
+    let recipes = RecipeRegistry::new();
+    sync_all_beliefs(&mut world, actor, Tick(1));
+
+    let (registry, handlers) = build_registry_with_recipes(&recipes);
+    let semantics = build_semantics_table(&registry);
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::Wash),
+        evidence_entities: BTreeSet::from([wash_basin, well]),
+        evidence_places: BTreeSet::from([orchard_farm]),
+    };
+    let view = PerAgentBeliefView::from_world(actor, &world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+
+    let mut expansions = Vec::new();
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &semantics,
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &recipes,
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut expansions),
+    );
+    let plan = match result {
+        PlanSearchResult::Found(plan) => *plan,
+        other => {
+            let root = expansions.iter().find(|summary| summary.depth == 0);
+            let saw_wash = expansions.iter().any(|summary| {
+                summary
+                    .expansion_candidates
+                    .iter()
+                    .any(|candidate| candidate.op_kind == Some(PlannerOpKind::Wash))
+            });
+            panic!(
+                "wash should find a lawful travel-then-wash plan at a believed basin/source place; result={other:?}; root={root:?}; saw_wash={saw_wash}"
+            );
+        }
+    };
+
+    assert_eq!(
+        plan.steps.last().map(|step| step.op_kind),
+        Some(PlannerOpKind::Wash)
+    );
+    assert!(
+        plan.steps
+            .iter()
+            .all(|step| step.op_kind != PlannerOpKind::Harvest),
+        "wash should no longer require harvest under the facility-mediated contract: {plan:?}"
+    );
+    assert!(
+        plan.steps
+            .iter()
+            .all(|step| step.op_kind != PlannerOpKind::MoveCargo),
+        "wash should no longer require picking up water under the facility-mediated contract: {plan:?}"
+    );
+}
+
+#[test]
+fn search_local_wash_candidates_require_basin_and_water_source() {
+    let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
+    let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let (actor, wash_basin, well) = {
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        let actor = txn.create_agent("Washer", ControlSource::Ai).unwrap();
+        let wash_basin = txn.create_entity(EntityKind::Facility);
+        let well = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(actor, village_square).unwrap();
+        txn.set_ground_location(wash_basin, orchard_farm).unwrap();
+        txn.set_ground_location(well, orchard_farm).unwrap();
+        txn.set_component_homeostatic_needs(
+            actor,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(700)),
+        )
+        .unwrap();
+        txn.set_component_deprivation_exposure(actor, DeprivationExposure::default())
+            .unwrap();
+        txn.set_component_drive_thresholds(actor, DriveThresholds::default())
+            .unwrap();
+        txn.set_component_metabolism_profile(actor, MetabolismProfile::default())
+            .unwrap();
+        txn.set_component_carry_capacity(actor, CarryCapacity(LoadUnits(50)))
+            .unwrap();
+        txn.set_component_known_recipes(actor, KnownRecipes::with([RecipeId(0)]))
+            .unwrap();
+        txn.set_component_workstation_marker(
+            wash_basin,
+            WorkstationMarker(WorkstationTag::WashBasin),
+        )
+        .unwrap();
+        txn.set_component_workstation_marker(well, WorkstationMarker(WorkstationTag::Well))
+            .unwrap();
+        txn.set_component_resource_source(
+            well,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+        (actor, wash_basin, well)
+    };
+
+    let recipes = RecipeRegistry::new();
+    sync_all_beliefs(&mut world, actor, Tick(1));
+
+    let (registry, handlers) = build_registry_with_recipes(&recipes);
+    let semantics_table = build_semantics_table(&registry);
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::Wash),
+        evidence_entities: BTreeSet::from([wash_basin, well]),
+        evidence_places: BTreeSet::from([orchard_farm]),
+    };
+    let view = PerAgentBeliefView::from_world(actor, &world);
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        ProfileFixture::default().snapshot_travel_horizon,
+    );
+    let reasoning = ProfileFixture::default();
+    let root = root_node(&snapshot, &goal, &recipes, &reasoning);
+    let relevant_defs = relevant_action_defs(&goal, &semantics_table);
+    let local_node = SearchNode {
+        state: root.state.clone().move_actor_to(orchard_farm),
+        steps: root.steps.clone(),
+        total_estimated_ticks: root.total_estimated_ticks,
+        search_cost: root.search_cost,
+        tactical_barrier_reached: root.tactical_barrier_reached,
+        heuristic_ticks: root.heuristic_ticks,
+    };
+    let local_candidates = search_candidates(
+        &goal,
+        &local_node,
+        candidate_search_context(
+            &semantics_table,
+            &registry,
+            &handlers,
+            &BlockedIntentMemory::default(),
+            Tick(0),
+            &relevant_defs,
+        ),
+        None,
+        None,
+        None,
+    );
+    assert!(
+        local_candidates.iter().any(|candidate| {
+            semantics_table
+                .get(&candidate.def_id)
+                .is_some_and(|semantics| semantics.op_kind == PlannerOpKind::Wash)
+                && matches!(
+                    candidate.planning_targets.as_slice(),
+                    [
+                        PlanningEntityRef::Authoritative(target0),
+                        PlanningEntityRef::Authoritative(target1)
+                    ] if *target0 == wash_basin && *target1 == well
+                )
+        }),
+        "local wash candidates should directly target the basin and local water source"
     );
 }
 
@@ -5432,6 +5835,12 @@ fn build_branching_care_view() -> (
         medicine,
         LoadUnits(worldwake_core::load_per_unit(CommodityKind::Medicine).0),
     );
+    let mut medicine_belief = believed_entity_state_at(medicine_place, Tick(1), None);
+    medicine_belief.believed_kind = Some(EntityKind::ItemLot);
+    medicine_belief
+        .last_known_inventory
+        .insert(CommodityKind::Medicine, Quantity(1));
+    remember_entity(&mut view, actor, medicine, medicine_belief);
 
     (
         view,
@@ -5452,6 +5861,15 @@ fn build_local_medicine_remote_patient_view()
     view.entities_at
         .insert(current_place, vec![actor, medicine]);
     view.entities_at.insert(medicine_place, Vec::new());
+    if let Some((_, belief)) = view
+        .known_entity_beliefs
+        .entry(actor)
+        .or_default()
+        .iter_mut()
+        .find(|(entity, _)| *entity == medicine)
+    {
+        belief.last_known_place = Some(current_place);
+    }
     (view, actor, patient, current_place, patient_place)
 }
 
@@ -9226,6 +9644,62 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
 }
 
 #[test]
+fn local_critical_sleep_returns_progress_barrier_after_one_step() {
+    let actor = entity(1);
+    let town = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.effective_places.insert(actor, town);
+    view.entities_at.insert(town, vec![actor]);
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(1000), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::Sleep),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([town]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        0,
+    );
+
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+    );
+
+    let plan = result
+        .into_plan()
+        .expect("critical local sleep should plan");
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Sleep);
+}
+
+#[test]
 fn search_fail_fast_when_barrier_required_explore_has_no_tactical_goal() {
     let step = super::strategic::StrategicStep {
         destination: entity(11),
@@ -12010,6 +12484,12 @@ fn travel_action_uses_destination_as_place_for_blocker_check() {
     view.lot_commodities.insert(bread, CommodityKind::Bread);
     view.commodity_quantities
         .insert((bread, CommodityKind::Bread), Quantity(1));
+    let mut bread_belief = believed_entity_state_at(field, Tick(1), None);
+    bread_belief.believed_kind = Some(EntityKind::ItemLot);
+    bread_belief
+        .last_known_inventory
+        .insert(CommodityKind::Bread, Quantity(1));
+    remember_entity(&mut view, actor, bread, bread_belief);
     view.carry_capacities.insert(actor, LoadUnits(10));
     view.consumable_profiles.insert(
         bread,

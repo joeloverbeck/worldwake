@@ -25,6 +25,14 @@ pub enum HomeostaticNeedId {
 }
 
 impl HomeostaticNeedId {
+    pub const ALL: [Self; 5] = [
+        Self::Hunger,
+        Self::Thirst,
+        Self::Fatigue,
+        Self::Bladder,
+        Self::Dirtiness,
+    ];
+
     pub const VARIANT_COUNT: usize = 5;
 }
 
@@ -58,6 +66,17 @@ impl HomeostaticNeeds {
         let max = max.max(self.bladder.value());
         max.max(self.dirtiness.value())
     }
+
+    #[must_use]
+    pub const fn value(&self, need: HomeostaticNeedId) -> Permille {
+        match need {
+            HomeostaticNeedId::Hunger => self.hunger,
+            HomeostaticNeedId::Thirst => self.thirst,
+            HomeostaticNeedId::Fatigue => self.fatigue,
+            HomeostaticNeedId::Bladder => self.bladder,
+            HomeostaticNeedId::Dirtiness => self.dirtiness,
+        }
+    }
 }
 
 impl Component for HomeostaticNeeds {}
@@ -75,9 +94,23 @@ pub struct DeprivationExposure {
     pub thirst_critical_ticks: u32,
     pub fatigue_critical_ticks: u32,
     pub bladder_critical_ticks: u32,
+    pub dirtiness_critical_ticks: u32,
 }
 
 impl Component for DeprivationExposure {}
+
+impl DeprivationExposure {
+    #[must_use]
+    pub const fn ticks_at_critical(&self, need: HomeostaticNeedId) -> u32 {
+        match need {
+            HomeostaticNeedId::Hunger => self.hunger_critical_ticks,
+            HomeostaticNeedId::Thirst => self.thirst_critical_ticks,
+            HomeostaticNeedId::Fatigue => self.fatigue_critical_ticks,
+            HomeostaticNeedId::Bladder => self.bladder_critical_ticks,
+            HomeostaticNeedId::Dirtiness => self.dirtiness_critical_ticks,
+        }
+    }
+}
 
 /// Per-agent physiology parameters that drive metabolism and recovery.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -267,6 +300,20 @@ mod tests {
     }
 
     #[test]
+    fn homeostatic_need_id_all_matches_enum_declaration_order() {
+        assert_eq!(
+            HomeostaticNeedId::ALL,
+            [
+                HomeostaticNeedId::Hunger,
+                HomeostaticNeedId::Thirst,
+                HomeostaticNeedId::Fatigue,
+                HomeostaticNeedId::Bladder,
+                HomeostaticNeedId::Dirtiness,
+            ]
+        );
+    }
+
+    #[test]
     fn homeostatic_needs_max_value_returns_highest_need() {
         let needs = HomeostaticNeeds::new(pm(10), pm(875), pm(120), pm(640), pm(500));
 
@@ -287,8 +334,37 @@ mod tests {
                 thirst_critical_ticks: 0,
                 fatigue_critical_ticks: 0,
                 bladder_critical_ticks: 0,
+                dirtiness_critical_ticks: 0,
             }
         );
+    }
+
+    #[test]
+    fn homeostatic_needs_value_reads_all_variants() {
+        let needs = HomeostaticNeeds::new(pm(10), pm(20), pm(30), pm(40), pm(50));
+
+        assert_eq!(needs.value(HomeostaticNeedId::Hunger), pm(10));
+        assert_eq!(needs.value(HomeostaticNeedId::Thirst), pm(20));
+        assert_eq!(needs.value(HomeostaticNeedId::Fatigue), pm(30));
+        assert_eq!(needs.value(HomeostaticNeedId::Bladder), pm(40));
+        assert_eq!(needs.value(HomeostaticNeedId::Dirtiness), pm(50));
+    }
+
+    #[test]
+    fn deprivation_exposure_ticks_at_critical_reads_all_variants() {
+        let exposure = DeprivationExposure {
+            hunger_critical_ticks: 1,
+            thirst_critical_ticks: 2,
+            fatigue_critical_ticks: 3,
+            bladder_critical_ticks: 4,
+            dirtiness_critical_ticks: 5,
+        };
+
+        assert_eq!(exposure.ticks_at_critical(HomeostaticNeedId::Hunger), 1);
+        assert_eq!(exposure.ticks_at_critical(HomeostaticNeedId::Thirst), 2);
+        assert_eq!(exposure.ticks_at_critical(HomeostaticNeedId::Fatigue), 3);
+        assert_eq!(exposure.ticks_at_critical(HomeostaticNeedId::Bladder), 4);
+        assert_eq!(exposure.ticks_at_critical(HomeostaticNeedId::Dirtiness), 5);
     }
 
     #[test]
@@ -399,6 +475,7 @@ mod tests {
             thirst_critical_ticks: 2,
             fatigue_critical_ticks: 3,
             bladder_critical_ticks: 4,
+            dirtiness_critical_ticks: 5,
         };
         let profile = MetabolismProfile::default();
         let cost = BodyCostPerTick::new(pm(4), pm(6), pm(9), pm(7), pm(3));

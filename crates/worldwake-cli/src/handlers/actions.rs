@@ -265,6 +265,7 @@ mod tests {
                 last_seen_memory: None,
                 obligation_satiation_profile: None,
                 drive_thresholds: None,
+                drive_escalation_profile: None,
                 metabolism_profile: None,
                 disposal_profile: None,
                 exploration_profile: None,
@@ -290,6 +291,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
         let spawned = spawn_scenario(&def).unwrap();
@@ -334,6 +336,7 @@ mod tests {
                 last_seen_memory: None,
                 obligation_satiation_profile: None,
                 drive_thresholds: None,
+                drive_escalation_profile: None,
                 metabolism_profile: None,
                 disposal_profile: None,
                 exploration_profile: None,
@@ -354,6 +357,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
         spawn_scenario(&def).unwrap()

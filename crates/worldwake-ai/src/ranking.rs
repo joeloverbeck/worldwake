@@ -18,13 +18,14 @@ use std::{
 };
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
-    CommunicationClass, DiversificationProfile, DriveThresholds, EntityId, ExpectationBasis,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation,
-    ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-    ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, Permille, Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick,
-    UtilityProfile, ViolationKind, belief_confidence, failure_ratio_permille,
+    CommunicationClass, DeprivationExposure, DiversificationProfile, DriveEscalationProfile,
+    DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
+    ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
+    ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
+    Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
+    belief_confidence, escalation_multiplier, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -346,6 +347,8 @@ struct RankingContext<'a> {
     utility: &'a UtilityProfile,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
+    exposure: Option<DeprivationExposure>,
+    escalation_profile: Option<DriveEscalationProfile>,
     exploration_profile: Option<ExplorationProfile>,
     diversification_profile: Option<DiversificationProfile>,
     last_proactive_exploration_tick: Option<Tick>,
@@ -383,6 +386,8 @@ impl<'a> RankingContext<'a> {
             utility,
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
+            exposure: view.deprivation_exposure(agent),
+            escalation_profile: view.drive_escalation_profile(agent),
             exploration_profile: view.exploration_profile(agent),
             diversification_profile: view.diversification_profile(agent),
             last_proactive_exploration_tick: view.last_proactive_exploration_tick(agent),
@@ -403,6 +408,7 @@ struct DriveFactor {
     drive: RankedDriveKind,
     pressure: Permille,
     weight: Permille,
+    escalation_multiplier: MultiplierPermille,
     band: ThresholdBand,
     recovery_relevant: bool,
     relief_per_unit: Permille,
@@ -540,14 +546,14 @@ fn drive_goal_provenance(
     Some(drive_provenance_from_inputs(
         context,
         base_priority_class,
-        vec![RankedDriveMotiveInput {
+        vec![ranked_drive_motive_input(
+            context,
             drive,
             pressure,
             weight,
-            score: score_product(weight, pressure),
-            relief_per_unit: Permille::new_unchecked(1000),
+            Permille::new_unchecked(1000),
             recovery_relevant,
-        }],
+        )],
     ))
 }
 
@@ -590,7 +596,7 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
             purpose: CommodityPurpose::SelfConsume,
         } => relevant_self_consume_factors(commodity, context)
             .into_iter()
-            .map(|factor| score_product(factor.weight, factor.pressure))
+            .map(effective_drive_factor_score)
             .max()
             .unwrap_or(0),
         GoalKind::AcquireCommodity {
@@ -606,16 +612,19 @@ fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
         | GoalKind::RestockCommodity { commodity } => enterprise_score(commodity, context),
         GoalKind::Sleep => drive_score(
             context,
+            HomeostaticNeedId::Fatigue,
             |needs| needs.fatigue,
             |utility| utility.fatigue_weight,
         ),
         GoalKind::Relieve => drive_score(
             context,
+            HomeostaticNeedId::Bladder,
             |needs| needs.bladder,
             |utility| utility.bladder_weight,
         ),
         GoalKind::Wash => drive_score(
             context,
+            HomeostaticNeedId::Dirtiness,
             |needs| needs.dirtiness,
             |utility| utility.dirtiness_weight,
         ),
@@ -1166,11 +1175,15 @@ fn patrol_relevant_offices(
 
 fn drive_score(
     context: &RankingContext<'_>,
+    need: HomeostaticNeedId,
     pressure: impl Fn(HomeostaticNeeds) -> Permille,
     weight: impl Fn(&UtilityProfile) -> Permille,
 ) -> u32 {
     match context.needs {
-        Some(needs) => score_product(weight(context.utility), pressure(needs)),
+        Some(needs) => effective_motive_score(
+            score_product(weight(context.utility), pressure(needs)),
+            drive_escalation_multiplier(context, need),
+        ),
         None => 0,
     }
 }
@@ -1187,13 +1200,15 @@ fn self_consume_provenance(
         .unwrap_or(GoalPriorityClass::Background);
     let motive_inputs = factors
         .into_iter()
-        .map(|factor| RankedDriveMotiveInput {
-            drive: factor.drive,
-            pressure: factor.pressure,
-            weight: factor.weight,
-            score: score_product(factor.weight, factor.pressure),
-            relief_per_unit: factor.relief_per_unit,
-            recovery_relevant: factor.recovery_relevant,
+        .map(|factor| {
+            ranked_drive_motive_input(
+                context,
+                factor.drive,
+                factor.pressure,
+                factor.weight,
+                factor.relief_per_unit,
+                factor.recovery_relevant,
+            )
         })
         .collect::<Vec<_>>();
     (!motive_inputs.is_empty())
@@ -1252,6 +1267,7 @@ fn relevant_self_consume_factors(
             drive: RankedDriveKind::Hunger,
             pressure: needs.hunger,
             weight: context.utility.hunger_weight,
+            escalation_multiplier: drive_escalation_multiplier(context, HomeostaticNeedId::Hunger),
             band: thresholds.hunger,
             recovery_relevant: true,
             relief_per_unit: profile.hunger_relief_per_unit,
@@ -1262,6 +1278,7 @@ fn relevant_self_consume_factors(
             drive: RankedDriveKind::Thirst,
             pressure: needs.thirst,
             weight: context.utility.thirst_weight,
+            escalation_multiplier: drive_escalation_multiplier(context, HomeostaticNeedId::Thirst),
             band: thresholds.thirst,
             recovery_relevant: true,
             relief_per_unit: profile.thirst_relief_per_unit,
@@ -1287,6 +1304,64 @@ fn reward_signal_from_quantity(quantity: Quantity) -> Permille {
 
 fn score_product(weight: Permille, pressure: Permille) -> u32 {
     u32::from(weight.value()) * u32::from(pressure.value())
+}
+
+fn effective_motive_score(base_score: u32, multiplier: MultiplierPermille) -> u32 {
+    base_score.saturating_mul(u32::from(multiplier.value())) / 1000
+}
+
+fn drive_escalation_multiplier(
+    context: &RankingContext<'_>,
+    need: HomeostaticNeedId,
+) -> MultiplierPermille {
+    let ticks = context
+        .exposure
+        .map_or(0, |exposure| exposure.ticks_at_critical(need));
+    let params = context
+        .escalation_profile
+        .as_ref()
+        .map(|profile| profile.params_for(need))
+        .unwrap_or_default();
+    escalation_multiplier(ticks, params)
+}
+
+fn effective_drive_factor_score(factor: DriveFactor) -> u32 {
+    effective_motive_score(
+        score_product(factor.weight, factor.pressure),
+        factor.escalation_multiplier,
+    )
+}
+
+fn ranked_drive_motive_input(
+    context: &RankingContext<'_>,
+    drive: RankedDriveKind,
+    pressure: Permille,
+    weight: Permille,
+    relief_per_unit: Permille,
+    recovery_relevant: bool,
+) -> RankedDriveMotiveInput {
+    RankedDriveMotiveInput {
+        drive,
+        pressure,
+        weight,
+        score: score_product(weight, pressure),
+        escalation_multiplier: drive_escalation_multiplier(
+            context,
+            homeostatic_need_id_for_drive(drive),
+        ),
+        relief_per_unit,
+        recovery_relevant,
+    }
+}
+
+fn homeostatic_need_id_for_drive(kind: RankedDriveKind) -> HomeostaticNeedId {
+    match kind {
+        RankedDriveKind::Hunger => HomeostaticNeedId::Hunger,
+        RankedDriveKind::Thirst => HomeostaticNeedId::Thirst,
+        RankedDriveKind::Fatigue => HomeostaticNeedId::Fatigue,
+        RankedDriveKind::Bladder => HomeostaticNeedId::Bladder,
+        RankedDriveKind::Dirtiness => HomeostaticNeedId::Dirtiness,
+    }
 }
 
 fn holdings_from_view(view: &dyn GoalBeliefView, agent: EntityId) -> BTreeMap<CommodityKind, u32> {
@@ -1381,7 +1456,7 @@ fn commodity_shared_motive_score(
     if breakdown.direct_survival_score > 0 {
         return relevant_self_consume_factors(commodity, context)
             .into_iter()
-            .map(|factor| score_product(factor.weight, factor.pressure))
+            .map(effective_drive_factor_score)
             .max()
             .unwrap_or(0);
     }
@@ -1522,14 +1597,14 @@ fn ranked_goal_ordering(
         return (ordering, Some(RankedGoalComparisonDimension::PriorityClass));
     }
 
-    let ordering = left.feasibility.cmp(&right.feasibility);
-    if ordering != Ordering::Equal {
-        return (ordering, Some(RankedGoalComparisonDimension::Feasibility));
-    }
-
     let ordering = right.motive_score.cmp(&left.motive_score);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::MotiveScore));
+    }
+
+    let ordering = left.feasibility.cmp(&right.feasibility);
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::Feasibility));
     }
 
     let ordering = compare_goal_specificity(&left.grounded.key.kind, &right.grounded.key.kind);
@@ -1776,14 +1851,15 @@ mod tests {
         BelievedActivity, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms,
         CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        CommodityValuationProfile, DemandObservation, DemandObservationReason, DeprivationKind,
-        DiversificationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
-        EpistemicDispositionProfile, ExpectationBasis, ExpectationId, ExpectationRecord,
-        ExpectationState, ExpectationStore, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
-        JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile,
-        OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        CommodityValuationProfile, DemandObservation, DemandObservationReason, DeprivationExposure,
+        DeprivationKind, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
+        DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
+        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
+        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile,
+        LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, MultiplierPermille,
+        NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
+        OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
         PreferenceProfile, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation,
         ReliabilityRecord, ResourceSource, RewardSource, RightKind, RouteExperience, SourceKey,
         SourceReliability, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
@@ -1804,6 +1880,8 @@ mod tests {
         place_entities: BTreeMap<EntityId, Vec<EntityId>>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
+        exposures: BTreeMap<EntityId, DeprivationExposure>,
+        escalation_profiles: BTreeMap<EntityId, DriveEscalationProfile>,
         exploration_profiles: BTreeMap<EntityId, worldwake_core::ExplorationProfile>,
         diversification_profiles: BTreeMap<EntityId, DiversificationProfile>,
         last_proactive_exploration_ticks: BTreeMap<EntityId, Tick>,
@@ -1899,6 +1977,12 @@ mod tests {
         }
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
+        }
+        fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
+            self.exposures.get(&agent).copied()
+        }
+        fn drive_escalation_profile(&self, agent: EntityId) -> Option<DriveEscalationProfile> {
+            self.escalation_profiles.get(&agent).cloned()
         }
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             None
@@ -2495,6 +2579,21 @@ mod tests {
         }
     }
 
+    fn escalation_profile(
+        start_after_ticks: u32,
+        growth_per_tick: u16,
+        max_multiplier: u16,
+    ) -> DriveEscalationProfile {
+        DriveEscalationProfile {
+            per_need: BTreeMap::new(),
+            default_per_need: DriveEscalationParams {
+                start_after_ticks,
+                growth_per_tick: pm(growth_per_tick),
+                max_multiplier: MultiplierPermille::new(max_multiplier).unwrap(),
+            },
+        }
+    }
+
     fn current_tick() -> Tick {
         Tick(10)
     }
@@ -2528,6 +2627,155 @@ mod tests {
         view.confidence_policies
             .insert(agent, BeliefConfidencePolicy::default());
         view
+    }
+
+    #[test]
+    fn drive_score_preserves_pre_s116_motive_when_counter_below_start_after() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(100), pm(100), pm(800), pm(100), pm(100)),
+        );
+        view.exposures.insert(
+            agent,
+            DeprivationExposure {
+                fatigue_critical_ticks: 100,
+                ..DeprivationExposure::default()
+            },
+        );
+        view.escalation_profiles
+            .insert(agent, escalation_profile(100, 10, 3000));
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        assert_eq!(
+            super::drive_score(
+                &context,
+                HomeostaticNeedId::Fatigue,
+                |needs| needs.fatigue,
+                |utility| utility.fatigue_weight,
+            ),
+            super::score_product(utility.fatigue_weight, pm(800))
+        );
+    }
+
+    #[test]
+    fn drive_score_doubles_when_multiplier_is_2000_permille() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(100), pm(100), pm(800), pm(100), pm(100)),
+        );
+        view.exposures.insert(
+            agent,
+            DeprivationExposure {
+                fatigue_critical_ticks: 200,
+                ..DeprivationExposure::default()
+            },
+        );
+        view.escalation_profiles
+            .insert(agent, escalation_profile(100, 10, 3000));
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+        let raw = super::score_product(utility.fatigue_weight, pm(800));
+
+        assert_eq!(
+            super::drive_score(
+                &context,
+                HomeostaticNeedId::Fatigue,
+                |needs| needs.fatigue,
+                |utility| utility.fatigue_weight,
+            ),
+            raw * 2
+        );
+    }
+
+    #[test]
+    fn drive_score_saturates_at_max_multiplier() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(100), pm(100), pm(800), pm(100), pm(100)),
+        );
+        view.exposures.insert(
+            agent,
+            DeprivationExposure {
+                fatigue_critical_ticks: 1_000,
+                ..DeprivationExposure::default()
+            },
+        );
+        view.escalation_profiles
+            .insert(agent, escalation_profile(100, 20, 1800));
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+        let raw = super::score_product(utility.fatigue_weight, pm(800));
+
+        assert_eq!(
+            super::drive_score(
+                &context,
+                HomeostaticNeedId::Fatigue,
+                |needs| needs.fatigue,
+                |utility| utility.fatigue_weight,
+            ),
+            raw * 1800 / 1000
+        );
+    }
+
+    #[test]
+    fn relevant_self_consume_factors_attaches_escalation_multiplier_to_hunger_factor() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(900), pm(100), pm(100), pm(100), pm(100)),
+        );
+        view.exposures.insert(
+            agent,
+            DeprivationExposure {
+                hunger_critical_ticks: 150,
+                ..DeprivationExposure::default()
+            },
+        );
+        view.escalation_profiles
+            .insert(agent, escalation_profile(100, 10, 3000));
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+        let hunger_factor = super::relevant_self_consume_factors(CommodityKind::Bread, &context)
+            .into_iter()
+            .find(|factor| factor.drive == RankedDriveKind::Hunger)
+            .unwrap();
+
+        assert_eq!(
+            hunger_factor.escalation_multiplier,
+            MultiplierPermille::new(1500).unwrap()
+        );
     }
 
     fn seed_directly_possessed_waste_lot(
@@ -4574,6 +4822,7 @@ mod tests {
                     pressure: pm(500),
                     weight: pm(500),
                     score: 250_000,
+                    escalation_multiplier: MultiplierPermille::IDENTITY,
                     relief_per_unit: pm(600),
                     recovery_relevant: true,
                 }],
@@ -4595,6 +4844,7 @@ mod tests {
                     pressure: pm(500),
                     weight: pm(500),
                     score: 250_000,
+                    escalation_multiplier: MultiplierPermille::IDENTITY,
                     relief_per_unit: pm(900),
                     recovery_relevant: true,
                 }],
@@ -4629,6 +4879,7 @@ mod tests {
                     pressure: pm(500),
                     weight: pm(500),
                     score: 250_000,
+                    escalation_multiplier: MultiplierPermille::IDENTITY,
                     relief_per_unit: pm(600),
                     recovery_relevant: true,
                 }],
@@ -4650,6 +4901,7 @@ mod tests {
                     pressure: pm(500),
                     weight: pm(500),
                     score: 250_000,
+                    escalation_multiplier: MultiplierPermille::IDENTITY,
                     relief_per_unit: pm(400),
                     recovery_relevant: true,
                 }],
@@ -6485,11 +6737,13 @@ mod tests {
             ),
         ];
         goals.sort_by(super::compare_ranked_goals);
-        // Likely(600) should outrank Unlikely(900) within same priority class.
-        assert_eq!(goals[0].feasibility, FeasibilityHint::Likely);
-        assert_eq!(goals[0].motive_score, 600);
-        assert_eq!(goals[1].feasibility, FeasibilityHint::Unlikely);
-        assert_eq!(goals[1].motive_score, 900);
+        // Within one priority class, higher motive should outrank a cheaper
+        // feasibility hint so urgent remote self-care is not starved by a
+        // merely local sibling option.
+        assert_eq!(goals[0].motive_score, 900);
+        assert_eq!(goals[0].feasibility, FeasibilityHint::Unlikely);
+        assert_eq!(goals[1].motive_score, 600);
+        assert_eq!(goals[1].feasibility, FeasibilityHint::Likely);
     }
 
     #[test]
@@ -6536,6 +6790,38 @@ mod tests {
         // Same priority class + same feasibility → higher motive wins.
         assert_eq!(goals[0].motive_score, 800);
         assert_eq!(goals[1].motive_score, 400);
+    }
+
+    #[test]
+    fn critical_remote_food_can_outrank_local_wash_on_motive() {
+        use crate::feasibility::FeasibilityHint;
+        let mut goals = [
+            make_ranked_goal(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::Critical,
+                617_400,
+                FeasibilityHint::Uncertain,
+            ),
+            make_ranked_goal(
+                GoalKind::Wash,
+                GoalPriorityClass::Critical,
+                600_000,
+                FeasibilityHint::Likely,
+            ),
+        ];
+
+        goals.sort_by(super::compare_ranked_goals);
+
+        assert!(matches!(
+            goals[0].grounded.key.kind,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
     }
 
     #[test]

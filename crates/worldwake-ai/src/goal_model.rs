@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
-    EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind, InstitutionalBeliefRead,
-    LoadUnits, OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick,
-    WorkstationTag, belief_confidence,
+    EntityId, EntityKind, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind,
+    InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS, Permille,
+    PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick, WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
@@ -768,6 +768,34 @@ impl GoalKindPlannerExt for GoalKind {
                     requested_quantity: Quantity(1),
                 })))
             }
+            PlannerOpKind::Harvest => {
+                let Some(workstation) = targets.first().copied() else {
+                    return Err(GoalPayloadOverrideError::MissingTarget);
+                };
+                let Some(actor_place) = state.effective_place(actor) else {
+                    return Err(GoalPayloadOverrideError::MissingActorPlace);
+                };
+                if state.effective_place(workstation) != Some(actor_place) {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+                let Some(payload) = def.payload.as_harvest() else {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                };
+                if state.workstation_tag(workstation) != Some(payload.required_workstation_tag) {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+                let requested_commodity = match self {
+                    GoalKind::AcquireCommodity { commodity, .. }
+                    | GoalKind::RestockCommodity { commodity }
+                    | GoalKind::ConsumeOwnedCommodity { commodity } => *commodity,
+                    GoalKind::TreatWounds { .. } => CommodityKind::Medicine,
+                    _ => return Err(GoalPayloadOverrideError::UnsupportedGoal),
+                };
+                if payload.output_commodity != requested_commodity {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                }
+                Ok(Some(def.payload.clone()))
+            }
             PlannerOpKind::Investigate => match self {
                 GoalKind::InvestigateViolation { violation_id, .. } => {
                     Ok(Some(ActionPayload::Investigate(InvestigateActionPayload {
@@ -1179,12 +1207,19 @@ impl GoalKindPlannerExt for GoalKind {
             },
             PlannerOpKind::Harvest => {
                 if let Some(harvest) = payload_override.and_then(ActionPayload::as_harvest) {
-                    let current = state.commodity_quantity(actor, harvest.output_commodity);
-                    state.with_commodity_quantity(
-                        actor,
+                    let mut next = state;
+                    let hypothetical =
+                        next.spawn_hypothetical_lot(EntityKind::ItemLot, harvest.output_commodity);
+                    let hypothetical_ref = PlanningEntityRef::Hypothetical(hypothetical);
+                    next = next.set_quantity_ref(
+                        hypothetical_ref,
                         harvest.output_commodity,
-                        Quantity(current.0.saturating_add(harvest.output_quantity.0)),
-                    )
+                        harvest.output_quantity,
+                    );
+                    if let Some(place) = next.effective_place(actor) {
+                        next = next.move_entity_ref(hypothetical_ref, place);
+                    }
+                    next
                 } else {
                     state
                 }
@@ -1461,7 +1496,7 @@ impl GoalKindPlannerExt for GoalKind {
                 None => state.effective_place(actor).into_iter().collect(),
             },
             GoalKind::EscortToSafety { destination, .. } => vec![*destination],
-            GoalKind::Wash => places_with_workstation(state, WorkstationTag::WashBasin),
+            GoalKind::Wash => places_with_wash_access(state),
             GoalKind::ReportFound { .. }
             | GoalKind::Sleep
             | GoalKind::ReduceDanger
@@ -1854,6 +1889,16 @@ fn places_with_resource_source(
     places.into_iter().collect()
 }
 
+fn places_with_wash_access(state: &PlanningState<'_>) -> Vec<EntityId> {
+    let basin_places = places_with_workstation(state, WorkstationTag::WashBasin);
+    let water_places = places_with_resource_source(state, CommodityKind::Water);
+    let water_place_set: BTreeSet<_> = water_places.into_iter().collect();
+    basin_places
+        .into_iter()
+        .filter(|place| water_place_set.contains(place))
+        .collect()
+}
+
 fn delivery_bounty_gap_at_destination(
     state: &PlanningState<'_>,
     actor: EntityId,
@@ -2230,6 +2275,7 @@ pub struct RankedDriveMotiveInput {
     pub pressure: Permille,
     pub weight: Permille,
     pub score: u32,
+    pub escalation_multiplier: MultiplierPermille,
     pub relief_per_unit: Permille,
     pub recovery_relevant: bool,
 }
@@ -2277,6 +2323,23 @@ impl GroundedGoal {
                 | GoalKind::ConsumeOwnedCommodity { .. }
                 | GoalKind::RestockCommodity { .. }
                 | GoalKind::TreatWounds { .. } => {
+                    if !matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
+                    if self.evidence_entities.len() != 1 {
+                        return RootCandidateSynthesis::TargetDerivationFailed;
+                    }
+                    RootCandidateSynthesis::Targets(
+                        self.evidence_entities.iter().copied().collect(),
+                    )
+                }
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::Harvest => match &self.key.kind {
+                GoalKind::AcquireCommodity { .. } | GoalKind::RestockCommodity { .. } => {
                     if !matches!(
                         def.targets.as_slice(),
                         [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
@@ -2473,8 +2536,8 @@ mod tests {
     };
     use crate::{
         CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics,
-        PlannerTransitionKind, PlanningState, ProfileFixture, build_planning_snapshot,
-        build_semantics_table,
+        PlannerTransitionKind, PlanningEntityRef, PlanningState, ProfileFixture,
+        build_planning_snapshot, build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -2487,14 +2550,14 @@ mod tests {
         AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
         BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
         BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DemandObservationReason, DisposalProfile, DriveThresholds, EntityId,
-        EntityKind, EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget,
-        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, NoticeTopic, OfficeData, Permille, ProofRequirement, PunishmentKind,
-        Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource, RewardSource, SuccessionLaw,
-        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId,
-        VisibilitySpec, WorkstationTag, Wound,
+        DemandObservation, DemandObservationReason, DeprivationExposure, DisposalProfile,
+        DriveEscalationProfile, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
+        EpistemicSubject, ExecutionBudget, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille, ProofRequirement,
+        PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource,
+        RewardSource, SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
     use worldwake_sim::PressForceClaimActionPayload;
@@ -3415,6 +3478,8 @@ mod tests {
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
+        exposures: BTreeMap<EntityId, DeprivationExposure>,
+        escalation_profiles: BTreeMap<EntityId, DriveEscalationProfile>,
         disposal_profiles: BTreeMap<EntityId, DisposalProfile>,
         trade_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
@@ -3465,6 +3530,8 @@ mod tests {
                 entity_loads: BTreeMap::new(),
                 needs: BTreeMap::new(),
                 thresholds: BTreeMap::new(),
+                exposures: BTreeMap::new(),
+                escalation_profiles: BTreeMap::new(),
                 disposal_profiles: BTreeMap::new(),
                 trade_profiles: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
@@ -3535,6 +3602,12 @@ mod tests {
         }
         fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
             self.thresholds.get(&agent).copied()
+        }
+        fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
+            self.exposures.get(&agent).copied()
+        }
+        fn drive_escalation_profile(&self, agent: EntityId) -> Option<DriveEscalationProfile> {
+            self.escalation_profiles.get(&agent).cloned()
         }
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             Some(MetabolismProfile::default())
@@ -5541,6 +5614,15 @@ mod tests {
             purpose: CommodityPurpose::SelfConsume,
         };
         let sleep_goal = GoalKind::Sleep;
+        let sleep_step = PlannedStep {
+            def_id: ActionDefId(2),
+            targets: Vec::new(),
+            payload_override: None,
+            op_kind: PlannerOpKind::Sleep,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
         let barrier_step = PlannedStep {
             def_id: ActionDefId(1),
             targets: Vec::new(),
@@ -5552,6 +5634,7 @@ mod tests {
         };
 
         assert!(acquire_goal.is_progress_barrier(&barrier_step));
+        assert!(sleep_goal.is_progress_barrier(&sleep_step));
         assert!(!sleep_goal.is_progress_barrier(&barrier_step));
     }
 
@@ -5782,7 +5865,7 @@ mod tests {
     }
 
     #[test]
-    fn harvest_step_updates_hypothetical_commodity_quantity() {
+    fn harvest_step_creates_hypothetical_ground_output_without_crediting_actor_inventory() {
         let (view, actor, _seller) = base_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
         let base_state = PlanningState::new(&snapshot);
@@ -5806,7 +5889,43 @@ mod tests {
 
         assert_eq!(
             advanced.commodity_quantity(actor, CommodityKind::Apple),
-            Quantity(3)
+            Quantity(0)
+        );
+    }
+
+    #[test]
+    fn harvest_step_spawns_hypothetical_ground_output_lot_at_actor_place() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let base_state = PlanningState::new(&snapshot);
+        let goal = GoalKind::Wash;
+
+        let advanced = goal.apply_planner_step(
+            base_state,
+            PlannerOpKind::Harvest,
+            &[],
+            Some(&ActionPayload::Harvest(HarvestActionPayload {
+                recipe_id: RecipeId(4),
+                required_workstation_tag: WorkstationTag::Well,
+                output_commodity: CommodityKind::Water,
+                output_quantity: Quantity(2),
+                required_tool_kinds: Vec::new(),
+            })),
+        );
+
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+        let actor_place = advanced.effective_place_ref(actor_ref);
+        let lots = actor_place
+            .into_iter()
+            .flat_map(|place| advanced.hypothetical_ground_lot_refs_at_place(place))
+            .collect::<Vec<_>>();
+        assert!(
+            lots.iter().any(|lot| {
+                advanced.item_lot_commodity_ref(*lot) == Some(CommodityKind::Water)
+                    && advanced.commodity_quantity_ref(*lot, CommodityKind::Water) == Quantity(2)
+                    && advanced.direct_possessor_ref(*lot).is_none()
+            }),
+            "harvest should create a hypothetical ground water lot at the actor place for downstream pick-up and wash planning"
         );
     }
 
@@ -5830,7 +5949,7 @@ mod tests {
     }
 
     #[test]
-    fn acquire_self_consume_goal_is_satisfied_after_hypothetical_harvest() {
+    fn acquire_self_consume_goal_is_not_satisfied_before_pickup_after_hypothetical_harvest() {
         let (view, actor, _seller) = base_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
         let base_state = PlanningState::new(&snapshot);
@@ -5854,7 +5973,7 @@ mod tests {
             })),
         );
 
-        assert!(goal.is_satisfied(&advanced));
+        assert!(!goal.is_satisfied(&advanced));
     }
 
     #[test]
@@ -6440,6 +6559,13 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&resource_entity).cloned();
+        remember_entity(
+            &mut view,
+            actor,
+            resource_entity,
+            believed_entity_state_at(place_b, Tick(1), believed_source),
+        );
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6513,6 +6639,13 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&resource_entity).cloned();
+        remember_entity(
+            &mut view,
+            actor,
+            resource_entity,
+            believed_entity_state_at(place_b, Tick(1), believed_source),
+        );
         // Merchant at place_c
         let merchant = entity(30);
         view.alive.insert(merchant);
@@ -6530,6 +6663,12 @@ mod tests {
             .insert(merchant, sample_trade_disposition_profile());
         view.commodity_quantities
             .insert((merchant, CommodityKind::Bread), Quantity(2));
+        let mut merchant_belief = believed_entity_state_at(place_c, Tick(1), None);
+        merchant_belief.believed_kind = Some(EntityKind::Agent);
+        merchant_belief
+            .last_known_inventory
+            .insert(CommodityKind::Bread, Quantity(2));
+        remember_entity(&mut view, actor, merchant, merchant_belief);
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6553,6 +6692,9 @@ mod tests {
         view.kinds.insert(target, EntityKind::Agent);
         view.effective_places.insert(target, place_b);
         view.entities_at.entry(place_b).or_default().push(target);
+        let mut target_belief = believed_entity_state_at(place_b, Tick(1), None);
+        target_belief.believed_kind = Some(EntityKind::Agent);
+        remember_entity(&mut view, actor, target, target_belief);
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6569,6 +6711,10 @@ mod tests {
         view.kinds.insert(corpse, EntityKind::Agent);
         view.effective_places.insert(corpse, place_c);
         view.entities_at.entry(place_c).or_default().push(corpse);
+        let mut corpse_belief = believed_entity_state_at(place_c, Tick(1), None);
+        corpse_belief.believed_kind = Some(EntityKind::Agent);
+        corpse_belief.alive = false;
+        remember_entity(&mut view, actor, corpse, corpse_belief);
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6645,7 +6791,7 @@ mod tests {
     }
 
     #[test]
-    fn wash_returns_empty_without_wash_basins() {
+    fn wash_returns_empty_without_local_wash_access() {
         let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
@@ -6655,21 +6801,109 @@ mod tests {
     }
 
     #[test]
-    fn wash_returns_places_with_wash_basins() {
+    fn wash_ignores_unbelieved_remote_wash_basin() {
         let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
         let basin = entity(50);
+        let well = entity(51);
         view.alive.insert(basin);
+        view.alive.insert(well);
         view.kinds.insert(basin, EntityKind::Facility);
+        view.kinds.insert(well, EntityKind::Facility);
         view.effective_places.insert(basin, place_c);
+        view.effective_places.insert(well, place_c);
         view.entities_at.entry(place_c).or_default().push(basin);
+        view.entities_at.entry(place_c).or_default().push(well);
         view.workstation_tags
             .insert(basin, WorkstationTag::WashBasin);
+        view.resource_sources.insert(
+            well,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
+        assert!(places.is_empty());
+        assert!(!places.contains(&place_a));
+    }
+
+    #[test]
+    fn wash_returns_places_with_basin_and_water_source_belief() {
+        let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
+        let basin = entity(50);
+        let well = entity(51);
+        view.alive.insert(basin);
+        view.alive.insert(well);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.kinds.insert(well, EntityKind::Facility);
+        view.effective_places.insert(basin, place_c);
+        view.effective_places.insert(well, place_c);
+        view.entities_at.entry(place_c).or_default().push(basin);
+        view.entities_at.entry(place_c).or_default().push(well);
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![
+                (
+                    basin,
+                    BelievedEntityState {
+                        believed_kind: Some(EntityKind::Facility),
+                        last_known_place: Some(place_c),
+                        last_known_inventory: BTreeMap::new(),
+                        workstation_tag: Some(WorkstationTag::WashBasin),
+                        resource_source: None,
+                        alive: true,
+                        wounds: Vec::new(),
+                        last_known_courage: None,
+                        believed_activity: None,
+                        believed_artifact: None,
+                        believed_contention: None,
+                        believed_evidence: None,
+                        ..BelievedEntityState::single_observation_defaults(
+                            Tick(4),
+                            worldwake_core::PerceptionSource::DirectObservation,
+                        )
+                    },
+                ),
+                (
+                    well,
+                    BelievedEntityState {
+                        believed_kind: Some(EntityKind::Facility),
+                        last_known_place: Some(place_c),
+                        last_known_inventory: BTreeMap::new(),
+                        workstation_tag: None,
+                        resource_source: Some(ResourceSource {
+                            commodity: CommodityKind::Water,
+                            available_quantity: Quantity(2),
+                            max_quantity: Quantity(2),
+                            regeneration_ticks_per_unit: None,
+                            last_regeneration_tick: None,
+                        }),
+                        alive: true,
+                        wounds: Vec::new(),
+                        last_known_courage: None,
+                        believed_activity: None,
+                        believed_artifact: None,
+                        believed_contention: None,
+                        believed_evidence: None,
+                        ..BelievedEntityState::single_observation_defaults(
+                            Tick(4),
+                            worldwake_core::PerceptionSource::DirectObservation,
+                        )
+                    },
+                ),
+            ],
+        );
         let recipes = worldwake_sim::RecipeRegistry::new();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
         let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
         assert_eq!(places, vec![place_c]);
-        // Actor's own place (place_a) should NOT appear — no basin there.
         assert!(!places.contains(&place_a));
     }
 
@@ -6738,6 +6972,10 @@ mod tests {
         view.effective_places.insert(forge, place_b);
         view.entities_at.entry(place_b).or_default().push(forge);
         view.workstation_tags.insert(forge, WorkstationTag::Forge);
+        let mut forge_belief = believed_entity_state_at(place_b, Tick(1), None);
+        forge_belief.believed_kind = Some(EntityKind::UniqueItem);
+        forge_belief.workstation_tag = Some(WorkstationTag::Forge);
+        remember_entity(&mut view, actor, forge, forge_belief);
         let mut recipes = worldwake_sim::RecipeRegistry::new();
         let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
             name: "Smelt Iron".to_string(),
@@ -6792,6 +7030,12 @@ mod tests {
             .insert(medicine, CommodityKind::Medicine);
         view.commodity_quantities
             .insert((medicine, CommodityKind::Medicine), Quantity(1));
+        let mut medicine_belief = believed_entity_state_at(place_b, Tick(1), None);
+        medicine_belief.believed_kind = Some(EntityKind::ItemLot);
+        medicine_belief
+            .last_known_inventory
+            .insert(CommodityKind::Medicine, Quantity(1));
+        remember_entity(&mut view, actor, medicine, medicine_belief);
 
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6884,6 +7128,12 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let mut loose_medicine_belief = believed_entity_state_at(place_b, Tick(1), None);
+        loose_medicine_belief.believed_kind = Some(EntityKind::ItemLot);
+        loose_medicine_belief
+            .last_known_inventory
+            .insert(CommodityKind::Medicine, Quantity(1));
+        remember_entity(&mut view, actor, loose_medicine, loose_medicine_belief);
 
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
@@ -6918,6 +7168,10 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&wheat_field).cloned();
+        let mut wheat_field_belief = believed_entity_state_at(place_b, Tick(1), believed_source);
+        wheat_field_belief.believed_kind = Some(EntityKind::Place);
+        remember_entity(&mut view, actor, wheat_field, wheat_field_belief);
 
         let mut recipes = RecipeRegistry::new();
         let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
@@ -6998,6 +7252,10 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&wheat_field).cloned();
+        let mut wheat_field_belief = believed_entity_state_at(place_b, Tick(1), believed_source);
+        wheat_field_belief.believed_kind = Some(EntityKind::Place);
+        remember_entity(&mut view, actor, wheat_field, wheat_field_belief);
 
         let mut recipes = RecipeRegistry::new();
         let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
@@ -7051,6 +7309,10 @@ mod tests {
                     last_regeneration_tick: None,
                 },
             );
+            let believed_source = view.resource_sources.get(&field).cloned();
+            let mut field_belief = believed_entity_state_at(place, Tick(1), believed_source);
+            field_belief.believed_kind = Some(EntityKind::Place);
+            remember_entity(&mut view, actor, field, field_belief);
         }
 
         let mut recipes = RecipeRegistry::new();
@@ -7099,6 +7361,10 @@ mod tests {
                 last_regeneration_tick: None,
             },
         );
+        let believed_source = view.resource_sources.get(&wheat_field).cloned();
+        let mut wheat_field_belief = believed_entity_state_at(place_b, Tick(1), believed_source);
+        wheat_field_belief.believed_kind = Some(EntityKind::Place);
+        remember_entity(&mut view, actor, wheat_field, wheat_field_belief);
 
         let mut recipes = RecipeRegistry::new();
         recipes.register(worldwake_sim::RecipeDefinition {
@@ -8658,6 +8924,18 @@ mod tests {
                 worldwake_core::PerceptionSource::DirectObservation,
             )
         }
+    }
+
+    fn remember_entity(
+        view: &mut TestBeliefView,
+        actor: EntityId,
+        entity: EntityId,
+        belief: BelievedEntityState,
+    ) {
+        view.known_entity_beliefs
+            .entry(actor)
+            .or_default()
+            .push((entity, belief));
     }
 
     fn set_office_jurisdiction(

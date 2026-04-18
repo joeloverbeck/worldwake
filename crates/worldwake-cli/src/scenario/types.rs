@@ -9,13 +9,13 @@ use serde::Deserialize;
 use worldwake_core::{
     ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile, CommodityDecayMap,
     CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile, ControlSource,
-    DisposalProfile, DiversificationProfile, DriveThresholds, EpistemicDispositionProfile,
-    ExecutionBudget, ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, MetabolismProfile, ObligationSatiationProfile,
-    PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile,
-    PursuitProfile, Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
-    items::CommodityKind, topology::PlaceTag,
+    DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
+    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
+    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, MetabolismProfile,
+    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile,
+    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -35,6 +35,8 @@ pub struct ScenarioDef {
     pub resource_sources: Vec<ResourceSourceDef>,
     #[serde(default)]
     pub commodity_decay: Option<CommodityDecayMap>,
+    #[serde(default)]
+    pub survival_health_contract: Option<SurvivalHealthContractDef>,
     /// Ticks between checkpoint snapshots for event log compaction.
     /// Default: 50. Set to 0 to disable compaction.
     #[serde(default = "default_compaction_interval")]
@@ -43,6 +45,41 @@ pub struct ScenarioDef {
 
 fn default_compaction_interval() -> u32 {
     50
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SurvivalHealthContractDef {
+    pub max_authored_critical_run_ticks: u32,
+    pub max_idle_window_ticks_with_elevated_need: u32,
+    pub elevated_need_floor: Permille,
+    pub required_self_care_families: Vec<NeedsActionFamily>,
+    #[serde(default)]
+    pub critical_run_limits: Option<SurvivalCriticalRunLimitsDef>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SurvivalCriticalRunLimitsDef {
+    #[serde(default)]
+    pub hunger: Option<u32>,
+    #[serde(default)]
+    pub thirst: Option<u32>,
+    #[serde(default)]
+    pub fatigue: Option<u32>,
+    #[serde(default)]
+    pub bladder: Option<u32>,
+    #[serde(default)]
+    pub dirtiness: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+pub enum NeedsActionFamily {
+    Eat,
+    Drink,
+    Sleep,
+    Relieve,
+    Wash,
 }
 
 /// A place in the world graph.
@@ -107,6 +144,8 @@ pub struct AgentDef {
     pub obligation_satiation_profile: Option<ObligationSatiationProfile>,
     #[serde(default)]
     pub drive_thresholds: Option<DriveThresholds>,
+    #[serde(default)]
+    pub drive_escalation_profile: Option<DriveEscalationProfile>,
     #[serde(default)]
     pub metabolism_profile: Option<MetabolismProfile>,
     #[serde(default)]
@@ -263,10 +302,60 @@ mod tests {
         assert_eq!(def.agents[0].location, "Village");
         assert_eq!(def.agents[0].control, ControlSource::Human);
         assert_eq!(def.agents[0].diversification_profile, None);
+        assert_eq!(def.agents[0].drive_escalation_profile, None);
         assert!(def.items.is_empty());
         assert!(def.facilities.is_empty());
         assert!(def.resource_sources.is_empty());
         assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_deserializes_survival_health_contract() {
+        let ron_str = r#"(
+            seed: 42,
+            survival_health_contract: (
+                max_authored_critical_run_ticks: 123,
+                max_idle_window_ticks_with_elevated_need: 17,
+                elevated_need_floor: 300,
+                required_self_care_families: [Eat, Drink, Sleep, Relieve],
+                critical_run_limits: (
+                    dirtiness: 999,
+                ),
+            ),
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let contract = def
+            .survival_health_contract
+            .expect("survival contract should deserialize");
+        assert_eq!(contract.max_authored_critical_run_ticks, 123);
+        assert_eq!(contract.max_idle_window_ticks_with_elevated_need, 17);
+        assert_eq!(contract.elevated_need_floor, Permille::new(300).unwrap());
+        assert_eq!(
+            contract.required_self_care_families,
+            vec![
+                NeedsActionFamily::Eat,
+                NeedsActionFamily::Drink,
+                NeedsActionFamily::Sleep,
+                NeedsActionFamily::Relieve,
+            ]
+        );
+        assert_eq!(
+            contract.critical_run_limits,
+            Some(SurvivalCriticalRunLimitsDef {
+                hunger: None,
+                thirst: None,
+                fatigue: None,
+                bladder: None,
+                dirtiness: Some(999),
+            })
+        );
     }
 
     #[test]
@@ -450,6 +539,20 @@ mod tests {
                         pain: (low: 120, medium: 240, high: 520, critical: 800),
                         danger: (low: 80, medium: 220, high: 480, critical: 760),
                     ),
+                    drive_escalation_profile: (
+                        per_need: {
+                            Dirtiness: (
+                                start_after_ticks: 40,
+                                growth_per_tick: 25,
+                                max_multiplier: 2200,
+                            ),
+                        },
+                        default_per_need: (
+                            start_after_ticks: 80,
+                            growth_per_tick: 15,
+                            max_multiplier: 1800,
+                        ),
+                    ),
                     exploration_profile: (
                         curiosity_weight: 275,
                         need_activation_threshold: 350,
@@ -540,6 +643,24 @@ mod tests {
         assert_eq!(perception.observation_budget, 7);
         assert!(bob.drive_thresholds.is_some());
         assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
+        assert_eq!(
+            bob.drive_escalation_profile,
+            Some(worldwake_core::DriveEscalationProfile {
+                per_need: std::collections::BTreeMap::from([(
+                    worldwake_core::HomeostaticNeedId::Dirtiness,
+                    worldwake_core::DriveEscalationParams {
+                        start_after_ticks: 40,
+                        growth_per_tick: Permille::new(25).unwrap(),
+                        max_multiplier: worldwake_core::MultiplierPermille::new(2200).unwrap(),
+                    },
+                )]),
+                default_per_need: worldwake_core::DriveEscalationParams {
+                    start_after_ticks: 80,
+                    growth_per_tick: Permille::new(15).unwrap(),
+                    max_multiplier: worldwake_core::MultiplierPermille::new(1800).unwrap(),
+                },
+            })
+        );
         assert_eq!(
             bob.exploration_profile,
             Some(ExplorationProfileDef {
@@ -778,6 +899,7 @@ mod tests {
         assert!(agent.last_seen_memory.is_none());
         assert!(agent.obligation_satiation_profile.is_none());
         assert!(agent.drive_thresholds.is_none());
+        assert!(agent.drive_escalation_profile.is_none());
         assert!(agent.metabolism_profile.is_none());
         assert!(agent.carry_capacity.is_none());
         assert!(agent.theft_disposition.is_none());

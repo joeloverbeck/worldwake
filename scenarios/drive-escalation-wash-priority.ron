@@ -1,0 +1,178 @@
+// Drive-escalation wash-priority scenario for Worldwake.
+//
+// Purpose: prove that drive escalation breaks the chronic "stay at the food
+// hub, relieve in the wilderness, and wash too rarely" loop without adding any
+// special-case production logic. Two agents share one orchard and one
+// wash-capable water source. The wash facility and the water source are
+// co-located at Spring Basin, where both agents start; the orchard is two hops
+// away through Central Crossing so washing always competes with staying near
+// food once they leave the basin.
+//
+// Lawful competing affordances intentionally removed from setup:
+// - no combat, trade, or social branches
+// - no second food hub or long-distance water route
+// - no second camp or alternate local food source
+// - thirst and fatigue pressure are downweighted so the scenario stays focused
+//   on hunger-versus-dirtiness priority under repeated wilderness relief
+//
+// This keeps the scenario focused on the motive-priority branch:
+// hunger_weight=750 still beats dirtiness_weight=625 until sustained critical
+// exposure raises Wash high enough to win.
+(
+    seed: 116006,
+    places: [
+        (name: "Central Crossing", tags: [Crossroads, Road]),
+        (name: "Spring Basin", tags: [Crossroads]),
+        (name: "East Orchard", tags: [Farm, Field]),
+    ],
+    edges: [
+        (from: "Central Crossing", to: "Spring Basin", travel_ticks: 2, bidirectional: true),
+        (from: "Central Crossing", to: "East Orchard", travel_ticks: 2, bidirectional: true),
+    ],
+    agents: [
+        (
+            name: "Agent A",
+            location: "Spring Basin",
+            control: Ai,
+            known_recipes: ["Harvest Apples", "Harvest Water"],
+            needs: (
+                hunger: 560,
+                thirst: 60,
+                fatigue: 20,
+                bladder: 260,
+                dirtiness: 760,
+            ),
+            utility_profile: (
+                hunger_weight: 750,
+                thirst_weight: 100,
+                fatigue_weight: 100,
+                bladder_weight: 650,
+                dirtiness_weight: 625,
+                pain_weight: 500,
+                danger_weight: 500,
+                enterprise_weight: 0,
+                social_weight: 0,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 500,
+                care_weight: 0,
+            ),
+            drive_thresholds: (
+                hunger: (low: 240, medium: 420, high: 620, critical: 820),
+                thirst: (low: 220, medium: 400, high: 620, critical: 820),
+                fatigue: (low: 300, medium: 550, high: 780, critical: 900),
+                bladder: (low: 260, medium: 520, high: 760, critical: 860),
+                dirtiness: (low: 280, medium: 500, high: 700, critical: 780),
+                pain: (low: 150, medium: 350, high: 600, critical: 850),
+                danger: (low: 100, medium: 300, high: 550, critical: 800),
+            ),
+            metabolism_profile: (
+                hunger_rate: 2,
+                thirst_rate: 1,
+                fatigue_rate: 1,
+                bladder_rate: 5,
+                dirtiness_rate: 1,
+                rest_efficiency: 20,
+                starvation_tolerance_ticks: 480,
+                dehydration_tolerance_ticks: 240,
+                exhaustion_collapse_ticks: 120,
+                bladder_accident_tolerance_ticks: 40,
+                toilet_ticks: 8,
+                wash_ticks: 10,
+                travel_fatigue_multiplier: 150,
+                travel_thirst_multiplier: 100,
+                travel_bladder_multiplier: 50,
+                wilderness_relief_dirtiness_penalty: 200,
+            ),
+            exploration_profile: (
+                curiosity_weight: 650,
+                need_activation_threshold: 325,
+                frontier_depth: 3,
+                acquisition_failure_threshold: 2,
+                exploration_arrival_boost: 650,
+                max_consecutive_explorations: 4,
+                visit_lookback_ticks: 150,
+            ),
+        ),
+        (
+            name: "Agent B",
+            location: "Spring Basin",
+            control: Ai,
+            known_recipes: ["Harvest Apples", "Harvest Water"],
+            needs: (
+                hunger: 560,
+                thirst: 60,
+                fatigue: 20,
+                bladder: 260,
+                dirtiness: 760,
+            ),
+            utility_profile: (
+                hunger_weight: 750,
+                thirst_weight: 100,
+                fatigue_weight: 100,
+                bladder_weight: 650,
+                dirtiness_weight: 625,
+                pain_weight: 500,
+                danger_weight: 500,
+                enterprise_weight: 0,
+                social_weight: 0,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 500,
+                care_weight: 0,
+            ),
+            drive_thresholds: (
+                hunger: (low: 240, medium: 420, high: 620, critical: 820),
+                thirst: (low: 220, medium: 400, high: 620, critical: 820),
+                fatigue: (low: 300, medium: 550, high: 780, critical: 900),
+                bladder: (low: 260, medium: 520, high: 760, critical: 860),
+                dirtiness: (low: 280, medium: 500, high: 700, critical: 780),
+                pain: (low: 150, medium: 350, high: 600, critical: 850),
+                danger: (low: 100, medium: 300, high: 550, critical: 800),
+            ),
+            metabolism_profile: (
+                hunger_rate: 2,
+                thirst_rate: 1,
+                fatigue_rate: 1,
+                bladder_rate: 5,
+                dirtiness_rate: 1,
+                rest_efficiency: 20,
+                starvation_tolerance_ticks: 480,
+                dehydration_tolerance_ticks: 240,
+                exhaustion_collapse_ticks: 120,
+                bladder_accident_tolerance_ticks: 40,
+                toilet_ticks: 8,
+                wash_ticks: 10,
+                travel_fatigue_multiplier: 150,
+                travel_thirst_multiplier: 100,
+                travel_bladder_multiplier: 50,
+                wilderness_relief_dirtiness_penalty: 200,
+            ),
+            exploration_profile: (
+                curiosity_weight: 650,
+                need_activation_threshold: 325,
+                frontier_depth: 3,
+                acquisition_failure_threshold: 2,
+                exploration_arrival_boost: 650,
+                max_consecutive_explorations: 4,
+                visit_lookback_ticks: 150,
+            ),
+        ),
+    ],
+    facilities: [
+        (name: "Spring Well", workstation: Well, location: "Spring Basin"),
+        (name: "Spring Washbasin", workstation: WashBasin, location: "Spring Basin"),
+        (name: "Valley Orchard", workstation: OrchardRow, location: "East Orchard"),
+    ],
+    items: [
+        (commodity: Water, quantity: 20, location: "Spring Basin"),
+    ],
+    resource_sources: [
+        (commodity: Water, location: "Spring Basin", facility: "Spring Well", regeneration_ticks_per_unit: 3, capacity: 12),
+        (commodity: Apple, location: "East Orchard", facility: "Valley Orchard", regeneration_ticks_per_unit: 3, capacity: 20),
+    ],
+)

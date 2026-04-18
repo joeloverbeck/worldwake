@@ -16,6 +16,7 @@ use crate::{
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     disposal::DisposalProfile,
     diversification::{DiversificationProfile, LastProactiveExplorationTick},
+    drive_escalation_profile::DriveEscalationProfile,
     drives::DriveThresholds,
     epistemic::EpistemicDispositionProfile,
     evidence::SceneEvidence,
@@ -627,6 +628,7 @@ mod tests {
             thirst_critical_ticks: 5,
             fatigue_critical_ticks: 6,
             bladder_critical_ticks: 7,
+            dirtiness_critical_ticks: 8,
         };
 
         assert_eq!(tables.insert_deprivation_exposure(id, exposure), None);

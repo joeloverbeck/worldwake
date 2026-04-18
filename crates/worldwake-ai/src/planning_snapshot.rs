@@ -479,25 +479,27 @@ impl PlanningSnapshot {
             max_per_place,
             &actor_known_entity_beliefs,
         );
-        let places = build_snapshot_places(
-            view,
-            actor,
-            &included_places,
-            &included_entities,
-            evidence_entities,
-        );
-        let actor_known_social_observations = view.known_social_observations(actor);
-        let actor_confidence_policy = view.belief_confidence_policy(actor);
         let mut entities: BTreeMap<EntityId, SnapshotEntity> = included_entities
             .iter()
             .copied()
             .map(|entity| {
                 (
                     entity,
-                    build_snapshot_entity(view, actor, entity, evidence_entities, &included_places),
+                    build_snapshot_entity(
+                        view,
+                        actor,
+                        entity,
+                        evidence_entities,
+                        &included_entities,
+                        &actor_known_entity_beliefs,
+                    ),
                 )
             })
             .collect();
+        let places =
+            build_snapshot_places(view, actor, &included_places, &entities, evidence_entities);
+        let actor_known_social_observations = view.known_social_observations(actor);
+        let actor_confidence_policy = view.belief_confidence_policy(actor);
         let content_edges = entities
             .iter()
             .filter_map(|(&entity, snapshot)| {
@@ -788,17 +790,18 @@ fn build_snapshot_places(
     view: &dyn RuntimeBeliefView,
     actor: EntityId,
     included_places: &BTreeSet<EntityId>,
-    included_entities: &BTreeSet<EntityId>,
+    entities: &BTreeMap<EntityId, SnapshotEntity>,
     evidence_entities: &BTreeSet<EntityId>,
 ) -> BTreeMap<EntityId, SnapshotPlace> {
     let mut places: BTreeMap<EntityId, SnapshotPlace> = included_places
         .iter()
         .copied()
         .map(|place| {
-            let entities = included_entities
+            let entities = entities
                 .iter()
-                .copied()
-                .filter(|entity| view.effective_place(*entity) == Some(place))
+                .filter_map(|(entity, snapshot)| {
+                    (snapshot.spatial.effective_place == Some(place)).then_some(*entity)
+                })
                 .collect();
             let adjacent_places_with_travel_ticks = view
                 .adjacent_places_with_travel_ticks(place)
@@ -822,7 +825,7 @@ fn build_snapshot_places(
         .collect();
 
     for entity in evidence_entities {
-        if !included_entities.contains(entity) || view.effective_place(*entity).is_some() {
+        if !entities.contains_key(entity) || view.effective_place(*entity).is_some() {
             continue;
         }
 
@@ -846,42 +849,67 @@ fn build_snapshot_entity(
     actor: EntityId,
     entity: EntityId,
     evidence_entities: &BTreeSet<EntityId>,
-    included_places: &BTreeSet<EntityId>,
+    included_entities: &BTreeSet<EntityId>,
+    known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
 ) -> SnapshotEntity {
-    let kind = view.entity_kind(entity);
-    let alive = view.is_alive(entity);
-    let dead = view.is_dead(entity);
-    let incapacitated = view.is_incapacitated(entity);
-    let effective_place = view.effective_place(entity);
+    let belief_backed =
+        snapshot_entity_belief(view, actor, entity, evidence_entities, known_entity_beliefs);
+    let kind = belief_backed
+        .and_then(|belief| belief.believed_kind)
+        .or_else(|| view.entity_kind(entity));
+    let alive = belief_backed.map_or_else(|| view.is_alive(entity), |belief| belief.alive);
+    let dead = !alive;
+    let incapacitated = belief_backed.map_or_else(
+        || view.is_incapacitated(entity),
+        |belief| !belief.alive && !belief.wounds.is_empty(),
+    );
+    let effective_place = belief_backed
+        .and_then(|belief| belief.last_known_place)
+        .or_else(|| view.effective_place(entity));
     let in_transit_state = view.in_transit_state(entity);
     let patrol_route = view.patrol_route(entity);
-    let direct_container = view.direct_container(entity);
-    let direct_possessor = view.direct_possessor(entity);
+    let direct_container = belief_backed
+        .is_none()
+        .then(|| view.direct_container(entity))
+        .flatten();
+    let direct_possessor = belief_backed
+        .is_none()
+        .then(|| view.direct_possessor(entity))
+        .flatten();
     let owner = view.believed_owner_of(entity);
     let direct_possessions = view
         .direct_possessions(entity)
         .into_iter()
-        .filter(|possessed| {
-            included_entities_contains(view, *possessed, actor, evidence_entities, included_places)
-        })
+        .filter(|possessed| included_entities.contains(possessed))
         .collect();
     let known_recipes = view.known_recipes(entity);
     let unique_item_counts = collect_unique_item_counts(view, entity);
-    let commodity_quantities = collect_commodity_quantities(view, entity);
-    let item_lot_commodity = view.item_lot_commodity(entity);
+    let commodity_quantities = belief_backed.map_or_else(
+        || collect_commodity_quantities(view, entity),
+        |belief| belief.last_known_inventory.clone(),
+    );
+    let item_lot_commodity = belief_backed
+        .and_then(believed_item_lot_commodity)
+        .or_else(|| view.item_lot_commodity(entity));
     let carry_capacity = view.carry_capacity(entity);
     let intrinsic_load = view.load_of_entity(entity).unwrap_or(LoadUnits(0));
     let item_lot_consumable_profile = view.item_lot_consumable_profile(entity);
-    let workstation_tag = view.workstation_tag(entity);
+    let workstation_tag = belief_backed
+        .and_then(|belief| belief.workstation_tag)
+        .or_else(|| view.workstation_tag(entity));
     let stock_storage_policy = view.stock_storage_policy(entity);
-    let resource_source = view.resource_source(entity);
+    let resource_source = belief_backed
+        .and_then(|belief| belief.resource_source.clone())
+        .or_else(|| view.resource_source(entity));
     let has_production_job = view.has_production_job(entity);
     let controllable_by_actor = view.can_control(actor, entity);
     let has_control = view.has_control(entity);
-    let wounds = view.wounds(entity);
+    let wounds = belief_backed.map_or_else(|| view.wounds(entity), |belief| belief.wounds.clone());
     let patrol_profile = view.patrol_profile(entity);
     let combat_profile = view.combat_profile(entity);
-    let courage = view.courage(entity);
+    let courage = belief_backed
+        .and_then(|belief| belief.last_known_courage)
+        .or_else(|| view.courage(entity));
     let hostile_targets = view.hostile_targets_of(entity);
     let visible_hostiles = view.visible_hostiles_for(entity);
     let current_attackers = view.current_attackers_of(entity);
@@ -976,6 +1004,29 @@ fn build_snapshot_entity(
             has_control,
         },
     }
+}
+
+fn snapshot_entity_belief<'a>(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    entity: EntityId,
+    evidence_entities: &BTreeSet<EntityId>,
+    known_entity_beliefs: &'a BTreeMap<EntityId, BelievedEntityState>,
+) -> Option<&'a BelievedEntityState> {
+    if entity == actor
+        || evidence_entities.contains(&entity)
+        || view.entity_kind(entity) == Some(EntityKind::Place)
+    {
+        None
+    } else {
+        known_entity_beliefs.get(&entity)
+    }
+}
+
+fn believed_item_lot_commodity(belief: &BelievedEntityState) -> Option<CommodityKind> {
+    (belief.believed_kind == Some(EntityKind::ItemLot) && belief.last_known_inventory.len() == 1)
+        .then(|| belief.last_known_inventory.keys().next().copied())
+        .flatten()
 }
 
 fn snapshot_facility_queue(
@@ -1137,18 +1188,29 @@ fn collect_entities(
     let mut included = BTreeSet::from([actor]);
     included.extend(evidence_entities.iter().copied());
     included.extend(included_places.iter().copied());
+    let actor_place = view.effective_place(actor);
 
     for place in included_places {
-        let mut filtered = view
-            .entities_at(*place)
-            .into_iter()
-            .filter(|entity| {
-                let Some(kind) = view.entity_kind(*entity) else {
-                    return false;
-                };
-                filter.includes(kind, believed_alive(view, *entity, known_entity_beliefs))
-            })
-            .collect::<Vec<_>>();
+        let mut filtered = if Some(*place) == actor_place {
+            view.entities_at(*place)
+                .into_iter()
+                .filter(|entity| {
+                    view.entity_kind(*entity)
+                        .is_some_and(|kind| filter.includes(kind, view.is_alive(*entity)))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            known_entity_beliefs
+                .iter()
+                .filter_map(|(entity, belief)| {
+                    (belief.last_known_place == Some(*place)).then_some((*entity, belief))
+                })
+                .filter_map(|(entity, belief)| {
+                    let kind = belief.believed_kind.or_else(|| view.entity_kind(entity))?;
+                    filter.includes(kind, belief.alive).then_some(entity)
+                })
+                .collect::<Vec<_>>()
+        };
         filtered.sort_by_key(|entity| {
             (
                 Reverse(observed_tick_for(*entity, known_entity_beliefs)),
@@ -1180,16 +1242,6 @@ fn collect_entities(
     included
 }
 
-fn believed_alive(
-    view: &dyn RuntimeBeliefView,
-    entity: EntityId,
-    known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
-) -> bool {
-    known_entity_beliefs
-        .get(&entity)
-        .map_or_else(|| view.is_alive(entity), |belief| belief.alive)
-}
-
 fn observed_tick_for(
     entity: EntityId,
     known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
@@ -1197,22 +1249,6 @@ fn observed_tick_for(
     known_entity_beliefs.get(&entity).map_or(Tick(0), |belief| {
         belief.last_observed_tick().unwrap_or(Tick(0))
     })
-}
-
-fn included_entities_contains(
-    view: &dyn RuntimeBeliefView,
-    entity: EntityId,
-    actor: EntityId,
-    evidence_entities: &BTreeSet<EntityId>,
-    included_places: &BTreeSet<EntityId>,
-) -> bool {
-    entity == actor
-        || evidence_entities.contains(&entity)
-        || view
-            .effective_place(entity)
-            .is_some_and(|place| included_places.contains(&place))
-        || view.direct_possessor(entity).is_some()
-        || view.direct_container(entity).is_some()
 }
 
 #[cfg(test)]
@@ -2376,6 +2412,149 @@ mod tests {
         assert!(snapshot.places.contains_key(&place_a));
         assert!(snapshot.places.contains_key(&place_b));
         assert!(!snapshot.places.contains_key(&place_c));
+    }
+
+    #[test]
+    fn build_snapshot_excludes_remote_unbelieved_facility_within_horizon() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let basin = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(basin, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place_a, EntityKind::Place);
+        view.kinds.insert(place_b, EntityKind::Place);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.effective_places.insert(actor, place_a);
+        view.effective_places.insert(basin, place_b);
+        view.entities_at.insert(place_a, vec![actor]);
+        view.entities_at.insert(place_b, vec![basin]);
+        view.adjacent
+            .insert(place_a, vec![(place_b, NonZeroU32::new(1).unwrap())]);
+        view.adjacent
+            .insert(place_b, vec![(place_a, NonZeroU32::new(1).unwrap())]);
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        assert!(!snapshot.entities.contains_key(&basin));
+        assert!(
+            !snapshot
+                .places
+                .get(&place_b)
+                .expect("adjacent place should still be in snapshot")
+                .entities
+                .contains(&basin)
+        );
+    }
+
+    #[test]
+    fn build_snapshot_uses_belief_summary_for_remote_facility_visibility() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let believed_place = entity(11);
+        let authoritative_place = entity(12);
+        let basin = entity(20);
+        let source = ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(7),
+            max_quantity: Quantity(7),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        };
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(basin, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(place_a, EntityKind::Place);
+        view.kinds.insert(believed_place, EntityKind::Place);
+        view.kinds.insert(authoritative_place, EntityKind::Place);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.effective_places.insert(actor, place_a);
+        view.effective_places.insert(basin, authoritative_place);
+        view.entities_at.insert(place_a, vec![actor]);
+        view.entities_at.insert(believed_place, vec![]);
+        view.entities_at.insert(authoritative_place, vec![basin]);
+        view.adjacent.insert(
+            place_a,
+            vec![
+                (believed_place, NonZeroU32::new(1).unwrap()),
+                (authoritative_place, NonZeroU32::new(1).unwrap()),
+            ],
+        );
+        view.adjacent
+            .insert(believed_place, vec![(place_a, NonZeroU32::new(1).unwrap())]);
+        view.adjacent.insert(
+            authoritative_place,
+            vec![(place_a, NonZeroU32::new(1).unwrap())],
+        );
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(
+                basin,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Facility),
+                    last_known_place: Some(believed_place),
+                    last_known_inventory: BTreeMap::new(),
+                    workstation_tag: Some(WorkstationTag::WashBasin),
+                    resource_source: Some(source.clone()),
+                    alive: true,
+                    wounds: Vec::new(),
+                    last_known_courage: None,
+                    believed_activity: None,
+                    believed_artifact: None,
+                    believed_contention: None,
+                    believed_evidence: None,
+                    ..BelievedEntityState::single_observation_defaults(
+                        Tick(4),
+                        worldwake_core::PerceptionSource::DirectObservation,
+                    )
+                },
+            )],
+        );
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&basin)
+                .map(|entity| entity.spatial.effective_place),
+            Some(Some(believed_place))
+        );
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&basin)
+                .and_then(|entity| entity.facility.workstation_tag),
+            Some(WorkstationTag::WashBasin)
+        );
+        assert_eq!(
+            snapshot
+                .entities
+                .get(&basin)
+                .and_then(|entity| entity.facility.resource_source.clone()),
+            Some(source)
+        );
+        assert!(
+            snapshot
+                .places
+                .get(&believed_place)
+                .expect("believed place should be in snapshot")
+                .entities
+                .contains(&basin)
+        );
+        assert!(
+            !snapshot
+                .places
+                .get(&authoritative_place)
+                .expect("authoritative place should remain in topology snapshot")
+                .entities
+                .contains(&basin)
+        );
     }
 
     #[test]

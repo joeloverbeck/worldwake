@@ -103,7 +103,7 @@ Every ticket MUST include:
   - **New/Modified Tests**: Paths with rationale
   - **Commands**: Targeted test commands and full suite verification
 
-Write all ticket files in parallel — ticket file writes are always independent since each creates a new file.
+Write all ticket files in parallel — send **one assistant message containing one Write tool call per ticket**, not N sequential messages. Each ticket file write is independent because each creates a new file.
 
 ### Step 6: Final Summary
 

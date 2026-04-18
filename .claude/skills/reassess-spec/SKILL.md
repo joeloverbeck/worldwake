@@ -106,25 +106,27 @@ For computation-optimization specs (type e, optimization subtype), skip root-cau
 
 ### Step 3: Codebase Validation
 
-Load `references/codebase-validation.md` and `references/worldwake-validation-patterns.md`. Validate every reference from Step 2. Apply the pattern-specific checklists from `worldwake-validation-patterns.md` when a spec matches a trigger (new GoalKind variant, new component on Agent, new component read by AI crate, new action type, new cross-crate enum variant).
+**Read `references/codebase-validation.md` and `references/worldwake-validation-patterns.md` now, with the Read tool, before any validation work.** These files carry the validation checklists and the pattern-specific triggers (new GoalKind variant, new component on Agent, new component read by AI crate, new action type, new cross-crate enum variant). Skipping these reads means pattern-specific checklists will be missed and findings produced in that state are incomplete.
+
+After reading, acknowledge the load with a one-line "Loaded: codebase-validation.md, worldwake-validation-patterns.md" so the skip is auditable. Then validate every reference from Step 2, applying any pattern-specific checklist the spec triggers.
 
 Do not present findings yet. Collect everything for Step 4.
 
 ### Step 4: FOUNDATIONS.md Alignment Check
 
-Load `references/foundations-alignment.md`. Check spec alignment against all applicable principles.
+**Read `references/foundations-alignment.md` now, with the Read tool, before checking alignment.** Acknowledge with "Loaded: foundations-alignment.md". Then check spec alignment against all applicable principles.
 
 ### Steps 5-6: Classify and Present Findings
 
-Load `references/findings-and-questions.md`. Classify all findings from Steps 3-4, then present to the user.
+**Read `references/findings-and-questions.md` now, with the Read tool, before classifying.** Acknowledge with "Loaded: findings-and-questions.md". The file prescribes the one-line finding format and the Step 6 presentation template; using your own format is not a substitute. Then classify all findings from Steps 3-4 and present to the user using that template.
 
 Wait for user response before proceeding to Step 7. (In plan mode: after question resolution, write the plan file per `references/plan-mode.md`, then call ExitPlanMode. Steps 7-8 execute after approval.)
 
 ### Step 7: Write the Updated Spec
 
-**Pre-Apply Verification**: Before editing, run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying. See `references/spec-writing-rules.md` for full details.
+**Pre-Apply Verification**: Before editing, run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying.
 
-Load `references/spec-writing-rules.md`. Apply all approved changes.
+**Read `references/spec-writing-rules.md` now, with the Read tool, before writing.** Acknowledge with "Loaded: spec-writing-rules.md". The file carries the full pre-apply verification, apply-changes, and post-apply confirmation rules. Then apply all approved changes.
 
 ### Step 8: Final Summary
 
@@ -136,6 +138,7 @@ Present:
 - Deferred items the user chose not to address
 - Items excluded by reassessment-driven scope changes (distinct from user-deferred) — note why. Omit if none.
 - 1-3 sections that changed most substantially, with a note to review before proceeding
+- **Classification shift note**: If the reassessment caused the spec's effective classification to shift (e.g., (a) new system collapsed into (b) system extension after deliverable removal, or (e) investigation was promoted to (a) after a new component proved necessary), name the shift explicitly — e.g., "Effective classification shifted (a) → (b) after D2/D3 elimination." This surfaces the change so `/spec-to-tickets` can plan ticket granularity accordingly. Omit if the classification is unchanged.
 - Suggested next step: `/spec-to-tickets <spec-path>` (the spec-to-tickets skill will prompt for the ticket namespace)
 
 Do NOT commit. Leave the file for user review.

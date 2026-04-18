@@ -61,9 +61,10 @@ Scan for instructions that appear in multiple locations with the same semantic c
 
 For each redundancy cluster:
 1. **Identify all instances**: Note the instruction text and its location (section + approximate position)
-2. **Pick the canonical location**: Where the instruction is most contextually relevant (e.g., a "reassess before coding" instruction belongs in the reassessment section, not in guardrails)
-3. **Mark non-canonical instances for removal**
-4. **Record** the cluster for the diff summary
+2. **Pick the canonical location**: Where the instruction is most contextually relevant (e.g., a "reassess before coding" instruction belongs in the reassessment section, not in guardrails). When wordings differ, select the version whose surrounding context is most natural.
+3. **Check for unique details**: Before discarding non-canonical copies, verify they contain no unique detail (a qualifier, an example, a caveat) that the canonical version lacks — if they do, fold that detail into the canonical version.
+4. **Mark non-canonical instances for removal**
+5. **Record** the cluster for the diff summary
 
 Common redundancy patterns to watch for:
 - Principle restated in introduction, section body, AND guardrails
@@ -135,7 +136,7 @@ For non-redundant instructions (those surviving Steps 2-5), tighten prose:
 
 ### Step 7: Rewrite
 
-Before writing, briefly summarize planned changes in the conversation so the user sees what will change before the file is overwritten.
+Before writing, briefly summarize planned changes in the conversation so the user sees what will change before the file is overwritten. The pre-write summary is an abbreviated version of the Step 9 categories (one line per category listing what will change), not the full diff summary.
 
 Write the consolidated SKILL.md in-place at `<skill-path>/SKILL.md`.
 

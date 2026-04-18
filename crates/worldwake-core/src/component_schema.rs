@@ -1030,6 +1030,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                drive_escalation_profiles,
+                DriveEscalationProfile,
+                insert_drive_escalation_profile,
+                get_drive_escalation_profile,
+                get_drive_escalation_profile_mut,
+                remove_drive_escalation_profile,
+                has_drive_escalation_profile,
+                iter_drive_escalation_profiles,
+                insert_component_drive_escalation_profile,
+                get_component_drive_escalation_profile,
+                get_component_drive_escalation_profile_mut,
+                remove_component_drive_escalation_profile,
+                has_component_drive_escalation_profile,
+                entities_with_drive_escalation_profile,
+                query_drive_escalation_profile,
+                count_with_drive_escalation_profile,
+                "DriveEscalationProfile",
+                |kind| kind == EntityKind::Agent,
+                DriveEscalationProfile,
+                crate::DriveEscalationProfile,
+                set_component_drive_escalation_profile,
+                clear_component_drive_escalation_profile,
+                txn_simple_set
+            }
+            {
                 drive_thresholds,
                 DriveThresholds,
                 insert_drive_thresholds,

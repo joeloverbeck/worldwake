@@ -17,6 +17,24 @@
 //   pressure within a ~150-tick window, creating overlap at water sources.
 (
     seed: 306006,
+    survival_health_contract: (
+        // Tightened from 400 to 300 by S116 (Drive Escalation Under Sustained
+        // Critical Need). Motive-score escalation interrupts the wash-cycle
+        // priority-override that previously allowed critical runs up to ~372
+        // ticks empirically. The 300-tick default gives >=72 ticks of headroom
+        // over the pre-S116 worst case while not depending on resolving the
+        // `wash_preconditions` water-possession bottleneck
+        // (`needs_actions.rs:196` still requires directly possessed Water).
+        // Further tightening toward 200 requires a follow-up spec that changes
+        // acquire-water-for-wash precedence or the wash precondition itself.
+        max_authored_critical_run_ticks: 300,
+        max_idle_window_ticks_with_elevated_need: 40,
+        elevated_need_floor: 300,
+        required_self_care_families: [Eat, Drink, Sleep, Relieve],
+        critical_run_limits: (
+            dirtiness: 1300,
+        ),
+    ),
     places: [
         (name: "North Camp", tags: [Camp, Latrine]),
         (name: "South Camp", tags: [Camp, Latrine]),

@@ -74,11 +74,7 @@ const ACQUIRE_OPS: &[PlannerOpKind] = &[
 ];
 const SLEEP_OPS: &[PlannerOpKind] = &[PlannerOpKind::Sleep];
 const RELIEVE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Relieve, PlannerOpKind::Travel];
-const WASH_OPS: &[PlannerOpKind] = &[
-    PlannerOpKind::Wash,
-    PlannerOpKind::Travel,
-    PlannerOpKind::MoveCargo,
-];
+const WASH_OPS: &[PlannerOpKind] = &[PlannerOpKind::Wash, PlannerOpKind::Travel];
 const FREE_CARRY_CAPACITY_OPS: &[PlannerOpKind] = &[PlannerOpKind::DropItem];
 const ENGAGE_HOSTILE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];
 const RAID_TARGET_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::Attack];
@@ -295,7 +291,7 @@ static DECL_SLEEP: GoalDispatchDeclaration = GoalDispatchDeclaration {
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Fatigue),
     feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
     family_policy: SELF_CARE_POLICY,
-    progress_barrier_ops: NO_BARRIER,
+    progress_barrier_ops: SLEEP_OPS,
 };
 static DECL_RELIEVE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Relieve",
@@ -311,7 +307,7 @@ static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
     provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: WASH_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Dirtiness),
-    feasibility_strategy: FeasibilityStrategy::CommodityPresenceCheck,
+    feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };

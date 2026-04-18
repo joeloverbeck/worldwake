@@ -124,7 +124,7 @@ fn derive_blocking_fact(
                 return fact;
             }
         }
-        PlannerOpKind::Consume | PlannerOpKind::Wash | PlannerOpKind::Heal => {
+        PlannerOpKind::Consume | PlannerOpKind::Heal => {
             if let Some(fact) = classify_input_failure(view, agent, goal_key, step) {
                 return fact;
             }
@@ -134,7 +134,8 @@ fn derive_blocking_fact(
                 return BlockingFact::CombatTooRisky;
             }
         }
-        PlannerOpKind::Patrol
+        PlannerOpKind::Wash
+        | PlannerOpKind::Patrol
         | PlannerOpKind::Sleep
         | PlannerOpKind::Relieve
         | PlannerOpKind::EstablishCamp
@@ -377,7 +378,6 @@ fn classify_input_failure(
     step: &PlannedStep,
 ) -> Option<BlockingFact> {
     let commodity = match step.op_kind {
-        PlannerOpKind::Wash => Some(CommodityKind::Water),
         PlannerOpKind::Heal => Some(CommodityKind::Medicine),
         PlannerOpKind::Consume => goal_key.commodity,
         PlannerOpKind::Travel
@@ -416,7 +416,8 @@ fn classify_input_failure(
         | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
         | PlannerOpKind::PostBounty
-        | PlannerOpKind::PostNotice => None,
+        | PlannerOpKind::PostNotice
+        | PlannerOpKind::Wash => None,
     }?;
 
     (view.commodity_quantity(agent, commodity) == Quantity(0))
@@ -549,9 +550,23 @@ fn map_start_failure_reason(reason: &ActionStartFailureReason) -> Option<Blockin
         ActionStartFailureReason::ReservationUnavailable(_) => {
             Some(BlockingFact::ReservationConflict)
         }
-        ActionStartFailureReason::PreconditionFailed(detail) => parse_abort_detail(detail),
+        ActionStartFailureReason::PreconditionFailed(detail) => {
+            classify_precondition_failure_detail(detail).or_else(|| parse_abort_detail(detail))
+        }
         ActionStartFailureReason::InvalidTarget(_) => Some(BlockingFact::TargetGone),
         ActionStartFailureReason::AbortRequested(reason) => map_handler_abort_reason(reason),
+    }
+}
+
+fn classify_precondition_failure_detail(detail: &str) -> Option<BlockingFact> {
+    let detail = detail.to_ascii_lowercase();
+    if detail.contains("targetatactorplace")
+        || detail.contains("targetdirectlypossessedbyactor")
+        || detail.contains("targetgrounded")
+    {
+        Some(BlockingFact::AssumptionFailed)
+    } else {
+        None
     }
 }
 
@@ -928,8 +943,11 @@ fn related_place(
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
-        | PlannerOpKind::MoveCargo
         | PlannerOpKind::DropItem => view.effective_place(agent).or(goal_key.place),
+        PlannerOpKind::MoveCargo => related_entity(step)
+            .and_then(|target| view.effective_place(target))
+            .or(goal_key.place)
+            .or_else(|| view.effective_place(agent)),
         PlannerOpKind::Bury => step
             .targets
             .get(1)
@@ -1590,6 +1608,71 @@ mod tests {
             intent.expires_tick,
             Tick(20 + u64::from(ProfileFixture::default().transient_block_ticks))
         );
+    }
+
+    fn move_cargo_step(target: EntityId) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(7),
+            targets: vec![PlanningEntityRef::Authoritative(target)],
+            payload_override: None,
+            op_kind: PlannerOpKind::MoveCargo,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn handle_plan_failure_scopes_remote_move_cargo_blocker_to_target_place() {
+        let agent = entity(1);
+        let home = entity(10);
+        let remote_place = entity(11);
+        let bread_lot = entity(2);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let step = move_cargo_step(bread_lot);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(bread_lot, remote_place);
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = Some(jc_for_goal(goal));
+        let mut blocked = BlockedIntentMemory::default();
+
+        handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                execution_failure: Some(ExecutionFailure::Start(&ActionStartFailure {
+                    tick: Tick(20),
+                    actor: agent,
+                    def_id: step.def_id,
+                    request: sample_request(1),
+                    reason: ActionStartFailureReason::PreconditionFailed(
+                        "TargetAtActorPlace(0)".to_string(),
+                    ),
+                })),
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut jc,
+            &mut blocked,
+            &mut ContentionIntents::default(),
+            &cognitive(&ProfileFixture::default()),
+        );
+
+        let intent = blocked.intents.values().next().unwrap();
+        assert_eq!(intent.blocking_fact, BlockingFact::AssumptionFailed);
+        assert_eq!(intent.blocker_key.target, Some(bread_lot));
+        assert_eq!(intent.blocker_key.place, Some(remote_place));
+        assert_eq!(intent.blocker_key.action_def, Some(step.def_id));
     }
 
     #[test]

@@ -17,6 +17,8 @@ Tag severity: CRITICAL (blocks tickets), HIGH (fix before tickets), MEDIUM (impr
 
 ## Step 6: Present Findings
 
+**Redesign-count checkpoint (before drafting the presentation)**: Count the deliverables whose approach was materially changed by the reassessment — eliminated, replaced with a different mechanism, or restructured such that the implementation path is not a refinement of the original. Include this count as `N / total`. If `N / total > 50%`, the Substantial Redesign Flag section below MUST appear in the output immediately above Questions. If `N / total <= 50%`, omit the Substantial Redesign Flag section entirely. Record both counts in your pre-draft notes so the decision is auditable.
+
 Present in this format:
 
 ```

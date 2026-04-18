@@ -692,10 +692,10 @@ mod tests {
         assert_eq!(hint, FeasibilityHint::Likely);
     }
 
-    // ── Test 9: Wash with Water → Likely ──
+    // ── Test 9: Wash with Water but No Local Place Evidence → Uncertain ──
 
     #[test]
-    fn test_wash_with_water_likely() {
+    fn test_wash_with_water_without_local_evidence_is_uncertain() {
         let view = MockView {
             commodities: vec![(CommodityKind::Water, Quantity(1))],
             ..Default::default()
@@ -704,7 +704,7 @@ mod tests {
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
-        assert_eq!(hint, FeasibilityHint::Likely);
+        assert_eq!(hint, FeasibilityHint::Uncertain);
     }
 
     // ── Test 10: Wash without Water → Uncertain ──
@@ -717,6 +717,20 @@ mod tests {
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
         assert_eq!(hint, FeasibilityHint::Uncertain);
+    }
+
+    #[test]
+    fn test_wash_with_local_evidence_place_likely() {
+        let place = entity(10);
+        let view = MockView {
+            agent_place: Some(place),
+            ..Default::default()
+        };
+        let goal = ranked_goal_with_evidence_places(GoalKind::Wash, &[place]);
+        let blocked = empty_blocked_memory();
+
+        let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1));
+        assert_eq!(hint, FeasibilityHint::Likely);
     }
 
     #[test]

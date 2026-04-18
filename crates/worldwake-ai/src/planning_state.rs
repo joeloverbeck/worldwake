@@ -1015,6 +1015,26 @@ impl<'snapshot> PlanningState<'snapshot> {
     }
 
     #[must_use]
+    pub(crate) fn hypothetical_ground_lot_refs_at_place(
+        &self,
+        place: EntityId,
+    ) -> Vec<PlanningEntityRef> {
+        let mut entities = self
+            .hypothetical_registry
+            .keys()
+            .copied()
+            .map(PlanningEntityRef::Hypothetical)
+            .filter(|entity| self.entity_kind_ref(*entity) == Some(EntityKind::ItemLot))
+            .filter(|entity| self.direct_possessor_ref(*entity).is_none())
+            .filter(|entity| self.direct_container_ref(*entity).is_none())
+            .filter(|entity| self.effective_place_ref(*entity) == Some(place))
+            .collect::<Vec<_>>();
+        entities.sort();
+        entities.dedup();
+        entities
+    }
+
+    #[must_use]
     pub fn controlled_stock_containers_at_place(
         &self,
         agent: PlanningEntityRef,

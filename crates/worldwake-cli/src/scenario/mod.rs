@@ -345,6 +345,11 @@ fn spawn_agent(
     txn.set_component_deprivation_exposure(agent_id, DeprivationExposure::default())?;
     let thresholds = agent_def.drive_thresholds.unwrap_or_default();
     txn.set_component_drive_thresholds(agent_id, thresholds)?;
+    let drive_escalation_profile = agent_def
+        .drive_escalation_profile
+        .clone()
+        .unwrap_or_default();
+    txn.set_component_drive_escalation_profile(agent_id, drive_escalation_profile)?;
     let metabolism = agent_def.metabolism_profile.unwrap_or_default();
     txn.set_component_metabolism_profile(agent_id, metabolism)?;
     if let Some(profile) = agent_def.disposal_profile {
@@ -597,13 +602,14 @@ mod tests {
         ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity, CognitiveProfile,
         CommodityDecayMap, CommodityKind, CommodityValuationProfile, CommunicationProfile,
         ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
-        DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
+        DriveEscalationParams, DriveEscalationProfile, DriveThresholds,
+        EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeedId,
         HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-        LastProactiveExplorationTick, LastSeenMemory, LoadUnits, ObligationSatiationProfile,
-        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceVisibilityProfile,
-        PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
-        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
-        WorkstationTag, default_commodity_decay_map,
+        LastProactiveExplorationTick, LastSeenMemory, LoadUnits, MultiplierPermille,
+        ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
+        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
+        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        ViolationDispositionProfile, WorkstationTag, default_commodity_decay_map,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -629,6 +635,7 @@ mod tests {
             last_seen_memory: None,
             obligation_satiation_profile: None,
             drive_thresholds: None,
+            drive_escalation_profile: None,
             metabolism_profile: None,
             disposal_profile: None,
             exploration_profile: None,
@@ -662,6 +669,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         }
     }
@@ -740,6 +748,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -782,6 +791,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -813,6 +823,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -849,6 +860,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -884,6 +896,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -934,6 +947,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -982,6 +996,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1029,6 +1044,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1082,6 +1098,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1137,6 +1154,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1187,6 +1205,7 @@ mod tests {
                 capacity: Quantity(20),
             }],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1246,6 +1265,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1303,6 +1323,7 @@ mod tests {
                 capacity: Quantity(20),
             }],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1363,6 +1384,7 @@ mod tests {
                 capacity: Quantity(15),
             }],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1446,6 +1468,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1483,6 +1506,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1520,6 +1544,10 @@ mod tests {
         assert_eq!(
             world.get_component_execution_budget(agent),
             Some(&ExecutionBudget::default())
+        );
+        assert_eq!(
+            world.get_component_drive_escalation_profile(agent),
+            Some(&DriveEscalationProfile::default())
         );
         assert_eq!(
             world.get_component_epistemic_disposition_profile(agent),
@@ -1592,6 +1620,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1636,6 +1665,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1679,6 +1709,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1789,6 +1820,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1847,6 +1879,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1859,6 +1892,56 @@ mod tests {
 
         assert_eq!(
             world.get_component_obligation_satiation_profile(agent),
+            Some(&custom_profile)
+        );
+    }
+
+    #[test]
+    fn test_spawn_agents_apply_drive_escalation_profile_override_when_present() {
+        let custom_profile = DriveEscalationProfile {
+            per_need: BTreeMap::from([(
+                HomeostaticNeedId::Dirtiness,
+                DriveEscalationParams {
+                    start_after_ticks: 40,
+                    growth_per_tick: Permille::new(25).unwrap(),
+                    max_multiplier: MultiplierPermille::new(2200).unwrap(),
+                },
+            )]),
+            default_per_need: DriveEscalationParams {
+                start_after_ticks: 80,
+                growth_per_tick: Permille::new(15).unwrap(),
+                max_multiplier: MultiplierPermille::new(1800).unwrap(),
+            },
+        };
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![AgentDef {
+                drive_escalation_profile: Some(custom_profile.clone()),
+                ..minimal_agent("Alice", "Town", ControlSource::Ai)
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_drive_escalation_profile(agent),
             Some(&custom_profile)
         );
     }
@@ -1939,6 +2022,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -2046,6 +2130,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 

@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, EventTag, HomeostaticNeeds, ItemLot, MetabolismProfile,
-    OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, VisibilitySpec, WorldTxn,
+    OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, VisibilitySpec, WorkstationTag, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -142,9 +142,17 @@ fn register_def(
             _ => vec![Constraint::ActorAlive],
         },
         targets: match name {
-            "eat" | "drink" | "wash" => vec![TargetSpec::EntityDirectlyPossessedByActor {
+            "eat" | "drink" => vec![TargetSpec::EntityDirectlyPossessedByActor {
                 kind: worldwake_core::EntityKind::ItemLot,
             }],
+            "wash" => vec![
+                TargetSpec::EntityAtActorPlace {
+                    kind: worldwake_core::EntityKind::Facility,
+                },
+                TargetSpec::EntityAtActorPlace {
+                    kind: worldwake_core::EntityKind::Facility,
+                },
+            ],
             _ => Vec::new(),
         },
         preconditions: preconditions.clone(),
@@ -197,14 +205,25 @@ fn wash_preconditions() -> Vec<Precondition> {
     vec![
         Precondition::ActorAlive,
         Precondition::TargetExists(0),
+        Precondition::TargetAtActorPlace(0),
         Precondition::TargetKind {
             target_index: 0,
-            kind: worldwake_core::EntityKind::ItemLot,
+            kind: worldwake_core::EntityKind::Facility,
         },
-        Precondition::TargetDirectlyPossessedByActor(0),
-        Precondition::TargetCommodity {
+        Precondition::TargetHasWorkstationTag {
             target_index: 0,
-            kind: CommodityKind::Water,
+            tag: WorkstationTag::WashBasin,
+        },
+        Precondition::TargetExists(1),
+        Precondition::TargetAtActorPlace(1),
+        Precondition::TargetKind {
+            target_index: 1,
+            kind: worldwake_core::EntityKind::Facility,
+        },
+        Precondition::TargetHasResourceSource {
+            target_index: 1,
+            commodity: CommodityKind::Water,
+            min_available: Quantity(1),
         },
     ]
 }
@@ -458,12 +477,26 @@ fn commit_wash(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let target = *instance
+    let source = *instance
         .targets
-        .first()
+        .get(1)
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
     let needs = actor_needs(txn, instance.actor)?;
-    consume_one_unit(txn, target)?;
+    let mut resource = txn
+        .get_component_resource_source(source)
+        .cloned()
+        .ok_or(ActionError::InvalidTarget(source))?;
+    resource.available_quantity = resource
+        .available_quantity
+        .checked_sub(Quantity(1))
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "resource source {source} lacks {:?} units for wash",
+                Quantity(1)
+            ))
+        })?;
+    txn.set_component_resource_source(source, resource)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
     set_actor_needs(
         txn,
         instance.actor,
@@ -489,10 +522,11 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
-        DisturbanceKind, DriveThresholds, EntityId, EventLog, EventTag, EvidenceKind,
+        DisturbanceKind, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EvidenceKind,
         HomeostaticNeeds, MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
-        Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
-        build_prototype_world, prototype_place_entity,
+        ResourceSource, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
+        World, WorldTxn, build_believed_entity_state, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
@@ -570,6 +604,33 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         register_needs_actions(&mut defs, &mut handlers);
         (defs, handlers)
+    }
+
+    fn setup_wash_access(
+        world: &mut World,
+        place: EntityId,
+        available_water: u32,
+    ) -> (EntityId, EntityId) {
+        let mut txn = new_txn(world, 2);
+        let basin = txn.create_entity(EntityKind::Facility);
+        let source = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(basin, place).unwrap();
+        txn.set_ground_location(source, place).unwrap();
+        txn.set_component_workstation_marker(basin, WorkstationMarker(WorkstationTag::WashBasin))
+            .unwrap();
+        txn.set_component_resource_source(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(available_water),
+                max_quantity: Quantity(available_water),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        (basin, source)
     }
 
     fn test_belief_store(world: &World, actor: EntityId) -> AgentBeliefStore {
@@ -920,19 +981,10 @@ mod tests {
     }
 
     #[test]
-    fn wash_consumes_water_and_clears_dirtiness() {
+    fn wash_consumes_local_water_source_and_clears_dirtiness() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (actor, place) = setup_actor(&mut world);
-        let water = {
-            let mut txn = new_txn(&mut world, 2);
-            let water = txn
-                .create_item_lot(CommodityKind::Water, Quantity(2))
-                .unwrap();
-            txn.set_ground_location(water, place).unwrap();
-            txn.set_possessor(water, actor).unwrap();
-            commit_txn(txn);
-            water
-        };
+        let (_basin, source) = setup_wash_access(&mut world, place, 2);
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
@@ -944,7 +996,10 @@ mod tests {
         run_action_to_completion(actor, wash_index, &mut world, &mut log, &defs, &handlers);
 
         assert_eq!(
-            world.get_component_item_lot(water).unwrap().quantity,
+            world
+                .get_component_resource_source(source)
+                .unwrap()
+                .available_quantity,
             Quantity(1)
         );
         assert_eq!(
@@ -1075,44 +1130,42 @@ mod tests {
     }
 
     #[test]
-    fn wash_rejects_unpossessed_water_lot_on_ground() {
+    fn wash_rejects_water_source_without_wash_basin() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (actor, place) = setup_actor(&mut world);
-        {
-            let mut txn = new_txn(&mut world, 2);
-            let water = txn
-                .create_item_lot(CommodityKind::Water, Quantity(1))
-                .unwrap();
-            txn.set_ground_location(water, place).unwrap();
-            txn.set_owner(water, actor).unwrap();
-            commit_txn(txn);
-        }
+        let mut txn = new_txn(&mut world, 2);
+        let source = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(source, place).unwrap();
+        txn.set_component_resource_source(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(1),
+                max_quantity: Quantity(1),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
         let (defs, handlers) = setup_registries();
         let affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(
             affordances.iter().all(|a| a.def_id != wash_def_id()),
-            "wash should not be offered for owned-but-unpossessed water lot"
+            "wash should not be offered without a local wash basin"
         );
     }
 
     #[test]
-    fn wash_accepts_possessed_water_lot() {
+    fn wash_accepts_local_basin_and_water_source() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (actor, place) = setup_actor(&mut world);
-        {
-            let mut txn = new_txn(&mut world, 2);
-            let water = txn
-                .create_item_lot(CommodityKind::Water, Quantity(1))
-                .unwrap();
-            txn.set_ground_location(water, place).unwrap();
-            txn.set_possessor(water, actor).unwrap();
-            commit_txn(txn);
-        }
+        let _ = setup_wash_access(&mut world, place, 1);
         let (defs, handlers) = setup_registries();
         let affordances = affordances_for(&world, actor, &defs, &handlers);
         assert!(
             affordances.iter().any(|a| a.def_id == wash_def_id()),
-            "wash should be offered for possessed water lot"
+            "wash should be offered for a local wash basin plus water source"
         );
     }
 

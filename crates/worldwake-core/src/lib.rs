@@ -44,6 +44,7 @@ pub mod crime;
 pub mod delta;
 pub mod disposal;
 pub mod diversification;
+pub mod drive_escalation_profile;
 pub mod drives;
 pub mod entity;
 pub mod entity_belief_claim;
@@ -142,6 +143,9 @@ pub use delta::{
 };
 pub use disposal::DisposalProfile;
 pub use diversification::{DiversificationProfile, LastProactiveExplorationTick};
+pub use drive_escalation_profile::{
+    DriveEscalationParams, DriveEscalationProfile, MultiplierPermille, escalation_multiplier,
+};
 pub use drives::{DriveThresholds, ThresholdBand};
 pub use entity::{EntityKind, EntityMeta};
 pub use entity_belief_claim::{ClaimId, ClaimValue, EntityBeliefAspect, EntityBeliefClaim};
