@@ -38,8 +38,7 @@ pub fn observe_critical_windows(
                     .map(|def| def.name.as_str());
                 ActionTraceSnapshot::from_sink(agent, tick, sink, active_action, active_action_name)
             });
-    let local_state = worldwake_ai::LocalSurvivalStateSummary::capture(&harness.world, agent)
-        .expect("golden survival agents should always have an effective place");
+    let local_state = worldwake_ai::LocalSurvivalStateSummary::capture(&harness.world, agent);
     extractor.observe(
         tick,
         needs,
@@ -158,10 +157,10 @@ pub fn dump_reports_for_debug(reports: &[CriticalWindowReport]) -> String {
 
 pub fn sample_local_survival_state_summary() -> worldwake_ai::LocalSurvivalStateSummary {
     worldwake_ai::LocalSurvivalStateSummary {
-        place: EntityId {
+        place: Some(EntityId {
             slot: 50,
             generation: 0,
-        },
+        }),
         water_source_present: true,
         wash_basin_present: false,
         sleep_affordance_present: true,

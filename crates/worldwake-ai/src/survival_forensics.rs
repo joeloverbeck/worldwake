@@ -70,7 +70,7 @@ pub struct BlockerSummary {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LocalSurvivalStateSummary {
-    pub place: EntityId,
+    pub place: Option<EntityId>,
     pub water_source_present: bool,
     pub wash_basin_present: bool,
     pub sleep_affordance_present: bool,
@@ -79,8 +79,16 @@ pub struct LocalSurvivalStateSummary {
 
 impl LocalSurvivalStateSummary {
     #[must_use]
-    pub fn capture(world: &World, agent: EntityId) -> Option<Self> {
-        let place = world.effective_place(agent)?;
+    pub fn capture(world: &World, agent: EntityId) -> Self {
+        let Some(place) = world.effective_place(agent) else {
+            return Self {
+                place: None,
+                water_source_present: false,
+                wash_basin_present: false,
+                sleep_affordance_present: false,
+                food_source_present: false,
+            };
+        };
         let water_source_present = world.query_resource_source().any(|(entity, source)| {
             world.effective_place(entity) == Some(place)
                 && source.commodity == CommodityKind::Water
@@ -102,13 +110,13 @@ impl LocalSurvivalStateSummary {
                 && commodity_is_edible(lot.commodity)
         });
 
-        Some(Self {
-            place,
+        Self {
+            place: Some(place),
             water_source_present,
             wash_basin_present,
             sleep_affordance_present,
             food_source_present,
-        })
+        }
     }
 }
 
@@ -696,12 +704,35 @@ mod tests {
         txn.set_ground_location(bread, place).unwrap();
         txn.commit(&mut worldwake_core::EventLog::new());
 
-        let summary = LocalSurvivalStateSummary::capture(&world, agent).unwrap();
-        assert_eq!(summary.place, place);
+        let summary = LocalSurvivalStateSummary::capture(&world, agent);
+        assert_eq!(summary.place, Some(place));
         assert!(summary.water_source_present);
         assert!(summary.wash_basin_present);
         assert!(summary.sleep_affordance_present);
         assert!(summary.food_source_present);
+    }
+
+    #[test]
+    fn local_survival_state_summary_capture_marks_in_transit_agents_without_place() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let mut txn = WorldTxn::new(
+            &mut world,
+            Tick(1),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::PublicRecord,
+            WitnessData::default(),
+        );
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.commit(&mut worldwake_core::EventLog::new());
+
+        let summary = LocalSurvivalStateSummary::capture(&world, agent);
+        assert_eq!(summary.place, None);
+        assert!(!summary.water_source_present);
+        assert!(!summary.wash_basin_present);
+        assert!(!summary.sleep_affordance_present);
+        assert!(!summary.food_source_present);
     }
 
     fn planning_trace(agent: EntityId, tick: Tick, goal: GoalKey) -> AgentDecisionTrace {
@@ -841,7 +872,7 @@ mod tests {
 
     fn sample_local_summary() -> LocalSurvivalStateSummary {
         LocalSurvivalStateSummary {
-            place: entity(50),
+            place: Some(entity(50)),
             water_source_present: true,
             wash_basin_present: false,
             sleep_affordance_present: true,

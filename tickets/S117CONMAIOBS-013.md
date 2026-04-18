@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — planner-side survival candidate/ranking behavior in `worldwake-ai`
-**Deps**: `archive/tickets/S117CONMAIOBS-011.md`, `archive/specs/S104-survival-baseline-recovery.md`, `docs/planner-contracts.md`
+**Deps**: `archive/tickets/S117CONMAIOBS-011.md`, `archive/specs/S104-survival-baseline-recovery.md`, `docs/planner-contracts.md`, `archive/tickets/S117CONMAIOBS-014.md`
 
 ## Problem
 
@@ -20,16 +20,18 @@ Archived `S117CONMAIOBS-011.md` concluded that the remaining `survival-baseline.
 6. `docs/planner-contracts.md` confirms the planner consumes grounded goals and current strategic output one active step at a time; there is no existing multi-step strategic fallback layer that already carries “prepare complementary support, then travel for food” semantics for self-care.
 7. This ticket must stay belief-local. Any split-support preparation signal must derive from planner-visible local state, believed place support, carried inventory, and existing travel knowledge. Global scenario-name suppressions or omniscient “future safety score” shortcuts are out of bounds under `docs/FOUNDATIONS.md` principles 14, 20, 21, and 27.
 8. The ticket does not need to make `AcuteNeedSpike` disappear in every scenario. The owned invariant is narrower: on the authored healthy baseline, the planner should stop producing the known split-support oscillation that currently drives the baseline acute and maintenance windows.
+9. The earlier proof-surface contradiction in the ignored survival golden has now been isolated and corrected by `S117CONMAIOBS-014`. The exact selector `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact` is once again a lawful behavior-level oracle for this planner ticket.
 
 ## Architecture Check
 
 1. A planner-side split-support preparation rule is cleaner than retuning the scenario around the current reactive behavior. The authored baseline already proves the topology is lawful for two agents; the failure is that one profile repeatedly leaves or returns without enough complementary support to survive the trip cleanly.
 2. The fix should stay concrete and local: prefer preparation using planner-visible current-place support and believed destination support, rather than a global scalar “survival safety” heuristic. This keeps the behavior explainable in decision traces and aligned with `FOUNDATIONS.md`.
+3. Separating the planner fix from the golden-harness `effective_place` contradiction kept the abstraction boundary honest. `S117CONMAIOBS-013` owns behavior; `S117CONMAIOBS-014` restored the ignored survival golden as a lawful oracle.
 
 ## Verification Layers
 
 1. Candidate/selection behavior changes at the intended planner boundary -> focused `worldwake-ai` unit/runtime coverage around self-care ranking/selection for split-support travel
-2. The authored baseline acute/maintenance contradiction is removed at the behavior layer -> `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact` plus observer baseline rerun
+2. The authored baseline acute/maintenance contradiction is removed at the behavior layer -> focused planner/runtime proof plus observer baseline rerun in this ticket, followed by `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact`
 3. The observer anomaly surface stays honest rather than tuned away -> `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
 4. No omniscient or snapshot-illegal carrier is introduced -> focused planner-boundary proof against `docs/planner-contracts.md` plus normal `worldwake-ai` crate verification
 
@@ -51,7 +53,7 @@ Add focused `worldwake-ai` coverage for the chosen contract using the narrowest 
 
 ### 3. Revalidate the authored baseline and observer handoff
 
-Rerun the exact ignored survival-baseline golden selector plus the observer baseline report. If the planner fix removes the split-support oscillation cleanly, update `S117CONMAIOBS-007` and `S117CONMAIOBS-011` closeout references factually. If a separate harness bug still blocks the survival golden after the planner fix, stop and spin that traceability remainder explicitly rather than smuggling it into this ticket.
+Rerun the observer baseline report, the focused planner proof, and the exact ignored survival-baseline golden selector in this ticket. If the planner fix removes the split-support oscillation cleanly, update `S117CONMAIOBS-007` and archived `S117CONMAIOBS-011.md` closeout references factually.
 
 ## Files to Touch
 
@@ -59,8 +61,9 @@ Rerun the exact ignored survival-baseline golden selector plus the observer base
 - `crates/worldwake-ai/src/ranking.rs` (modify)
 - `crates/worldwake-ai/src/agent_tick/planning.rs` (modify)
 - `crates/worldwake-ai/tests/golden_survival_baseline.rs` (modify if the proving contract needs focused baseline assertions beyond the current ignored selector)
+- `tickets/S117CONMAIOBS-014.md` (new proof-surface dependency; created during reassessment)
 - `tickets/S117CONMAIOBS-007.md` (modify if baseline blocker ownership changes after the fix)
-- `tickets/S117CONMAIOBS-011.md` (modify on closeout if this ticket resolves the owning contradiction)
+- `archive/tickets/S117CONMAIOBS-011.md` (modify on closeout if this ticket resolves the owning contradiction)
 
 ## Out of Scope
 
@@ -74,8 +77,8 @@ Rerun the exact ignored survival-baseline golden selector plus the observer base
 ### Tests That Must Pass
 
 1. Focused `worldwake-ai` proof for the new split-support preparation behavior
-2. `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact`
-3. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
+2. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
+3. `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact`
 4. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
@@ -88,11 +91,11 @@ Rerun the exact ignored survival-baseline golden selector plus the observer base
 ### New/Modified Tests
 
 1. `crates/worldwake-ai/src/agent_tick/planning.rs` or nearby focused planner unit coverage — prove the bounded split-support preparation contract at the real selection boundary.
-2. `crates/worldwake-ai/tests/golden_survival_baseline.rs` — use the exact ignored baseline selector as the behavior-level proof once the planner fix lands.
+2. `crates/worldwake-ai/tests/golden_survival_baseline.rs` — use the exact ignored baseline selector as the behavior-level proof.
 
 ### Commands
 
 1. Focused `cargo test -p worldwake-ai <exact focused selector>`
-2. `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact`
-3. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
-4. `cargo test -p worldwake-ai`
+2. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
+3. `cargo test -p worldwake-ai`
+4. `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact`
