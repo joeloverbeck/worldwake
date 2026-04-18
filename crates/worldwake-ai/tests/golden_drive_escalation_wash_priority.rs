@@ -512,6 +512,7 @@ fn run_escalation_fades_after_relief() -> EscalationReliefObservation {
 // enough to grow escalation -> Wash motive overtakes hunger-driven orchard
 // looping -> repeated wash commits reset the critical run length.
 #[test]
+#[ignore = "CI-only: long-running drive-escalation scenario; run via golden-drive-escalation workflow"]
 fn dirtiness_wash_cycle_under_priority_override() {
     let observation = run_dirtiness_wash_cycle_under_priority_override();
 
@@ -550,6 +551,7 @@ fn dirtiness_wash_cycle_under_priority_override() {
 // there -> escalation multiplier grows -> no believed wash basin means search
 // never finds a lawful Wash plan -> no wash commit occurs.
 #[test]
+#[ignore = "CI-only: long-running drive-escalation scenario; run via golden-drive-escalation workflow"]
 fn escalation_respects_belief_only_planning() {
     let observation = run_escalation_respects_belief_only_planning();
     let mut h = GoldenHarness::new(Seed([0; 32]));
@@ -607,6 +609,7 @@ fn escalation_respects_belief_only_planning() {
 // Chain: sustained critical dirtiness -> escalation begin -> committed wash ->
 // needs-system counter reset -> authoritative escalation-end event.
 #[test]
+#[ignore = "CI-only: long-running drive-escalation scenario; run via golden-drive-escalation workflow"]
 fn escalation_fades_after_relief() {
     let observation = run_escalation_fades_after_relief();
 

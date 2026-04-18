@@ -1,0 +1,43 @@
+# Family-per-matrix-workflow convention: add scenarios to the matrix below; create a
+# new golden-<family>.yml when a new scenario family lands (combat, trade, exploration, …).
+# See docs/plans/2026-04-17-per-family-golden-scenario-workflows-design.md.
+name: Golden Drive Escalation
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+concurrency:
+  group: golden-drive-escalation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenario:
+    name: golden-drive-escalation / ${{ matrix.scenario }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [wash_priority]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+          components: clippy,rustfmt
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: golden-drive-escalation-${{ matrix.scenario }}
+
+      - name: Run golden_drive_escalation_${{ matrix.scenario }}
+        run: cargo test --release -p worldwake-ai --test golden_drive_escalation_${{ matrix.scenario }} -- --ignored --test-threads=1
