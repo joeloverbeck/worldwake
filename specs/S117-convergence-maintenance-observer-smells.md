@@ -175,7 +175,7 @@ This derivation is a pure read-side computation per FND-27. It lives as a privat
 let critical = thresholds.critical(need);
 ```
 
-**Threshold justification**: The 30-tick minimum filters out single-action transients. Wash takes 12 ticks (per `S118` Motivating Evidence and the wash action registration). Single-unit consume actions vary by `CommodityConsumableProfile.consumption_ticks_per_unit`, typically in the single-digit range. The 100-tick maximum is the existing `SUSTAINED_CRITICAL_NEED` cutoff — `AcuteNeedSpike` and `SUSTAINED_CRITICAL_NEED` are disjoint by construction; no double-flagging.
+**Threshold justification**: The 30-tick minimum filters out single-action transients. Wash takes 12 ticks (per `S118` Motivating Evidence and the wash action registration). Single-unit consume actions vary by `CommodityConsumableProfile.consumption_ticks_per_unit`, typically in the single-digit range. The 100-tick maximum still separates bounded critical-band bursts from the longer sustained-critical contract, but it does **not** make `AcuteNeedSpike` and `SUSTAINED_CRITICAL_NEED` globally disjoint: because `SUSTAINED_CRITICAL_NEED` uses a lower threshold, an acute run can sit inside a longer sustained-critical episode. Any output dedup between those detectors is a separate observer/reporting decision, not a threshold guarantee.
 
 **Dedup key**: `(AcuteNeedSpike, agent, need, run_start_tick)` — one anomaly per maximal qualifying run. If two runs are separated by a single-tick gap, they remain distinct unless the detector chooses to merge; the reference implementation does not merge (treats gaps as real).
 
@@ -239,7 +239,7 @@ Four new goldens in a new file `crates/worldwake-cli/tests/golden_observer_anoma
 
 3. **`recipe_monoculture_fires_on_single_food_dependency`** — scripted scenario with an agent that has Harvest Apples + Harvest Grain knowledge plus a West Grainfield facility belief, but all food intake is apples. Assert: Section 3 contains `RECIPE_MONOCULTURE` for `Hunger` on that agent. Control case in the same test: a sibling agent that knows both recipes but never acquires the grainfield belief does NOT trigger the anomaly (belief-gate).
 
-4. **`acute_need_spike_fires_on_bounded_thirst_run`** — scripted scenario forcing one bounded thirst-critical run followed by relief. Assert: Section 3 contains `ACUTE_NEED_SPIKE` with the bounded run rendered in the live report output, and no overlap with any `SUSTAINED_CRITICAL_NEED` entry.
+4. **`acute_need_spike_fires_on_bounded_thirst_run`** — scripted scenario forcing one bounded thirst-critical run followed by relief. Assert: Section 3 contains `ACUTE_NEED_SPIKE` with the bounded run rendered in the live report output. If `SUSTAINED_CRITICAL_NEED` also appears for the same agent, that overlap is lawful and should be treated separately from the acute detector's own proof boundary.
 
 Each fixture scenario is minimal (1–3 agents, 2–4 places) and reuses the existing scenario schema without new fields.
 

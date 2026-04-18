@@ -1,9 +1,9 @@
 # S117CONMAIOBS-011: Baseline `AcuteNeedSpike` triage and architectural disposition
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: None — investigation, trace analysis, and roadmap/spec disposition only
+**Engine Changes**: None — investigation, trace analysis, roadmap/spec disposition, and follow-up ticket creation only
 **Deps**: `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-010.md`, `S117CONMAIOBS-007`, `specs/S117-convergence-maintenance-observer-smells.md`, `docs/golden-e2e-testing.md`
 
 ## Problem
@@ -22,9 +22,9 @@
    - Thirst `994..1037`
    During those windows, `Agent B` alternates between places with `food=yes, water=no, wash=no, sleep=no` and `food=no, water=yes, wash=yes, sleep=yes`, indicating a lawful but unhealthy coupled-need oscillation rather than a bogus detector readout.
 6. Existing repo expectations still treat `survival-baseline.ron` as healthy. [`crates/worldwake-ai/tests/golden_survival_baseline.rs`](../crates/worldwake-ai/tests/golden_survival_baseline.rs), lines 288-420, states that all agents should survive 1440 ticks and keep critical runs below the authored bound. The ignored golden is not currently a clean oracle either — running `all_agents_survive_1440_ticks` now fails early in the harness on an effective-place assumption before reaching the health assertion.
-7. External primary-source guidance is relevant here because the architectural question is about homeostatic action selection under competing physiological needs, not a repo-local naming issue. Initial research anchors:
+7. External primary-source guidance is relevant here because the architectural question is about homeostatic action selection under competing physiological needs, not a repo-local naming issue. Primary research reviewed during implementation points in the same direction as the local traces: efficient regulation should be anticipatory and trade-off aware, not purely reactive after critical-band errors accumulate. Anchors:
    - Keramati & Gutkin, 2014, *Homeostatic reinforcement learning for integrating reward collection and physiological stability* (eLife): https://pmc.ncbi.nlm.nih.gov/articles/PMC4270100/
-   - Barrett et al., 2016, *An active inference theory of allostasis and interoception in depression* (Phil. Trans. R. Soc. B): https://pmc.ncbi.nlm.nih.gov/articles/PMC5062100/
+   - Sterling, 2012, *Allostasis: a model of predictive regulation* (Physiology & Behavior): https://pubmed.ncbi.nlm.nih.gov/21684297/
    - van den Briel et al., 2004, *Effective Approaches for Partial Satisfaction (Over-Subscription) Planning* (AAAI): https://cdn.aaai.org/AAAI/2004/AAAI04-090.pdf
 8. `docs/FOUNDATIONS.md` constraints that must govern the disposition:
    - Principle 3 / 27: detector output remains derived, never truth
@@ -39,7 +39,7 @@
 ## Architecture Check
 
 1. A disposition ticket is cleaner than prematurely weakening `ACUTE_NEED_SPIKE` to make baseline quiet. The current evidence points to a real survival problem, so suppressing the detector first would be a workaround that violates `FOUNDATIONS.md`.
-2. Separating investigation/disposition from implementation keeps the eventual fix honest. If the issue is scenario drift, that should land as a scenario ticket; if it is planner anticipation or coupled-need reasoning, that should land as a planner/AI ticket; if it is pure observer redundancy against `SUSTAINED_CRITICAL_NEED`, that should land as a bounded observer follow-up. This ticket decides which one is true.
+2. Separating investigation/disposition from implementation keeps the eventual fix honest. Live traces plus the reviewed literature point to planner-side coupled-need anticipation, not scenario-name cleanup or detector dedup, as the next honest implementation owner.
 
 ## Verification Layers
 
@@ -80,7 +80,7 @@ If more than one layer truly needs work, split them explicitly and document the 
 
 - `tickets/S117CONMAIOBS-007.md` (modify if the owning baseline-regression handoff needs a factual note)
 - `specs/S117-convergence-maintenance-observer-smells.md` (modify only if the acute-detector spec claim is proven factually wrong)
-- `tickets/` (new follow-up ticket(s) created from this disposition if warranted)
+- `tickets/S117CONMAIOBS-013.md` (new planner/AI implementation follow-up)
 
 ## Out of Scope
 
@@ -93,7 +93,7 @@ If more than one layer truly needs work, split them explicitly and document the 
 ### Tests That Must Pass
 
 1. `cargo test -p worldwake-cli --test golden_observer_anomalies`
-2. `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
+2. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
 3. Existing suite: `cargo test -p worldwake-cli`
 
 ### Invariants
@@ -111,4 +111,26 @@ If more than one layer truly needs work, split them explicitly and document the 
 
 1. `cargo test -p worldwake-cli --test golden_observer_anomalies`
 2. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
-3. `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
+3. `cargo test -p worldwake-cli`
+4. `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Audited the live observer anomalies, Section 9 critical-window forensics, baseline scenario substrate, and the ignored survival golden. The acute hunger/thirst runs and corroborating maintenance windows are real symptoms of one split-support survival failure mode, not observer arithmetic noise.
+- The local trace evidence points to a planner-side ownership boundary. `rank_candidates()` in `crates/worldwake-ai/src/ranking.rs` scores self-care goals per need independently, `emit_need_driven_candidates()` in `crates/worldwake-ai/src/candidate_generation.rs` emits one-need-at-a-time self-care goals, and `build_candidate_plans()` in `crates/worldwake-ai/src/agent_tick/planning.rs` repeatedly selects/reactivates single-goal travel plans. On `survival-baseline.ron`, that produces repeated remote apple-travel selection without enough complementary water/sleep/wash buffering before or during split-support travel.
+- Reviewed primary research and found it consistent with the local traces: Keramati & Gutkin (2014) argue efficient physiological control should learn predictive behavior to preclude future need violations; Sterling (2012) frames allostasis as anticipatory regulation rather than purely reactive correction; van den Briel et al. (2004) supports explicit trade-off handling when not all goals can be satisfied at once. Together with the repo's FOUNDATIONS, that supports a planner-side follow-up rather than scenario-name suppression or observer-only dedup.
+- Created `tickets/S117CONMAIOBS-013.md` to own the planner/AI implementation work for split-support survival preparation, updated `tickets/S117CONMAIOBS-007.md` so the remaining baseline blocker points at that new ticket, and corrected `specs/S117-convergence-maintenance-observer-smells.md` where it previously claimed `ACUTE_NEED_SPIKE` and `SUSTAINED_CRITICAL_NEED` were disjoint by construction.
+
+## Deviations
+
+- The drafted ticket left scenario repair, planner behavior, and observer dedup open as co-equal remedy classes. Live implementation evidence narrowed that choice: this ticket resolves to a planner/AI follow-up, not a scenario retune or observer cleanup ticket.
+- The drafted verification command `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored` was too broad for honest disposition evidence. The landed closeout uses the exact failing baseline-survival selector instead, because the current value of that command is the harness-level failure it exposes (`golden survival agents should always have an effective place`), not a green full-suite proof.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --test golden_observer_anomalies`
+- Passed `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
+- Passed `cargo test -p worldwake-cli`
+- Observed expected investigation failure in `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact` (`golden survival agents should always have an effective place`)

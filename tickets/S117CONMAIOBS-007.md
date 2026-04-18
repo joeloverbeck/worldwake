@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Observer-only
-**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `archive/tickets/S117CONMAIOBS-009.md`, `archive/tickets/S117CONMAIOBS-010.md`, `S117CONMAIOBS-011`, `specs/S117-convergence-maintenance-observer-smells.md`
+**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `archive/tickets/S117CONMAIOBS-009.md`, `archive/tickets/S117CONMAIOBS-010.md`, `S117CONMAIOBS-013`, `specs/S117-convergence-maintenance-observer-smells.md`
 
 ## Problem
 
@@ -85,7 +85,7 @@ fn recipe_monoculture_fires_on_single_food_dependency() {
 fn acute_need_spike_fires_on_40_tick_thirst() {
     let report = run_observer("tests/fixtures/observer_anomalies/acute_thirst_spike.ron", 200);
     assert_eq!(count_anomalies_of_kind(&report, "ACUTE_NEED_SPIKE"), 1);
-    // No overlap with SUSTAINED_CRITICAL_NEED for the same agent.
+    // The bounded acute run is rendered in the live report output.
     // Tick range in description is 1–40 or equivalent.
 }
 ```
@@ -168,4 +168,4 @@ Completed on 2026-04-18.
 - Passed `cargo test -p worldwake-cli`
 - Passed `cargo clippy --workspace --all-targets -- -D warnings`
 - Passed automated convergence baseline regression in `crates/worldwake-cli/tests/golden_observer_anomalies.rs`: `GEOGRAPHIC_CONVERGENCE` stays absent on `scenarios/survival-baseline.ron`
-- Remaining baseline regression is still failing outside convergence: the healthy baseline run emits corrected `MAINTENANCE_STARVATION` windows and `ACUTE_NEED_SPIKE` anomaly headers. The maintenance-only disposition completed in archived `S117CONMAIOBS-012.md`; the remaining shared split-support baseline contradiction is now owned by `S117CONMAIOBS-011`
+- Remaining baseline regression is still failing outside convergence: the healthy baseline run emits corrected `MAINTENANCE_STARVATION` windows and `ACUTE_NEED_SPIKE` anomaly headers. The maintenance-only disposition completed in archived `S117CONMAIOBS-012.md`, and the acute/split-support disposition completed in `archive/tickets/S117CONMAIOBS-011.md`; the remaining implementation blocker is now `S117CONMAIOBS-013`
