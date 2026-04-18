@@ -54,7 +54,7 @@ The removed clauses — "behavior is not 100% reliable for composite maintenance
 - Any edits to `.claude/skills/scenario-analysis/SKILL.md` itself (confirmed irrelevant by grep; any future relevance would be a separate ticket).
 - Other Smell-3 guidance at lines 16-19 (the three sub-patterns) — they remain accurate and are not affected by this ticket.
 - Caveats for other mechanical smells (ActionLoop, MaintenanceStarvation, etc.) — outside spec scope.
-- The runtime detector fix and its regression/guardrail tests — owned by S118STUAGEDET-001 and S118STUAGEDET-002.
+- The runtime detector fix and its regression/guardrail tests — owned by `archive/tickets/S118STUAGEDET-001.md` and `archive/tickets/S118STUAGEDET-002.md`.
 
 ## Acceptance Criteria
 

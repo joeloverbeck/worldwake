@@ -175,23 +175,28 @@ fn stuck_detector_still_fires_on_genuine_idle() {
 
 ### D4: Test — StartFailed does not open a frame
 
-New fixture: `crates/worldwake-cli/tests/fixtures/observer_anomalies/stuck_detector_startfailed_idle.ron`. Design:
+Implemented form after live reassessment: a focused unit test in `crates/worldwake-cli/src/bin/observer.rs`, not a pure observer-binary `.ron` fixture.
 
-- One agent whose planner repeatedly requests an action that will `StartFailed` (e.g., consuming a commodity that is never available, or using a workstation gated by a precondition the agent cannot satisfy) and that produces no other ActionStarted events during the span.
-- A rising need to clear the `refine_stuck_agents` low-need exemption.
+Why the seam changed:
 
-The fixture must produce at least one `ActionTraceKind::StartFailed` during the window and zero `Started/Committed/Aborted` events for the agent. The `STUCK_AGENT` anomaly must still fire — StartFailed is not a frame opener.
+- The live observer scenario schema does not expose an authored input/request surface that can truthfully produce a `StartFailed`-only span.
+- Probe scenarios that attempted to force the shape through authored `.ron` setup produced lawful silence (`Harvest Water | 0`) rather than AI-driven `ActionTraceKind::StartFailed`.
+- The honest missing proof surface was observer-local confirmation that `StartFailed` does **not** count as activity in the stuck-detector path.
+
+Implemented proof shape:
+
+- Create one synthetic agent stats entry with elevated needs.
+- Record one `ActionTraceKind::StartFailed` event per tick in an `ActionTraceSink`.
+- Recompute `had_event` with the same live observer filter (`!matches!(e.kind, ActionTraceKind::StartFailed { .. })`).
+- Feed the resulting values through `AgentStats::record_idle_tick`, flush the final idle window, and assert `detect_anomalies(...)` still emits exactly one `AnomalyKind::StuckAgent`.
 
 Test:
 
 ```rust
 #[test]
 fn stuck_detector_does_not_treat_startfailed_as_active_frame() {
-    let report = run_observer(
-        "tests/fixtures/observer_anomalies/stuck_detector_startfailed_idle.ron",
-        /* ticks: */ <span_length + small buffer>,
-    );
-    assert_eq!(count_anomalies_of_kind(&report, "STUCK_AGENT"), 1);
+    // synthetic StartFailed-only action trace must still accumulate idle
+    // and survive the STUCK_AGENT emission/refinement path
 }
 ```
 
@@ -237,7 +242,8 @@ None. Observer-only.
 
 ## Verification Plan
 
-1. `cargo test -p worldwake-cli --test golden_observer_anomalies` — all three new tests pass (D2, D3, D4), and the existing S117 tests still pass.
-2. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-contested.ron --ticks 1440 --output /tmp/contested-dump.md` — the historical Agent C 26-tick window (ticks 59-84) is no longer flagged as `STUCK_AGENT`.
-3. `cargo test -p worldwake-ai --test golden_survival_contested` — still passes. This test is independent of the observer binary's detector: it runs its own per-agent idle tracker inside `no_stuck_idle_windows_with_elevated_needs` (see `golden_survival_contested.rs:593-602`) using scenario-authored thresholds read from the `SurvivalHealthContract` (`contract.max_idle_window_ticks_with_elevated_need = 40` and `contract.elevated_need_floor`, both sourced from `scenarios/survival-contested.ron:31`). S118 does not touch either the contract or the test's idle logic.
-4. `cargo clippy --workspace --all-targets -- -D warnings` — clean.
+1. `cargo test -p worldwake-cli --test golden_observer_anomalies` — D2 and D3 pass, and the existing S117 tests still pass.
+2. `cargo test -p worldwake-cli --bin observer tests::stuck_detector_does_not_treat_startfailed_as_active_frame -- --exact` — D4 passes at the strongest honest observer-local seam.
+3. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-contested.ron --ticks 1440 --output /tmp/contested-dump.md` — the historical Agent C 26-tick window (ticks 59-84) is no longer flagged as `STUCK_AGENT`.
+4. `cargo test -p worldwake-ai --test golden_survival_contested` — still passes. This test is independent of the observer binary's detector: it runs its own per-agent idle tracker inside `no_stuck_idle_windows_with_elevated_needs` (see `golden_survival_contested.rs:593-602`) using scenario-authored thresholds read from the `SurvivalHealthContract` (`contract.max_idle_window_ticks_with_elevated_need = 40` and `contract.elevated_need_floor`, both sourced from `scenarios/survival-contested.ron:31`). S118 does not touch either the contract or the test's idle logic.
+5. `cargo clippy --workspace --all-targets -- -D warnings` — clean.

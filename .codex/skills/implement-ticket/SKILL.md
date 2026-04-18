@@ -99,7 +99,7 @@ Covered in `references/closeout.md` (Step 8 section).
 - Name exact files, symbols, layers, and invariants for non-trivial claims.
 - Treat tests, traces, event logs, and authoritative state as different proof surfaces.
 - Architectural contradictions: solve or escalate with 1-3-1 (see `references/mismatch-handling.md`, Escalation decision tree). Do not patch around them.
-- For focused test commands, verify that the selector actually proves the owned surface. Substring filters can run extra tests or, for integration-test binaries, compile the target while executing zero tests. When exactness matters, prefer the narrowest truthful selector such as an exact unit-test name or `cargo test -p <crate> --test <file_stem>` for integration-test binaries instead of a loose name filter.
+- For focused test commands, verify that the selector actually proves the owned surface. Substring filters can run extra tests or, for integration-test binaries, compile the target while executing zero tests. When exactness matters, prefer the narrowest truthful selector such as an exact unit-test name or `cargo test -p <crate> --test <file_stem>` for integration-test binaries instead of a loose name filter. For `src/bin/*.rs` unit tests, `--exact` may require the fully qualified test name (for example `tests::my_case`) rather than the bare function name; check `cargo test ... -- --list` before recording the command in ticket closeout.
 
 ## Example Usage
 

@@ -135,6 +135,18 @@ fn stuck_detector_excludes_wash_travel_cycle() {
 }
 
 #[test]
+fn stuck_detector_still_fires_on_genuine_idle() {
+    let report = run_observer(
+        "tests/fixtures/observer_anomalies/stuck_detector_genuine_idle.ron",
+        25,
+    );
+
+    assert_eq!(count_anomalies_of_kind(&report, "STUCK_AGENT"), 1);
+    let block = anomaly_block(&report, "STUCK_AGENT");
+    assert!(block.contains("consecutive ticks"));
+}
+
+#[test]
 fn recipe_monoculture_fires_on_single_food_dependency() {
     let report = run_observer(
         "tests/fixtures/observer_anomalies/recipe_monoculture_apples_vs_grain.ron",

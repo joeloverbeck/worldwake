@@ -3694,7 +3694,8 @@ mod tests {
         ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
         NeedsSample, PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots,
         behavioral_transitions, committed_travel_ticks, compute_maintenance_rates,
-        death_summary_line, detect_acute_need_spike, detect_geographic_convergence,
+        death_summary_line, detect_acute_need_spike, detect_anomalies,
+        detect_geographic_convergence,
         detect_maintenance_starvation, detect_recipe_monoculture, failed_plan_breakdown,
         failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
@@ -3727,7 +3728,8 @@ mod tests {
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
-        PerceptionTraceSink, RecipeDefinition, RecipeRegistry,
+        PerceptionTraceSink, RecipeDefinition, RecipeRegistry, RequestAttemptTrace,
+        RequestBindingKind, RequestProvenance, ResolvedRequestTrace,
     };
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
@@ -4309,6 +4311,63 @@ mod tests {
         let needs_samples = (0..300).map(|_| need_sample(600)).collect::<Vec<_>>();
 
         assert!(behavioral_transitions(&bins, &needs_samples).is_empty());
+    }
+
+    #[test]
+    fn stuck_detector_does_not_treat_startfailed_as_active_frame() {
+        let actor = entity(1);
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        let mut action_trace = ActionTraceSink::new();
+        let needs = NeedsSample {
+            hunger: 450,
+            thirst: 0,
+            fatigue: 0,
+            bladder: 0,
+            dirtiness: 0,
+        };
+
+        for tick in 0..25 {
+            action_trace.record(ActionTraceEvent::new(
+                Tick(tick),
+                actor,
+                ActionDefId(1),
+                "harvest:Harvest Water".to_string(),
+                ActionTraceKind::StartFailed {
+                    reason: "resource unavailable".to_string(),
+                    request: ResolvedRequestTrace {
+                        attempt: RequestAttemptTrace {
+                            input_sequence_no: tick,
+                            provenance: RequestProvenance::AiPlan,
+                        },
+                        binding: RequestBindingKind::ReproducedAffordance,
+                    },
+                    legality: None,
+                },
+            ));
+            let had_event = action_trace
+                .events_for_at(actor, Tick(tick))
+                .iter()
+                .any(|event| !matches!(event.kind, ActionTraceKind::StartFailed { .. }));
+            stats.record_idle_tick(had_event, tick, needs);
+        }
+        stats.flush_idle_window(24);
+
+        let world = World::new(build_prototype_world()).expect("world");
+        let anomalies = detect_anomalies(
+            &BTreeMap::from([(actor, stats)]),
+            &PerceptionTraceSink::new(),
+            &EventLog::new(),
+            &world,
+            &RecipeRegistry::new(),
+        );
+
+        assert_eq!(
+            anomalies
+                .iter()
+                .filter(|anomaly| matches!(anomaly.kind, AnomalyKind::StuckAgent))
+                .count(),
+            1
+        );
     }
 
     #[test]
