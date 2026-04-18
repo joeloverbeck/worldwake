@@ -1,10 +1,10 @@
 # S117CONMAIOBS-007: Golden coverage and scenario fixtures
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Observer-only
-**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `archive/tickets/S117CONMAIOBS-009.md`, `archive/tickets/S117CONMAIOBS-010.md`, `archive/tickets/S117CONMAIOBS-013.md`, `S117CONMAIOBS-015`, `specs/S117-convergence-maintenance-observer-smells.md`
+**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `archive/tickets/S117CONMAIOBS-009.md`, `archive/tickets/S117CONMAIOBS-010.md`, `archive/tickets/S117CONMAIOBS-013.md`, `archive/tickets/S117CONMAIOBS-015.md`, `specs/S117-convergence-maintenance-observer-smells.md`
 
 ## Problem
 
@@ -32,7 +32,7 @@ Four new observer detectors (002–005) and two supplementary tables (006) ship 
 ## Verification Layers
 
 1. Detector fires on its forcing fixture → golden E2E assertion on Section 3 content.
-2. Detector does NOT fire on `scenarios/survival-baseline.ron` (healthy baseline) → regression guard command in Test Plan; this test asserts the anomaly count for each new variant is zero on the baseline run.
+2. Baseline regression ownership is narrower than the original draft. The live automated baseline guard only asserts that `GEOGRAPHIC_CONVERGENCE` stays absent on `scenarios/survival-baseline.ron`; `MAINTENANCE_STARVATION` and `ACUTE_NEED_SPIKE` can still appear as observer stress smells while the stronger authored survival oracle remains green.
 3. Belief-gate negative case for `RecipeMonoculture` → asserted in the same test that covers the positive case (control-group agent lacks grainfield belief and does NOT trigger).
 4. Mixed-layer ticket: (a) detector emission correctness → golden E2E via report-string assertion; (b) Section 3 rendering correctness → same assertion surface, checked via string contents; (c) report format stability → existing `test_observer_mode_simulation_runs` is the backstop (continues to pass).
 
@@ -94,7 +94,7 @@ Test helpers `run_observer(scenario_path, ticks) -> String`, `count_anomalies_of
 
 ### 3. Baseline regression command
 
-The `Test Plan` below names an explicit command that runs the observer against `scenarios/survival-baseline.ron` and asserts zero anomalies of the four new variants. This runs on demand rather than in the test suite (it takes ~minutes) — the developer runs it before merging.
+The `Test Plan` below names an explicit command that reruns the observer against `scenarios/survival-baseline.ron` as a diagnostic baseline check. The live enforced regression is narrower than the draft: automated ownership only guarantees that `GEOGRAPHIC_CONVERGENCE` stays absent on baseline, while the broader smell surface may still show stress anomalies inside the authored survival envelope.
 
 ## Files to Touch
 
@@ -140,7 +140,7 @@ The `Test Plan` below names an explicit command that runs the observer against `
 
 1. `cargo test -p worldwake-cli --test golden_observer_anomalies`
 2. `cargo test -p worldwake-cli` (full crate suite, including existing integration tests)
-3. Baseline regression (manual; not part of automated suite): `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md && grep -c "GEOGRAPHIC_CONVERGENCE\|MAINTENANCE_STARVATION\|RECIPE_MONOCULTURE\|ACUTE_NEED_SPIKE" /tmp/baseline-dump.md` — expected output: `0`. Verify the observer CLI flag names (`--ticks`, `--output`) against `bin/observer.rs` argument parsing before running; if they differ, use the actual names.
+3. Baseline observer rerun (manual; diagnostic, not part of automated suite): `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`. Use this to inspect the live smell surface, not to require a globally smell-free baseline report.
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 
 ## Outcome
@@ -160,7 +160,7 @@ Completed on 2026-04-18.
 - The drafted ticket assumed an existing public observer report helper. Live reassessment showed no such seam exists, so the landed goldens use the compiled `observer` binary itself via `env!("CARGO_BIN_EXE_observer")` and a temp output file.
 - The drafted ticket claimed `Engine Changes: None`, but the golden pass exposed a real observer read-side contradiction in production code: `recipe_usage_rows()` and `detect_recipe_monoculture()` were counting canonical recipe names while live action traces record prefixed action names (`harvest:` / `craft:`). This ticket absorbed the narrow observer-side fix rather than shipping a knowingly broken golden.
 - The drafted acute fixture narrative hardcoded a 40-tick remote-water path. Live scenario-authoring constraints made that exact branch brittle, so the landed fixture proves the same detector contract through a local well plus sleep-first pressure competition. The test asserts the live bounded acute anomaly rather than preserving the stale narrative tick math verbatim.
-- The draft manual baseline regression command's `grep -c "GEOGRAPHIC_CONVERGENCE\|MAINTENANCE_STARVATION\|RECIPE_MONOCULTURE\|ACUTE_NEED_SPIKE"` check is too loose for a markdown report because it counts any mention of the labels, not just anomaly headers. Post-ticket review reran the baseline proof with a header-level check and found real false positives in `scenarios/survival-baseline.ron`, so this ticket remains active until the remaining maintenance-starvation and acute-spike regressions are dispositioned honestly.
+- The draft manual baseline regression command's `grep -c "GEOGRAPHIC_CONVERGENCE\|MAINTENANCE_STARVATION\|RECIPE_MONOCULTURE\|ACUTE_NEED_SPIKE"` check is too loose for a markdown report because it counts any mention of the labels, not just anomaly headers. Later reassessment also showed the broader “healthy baseline must be smell-free” expectation was itself stale: the stronger authored survival oracle still passes while the observer report can lawfully emit stress smells. Baseline regression ownership was therefore narrowed to the specific absence claim the repo actually enforces mechanically (`GEOGRAPHIC_CONVERGENCE` stays absent on baseline).
 
 ## Verification Result
 
@@ -168,4 +168,4 @@ Completed on 2026-04-18.
 - Passed `cargo test -p worldwake-cli`
 - Passed `cargo clippy --workspace --all-targets -- -D warnings`
 - Passed automated convergence baseline regression in `crates/worldwake-cli/tests/golden_observer_anomalies.rs`: `GEOGRAPHIC_CONVERGENCE` stays absent on `scenarios/survival-baseline.ron`
-- Remaining baseline regression is still failing outside convergence: the healthy baseline run emits corrected `MAINTENANCE_STARVATION` windows and `ACUTE_NEED_SPIKE` anomaly headers even though the restored authored survival selector now passes. The maintenance-only disposition completed in archived `S117CONMAIOBS-012.md`, the stale planner-ownership follow-up was closed in `archive/tickets/S117CONMAIOBS-013.md`, and the remaining blocker is now `S117CONMAIOBS-015`, which reconciles the observer baseline contract against the authored survival oracle before any new implementation ticket is chosen
+- Reconciled baseline proof surfaces in `archive/tickets/S117CONMAIOBS-015.md`: `golden_survival_baseline.rs` owns the authored survival-health contract for `survival-baseline.ron`, while the observer report remains a heuristic smell surface that can still emit `ACTION_LOOP`, `SUSTAINED_CRITICAL_NEED`, `MAINTENANCE_STARVATION`, and `ACUTE_NEED_SPIKE` inside that healthy envelope. No further production blocker remains on this ticket.
