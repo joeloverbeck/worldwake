@@ -1197,16 +1197,16 @@ fn need_value(sample: &NeedsSample, need: HomeostaticNeedId) -> u16 {
     }
 }
 
-fn need_medium_threshold(
+fn need_high_threshold(
     thresholds: &worldwake_core::DriveThresholds,
     need: HomeostaticNeedId,
 ) -> u16 {
     match need {
-        HomeostaticNeedId::Hunger => thresholds.hunger.medium().value(),
-        HomeostaticNeedId::Thirst => thresholds.thirst.medium().value(),
-        HomeostaticNeedId::Fatigue => thresholds.fatigue.medium().value(),
-        HomeostaticNeedId::Bladder => thresholds.bladder.medium().value(),
-        HomeostaticNeedId::Dirtiness => thresholds.dirtiness.medium().value(),
+        HomeostaticNeedId::Hunger => thresholds.hunger.high().value(),
+        HomeostaticNeedId::Thirst => thresholds.thirst.high().value(),
+        HomeostaticNeedId::Fatigue => thresholds.fatigue.high().value(),
+        HomeostaticNeedId::Bladder => thresholds.bladder.high().value(),
+        HomeostaticNeedId::Dirtiness => thresholds.dirtiness.high().value(),
     }
 }
 
@@ -1234,6 +1234,38 @@ fn maintenance_window_stats(samples: &[NeedsSample], need: HomeostaticNeedId) ->
         / samples.len() as u32;
 
     (accumulation, relief, avg)
+}
+
+#[derive(Clone, Copy)]
+struct MaintenanceStarvationWindow {
+    start_tick: usize,
+    end_tick: usize,
+    accumulation: u32,
+    relief: u32,
+    avg: u32,
+}
+
+fn maintenance_window_is_starvation(
+    accumulation: u32,
+    relief: u32,
+    avg: u32,
+    high_threshold: u16,
+) -> bool {
+    accumulation > 0
+        && avg > u32::from(high_threshold)
+        && relief.saturating_mul(2) < accumulation
+}
+
+fn maintenance_window_is_better(
+    candidate: MaintenanceStarvationWindow,
+    current: MaintenanceStarvationWindow,
+) -> bool {
+    let candidate_deficit = candidate.accumulation.saturating_sub(candidate.relief);
+    let current_deficit = current.accumulation.saturating_sub(current.relief);
+    candidate_deficit > current_deficit
+        || (candidate_deficit == current_deficit
+            && (candidate.avg > current.avg
+                || (candidate.avg == current.avg && candidate.start_tick < current.start_tick)))
 }
 
 fn compute_maintenance_rates(samples: &[NeedsSample]) -> [(HomeostaticNeedId, u32, u32, i64); 5] {
@@ -1288,7 +1320,8 @@ fn detect_maintenance_starvation(
     thresholds_by_agent: &BTreeMap<EntityId, worldwake_core::DriveThresholds>,
     anomalies: &mut Vec<Anomaly>,
 ) {
-    let mut merged_spans: BTreeMap<(EntityId, HomeostaticNeedId), (usize, usize)> = BTreeMap::new();
+    let mut strongest_windows: BTreeMap<(EntityId, HomeostaticNeedId), MaintenanceStarvationWindow> =
+        BTreeMap::new();
 
     for (agent_id, stats) in agent_stats {
         if stats.needs_samples.len() < ANOMALY_ROLLING_WINDOW_TICKS {
@@ -1299,46 +1332,60 @@ fn detect_maintenance_starvation(
         };
 
         for need in MAINTENANCE_STARVATION_NEEDS {
-            let medium_threshold = need_medium_threshold(thresholds, need);
+            let high_threshold = need_high_threshold(thresholds, need);
             for window_start in 0..=stats.needs_samples.len() - ANOMALY_ROLLING_WINDOW_TICKS {
                 let window_end = window_start + ANOMALY_ROLLING_WINDOW_TICKS - 1;
                 let Some(window) = stats.needs_samples.get(window_start..=window_end) else {
                     continue;
                 };
                 let (accumulation, relief, avg) = maintenance_window_stats(window, need);
-                if relief < accumulation && avg > u32::from(medium_threshold) {
-                    let entry = merged_spans
-                        .entry((*agent_id, need))
-                        .or_insert((window_start, window_end));
-                    entry.0 = entry.0.min(window_start);
-                    entry.1 = entry.1.max(window_end);
+                if maintenance_window_is_starvation(accumulation, relief, avg, high_threshold) {
+                    let candidate = MaintenanceStarvationWindow {
+                        start_tick: window_start,
+                        end_tick: window_end,
+                        accumulation,
+                        relief,
+                        avg,
+                    };
+                    match strongest_windows.entry((*agent_id, need)) {
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(candidate);
+                        }
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            if maintenance_window_is_better(candidate, *entry.get()) {
+                                entry.insert(candidate);
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    for ((agent_id, need), (start_tick, end_tick)) in merged_spans {
+    for ((agent_id, need), window) in strongest_windows {
         let Some(stats) = agent_stats.get(&agent_id) else {
             continue;
         };
         let Some(thresholds) = thresholds_by_agent.get(&agent_id) else {
             continue;
         };
-        let Some(span) = stats.needs_samples.get(start_tick..=end_tick) else {
-            continue;
-        };
-        let (accumulation, relief, avg) = maintenance_window_stats(span, need);
-        let medium_threshold = need_medium_threshold(thresholds, need);
+        let high_threshold = need_high_threshold(thresholds, need);
         let need_label = need_label(need);
+        let deficit = window.accumulation.saturating_sub(window.relief);
 
         anomalies.push(Anomaly {
             kind: AnomalyKind::MaintenanceStarvation,
             agent_name: stats.name.clone(),
             additional_agent_names: None,
             description: format!(
-                "{need_label} accumulated {accumulation} permille but was relieved only {relief} permille over ticks {start_tick}–{end_tick}. Average {need_label} in window: {avg} permille (above medium threshold {medium_threshold})."
+                "{need_label} accumulated {accumulation} permille but was relieved only {relief} permille over ticks {start_tick}–{end_tick}. Net deficit: {deficit} permille; average {need_label} in window: {avg} permille (above high threshold {high_threshold}).",
+                accumulation = window.accumulation,
+                relief = window.relief,
+                start_tick = window.start_tick,
+                end_tick = window.end_tick,
+                avg = window.avg,
             ),
-            tick_range: Some((start_tick as u64, end_tick as u64)),
+            tick_range: Some((window.start_tick as u64, window.end_tick as u64)),
         });
     }
 }
@@ -3634,7 +3681,7 @@ mod tests {
         failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
-        format_death_cause, format_report, need_medium_threshold, post_travel_affordance_snapshots,
+        format_death_cause, format_report, need_high_threshold, post_travel_affordance_snapshots,
         primary_satisfied_need, recipe_usage_rows, render_maintenance_rates_table,
         render_recipe_usage_table, unknown_location_entity_groups,
     };
@@ -4992,8 +5039,10 @@ mod tests {
     #[test]
     fn test_maintenance_starvation_fires_on_rising_dirtiness_over_window() {
         let thresholds = DriveThresholds::default();
-        let medium_threshold = need_medium_threshold(&thresholds, HomeostaticNeedId::Dirtiness);
-        let dirtiness = (medium_threshold + 1..=850).collect::<Vec<_>>();
+        let high_threshold = need_high_threshold(&thresholds, HomeostaticNeedId::Dirtiness);
+        let dirtiness = (0..ANOMALY_ROLLING_WINDOW_TICKS)
+            .map(|tick| high_threshold + 50 + u16::try_from(tick.min(49)).expect("tick fits"))
+            .collect::<Vec<_>>();
         let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
         let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
         let mut anomalies = Vec::new();
@@ -5008,7 +5057,7 @@ mod tests {
         assert!(
             anomalies[0]
                 .description
-                .contains("dirtiness accumulated 199 permille")
+                .contains("dirtiness accumulated 49 permille")
         );
         assert!(
             anomalies[0]
@@ -5018,15 +5067,16 @@ mod tests {
         assert!(
             anomalies[0]
                 .description
-                .contains("Average dirtiness in window: 750 permille")
+                .contains("Net deficit: 49 permille")
         );
-        assert!(anomalies[0].description.contains("medium threshold 650"));
+        assert!(anomalies[0].description.contains("above high threshold 850"));
+        assert_eq!(anomalies[0].tick_range, Some((0, 199)));
     }
 
     #[test]
-    fn test_maintenance_starvation_does_not_fire_when_balanced() {
+    fn test_maintenance_starvation_does_not_fire_when_relief_keeps_up() {
         let dirtiness = (0..ANOMALY_ROLLING_WINDOW_TICKS)
-            .map(|tick| if tick % 2 == 0 { 800 } else { 700 })
+            .map(|tick| if tick % 2 == 0 { 900 } else { 1000 })
             .collect::<Vec<_>>();
         let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
         let thresholds_by_agent = BTreeMap::from([(entity(1), DriveThresholds::default())]);
@@ -5038,9 +5088,9 @@ mod tests {
     }
 
     #[test]
-    fn test_maintenance_starvation_does_not_fire_when_avg_below_medium() {
+    fn test_maintenance_starvation_does_not_fire_when_avg_below_high() {
         let dirtiness = (0..ANOMALY_ROLLING_WINDOW_TICKS)
-            .map(|tick| if tick % 2 == 0 { 500 } else { 600 })
+            .map(|tick| if tick % 2 == 0 { 800 } else { 900 })
             .collect::<Vec<_>>();
         let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
         let thresholds_by_agent = BTreeMap::from([(entity(1), DriveThresholds::default())]);
@@ -5052,11 +5102,17 @@ mod tests {
     }
 
     #[test]
-    fn test_maintenance_starvation_merges_adjacent_windows() {
+    fn test_maintenance_starvation_reports_strongest_qualifying_window() {
         let thresholds = DriveThresholds::default();
-        let medium_threshold = need_medium_threshold(&thresholds, HomeostaticNeedId::Dirtiness);
+        let high_threshold = need_high_threshold(&thresholds, HomeostaticNeedId::Dirtiness);
         let dirtiness = (0u16..400u16)
-            .map(|tick| medium_threshold + 1 + (tick / 2))
+            .map(|tick| {
+                if tick < 200 {
+                    high_threshold + 50 + tick.min(49)
+                } else {
+                    high_threshold + 10
+                }
+            })
             .collect::<Vec<_>>();
         let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
         let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
@@ -5065,7 +5121,7 @@ mod tests {
         detect_maintenance_starvation(&stats, &thresholds_by_agent, &mut anomalies);
 
         assert_eq!(anomalies.len(), 1);
-        assert_eq!(anomalies[0].tick_range, Some((0, 399)));
+        assert_eq!(anomalies[0].tick_range, Some((0, 199)));
     }
 
     #[test]

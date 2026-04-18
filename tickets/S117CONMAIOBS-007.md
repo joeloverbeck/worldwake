@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Observer-only
-**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `archive/tickets/S117CONMAIOBS-009.md`, `S117CONMAIOBS-010`, `S117CONMAIOBS-011`, `specs/S117-convergence-maintenance-observer-smells.md`
+**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `archive/tickets/S117CONMAIOBS-009.md`, `archive/tickets/S117CONMAIOBS-010.md`, `S117CONMAIOBS-011`, `S117CONMAIOBS-012`, `specs/S117-convergence-maintenance-observer-smells.md`
 
 ## Problem
 
@@ -160,7 +160,7 @@ Completed on 2026-04-18.
 - The drafted ticket assumed an existing public observer report helper. Live reassessment showed no such seam exists, so the landed goldens use the compiled `observer` binary itself via `env!("CARGO_BIN_EXE_observer")` and a temp output file.
 - The drafted ticket claimed `Engine Changes: None`, but the golden pass exposed a real observer read-side contradiction in production code: `recipe_usage_rows()` and `detect_recipe_monoculture()` were counting canonical recipe names while live action traces record prefixed action names (`harvest:` / `craft:`). This ticket absorbed the narrow observer-side fix rather than shipping a knowingly broken golden.
 - The drafted acute fixture narrative hardcoded a 40-tick remote-water path. Live scenario-authoring constraints made that exact branch brittle, so the landed fixture proves the same detector contract through a local well plus sleep-first pressure competition. The test asserts the live bounded acute anomaly rather than preserving the stale narrative tick math verbatim.
-- The draft manual baseline regression command's `grep -c "GEOGRAPHIC_CONVERGENCE\|MAINTENANCE_STARVATION\|RECIPE_MONOCULTURE\|ACUTE_NEED_SPIKE"` check is too loose for a markdown report because it counts any mention of the labels, not just anomaly headers. Post-ticket review reran the baseline proof with a header-level check and found real false positives in `scenarios/survival-baseline.ron`, so this ticket remains active until the remaining maintenance-starvation and acute-spike regressions are fixed.
+- The draft manual baseline regression command's `grep -c "GEOGRAPHIC_CONVERGENCE\|MAINTENANCE_STARVATION\|RECIPE_MONOCULTURE\|ACUTE_NEED_SPIKE"` check is too loose for a markdown report because it counts any mention of the labels, not just anomaly headers. Post-ticket review reran the baseline proof with a header-level check and found real false positives in `scenarios/survival-baseline.ron`, so this ticket remains active until the remaining maintenance-starvation and acute-spike regressions are dispositioned honestly.
 
 ## Verification Result
 
@@ -168,4 +168,4 @@ Completed on 2026-04-18.
 - Passed `cargo test -p worldwake-cli`
 - Passed `cargo clippy --workspace --all-targets -- -D warnings`
 - Passed automated convergence baseline regression in `crates/worldwake-cli/tests/golden_observer_anomalies.rs`: `GEOGRAPHIC_CONVERGENCE` stays absent on `scenarios/survival-baseline.ron`
-- Remaining baseline regression is still failing outside convergence: the healthy baseline run emits `MAINTENANCE_STARVATION` and `ACUTE_NEED_SPIKE` anomaly headers
+- Remaining baseline regression is still failing outside convergence: the healthy baseline run emits corrected `MAINTENANCE_STARVATION` windows and `ACUTE_NEED_SPIKE` anomaly headers, now owned by `S117CONMAIOBS-012` and `S117CONMAIOBS-011`

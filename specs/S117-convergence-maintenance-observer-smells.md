@@ -116,29 +116,29 @@ The agent-set for dedup is a `BTreeSet<EntityId>` (deterministic) materialized i
 - `relief_permille` — total negative delta of the need value across the window (sum of per-tick decreases from relief actions).
 - `avg_need_permille` — simple mean of the per-tick need value across the window.
 
-If `relief_permille < accumulation_permille` AND `avg_need_permille > medium` (the per-agent, per-need medium threshold; i.e., the need is chronically elevated), emit anomaly.
+If `relief_permille * 2 < accumulation_permille` AND `avg_need_permille > high` (the per-agent, per-need high threshold; i.e., the need stayed in the agent's upper urgency band while relief badly lagged accumulation), treat the window as qualifying. Emit one anomaly per `(agent, need)` using the single strongest qualifying 200-tick window across the run rather than a merged suffix.
 
-`medium` is read per-agent, per-need via the `DriveThresholds` component:
+`high` is read per-agent, per-need via the `DriveThresholds` component:
 
 ```rust
 let thresholds = world
     .get_component_drive_thresholds(agent)
     .copied()
     .unwrap_or_default();
-let medium = match need {
-    HomeostaticNeedId::Hunger    => thresholds.hunger.medium(),
-    HomeostaticNeedId::Thirst    => thresholds.thirst.medium(),
-    HomeostaticNeedId::Fatigue   => thresholds.fatigue.medium(),
-    HomeostaticNeedId::Bladder   => thresholds.bladder.medium(),
-    HomeostaticNeedId::Dirtiness => thresholds.dirtiness.medium(),
+let high = match need {
+    HomeostaticNeedId::Hunger    => thresholds.hunger.high(),
+    HomeostaticNeedId::Thirst    => thresholds.thirst.high(),
+    HomeostaticNeedId::Fatigue   => thresholds.fatigue.high(),
+    HomeostaticNeedId::Bladder   => thresholds.bladder.high(),
+    HomeostaticNeedId::Dirtiness => thresholds.dirtiness.high(),
 };
 ```
 
-(This mirrors the existing `DriveThresholds::critical(need)` helper's body; a `medium(need)` helper is intentionally not added to `worldwake-core` — the match stays local to the single detector call site.)
+(This mirrors the existing `DriveThresholds::critical(need)` helper's body; a `high(need)` helper is intentionally not added to `worldwake-core` — the match stays local to the single detector call site.)
 
-**Threshold justification**: Using the agent's own per-need medium threshold (FND-14) avoids global constants and respects per-agent variation. The rolling 200-tick window mirrors `GeographicConvergence` for consistency.
+**Threshold justification**: Using the agent's own per-need high threshold (FND-14) avoids global constants and respects per-agent variation while filtering out merely elevated drift. Requiring relief to stay below half of accumulation keeps the detector tied to badly lagging maintenance cadence rather than any slight positive net balance. The rolling 200-tick window mirrors `GeographicConvergence` for consistency.
 
-**Dedup key**: `(MaintenanceStarvation, agent, need)` — at most one anomaly per (agent × need) across the whole run. If the starvation persists across multiple windows, merge into a single anomaly with the combined span (first qualifying window start → last qualifying window end).
+**Dedup key**: `(MaintenanceStarvation, agent, need)` — at most one anomaly per (agent × need) across the whole run, using the strongest qualifying window rather than a merged multi-window span.
 
 ### D4: `RecipeMonoculture` detector
 

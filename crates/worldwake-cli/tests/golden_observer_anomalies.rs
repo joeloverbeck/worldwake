@@ -106,6 +106,8 @@ fn maintenance_starvation_fires_on_wash_gap() {
     assert!(section.contains("Noor"));
     assert!(section.contains("accumulated"));
     assert!(section.contains("relieved only"));
+    assert!(section.contains("Net deficit"));
+    assert!(section.contains("above high threshold"));
 }
 
 #[test]
