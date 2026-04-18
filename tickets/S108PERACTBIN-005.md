@@ -4,11 +4,11 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — this ticket is test-only. It exercises the gate wired by T-002, the revalidation gate by T-003, and the trace field from T-004 through existing golden scenarios extended with `ExactIdentity`-substitution-attempt setups.
-**Deps**: archive/tickets/S108PERACTBIN-002.md, tickets/S108PERACTBIN-003.md, tickets/S108PERACTBIN-004.md (requires all three feature paths to be live).
+**Deps**: archive/tickets/S108PERACTBIN-002.md, tickets/S108PERACTBIN-003.md, tickets/S108PERACTBIN-004.md (requires the dispatch-side gate from T-002, the T-003 planner-side contract correction, and the trace field from T-004).
 
 ## Problem
 
-Spec S108's design succeeds only if the sim-side dispatch gate, the AI-side revalidation gate, and the trace snapshot produce coherent end-to-end behavior on real scenarios. Unit tests in T-001 through T-004 prove each surface in isolation, but the Authoritative-to-AI Impact Rule checklist (CLAUDE.md) requires verification across the full cycle: `get_affordances` → `generate_candidates` → `search_plan` → BestEffort action start → `handle_plan_failure` → payload revalidation → golden pass.
+Spec S108's design succeeds only if the sim-side dispatch gate, the planner-side revalidation contract, and the trace snapshot produce coherent end-to-end behavior on real scenarios. Unit tests in T-001 through T-004 prove each surface in isolation, but the Authoritative-to-AI Impact Rule checklist (CLAUDE.md) requires verification across the full cycle: `get_affordances` → `generate_candidates` → `search_plan` → BestEffort action start → `handle_plan_failure` → payload revalidation → golden pass.
 
 This ticket extends the goldens listed in spec D1-Validation items 7–10 (`accuse`, `loot`, `eat`/`drink`, `travel`) with setups that attempt BestEffort substitution and assert the correct behavior: `ExactIdentity` refuses, `FungibleEquivalentCommodity` substitutes, `EquivalentRouteStep` substitutes.
 
@@ -18,15 +18,15 @@ This ticket extends the goldens listed in spec D1-Validation items 7–10 (`accu
 
 1. The existing golden inventory in `docs/generated/golden-e2e-inventory.md` (regenerate with `python3 scripts/golden_inventory.py --write --check-docs`) names the canonical `golden_*` tests. Accuse, loot, heal, eat, drink, and travel goldens exist under `crates/worldwake-ai/tests/golden_*.rs`. The specific test names and their scenarios must be enumerated at implementation time via `cargo test -p worldwake-ai -- --list` to match real targets per `tickets/README.md` check #7. The goldens listed in the spec are representative; implementation verifies actual test names.
 2. Spec S108's Validation and Falsification section (items 7–10) enumerates the intended goldens. The reassessed spec explicitly included the 7-point Authoritative-to-AI checklist as part of this ticket's scope.
-3. Shared abstraction boundary: the end-to-end agent decision cycle. Verification layers are decision-trace (for revalidation refusal and trace-snapshot assertions), action-trace (for dispatch start-failure recording), and focused runtime coverage (for the request-resolution trace's `ExactIdentityRequired` reason).
-4. If a failing golden is what motivates debugging during this ticket, restate the intended invariant: "`ExactIdentity` actions refuse silent substitution across the end-to-end cycle: revalidation should refuse stale fully bound steps, request resolution should reject underbound or malformed requests, and authoritative start-time validation should still reject stale concrete targets that survive to dispatch. `FungibleEquivalentCommodity` continues substituting; all existing goldens unchanged under the default classifications."
+3. Shared abstraction boundary: the end-to-end agent decision cycle. Verification layers are decision-trace (for revalidation behavior and trace-snapshot assertions), action-trace (for dispatch start-failure recording), and focused runtime coverage (for the request-resolution trace's `ExactIdentityRequired` reason when the request shape itself is malformed/underbound).
+4. If a failing golden is what motivates debugging during this ticket, restate the intended invariant: "`ExactIdentity` actions refuse silent substitution across the end-to-end cycle, but planner-side same-target payload/specific-entity revalidation remains lawful. Request resolution rejects underbound or malformed requests, and authoritative start-time validation still rejects stale concrete targets that survive to dispatch. `FungibleEquivalentCommodity` continues substituting; all existing goldens unchanged under the default classifications."
 5. Live `GoalKind`s under test in the existing goldens: `Accuse`, `LootCorpse`, `TreatWounds`, `ConsumeOwnedCommodity` (or similar per current ranking decl), and `TravelToPlace` (or the live Travel goal name). The existing operator/affordance surface each scenario relies on remains unchanged — this ticket adds setup, not alters goal routing.
 6. AI regression intended layer spans candidate generation (unchanged), runtime `agent_tick` (exercises revalidation gate from T-003), and golden E2E. Harness boundary: goldens require full action registries (not a local needs-only harness), per the existing golden architecture.
 7. Ordering: this ticket does not introduce new ordering contracts. Existing goldens already define their tick ordering and cross-agent sequencing; the strictness gates fire inside a single request-resolution path within a single tick, not across tick boundaries.
 8. Not applicable — no heuristic removal.
 9. First failure boundary per scenario:
-   - `accuse` with substituted suspect: revalidation refuses (T-003 gate in `revalidate_exact_target_step`, which already covered `accuse` via its all-`SpecificEntity` TargetSpec; now covered authoritatively by the strictness gate).
-   - `loot` with moved corpse: revalidation refuses (T-003 gate — newly covered by strictness; the legacy `revalidate_exact_target_step` did not apply to `loot` because its TargetSpec is `EntityAtActorPlace`).
+   - `accuse` with substituted suspect: revalidation or later dispatch/start-time validation may refuse depending on whether the original same-target step still survives past the primary revalidation miss; T-003 established that `revalidate_exact_target_step` itself is a lawful same-target path, not a substitution gate.
+   - `loot` with moved corpse: the planner-side helpers do not retarget it; the relevant refusal surface is the existing revalidation miss or the T-002/T-005 dispatch/start-time path rather than a new T-003 gate.
    - `eat`/`drink` with substitute item available: revalidation succeeds via `FungibleEquivalentCommodity` path; action completes.
    - `travel` with alternate route: existing behavior under `EquivalentRouteStep`; action completes.
 10. Not applicable.
@@ -43,9 +43,9 @@ This ticket extends the goldens listed in spec D1-Validation items 7–10 (`accu
 
 ## Verification Layers
 
-1. AI reasoning (candidate re-selection after `ExactIdentity` refusal) -> decision trace assertions in golden tests.
+1. AI reasoning (candidate re-selection after `ExactIdentity` refusal or same-target revalidation survival) -> decision trace assertions in golden tests.
 2. Dispatch/start-time refusal -> action trace for stale fully bound exact-identity steps, plus `RequestResolutionOutcome::RejectedBeforeStart { reason: ExactIdentityRequired }` in request-resolution trace only when the request shape itself is underbound or malformed.
-3. Revalidation refusal (tick before dispatch) -> decision trace showing the plan was invalidated and replanning occurred.
+3. Revalidation behavior (tick before dispatch) -> decision trace showing whether the plan was invalidated or lawfully preserved as a same-target step.
 4. Fungible/route substitution success (negative control) -> action trace showing the step started with `RequestBindingKind::BestEffortFallback` for the non-`ExactIdentity` classes.
 5. Trace snapshot correctness (`PlannedStepSummary.binding_strictness`) -> decision trace assertion in one golden per class asserting the snapshot matches the authoritative `ActionDef::binding_strictness`.
 
@@ -89,7 +89,7 @@ Run the full 7-point verification from CLAUDE.md:
 3. `search_plan` — unaffected.
 4. BestEffort action start — document the exact action-trace or request-resolution-trace pattern produced by the live `ExactIdentity` surface under test, depending on whether the scenario reaches revalidation only, authoritative start-time validation, or an underbound request-resolution rejection.
 5. `handle_plan_failure` — document that a refused `ExactIdentity` step routes through `handle_plan_failure` via `BlockingFact::AssumptionFailed` (pre-S109 mapping); assert in one golden.
-6. Payload revalidation — confirm the strictness gate precedes the payload validator in `revalidate_best_effort_payload_override_step`; assert the ordering in a unit test at the T-003 level if not already present there.
+6. Payload revalidation — confirm the end-to-end scenarios respect the narrowed T-003 contract: same-target exact-identity payload revalidation stays lawful, while no scenario silently retargets a different concrete target under BestEffort.
 7. Golden tests — full `cargo test -p worldwake-ai` pass.
 
 ## Files to Touch
