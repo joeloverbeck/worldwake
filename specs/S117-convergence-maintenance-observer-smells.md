@@ -48,7 +48,7 @@ From `reports/scenario-analysis-report.md` Layer 3:
 - Auto-remediation. The detector emits an anomaly; responding to it is the analyst's (or `/scenario-analysis` skill's) job.
 - LLM-gated detection. Every detector in this spec is mechanical and runs in the Rust observer binary.
 - Refactoring the existing observer architecture. `bin/observer.rs` stays monolithic; new detectors slot into the same file alongside existing ones. A future extraction to a dedicated `src/observer/` module tree is a separate refactor.
-- Adding a shared helper for recipe → need classification. The derivation (recipe.outputs → `CommodityKind::spec().consumable_profile` → first non-zero relief) lives inline in the `RecipeMonoculture` detector. If a second consumer appears later, it can be promoted.
+- Adding a shared helper for recipe → need classification. The derivation (`CommodityKind::spec().trade_category` + `consumable_profile`) lives inline in the `RecipeMonoculture` detector. If a second consumer appears later, it can be promoted.
 - Adding a `DriveThresholds::medium(need)` helper to `worldwake-core`. The detector performs the per-need match locally.
 
 ## FOUNDATIONS Alignment
@@ -147,17 +147,17 @@ let medium = match need {
 1. Read `KnownRecipes` (`crates/worldwake-core/src/production.rs:40`) for the agent.
 2. For each known `RecipeId`, resolve the `RecipeDefinition` (`crates/worldwake-sim/src/recipe_def.rs:6`) and classify its primary satisfied need via the derivation below. Recipes with no consumable output (tools, weapons, waste) are excluded.
 3. Bucket known-and-classified recipes by `HomeostaticNeedId`. For each bucket with ≥ 2 recipes, compute the per-recipe action-count share across the run (from the action trace / commit log already consumed by the observer). If the top recipe's share ≥ 95%, emit anomaly.
-4. Belief-gate cross-check: only emit if at least one alternative recipe's required facility / workstation / resource source was known to the agent at some point during the run (from the Section 5 belief data the observer already collects). This rules out the case where the agent genuinely never discovered where to execute the alternative.
+4. Belief-gate cross-check: only emit if at least one alternative recipe's required facility / workstation / resource source is present in the agent's final `AgentBeliefStore` at run end (from the same Section 5 belief data the observer already renders). This rules out the case where the agent genuinely never discovered where to execute the alternative.
 
 **Recipe → need derivation (inline)**:
 
-For a given `RecipeDefinition`, inspect each `(CommodityKind, Quantity)` in `outputs`. Resolve `CommodityKind::spec().consumable_profile`. If the profile is `None`, the recipe has no consumable output and is excluded from monoculture analysis. If the profile is `Some(p)`, classify by the first non-zero relief field in order:
+For a given `RecipeDefinition`, inspect `outputs[0]`. Resolve `CommodityKind::spec()`. If `consumable_profile` is `None`, the recipe has no consumable output and is excluded from monoculture analysis. Otherwise classify by trade category:
 
-- `p.thirst_relief_per_unit > 0` → `HomeostaticNeedId::Thirst`
-- `p.hunger_relief_per_unit > 0` → `HomeostaticNeedId::Hunger`
-- `p.bladder_fill_per_unit > 0` → (bladder-fill is an anti-relief; treat as `HomeostaticNeedId::Thirst` because commodities that fill the bladder always also relieve thirst in current data, but document the check so a future non-thirst bladder filler would surface as an explicit new branch rather than silent misclassification)
+- `TradeCategory::Water` → `HomeostaticNeedId::Thirst`
+- `TradeCategory::Food` → `HomeostaticNeedId::Hunger`
+- all other trade categories → excluded from monoculture analysis
 
-If a recipe has multiple outputs with different classifications, use the first output's classification (matches the current "primary output" convention elsewhere in the codebase). Fatigue and dirtiness reliefs do not come from recipes in the current model; such recipes do not exist today and are not special-cased.
+This landed rule is narrower than the original draft's "first non-zero relief field" ordering because live `CommodityKind::Apple` relieves both hunger and thirst; classifying by `TradeCategory` preserves the intended food-monoculture behavior for apples vs grain while still treating water recipes as thirst support. If a recipe has multiple outputs with different classifications, use the first output's classification (matches the current "primary output" convention elsewhere in the codebase). Fatigue and dirtiness reliefs do not come from recipes in the current model; such recipes do not exist today and are not special-cased.
 
 This derivation is a pure read-side computation per FND-27. It lives as a private helper inside the detector module, not in `worldwake-sim`.
 
@@ -207,7 +207,7 @@ Tick range: 400–600
 ```
 ### Anomaly 8 — RECIPE_MONOCULTURE (Agent A)
 
-Food actions: 100% Harvest Apples (16 actions), 0% Harvest Grain (0 actions). Both recipes known; West Grainfield facility belief present at tick 412.
+Food actions: 100% Harvest Apples (16 actions), 0% Harvest Grain (0 actions). Both recipes known; final belief store includes workstation FieldPlot evidence.
 
 Tick range: 0–1440
 ```

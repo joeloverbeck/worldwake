@@ -76,7 +76,7 @@ Rows are emitted for each recipe in the agent's `KnownRecipes.recipes` (iteratin
 Both tables benefit from small helpers:
 
 - `fn compute_maintenance_rates(samples: &[NeedsSample]) -> [(HomeostaticNeedId, u32, u32, i64); 5]` returning (need, accum, relief, net) per need.
-- `fn commits_per_recipe(agent_stats: &AgentStats, registry: &ActionRecipeRegistry) -> BTreeMap<RecipeId, u32>` returning deterministic iteration order.
+- `fn commits_per_recipe(agent_stats: &AgentStats, registry: &RecipeRegistry) -> BTreeMap<RecipeId, u32>` returning deterministic iteration order.
 
 Both helpers are private to `bin/observer.rs`.
 

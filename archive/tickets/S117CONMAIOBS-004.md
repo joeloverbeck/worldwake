@@ -1,6 +1,6 @@
 # S117CONMAIOBS-004: `RecipeMonoculture` detector
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -14,10 +14,10 @@ In the survival-contested run, every agent knew both Harvest Apples and Harvest 
 
 1. `KnownRecipes` component is defined at `crates/worldwake-core/src/production.rs:40` as `pub struct KnownRecipes { pub recipes: BTreeSet<RecipeId> }` and implements `Component`. The observer can read it per-agent via the standard `get_component_known_recipes(agent)` accessor (pattern matches `get_component_drive_thresholds` and `get_component_homeostatic_needs`).
 2. `RecipeDefinition` is defined at `crates/worldwake-sim/src/recipe_def.rs:6-15` with fields `name`, `inputs: Vec<(CommodityKind, Quantity)>`, `outputs: Vec<(CommodityKind, Quantity)>`, `work_ticks`, `required_workstation_tag`, `required_tool_kinds`, `body_cost_per_tick`. There is no `need_category` field — classification is derived from `outputs[0]`'s `CommodityKind::spec().consumable_profile`.
-3. `CommodityKindSpec` is defined at `crates/worldwake-core/src/items.rs:122-128` with `consumable_profile: Option<CommodityConsumableProfile>`. `CommodityConsumableProfile` at line 135 has `hunger_relief_per_unit: Permille`, `thirst_relief_per_unit: Permille`, `bladder_fill_per_unit: Permille` (all per-unit positive-delta amounts). Fatigue and dirtiness reliefs are NOT exposed through `CommodityConsumableProfile` — they come from actions (sleep, wash), not from consuming items.
-4. Recipe commit counts are already counted in the observer via the action trace (commits per recipe name). The Section 2 "Recipe usage" table landed in 006 relies on the same data; this ticket reads action-trace commit counts per agent per recipe.
-5. Belief-gate requires "alternative recipe's required facility / workstation / resource source was known to the agent" — the observer's Section 5 already collects per-agent belief data. This ticket reads the same belief substrate to check whether an alternative recipe's prerequisites were observed by the agent at some point during the run.
-6. Shared abstraction boundary under audit: the `detect_anomalies()` orchestrator at `bin/observer.rs:752` plus the recipe → need derivation helper introduced in this ticket. The derivation is a read-side computation per FND-27 — it is not cached or stored.
+3. `CommodityKindSpec` is defined at `crates/worldwake-core/src/items.rs:122-128` with `trade_category` plus `consumable_profile: Option<CommodityConsumableProfile>`. Live data mismatch: `CommodityKind::Apple` currently relieves both hunger and thirst, so a naive "first non-zero relief field in thirst-first order" would classify apples as `Thirst` and contradict this ticket's own food-monoculture scope. The honest live detector boundary for this ticket is therefore `TradeCategory::Food -> HomeostaticNeedId::Hunger`, `TradeCategory::Water -> HomeostaticNeedId::Thirst`, otherwise `None`; `consumable_profile` still gates out non-consumables. Fatigue and dirtiness reliefs are NOT exposed through `CommodityConsumableProfile` — they come from actions (sleep, wash), not from consuming items.
+4. Recipe commit counts are already counted in the observer via `AgentStats.actions_committed: BTreeMap<String, u32>` keyed by committed action name. The Section 2 "Recipe usage" table in 006 is still pending, so this ticket must read the existing committed-action counts directly rather than relying on an already-landed table.
+5. Live observer belief substrate is the final `AgentBeliefStore` read from `World::get_component_agent_belief_store(agent)` in Section 5; there is no separate observer-side `AgentBeliefSnapshot` aggregation today. The belief-gate for this ticket must therefore narrow to "the final belief store contains evidence of the alternative recipe's required workstation or matching resource source" rather than claiming tick-specific historical witness data the observer does not retain separately.
+6. Shared abstraction boundary under audit: the `detect_anomalies()` orchestrator in `bin/observer.rs`, the live `worldwake_sim::RecipeRegistry`, and the final `AgentBeliefStore` read surface on `worldwake_core::World`. The derivation is a read-side computation per FND-27 — it is not cached or stored.
 
 ## Architecture Check
 
@@ -27,10 +27,10 @@ In the survival-contested run, every agent knew both Harvest Apples and Harvest 
 
 ## Verification Layers
 
-1. Detector fires when agent has ≥2 known food recipes, commits ≥95% to one, and has belief evidence of the alternative's facility → focused unit test with hand-constructed `KnownRecipes`, action counts, and belief snapshot.
+1. Detector fires when agent has ≥2 known food recipes, commits ≥95% to one, and the final belief store contains evidence of the alternative's facility → focused unit test with hand-constructed `KnownRecipes`, action counts, and `AgentBeliefStore`.
 2. Detector does NOT fire when belief substrate for the alternative is missing → focused unit test (belief-gate control case).
 3. Detector does NOT fire when the only known recipe for a need has no alternatives → focused unit test (trivial single-recipe case).
-4. Recipe → need derivation maps `CommodityKind::Apple` / `CommodityKind::Grain` to `HomeostaticNeedId::Hunger` (via `hunger_relief_per_unit > 0`) and `CommodityKind::Water` to `HomeostaticNeedId::Thirst` → focused unit test on the derivation helper.
+4. Recipe → need derivation maps `CommodityKind::Apple` / `CommodityKind::Grain` to `HomeostaticNeedId::Hunger` (via `TradeCategory::Food`) and `CommodityKind::Water` to `HomeostaticNeedId::Thirst` (via `TradeCategory::Water`) → focused unit test on the derivation helper.
 5. Recipes producing non-consumable outputs (e.g., tools, weapons, waste) return `None` from the derivation and are excluded from monoculture analysis → focused unit test.
 6. Single-layer ticket (observer read-side); no action-trace or event-log proof surface applies beyond reading the already-captured commit counts.
 
@@ -42,19 +42,18 @@ Add a private module-local helper inside `bin/observer.rs`:
 
 ```rust
 fn primary_satisfied_need(recipe: &RecipeDefinition) -> Option<HomeostaticNeedId> {
-    // Pure derivation: outputs[0] -> CommodityKind::spec().consumable_profile -> first non-zero relief.
-    // FND-27: not cached, recomputed per-call. Per spec D4 semantics:
-    //   thirst_relief > 0 -> Thirst
-    //   hunger_relief > 0 -> Hunger
-    //   otherwise          -> None
+    // Pure derivation: outputs[0] -> CommodityKind::spec().
+    // FND-27: not cached, recomputed per-call. Live S117 boundary:
+    //   TradeCategory::Water + consumable_profile present -> Thirst
+    //   TradeCategory::Food + consumable_profile present  -> Hunger
+    //   otherwise                                         -> None
     let (commodity, _qty) = recipe.outputs.first()?;
-    let profile = commodity.spec().consumable_profile?;
-    if profile.thirst_relief_per_unit.as_u16() > 0 {
-        Some(HomeostaticNeedId::Thirst)
-    } else if profile.hunger_relief_per_unit.as_u16() > 0 {
-        Some(HomeostaticNeedId::Hunger)
-    } else {
-        None // bladder-fill-only or non-consumable outputs
+    let spec = commodity.spec();
+    let _profile = spec.consumable_profile?;
+    match spec.trade_category {
+        TradeCategory::Water => Some(HomeostaticNeedId::Thirst),
+        TradeCategory::Food => Some(HomeostaticNeedId::Hunger),
+        _ => None,
     }
 }
 ```
@@ -63,11 +62,11 @@ Use the project's existing `Permille` accessor (whatever `.as_u16()` or `.0` con
 
 ### 2. Belief-gate helper
 
-Add `fn agent_believes_recipe_facility_reachable(agent: EntityId, recipe: &RecipeDefinition, belief_snapshot: &AgentBeliefSnapshot) -> bool` that scans the agent's run-long belief history for evidence of the recipe's `required_workstation_tag` or primary input's resource source. If either appears in the agent's belief record at any tick during the run, return `true`. The belief data is already collected by the observer for Section 5 — reuse that collection rather than re-sampling.
+Add `fn agent_believes_recipe_facility_reachable(recipe: &RecipeDefinition, belief_store: &AgentBeliefStore) -> bool` that scans the agent's final belief store for evidence of the recipe's `required_workstation_tag` or a matching primary-input `resource_source.commodity`. Reuse the `known_entities` entries already rendered in Section 5; do not introduce a new observer-side belief-history snapshot type for this ticket.
 
 ### 3. New detector function
 
-Add `fn detect_recipe_monoculture(stats_by_agent: &BTreeMap<EntityId, AgentStats>, known_recipes_by_agent: &BTreeMap<EntityId, BTreeSet<RecipeId>>, recipe_registry: &ActionRecipeRegistry, beliefs_by_agent: &BTreeMap<EntityId, AgentBeliefSnapshot>, names: &BTreeMap<EntityId, String>, anomalies: &mut Vec<Anomaly>)` below `detect_maintenance_starvation`.
+Add `fn detect_recipe_monoculture(stats_by_agent: &BTreeMap<EntityId, AgentStats>, known_recipes_by_agent: &BTreeMap<EntityId, BTreeSet<RecipeId>>, recipe_registry: &RecipeRegistry, world: &worldwake_core::World, anomalies: &mut Vec<Anomaly>)` below `detect_maintenance_starvation`.
 
 Logic per agent:
 
@@ -75,17 +74,17 @@ Logic per agent:
 - For each need bucket with ≥2 recipes:
   - Count commits per recipe across the run (from existing action-trace data).
   - If the top recipe's share (commits / total_bucket_commits) ≥ 95% (as a permille integer comparison: `>= 950`) AND `total_bucket_commits > 0`:
-    - Belief-gate: for each non-top recipe in the bucket, check `agent_believes_recipe_facility_reachable`. If NONE of the alternatives satisfies the belief-gate, skip (no false positive).
+    - Belief-gate: for each non-top recipe in the bucket, check `agent_believes_recipe_facility_reachable` against the agent's final `AgentBeliefStore`. If NONE of the alternatives satisfies the belief-gate, skip (no false positive).
     - Otherwise emit one anomaly:
       - `kind: AnomalyKind::RecipeMonoculture`
-      - `agent_name: names[&agent]`
+      - `agent_name: stats_by_agent[&agent].name`
       - `additional_agent_names: None`
-      - `description: format!("{} actions: {:.0}% {} ({} actions), {:.0}% {} ({} actions). Both recipes known; {} facility belief present at tick {}.", need_category_label, top_percent, top_name, top_count, other_percent, other_name, other_facility_label, belief_tick)` (extend with additional "`, {:.0}% ...`" entries if bucket has >2 recipes)
+      - `description: format!("{} actions: {:.0}% {} ({} actions), {:.0}% {} ({} actions). Both recipes known; final belief store includes {} evidence.", need_category_label, top_percent, top_name, top_count, other_percent, other_name, alternative_evidence_label)` (extend with additional "`, {:.0}% ...`" entries if bucket has >2 recipes)
       - `tick_range: Some((0, run_end_tick))`
 
 ### 4. Wire into `detect_anomalies()`
 
-Call from the orchestrator after `detect_maintenance_starvation`. Collect per-agent `KnownRecipes` via `world.get_component_known_recipes(agent).cloned().unwrap_or_default()` into the required BTreeMap.
+Call from the orchestrator after `detect_maintenance_starvation`. Collect per-agent `KnownRecipes` via `world.get_component_known_recipes(agent).cloned().unwrap_or_default()` into the required `BTreeMap<EntityId, BTreeSet<RecipeId>>`, and pass the live `RecipeRegistry` through `detect_anomalies()`.
 
 ### 5. Focused unit tests
 
@@ -139,3 +138,24 @@ Add to the existing `#[cfg(test)] mod tests`:
 2. `cargo test -p worldwake-cli --bin observer primary_satisfied_need`
 3. `cargo test -p worldwake-cli`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Extended `crates/worldwake-cli/src/bin/observer.rs` with the `RecipeMonoculture` observer detector, including a private `primary_satisfied_need()` helper, a final-belief-store facility/resource evidence helper, and orchestrator wiring for per-agent `KnownRecipes` plus the live `RecipeRegistry`.
+- Wired `detect_anomalies()` to collect per-agent known recipes from `World`, accept the live `RecipeRegistry`, and emit `RECIPE_MONOCULTURE` anomalies after `detect_maintenance_starvation`.
+- Added focused observer unit coverage for apple/water/non-consumable classification, positive recipe monoculture detection, belief-gate non-detection, and single-known-recipe non-detection.
+
+## Deviations
+
+- The drafted ticket assumed a non-live `ActionRecipeRegistry` plus an observer-side `AgentBeliefSnapshot` with tick-specific facility evidence. Live reassessment showed the honest boundary is the existing `worldwake_sim::RecipeRegistry` plus the agent's final `AgentBeliefStore`, so the landed detector reads the final belief store directly and reports evidence text without a belief tick.
+- Reassessment exposed an internal contract contradiction between the drafted "thirst-first non-zero relief field" helper and the ticket's own food-monoculture acceptance criteria: live `CommodityKind::Apple` relieves both hunger and thirst, so thirst-first ordering would misclassify `Harvest Apples` as `Thirst`. The landed helper therefore narrows to the honest live rule for this slice: consumable `TradeCategory::Food -> Hunger`, consumable `TradeCategory::Water -> Thirst`, otherwise `None`.
+- The drafted detector signature carried a separate `names` map. Live implementation reused `AgentStats.name` directly and kept the detector signature narrower.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --bin observer recipe_monoculture`
+- Passed `cargo test -p worldwake-cli --bin observer primary_satisfied_need`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

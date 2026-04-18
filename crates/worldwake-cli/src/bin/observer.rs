@@ -22,12 +22,13 @@ use worldwake_ai::{
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
-    DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView, HomeostaticNeedId, Tick,
+    AgentBeliefStore, DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView,
+    HomeostaticNeedId, RecipeId, Tick,
 };
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
-    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink,
-    RequestResolutionTraceSink, TickStepServices, step_tick,
+    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeDefinition,
+    RecipeRegistry, RequestResolutionTraceSink, TickStepServices, step_tick,
 };
 
 #[derive(Parser)]
@@ -784,6 +785,7 @@ fn detect_anomalies(
     perception_trace: &PerceptionTraceSink,
     event_log: &worldwake_core::EventLog,
     world: &worldwake_core::World,
+    recipe_registry: &RecipeRegistry,
 ) -> Vec<Anomaly> {
     let mut anomalies = Vec::new();
 
@@ -915,6 +917,25 @@ fn detect_anomalies(
         })
         .collect::<BTreeMap<_, _>>();
     detect_maintenance_starvation(agent_stats, &thresholds_by_agent, &mut anomalies);
+    let known_recipes_by_agent = agent_stats
+        .keys()
+        .map(|agent_id| {
+            (
+                *agent_id,
+                world
+                    .get_component_known_recipes(*agent_id)
+                    .map(|known| known.recipes.clone())
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    detect_recipe_monoculture(
+        agent_stats,
+        &known_recipes_by_agent,
+        recipe_registry,
+        world,
+        &mut anomalies,
+    );
 
     // Cross-reference redundant perception more precisely using event log
     refine_redundant_perception(&mut anomalies, agent_stats, perception_trace, event_log);
@@ -1166,6 +1187,164 @@ fn detect_maintenance_starvation(
             ),
             tick_range: Some((start_tick as u64, end_tick as u64)),
         });
+    }
+}
+
+const RECIPE_MONOCULTURE_SHARE_THRESHOLD_PERMILLE: u32 = 950;
+
+fn primary_satisfied_need(recipe: &RecipeDefinition) -> Option<HomeostaticNeedId> {
+    let (commodity, _) = recipe.outputs.first()?;
+    let spec = commodity.spec();
+    let _profile = spec.consumable_profile?;
+    match spec.trade_category {
+        worldwake_core::TradeCategory::Food => Some(HomeostaticNeedId::Hunger),
+        worldwake_core::TradeCategory::Water => Some(HomeostaticNeedId::Thirst),
+        _ => None,
+    }
+}
+
+fn recipe_facility_evidence_label(
+    recipe: &RecipeDefinition,
+    belief_store: &AgentBeliefStore,
+) -> Option<String> {
+    if let Some(tag) = recipe.required_workstation_tag
+        && belief_store
+            .known_entities
+            .values()
+            .any(|state| state.workstation_tag == Some(tag))
+    {
+        return Some(format!("workstation {tag:?}"));
+    }
+
+    let (primary_input, _) = recipe.inputs.first()?;
+    belief_store
+        .known_entities
+        .values()
+        .find(|state| {
+            state
+                .resource_source
+                .as_ref()
+                .is_some_and(|source| source.commodity == *primary_input)
+        })
+        .map(|_| format!("resource source {primary_input:?}"))
+}
+
+fn agent_believes_recipe_facility_reachable(
+    recipe: &RecipeDefinition,
+    belief_store: &AgentBeliefStore,
+) -> bool {
+    recipe_facility_evidence_label(recipe, belief_store).is_some()
+}
+
+fn detect_recipe_monoculture(
+    agent_stats: &BTreeMap<EntityId, AgentStats>,
+    known_recipes_by_agent: &BTreeMap<EntityId, BTreeSet<RecipeId>>,
+    recipe_registry: &RecipeRegistry,
+    world: &worldwake_core::World,
+    anomalies: &mut Vec<Anomaly>,
+) {
+    for (agent_id, stats) in agent_stats {
+        let Some(belief_store) = world.get_component_agent_belief_store(*agent_id) else {
+            continue;
+        };
+        let Some(known_recipes) = known_recipes_by_agent.get(agent_id) else {
+            continue;
+        };
+
+        let mut recipes_by_need: BTreeMap<HomeostaticNeedId, Vec<RecipeId>> = BTreeMap::new();
+        for recipe_id in known_recipes {
+            let Some(recipe) = recipe_registry.get(*recipe_id) else {
+                continue;
+            };
+            let Some(need) = primary_satisfied_need(recipe) else {
+                continue;
+            };
+            recipes_by_need.entry(need).or_default().push(*recipe_id);
+        }
+
+        for (need, recipe_ids) in recipes_by_need {
+            if recipe_ids.len() < 2 {
+                continue;
+            }
+
+            let mut recipe_counts = recipe_ids
+                .into_iter()
+                .filter_map(|recipe_id| {
+                    let recipe = recipe_registry.get(recipe_id)?;
+                    Some((
+                        recipe_id,
+                        recipe.name.clone(),
+                        stats
+                            .actions_committed
+                            .get(&recipe.name)
+                            .copied()
+                            .unwrap_or(0),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            recipe_counts.sort_by(|left, right| {
+                right
+                    .2
+                    .cmp(&left.2)
+                    .then_with(|| left.1.cmp(&right.1))
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+
+            let total_bucket_commits = recipe_counts
+                .iter()
+                .map(|(_, _, count)| *count)
+                .sum::<u32>();
+            if total_bucket_commits == 0 {
+                continue;
+            }
+
+            let Some((_, _, top_count)) = recipe_counts.first() else {
+                continue;
+            };
+            let top_share_permille = (*top_count * 1000) / total_bucket_commits;
+            if top_share_permille < RECIPE_MONOCULTURE_SHARE_THRESHOLD_PERMILLE {
+                continue;
+            }
+
+            let alternative_evidence =
+                recipe_counts.iter().skip(1).find_map(|(recipe_id, _, _)| {
+                    let recipe = recipe_registry.get(*recipe_id)?;
+                    agent_believes_recipe_facility_reachable(recipe, belief_store).then(|| {
+                        recipe_facility_evidence_label(recipe, belief_store)
+                            .unwrap_or_else(|| "alternative facility".to_string())
+                    })
+                });
+            let Some(alternative_evidence_label) = alternative_evidence else {
+                continue;
+            };
+
+            let parts = recipe_counts
+                .iter()
+                .map(|(_, recipe_name, count)| {
+                    let share_percent =
+                        (f64::from(*count) * 100.0) / f64::from(total_bucket_commits);
+                    format!("{share_percent:.0}% {recipe_name} ({count} actions)")
+                })
+                .collect::<Vec<_>>();
+            let run_end_tick = stats
+                .needs_samples
+                .len()
+                .checked_sub(1)
+                .map_or(0, |tick| tick as u64);
+
+            anomalies.push(Anomaly {
+                kind: AnomalyKind::RecipeMonoculture,
+                agent_name: stats.name.clone(),
+                additional_agent_names: None,
+                description: format!(
+                    "{} actions: {}. Both recipes known; final belief store includes {} evidence.",
+                    need_label(need),
+                    parts.join(", "),
+                    alternative_evidence_label
+                ),
+                tick_range: Some((0, run_end_tick)),
+            });
+        }
     }
 }
 
@@ -3022,6 +3201,7 @@ fn main() {
         &perception_trace,
         sim.event_log(),
         sim.world(),
+        sim.recipe_registry(),
     );
 
     eprintln!("Found {} anomalies. Writing report...", anomalies.len());
@@ -3084,15 +3264,16 @@ mod tests {
         ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
         NeedsSample, PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots,
         behavioral_transitions, committed_travel_ticks, death_summary_line,
-        detect_geographic_convergence, detect_maintenance_starvation, failed_plan_breakdown,
-        failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
+        detect_geographic_convergence, detect_maintenance_starvation, detect_recipe_monoculture,
+        failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
         format_death_cause, format_report, need_medium_threshold, post_travel_affordance_snapshots,
-        unknown_location_entity_groups,
+        primary_satisfied_need, unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
+    use std::num::NonZeroU32;
     use worldwake_ai::decision_trace::{
         AffordanceSummary, AffordanceTrace, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
         ExecutionTrace, PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace,
@@ -3105,14 +3286,14 @@ mod tests {
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
-        ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, ControlSource, DeadAt,
-        DeathCause, DriveThresholds, EntityId, EntityKind, EventLog, GoalKey, GoalKind,
-        HomeostaticNeedId, OpportunityAnchor, Permille, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn, build_prototype_world,
+        ActionDefId, AgentBeliefStore, BelievedEntityState, BodyCostPerTick, CauseRef,
+        CommodityKind, ControlSource, DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind,
+        EventLog, GoalKey, GoalKind, HomeostaticNeedId, OpportunityAnchor, Permille, Quantity,
+        Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
-        PerceptionTraceSink,
+        PerceptionTraceSink, RecipeDefinition, RecipeRegistry,
     };
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
@@ -3379,6 +3560,34 @@ mod tests {
             })
             .collect();
         stats
+    }
+
+    fn sample_recipe(
+        name: &str,
+        inputs: Vec<(CommodityKind, Quantity)>,
+        outputs: Vec<(CommodityKind, Quantity)>,
+        workstation: Option<WorkstationTag>,
+    ) -> RecipeDefinition {
+        RecipeDefinition {
+            name: name.to_string(),
+            inputs,
+            outputs,
+            work_ticks: NonZeroU32::new(3).expect("work ticks"),
+            required_workstation_tag: workstation,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        }
+    }
+
+    fn belief_state_with_workstation(
+        kind: Option<EntityKind>,
+        last_known_place: Option<EntityId>,
+        workstation_tag: Option<WorkstationTag>,
+    ) -> BelievedEntityState {
+        BelievedEntityState {
+            workstation_tag,
+            ..belief_state(kind, last_known_place)
+        }
     }
 
     #[test]
@@ -4221,5 +4430,213 @@ mod tests {
 
         assert_eq!(anomalies.len(), 1);
         assert_eq!(anomalies[0].tick_range, Some((0, 399)));
+    }
+
+    #[test]
+    fn test_primary_satisfied_need_classifies_apple_as_hunger() {
+        let recipe = sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        );
+
+        assert_eq!(
+            primary_satisfied_need(&recipe),
+            Some(HomeostaticNeedId::Hunger)
+        );
+    }
+
+    #[test]
+    fn test_primary_satisfied_need_classifies_water_as_thirst() {
+        let recipe = sample_recipe(
+            "Harvest Water",
+            vec![(CommodityKind::Water, Quantity(1))],
+            vec![(CommodityKind::Water, Quantity(1))],
+            Some(WorkstationTag::Well),
+        );
+
+        assert_eq!(
+            primary_satisfied_need(&recipe),
+            Some(HomeostaticNeedId::Thirst)
+        );
+    }
+
+    #[test]
+    fn test_primary_satisfied_need_returns_none_for_non_consumable() {
+        let recipe = sample_recipe(
+            "Gather Firewood",
+            vec![],
+            vec![(CommodityKind::Firewood, Quantity(1))],
+            None,
+        );
+
+        assert_eq!(primary_satisfied_need(&recipe), None);
+    }
+
+    #[test]
+    fn test_recipe_monoculture_fires_on_100_percent_apple_share() {
+        let mut registry = RecipeRegistry::new();
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let grain_id = registry.register(sample_recipe(
+            "Harvest Grain",
+            vec![(CommodityKind::Grain, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(1))],
+            Some(WorkstationTag::FieldPlot),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("Harvest Apples".to_string(), 16);
+        stats
+            .actions_committed
+            .insert("Harvest Grain".to_string(), 0);
+        stats.needs_samples = vec![NeedsSample {
+            hunger: 0,
+            thirst: 0,
+            fatigue: 0,
+            bladder: 0,
+            dirtiness: 0,
+        }];
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let mut store = AgentBeliefStore::new();
+        store.known_entities.insert(
+            entity(10),
+            belief_state_with_workstation(
+                Some(EntityKind::Facility),
+                Some(entity(20)),
+                Some(WorkstationTag::FieldPlot),
+            ),
+        );
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Alice", ControlSource::Ai).expect("agent");
+            txn.set_component_agent_belief_store(agent, store)
+                .expect("belief store");
+            commit_txn(txn);
+            agent
+        };
+        let stats_by_agent = BTreeMap::from([(agent, stats)]);
+        let known_recipes_by_agent =
+            BTreeMap::from([(agent, BTreeSet::from([apple_id, grain_id]))]);
+        let mut anomalies = Vec::new();
+
+        detect_recipe_monoculture(
+            &stats_by_agent,
+            &known_recipes_by_agent,
+            &registry,
+            &world,
+            &mut anomalies,
+        );
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(anomalies[0].kind, AnomalyKind::RecipeMonoculture));
+        assert!(anomalies[0].description.contains(
+            "hunger actions: 100% Harvest Apples (16 actions), 0% Harvest Grain (0 actions)"
+        ));
+        assert!(
+            anomalies[0]
+                .description
+                .contains("final belief store includes workstation FieldPlot evidence")
+        );
+    }
+
+    #[test]
+    fn test_recipe_monoculture_does_not_fire_without_belief_gate() {
+        let mut registry = RecipeRegistry::new();
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let grain_id = registry.register(sample_recipe(
+            "Harvest Grain",
+            vec![(CommodityKind::Grain, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(1))],
+            Some(WorkstationTag::FieldPlot),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("Harvest Apples".to_string(), 16);
+        stats
+            .actions_committed
+            .insert("Harvest Grain".to_string(), 0);
+        stats.needs_samples = vec![NeedsSample {
+            hunger: 0,
+            thirst: 0,
+            fatigue: 0,
+            bladder: 0,
+            dirtiness: 0,
+        }];
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Alice", ControlSource::Ai).expect("agent");
+            commit_txn(txn);
+            agent
+        };
+        let stats_by_agent = BTreeMap::from([(agent, stats)]);
+        let known_recipes_by_agent =
+            BTreeMap::from([(agent, BTreeSet::from([apple_id, grain_id]))]);
+        let mut anomalies = Vec::new();
+
+        detect_recipe_monoculture(
+            &stats_by_agent,
+            &known_recipes_by_agent,
+            &registry,
+            &world,
+            &mut anomalies,
+        );
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_recipe_monoculture_does_not_fire_on_single_known_recipe() {
+        let mut registry = RecipeRegistry::new();
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("Harvest Apples".to_string(), 16);
+        stats.needs_samples = vec![NeedsSample {
+            hunger: 0,
+            thirst: 0,
+            fatigue: 0,
+            bladder: 0,
+            dirtiness: 0,
+        }];
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Alice", ControlSource::Ai).expect("agent");
+            commit_txn(txn);
+            agent
+        };
+        let stats_by_agent = BTreeMap::from([(agent, stats)]);
+        let known_recipes_by_agent = BTreeMap::from([(agent, BTreeSet::from([apple_id]))]);
+        let mut anomalies = Vec::new();
+
+        detect_recipe_monoculture(
+            &stats_by_agent,
+            &known_recipes_by_agent,
+            &registry,
+            &world,
+            &mut anomalies,
+        );
+
+        assert!(anomalies.is_empty());
     }
 }
