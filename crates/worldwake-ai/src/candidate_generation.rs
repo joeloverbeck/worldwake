@@ -8010,7 +8010,8 @@ mod tests {
             baseline_snapshot: None,
         });
 
-        let candidates = generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
         let acquire_goals = goals_for(
             &candidates,
             &GoalKind::AcquireCommodity {
@@ -8024,7 +8025,10 @@ mod tests {
             acquire_goals[0].anchor,
             worldwake_core::OpportunityAnchor::Place(orchard),
         );
-        assert_eq!(acquire_goals[0].evidence_entities, BTreeSet::from([orchard_seller]));
+        assert_eq!(
+            acquire_goals[0].evidence_entities,
+            BTreeSet::from([orchard_seller])
+        );
     }
 
     #[test]

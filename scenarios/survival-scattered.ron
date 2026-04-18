@@ -12,6 +12,12 @@
 // - Max travel cost 7 ticks (vs baseline's 6) with more places (6 vs 4)
 (
     seed: 205005,
+    survival_health_contract: (
+        max_authored_critical_run_ticks: 400,
+        max_idle_window_ticks_with_elevated_need: 50,
+        elevated_need_floor: 300,
+        required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
+    ),
     places: [
         (name: "Hilltop Camp", tags: [Camp, Latrine]),
         (name: "Woodland Clearing", tags: [Forest]),

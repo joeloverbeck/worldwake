@@ -357,6 +357,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
         spawn_scenario(&def).unwrap()
@@ -377,6 +378,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
         spawn_scenario(&def).unwrap()

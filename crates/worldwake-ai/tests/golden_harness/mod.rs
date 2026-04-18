@@ -55,6 +55,191 @@ pub fn nz(value: u32) -> NonZeroU32 {
     NonZeroU32::new(value).unwrap()
 }
 
+pub fn expect_survival_health_contract<'a, T>(
+    contract: Option<&'a T>,
+    scenario_name: &str,
+) -> &'a T {
+    contract.unwrap_or_else(|| {
+        panic!(
+            "{scenario_name} must define survival_health_contract before a survival golden can use it"
+        )
+    })
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SurvivalNeedRunTracker {
+    pub hunger_current: u32,
+    pub hunger_max: u32,
+    pub thirst_current: u32,
+    pub thirst_max: u32,
+    pub fatigue_current: u32,
+    pub fatigue_max: u32,
+    pub bladder_current: u32,
+    pub bladder_max: u32,
+    pub dirtiness_current: u32,
+    pub dirtiness_max: u32,
+}
+
+impl SurvivalNeedRunTracker {
+    pub fn observe(&mut self, needs: &HomeostaticNeeds, thresholds: &DriveThresholds) {
+        update_need_run(
+            &mut self.hunger_current,
+            &mut self.hunger_max,
+            needs.hunger >= thresholds.hunger.critical(),
+        );
+        update_need_run(
+            &mut self.thirst_current,
+            &mut self.thirst_max,
+            needs.thirst >= thresholds.thirst.critical(),
+        );
+        update_need_run(
+            &mut self.fatigue_current,
+            &mut self.fatigue_max,
+            needs.fatigue >= thresholds.fatigue.critical(),
+        );
+        update_need_run(
+            &mut self.bladder_current,
+            &mut self.bladder_max,
+            needs.bladder >= thresholds.bladder.critical(),
+        );
+        update_need_run(
+            &mut self.dirtiness_current,
+            &mut self.dirtiness_max,
+            needs.dirtiness >= thresholds.dirtiness.critical(),
+        );
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StuckIdleWindow {
+    pub agent_name: String,
+    pub start_tick: u32,
+    pub end_tick: u32,
+    pub max_need_at_start: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SurvivalCriticalRunLimitOverrides {
+    pub hunger: Option<u32>,
+    pub thirst: Option<u32>,
+    pub fatigue: Option<u32>,
+    pub bladder: Option<u32>,
+    pub dirtiness: Option<u32>,
+}
+
+pub fn update_need_run(current: &mut u32, max: &mut u32, above_threshold: bool) {
+    if above_threshold {
+        *current += 1;
+        *max = (*max).max(*current);
+    } else {
+        *current = 0;
+    }
+}
+
+pub fn max_need_value(needs: &HomeostaticNeeds) -> u16 {
+    needs
+        .hunger
+        .value()
+        .max(needs.thirst.value())
+        .max(needs.fatigue.value())
+        .max(needs.bladder.value())
+        .max(needs.dirtiness.value())
+}
+
+pub fn assert_authored_critical_runs(
+    max_run: u32,
+    agent_name: &str,
+    thresholds: &DriveThresholds,
+    runs: &SurvivalNeedRunTracker,
+) {
+    assert_authored_critical_runs_with_overrides(
+        max_run,
+        SurvivalCriticalRunLimitOverrides::default(),
+        agent_name,
+        thresholds,
+        runs,
+    );
+}
+
+pub fn assert_authored_critical_runs_with_overrides(
+    default_max_run: u32,
+    overrides: SurvivalCriticalRunLimitOverrides,
+    agent_name: &str,
+    thresholds: &DriveThresholds,
+    runs: &SurvivalNeedRunTracker,
+) {
+    let hunger_max_run = overrides.hunger.unwrap_or(default_max_run);
+    let thirst_max_run = overrides.thirst.unwrap_or(default_max_run);
+    let fatigue_max_run = overrides.fatigue.unwrap_or(default_max_run);
+    let bladder_max_run = overrides.bladder.unwrap_or(default_max_run);
+    let dirtiness_max_run = overrides.dirtiness.unwrap_or(default_max_run);
+
+    assert!(
+        runs.hunger_max <= hunger_max_run,
+        "{agent_name} hunger exceeded authored critical pm({}) for {} consecutive ticks (max allowed: {hunger_max_run})",
+        thresholds.hunger.critical().value(),
+        runs.hunger_max
+    );
+    assert!(
+        runs.thirst_max <= thirst_max_run,
+        "{agent_name} thirst exceeded authored critical pm({}) for {} consecutive ticks (max allowed: {thirst_max_run})",
+        thresholds.thirst.critical().value(),
+        runs.thirst_max
+    );
+    assert!(
+        runs.fatigue_max <= fatigue_max_run,
+        "{agent_name} fatigue exceeded authored critical pm({}) for {} consecutive ticks (max allowed: {fatigue_max_run})",
+        thresholds.fatigue.critical().value(),
+        runs.fatigue_max
+    );
+    assert!(
+        runs.bladder_max <= bladder_max_run,
+        "{agent_name} bladder exceeded authored critical pm({}) for {} consecutive ticks (max allowed: {bladder_max_run})",
+        thresholds.bladder.critical().value(),
+        runs.bladder_max
+    );
+    assert!(
+        runs.dirtiness_max <= dirtiness_max_run,
+        "{agent_name} dirtiness exceeded authored critical pm({}) for {} consecutive ticks (max allowed: {dirtiness_max_run})",
+        thresholds.dirtiness.critical().value(),
+        runs.dirtiness_max
+    );
+}
+
+pub fn assert_required_self_care_families<T: std::fmt::Debug>(
+    required_families: &[T],
+    agent_name: &str,
+    actions: &BTreeSet<String>,
+    scenario_name: &str,
+) {
+    for family in required_families {
+        let present = match format!("{family:?}").as_str() {
+            "Eat" => actions.contains("eat"),
+            "Drink" => actions.contains("drink"),
+            "Sleep" => actions.contains("sleep"),
+            "Relieve" => actions.contains("toilet") || actions.contains("relieve_wilderness"),
+            "Wash" => actions.contains("wash"),
+            other => panic!("unknown self-care family debug label: {other}"),
+        };
+        assert!(
+            present,
+            "{agent_name} should commit {family:?} within the 1440-tick {scenario_name}; committed_actions={actions:?}"
+        );
+    }
+}
+
+pub fn assert_no_stuck_idle_windows(
+    max_idle_window_ticks_with_elevated_need: u32,
+    elevated_need_floor: u16,
+    scenario_name: &str,
+    windows: &[StuckIdleWindow],
+) {
+    assert!(
+        windows.is_empty(),
+        "{scenario_name} should have no idle windows >= {max_idle_window_ticks_with_elevated_need} ticks with needs > {elevated_need_floor} permille: {windows:?}"
+    );
+}
+
 /// Village Square — central hub, slot 0.
 pub const VILLAGE_SQUARE: EntityId = prototype_place_entity(PrototypePlace::VillageSquare);
 /// Orchard Farm — slot 1.

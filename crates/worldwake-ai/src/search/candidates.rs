@@ -1182,9 +1182,10 @@ fn candidate_action_place(
                     .effective_place_ref(PlanningEntityRef::Authoritative(target))
             })
             .or_else(|| {
-                node.state.effective_place_ref(PlanningEntityRef::Authoritative(
-                    node.state.snapshot().actor(),
-                ))
+                node.state
+                    .effective_place_ref(PlanningEntityRef::Authoritative(
+                        node.state.snapshot().actor(),
+                    ))
             }),
         _ => node
             .state

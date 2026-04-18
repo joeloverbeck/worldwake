@@ -35,6 +35,8 @@ pub struct ScenarioDef {
     pub resource_sources: Vec<ResourceSourceDef>,
     #[serde(default)]
     pub commodity_decay: Option<CommodityDecayMap>,
+    #[serde(default)]
+    pub survival_health_contract: Option<SurvivalHealthContractDef>,
     /// Ticks between checkpoint snapshots for event log compaction.
     /// Default: 50. Set to 0 to disable compaction.
     #[serde(default = "default_compaction_interval")]
@@ -43,6 +45,41 @@ pub struct ScenarioDef {
 
 fn default_compaction_interval() -> u32 {
     50
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SurvivalHealthContractDef {
+    pub max_authored_critical_run_ticks: u32,
+    pub max_idle_window_ticks_with_elevated_need: u32,
+    pub elevated_need_floor: Permille,
+    pub required_self_care_families: Vec<NeedsActionFamily>,
+    #[serde(default)]
+    pub critical_run_limits: Option<SurvivalCriticalRunLimitsDef>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SurvivalCriticalRunLimitsDef {
+    #[serde(default)]
+    pub hunger: Option<u32>,
+    #[serde(default)]
+    pub thirst: Option<u32>,
+    #[serde(default)]
+    pub fatigue: Option<u32>,
+    #[serde(default)]
+    pub bladder: Option<u32>,
+    #[serde(default)]
+    pub dirtiness: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+pub enum NeedsActionFamily {
+    Eat,
+    Drink,
+    Sleep,
+    Relieve,
+    Wash,
 }
 
 /// A place in the world graph.
@@ -270,6 +307,55 @@ mod tests {
         assert!(def.facilities.is_empty());
         assert!(def.resource_sources.is_empty());
         assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_deserializes_survival_health_contract() {
+        let ron_str = r#"(
+            seed: 42,
+            survival_health_contract: (
+                max_authored_critical_run_ticks: 123,
+                max_idle_window_ticks_with_elevated_need: 17,
+                elevated_need_floor: 300,
+                required_self_care_families: [Eat, Drink, Sleep, Relieve],
+                critical_run_limits: (
+                    dirtiness: 999,
+                ),
+            ),
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let contract = def
+            .survival_health_contract
+            .expect("survival contract should deserialize");
+        assert_eq!(contract.max_authored_critical_run_ticks, 123);
+        assert_eq!(contract.max_idle_window_ticks_with_elevated_need, 17);
+        assert_eq!(contract.elevated_need_floor, Permille::new(300).unwrap());
+        assert_eq!(
+            contract.required_self_care_families,
+            vec![
+                NeedsActionFamily::Eat,
+                NeedsActionFamily::Drink,
+                NeedsActionFamily::Sleep,
+                NeedsActionFamily::Relieve,
+            ]
+        );
+        assert_eq!(
+            contract.critical_run_limits,
+            Some(SurvivalCriticalRunLimitsDef {
+                hunger: None,
+                thirst: None,
+                fatigue: None,
+                bladder: None,
+                dirtiness: Some(999),
+            })
+        );
     }
 
     #[test]

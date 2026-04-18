@@ -655,15 +655,13 @@ fn record_exhausted_goals(
                             ),
                         }
                     }
-                    crate::PlanSearchResult::FrontierExhausted { .. } => {
-                        frontier_exhaustion_entry(
-                            &plan.opportunity.goal_key.kind,
-                            invalidation_conditions,
-                            baseline,
-                            tick,
-                            cognitive,
-                        )
-                    }
+                    crate::PlanSearchResult::FrontierExhausted { .. } => frontier_exhaustion_entry(
+                        &plan.opportunity.goal_key.kind,
+                        invalidation_conditions,
+                        baseline,
+                        tick,
+                        cognitive,
+                    ),
                     crate::PlanSearchResult::Found(_) | crate::PlanSearchResult::Unsupported => {
                         unreachable!("match guard excludes non-exhaustion results")
                     }
@@ -689,9 +687,12 @@ fn frontier_exhaustion_entry(
         // Sleep is a direct local self-care action. If a single search pass
         // exhausts its frontier, suppressing it until a band/position change
         // can strand the agent inside one authored critical band.
-        GoalKind::Sleep => {
-            ExhaustionEntry::budget_retry_pending(invalidation_conditions, baseline, tick, cognitive)
-        }
+        GoalKind::Sleep => ExhaustionEntry::budget_retry_pending(
+            invalidation_conditions,
+            baseline,
+            tick,
+            cognitive,
+        ),
         _ => ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline),
     }
 }

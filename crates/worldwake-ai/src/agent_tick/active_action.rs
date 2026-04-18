@@ -76,7 +76,8 @@ pub(super) fn handle_active_action_phase(
     // `planned_candidates` is consumed only by `interrupt_freely`, so we can skip
     // the expensive GOAP search for NonInterruptible and InterruptibleWithPenalty
     // actions.
-    let needs_plans = should_build_interrupt_plans(interruptibility, runtime, *active_goal, jc.as_ref());
+    let needs_plans =
+        should_build_interrupt_plans(interruptibility, runtime, *active_goal, jc.as_ref());
     let planned_candidates = needs_plans.then(|| {
         build_candidate_plans(
             ctx.world,
@@ -311,8 +312,8 @@ mod tests {
     use super::should_build_interrupt_plans;
     use crate::{AgentDecisionRuntime, PlannedPlan, PlannedStep};
     use worldwake_core::{
-        ActionDefId, ActiveGoal, EntityId, GoalKey, GoalKind, IntentionFrame,
-        OpportunityAnchor, Tick,
+        ActionDefId, ActiveGoal, EntityId, GoalKey, GoalKind, IntentionFrame, OpportunityAnchor,
+        Tick,
     };
     use worldwake_sim::Interruptibility;
 

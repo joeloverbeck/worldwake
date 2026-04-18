@@ -302,12 +302,14 @@ Derived from the 2026-04-18 S116 implementation retrospective after tickets `S11
 ```text
 S119 (independent)
 S120 (independent)
+S121 (soft depends on S119)
 ```
 
 **Wave** (parallel, no hard deps):
 
 - **S119**: Authored Survival Health Contracts — add a shared scenario-authored `survival_health_contract` surface for survival scenarios so long-run goldens read authored-critical thresholds, idle-window bounds, and required self-care families from one canonical place instead of duplicating file-local constants.
 - **S120**: Survival Critical-Window Forensics — add a deterministic derived report for prolonged authored-critical runs showing selected goal, competitors, blocker/exhaustion state, and local authoritative survival state, so future regressions can be explained without one-off debug probes.
+- **S121**: Per-Need Survival Health Contracts — extend the S119 contract so contested/adversarial scenarios can author different critical-run bounds per need when one coarse global cap overstates unlike self-care families such as dirtiness under non-Wash-required scenarios.
 
 ### Phase 7 Gate
 

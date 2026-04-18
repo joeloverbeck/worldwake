@@ -669,6 +669,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         }
     }
@@ -747,6 +748,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -789,6 +791,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -820,6 +823,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -856,6 +860,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -891,6 +896,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -941,6 +947,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -989,6 +996,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1036,6 +1044,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1089,6 +1098,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1144,6 +1154,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1194,6 +1205,7 @@ mod tests {
                 capacity: Quantity(20),
             }],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1253,6 +1265,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1310,6 +1323,7 @@ mod tests {
                 capacity: Quantity(20),
             }],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1370,6 +1384,7 @@ mod tests {
                 capacity: Quantity(15),
             }],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1453,6 +1468,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1490,6 +1506,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1603,6 +1620,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1647,6 +1665,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1690,6 +1709,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1800,6 +1820,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1858,6 +1879,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1907,6 +1929,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -1999,6 +2022,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 
@@ -2106,6 +2130,7 @@ mod tests {
             facilities: vec![],
             resource_sources: vec![],
             commodity_decay: None,
+            survival_health_contract: None,
             compaction_interval: 0,
         };
 

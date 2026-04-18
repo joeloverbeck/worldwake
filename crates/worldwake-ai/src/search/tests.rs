@@ -2329,7 +2329,14 @@ fn search_blocks_remote_stale_move_cargo_by_target_place() {
     });
 
     assert_eq!(
-        candidate_blocked_by_place(&candidate, &goal, &node, &semantics_table, &blocked, Tick(5)),
+        candidate_blocked_by_place(
+            &candidate,
+            &goal,
+            &node,
+            &semantics_table,
+            &blocked,
+            Tick(5)
+        ),
         Some((Some(orchard), BlockingFact::AssumptionFailed)),
     );
 }
@@ -9684,7 +9691,9 @@ fn local_critical_sleep_returns_progress_barrier_after_one_step() {
         None,
     );
 
-    let plan = result.into_plan().expect("critical local sleep should plan");
+    let plan = result
+        .into_plan()
+        .expect("critical local sleep should plan");
     assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Sleep);

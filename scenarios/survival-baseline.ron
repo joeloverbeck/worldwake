@@ -5,6 +5,12 @@
 // path over a full 1440-tick observer run.
 (
     seed: 104004,
+    survival_health_contract: (
+        max_authored_critical_run_ticks: 100,
+        max_idle_window_ticks_with_elevated_need: 20,
+        elevated_need_floor: 300,
+        required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
+    ),
     places: [
         (name: "Riverside Camp", tags: [Camp, Latrine]),
         (name: "Fertile Fields", tags: [Field, Farm]),

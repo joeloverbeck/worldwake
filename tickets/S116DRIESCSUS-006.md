@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (tests + scenario fixture)
-**Deps**: archive/tickets/S116DRIESCSUS-003.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-005.md, archive/tickets/S116DRIESCSUS-008.md, archive/tickets/S116DRIESCSUS-009.md, archive/tickets/S116DRIESCSUS-010.md, archive/tickets/S116DRIESCSUS-011.md, archive/tickets/S116DRIESCSUS-012.md
+**Deps**: archive/tickets/S116DRIESCSUS-003.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-005.md, archive/tickets/S116DRIESCSUS-008.md, archive/tickets/S116DRIESCSUS-009.md, archive/tickets/S116DRIESCSUS-010.md, archive/tickets/S116DRIESCSUS-011.md, archive/tickets/S116DRIESCSUS-012.md, tickets/S119AUTHSURVHC-001.md, tickets/S119AUTHSURVHC-002.md
 
 ## Problem
 
@@ -28,6 +28,11 @@ Spec S116 D7 requires three new goldens proving escalation behavior end-to-end, 
 12. Live harness mismatch: the existing `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` tests are all `#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]` on this branch. Truthful calibration verification therefore requires running those binaries with `-- --ignored`; plain `cargo test --test ...` would only compile the binary and skip the owned assertions.
 13. Reassessment on 2026-04-18 exposed a separate production bug during calibration. In `golden_survival_baseline`, agents repeatedly selected exact `AcquireCommodity(SelfConsume)` opportunities that compiled to a root `MoveCargo` / `pick_up` step against stale believed current-place lots, then failed at runtime with `PreconditionFailed("TargetAtActorPlace(0)")`. That contradiction is now explicitly tracked in archived [archive/tickets/S116DRIESCSUS-011.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-011.md); this ticket does not own the planner/runtime repair itself.
 14. Follow-up reassessment after `011`'s local-authority repair shows the stale exact-target loop is gone, but `golden_survival_baseline::all_agents_survive_1440_ticks` still fails with a separate long hunger-critical run for Agent A. That residual calibration contradiction is now explicitly tracked in archived [archive/tickets/S116DRIESCSUS-012.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-012.md); this ticket should wait on both production follow-ups rather than absorbing either one silently.
+15. Reassessment on 2026-04-18 first exposed a proof-surface blocker rather than a confirmed default-calibration regression: `golden_survival_scattered` and `golden_survival_contested` were still restating survival health with stale file-local `pm(750)` critical bounds, and `golden_survival_contested` still carried pre-S116 / pre-S010 self-care expectations in its action-family assertion block. That duplicate authored-survival-contract drift is tracked in active [tickets/S119AUTHSURVHC-001.md](/home/joeloverbeck/projects/worldwake/tickets/S119AUTHSURVHC-001.md).
+16. After the S119 retrofit landed locally, `golden_survival_baseline -- --ignored` turned green, but the remaining calibration blockers split by cause:
+   - scattered now fails only on `Agent B hunger exceeded authored critical pm(820) for 506 consecutive ticks (max allowed: 400)`, which is tracked separately in [tickets/S119AUTHSURVHC-002.md](/home/joeloverbeck/projects/worldwake/tickets/S119AUTHSURVHC-002.md) as a classification ticket
+   - the earlier contested contract-model gap is now resolved locally by [archive/tickets/S121PERNEEDSHC-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S121PERNEEDSHC-001.md); `golden_survival_contested -- --ignored` is green under the authored per-need dirtiness override
+   This ticket remains blocked on those explicit follow-ups before scattered/contested calibration can be interpreted honestly.
 
 ## Architecture Check
 

@@ -13,79 +13,20 @@ use std::path::PathBuf;
 
 use golden_harness::*;
 use worldwake_ai::{CommodityPurpose, DecisionOutcome, PlanSearchOutcome};
-use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
-use worldwake_core::{EntityId, GoalKind, HomeostaticNeeds, Tick};
+use worldwake_cli::scenario::{
+    load_scenario_file, spawn_scenario,
+    types::{ScenarioDef, SurvivalCriticalRunLimitsDef},
+};
+use worldwake_core::{DriveThresholds, EntityId, GoalKind, Tick};
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
-const NEED_CRITICAL_THRESHOLD: u16 = 750;
-/// Matches scattered's 400.  The design target was 250, relaxed in stages
-/// (319 → 373) after empirical runs revealed dirtiness-specific behavior:
-/// `wash` requires directly-possessed water (`needs_actions.rs:196`
-/// `wash_preconditions`), so agents under water contention preferentially
-/// drink rather than save water for wash, stretching dirtiness critical
-/// runs.  The contested scenario does not improve the run-length metric
-/// over scattered on dirtiness; its distinct value is contention-specific
-/// assertions (four agents, both water sources drawn, both camp sides
-/// reach food) and tighter `IDLE_THRESHOLD=40`.  If this ever needs to
-/// loosen further, investigate before relaxing — the wash-starvation
-/// dynamic is a legitimate architectural observation to consider in
-/// gameplay-feature specs that stack on survival.
-const MAX_CRITICAL_RUN_TICKS: u32 = 400;
-/// Tighter than scattered's 50: 4 agents share two wells, so any single
-/// agent should rarely block for long before an alternative opens.
-const IDLE_THRESHOLD: u32 = 40;
-/// Maximum need value (permille) below which idle behavior is expected.
-const NEEDS_LOW_CEILING: u16 = 300;
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct NeedRunTracker {
-    hunger_current: u32,
-    hunger_max: u32,
-    thirst_current: u32,
-    thirst_max: u32,
-    fatigue_current: u32,
-    fatigue_max: u32,
-    bladder_current: u32,
-    bladder_max: u32,
-    dirtiness_current: u32,
-    dirtiness_max: u32,
-}
-
-impl NeedRunTracker {
-    fn observe(&mut self, needs: &HomeostaticNeeds) {
-        update_need_run(
-            &mut self.hunger_current,
-            &mut self.hunger_max,
-            needs.hunger >= pm(NEED_CRITICAL_THRESHOLD),
-        );
-        update_need_run(
-            &mut self.thirst_current,
-            &mut self.thirst_max,
-            needs.thirst >= pm(NEED_CRITICAL_THRESHOLD),
-        );
-        update_need_run(
-            &mut self.fatigue_current,
-            &mut self.fatigue_max,
-            needs.fatigue >= pm(NEED_CRITICAL_THRESHOLD),
-        );
-        update_need_run(
-            &mut self.bladder_current,
-            &mut self.bladder_max,
-            needs.bladder >= pm(NEED_CRITICAL_THRESHOLD),
-        );
-        update_need_run(
-            &mut self.dirtiness_current,
-            &mut self.dirtiness_max,
-            needs.dirtiness >= pm(NEED_CRITICAL_THRESHOLD),
-        );
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentSurvivalObservation {
     alive: bool,
-    critical_need_runs: NeedRunTracker,
+    critical_thresholds: DriveThresholds,
+    critical_need_runs: SurvivalNeedRunTracker,
     committed_actions: BTreeSet<String>,
 }
 
@@ -96,17 +37,9 @@ struct BudgetExhaustionObservation {
     goal: String,
 }
 
-/// An idle window where an agent had elevated needs but no action.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct StuckIdleWindow {
-    agent_name: String,
-    start_tick: u32,
-    end_tick: u32,
-    max_need_at_start: u16,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SurvivalContestedObservation {
+    contract: worldwake_cli::scenario::types::SurvivalHealthContractDef,
     agents: BTreeMap<String, AgentSurvivalObservation>,
     /// Places (by name) where at least one agent committed a `drink` action.
     drink_places: BTreeSet<String>,
@@ -116,15 +49,6 @@ struct SurvivalContestedObservation {
     south_reached_food: bool,
     survival_budget_exhaustions: Vec<BudgetExhaustionObservation>,
     stuck_idle_windows: Vec<StuckIdleWindow>,
-}
-
-fn update_need_run(current: &mut u32, max: &mut u32, above_threshold: bool) {
-    if above_threshold {
-        *current += 1;
-        *max = (*max).max(*current);
-    } else {
-        *current = 0;
-    }
 }
 
 fn scenario_path() -> PathBuf {
@@ -198,8 +122,29 @@ fn water_place_names() -> BTreeSet<String> {
         .collect()
 }
 
+fn contract_run_limit_overrides(
+    limits: Option<&SurvivalCriticalRunLimitsDef>,
+) -> SurvivalCriticalRunLimitOverrides {
+    let Some(limits) = limits else {
+        return SurvivalCriticalRunLimitOverrides::default();
+    };
+
+    SurvivalCriticalRunLimitOverrides {
+        hunger: limits.hunger,
+        thirst: limits.thirst,
+        fatigue: limits.fatigue,
+        bladder: limits.bladder,
+        dirtiness: limits.dirtiness,
+    }
+}
+
 fn run_survival_contested() -> SurvivalContestedObservation {
     let (mut h, def) = load_survival_contested_harness();
+    let contract = expect_survival_health_contract(
+        def.survival_health_contract.as_ref(),
+        "survival contested",
+    )
+    .clone();
     let agents = named_agents(&h);
     let food_places = food_place_ids(&def);
     let place_name_by_id: BTreeMap<EntityId, String> = def
@@ -229,7 +174,19 @@ fn run_survival_contested() -> SurvivalContestedObservation {
     let mut critical_need_runs = agents
         .keys()
         .cloned()
-        .map(|name| (name, NeedRunTracker::default()))
+        .map(|name| (name, SurvivalNeedRunTracker::default()))
+        .collect::<BTreeMap<_, _>>();
+    let critical_thresholds = agents
+        .iter()
+        .map(|(name, agent)| {
+            (
+                name.clone(),
+                h.world
+                    .get_component_drive_thresholds(*agent)
+                    .copied()
+                    .expect("survival scenario agents should have drive thresholds"),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let mut north_reached_food = false;
     let mut south_reached_food = false;
@@ -270,10 +227,13 @@ fn run_survival_contested() -> SurvivalContestedObservation {
                 .world
                 .get_component_homeostatic_needs(*agent)
                 .expect("survival scenario agents should always have needs");
+            let thresholds = critical_thresholds
+                .get(agent_name)
+                .expect("every agent should have critical thresholds");
             critical_need_runs
                 .get_mut(agent_name)
                 .expect("every agent should have a run tracker")
-                .observe(needs);
+                .observe(needs, thresholds);
 
             let tick_events = action_sink.events_for_at(*agent, Tick(u64::from(tick_num)));
 
@@ -300,8 +260,8 @@ fn run_survival_contested() -> SurvivalContestedObservation {
 
             if had_action {
                 if let Some(s) = start.take()
-                    && *count >= IDLE_THRESHOLD
-                    && *max_need > NEEDS_LOW_CEILING
+                    && *count >= contract.max_idle_window_ticks_with_elevated_need
+                    && *max_need > contract.elevated_need_floor.value()
                 {
                     stuck_idle_windows.push(StuckIdleWindow {
                         agent_name: agent_name.clone(),
@@ -314,14 +274,7 @@ fn run_survival_contested() -> SurvivalContestedObservation {
             } else {
                 if start.is_none() {
                     *start = Some(tick_num);
-                    let max_n = needs
-                        .hunger
-                        .value()
-                        .max(needs.thirst.value())
-                        .max(needs.fatigue.value())
-                        .max(needs.bladder.value())
-                        .max(needs.dirtiness.value());
-                    *max_need = max_n;
+                    *max_need = max_need_value(needs);
                 }
                 *count += 1;
             }
@@ -349,6 +302,9 @@ fn run_survival_contested() -> SurvivalContestedObservation {
                 name.clone(),
                 AgentSurvivalObservation {
                     alive: !h.agent_is_dead(agent),
+                    critical_thresholds: *critical_thresholds
+                        .get(&name)
+                        .expect("every agent should keep its critical thresholds"),
                     critical_need_runs: critical_need_runs
                         .remove(&name)
                         .expect("every agent should have final need tracking"),
@@ -380,6 +336,7 @@ fn run_survival_contested() -> SurvivalContestedObservation {
     }
 
     SurvivalContestedObservation {
+        contract,
         agents,
         drink_places,
         north_reached_food,
@@ -387,34 +344,6 @@ fn run_survival_contested() -> SurvivalContestedObservation {
         survival_budget_exhaustions,
         stuck_idle_windows,
     }
-}
-
-fn assert_survival_action_coverage(agent_name: &str, actions: &BTreeSet<String>) {
-    let has_eat = actions.contains("eat");
-    let has_drink = actions.contains("drink");
-    let has_sleep = actions.contains("sleep");
-    let has_relieve = actions.contains("toilet") || actions.contains("relieve_wilderness");
-    let has_wash = actions.contains("wash");
-    assert!(
-        has_eat,
-        "{agent_name} should commit eat within the 1440-tick contested scenario; committed_actions={actions:?}"
-    );
-    assert!(
-        has_drink,
-        "{agent_name} should commit drink within the 1440-tick contested scenario; committed_actions={actions:?}"
-    );
-    assert!(
-        has_sleep,
-        "{agent_name} should commit sleep within the 1440-tick contested scenario; committed_actions={actions:?}"
-    );
-    assert!(
-        has_relieve,
-        "{agent_name} should commit a relief action within the 1440-tick contested scenario; committed_actions={actions:?}"
-    );
-    assert!(
-        has_wash,
-        "{agent_name} should commit wash within the 1440-tick contested scenario; committed_actions={actions:?}"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -436,9 +365,8 @@ fn assert_survival_action_coverage(agent_name: &str, actions: &BTreeSet<String>)
 // demand windows so instantaneous contention is real.
 //
 // Proves: all four agents remain alive and none of the five tracked needs
-// stays above pm(750) for more than 400 consecutive ticks (matching
-// scattered's tolerance — see `MAX_CRITICAL_RUN_TICKS` for the empirical
-// landing and the wash-starvation dynamic under contention).
+// stays above that agent's authored critical threshold for more than the
+// scenario-authored contract limit.
 // Demonstrates population-level survival under contention using only the
 // profile set exercised by the first two survival scenarios — no
 // `DiversificationProfile` opt-in.
@@ -457,30 +385,12 @@ fn all_agents_survive_1440_ticks() {
             agent.alive,
             "{agent_name} should still be alive at tick {SURVIVAL_TICKS}"
         );
-        assert!(
-            agent.critical_need_runs.hunger_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} hunger exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks (max allowed: {MAX_CRITICAL_RUN_TICKS})",
-            agent.critical_need_runs.hunger_max
-        );
-        assert!(
-            agent.critical_need_runs.thirst_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} thirst exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks (max allowed: {MAX_CRITICAL_RUN_TICKS})",
-            agent.critical_need_runs.thirst_max
-        );
-        assert!(
-            agent.critical_need_runs.fatigue_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} fatigue exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks (max allowed: {MAX_CRITICAL_RUN_TICKS})",
-            agent.critical_need_runs.fatigue_max
-        );
-        assert!(
-            agent.critical_need_runs.bladder_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} bladder exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks (max allowed: {MAX_CRITICAL_RUN_TICKS})",
-            agent.critical_need_runs.bladder_max
-        );
-        assert!(
-            agent.critical_need_runs.dirtiness_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} dirtiness exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks (max allowed: {MAX_CRITICAL_RUN_TICKS})",
-            agent.critical_need_runs.dirtiness_max
+        assert_authored_critical_runs_with_overrides(
+            observation.contract.max_authored_critical_run_ticks,
+            contract_run_limit_overrides(observation.contract.critical_run_limits.as_ref()),
+            agent_name,
+            &agent.critical_thresholds,
+            &agent.critical_need_runs,
         );
     }
 }
@@ -498,9 +408,9 @@ fn all_agents_survive_1440_ticks() {
 // Setup: Run the authored survival contested scenario for 1440 ticks and
 // collect action traces for each of the four authored agents.
 //
-// Proves: every agent commits eat, drink, sleep, relieve, and wash actions
-// despite sharing low-capacity resources and needing to cross chokepoint
-// topology for cross-camp resources.
+// Proves: every agent commits the scenario-authored self-care families despite
+// sharing low-capacity resources and needing to cross chokepoint topology for
+// cross-camp resources.
 //
 // Chain: contested resources + chokepoint topology -> agents explore, queue,
 // and replan under contention -> committed action traces for all five
@@ -511,7 +421,12 @@ fn all_agents_perform_survival_actions() {
     let observation = run_survival_contested();
 
     for (agent_name, agent) in &observation.agents {
-        assert_survival_action_coverage(agent_name, &agent.committed_actions);
+        assert_required_self_care_families(
+            &observation.contract.required_self_care_families,
+            agent_name,
+            &agent.committed_actions,
+            "contested scenario",
+        );
     }
 }
 
@@ -641,12 +556,10 @@ fn no_budget_exhaustion_on_survival_goals() {
 // Principles: 6, 7, 22, 31
 //
 // Setup: Run the authored survival contested scenario for 1440 ticks and
-// track idle windows (>= 40 consecutive ticks with no action trace events).
-// Threshold is tighter than scattered's 50 because contention should not
-// compound into long idle stalls when two water sources are available.
+// track idle windows using the scenario-authored survival-health contract.
 //
-// Proves: no agent is idle for 40+ consecutive ticks while any need exceeds
-// 300 permille.
+// Proves: no agent is idle beyond the scenario-authored bound while any need
+// exceeds the scenario-authored elevated-need floor.
 //
 // Chain: agents plan from beliefs under need pressure -> self-care actions
 // always planned when needs elevated -> contention at one well triggers
@@ -656,10 +569,33 @@ fn no_budget_exhaustion_on_survival_goals() {
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn no_stuck_idle_windows_with_elevated_needs() {
     let observation = run_survival_contested();
+    assert_no_stuck_idle_windows(
+        observation
+            .contract
+            .max_idle_window_ticks_with_elevated_need,
+        observation.contract.elevated_need_floor.value(),
+        "survival contested",
+        &observation.stuck_idle_windows,
+    );
+}
 
-    assert!(
-        observation.stuck_idle_windows.is_empty(),
-        "survival contested should have no idle windows >= {IDLE_THRESHOLD} ticks with needs > {NEEDS_LOW_CEILING} permille: {:?}",
-        observation.stuck_idle_windows
+#[test]
+fn per_need_critical_run_limit_override_beats_default_for_dirtiness_only() {
+    let thresholds = DriveThresholds::default();
+    let runs = SurvivalNeedRunTracker {
+        hunger_max: 10,
+        dirtiness_max: 500,
+        ..SurvivalNeedRunTracker::default()
+    };
+
+    assert_authored_critical_runs_with_overrides(
+        100,
+        SurvivalCriticalRunLimitOverrides {
+            dirtiness: Some(600),
+            ..SurvivalCriticalRunLimitOverrides::default()
+        },
+        "Agent A",
+        &thresholds,
+        &runs,
     );
 }

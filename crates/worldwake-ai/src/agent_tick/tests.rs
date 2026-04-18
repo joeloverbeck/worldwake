@@ -29,19 +29,19 @@ use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
-    ActionDefId, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy, BelievedInstitutionalClaim,
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart,
-    CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents,
-    ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
-    DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId, EntityKind, EventLog,
-    EventPayload, ExecutionBudget, ExplorationProfile, FrameState, HomeostaticNeedId,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    IntentionDispositionProfile, IntentionDomain, IntentionFrame, KnownRecipes, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent,
-    PerceptionProfile, PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent,
-    RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw, TellMemoryKey,
-    TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId,
-    UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
+    ActionDefId, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
+    BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
+    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CognitiveProfile, CommodityKind,
+    ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
+    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
+    EntityId, EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameState,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
+    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
+    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
+    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
+    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
     WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     build_believed_entity_state, build_prototype_world,
 };
@@ -3777,9 +3777,13 @@ fn stale_current_place_lot_belief_does_not_emit_consume_owned_goal() {
         .get_component_agent_belief_store(harness.actor)
         .cloned()
         .unwrap_or_else(AgentBeliefStore::new);
-    let mut stale_lot_belief =
-        build_believed_entity_state(&harness.world, stale_lot, Tick(2), PerceptionSource::DirectObservation)
-            .expect("fresh lot should be representable as a belief snapshot");
+    let mut stale_lot_belief = build_believed_entity_state(
+        &harness.world,
+        stale_lot,
+        Tick(2),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("fresh lot should be representable as a belief snapshot");
     stale_lot_belief.last_known_place = Some(local_place);
     belief_store.update_entity(stale_lot, stale_lot_belief);
 
