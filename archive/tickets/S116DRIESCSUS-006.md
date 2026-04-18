@@ -1,6 +1,6 @@
 # S116DRIESCSUS-006: Golden coverage for drive escalation behavior
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (tests + scenario fixture)
@@ -124,3 +124,37 @@ If those reruns expose a real default-calibration regression, tune `DriveEscalat
 3. `cargo test -p worldwake-ai --test golden_survival_scattered -- --ignored`
 4. `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored`
 5. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Landed the new drive-escalation proof fixture [drive-escalation-wash-priority.ron](/home/joeloverbeck/projects/worldwake/scenarios/drive-escalation-wash-priority.ron) with explicit scenario-isolation comments and a concrete local basin-plus-source wash path.
+- Landed [golden_drive_escalation.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_drive_escalation.rs) with the 3 owned S116 goldens:
+  - `dirtiness_wash_cycle_under_priority_override`
+  - `escalation_respects_belief_only_planning`
+  - `escalation_fades_after_relief`
+- Completed the required calibration reruns under the truthful authored-contract surface:
+  - [golden_survival_baseline.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_baseline.rs)
+  - [golden_survival_scattered.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_scattered.rs)
+  - [golden_survival_contested.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_contested.rs)
+- Left production defaults untouched. The apparent calibration regressions exposed during implementation were resolved by the explicit follow-up chain already archived under:
+  - [archive/tickets/S116DRIESCSUS-011.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-011.md)
+  - [archive/tickets/S116DRIESCSUS-012.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-012.md)
+  - [archive/tickets/S119AUTHSURVHC-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S119AUTHSURVHC-001.md)
+  - [archive/tickets/S119AUTHSURVHC-002.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S119AUTHSURVHC-002.md)
+  - [archive/tickets/S121PERNEEDSHC-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S121PERNEEDSHC-001.md)
+
+## Deviations
+
+- This ticket did not stay a pure “new golden file only” pass. Truthful implementation exposed separate planner/runtime and survival-proof-contract contradictions, which were split into explicit follow-up tickets before the original S116 golden scope could close honestly.
+- `golden_survival_contested::MAX_CRITICAL_RUN_TICKS` was not tightened here. That remaining contested-tightening step still belongs to [tickets/S116DRIESCSUS-007.md](/home/joeloverbeck/projects/worldwake/tickets/S116DRIESCSUS-007.md), exactly as the ticket/problem statement already says.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_drive_escalation`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (test-constant + rationale-comment update)
-**Deps**: S116DRIESCSUS-006
+**Deps**: archive/tickets/S116DRIESCSUS-006.md
 
 ## Problem
 
@@ -14,7 +14,7 @@ Spec S116 D8 requires `golden_survival_contested::MAX_CRITICAL_RUN_TICKS` to tig
 
 1. Current constant: `const MAX_CRITICAL_RUN_TICKS: u32 = 400;` at `crates/worldwake-ai/tests/golden_survival_contested.rs:34`.
 2. Existing rationale comment at lines 22-33 documents the water-possession architectural bottleneck. Per the spec's D8 direction, the comment must be replaced to reference S116 and preserve the water-possession note as a named follow-up.
-3. Empirical max-consecutive-run figures from `reports/scenario-analysis-report.md` for survival-contested seed 306006: Agent A = 319 ticks, Agent B = 315 ticks, Agent C = 313 ticks, Agent D = 372 ticks. Worst case = 372. Tightening to 300 requires motive escalation to break runs ≥72 ticks earlier than today's worst case — verified empirically by ticket 006's run-through of the contested scenario under the new pipeline.
+3. Empirical max-consecutive-run figures from `reports/scenario-analysis-report.md` for survival-contested seed 306006: Agent A = 319 ticks, Agent B = 315 ticks, Agent C = 313 ticks, Agent D = 372 ticks. Worst case = 372. Tightening to 300 requires motive escalation to break runs ≥72 ticks earlier than today's worst case — the prerequisite S116 golden/calibration proof is now complete in [archive/tickets/S116DRIESCSUS-006.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S116DRIESCSUS-006.md).
 4. Live `GoalKind` and affordance surface unchanged: `wash_preconditions` (`crates/worldwake-systems/src/needs_actions.rs:196`) still requires `TargetDirectlyPossessedByActor(0)` with `CommodityKind::Water`. This remains the architectural limit on tightening further than 300.
 5. Follow-up: water-possession bottleneck resolution is named in the spec D8 text and in the replaced rationale comment. Not in scope here.
 6. Intended verification layer (precision rule 3): Golden E2E coverage. Harness already full-action-registries per the existing test's setup — no change to the harness itself.
