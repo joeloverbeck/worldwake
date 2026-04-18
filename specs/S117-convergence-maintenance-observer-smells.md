@@ -10,17 +10,18 @@ Phase 8 Adjunct: Survival Baseline Under Contention (post-`survival-contested.ro
 
 ## Crates
 
-- `worldwake-cli` — observer binary (`src/bin/observer.rs` and `src/observer/anomalies.rs` or equivalent): four new detectors, four new `AnomalyKind` variants, Section 3 rendering, Section 2 supplementary subsections
-- `worldwake-core` — no changes
-- `worldwake-sim` — no changes
-- `worldwake-ai` — no changes
-- `worldwake-systems` — no changes
+- `worldwake-cli` — observer binary (`crates/worldwake-cli/src/bin/observer.rs`, where `AnomalyKind`, the `Anomaly` struct, detectors, and the Section 3 renderer currently live as a single module): four new `AnomalyKind` label variants, new optional fields on the outer `Anomaly` struct for multi-agent rendering, four new detector functions, Section 3 rendering additions, Section 2 supplementary subsections, golden tests under `crates/worldwake-cli/tests/`.
+- `worldwake-core` — no changes.
+- `worldwake-sim` — no changes.
+- `worldwake-ai` — no changes.
+- `worldwake-systems` — no changes.
 
 ## Dependencies
 
-- None on the simulation side.
-- Informs `S116` golden validation (a clean `survival-contested.ron` re-run after S116 should show zero `MAINTENANCE_STARVATION` anomalies).
-- Informs `.claude/skills/scenario-analysis/SKILL.md`: once S117 lands, Step 4 Known Pathology Signatures gains "Maintenance-cycle starvation" as a catalogued signature, and Step 6.4 proposed smells 11/12/13 graduate from "proposed" to "shipped".
+- No simulation-side dependencies.
+- `S116` is completed and archived at `archive/specs/S116-drive-escalation-sustained-critical.md`. With S116 landed, a clean `survival-contested.ron` re-run after S117 should show zero `MAINTENANCE_STARVATION` anomalies on the dirtiness need; any that fire signal remaining gaps.
+- `S118` (`specs/S118-stuck-agent-detector-active-frame-exclusion.md`) refines the `STUCK_AGENT` detector. S117 and S118 are symmetric siblings: neither blocks the other's landing. S117's prose about `STUCK_AGENT` simply tracks whichever precision behavior is live when S117 merges.
+- `.claude/skills/scenario-analysis/references/layer-1-behavioral-smells.md` and `.claude/skills/scenario-analysis/references/layer-3-meta-analysis.md`: once S117 lands, the "Known Pathology Signatures" list (Step 4) gains "Maintenance-cycle starvation" as a catalogued signature, and the "Step 6.4: Proposed New Smell Categories" template notes that smells 11/12/13 graduate from "proposed" to "shipped".
 
 ## Motivating Evidence
 
@@ -30,7 +31,7 @@ From `reports/scenario-analysis-report.md` Layer 3:
 - **Gap 2 (Latrine Abandonment, MEDIUM)** — also surfaces through gap 4 (Wash-Cycle Starvation). 0 toilet actions across all 4 agents; 88 `relieve_wilderness` actions (each adding +200 permille dirtiness).
 - **Gap 3 (Single-Source Food Monoculture, MEDIUM)**: Harvest Apples total = 64, Harvest Grain total = 0, despite every agent knowing both recipes.
 - **Gap 4 (Wash-Cycle Starvation, MEDIUM)**: `relief_rate < accumulation_rate` over 200+ ticks. Smell 5 (Sustained Critical Needs) flags the symptom once it crosses 100 ticks, but the underlying frequency mismatch is invisible.
-- **Gap 5 (Sub-Threshold Acute Spikes, LOW)**: Agent C hunger=950 for 97 ticks, thirst=900 for 37 ticks. Both below the 100-tick sustained-critical threshold, both dangerous proximity to metabolism tolerance limits (`dehydration_tolerance_ticks=220`).
+- **Gap 5 (Sub-Threshold Acute Spikes, LOW)**: Agent C (`dehydration_tolerance_ticks=220` per `scenarios/survival-contested.ron:386`) hit hunger=950 for 97 ticks, thirst=900 for 37 ticks. Both below the 100-tick sustained-critical threshold, both dangerous proximity to metabolism tolerance limits.
 
 ## Design Goals
 
@@ -38,14 +39,17 @@ From `reports/scenario-analysis-report.md` Layer 3:
 2. Detectors run entirely inside the observer — no simulation-state writes, no event-log writes. Observer remains passive (FND-26, FND-12).
 3. Each detector's threshold is a compile-time constant with a short justification comment, revisable without engine changes. Threshold revisions are observer-tool changes, not world-meaning changes.
 4. Anomaly rendering in Section 3 matches the existing format so the `/scenario-analysis` skill can consume it without parser changes.
-5. Each detector produces at most one anomaly entry per (agent × window × kind) tuple to prevent Section 3 flooding.
+5. Each detector produces at most one anomaly entry per dedup key (detector-specific; see D2–D5) to prevent Section 3 flooding.
+6. `AnomalyKind` remains a `Copy` label enum. Rich per-anomaly data lives on the outer `Anomaly` struct, preserving the existing rendering contract and avoiding migration of the six existing anomaly variants.
 
 ## Non-Goals
 
 - Changing simulation behavior. These are detectors only.
 - Auto-remediation. The detector emits an anomaly; responding to it is the analyst's (or `/scenario-analysis` skill's) job.
 - LLM-gated detection. Every detector in this spec is mechanical and runs in the Rust observer binary.
-- Refactoring the existing anomaly architecture. New detectors slot into the same `AnomalyKind` enum and Section 3 rendering path.
+- Refactoring the existing observer architecture. `bin/observer.rs` stays monolithic; new detectors slot into the same file alongside existing ones. A future extraction to a dedicated `src/observer/` module tree is a separate refactor.
+- Adding a shared helper for recipe → need classification. The derivation (recipe.outputs → `CommodityKind::spec().consumable_profile` → first non-zero relief) lives inline in the `RecipeMonoculture` detector. If a second consumer appears later, it can be promoted.
+- Adding a `DriveThresholds::medium(need)` helper to `worldwake-core`. The detector performs the per-need match locally.
 
 ## FOUNDATIONS Alignment
 
@@ -53,82 +57,136 @@ From `reports/scenario-analysis-report.md` Layer 3:
 |-----------|---------------|
 | FND-12 (Performance May Compress Computation, Never Causality) | Observer detectors read the authoritative event log and agent component state. They do not alter world meaning. |
 | FND-26 (Systems Interact Through State) | Detectors are pure reads of authoritative state and derived event-log scans. No simulation system depends on them. |
-| FND-27 (Derived Summaries Are Caches, Never Truth) | Anomaly entries in Section 3 are derived views over authoritative history. Deleting the observer output does not change the simulation. |
+| FND-27 (Derived Summaries Are Caches, Never Truth) | Anomaly entries in Section 3 are derived views over authoritative history. The recipe → need classification in D4 is derived inline from `RecipeDefinition` + `CommodityConsumableProfile`; it is not stored state. Deleting the observer output does not change the simulation. |
 | FND-29 (Debuggability Is a Product Feature) | This spec's entire purpose: surface failure modes that are currently invisible. |
 | FND-29A (Causal History Is Authoritative, Append-Only) | Detectors compute over the append-only event log. They do not mutate history. |
 
 ## Deliverables
 
-### D1: `AnomalyKind` extensions
+### D1: `AnomalyKind` label variants and `Anomaly` struct extension
 
-In `crates/worldwake-cli/src/observer/anomalies.rs` (or equivalent):
+In `crates/worldwake-cli/src/bin/observer.rs` (current `AnomalyKind` definition at line ~729, current `Anomaly` struct nearby):
+
+**`AnomalyKind`** — add four unit variants. The enum remains `#[derive(Clone, Copy)]`:
 
 ```rust
-pub enum AnomalyKind {
-    // ... existing kinds ...
-    GeographicConvergence {
-        agents: Vec<EntityId>,
-        place: EntityId,
-        window_start_tick: Tick,
-        window_end_tick: Tick,
-        overlap_permille: Permille, // fraction of window ticks agents co-occupied
-    },
-    MaintenanceStarvation {
-        agent: EntityId,
-        need: NeedKind,
-        window_start_tick: Tick,
-        window_end_tick: Tick,
-        accumulation_permille_per_tick: Permille,
-        relief_permille_per_tick: Permille,
-    },
-    RecipeMonoculture {
-        agent: EntityId,
-        need: NeedKind,
-        used_recipe: RecipeId,
-        unused_recipes: Vec<RecipeId>,
-        used_share_permille: Permille,
-    },
-    AcuteNeedSpike {
-        agent: EntityId,
-        need: NeedKind,
-        start_tick: Tick,
-        end_tick: Tick,
-        peak_permille: Permille,
-    },
+enum AnomalyKind {
+    // ... existing variants: RedundantPerception, ActionLoop, StuckAgent,
+    //                         FailedActionSpiral, SustainedCriticalNeed, UnaddressedNeed ...
+    GeographicConvergence,
+    MaintenanceStarvation,
+    RecipeMonoculture,
+    AcuteNeedSpike,
 }
 ```
 
+Extend `AnomalyKind::label()` with the four new labels: `"GEOGRAPHIC_CONVERGENCE"`, `"MAINTENANCE_STARVATION"`, `"RECIPE_MONOCULTURE"`, `"ACUTE_NEED_SPIKE"`.
+
+**`Anomaly` struct** — add one new optional field to support multi-agent rendering (used by `GeographicConvergence`). The existing `agent_name: String`, `description: String`, and `tick_range: Option<(Tick, Tick)>` fields are unchanged:
+
+```rust
+struct Anomaly {
+    kind: AnomalyKind,
+    agent_name: String,              // existing; lead agent
+    description: String,             // existing; rich quantitative content rendered as body
+    tick_range: Option<(Tick, Tick)>,// existing
+    // Added by S117:
+    additional_agent_names: Option<Vec<String>>, // None for single-agent anomalies;
+                                                 // Some(names) for multi-agent (agents sorted by EntityId)
+}
+```
+
+All quantitative data (permille rates, recipe shares, peak values, commodity counts) is formatted into the `description` string at detection time. This keeps `AnomalyKind` `Copy` and leaves the six existing detectors untouched.
+
 ### D2: `GeographicConvergence` detector
 
-**Logic**: Over the full run, for each 200-tick rolling window and each place, compute the share of each agent's ticks spent at that place. If 2+ agents each spend ≥ 60% of the window at the same place, emit one anomaly per (agent-set × place × window).
+**Logic**: Over the full run, for each 200-tick rolling window and each place, compute the share of each agent's ticks spent at that place. If 2+ agents each spend ≥ 60% of the window at the same place, emit one anomaly per `(agent-set, place)` with the window collapsed to the first qualifying window's start and the last qualifying window's end.
 
-**Threshold justification**: 60% × 200 ticks = 120 ticks of shared occupancy. Below 60%, agents are rotating normally; above 60%, they are anchored. Survival-scattered's historical runs show natural 2-agent overlap peaks around 35–45%; 60% is well above the baseline. Deduplicated: if the same convergence persists across overlapping 200-tick windows, emit only the first occurrence and record `window_end_tick` at the last qualifying window's end.
+The agent-set for dedup is a `BTreeSet<EntityId>` (deterministic) materialized into the `agent_name` (lead = smallest EntityId's name) and `additional_agent_names` (remaining names, sorted by EntityId) fields on the `Anomaly` struct.
+
+**Threshold justification**: 60% × 200 ticks = 120 ticks of shared occupancy. Below 60%, agents are rotating normally; above 60%, they are anchored. This is well above the natural overlap floor observed in `survival-baseline.ron`'s healthy runs (where agents rotate between places and peak co-occupancy is visibly far below 60%). The 60% bar avoids false positives on normal rotation while catching the anchored-hub pattern in `survival-contested.ron`.
+
+**Dedup key**: `(GeographicConvergence, BTreeSet<EntityId> of agents, place_id)` — at most one anomaly per distinct agent-set × place across the whole run.
 
 ### D3: `MaintenanceStarvation` detector
 
-**Logic**: For each agent and each homeostatic need, compute over a rolling 200-tick window:
-- `accumulation_permille` — total increase of the need value across the window (sum of positive deltas from metabolism + any action penalties)
-- `relief_permille` — total decrease of the need value across the window (sum of negative deltas from relief actions)
+**Logic**: For each agent and each `HomeostaticNeedId`, compute over a rolling 200-tick window:
 
-If `relief_permille < accumulation_permille` AND `avg_need_value_in_window > medium_threshold` (i.e., the need is chronically elevated), emit anomaly.
+- `accumulation_permille` — total positive delta of the need value across the window (sum of per-tick increases from metabolism + any action penalties).
+- `relief_permille` — total negative delta of the need value across the window (sum of per-tick decreases from relief actions).
+- `avg_need_permille` — simple mean of the per-tick need value across the window.
 
-**Threshold justification**: The medium threshold already exists in `DriveThresholds` (e.g., dirtiness medium = 550). Using the agent's own medium threshold (FND-14) avoids global constants. Rolling 200-tick window mirrors `GeographicConvergence` for consistency. The detector emits at most one `MaintenanceStarvation` per (agent × need × run) — if the starvation persists across multiple windows, merge into a single anomaly with the longest span.
+If `relief_permille < accumulation_permille` AND `avg_need_permille > medium` (the per-agent, per-need medium threshold; i.e., the need is chronically elevated), emit anomaly.
+
+`medium` is read per-agent, per-need via the `DriveThresholds` component:
+
+```rust
+let thresholds = world
+    .get_component_drive_thresholds(agent)
+    .copied()
+    .unwrap_or_default();
+let medium = match need {
+    HomeostaticNeedId::Hunger    => thresholds.hunger.medium(),
+    HomeostaticNeedId::Thirst    => thresholds.thirst.medium(),
+    HomeostaticNeedId::Fatigue   => thresholds.fatigue.medium(),
+    HomeostaticNeedId::Bladder   => thresholds.bladder.medium(),
+    HomeostaticNeedId::Dirtiness => thresholds.dirtiness.medium(),
+};
+```
+
+(This mirrors the existing `DriveThresholds::critical(need)` helper's body; a `medium(need)` helper is intentionally not added to `worldwake-core` — the match stays local to the single detector call site.)
+
+**Threshold justification**: Using the agent's own per-need medium threshold (FND-14) avoids global constants and respects per-agent variation. The rolling 200-tick window mirrors `GeographicConvergence` for consistency.
+
+**Dedup key**: `(MaintenanceStarvation, agent, need)` — at most one anomaly per (agent × need) across the whole run. If the starvation persists across multiple windows, merge into a single anomaly with the combined span (first qualifying window start → last qualifying window end).
 
 ### D4: `RecipeMonoculture` detector
 
-**Logic**: For each agent, at run end, enumerate known recipes by need category (food, water, etc. — recipe metadata exposes which need a recipe satisfies). For each category with ≥ 2 known recipes, compute the per-recipe action-count share across the whole run. If the top recipe's share ≥ 95%, emit anomaly. Cross-check: only emit if the alternative recipe's required facility/resource was known to the agent (from Section 5 belief data) — rules out the case where the agent genuinely never knew where to get the alternative.
+**Logic**: For each agent, at run end:
 
-**Threshold justification**: 95% is a strict monoculture cutoff; anything above 90% is effectively single-recipe. The belief-gate prevents false positives for agents who know the recipe but never discovered the facility.
+1. Read `KnownRecipes` (`crates/worldwake-core/src/production.rs:40`) for the agent.
+2. For each known `RecipeId`, resolve the `RecipeDefinition` (`crates/worldwake-sim/src/recipe_def.rs:6`) and classify its primary satisfied need via the derivation below. Recipes with no consumable output (tools, weapons, waste) are excluded.
+3. Bucket known-and-classified recipes by `HomeostaticNeedId`. For each bucket with ≥ 2 recipes, compute the per-recipe action-count share across the run (from the action trace / commit log already consumed by the observer). If the top recipe's share ≥ 95%, emit anomaly.
+4. Belief-gate cross-check: only emit if at least one alternative recipe's required facility / workstation / resource source was known to the agent at some point during the run (from the Section 5 belief data the observer already collects). This rules out the case where the agent genuinely never discovered where to execute the alternative.
+
+**Recipe → need derivation (inline)**:
+
+For a given `RecipeDefinition`, inspect each `(CommodityKind, Quantity)` in `outputs`. Resolve `CommodityKind::spec().consumable_profile`. If the profile is `None`, the recipe has no consumable output and is excluded from monoculture analysis. If the profile is `Some(p)`, classify by the first non-zero relief field in order:
+
+- `p.thirst_relief_per_unit > 0` → `HomeostaticNeedId::Thirst`
+- `p.hunger_relief_per_unit > 0` → `HomeostaticNeedId::Hunger`
+- `p.bladder_fill_per_unit > 0` → (bladder-fill is an anti-relief; treat as `HomeostaticNeedId::Thirst` because commodities that fill the bladder always also relieve thirst in current data, but document the check so a future non-thirst bladder filler would surface as an explicit new branch rather than silent misclassification)
+
+If a recipe has multiple outputs with different classifications, use the first output's classification (matches the current "primary output" convention elsewhere in the codebase). Fatigue and dirtiness reliefs do not come from recipes in the current model; such recipes do not exist today and are not special-cased.
+
+This derivation is a pure read-side computation per FND-27. It lives as a private helper inside the detector module, not in `worldwake-sim`.
+
+**Threshold justification**: 95% is a strict monoculture cutoff; anything above 90% is effectively single-recipe. The belief-gate prevents false positives for agents who know a recipe but never discovered the facility.
+
+**Dedup key**: `(RecipeMonoculture, agent, need)` — at most one anomaly per (agent × need category) per run.
 
 ### D5: `AcuteNeedSpike` detector
 
-**Logic**: For each agent and each need, scan the per-tick need trajectory (already collected for Section 2) for maximal runs where `value >= critical_threshold` of length ≥ 30 and < 100 consecutive ticks. Emit one anomaly per run.
+**Logic**: For each agent and each `HomeostaticNeedId`, scan the per-tick need trajectory (already collected in `AgentStats.needs_samples` for Section 2) for maximal runs where `value >= critical_threshold` of length ≥ 30 and < 100 consecutive ticks. Emit one anomaly per run.
 
-**Threshold justification**: 30-tick minimum filters out single-action transients (wash takes 12 ticks; eat takes ~5). 100-tick maximum is the existing sustained-critical cutoff — avoids double-flagging with `SUSTAINED_CRITICAL_NEED`.
+`critical_threshold` is read per-agent, per-need via the existing `DriveThresholds::critical(need)` method (`crates/worldwake-core/src/drives.rs:92`):
+
+```rust
+let critical = thresholds.critical(need);
+```
+
+**Threshold justification**: The 30-tick minimum filters out single-action transients. Wash takes 12 ticks (per `S118` Motivating Evidence and the wash action registration). Single-unit consume actions vary by `CommodityConsumableProfile.consumption_ticks_per_unit`, typically in the single-digit range. The 100-tick maximum is the existing `SUSTAINED_CRITICAL_NEED` cutoff — `AcuteNeedSpike` and `SUSTAINED_CRITICAL_NEED` are disjoint by construction; no double-flagging.
+
+**Dedup key**: `(AcuteNeedSpike, agent, need, run_start_tick)` — one anomaly per maximal qualifying run. If two runs are separated by a single-tick gap, they remain distinct unless the detector chooses to merge; the reference implementation does not merge (treats gaps as real).
 
 ### D6: Section 3 rendering
 
-Each new anomaly renders under the existing `### Anomaly N — KIND (agent[s])` header. Examples:
+Each new anomaly renders through the existing single render path (`bin/observer.rs:1696-1709`) with two small changes:
+
+1. **Multi-agent header**: when `anomaly.additional_agent_names` is `Some(names)`, render the header as `### Anomaly N — KIND (agent_name, name1, name2, ...)` instead of the single-agent `### Anomaly N — KIND (agent_name)`. No other existing detectors use this field, so existing rendering is unchanged.
+2. **Descriptions are pre-formatted**: all quantitative content (percentages, permille values, tick counts, commodity counts, recipe names) is interpolated into the `description` string at detection time.
+
+Example outputs (body = `description` field):
 
 ```
 ### Anomaly 6 — GEOGRAPHIC_CONVERGENCE (Agent A, Agent B, Agent C, Agent D)
@@ -141,7 +199,7 @@ Tick range: 100–300
 ```
 ### Anomaly 7 — MAINTENANCE_STARVATION (Agent A)
 
-Dirtiness accumulated 385 permille but was relieved only 201 permille over ticks 400–600. Average dirtiness in window: 812 permille.
+Dirtiness accumulated 385 permille but was relieved only 201 permille over ticks 400–600. Average dirtiness in window: 812 permille (above medium threshold 550).
 
 Tick range: 400–600
 ```
@@ -157,45 +215,55 @@ Tick range: 0–1440
 ```
 ### Anomaly 9 — ACUTE_NEED_SPIKE (Agent C)
 
-hunger above 750 permille for 97 consecutive ticks (ticks 99–195), peak 950 permille. Below the 100-tick sustained-critical bar but within 41% of starvation tolerance (480 ticks).
+hunger above critical threshold (750 permille) for 97 consecutive ticks (ticks 99–195), peak 950 permille. Below the 100-tick sustained-critical bar but within 44% of starvation tolerance (480 ticks).
 
 Tick range: 99–195
 ```
 
-### D7: Section 2 supplementary subsections (optional, same spec)
+### D7: Section 2 supplementary subsections
 
-Add two small supplementary sections to each agent's Section 2 block:
+Add two small supplementary subsections to each agent's Section 2 block, immediately after the existing "Needs trajectory" / "Ticks above 750‰" / "Locations visited" / "Max consecutive idle ticks" blocks:
 
-- **"Maintenance rates"** table: per need, accumulation permille/tick, relief permille/tick, net balance. One row per need. Provides the analyst with raw data to check the `MaintenanceStarvation` detector without re-deriving it.
-- **"Recipe usage"** table: per known recipe, count of commits. Single line per recipe.
+- **"Maintenance rates"** table: per need, accumulation permille (window-total), relief permille (window-total), net balance. One row per need. Provides the analyst with raw data to check the `MaintenanceStarvation` detector without re-deriving it. Uses the same 200-tick rolling-window convention as D3; the reported row uses the whole-run totals.
+- **"Recipe usage"** table: per known recipe (from `KnownRecipes`), count of commits by that agent. Single line per recipe, in RecipeId order.
+
+Neither table requires new per-tick collection; both are aggregations over the `needs_samples` already collected for Section 2 and the action trace the observer already reads.
 
 ### D8: Golden coverage
 
-Four new goldens in a new `crates/worldwake-cli/tests/golden_observer_anomalies.rs` (observer binary is in `worldwake-cli`):
+Four new goldens in a new file `crates/worldwake-cli/tests/golden_observer_anomalies.rs`. Each golden drives the observer over a dedicated scenario fixture committed to `crates/worldwake-cli/tests/fixtures/observer_anomalies/` (one `.ron` scenario per golden, mirroring the existing production scenario layout in `scenarios/`). The existing observer `load_scenario_file` + `spawn_scenario` path (already used by the observer binary) is the authoritative driver; tests invoke it directly rather than shelling out to the binary.
 
-1. **`convergence_smell_fires_on_forced_hub_scenario`** — scripted scenario with 3 agents converging on one place for 200 consecutive ticks. Assert: Section 3 contains exactly one `GEOGRAPHIC_CONVERGENCE` anomaly covering the expected window.
+1. **`convergence_smell_fires_on_forced_hub_scenario`** — scripted scenario with 3 agents whose profiles, knowledge, and place layout make a single place the only viable option for 200+ consecutive ticks. Assert: Section 3 contains exactly one `GEOGRAPHIC_CONVERGENCE` anomaly covering the expected window and including all three agent names in the header.
 
-2. **`maintenance_starvation_fires_on_wash_gap`** — scripted scenario with `wilderness_relief_dirtiness_penalty=200` and wash 5 hops away. Assert: Section 3 contains `MAINTENANCE_STARVATION` for dirtiness on each affected agent.
+2. **`maintenance_starvation_fires_on_wash_gap`** — scripted scenario with `wilderness_relief_dirtiness_penalty=200` (verified scenario-configurable via `MetabolismProfile` at `crates/worldwake-core/src/needs.rs:149` and `crates/worldwake-cli/src/scenario/types.rs`) and the wash facility several travel hops away. Assert: Section 3 contains `MAINTENANCE_STARVATION` for `Dirtiness` on each affected agent, with `accumulation_permille > relief_permille` in the description.
 
-3. **`recipe_monoculture_fires_on_single_food_dependency`** — scripted scenario with an agent that has Harvest Apples + Harvest Grain + Spring Basin beliefs, but all food intake is Apples. Assert: Section 3 contains `RECIPE_MONOCULTURE` for food on that agent. Control case in the same test: an agent that doesn't know the grainfield facility does NOT trigger the anomaly.
+3. **`recipe_monoculture_fires_on_single_food_dependency`** — scripted scenario with an agent that has Harvest Apples + Harvest Grain knowledge plus a West Grainfield facility belief, but all food intake is apples. Assert: Section 3 contains `RECIPE_MONOCULTURE` for `Hunger` on that agent. Control case in the same test: a sibling agent that knows both recipes but never acquires the grainfield belief does NOT trigger the anomaly (belief-gate).
 
-4. **`acute_need_spike_fires_on_40_tick_thirst`** — scripted scenario forcing 40 consecutive ticks of thirst ≥ 900 followed by relief. Assert: Section 3 contains `ACUTE_NEED_SPIKE` with start/end/peak matching the scenario setup.
+4. **`acute_need_spike_fires_on_40_tick_thirst`** — scripted scenario forcing 40 consecutive ticks of thirst ≥ the agent's critical threshold followed by relief. Assert: Section 3 contains `ACUTE_NEED_SPIKE` with start / end / peak matching the scenario setup, and no overlap with any `SUSTAINED_CRITICAL_NEED` entry.
+
+Each fixture scenario is minimal (1–3 agents, 2–4 places) and reuses the existing scenario schema without new fields.
 
 ### D9: Skill-side integration (documentation only, no code)
 
-Update `.claude/skills/scenario-analysis/SKILL.md` Step 4 Known Pathology Signatures to reference the new mechanical detectors. Update Step 6.4 Proposed New Smell Categories template to note that smells 11/12/13 (the ones this spec implements) graduate from "proposed" to "shipped" — proposing smells in a report now means proposing additions to this spec or a successor. This change is a post-implementation skill edit, not a code deliverable.
+After S117 lands, update the scenario-analysis skill references (NOT `.claude/skills/scenario-analysis/SKILL.md`, which is a thin entry point):
+
+- **`.claude/skills/scenario-analysis/references/layer-1-behavioral-smells.md`** — under the "Known Pathology Signatures" section (line 41), add entries for the four new mechanical detectors so analysts know they fire mechanically rather than via Layer 3 LLM judgment.
+- **`.claude/skills/scenario-analysis/references/layer-3-meta-analysis.md`** — under "Step 6.4: Proposed New Smell Categories" (line 79), note that smells 11/12/13 graduate from "proposed" to "shipped"; proposing new smells in a future report now means proposing additions to a successor spec.
+- **`.claude/skills/scenario-analysis/references/report-templates.md`** — the "Proposed New Smell Categories" section (line 121) is documentation template only; no change required unless the template phrasing needs tightening.
+
+This change is a post-implementation skill edit, not a code deliverable.
 
 ## FND-01 Section H: Causal Hooks
 
-1. **Information-path analysis**: All four detectors read the authoritative event log (action traces, ActionStarted/Committed pairs) and agent-component state (HomeostaticNeeds per-tick trajectory already captured for Section 2). No new information paths. FND-7 and FND-14 preserved — detectors operate on the observer's authoritative read view, not on any planner-facing belief state.
+1. **Information-path analysis**: All four detectors read the authoritative event log (action traces, ActionStarted/Committed pairs) and agent-component state (`HomeostaticNeeds` per-tick trajectory already captured in `AgentStats.needs_samples` for Section 2; `DriveThresholds` via `World::get_component_drive_thresholds`; `KnownRecipes`; belief entries per Section 5). No new information paths. FND-7 and FND-14 preserved — detectors operate on the observer's authoritative read view, not on any planner-facing belief state.
 
 2. **Positive-feedback analysis**: None. Detectors do not modify any simulation state, produce no events, and do not feed back into agent behavior. The report-generation loop is purely read-side.
 
-3. **Concrete dampeners**: Not applicable — no loops to dampen. The per-run anomaly-dedup logic (one anomaly per agent × need × run or window) prevents Section 3 output inflation but is an output-format concern, not a world-state dampener.
+3. **Concrete dampeners**: Not applicable — no loops to dampen. The per-dedup-key anomaly limits prevent Section 3 output inflation but are output-format concerns, not world-state dampeners.
 
 4. **Stored state vs. derived read-model**:
    - **Stored state**: none. This spec adds no authoritative components.
-   - **Derived**: every anomaly entry is derived per-run from the event log + component trajectories. Re-running the observer on the same dump produces the same anomalies.
+   - **Derived**: every anomaly entry is derived per-run from the event log + component trajectories. The D4 recipe → need classification is derived inline from `RecipeDefinition.outputs` + `CommodityKind::spec().consumable_profile`; it is not cached, not stored, and re-running the observer on the same dump produces the same anomalies.
 
 ## SystemFn Integration
 
@@ -208,8 +276,10 @@ None. No new ECS components.
 ## Cross-System Interactions (FND-26)
 
 No simulation system consumes the observer's output. Cross-observer interactions:
+
 - Detectors read the same authoritative event log and agent components that Section 2 already summarizes — shared read substrate, not cross-component coupling.
-- `STUCK_AGENT` detector behavior is refined by S118 (active-frame exclusion). S117 does not re-specify that detector; it merely relies on its revised behavior for the Section 3 ordering and false-positive counts.
+- `STUCK_AGENT` detector behavior is refined by `specs/S118-stuck-agent-detector-active-frame-exclusion.md`. S117 does not re-specify that detector; it merely tracks whichever precision behavior is live when S117 merges.
+- The D4 recipe → need derivation reads `CommodityKind::spec()` (a `const fn` lookup in `worldwake-core/src/items.rs`). This is a static-spec read, not a runtime cross-system call.
 
 ## Risks and Open Questions
 
@@ -217,11 +287,16 @@ No simulation system consumes the observer's output. Cross-observer interactions
 
 2. **Threshold drift**: 60% / 200-tick window / 95% monoculture / 30-tick acute threshold are all constants. If a future scenario class needs different thresholds, the right response is per-scenario threshold overrides via an observer CLI flag — deferred until a motivating case arises.
 
-3. **Window overlap and dedup**: Implementing maximal-run detection (for `AcuteNeedSpike` and `MaintenanceStarvation`) while avoiding duplicate reports across adjacent 200-tick windows requires care. Reference implementation: compute all qualifying runs first, then merge adjacent/overlapping runs into a single anomaly with the combined span.
+3. **Window overlap and dedup**: Implementing maximal-run detection (for `AcuteNeedSpike` and `MaintenanceStarvation`) while avoiding duplicate reports across adjacent 200-tick windows requires care. Reference implementation: compute all qualifying runs first, then merge adjacent/overlapping runs into a single anomaly with the combined span per the D3 / D5 dedup keys.
+
+4. **Inline recipe → need classification**: The D4 derivation is inline and duplicates logic that may later be useful to a planner-side system (e.g., a ranking heuristic that prefers need-relevant recipes). If a second consumer appears, promote the classification to a helper function on `RecipeDefinition` or a free function in `worldwake-sim`. For the S117 scope, inline keeps `worldwake-sim` untouched and avoids speculative API.
+
+5. **Dual-use placement**: The extended `Anomaly` struct and four new detectors live in `bin/observer.rs`, which is not importable from other crates. If a future replay / diagnostic tool needs to consume anomaly structures programmatically, both the `Anomaly` struct and the detector module will need to move from `bin/observer.rs` to `crates/worldwake-cli/src/observer.rs` (or a submodule) with `pub` visibility — an `DecisionTraceSink` / `ActionTraceSink`-style extraction. Not required for S117 to land; flag for a future refactor if the reuse pressure materializes.
 
 ## Verification Plan
 
-1. `cargo test -p worldwake-cli --test golden_observer_anomalies` — 4 new goldens pass
-2. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-contested.ron --ticks 1440 --output /tmp/contested-dump.md` — dump contains the new anomalies matching the report (at minimum: `GEOGRAPHIC_CONVERGENCE` for East Orchard, `MAINTENANCE_STARVATION` for dirtiness on all 4 agents, `RECIPE_MONOCULTURE` for food on all 4 agents, `ACUTE_NEED_SPIKE` for Agent C hunger)
-3. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md` — regression: no false positives in the healthy baseline scenario
-4. `cargo clippy --workspace --all-targets -- -D warnings` — clean
+1. `cargo test -p worldwake-cli --test golden_observer_anomalies` — 4 new goldens pass.
+2. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-contested.ron --ticks 1440 --output /tmp/contested-dump.md` — dump contains the new anomalies matching the report (at minimum: `GEOGRAPHIC_CONVERGENCE` for East Orchard, `MAINTENANCE_STARVATION` for dirtiness on all 4 agents, `RECIPE_MONOCULTURE` for hunger on all 4 agents, `ACUTE_NEED_SPIKE` for Agent C hunger). Verify the observer CLI flag names against `bin/observer.rs` main-function argument parsing before scripting; if they differ from `--ticks` / `--output`, update this step.
+3. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md` — regression: no false positives in the healthy baseline scenario.
+4. `cargo clippy --workspace --all-targets -- -D warnings` — clean.
+5. `cargo test -p worldwake-cli` — full crate test suite passes (integration test `test_observer_mode_simulation_runs` at `tests/integration.rs:395` continues to pass).

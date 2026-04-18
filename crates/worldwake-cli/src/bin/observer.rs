@@ -722,11 +722,13 @@ fn yes_no(value: bool) -> &'static str {
 struct Anomaly {
     kind: AnomalyKind,
     agent_name: String,
+    additional_agent_names: Option<Vec<String>>,
     description: String,
     tick_range: Option<(u64, u64)>,
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 enum AnomalyKind {
     RedundantPerception,
     ActionLoop,
@@ -734,6 +736,10 @@ enum AnomalyKind {
     FailedActionSpiral,
     SustainedCriticalNeed,
     UnaddressedNeed,
+    GeographicConvergence,
+    MaintenanceStarvation,
+    RecipeMonoculture,
+    AcuteNeedSpike,
 }
 
 impl AnomalyKind {
@@ -745,8 +751,28 @@ impl AnomalyKind {
             Self::FailedActionSpiral => "FAILED_ACTION_SPIRAL",
             Self::SustainedCriticalNeed => "SUSTAINED_CRITICAL_NEED",
             Self::UnaddressedNeed => "UNADDRESSED_NEED",
+            Self::GeographicConvergence => "GEOGRAPHIC_CONVERGENCE",
+            Self::MaintenanceStarvation => "MAINTENANCE_STARVATION",
+            Self::RecipeMonoculture => "RECIPE_MONOCULTURE",
+            Self::AcuteNeedSpike => "ACUTE_NEED_SPIKE",
         }
     }
+}
+
+fn format_anomaly_header(index: usize, anomaly: &Anomaly) -> String {
+    let mut names = vec![anomaly.agent_name.as_str()];
+    if let Some(additional_names) = anomaly.additional_agent_names.as_ref()
+        && !additional_names.is_empty()
+    {
+        names.extend(additional_names.iter().map(String::as_str));
+    }
+
+    format!(
+        "### Anomaly {} — {} ({})",
+        index,
+        anomaly.kind.label(),
+        names.join(", ")
+    )
 }
 
 fn detect_anomalies(
@@ -775,6 +801,7 @@ fn detect_anomalies(
                 anomalies.push(Anomaly {
                     kind: AnomalyKind::RedundantPerception,
                     agent_name: stats.name.clone(),
+                    additional_agent_names: None,
                     description: format!(
                         "Observed entity {entity} ({entity_name}, {entity_kind}) {count} times \
                          across {distinct_ticks} distinct ticks via event witnessing",
@@ -791,6 +818,7 @@ fn detect_anomalies(
             anomalies.push(Anomaly {
                 kind: AnomalyKind::ActionLoop,
                 agent_name: stats.name.clone(),
+                additional_agent_names: None,
                 description: loop_desc,
                 tick_range: None,
             });
@@ -831,6 +859,7 @@ fn detect_anomalies(
             anomalies.push(Anomaly {
                 kind: AnomalyKind::StuckAgent,
                 agent_name: stats.name.clone(),
+                additional_agent_names: None,
                 description: desc,
                 tick_range,
             });
@@ -848,6 +877,7 @@ fn detect_anomalies(
                 anomalies.push(Anomaly {
                     kind: AnomalyKind::FailedActionSpiral,
                     agent_name: stats.name.clone(),
+                    additional_agent_names: None,
                     description: format!(
                         "Action '{}': {} failed out of {} attempts ({:.0}% failure rate)",
                         action_name,
@@ -917,6 +947,7 @@ fn detect_sustained_critical_needs(stats: &AgentStats, anomalies: &mut Vec<Anoma
             anomalies.push(Anomaly {
                 kind: AnomalyKind::SustainedCriticalNeed,
                 agent_name: stats.name.clone(),
+                additional_agent_names: None,
                 description: format!(
                     "{need_name} above {THRESHOLD}‰ for {max_consecutive} consecutive ticks (ticks {start_tick}–{max_end_tick})"
                 ),
@@ -962,6 +993,7 @@ fn detect_unaddressed_needs(stats: &AgentStats, anomalies: &mut Vec<Anomaly>) {
                 anomalies.push(Anomaly {
                     kind: AnomalyKind::UnaddressedNeed,
                     agent_name: stats.name.clone(),
+                    additional_agent_names: None,
                     description: format!(
                         "{need_name} avg {avg}‰ but no relief action ({}) was ever attempted",
                         relief_actions.join("/")
@@ -1694,14 +1726,7 @@ fn format_report(
     } else {
         writeln!(out, "{} anomalies detected:\n", anomalies.len()).unwrap();
         for (i, anomaly) in anomalies.iter().enumerate() {
-            writeln!(
-                out,
-                "### Anomaly {} — {} ({})\n",
-                i + 1,
-                anomaly.kind.label(),
-                anomaly.agent_name
-            )
-            .unwrap();
+            writeln!(out, "{}\n", format_anomaly_header(i + 1, anomaly)).unwrap();
             writeln!(out, "{}\n", anomaly.description).unwrap();
             if let Some((start, end)) = anomaly.tick_range {
                 writeln!(out, "Tick range: {start}–{end}\n").unwrap();
@@ -2792,13 +2817,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentStats, BehavioralTransition, NeedsSample, PlanAttemptTrace, PlanSearchOutcome,
-        affordance_change_snapshots, behavioral_transitions, committed_travel_ticks,
-        death_summary_line, failed_plan_breakdown, failed_plan_candidates, failed_plan_location,
-        failed_plan_max_depth, failed_plan_outcome_label, failed_plan_target_beliefs,
-        final_affordance_snapshot, format_affordance_summary, format_behavioral_transition,
-        format_death_cause, format_report, post_travel_affordance_snapshots,
-        unknown_location_entity_groups,
+        AgentStats, Anomaly, AnomalyKind, BehavioralTransition, NeedsSample, PlanAttemptTrace,
+        PlanSearchOutcome, affordance_change_snapshots, behavioral_transitions,
+        committed_travel_ticks, death_summary_line, failed_plan_breakdown, failed_plan_candidates,
+        failed_plan_location, failed_plan_max_depth, failed_plan_outcome_label,
+        failed_plan_target_beliefs, final_affordance_snapshot, format_affordance_summary,
+        format_anomaly_header, format_behavioral_transition, format_death_cause, format_report,
+        post_travel_affordance_snapshots, unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
@@ -3686,5 +3711,51 @@ mod tests {
         };
 
         assert_eq!(death_summary_line(&world, agent), None);
+    }
+
+    #[test]
+    fn test_anomaly_kind_label_emits_new_labels() {
+        assert_eq!(
+            AnomalyKind::GeographicConvergence.label(),
+            "GEOGRAPHIC_CONVERGENCE"
+        );
+        assert_eq!(
+            AnomalyKind::MaintenanceStarvation.label(),
+            "MAINTENANCE_STARVATION"
+        );
+        assert_eq!(AnomalyKind::RecipeMonoculture.label(), "RECIPE_MONOCULTURE");
+        assert_eq!(AnomalyKind::AcuteNeedSpike.label(), "ACUTE_NEED_SPIKE");
+    }
+
+    #[test]
+    fn test_anomaly_render_single_agent_header_unchanged() {
+        let anomaly = Anomaly {
+            kind: AnomalyKind::RedundantPerception,
+            agent_name: "Alice".to_string(),
+            additional_agent_names: None,
+            description: "desc".to_string(),
+            tick_range: None,
+        };
+
+        assert_eq!(
+            format_anomaly_header(1, &anomaly),
+            "### Anomaly 1 — REDUNDANT_PERCEPTION (Alice)"
+        );
+    }
+
+    #[test]
+    fn test_anomaly_render_multi_agent_header() {
+        let anomaly = Anomaly {
+            kind: AnomalyKind::GeographicConvergence,
+            agent_name: "Alice".to_string(),
+            additional_agent_names: Some(vec!["Bob".to_string(), "Carol".to_string()]),
+            description: "desc".to_string(),
+            tick_range: None,
+        };
+
+        assert_eq!(
+            format_anomaly_header(1, &anomaly),
+            "### Anomaly 1 — GEOGRAPHIC_CONVERGENCE (Alice, Bob, Carol)"
+        );
     }
 }

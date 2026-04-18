@@ -140,7 +140,19 @@ Wait for user response before proceeding to Step 7. (In plan mode: after questio
 
 ### Step 7: Write the Updated Spec
 
-**Pre-Apply Verification**: Before editing, build a per-finding verification mini-table. For each finding (by its Step 6 number), run a targeted check (grep, count, path existence) and record both the command and the result inline — e.g., `Finding I1: grep -n "pm(750)" crates/worldwake-ai/tests/golden_survival_*.rs → 0 matches, confirms stale constant eliminated`. A vague "I checked the findings" is not sufficient and will be treated as no verification. If any check invalidates a finding, re-present the corrected finding to the user before applying any edits — do not silently drop or modify the finding.
+#### Pre-Apply Verification Table
+
+Before editing, build a per-finding verification mini-table **and emit it in chat before calling Write/Edit**. For each finding (by its Step 6 key — `I1`, `I2`, `M1`, `F1`, etc.), run a targeted check (grep, count, path existence) and record both the command and the result. The table is the gate — a vague "I checked the findings" is not sufficient and will be treated as no verification.
+
+Example:
+
+| Finding | Check | Result |
+|---------|-------|--------|
+| I1 | `grep -n "pm(750)" crates/worldwake-ai/tests/golden_survival_*.rs` | 0 matches — confirms stale constant eliminated |
+| I2 | `grep -rn "AnomalyKind::" crates/worldwake-cli/src/` | 17 matches, all in `bin/observer.rs` — no external consumers to migrate |
+| M3 | `test -f specs/S118-stuck-agent-detector-active-frame-exclusion.md` | file exists — dependency path valid |
+
+If any check invalidates a finding, re-present the corrected finding to the user before applying any edits — do not silently drop or modify the finding.
 
 **Read `references/spec-writing-rules.md` now, with the Read tool, before writing.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded spec-writing-rules.md — opens with "Pre-Apply Verification"`. A bare "Loaded: spec-writing-rules.md" is treated as a skipped load. The file carries the full pre-apply verification, apply-changes, and post-apply confirmation rules. Then apply all approved changes.
 
