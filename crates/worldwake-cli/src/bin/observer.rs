@@ -21,7 +21,9 @@ use worldwake_ai::{
 };
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
-use worldwake_core::{DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView, Tick};
+use worldwake_core::{
+    DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView, HomeostaticNeedId, Tick,
+};
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
     InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink,
@@ -900,6 +902,19 @@ fn detect_anomalies(
     }
 
     detect_geographic_convergence(agent_stats, world, &mut anomalies);
+    let thresholds_by_agent = agent_stats
+        .keys()
+        .map(|agent_id| {
+            (
+                *agent_id,
+                world
+                    .get_component_drive_thresholds(*agent_id)
+                    .copied()
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    detect_maintenance_starvation(agent_stats, &thresholds_by_agent, &mut anomalies);
 
     // Cross-reference redundant perception more precisely using event log
     refine_redundant_perception(&mut anomalies, agent_stats, perception_trace, event_log);
@@ -911,8 +926,8 @@ fn detect_anomalies(
     anomalies
 }
 
-const GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS: usize = 200;
 const GEOGRAPHIC_CONVERGENCE_SHARE_THRESHOLD_PERMILLE: u32 = 600;
+const ANOMALY_ROLLING_WINDOW_TICKS: usize = 200;
 
 fn detect_geographic_convergence(
     agent_stats: &BTreeMap<EntityId, AgentStats>,
@@ -924,15 +939,15 @@ fn detect_geographic_convergence(
         .map(|stats| stats.location_history.len())
         .max()
         .unwrap_or(0);
-    if sample_len < GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS {
+    if sample_len < ANOMALY_ROLLING_WINDOW_TICKS {
         return;
     }
 
     let mut merged_spans: BTreeMap<(BTreeSet<EntityId>, EntityId), (usize, usize)> =
         BTreeMap::new();
 
-    for window_start in 0..=sample_len - GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS {
-        let window_end = window_start + GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS - 1;
+    for window_start in 0..=sample_len - ANOMALY_ROLLING_WINDOW_TICKS {
+        let window_end = window_start + ANOMALY_ROLLING_WINDOW_TICKS - 1;
         let mut per_place_counts: BTreeMap<EntityId, BTreeMap<EntityId, usize>> = BTreeMap::new();
 
         for (agent_id, stats) in agent_stats {
@@ -958,7 +973,7 @@ fn detect_geographic_convergence(
                 .iter()
                 .filter_map(|(agent_id, count)| {
                     let share_permille =
-                        (*count as u32 * 1000) / GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS as u32;
+                        (*count as u32 * 1000) / ANOMALY_ROLLING_WINDOW_TICKS as u32;
                     (share_permille >= GEOGRAPHIC_CONVERGENCE_SHARE_THRESHOLD_PERMILLE)
                         .then_some(*agent_id)
                 })
@@ -1021,6 +1036,133 @@ fn detect_geographic_convergence(
                 end_tick,
                 entity_display_name(world, place),
                 lead_share_percent,
+            ),
+            tick_range: Some((start_tick as u64, end_tick as u64)),
+        });
+    }
+}
+
+const MAINTENANCE_STARVATION_NEEDS: [HomeostaticNeedId; 5] = [
+    HomeostaticNeedId::Hunger,
+    HomeostaticNeedId::Thirst,
+    HomeostaticNeedId::Fatigue,
+    HomeostaticNeedId::Bladder,
+    HomeostaticNeedId::Dirtiness,
+];
+
+fn need_label(need: HomeostaticNeedId) -> &'static str {
+    match need {
+        HomeostaticNeedId::Hunger => "hunger",
+        HomeostaticNeedId::Thirst => "thirst",
+        HomeostaticNeedId::Fatigue => "fatigue",
+        HomeostaticNeedId::Bladder => "bladder",
+        HomeostaticNeedId::Dirtiness => "dirtiness",
+    }
+}
+
+fn need_value(sample: &NeedsSample, need: HomeostaticNeedId) -> u16 {
+    match need {
+        HomeostaticNeedId::Hunger => sample.hunger,
+        HomeostaticNeedId::Thirst => sample.thirst,
+        HomeostaticNeedId::Fatigue => sample.fatigue,
+        HomeostaticNeedId::Bladder => sample.bladder,
+        HomeostaticNeedId::Dirtiness => sample.dirtiness,
+    }
+}
+
+fn need_medium_threshold(
+    thresholds: &worldwake_core::DriveThresholds,
+    need: HomeostaticNeedId,
+) -> u16 {
+    match need {
+        HomeostaticNeedId::Hunger => thresholds.hunger.medium().value(),
+        HomeostaticNeedId::Thirst => thresholds.thirst.medium().value(),
+        HomeostaticNeedId::Fatigue => thresholds.fatigue.medium().value(),
+        HomeostaticNeedId::Bladder => thresholds.bladder.medium().value(),
+        HomeostaticNeedId::Dirtiness => thresholds.dirtiness.medium().value(),
+    }
+}
+
+fn maintenance_window_stats(samples: &[NeedsSample], need: HomeostaticNeedId) -> (u32, u32, u32) {
+    let deltas = samples
+        .windows(2)
+        .map(|pair| i32::from(need_value(&pair[1], need)) - i32::from(need_value(&pair[0], need)))
+        .collect::<Vec<_>>();
+    let accumulation = deltas
+        .iter()
+        .copied()
+        .filter(|delta| *delta > 0)
+        .map(i32::cast_unsigned)
+        .sum::<u32>();
+    let relief = deltas
+        .iter()
+        .copied()
+        .filter(|delta| *delta < 0)
+        .map(i32::unsigned_abs)
+        .sum::<u32>();
+    let avg = samples
+        .iter()
+        .map(|sample| u32::from(need_value(sample, need)))
+        .sum::<u32>()
+        / samples.len() as u32;
+
+    (accumulation, relief, avg)
+}
+
+fn detect_maintenance_starvation(
+    agent_stats: &BTreeMap<EntityId, AgentStats>,
+    thresholds_by_agent: &BTreeMap<EntityId, worldwake_core::DriveThresholds>,
+    anomalies: &mut Vec<Anomaly>,
+) {
+    let mut merged_spans: BTreeMap<(EntityId, HomeostaticNeedId), (usize, usize)> = BTreeMap::new();
+
+    for (agent_id, stats) in agent_stats {
+        if stats.needs_samples.len() < ANOMALY_ROLLING_WINDOW_TICKS {
+            continue;
+        }
+        let Some(thresholds) = thresholds_by_agent.get(agent_id) else {
+            continue;
+        };
+
+        for need in MAINTENANCE_STARVATION_NEEDS {
+            let medium_threshold = need_medium_threshold(thresholds, need);
+            for window_start in 0..=stats.needs_samples.len() - ANOMALY_ROLLING_WINDOW_TICKS {
+                let window_end = window_start + ANOMALY_ROLLING_WINDOW_TICKS - 1;
+                let Some(window) = stats.needs_samples.get(window_start..=window_end) else {
+                    continue;
+                };
+                let (accumulation, relief, avg) = maintenance_window_stats(window, need);
+                if relief < accumulation && avg > u32::from(medium_threshold) {
+                    let entry = merged_spans
+                        .entry((*agent_id, need))
+                        .or_insert((window_start, window_end));
+                    entry.0 = entry.0.min(window_start);
+                    entry.1 = entry.1.max(window_end);
+                }
+            }
+        }
+    }
+
+    for ((agent_id, need), (start_tick, end_tick)) in merged_spans {
+        let Some(stats) = agent_stats.get(&agent_id) else {
+            continue;
+        };
+        let Some(thresholds) = thresholds_by_agent.get(&agent_id) else {
+            continue;
+        };
+        let Some(span) = stats.needs_samples.get(start_tick..=end_tick) else {
+            continue;
+        };
+        let (accumulation, relief, avg) = maintenance_window_stats(span, need);
+        let medium_threshold = need_medium_threshold(thresholds, need);
+        let need_label = need_label(need);
+
+        anomalies.push(Anomaly {
+            kind: AnomalyKind::MaintenanceStarvation,
+            agent_name: stats.name.clone(),
+            additional_agent_names: None,
+            description: format!(
+                "{need_label} accumulated {accumulation} permille but was relieved only {relief} permille over ticks {start_tick}–{end_tick}. Average {need_label} in window: {avg} permille (above medium threshold {medium_threshold})."
             ),
             tick_range: Some((start_tick as u64, end_tick as u64)),
         });
@@ -2939,13 +3081,14 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentStats, Anomaly, AnomalyKind, BehavioralTransition, NeedsSample, PlanAttemptTrace,
-        PlanSearchOutcome, affordance_change_snapshots, behavioral_transitions,
-        committed_travel_ticks, death_summary_line, detect_geographic_convergence,
-        failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
+        ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
+        NeedsSample, PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots,
+        behavioral_transitions, committed_travel_ticks, death_summary_line,
+        detect_geographic_convergence, detect_maintenance_starvation, failed_plan_breakdown,
+        failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
-        format_death_cause, format_report, post_travel_affordance_snapshots,
+        format_death_cause, format_report, need_medium_threshold, post_travel_affordance_snapshots,
         unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
@@ -2963,9 +3106,9 @@ mod tests {
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, ControlSource, DeadAt,
-        DeathCause, EntityId, EntityKind, EventLog, GoalKey, GoalKind, HomeostaticNeedId,
-        OpportunityAnchor, Permille, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
-        build_prototype_world,
+        DeathCause, DriveThresholds, EntityId, EntityKind, EventLog, GoalKey, GoalKind,
+        HomeostaticNeedId, OpportunityAnchor, Permille, Tick, VisibilitySpec, WitnessData, World,
+        WorldTxn, build_prototype_world,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -3220,6 +3363,21 @@ mod tests {
         for place in locations {
             *stats.location_ticks.entry(*place).or_insert(0) += 1;
         }
+        stats
+    }
+
+    fn agent_stats_with_dirtiness(name: &str, dirtiness: &[u16]) -> AgentStats {
+        let mut stats = AgentStats::new(name.to_string(), false);
+        stats.needs_samples = dirtiness
+            .iter()
+            .map(|value| NeedsSample {
+                hunger: 0,
+                thirst: 0,
+                fatigue: 0,
+                bladder: 0,
+                dirtiness: *value,
+            })
+            .collect();
         stats
     }
 
@@ -3984,5 +4142,84 @@ mod tests {
         detect_geographic_convergence(&stats, &world, &mut anomalies);
 
         assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_maintenance_starvation_fires_on_rising_dirtiness_over_window() {
+        let thresholds = DriveThresholds::default();
+        let medium_threshold = need_medium_threshold(&thresholds, HomeostaticNeedId::Dirtiness);
+        let dirtiness = (medium_threshold + 1..=850).collect::<Vec<_>>();
+        let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let mut anomalies = Vec::new();
+
+        detect_maintenance_starvation(&stats, &thresholds_by_agent, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(
+            anomalies[0].kind,
+            AnomalyKind::MaintenanceStarvation
+        ));
+        assert!(
+            anomalies[0]
+                .description
+                .contains("dirtiness accumulated 199 permille")
+        );
+        assert!(
+            anomalies[0]
+                .description
+                .contains("relieved only 0 permille")
+        );
+        assert!(
+            anomalies[0]
+                .description
+                .contains("Average dirtiness in window: 750 permille")
+        );
+        assert!(anomalies[0].description.contains("medium threshold 650"));
+    }
+
+    #[test]
+    fn test_maintenance_starvation_does_not_fire_when_balanced() {
+        let dirtiness = (0..ANOMALY_ROLLING_WINDOW_TICKS)
+            .map(|tick| if tick % 2 == 0 { 800 } else { 700 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), DriveThresholds::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_maintenance_starvation(&stats, &thresholds_by_agent, &mut anomalies);
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_maintenance_starvation_does_not_fire_when_avg_below_medium() {
+        let dirtiness = (0..ANOMALY_ROLLING_WINDOW_TICKS)
+            .map(|tick| if tick % 2 == 0 { 500 } else { 600 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), DriveThresholds::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_maintenance_starvation(&stats, &thresholds_by_agent, &mut anomalies);
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_maintenance_starvation_merges_adjacent_windows() {
+        let thresholds = DriveThresholds::default();
+        let medium_threshold = need_medium_threshold(&thresholds, HomeostaticNeedId::Dirtiness);
+        let dirtiness = (0u16..400u16)
+            .map(|tick| medium_threshold + 1 + (tick / 2))
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let mut anomalies = Vec::new();
+
+        detect_maintenance_starvation(&stats, &thresholds_by_agent, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert_eq!(anomalies[0].tick_range, Some((0, 399)));
     }
 }

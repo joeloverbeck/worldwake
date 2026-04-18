@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `S117CONMAIOBS-003`, `S117CONMAIOBS-004`, `S117CONMAIOBS-005`, `S117CONMAIOBS-006`, `specs/S117-convergence-maintenance-observer-smells.md`
+**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `S117CONMAIOBS-004`, `S117CONMAIOBS-005`, `S117CONMAIOBS-006`, `specs/S117-convergence-maintenance-observer-smells.md`
 
 ## Problem
 

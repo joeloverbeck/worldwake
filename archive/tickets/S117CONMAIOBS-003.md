@@ -1,6 +1,6 @@
 # S117CONMAIOBS-003: `MaintenanceStarvation` detector
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -17,6 +17,7 @@ Per the Layer 3 report, the survival-contested scenario shows agents accumulatin
 3. Shared abstraction boundary under audit: the `detect_anomalies()` orchestrator at `bin/observer.rs:752` and the `AgentStats.needs_samples` data structure. This ticket is a pure read-side extension.
 4. The intended invariant surfaced by this detector: "if mean need is chronically elevated AND net per-tick delta is positive over a 200-tick window, the agent's maintenance cadence is failing regardless of whether the need ever crosses critical." The detector measures the cadence gap directly, not a symptom proxy.
 5. Cumulative arithmetic: the detector reads `needs_samples[i].hunger - needs_samples[i-1].hunger` per tick (same pattern for other needs), summing positive deltas into `accumulation_permille` and negative deltas into `relief_permille` across the window. Values are `u16` permille in `NeedsSample`; accumulators are `u32` to avoid overflow over a 200-tick window.
+6. Live threshold correction: `DriveThresholds::default().dirtiness.medium()` is currently `650‰` (`crates/worldwake-core/src/drives.rs:112`), not `550‰`. Focused tests and example prose in this ticket must derive their expected medium threshold from the live default or from an explicit `DriveThresholds` fixture instead of hardcoding the stale drafted value.
 
 ## Architecture Check
 
@@ -75,9 +76,9 @@ At the `detect_anomalies()` call site, collect per-agent `DriveThresholds` into 
 
 Add to the existing `#[cfg(test)] mod tests`:
 
-- `test_maintenance_starvation_fires_on_rising_dirtiness_over_window` — synthetic dirtiness trajectory rising from 550 → 850 over 200 ticks, average ≈ 700 (> medium 550 for dirtiness default), per-tick deltas all positive. Assert one anomaly with correct accumulation/relief/avg values in description.
+- `test_maintenance_starvation_fires_on_rising_dirtiness_over_window` — synthetic dirtiness trajectory rising from 651 → 850 over 200 ticks, average > the live default dirtiness medium threshold (`650‰` today), per-tick deltas net positive. Assert one anomaly with correct accumulation/relief/avg values in description.
 - `test_maintenance_starvation_does_not_fire_when_balanced` — dirtiness oscillating 600 ± 50 over 200 ticks (accumulation ≈ relief). Assert zero anomalies.
-- `test_maintenance_starvation_does_not_fire_when_avg_below_medium` — dirtiness oscillating 400 ± 100 over 200 ticks (avg < medium 550). Assert zero anomalies.
+- `test_maintenance_starvation_does_not_fire_when_avg_below_medium` — dirtiness oscillating below the live default dirtiness medium threshold (currently `650‰`). Assert zero anomalies.
 - `test_maintenance_starvation_merges_adjacent_windows` — 400-tick rising trajectory. Assert exactly one anomaly with span covering the full qualifying range, not `(400 - 200 + 1) = 201`.
 
 ## Files to Touch
@@ -117,3 +118,23 @@ Add to the existing `#[cfg(test)] mod tests`:
 1. `cargo test -p worldwake-cli --bin observer maintenance_starvation`
 2. `cargo test -p worldwake-cli`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Extended `crates/worldwake-cli/src/bin/observer.rs` with the `MaintenanceStarvation` observer detector, including local per-need helpers for need labels, current values, medium-threshold lookup, and rolling-window accumulation / relief / average calculations over the shared 200-tick anomaly window.
+- Wired per-agent `DriveThresholds` collection into `detect_anomalies()` and invoked the new detector immediately after `detect_geographic_convergence()` to preserve Section 3 ordering.
+- Added focused observer unit coverage for positive dirtiness starvation detection, chronic-but-balanced non-detection, below-medium non-detection, and overlapping-window merge behavior.
+
+## Deviations
+
+- The drafted detector signature carried a separate `names: &BTreeMap<EntityId, String>` parameter. Live reassessment showed `AgentStats` already owns the rendered agent name, so the landed seam reused `stats.name` directly and kept the detector signature narrower.
+- The drafted ticket described a new `WINDOW_TICKS` constant local to this detector. Live implementation reused a shared file-local `ANOMALY_ROLLING_WINDOW_TICKS` constant so the maintenance and geographic convergence detectors stay aligned on the same 200-tick window without duplicating constants.
+- Focused test fixtures were tightened during implementation to match the intended invariant exactly: the chronic balanced case now uses a high oscillation with non-positive net drift across the 200-sample window, and the merge case uses a genuinely rising 400-sample trajectory rather than a two-plateau fixture that did not qualify from tick 0.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --bin observer maintenance_starvation`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
