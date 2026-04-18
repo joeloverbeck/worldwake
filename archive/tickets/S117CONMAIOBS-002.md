@@ -1,6 +1,6 @@
 # S117CONMAIOBS-002: `GeographicConvergence` detector
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
@@ -12,9 +12,9 @@ Four-agent survival-contested runs have shown 78–84% occupancy on a single pla
 
 ## Assumption Reassessment (2026-04-18)
 
-1. Per-tick location data is already collected by the observer via `AgentStats.location_ticks` (rendered in Section 2 as "Locations visited"), and per-tick `(agent, tick, place)` records are reconstructible from the action trace and the existing per-tick sampling loop at `bin/observer.rs:2544-2551`. No new world-state reads are required.
+1. Live mismatch: the observer currently retains only aggregate `AgentStats.location_ticks` counts for Section 2 plus per-tick world reads in the sampling loop; it does **not** keep per-tick `(agent, tick, place)` history in memory yet. This ticket must add a deterministic per-agent place-history carrier beside `location_ticks` inside `AgentStats` and populate it from the existing post-tick sampling loop at `bin/observer.rs:2564-2591`. No new simulation-side reads beyond that existing sampling point are required.
 2. The `Anomaly` struct's `additional_agent_names: Option<Vec<String>>` field lands in 001; this ticket depends on that field being present. No other detector in this spec emits multi-agent anomalies, so this ticket is the sole consumer of the multi-agent header branch.
-3. Shared abstraction boundary under audit: the `detect_anomalies()` function's per-agent scan at `bin/observer.rs:752` — this ticket adds a new detector function invoked from the same orchestrator.
+3. Shared abstraction boundary under audit: `AgentStats` place-history capture plus the `detect_anomalies()` orchestrator in `crates/worldwake-cli/src/bin/observer.rs`. This ticket adds one new read-side history field and one detector function invoked from the same anomaly pipeline.
 4. Determinism: agent-set dedup keys must use `BTreeSet<EntityId>` (not `HashSet`) per CLAUDE.md's Determinism invariant. Iteration order of the dedup map drives anomaly emission order, which drives Section 3 numbering.
 
 ## Architecture Check
@@ -31,13 +31,13 @@ Four-agent survival-contested runs have shown 78–84% occupancy on a single pla
 
 ## What to Change
 
-### 1. Per-tick location reconstruction
+### 1. Per-agent deterministic place history
 
-Within the `detect_anomalies()` orchestrator (or a new helper it calls), build a `BTreeMap<Tick, BTreeMap<EntityId, EntityId>>` (tick → agent → place) from the observer's existing per-tick sampling. If the current sampling already stores this, reuse it; otherwise extend the sampling loop at `bin/observer.rs:2544-2551` to emit per-tick location records keyed in a deterministic container.
+Extend `AgentStats` with a deterministic per-tick place-history carrier populated from the existing post-tick sampling loop. Keep the existing `location_ticks` aggregate for Section 2 unchanged. The detector may read that per-agent history directly; a new global `BTreeMap<Tick, BTreeMap<EntityId, EntityId>>` is not required if the live implementation stays simpler and fully deterministic.
 
 ### 2. New detector function
 
-Add `fn detect_geographic_convergence(stats_by_agent: &BTreeMap<EntityId, AgentStats>, per_tick_location: &BTreeMap<Tick, BTreeMap<EntityId, EntityId>>, names: &BTreeMap<EntityId, String>, anomalies: &mut Vec<Anomaly>)` below the existing `detect_sustained_critical_needs` / `detect_unaddressed_needs` detectors.
+Add a read-side detector helper below the existing `detect_sustained_critical_needs` / `detect_unaddressed_needs` detectors. The helper may read the new per-agent place-history carrier directly from `AgentStats` rather than taking a separately reconstructed global tick map, as long as the dedup key and emitted anomaly contract stay the same.
 
 Logic:
 
@@ -102,3 +102,22 @@ Add to the existing `#[cfg(test)] mod tests`:
 1. `cargo test -p worldwake-cli --bin observer geographic_convergence`
 2. `cargo test -p worldwake-cli`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Extended `crates/worldwake-cli/src/bin/observer.rs` with a deterministic per-agent `location_history` carrier inside `AgentStats`, populated from the existing post-tick sampling loop while preserving the existing `location_ticks` Section 2 aggregate.
+- Added `detect_geographic_convergence()` to the observer anomaly pipeline and emitted one `GEOGRAPHIC_CONVERGENCE` anomaly per distinct `(agent-set, place)` dedup key with deterministic `BTreeSet<EntityId>` ordering and multi-agent header support via `additional_agent_names`.
+- Added focused observer unit coverage for positive detection, overlapping-window deduplication, and rotating-agent non-detection.
+
+## Deviations
+
+- The drafted ticket assumed the observer already retained per-tick place history or needed a separate global tick-to-agent map reconstruction. Live reassessment showed only aggregate `location_ticks` existed, so this ticket honestly landed the narrower same-struct substrate: a per-agent `location_history` vector on `AgentStats`, read directly by the detector.
+- The detector description text was phrased as an \"at least 60.0%\" threshold statement plus lead-agent share over the merged span, rather than the ticket's drafted single percentage placeholder. This keeps the rendered text truthful when a merged anomaly span covers many overlapping qualifying windows.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --bin observer geographic_convergence`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

@@ -93,6 +93,7 @@ struct AgentStats {
     needs_samples: Vec<NeedsSample>,
     // Location tracking
     location_ticks: BTreeMap<EntityId, u32>,
+    location_history: Vec<Option<EntityId>>,
     // Action sequence (for loop detection)
     action_sequence: Vec<String>,
     // Idle tracking
@@ -122,6 +123,7 @@ impl AgentStats {
             observation_tick_sets: BTreeMap::new(),
             needs_samples: Vec::new(),
             location_ticks: BTreeMap::new(),
+            location_history: Vec::new(),
             action_sequence: Vec::new(),
             consecutive_idle_ticks: 0,
             max_consecutive_idle: 0,
@@ -897,6 +899,8 @@ fn detect_anomalies(
         detect_unaddressed_needs(stats, &mut anomalies);
     }
 
+    detect_geographic_convergence(agent_stats, world, &mut anomalies);
+
     // Cross-reference redundant perception more precisely using event log
     refine_redundant_perception(&mut anomalies, agent_stats, perception_trace, event_log);
 
@@ -905,6 +909,122 @@ fn detect_anomalies(
     refine_stuck_agents(&mut anomalies, agent_stats);
 
     anomalies
+}
+
+const GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS: usize = 200;
+const GEOGRAPHIC_CONVERGENCE_SHARE_THRESHOLD_PERMILLE: u32 = 600;
+
+fn detect_geographic_convergence(
+    agent_stats: &BTreeMap<EntityId, AgentStats>,
+    world: &worldwake_core::World,
+    anomalies: &mut Vec<Anomaly>,
+) {
+    let sample_len = agent_stats
+        .values()
+        .map(|stats| stats.location_history.len())
+        .max()
+        .unwrap_or(0);
+    if sample_len < GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS {
+        return;
+    }
+
+    let mut merged_spans: BTreeMap<(BTreeSet<EntityId>, EntityId), (usize, usize)> =
+        BTreeMap::new();
+
+    for window_start in 0..=sample_len - GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS {
+        let window_end = window_start + GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS - 1;
+        let mut per_place_counts: BTreeMap<EntityId, BTreeMap<EntityId, usize>> = BTreeMap::new();
+
+        for (agent_id, stats) in agent_stats {
+            let Some(window) = stats.location_history.get(window_start..=window_end) else {
+                continue;
+            };
+
+            let mut counts_by_place: BTreeMap<EntityId, usize> = BTreeMap::new();
+            for place in window.iter().flatten() {
+                *counts_by_place.entry(*place).or_insert(0) += 1;
+            }
+
+            for (place, count) in counts_by_place {
+                per_place_counts
+                    .entry(place)
+                    .or_default()
+                    .insert(*agent_id, count);
+            }
+        }
+
+        for (place, counts_by_agent) in per_place_counts {
+            let qualifying_agents = counts_by_agent
+                .iter()
+                .filter_map(|(agent_id, count)| {
+                    let share_permille =
+                        (*count as u32 * 1000) / GEOGRAPHIC_CONVERGENCE_WINDOW_TICKS as u32;
+                    (share_permille >= GEOGRAPHIC_CONVERGENCE_SHARE_THRESHOLD_PERMILLE)
+                        .then_some(*agent_id)
+                })
+                .collect::<BTreeSet<_>>();
+
+            if qualifying_agents.len() < 2 {
+                continue;
+            }
+
+            let entry = merged_spans
+                .entry((qualifying_agents, place))
+                .or_insert((window_start, window_end));
+            entry.0 = entry.0.min(window_start);
+            entry.1 = entry.1.max(window_end);
+        }
+    }
+
+    for ((agent_ids, place), (start_tick, end_tick)) in merged_spans {
+        let Some((&lead_agent, remaining_agents)) = agent_ids.iter().next().map(|lead| {
+            (
+                lead,
+                agent_ids.iter().copied().skip(1).collect::<Vec<EntityId>>(),
+            )
+        }) else {
+            continue;
+        };
+
+        let Some(lead_stats) = agent_stats.get(&lead_agent) else {
+            continue;
+        };
+        let Some(window) = lead_stats.location_history.get(start_tick..=end_tick) else {
+            continue;
+        };
+        let lead_share_ticks = window
+            .iter()
+            .filter(|sample| **sample == Some(place))
+            .count();
+        let span_ticks = end_tick - start_tick + 1;
+        let lead_share_ticks_u32 = u32::try_from(lead_share_ticks).unwrap_or(u32::MAX);
+        let span_ticks_u32 = u32::try_from(span_ticks).unwrap_or(u32::MAX);
+        let lead_share_percent =
+            (f64::from(lead_share_ticks_u32) * 100.0) / f64::from(span_ticks_u32);
+
+        anomalies.push(Anomaly {
+            kind: AnomalyKind::GeographicConvergence,
+            agent_name: lead_stats.name.clone(),
+            additional_agent_names: Some(
+                remaining_agents
+                    .into_iter()
+                    .filter_map(|agent_id| {
+                        agent_stats.get(&agent_id).map(|stats| stats.name.clone())
+                    })
+                    .collect(),
+            ),
+            description: format!(
+                "{} agents spent at least {:.1}% of ticks {}–{} at {} (lead agent share: {:.1}%).",
+                agent_ids.len(),
+                f64::from(GEOGRAPHIC_CONVERGENCE_SHARE_THRESHOLD_PERMILLE) / 10.0,
+                start_tick,
+                end_tick,
+                entity_display_name(world, place),
+                lead_share_percent,
+            ),
+            tick_range: Some((start_tick as u64, end_tick as u64)),
+        });
+    }
 }
 
 type NeedExtractor = (&'static str, fn(&NeedsSample) -> u16);
@@ -2586,7 +2706,9 @@ fn main() {
                 };
 
             // Location
-            if let Some(place) = world.effective_place(*agent_id) {
+            let current_place = world.effective_place(*agent_id);
+            stats.location_history.push(current_place);
+            if let Some(place) = current_place {
                 *stats.location_ticks.entry(place).or_insert(0) += 1;
             }
 
@@ -2819,11 +2941,12 @@ mod tests {
     use super::{
         AgentStats, Anomaly, AnomalyKind, BehavioralTransition, NeedsSample, PlanAttemptTrace,
         PlanSearchOutcome, affordance_change_snapshots, behavioral_transitions,
-        committed_travel_ticks, death_summary_line, failed_plan_breakdown, failed_plan_candidates,
-        failed_plan_location, failed_plan_max_depth, failed_plan_outcome_label,
-        failed_plan_target_beliefs, final_affordance_snapshot, format_affordance_summary,
-        format_anomaly_header, format_behavioral_transition, format_death_cause, format_report,
-        post_travel_affordance_snapshots, unknown_location_entity_groups,
+        committed_travel_ticks, death_summary_line, detect_geographic_convergence,
+        failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
+        failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
+        format_affordance_summary, format_anomaly_header, format_behavioral_transition,
+        format_death_cause, format_report, post_travel_affordance_snapshots,
+        unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
@@ -3089,6 +3212,15 @@ mod tests {
                 local_authoritative_summary: sample_local_survival_state_summary(),
             }],
         }
+    }
+
+    fn agent_stats_with_locations(name: &str, locations: &[EntityId]) -> AgentStats {
+        let mut stats = AgentStats::new(name.to_string(), false);
+        stats.location_history = locations.iter().copied().map(Some).collect();
+        for place in locations {
+            *stats.location_ticks.entry(*place).or_insert(0) += 1;
+        }
+        stats
     }
 
     #[test]
@@ -3757,5 +3889,100 @@ mod tests {
             format_anomaly_header(1, &anomaly),
             "### Anomaly 1 — GEOGRAPHIC_CONVERGENCE (Alice, Bob, Carol)"
         );
+    }
+
+    #[test]
+    fn test_geographic_convergence_fires_when_three_agents_share_place_for_window() {
+        let shared_place = entity(10);
+        let world = World::new(build_prototype_world()).expect("world");
+        let stats = BTreeMap::from([
+            (
+                entity(1),
+                agent_stats_with_locations("Alice", &vec![shared_place; 250]),
+            ),
+            (
+                entity(2),
+                agent_stats_with_locations("Bob", &vec![shared_place; 250]),
+            ),
+            (
+                entity(3),
+                agent_stats_with_locations("Carol", &vec![shared_place; 250]),
+            ),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(
+            anomalies[0].kind,
+            AnomalyKind::GeographicConvergence
+        ));
+        assert_eq!(anomalies[0].agent_name, "Alice");
+        assert_eq!(
+            anomalies[0].additional_agent_names.as_deref(),
+            Some(&["Bob".to_string(), "Carol".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn test_geographic_convergence_deduplicates_overlapping_windows() {
+        let shared_place = entity(10);
+        let world = World::new(build_prototype_world()).expect("world");
+        let stats = BTreeMap::from([
+            (
+                entity(1),
+                agent_stats_with_locations("Alice", &vec![shared_place; 250]),
+            ),
+            (
+                entity(2),
+                agent_stats_with_locations("Bob", &vec![shared_place; 250]),
+            ),
+            (
+                entity(3),
+                agent_stats_with_locations("Carol", &vec![shared_place; 250]),
+            ),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert_eq!(anomalies[0].tick_range, Some((0, 249)));
+    }
+
+    #[test]
+    fn test_geographic_convergence_does_not_fire_on_rotating_agents() {
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let world = World::new(build_prototype_world()).expect("world");
+        let rotating = (0..250)
+            .map(|tick| {
+                if (tick / 50) % 2 == 0 {
+                    place_a
+                } else {
+                    place_b
+                }
+            })
+            .collect::<Vec<_>>();
+        let inverse = (0..250)
+            .map(|tick| {
+                if (tick / 50) % 2 == 0 {
+                    place_b
+                } else {
+                    place_a
+                }
+            })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([
+            (entity(1), agent_stats_with_locations("Alice", &rotating)),
+            (entity(2), agent_stats_with_locations("Bob", &inverse)),
+            (entity(3), agent_stats_with_locations("Carol", &rotating)),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert!(anomalies.is_empty());
     }
 }
