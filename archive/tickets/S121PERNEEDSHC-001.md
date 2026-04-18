@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — scenario schema, survival golden harness helpers, contested survival scenario/golden, golden contract docs
-**Deps**: specs/S121-per-need-survival-health-contracts.md, tickets/S119AUTHSURVHC-001.md
+**Deps**: archive/specs/S121-per-need-survival-health-contracts.md, archive/tickets/S119AUTHSURVHC-001.md
 
 ## Problem
 

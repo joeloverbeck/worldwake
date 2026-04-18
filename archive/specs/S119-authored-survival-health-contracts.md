@@ -91,7 +91,7 @@ pub struct ScenarioDef {
 
 `survival_health_contract` is optional so non-survival scenarios do not carry irrelevant assertions.
 
-Per-need critical-run overrides are out of scope for this spec. They were added as a separate substrate by [specs/S121-per-need-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/specs/S121-per-need-survival-health-contracts.md), which extends `SurvivalHealthContractDef` with an optional `critical_run_limits: Option<SurvivalCriticalRunLimitsDef>` field carried on the same authored-contract surface.
+Per-need critical-run overrides are out of scope for this spec. They were added as a separate substrate by [archive/specs/S121-per-need-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/archive/specs/S121-per-need-survival-health-contracts.md), which extends `SurvivalHealthContractDef` with an optional `critical_run_limits: Option<SurvivalCriticalRunLimitsDef>` field carried on the same authored-contract surface.
 
 ### D2: Shared golden helper reads authored contract
 
@@ -204,7 +204,7 @@ Completed on 2026-04-18.
 
 - Post-retrofit verification surfaced two additional blockers that were resolved in their own explicit owners rather than absorbed into this spec:
   1. Scattered hunger overrun → [archive/tickets/S119AUTHSURVHC-002.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S119AUTHSURVHC-002.md) classified it as a too-strict authored bound and corrected `survival-scattered.ron`.
-  2. Contested dirtiness overrun → [specs/S121-per-need-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/specs/S121-per-need-survival-health-contracts.md) extended `SurvivalHealthContractDef` with an optional `critical_run_limits: Option<SurvivalCriticalRunLimitsDef>` field so per-need authored-critical bounds could live on the same contract surface without weakening the global envelope.
+  2. Contested dirtiness overrun → [archive/specs/S121-per-need-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/archive/specs/S121-per-need-survival-health-contracts.md) extended `SurvivalHealthContractDef` with an optional `critical_run_limits: Option<SurvivalCriticalRunLimitsDef>` field so per-need authored-critical bounds could live on the same contract surface without weakening the global envelope.
 - `NeedsActionFamily` carries a `Wash` variant even though `survival-contested.ron` authors `required_self_care_families: [Eat, Drink, Sleep, Relieve]` (no `Wash`). The variant exists at the enum level; each scenario declares its own required families.
 
 **Verification**:
