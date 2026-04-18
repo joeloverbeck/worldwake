@@ -1,10 +1,10 @@
 # S120SURCRIWIN-004: Documentation for survival-forensics canonical helper
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — documentation-only ticket.
-**Deps**: `archive/tickets/S120SURCRIWIN-002.md`
+**Deps**: `archive/tickets/S120SURCRIWIN-002.md`, `archive/tickets/S120SURCRIWIN-003.md`
 
 ## Problem
 
@@ -19,12 +19,12 @@ This ticket implements S120 deliverable D7: updates `docs/golden-e2e-testing.md`
    - `docs/debugging-traces.md` — 148 lines, covering decision traces, action traces, tick alignment, observation strategy, system tick ordering, and force-control lifecycle. A new section referencing the canonical helper belongs here too.
    Both files validated during `/reassess-spec` pass on 2026-04-18.
 2. Spec reference: `specs/S120-survival-critical-window-forensics.md` D7 (lines 194–196): "Update `docs/golden-e2e-testing.md` and/or `docs/debugging-traces.md` to point survival-debugging work at the shared critical-window report helper rather than ad hoc ignored reproducers."
-3. Shared abstraction boundary: the documentation names `worldwake-ai::survival_forensics` as the canonical helper and `golden_harness::expect_*_window` helpers as the assertion wrappers. No new boundary is introduced; the docs describe the boundary already landed in the prior two tickets.
+3. Shared abstraction boundary: the documentation names `worldwake_ai::{CriticalWindowReport, SurvivalForensicExtractor}` as the canonical runtime surface, `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs` as the focused helper module (re-exported by `golden_harness::mod.rs`), and the observer's Section 9 renderer from `archive/tickets/S120SURCRIWIN-003.md` as the live CLI discoverability surface. No new boundary is introduced; the docs describe the boundaries already landed in the prior tickets.
 13. Adjacent contradiction audit: `docs/debugging-traces.md` currently describes decision traces and action traces as the primary debugging surface. The new section positions `CriticalWindowReport` as a *composed* surface over those two existing trace systems (plus authoritative physiology state) — not as a replacement. This is the in-scope consequence.
 
 ## Architecture Check
 
-1. Documentation-only placement avoids interfering with the runtime or test surfaces — reviewers of this ticket can land it without running any simulation tests.
+1. Documentation-only placement avoids interfering with the runtime or test surfaces, but the ticket still benefits from repo-baseline verification so the docs land against a green tree.
 2. Cross-referencing both documentation targets (golden-e2e-testing.md for test authors, debugging-traces.md for debuggers) ensures the surface is discoverable from both entry points into survival-work.
 3. Deferring this ticket until `S120SURCRIWIN-002` lands means the documentation can cite real helper names and real test paths rather than forward-declaring them.
 
@@ -46,7 +46,7 @@ When a survival golden's `assert_authored_critical_runs` fails with "Agent X hun
 
 ### How
 
-1. The survival goldens capture per-tick `CriticalWindowReport` data via the `SurvivalForensicExtractor` already wired into the harness (see `crates/worldwake-ai/tests/golden_harness/mod.rs`).
+1. The survival goldens capture per-tick `CriticalWindowReport` data via the `SurvivalForensicExtractor` already wired into the harness (see `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs`, re-exported by `golden_harness::mod.rs`).
 2. On assertion failure, attach or print the extractor's `finalize()` output via `dump_reports_for_debug(&reports)`.
 3. Use `expect_sleep_progress_barrier_window`, `expect_wash_vs_water_competition_window`, or a new helper to assert the specific causal class you suspect.
 
@@ -84,7 +84,7 @@ If the spec chain already mentions `docs/debugging-traces.md` elsewhere in the s
 
 ## Out of Scope
 
-- Changes to `worldwake-ai::survival_forensics` or its consumers — all runtime/test code lives in prior tickets.
+- Changes to `worldwake_ai::{CriticalWindowReport, SurvivalForensicExtractor}` or their runtime/test consumers — all runtime/test code lives in prior tickets.
 - Renaming or reorganizing existing sections of the two documentation files.
 - Integration with `/scenario-analysis` skill documentation — the skill already consumes observer dumps; no documentation change is required for it to incorporate Section 9 rendered by `S120SURCRIWIN-003`.
 - Observer binary Section 9 — see `S120SURCRIWIN-003`.
@@ -116,3 +116,20 @@ If the spec chain already mentions `docs/debugging-traces.md` elsewhere in the s
 1. `grep -n "CriticalWindowReport\|SurvivalForensicExtractor\|expect_sleep_progress_barrier_window\|expect_wash_vs_water_competition_window" docs/golden-e2e-testing.md docs/debugging-traces.md crates/worldwake-ai/src/survival_forensics.rs crates/worldwake-ai/tests/golden_harness/` — spot-check that every documentation reference resolves to a real symbol.
 2. `cargo test --workspace` — full regression sweep (no code changes, pure sanity check).
 3. `cargo clippy --workspace --all-targets -- -D warnings` — workspace lint (CI parity).
+
+## Outcome
+
+- Completion date: 2026-04-18
+- Added a new `## Survival Critical-Window Forensics` section to `docs/golden-e2e-testing.md` that points survival-golden authors at the canonical runtime extractor, the shared `expect_*_window` helpers, and the observer's live Section 9 output instead of bespoke `#[ignore]` reproducers.
+- Added a new `## Critical Window Forensics` section to `docs/debugging-traces.md` that positions the report surface as a composed read-model over decision traces, action traces, and authoritative local state, with a cross-reference back to the golden-testing guidance.
+- Corrected the ticket's own dependency and helper-path story so it matches the landed `002`/`003` surfaces.
+
+## Verification Result
+
+- `rg -n "CriticalWindowReport|SurvivalForensicExtractor|expect_sleep_progress_barrier_window|expect_wash_vs_water_competition_window|dump_reports_for_debug|critical-window-top-n|Section 9" docs/golden-e2e-testing.md docs/debugging-traces.md crates/worldwake-ai/src/survival_forensics.rs crates/worldwake-ai/tests/golden_harness crates/worldwake-cli/src/bin/observer.rs`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Deviations
+
+- `cargo test --workspace` remained green, but the existing long-running `golden_survival_*` 1440-tick scenario cases stayed `#[ignore]`. That command therefore proved the workspace, the modified docs, and the non-ignored helper coverage stayed green; it did not execute the ignored long-run survival scenarios in this turn.

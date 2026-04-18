@@ -64,6 +64,30 @@ For survival scenarios such as `survival-baseline.ron`, `survival-scattered.ron`
 
 This keeps the scenario author as the single source of truth for what "healthy" means and prevents goldens from drifting away from the live authored profile.
 
+## Survival Critical-Window Forensics
+
+When a survival golden's authored-critical assertion fails for tens or hundreds of ticks, do not reach for a bespoke `#[ignore]` reproducer or add local probe code to one scenario binary. Start from the canonical survival-forensics surface instead.
+
+The runtime report model is `worldwake_ai::{CriticalWindowReport, SurvivalForensicExtractor}` in `crates/worldwake-ai/src/survival_forensics.rs`. The shared golden assertion helpers live in `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs` and are re-exported by `golden_harness::mod.rs`. Today that helper surface includes `expect_sleep_progress_barrier_window`, `expect_wash_vs_water_competition_window`, and `dump_reports_for_debug`.
+
+### How to use it
+
+1. Capture per-tick reports through the already-wired harness extractor rather than adding ad hoc instrumentation to one golden binary.
+2. On failure, print or attach `dump_reports_for_debug(&reports)` so the bounded report frames are visible in the failing output.
+3. Assert the causal class you expect with the shared `expect_*_window` helpers, or add one new focused helper plus a focused test when a genuinely new contradiction class emerges.
+
+### What the report tells you
+
+A `CriticalWindowReport` composes three boundaries that are otherwise tedious to correlate by hand:
+
+- decision-trace state such as selected goal, selected plan source, planner exhaustion, blockers, and top competitors
+- action-trace state such as the active action snapshot
+- authoritative local-place state such as nearby water, wash, sleep, and food availability
+
+This is the default first step for separating "planner failed despite a local affordance" from "no lawful local affordance existed and the agent needed remote pursuit." If you need an interactive human-readable rendering while replaying a scenario, `worldwake-cli` now exposes the same surface through observer Section 9 (`--critical-window-top-n`, default `3`; `0` disables the section) rather than a separate debugging path.
+
+Cross-reference: `docs/debugging-traces.md` section `Critical Window Forensics`.
+
 ## Ordering Rules
 
 When a test needs ordering, state explicitly which ordering is the contract:

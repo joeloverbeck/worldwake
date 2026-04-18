@@ -26,6 +26,7 @@ Completed Phase 7 specs:
 - `S105: Observation Salience Filtering` — archived at [archive/specs/S105-observation-salience-filtering.md](/home/joeloverbeck/projects/worldwake/archive/specs/S105-observation-salience-filtering.md). Landed `PerceptionProfile.observation_budget` with authored-input compatibility, deterministic same-place observation priority plus budget truncation in `collect_direct_local_observation_batch`, focused unit proof for non-place truncation / need-based non-Waste boosting, and Scenario 341 golden coverage for bounded waste visibility under reduced observation budgets.
 - `S106: Ground Item Decay` — archived at [archive/specs/S106-ground-item-decay.md](/home/joeloverbeck/projects/worldwake/archive/specs/S106-ground-item-decay.md). Landed `GroundSince`, persisted `CommodityDecayMap`, `EventTag::ItemDecay`, `SystemId::ItemDecay`, live decay archival after `EvidenceDecay`, and Scenario 342 golden proof of bounded Waste steady state plus regenerated golden inventory/detail docs.
 - `S107: Proactive Diversification Exploration` — archived at [archive/specs/S107-proactive-diversification.md](/home/joeloverbeck/projects/worldwake/archive/specs/S107-proactive-diversification.md). Landed `DiversificationProfile`, passive place-visit tracking, proactive `ExploreLocation` emission/ranking with need-slack and cooldown gating, authored scenario support, and golden exploration coverage plus refreshed generated golden docs.
+- `S120: Survival Critical-Window Forensics` — archived at [archive/specs/S120-survival-critical-window-forensics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S120-survival-critical-window-forensics.md). Landed the shared runtime forensics model and extractor in `worldwake-ai`, golden-harness forensic helpers and focused proof, observer Section 9 rendering plus `--critical-window-top-n`, and the survival-debugging documentation updates.
 - `S104: Survival Baseline Recovery` — archived at [archive/specs/S104-survival-baseline-recovery.md](/home/joeloverbeck/projects/worldwake/archive/specs/S104-survival-baseline-recovery.md). Landed the survival-baseline recovery slice: golden triage, TellProfile profile-gating cleanup, the authored `survival-baseline.ron` scenario, planner cleanup for the remaining survival-path `ProduceCommodity` budget exhaustion, and the Layer 0 survival golden proof. The later Layer 1–3 rebuild wave was intentionally not pursued.
 
 Completed adjunct specs:
@@ -301,14 +302,14 @@ Derived from the 2026-04-18 S116 implementation retrospective after tickets `S11
 
 ```text
 S119 (independent)
-S120 (independent)
+S120 ✅ archived (independent)
 S121 (soft depends on S119)
 ```
 
 **Wave** (parallel, no hard deps):
 
 - **S119**: ✅ COMPLETED — archived at [archive/specs/S119-authored-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/archive/specs/S119-authored-survival-health-contracts.md). Landed `SurvivalHealthContractDef` and `NeedsActionFamily` on `ScenarioDef`, shared survival-golden harness helpers (`expect_survival_health_contract`, `assert_authored_critical_runs`, `assert_required_self_care_families`, `assert_no_stuck_idle_windows`), authored `survival_health_contract` sections in the three survival scenarios, the contract-presence guard plus dedicated regression test, and the `docs/golden-e2e-testing.md` update. Post-retrofit fallout absorbed by `S119AUTHSURVHC-002` (scattered hunger bound raised to 550) and `S121` (per-need `critical_run_limits` extension).
-- **S120**: Survival Critical-Window Forensics — add a deterministic derived report for prolonged authored-critical runs showing selected goal, competitors, blocker/exhaustion state, and local authoritative survival state, so future regressions can be explained without one-off debug probes.
+- **S120**: ✅ COMPLETED — archived at [archive/specs/S120-survival-critical-window-forensics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S120-survival-critical-window-forensics.md). Landed the deterministic derived report surface in `worldwake-ai`, shared golden-harness helpers plus focused proof, observer Section 9 rendering and CLI control, and the canonical debugging/doc guidance for survival critical-window analysis.
 - **S121**: ✅ COMPLETED — archived at [archive/specs/S121-per-need-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/archive/specs/S121-per-need-survival-health-contracts.md). Extended `SurvivalHealthContractDef` with optional per-need `critical_run_limits` (`SurvivalCriticalRunLimitsDef`), taught the shared survival-golden harness to honor per-need overrides via `assert_authored_critical_runs_with_overrides` and `SurvivalCriticalRunLimitOverrides`, retrofitted `scenarios/survival-contested.ron` with a dirtiness-specific override so contested no longer over-asserts unlike self-care families, and documented the richer contract in `docs/golden-e2e-testing.md`. Delivered by `S121PERNEEDSHC-001`.
 
 ### Phase 7 Gate

@@ -6,7 +6,7 @@ Add a stable, mechanical forensic surface for long-run survival failures so auth
 
 ## Phase and Status
 
-Phase 7 Adjunct: Survival Stability Hardening. Status: Draft.
+Phase 7 Adjunct: Survival Stability Hardening. Status: ✅ COMPLETED.
 
 ## Crates
 
@@ -231,4 +231,31 @@ None.
 
 ## Outcome
 
-To be filled in at completion.
+Completed on 2026-04-18 via the archived ticket chain:
+
+- [S120SURCRIWIN-001](/home/joeloverbeck/projects/worldwake/archive/tickets/S120SURCRIWIN-001.md)
+- [S120SURCRIWIN-002](/home/joeloverbeck/projects/worldwake/archive/tickets/S120SURCRIWIN-002.md)
+- [S120SURCRIWIN-003](/home/joeloverbeck/projects/worldwake/archive/tickets/S120SURCRIWIN-003.md)
+- [S120SURCRIWIN-004](/home/joeloverbeck/projects/worldwake/archive/tickets/S120SURCRIWIN-004.md)
+
+### Landed changes
+
+- **D1-D4 — Runtime forensic surface**: added `crates/worldwake-ai/src/survival_forensics.rs`, exported `CriticalWindowReport`, `CriticalWindowFrame`, `SurvivalForensicExtractor`, bounded frame capture, and the authoritative local survival summary through `worldwake-ai/src/lib.rs`.
+- **D5 — Golden/test integration**: added the shared test-facing helper module `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs`, wired per-tick observation into the three survival golden binaries, and landed focused proof for the sleep progress-barrier, wash-vs-water competition, and deterministic bounded-capture contracts.
+- **D6 — Observer rendering**: added observer Section 9 (`## Section 9 — Critical Window Forensics`) plus `--critical-window-top-n` in `crates/worldwake-cli/src/bin/observer.rs`, using the same runtime report model rather than a duplicate consumer path.
+- **D7 — Documentation**: updated `docs/golden-e2e-testing.md` and `docs/debugging-traces.md` so survival-debugging work points at the canonical runtime/report helper and observer surface instead of bespoke ignored reproducers.
+
+### Deviations from original plan
+
+- `ActiveActionSummary.action_name` landed as `String` rather than `&'static str`, matching the live action-trace carrier shape.
+- The D5.2 competition contract was narrowed during implementation to the honest extractor boundary: wash-vs-water competition is exposed by `selected_goal` plus `top_competitors` collectively, because the selected goal is intentionally excluded from `top_competitors`.
+- The observer integration described as optional in D6 was completed as part of the initial S120 delivery rather than deferred.
+
+### Verification
+
+- Runtime module verification, focused golden/observer verification, and full workspace verification were completed across the archived S120 ticket chain, including:
+  - `cargo test -p worldwake-ai`
+  - `cargo test -p worldwake-cli --bin observer`
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+- The long-running `golden_survival_*` 1440-tick scenarios remained `#[ignore]` during the workspace-wide verification runs, and that limitation is recorded explicitly in the archived ticket closeouts where it applied.
