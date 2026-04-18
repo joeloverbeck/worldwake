@@ -103,7 +103,9 @@ Verify proposed functions' parameter/return types are accessible from the target
 
 ## 3.8 Upstream Spec References
 
-Grep active specs in `specs/` for references to this spec's deliverables. Note affected specs.
+Grep active specs in `specs/` **and archived specs in `archive/specs/`** for references to this spec's deliverables. Note affected specs.
+
+Archived-spec matches are informational (the dependency already landed) — use them to refresh the Dependencies section, Motivating Evidence, and any "this spec depends on X" prose with accurate archival paths. Archived matches do not block reassessment; they catch stale "X has not landed yet" claims and surface forward-references that the archived sibling made back to this spec (common when observer/diagnostic specs land in waves and a later adjunct spec is reassessed after its siblings archive).
 
 ## 3.8A Cross-System and SystemFn Section Validation
 

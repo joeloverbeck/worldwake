@@ -22,9 +22,9 @@ use worldwake_ai::{
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
-    AgentBeliefStore, CommodityKind, DeadAt, DeathCause, EntityId, EntityKind, EventId,
-    EventView, HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, Quantity, RecipeId,
-    Tick, WorkstationTag,
+    AgentBeliefStore, CommodityKind, DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView,
+    HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, Quantity, RecipeId, Tick,
+    WorkstationTag,
 };
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
@@ -706,9 +706,10 @@ fn format_local_survival_state_summary(
     world: &worldwake_core::World,
     summary: &LocalSurvivalStateSummary,
 ) -> String {
-    let place_name = summary
-        .place
-        .map_or_else(|| "In transit".to_string(), |place| entity_display_name(world, place));
+    let place_name = summary.place.map_or_else(
+        || "In transit".to_string(),
+        |place| entity_display_name(world, place),
+    );
     format!(
         "{}: water={}, wash={}, sleep={}, food={}",
         place_name,
@@ -1253,9 +1254,7 @@ fn maintenance_window_is_starvation(
     avg: u32,
     high_threshold: u16,
 ) -> bool {
-    accumulation > 0
-        && avg > u32::from(high_threshold)
-        && relief.saturating_mul(2) < accumulation
+    accumulation > 0 && avg > u32::from(high_threshold) && relief.saturating_mul(2) < accumulation
 }
 
 fn maintenance_window_is_better(
@@ -1322,8 +1321,10 @@ fn detect_maintenance_starvation(
     thresholds_by_agent: &BTreeMap<EntityId, worldwake_core::DriveThresholds>,
     anomalies: &mut Vec<Anomaly>,
 ) {
-    let mut strongest_windows: BTreeMap<(EntityId, HomeostaticNeedId), MaintenanceStarvationWindow> =
-        BTreeMap::new();
+    let mut strongest_windows: BTreeMap<
+        (EntityId, HomeostaticNeedId),
+        MaintenanceStarvationWindow,
+    > = BTreeMap::new();
 
     for (agent_id, stats) in agent_stats {
         if stats.needs_samples.len() < ANOMALY_ROLLING_WINDOW_TICKS {
@@ -1554,7 +1555,11 @@ fn detect_recipe_monoculture(
                 .into_iter()
                 .filter_map(|recipe_id| {
                     let recipe = recipe_registry.get(recipe_id)?;
-                    Some((recipe_id, recipe.name.clone(), recipe_commit_count(stats, &recipe.name)))
+                    Some((
+                        recipe_id,
+                        recipe.name.clone(),
+                        recipe_commit_count(stats, &recipe.name),
+                    ))
                 })
                 .collect::<Vec<_>>();
             recipe_counts.sort_by(|left, right| {
@@ -3319,6 +3324,7 @@ fn main() {
     let mut request_resolution_trace = RequestResolutionTraceSink::new();
     let mut politics_trace = PoliticalTraceSink::new();
     let mut institutional_knowledge_trace = InstitutionalKnowledgeTraceSink::new();
+    let mut open_frame: BTreeMap<EntityId, bool> = BTreeMap::new();
 
     eprintln!(
         "Running {} ticks on scenario '{}' (seed {})...",
@@ -3363,6 +3369,16 @@ fn main() {
         // Gather per-tick stats
         // Action trace events for this tick
         for event in action_trace.events_at(current_tick) {
+            match &event.kind {
+                ActionTraceKind::Started { .. } => {
+                    open_frame.insert(event.actor, true);
+                }
+                ActionTraceKind::Committed { .. } | ActionTraceKind::Aborted { .. } => {
+                    open_frame.insert(event.actor, false);
+                }
+                ActionTraceKind::StartFailed { .. } => {}
+            }
+
             if let Some(stats) = agent_stats.get_mut(&event.actor) {
                 match &event.kind {
                     ActionTraceKind::Started { .. } => {
@@ -3447,10 +3463,12 @@ fn main() {
             }
 
             // Idle tracking: did this agent have any action trace events this tick?
-            let had_action = action_trace
+            let had_event = action_trace
                 .events_for_at(*agent_id, current_tick)
                 .iter()
                 .any(|e| !matches!(e.kind, ActionTraceKind::StartFailed { .. }));
+            let in_open_frame = open_frame.get(agent_id).copied().unwrap_or(false);
+            let had_action = had_event || in_open_frame;
             stats.record_idle_tick(had_action, current_tick.0, current_needs);
         }
 
@@ -5021,9 +5039,18 @@ mod tests {
         let camp = prototype_place_entity(PrototypePlace::BanditCamp);
         let world = build_bundled_support_convergence_world();
         let stats = BTreeMap::from([
-            (entity(1), agent_stats_with_locations("Alice", &vec![camp; 250])),
-            (entity(2), agent_stats_with_locations("Bob", &vec![camp; 250])),
-            (entity(3), agent_stats_with_locations("Carol", &vec![camp; 250])),
+            (
+                entity(1),
+                agent_stats_with_locations("Alice", &vec![camp; 250]),
+            ),
+            (
+                entity(2),
+                agent_stats_with_locations("Bob", &vec![camp; 250]),
+            ),
+            (
+                entity(3),
+                agent_stats_with_locations("Carol", &vec![camp; 250]),
+            ),
         ]);
         let mut anomalies = Vec::new();
 
@@ -5069,7 +5096,11 @@ mod tests {
                 .description
                 .contains("Net deficit: 49 permille")
         );
-        assert!(anomalies[0].description.contains("above high threshold 850"));
+        assert!(
+            anomalies[0]
+                .description
+                .contains("above high threshold 850")
+        );
         assert_eq!(anomalies[0].tick_range, Some((0, 199)));
     }
 

@@ -152,7 +152,17 @@ Example:
 | I2 | `grep -rn "AnomalyKind::" crates/worldwake-cli/src/` | 17 matches, all in `bin/observer.rs` — no external consumers to migrate |
 | M3 | `test -f specs/S118-stuck-agent-detector-active-frame-exclusion.md` | file exists — dependency path valid |
 
-If any check invalidates a finding, re-present the corrected finding to the user before applying any edits — do not silently drop or modify the finding.
+If a check reveals a mismatch with a finding, classify the mismatch and respond accordingly:
+
+- **Recommendation-changing mismatch**: the pre-apply check invalidates the finding's *recommendation* — the fix that was approved no longer applies, the target text/symbol has moved, or a different fix is now warranted. Re-present the corrected finding to the user and wait for confirmation before applying any edits. Do not silently drop or modify the finding.
+- **Evidence-refining mismatch**: the pre-apply check refines the finding's *supporting evidence* (e.g., a symbol the finding claimed was absent turns out to exist in a different location) but the recommendation still holds unchanged. Note the refinement inline in the Result column of the pre-apply table (e.g., "partial invalidation: symbol exists at <path>:<line>, not at spec-claimed location — recommendation unchanged") and proceed. The user sees the refinement in the emitted table, so this is not silent modification.
+
+Example rows for each tier:
+
+| Finding | Check | Result |
+|---------|-------|--------|
+| I5 (evidence-refining) | `grep -rn "NEEDS_LOW_CEILING"` | exists at `observer.rs:1931`, not at spec-claimed `golden_survival_contested.rs` — recommendation (cite scenario-authored contract field instead) unchanged |
+| I3 (recommendation-changing) | `grep -n "#[cfg(test)]"` at claimed line | boundary has moved; the targeted function is now runtime, not test-only — re-present to user before applying |
 
 **Read `references/spec-writing-rules.md` now, with the Read tool, before writing.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded spec-writing-rules.md — opens with "Pre-Apply Verification"`. A bare "Loaded: spec-writing-rules.md" is treated as a skipped load. The file carries the full pre-apply verification, apply-changes, and post-apply confirmation rules. Then apply all approved changes.
 
