@@ -1,6 +1,6 @@
 # S117CONMAIOBS-005: `AcuteNeedSpike` detector
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -36,7 +36,7 @@ The survival-contested run showed Agent C at hunger=950 for 97 consecutive ticks
 
 ### 1. New detector function
 
-Add `fn detect_acute_need_spike(stats_by_agent: &BTreeMap<EntityId, AgentStats>, thresholds_by_agent: &BTreeMap<EntityId, DriveThresholds>, names: &BTreeMap<EntityId, String>, anomalies: &mut Vec<Anomaly>)` below `detect_recipe_monoculture`.
+Add `fn detect_acute_need_spike(stats_by_agent: &BTreeMap<EntityId, AgentStats>, thresholds_by_agent: &BTreeMap<EntityId, DriveThresholds>, metabolism_by_agent: &BTreeMap<EntityId, MetabolismProfile>, anomalies: &mut Vec<Anomaly>)` below `detect_recipe_monoculture`.
 
 Logic per agent per `HomeostaticNeedId`:
 
@@ -48,7 +48,7 @@ Logic per agent per `HomeostaticNeedId`:
 - After the loop, close any open run with the same emit condition.
 - Anomaly shape:
   - `kind: AnomalyKind::AcuteNeedSpike`
-  - `agent_name: names[&agent]`
+  - `agent_name: stats_by_agent[&agent].name`
   - `additional_agent_names: None`
   - `description: format!("{} above critical threshold ({} permille) for {} consecutive ticks (ticks {}–{}), peak {} permille. Below the 100-tick sustained-critical bar but within {:.0}% of starvation tolerance ({} ticks).", need_label, critical_permille, run_length, run_start, run_end, peak, percent_of_tolerance, tolerance_ticks)` — where `tolerance_ticks` is read from the agent's `MetabolismProfile.starvation_tolerance_ticks` (for hunger) or `dehydration_tolerance_ticks` (for thirst); for other needs, omit the tolerance clause.
   - `tick_range: Some((run_start, run_end))`
@@ -112,3 +112,23 @@ Add to the existing `#[cfg(test)] mod tests`:
 1. `cargo test -p worldwake-cli --bin observer acute_need_spike`
 2. `cargo test -p worldwake-cli`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Extended `crates/worldwake-cli/src/bin/observer.rs` with the `AcuteNeedSpike` observer detector, including private helpers for hunger/thirst tolerance-note formatting and orchestrator wiring for per-agent `MetabolismProfile` lookup beside the existing `DriveThresholds` collection.
+- Wired `detect_anomalies()` to collect per-agent metabolism profiles from `World` and emit `ACUTE_NEED_SPIKE` anomalies after `detect_recipe_monoculture`.
+- Added focused observer unit coverage for positive acute-spike detection, below-minimum non-detection, sustained-run non-detection, maximal-run dedup, and gap-separated runs.
+
+## Deviations
+
+- The drafted detector signature carried a separate `names: &BTreeMap<EntityId, String>` parameter. Live reassessment showed `AgentStats` already owns the rendered agent name, so the landed seam reused `stats.name` directly and kept the detector signature narrower.
+- The motivating prose cited `dehydration_tolerance_ticks=220`, but the live default `MetabolismProfile` uses `240` (`crates/worldwake-core/src/needs.rs`). The landed detector reads each agent's real `MetabolismProfile` and the focused tests derive their tolerance text from the live default instead of preserving the stale drafted number.
+- The spec example anomaly text still shows a stale `750 permille` critical threshold. The landed detector uses the agent's actual `DriveThresholds::critical(need)` value in both detection and description text, so the tests exercise the live thirst critical threshold (`850`) rather than a global constant.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --bin observer acute_need_spike`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

@@ -199,7 +199,7 @@ Tick range: 100–300
 ```
 ### Anomaly 7 — MAINTENANCE_STARVATION (Agent A)
 
-Dirtiness accumulated 385 permille but was relieved only 201 permille over ticks 400–600. Average dirtiness in window: 812 permille (above medium threshold 550).
+dirtiness accumulated 385 permille but was relieved only 201 permille over ticks 400–600. Average dirtiness in window: 812 permille (above medium threshold 650).
 
 Tick range: 400–600
 ```
@@ -207,7 +207,7 @@ Tick range: 400–600
 ```
 ### Anomaly 8 — RECIPE_MONOCULTURE (Agent A)
 
-Food actions: 100% Harvest Apples (16 actions), 0% Harvest Grain (0 actions). Both recipes known; final belief store includes workstation FieldPlot evidence.
+hunger actions: 100% Harvest Apples (16 actions), 0% Harvest Grain (0 actions). Both recipes known; final belief store includes workstation FieldPlot evidence.
 
 Tick range: 0–1440
 ```
@@ -215,7 +215,7 @@ Tick range: 0–1440
 ```
 ### Anomaly 9 — ACUTE_NEED_SPIKE (Agent C)
 
-hunger above critical threshold (750 permille) for 97 consecutive ticks (ticks 99–195), peak 950 permille. Below the 100-tick sustained-critical bar but within 44% of starvation tolerance (480 ticks).
+thirst above critical threshold (850 permille) for 40 consecutive ticks (ticks 0–39), peak 850 permille. Below the 100-tick sustained-critical bar but within 17% of dehydration tolerance (240 ticks).
 
 Tick range: 99–195
 ```

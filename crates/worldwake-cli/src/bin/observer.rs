@@ -23,7 +23,7 @@ use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
     AgentBeliefStore, DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView,
-    HomeostaticNeedId, RecipeId, Tick,
+    HomeostaticNeedId, MetabolismProfile, RecipeId, Tick,
 };
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
@@ -936,6 +936,24 @@ fn detect_anomalies(
         world,
         &mut anomalies,
     );
+    let metabolism_by_agent = agent_stats
+        .keys()
+        .map(|agent_id| {
+            (
+                *agent_id,
+                world
+                    .get_component_metabolism_profile(*agent_id)
+                    .copied()
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    detect_acute_need_spike(
+        agent_stats,
+        &thresholds_by_agent,
+        &metabolism_by_agent,
+        &mut anomalies,
+    );
 
     // Cross-reference redundant perception more precisely using event log
     refine_redundant_perception(&mut anomalies, agent_stats, perception_trace, event_log);
@@ -949,6 +967,8 @@ fn detect_anomalies(
 
 const GEOGRAPHIC_CONVERGENCE_SHARE_THRESHOLD_PERMILLE: u32 = 600;
 const ANOMALY_ROLLING_WINDOW_TICKS: usize = 200;
+const ACUTE_NEED_SPIKE_MIN_TICKS: usize = 30;
+const ACUTE_NEED_SPIKE_MAX_TICKS: usize = 100;
 
 fn detect_geographic_convergence(
     agent_stats: &BTreeMap<EntityId, AgentStats>,
@@ -1344,6 +1364,131 @@ fn detect_recipe_monoculture(
                 ),
                 tick_range: Some((0, run_end_tick)),
             });
+        }
+    }
+}
+
+fn acute_need_tolerance_context(
+    need: HomeostaticNeedId,
+    metabolism: &MetabolismProfile,
+) -> Option<(&'static str, u32)> {
+    match need {
+        HomeostaticNeedId::Hunger => {
+            Some(("starvation", metabolism.starvation_tolerance_ticks.get()))
+        }
+        HomeostaticNeedId::Thirst => {
+            Some(("dehydration", metabolism.dehydration_tolerance_ticks.get()))
+        }
+        HomeostaticNeedId::Fatigue | HomeostaticNeedId::Bladder | HomeostaticNeedId::Dirtiness => {
+            None
+        }
+    }
+}
+
+fn acute_need_spike_description(
+    need: HomeostaticNeedId,
+    critical_permille: u16,
+    run_length: usize,
+    run_start: usize,
+    run_end: usize,
+    peak: u16,
+    metabolism: &MetabolismProfile,
+) -> String {
+    let need_label = need_label(need);
+    let mut description = format!(
+        "{need_label} above critical threshold ({critical_permille} permille) for {run_length} consecutive ticks (ticks {run_start}–{run_end}), peak {peak} permille. Below the 100-tick sustained-critical bar"
+    );
+
+    if let Some((tolerance_label, tolerance_ticks)) = acute_need_tolerance_context(need, metabolism)
+    {
+        let run_length_u32 = u32::try_from(run_length).expect("acute run length fits in u32");
+        let percent_of_tolerance = (f64::from(run_length_u32) * 100.0) / f64::from(tolerance_ticks);
+        write!(
+            description,
+            " but within {percent_of_tolerance:.0}% of {tolerance_label} tolerance ({tolerance_ticks} ticks)."
+        )
+        .unwrap();
+    } else {
+        description.push('.');
+    }
+
+    description
+}
+
+fn detect_acute_need_spike(
+    agent_stats: &BTreeMap<EntityId, AgentStats>,
+    thresholds_by_agent: &BTreeMap<EntityId, worldwake_core::DriveThresholds>,
+    metabolism_by_agent: &BTreeMap<EntityId, MetabolismProfile>,
+    anomalies: &mut Vec<Anomaly>,
+) {
+    for (agent_id, stats) in agent_stats {
+        let Some(thresholds) = thresholds_by_agent.get(agent_id) else {
+            continue;
+        };
+        let Some(metabolism) = metabolism_by_agent.get(agent_id) else {
+            continue;
+        };
+
+        for need in MAINTENANCE_STARVATION_NEEDS {
+            let critical_permille = thresholds.critical(need).value();
+            let mut run_start = None;
+            let mut peak = 0;
+
+            for (tick, sample) in stats.needs_samples.iter().enumerate() {
+                let value = need_value(sample, need);
+                if value >= critical_permille {
+                    run_start.get_or_insert(tick);
+                    peak = peak.max(value);
+                    continue;
+                }
+
+                if let Some(start_tick) = run_start.take() {
+                    let run_end = tick.saturating_sub(1);
+                    let run_length = run_end - start_tick + 1;
+                    if (ACUTE_NEED_SPIKE_MIN_TICKS..ACUTE_NEED_SPIKE_MAX_TICKS)
+                        .contains(&run_length)
+                    {
+                        anomalies.push(Anomaly {
+                            kind: AnomalyKind::AcuteNeedSpike,
+                            agent_name: stats.name.clone(),
+                            additional_agent_names: None,
+                            description: acute_need_spike_description(
+                                need,
+                                critical_permille,
+                                run_length,
+                                start_tick,
+                                run_end,
+                                peak,
+                                metabolism,
+                            ),
+                            tick_range: Some((start_tick as u64, run_end as u64)),
+                        });
+                    }
+                    peak = 0;
+                }
+            }
+
+            if let Some(start_tick) = run_start.take() {
+                let run_end = stats.needs_samples.len().saturating_sub(1);
+                let run_length = run_end - start_tick + 1;
+                if (ACUTE_NEED_SPIKE_MIN_TICKS..ACUTE_NEED_SPIKE_MAX_TICKS).contains(&run_length) {
+                    anomalies.push(Anomaly {
+                        kind: AnomalyKind::AcuteNeedSpike,
+                        agent_name: stats.name.clone(),
+                        additional_agent_names: None,
+                        description: acute_need_spike_description(
+                            need,
+                            critical_permille,
+                            run_length,
+                            start_tick,
+                            run_end,
+                            peak,
+                            metabolism,
+                        ),
+                        tick_range: Some((start_tick as u64, run_end as u64)),
+                    });
+                }
+            }
         }
     }
 }
@@ -3264,12 +3409,13 @@ mod tests {
         ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
         NeedsSample, PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots,
         behavioral_transitions, committed_travel_ticks, death_summary_line,
-        detect_geographic_convergence, detect_maintenance_starvation, detect_recipe_monoculture,
-        failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
-        failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
-        format_affordance_summary, format_anomaly_header, format_behavioral_transition,
-        format_death_cause, format_report, need_medium_threshold, post_travel_affordance_snapshots,
-        primary_satisfied_need, unknown_location_entity_groups,
+        detect_acute_need_spike, detect_geographic_convergence, detect_maintenance_starvation,
+        detect_recipe_monoculture, failed_plan_breakdown, failed_plan_candidates,
+        failed_plan_location, failed_plan_max_depth, failed_plan_outcome_label,
+        failed_plan_target_beliefs, final_affordance_snapshot, format_affordance_summary,
+        format_anomaly_header, format_behavioral_transition, format_death_cause, format_report,
+        need_medium_threshold, post_travel_affordance_snapshots, primary_satisfied_need,
+        unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
@@ -3288,8 +3434,9 @@ mod tests {
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, BelievedEntityState, BodyCostPerTick, CauseRef,
         CommodityKind, ControlSource, DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind,
-        EventLog, GoalKey, GoalKind, HomeostaticNeedId, OpportunityAnchor, Permille, Quantity,
-        Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        EventLog, GoalKey, GoalKind, HomeostaticNeedId, MetabolismProfile, OpportunityAnchor,
+        Permille, Quantity, Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -3557,6 +3704,55 @@ mod tests {
                 fatigue: 0,
                 bladder: 0,
                 dirtiness: *value,
+            })
+            .collect();
+        stats
+    }
+
+    fn agent_stats_with_need_values(
+        name: &str,
+        need: HomeostaticNeedId,
+        values: &[u16],
+    ) -> AgentStats {
+        let mut stats = AgentStats::new(name.to_string(), false);
+        stats.needs_samples = values
+            .iter()
+            .map(|value| match need {
+                HomeostaticNeedId::Hunger => NeedsSample {
+                    hunger: *value,
+                    thirst: 0,
+                    fatigue: 0,
+                    bladder: 0,
+                    dirtiness: 0,
+                },
+                HomeostaticNeedId::Thirst => NeedsSample {
+                    hunger: 0,
+                    thirst: *value,
+                    fatigue: 0,
+                    bladder: 0,
+                    dirtiness: 0,
+                },
+                HomeostaticNeedId::Fatigue => NeedsSample {
+                    hunger: 0,
+                    thirst: 0,
+                    fatigue: *value,
+                    bladder: 0,
+                    dirtiness: 0,
+                },
+                HomeostaticNeedId::Bladder => NeedsSample {
+                    hunger: 0,
+                    thirst: 0,
+                    fatigue: 0,
+                    bladder: *value,
+                    dirtiness: 0,
+                },
+                HomeostaticNeedId::Dirtiness => NeedsSample {
+                    hunger: 0,
+                    thirst: 0,
+                    fatigue: 0,
+                    bladder: 0,
+                    dirtiness: *value,
+                },
             })
             .collect();
         stats
@@ -4638,5 +4834,152 @@ mod tests {
         );
 
         assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_acute_need_spike_fires_on_40_tick_run() {
+        let thresholds = DriveThresholds::default();
+        let metabolism = MetabolismProfile::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..50)
+            .map(|tick| if tick < 40 { critical } else { 100 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), metabolism)]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(anomalies[0].kind, AnomalyKind::AcuteNeedSpike));
+        assert_eq!(anomalies[0].tick_range, Some((0, 39)));
+        assert!(
+            anomalies[0].description.contains(
+                "thirst above critical threshold (850 permille) for 40 consecutive ticks"
+            )
+        );
+        assert!(
+            anomalies[0]
+                .description
+                .contains("within 17% of dehydration tolerance (240 ticks)")
+        );
+    }
+
+    #[test]
+    fn test_acute_need_spike_does_not_fire_below_30_ticks() {
+        let thresholds = DriveThresholds::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..40)
+            .map(|tick| if tick < 29 { critical } else { 100 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), MetabolismProfile::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_acute_need_spike_does_not_fire_at_or_above_100_ticks() {
+        let thresholds = DriveThresholds::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..110)
+            .map(|tick| if tick < 100 { critical } else { 100 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), MetabolismProfile::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_acute_need_spike_emits_once_per_maximal_run() {
+        let thresholds = DriveThresholds::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..60)
+            .map(|tick| if tick < 50 { critical } else { 100 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), MetabolismProfile::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert_eq!(anomalies.len(), 1);
+        assert_eq!(anomalies[0].tick_range, Some((0, 49)));
+    }
+
+    #[test]
+    fn test_acute_need_spike_treats_gaps_as_distinct() {
+        let thresholds = DriveThresholds::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..90)
+            .map(|tick| {
+                if tick < 40 || (41..81).contains(&tick) {
+                    critical
+                } else {
+                    100
+                }
+            })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), MetabolismProfile::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert_eq!(anomalies.len(), 2);
+        assert_eq!(anomalies[0].tick_range, Some((0, 39)));
+        assert_eq!(anomalies[1].tick_range, Some((41, 80)));
     }
 }
