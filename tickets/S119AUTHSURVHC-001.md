@@ -1,10 +1,10 @@
 # S119AUTHSURVHC-001: Implement authored survival health contracts for survival goldens
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — scenario schema/loader, survival golden harness helpers, authored scenario fixtures, survival golden assertions, golden testing docs
-**Deps**: specs/S119-authored-survival-health-contracts.md, tickets/S119AUTHSURVHC-002.md
+**Deps**: specs/S119-authored-survival-health-contracts.md
 
 ## Problem
 
@@ -48,7 +48,7 @@ The existing survival goldens still restate scenario health with file-local cons
    - `golden_survival_baseline -- --ignored` is now green under the authored contract.
    - `golden_survival_scattered all_agents_survive_1440_ticks -- --ignored --exact` fails with `Agent B hunger exceeded authored critical pm(820) for 506 consecutive ticks (max allowed: 400)`. That is now tracked separately in [tickets/S119AUTHSURVHC-002.md](/home/joeloverbeck/projects/worldwake/tickets/S119AUTHSURVHC-002.md) as a classification ticket: wrong authored bound or real runtime contradiction.
    - the earlier contested contract-model gap is now resolved locally by [archive/tickets/S121PERNEEDSHC-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S121PERNEEDSHC-001.md): the contract now supports per-need overrides and the contested golden is green under the authored dirtiness bound.
-14. As of this reassessment, the S119 substrate itself is implemented locally and the contested contract-model gap is resolved, but the ticket remains blocked on [tickets/S119AUTHSURVHC-002.md](/home/joeloverbeck/projects/worldwake/tickets/S119AUTHSURVHC-002.md) before its full acceptance criteria can be satisfied honestly.
+14. Final 2026-04-18 reassessment: the S119 substrate is implemented locally, the contested contract-model gap is resolved by [archive/tickets/S121PERNEEDSHC-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S121PERNEEDSHC-001.md), and the scattered hunger overrun is classified as a too-strict authored bound by [archive/tickets/S119AUTHSURVHC-002.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S119AUTHSURVHC-002.md). The full survival-golden family is green under the authored-contract model.
 
 ## Architecture Check
 
@@ -168,3 +168,28 @@ so the scenario-owned survival envelope comes from the authored contract and aut
 3. `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored`
 4. `cargo test -p worldwake-cli scenario`
 5. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Added `ScenarioDef.survival_health_contract` and supporting schema types in [types.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-cli/src/scenario/types.rs).
+- Added shared authored-contract survival helpers in [golden_harness/mod.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_harness/mod.rs) so survival goldens consume authored thresholds and scenario-owned envelope values instead of file-local constants.
+- Retrofitted [golden_survival_baseline.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_baseline.rs), [golden_survival_scattered.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_scattered.rs), and [golden_survival_contested.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_contested.rs) to read the shared authored-contract path.
+- Added explicit `survival_health_contract` sections to [survival-baseline.ron](/home/joeloverbeck/projects/worldwake/scenarios/survival-baseline.ron), [survival-scattered.ron](/home/joeloverbeck/projects/worldwake/scenarios/survival-scattered.ron), and [survival-contested.ron](/home/joeloverbeck/projects/worldwake/scenarios/survival-contested.ron).
+- Updated [docs/golden-e2e-testing.md](/home/joeloverbeck/projects/worldwake/docs/golden-e2e-testing.md) so long-run survival-envelope checks are documented as scenario-authored contract reads.
+- Closed the 2 post-retrofit blocker paths honestly:
+  - contested required richer per-need contract expressiveness, delivered by [archive/tickets/S121PERNEEDSHC-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S121PERNEEDSHC-001.md)
+  - scattered required authored-bound classification, delivered by [archive/tickets/S119AUTHSURVHC-002.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S119AUTHSURVHC-002.md)
+
+## Deviations
+
+- The ticket did not complete in a single straight pass. Truthful verification split the remaining red goldens into 2 explicit follow-up owners before the family could close.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli scenario`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

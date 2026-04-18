@@ -1,6 +1,6 @@
 # S119AUTHSURVHC-002: Classify scattered survival hunger overrun after authored-contract retrofit
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Maybe — scenario contract correction or separate production follow-up, depending on reassessment
@@ -103,3 +103,28 @@ If the outcome blocks S119 or S116 further, update their dependency text explici
 1. `cargo test -p worldwake-ai --test golden_survival_scattered all_agents_survive_1440_ticks -- --ignored --exact --nocapture`
 2. `cargo test -p worldwake-ai --test golden_survival_scattered -- --ignored`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Reproduced the scattered hunger overrun under the truthful S119 authored-contract surface and classified it as a too-strict authored scenario bound rather than a live runtime contradiction.
+- Updated [survival-scattered.ron](/home/joeloverbeck/projects/worldwake/scenarios/survival-scattered.ron) so `survival_health_contract.max_authored_critical_run_ticks` is `550` instead of `400`.
+- Left planner and runtime code untouched because the strongest available lower-layer and sibling-golden evidence already showed lawful food recovery behavior:
+  - `all_agents_perform_survival_actions` was green
+  - `isolated_agent_reaches_food_source` was green
+  - `no_budget_exhaustion_on_survival_goals` was green
+  - `no_stuck_idle_windows_with_elevated_needs` was green
+- Confirmed the full ignored scattered suite is green under the corrected authored contract, resolving the last scattered blocker in the S119 family.
+
+## Deviations
+
+- No production follow-up ticket was created. The final classification stayed entirely on the scenario-authored contract path.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered all_agents_survive_1440_ticks -- --ignored --exact`
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
