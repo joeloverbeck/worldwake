@@ -1,7 +1,10 @@
-// Default scenario for Worldwake — a small world for testing and play.
+// CLI integration test fixture — a small world for exercising the CLI pipeline.
 //
 // 3 places connected by travel edges, 3 agents (1 human, 2 AI),
 // items, a workstation facility, and a resource source.
+//
+// Used by crates/worldwake-cli/tests/integration.rs. Not intended as a
+// gameplay scenario — keep it minimal and test-focused.
 (
     seed: 42,
     places: [

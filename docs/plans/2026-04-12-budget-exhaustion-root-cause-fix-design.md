@@ -143,7 +143,7 @@ git commit -m "Add role-appropriate KnownRecipes to golden budget exhaustion tes
 
 **Files:**
 - Modify: `scenarios/cli-evaluation.ron` (Kael, Merchant Vara, Guard Theron)
-- Modify: `scenarios/default.ron` (Kael, Merchant Vara)
+- Modify: `crates/worldwake-cli/tests/fixtures/cli_integration.ron` (Kael, Merchant Vara)
 
 **Step 1: Add `known_recipes` to agents in `cli-evaluation.ron`**
 
@@ -164,7 +164,7 @@ known_recipes: ["Harvest Water"],
 
 Forager Lina already has `known_recipes: ["Harvest Apples"]` — leave as-is.
 
-**Step 2: Add `known_recipes` to agents in `default.ron`**
+**Step 2: Add `known_recipes` to agents in `cli_integration.ron` fixture**
 
 For Kael (line 17):
 ```ron
@@ -184,7 +184,7 @@ Expected: All scenario-loading tests pass.
 **Step 4: Commit**
 
 ```bash
-git add scenarios/cli-evaluation.ron scenarios/default.ron
+git add scenarios/cli-evaluation.ron crates/worldwake-cli/tests/fixtures/cli_integration.ron
 git commit -m "Add role-appropriate known_recipes to scenario agent definitions"
 ```
 

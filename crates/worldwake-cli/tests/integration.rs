@@ -16,15 +16,10 @@ use worldwake_core::ids::EntityId;
 use worldwake_sim::{SimulationState, SystemDispatchTable};
 use worldwake_systems::ActionRegistries;
 
-/// Path to the default scenario file, resolved relative to the workspace root.
+/// Path to the CLI integration fixture scenario, resolved relative to the crate root.
 fn default_scenario_path() -> PathBuf {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    PathBuf::from(manifest)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("scenarios/default.ron")
+    PathBuf::from(manifest).join("tests/fixtures/cli_integration.ron")
 }
 
 /// Path to the cli evaluation scenario file, resolved relative to the workspace root.
@@ -50,8 +45,8 @@ struct TestContext {
 impl TestContext {
     fn load_default() -> Self {
         let path = default_scenario_path();
-        let def = load_scenario_file(&path).expect("default.ron should parse");
-        let spawned = spawn_scenario(&def).expect("default scenario should spawn");
+        let def = load_scenario_file(&path).expect("cli_integration.ron should parse");
+        let spawned = spawn_scenario(&def).expect("cli integration fixture should spawn");
         Self {
             sim: spawned.state,
             registries: spawned.action_registries,

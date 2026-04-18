@@ -3,8 +3,8 @@
 **Status**: PENDING
 **Priority**: MEDIUM
 **Effort**: Medium
-**Engine Changes**: None
-**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `specs/S117-convergence-maintenance-observer-smells.md`
+**Engine Changes**: Observer-only
+**Deps**: `archive/tickets/S117CONMAIOBS-001.md`, `archive/tickets/S117CONMAIOBS-002.md`, `archive/tickets/S117CONMAIOBS-003.md`, `archive/tickets/S117CONMAIOBS-004.md`, `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-006.md`, `archive/tickets/S117CONMAIOBS-009.md`, `S117CONMAIOBS-010`, `S117CONMAIOBS-011`, `specs/S117-convergence-maintenance-observer-smells.md`
 
 ## Problem
 
@@ -12,7 +12,7 @@ Four new observer detectors (002–005) and two supplementary tables (006) ship 
 
 ## Assumption Reassessment (2026-04-18)
 
-1. The observer binary's scenario load path uses `load_scenario_file()` + `spawn_scenario()` (see `crates/worldwake-cli/src/scenario/mod.rs`). Goldens invoke the observer's report-generation pipeline directly rather than shelling out to the binary; this is consistent with existing `crates/worldwake-cli/tests/integration.rs` patterns (see `test_observer_mode_simulation_runs` at line 395).
+1. The observer binary's scenario load path uses `load_scenario_file()` + `spawn_scenario()` (see `crates/worldwake-cli/src/scenario/mod.rs`), but there is no existing public observer report helper to call from an integration test. The honest E2E seam is the compiled `observer` binary itself, invoked from the test via `env!("CARGO_BIN_EXE_observer")` with a temp output path. Existing `crates/worldwake-cli/tests/integration.rs` does not already cover the observer report pipeline; `test_observer_mode_simulation_runs` only proves observer-mode ticking through the interactive CLI stack.
 2. `MetabolismProfile.wilderness_relief_dirtiness_penalty` is scenario-configurable (`crates/worldwake-core/src/needs.rs:149` and `crates/worldwake-cli/src/scenario/types.rs`). Confirmed during the S117 reassessment.
 3. Scenario fixtures for goldens live in a new directory `crates/worldwake-cli/tests/fixtures/observer_anomalies/` — the existing production scenarios under `scenarios/` are reserved for the real simulation; test fixtures are committed alongside the tests that use them.
 4. Shared abstraction boundary under audit: the observer's report-generation pipeline — specifically the `Vec<Anomaly>` produced by `detect_anomalies()` and the Section 3 render path. Goldens assert string-level content matching in the generated report, not byte-identical output (so minor whitespace changes don't create spurious test failures).
@@ -20,8 +20,8 @@ Four new observer detectors (002–005) and two supplementary tables (006) ship 
 6. Lawful competing affordances intentionally excluded from each fixture:
    - Convergence fixture: only one viable place per need; agents cannot rotate.
    - Maintenance starvation fixture: wash facility is far enough that relief cadence lags accumulation; no alternative washing mechanism.
-   - Recipe monoculture fixture: both food recipes are known but the grainfield facility is intentionally out of the agent's perception-reachable radius (belief-gate control group) for the negative case.
-   - Acute need spike fixture: the scenario forces a 40-tick thirst run followed by relief so the run is strictly bounded at 40 ticks.
+   - Recipe monoculture fixture: both food recipes are known, but only Agent A receives final `FieldPlot` workstation evidence in its belief store; Agent B never perceives that workstation. This matches the landed live gate, which checks final workstation evidence rather than a stronger source-viability proof.
+   - Acute need spike fixture: the scenario forces one bounded thirst-critical run in the detector's 30–99 tick window, then relief; exact start/end ticks are asserted from the live report output rather than hardcoded from the draft narrative.
 
 ## Architecture Check
 
@@ -44,14 +44,14 @@ Create four `.ron` files under `crates/worldwake-cli/tests/fixtures/observer_ano
 
 - `convergence_hub.ron` — 3 agents, 2 places (HubPlace and AuxPlace). Place design + agent profiles ensure all 3 agents spend ≥60% of ticks at HubPlace over a 300-tick run. Needs are tuned to be satisfiable at HubPlace only.
 - `maintenance_starvation_wash_gap.ron` — 2 agents, 3 places (Home, Wash, Forest). `wilderness_relief_dirtiness_penalty = 200`. Wash facility is 5 travel hops away. Hunger/thirst/bladder satisfiable near Home; dirtiness only at Wash. Over 600 ticks, dirtiness accumulates faster than the agents can travel to Wash and back.
-- `recipe_monoculture_apples_vs_grain.ron` — 2 agents with identical `KnownRecipes = {Harvest Apples, Harvest Grain}`. Agent A sees the grainfield facility during startup (belief seeded). Agent B does not (no perception reach). Apple orchard is co-located with both; grainfield is at a distant place. Over 1000 ticks, both agents eat apples exclusively; Agent A should trigger the anomaly, Agent B should not.
-- `acute_thirst_spike.ron` — 1 agent with `dehydration_tolerance_ticks = 220` and metabolism tuned so thirst rises from 0 to 900 over 40 ticks (peak at tick 40), then a water source becomes available at tick 41 and thirst drops to 100 by tick 50. Over 200 ticks total.
+- `recipe_monoculture_apples_vs_grain.ron` — 2 agents with identical `KnownRecipes = {Harvest Apples, Harvest Grain}`. Agent A starts co-located with both an orchard and a `FieldPlot` workstation, while Agent B only ever sees an orchard. Apple harvesting remains the only repeatedly used hunger action for both agents; Agent A should trigger the anomaly because the final belief store still carries `FieldPlot` evidence, Agent B should not.
+- `acute_thirst_spike.ron` — 1 agent with thirst/metabolism/topology tuned so one thirst-critical run lands inside the detector's 30–99 tick acute window and then resolves. The live report's tick range becomes the asserted contract.
 
 Each fixture uses the existing scenario schema — no new fields. Cross-reference structural conventions with `scenarios/survival-baseline.ron` and `scenarios/survival-contested.ron`.
 
 ### 2. Golden test file
 
-Create `crates/worldwake-cli/tests/golden_observer_anomalies.rs` with four tests:
+Create `crates/worldwake-cli/tests/golden_observer_anomalies.rs` with four tests that invoke `env!("CARGO_BIN_EXE_observer")`, read the generated markdown report from a temp file, and assert on Section 3 content:
 
 ```rust
 #[test]
@@ -90,7 +90,7 @@ fn acute_need_spike_fires_on_40_tick_thirst() {
 }
 ```
 
-Test helpers `run_observer(scenario_path, ticks) -> String` and `count_anomalies_of_kind(report: &str, kind: &str) -> usize` live in the same test file or a shared `tests/common/` module.
+Test helpers `run_observer(scenario_path, ticks) -> String`, `count_anomalies_of_kind(report: &str, kind: &str) -> usize`, and small anomaly-section extractors live in the same test file.
 
 ### 3. Baseline regression command
 
@@ -103,6 +103,7 @@ The `Test Plan` below names an explicit command that runs the observer against `
 - `crates/worldwake-cli/tests/fixtures/observer_anomalies/recipe_monoculture_apples_vs_grain.ron` (new)
 - `crates/worldwake-cli/tests/fixtures/observer_anomalies/acute_thirst_spike.ron` (new)
 - `crates/worldwake-cli/tests/golden_observer_anomalies.rs` (new)
+- `crates/worldwake-cli/src/bin/observer.rs` (modify)
 
 ## Out of Scope
 
@@ -117,7 +118,7 @@ The `Test Plan` below names an explicit command that runs the observer against `
 1. `convergence_smell_fires_on_forced_hub_scenario` passes.
 2. `maintenance_starvation_fires_on_wash_gap` passes.
 3. `recipe_monoculture_fires_on_single_food_dependency` passes.
-4. `acute_need_spike_fires_on_40_tick_thirst` passes.
+4. `acute_need_spike_fires_on_bounded_thirst_run` passes.
 5. `cargo test -p worldwake-cli --test golden_observer_anomalies` runs all four.
 6. Existing integration: `test_observer_mode_simulation_runs` still passes.
 7. Existing suite: `cargo test -p worldwake-cli`.
@@ -141,3 +142,30 @@ The `Test Plan` below names an explicit command that runs the observer against `
 2. `cargo test -p worldwake-cli` (full crate suite, including existing integration tests)
 3. Baseline regression (manual; not part of automated suite): `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md && grep -c "GEOGRAPHIC_CONVERGENCE\|MAINTENANCE_STARVATION\|RECIPE_MONOCULTURE\|ACUTE_NEED_SPIKE" /tmp/baseline-dump.md` — expected output: `0`. Verify the observer CLI flag names (`--ticks`, `--output`) against `bin/observer.rs` argument parsing before running; if they differ, use the actual names.
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Added `crates/worldwake-cli/tests/golden_observer_anomalies.rs`, which drives the compiled `observer` binary through `env!("CARGO_BIN_EXE_observer")`, reads the emitted markdown report, and asserts exact anomaly-count contracts plus key header/description content for convergence, maintenance starvation, recipe monoculture, and acute need spike.
+- Added four scenario fixtures under `crates/worldwake-cli/tests/fixtures/observer_anomalies/`:
+  - `convergence_hub.ron`
+  - `maintenance_starvation_wash_gap.ron`
+  - `recipe_monoculture_apples_vs_grain.ron`
+  - `acute_thirst_spike.ron`
+- Fixed an observer-side production mismatch exposed by the new goldens: recipe usage and recipe-monoculture counting now normalize real action-trace names like `harvest:Harvest Apples` / `craft:Bake Bread` back to canonical registry recipe names before counting commits. That same fix makes Section 2 `Recipe usage` rows honest on live runs instead of silently rendering `0` for committed known recipes.
+
+## Deviations
+
+- The drafted ticket assumed an existing public observer report helper. Live reassessment showed no such seam exists, so the landed goldens use the compiled `observer` binary itself via `env!("CARGO_BIN_EXE_observer")` and a temp output file.
+- The drafted ticket claimed `Engine Changes: None`, but the golden pass exposed a real observer read-side contradiction in production code: `recipe_usage_rows()` and `detect_recipe_monoculture()` were counting canonical recipe names while live action traces record prefixed action names (`harvest:` / `craft:`). This ticket absorbed the narrow observer-side fix rather than shipping a knowingly broken golden.
+- The drafted acute fixture narrative hardcoded a 40-tick remote-water path. Live scenario-authoring constraints made that exact branch brittle, so the landed fixture proves the same detector contract through a local well plus sleep-first pressure competition. The test asserts the live bounded acute anomaly rather than preserving the stale narrative tick math verbatim.
+- The draft manual baseline regression command's `grep -c "GEOGRAPHIC_CONVERGENCE\|MAINTENANCE_STARVATION\|RECIPE_MONOCULTURE\|ACUTE_NEED_SPIKE"` check is too loose for a markdown report because it counts any mention of the labels, not just anomaly headers. Post-ticket review reran the baseline proof with a header-level check and found real false positives in `scenarios/survival-baseline.ron`, so this ticket remains active until the remaining maintenance-starvation and acute-spike regressions are fixed.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --test golden_observer_anomalies`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed automated convergence baseline regression in `crates/worldwake-cli/tests/golden_observer_anomalies.rs`: `GEOGRAPHIC_CONVERGENCE` stays absent on `scenarios/survival-baseline.ron`
+- Remaining baseline regression is still failing outside convergence: the healthy baseline run emits `MAINTENANCE_STARVATION` and `ACUTE_NEED_SPIKE` anomaly headers

@@ -104,7 +104,7 @@ All quantitative data (permille rates, recipe shares, peak values, commodity cou
 
 The agent-set for dedup is a `BTreeSet<EntityId>` (deterministic) materialized into the `agent_name` (lead = smallest EntityId's name) and `additional_agent_names` (remaining names, sorted by EntityId) fields on the `Anomaly` struct.
 
-**Threshold justification**: 60% × 200 ticks = 120 ticks of shared occupancy. Below 60%, agents are rotating normally; above 60%, they are anchored. This is well above the natural overlap floor observed in `survival-baseline.ron`'s healthy runs (where agents rotate between places and peak co-occupancy is visibly far below 60%). The 60% bar avoids false positives on normal rotation while catching the anchored-hub pattern in `survival-contested.ron`.
+**Threshold justification**: 60% × 200 ticks = 120 ticks of shared occupancy. Below 60%, agents are rotating normally; above 60%, they are anchored. Live reassessment on `survival-baseline.ron` showed the threshold alone is not sufficient, because lawful split-support routing can still anchor multiple agents on a food-only node for well above 60% of a window. The landed observer contract therefore keeps the 60% bar for anchored overlap but also suppresses places that expose only one local survival-support family while complementary support clearly exists elsewhere. The threshold still catches anchored-hub patterns like `survival-contested.ron` without relying on scenario-name suppression.
 
 **Dedup key**: `(GeographicConvergence, BTreeSet<EntityId> of agents, place_id)` — at most one anomaly per distinct agent-set × place across the whole run.
 
@@ -231,7 +231,7 @@ Neither table requires new per-tick collection; both are aggregations over the `
 
 ### D8: Golden coverage
 
-Four new goldens in a new file `crates/worldwake-cli/tests/golden_observer_anomalies.rs`. Each golden drives the observer over a dedicated scenario fixture committed to `crates/worldwake-cli/tests/fixtures/observer_anomalies/` (one `.ron` scenario per golden, mirroring the existing production scenario layout in `scenarios/`). The existing observer `load_scenario_file` + `spawn_scenario` path (already used by the observer binary) is the authoritative driver; tests invoke it directly rather than shelling out to the binary.
+Four new goldens in a new file `crates/worldwake-cli/tests/golden_observer_anomalies.rs`. Each golden drives the observer over a dedicated scenario fixture committed to `crates/worldwake-cli/tests/fixtures/observer_anomalies/` (one `.ron` scenario per golden, mirroring the existing production scenario layout in `scenarios/`). The existing observer `load_scenario_file` + `spawn_scenario` path remains the authoritative scenario-loading substrate, but the honest E2E test seam is the compiled `observer` binary itself, invoked from the integration test via `env!("CARGO_BIN_EXE_observer")` with a temp output path.
 
 1. **`convergence_smell_fires_on_forced_hub_scenario`** — scripted scenario with 3 agents whose profiles, knowledge, and place layout make a single place the only viable option for 200+ consecutive ticks. Assert: Section 3 contains exactly one `GEOGRAPHIC_CONVERGENCE` anomaly covering the expected window and including all three agent names in the header.
 
@@ -239,7 +239,7 @@ Four new goldens in a new file `crates/worldwake-cli/tests/golden_observer_anoma
 
 3. **`recipe_monoculture_fires_on_single_food_dependency`** — scripted scenario with an agent that has Harvest Apples + Harvest Grain knowledge plus a West Grainfield facility belief, but all food intake is apples. Assert: Section 3 contains `RECIPE_MONOCULTURE` for `Hunger` on that agent. Control case in the same test: a sibling agent that knows both recipes but never acquires the grainfield belief does NOT trigger the anomaly (belief-gate).
 
-4. **`acute_need_spike_fires_on_40_tick_thirst`** — scripted scenario forcing 40 consecutive ticks of thirst ≥ the agent's critical threshold followed by relief. Assert: Section 3 contains `ACUTE_NEED_SPIKE` with start / end / peak matching the scenario setup, and no overlap with any `SUSTAINED_CRITICAL_NEED` entry.
+4. **`acute_need_spike_fires_on_bounded_thirst_run`** — scripted scenario forcing one bounded thirst-critical run followed by relief. Assert: Section 3 contains `ACUTE_NEED_SPIKE` with the bounded run rendered in the live report output, and no overlap with any `SUSTAINED_CRITICAL_NEED` entry.
 
 Each fixture scenario is minimal (1–3 agents, 2–4 places) and reuses the existing scenario schema without new fields.
 

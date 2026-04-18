@@ -22,8 +22,9 @@ use worldwake_ai::{
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
-    AgentBeliefStore, DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView,
-    HomeostaticNeedId, KnownRecipes, MetabolismProfile, RecipeId, Tick,
+    AgentBeliefStore, CommodityKind, DeadAt, DeathCause, EntityId, EntityKind, EventId,
+    EventView, HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, Quantity, RecipeId,
+    Tick, WorkstationTag,
 };
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
@@ -970,6 +971,78 @@ const ANOMALY_ROLLING_WINDOW_TICKS: usize = 200;
 const ACUTE_NEED_SPIKE_MIN_TICKS: usize = 30;
 const ACUTE_NEED_SPIKE_MAX_TICKS: usize = 100;
 
+fn commodity_is_edible(commodity: CommodityKind) -> bool {
+    commodity.spec().consumable_profile.is_some()
+}
+
+fn place_survival_state_summary(
+    world: &worldwake_core::World,
+    place: EntityId,
+) -> LocalSurvivalStateSummary {
+    let water_source_present = world.query_resource_source().any(|(entity, source)| {
+        world.effective_place(entity) == Some(place)
+            && source.commodity == CommodityKind::Water
+            && source.available_quantity > Quantity(0)
+    });
+    let wash_basin_present = world.query_workstation_marker().any(|(entity, marker)| {
+        world.effective_place(entity) == Some(place) && marker.0 == WorkstationTag::WashBasin
+    });
+    let sleep_affordance_present = [PlaceTag::Inn, PlaceTag::Barracks, PlaceTag::Camp]
+        .into_iter()
+        .any(|tag| world.place_has_tag(place, tag));
+    let food_source_present = world.query_resource_source().any(|(entity, source)| {
+        world.effective_place(entity) == Some(place)
+            && source.available_quantity > Quantity(0)
+            && commodity_is_edible(source.commodity)
+    }) || world.query_item_lot().any(|(entity, lot)| {
+        world.effective_place(entity) == Some(place)
+            && lot.quantity > Quantity(0)
+            && commodity_is_edible(lot.commodity)
+    });
+
+    LocalSurvivalStateSummary {
+        place,
+        water_source_present,
+        wash_basin_present,
+        sleep_affordance_present,
+        food_source_present,
+    }
+}
+
+fn is_lawful_split_support_convergence_place(
+    world: &worldwake_core::World,
+    place: EntityId,
+) -> bool {
+    let summary = place_survival_state_summary(world, place);
+    let support_count = [
+        summary.water_source_present,
+        summary.wash_basin_present,
+        summary.sleep_affordance_present,
+        summary.food_source_present,
+    ]
+    .into_iter()
+    .filter(|present| *present)
+    .count();
+    if support_count != 1 {
+        return false;
+    }
+
+    world.topology().place_ids().any(|other_place| {
+        if other_place == place {
+            return false;
+        }
+        let other_summary = place_survival_state_summary(world, other_place);
+        (summary.water_source_present != other_summary.water_source_present
+            && other_summary.water_source_present)
+            || (summary.wash_basin_present != other_summary.wash_basin_present
+                && other_summary.wash_basin_present)
+            || (summary.sleep_affordance_present != other_summary.sleep_affordance_present
+                && other_summary.sleep_affordance_present)
+            || (summary.food_source_present != other_summary.food_source_present
+                && other_summary.food_source_present)
+    })
+}
+
 fn detect_geographic_convergence(
     agent_stats: &BTreeMap<EntityId, AgentStats>,
     world: &worldwake_core::World,
@@ -1021,6 +1094,9 @@ fn detect_geographic_convergence(
                 .collect::<BTreeSet<_>>();
 
             if qualifying_agents.len() < 2 {
+                continue;
+            }
+            if is_lawful_split_support_convergence_place(world, place) {
                 continue;
             }
 
@@ -1313,6 +1389,22 @@ fn agent_believes_recipe_facility_reachable(
     recipe_facility_evidence_label(recipe, belief_store).is_some()
 }
 
+fn action_name_recipe_name(action_name: &str) -> &str {
+    action_name
+        .strip_prefix("harvest:")
+        .or_else(|| action_name.strip_prefix("craft:"))
+        .unwrap_or(action_name)
+}
+
+fn recipe_commit_count(agent_stats: &AgentStats, recipe_name: &str) -> u32 {
+    agent_stats
+        .actions_committed
+        .iter()
+        .filter(|(action_name, _)| action_name_recipe_name(action_name) == recipe_name)
+        .map(|(_, commits)| *commits)
+        .sum()
+}
+
 fn recipe_usage_rows(
     agent_stats: &AgentStats,
     known_recipes: Option<&KnownRecipes>,
@@ -1330,24 +1422,27 @@ fn recipe_usage_rows(
             );
             let commits = registry
                 .get(*recipe_id)
-                .and_then(|def| agent_stats.actions_committed.get(&def.name).copied())
-                .unwrap_or(0);
+                .map_or(0, |def| recipe_commit_count(agent_stats, &def.name));
             known_names.insert(recipe_name.clone());
             rows.push((recipe_name, commits));
         }
     }
 
     for (action_name, commits) in &agent_stats.actions_committed {
-        if *commits == 0 || known_names.contains(action_name) {
+        if *commits == 0 {
             continue;
         }
-        let Some((recipe_id, _)) = registry.recipe_by_name(action_name) else {
+        let recipe_name = action_name_recipe_name(action_name);
+        if known_names.contains(recipe_name) {
+            continue;
+        }
+        let Some((recipe_id, _)) = registry.recipe_by_name(recipe_name) else {
             continue;
         };
         if known_recipes.is_some_and(|recipes| recipes.contains(&recipe_id)) {
             continue;
         }
-        rows.push((format!("{action_name} (unknown)"), *commits));
+        rows.push((format!("{recipe_name} (unknown)"), *commits));
     }
 
     rows
@@ -1410,15 +1505,7 @@ fn detect_recipe_monoculture(
                 .into_iter()
                 .filter_map(|recipe_id| {
                     let recipe = recipe_registry.get(recipe_id)?;
-                    Some((
-                        recipe_id,
-                        recipe.name.clone(),
-                        stats
-                            .actions_committed
-                            .get(&recipe.name)
-                            .copied()
-                            .unwrap_or(0),
-                    ))
+                    Some((recipe_id, recipe.name.clone(), recipe_commit_count(stats, &recipe.name)))
                 })
                 .collect::<Vec<_>>();
             recipe_counts.sort_by(|left, right| {
@@ -3569,8 +3656,9 @@ mod tests {
         ActionDefId, AgentBeliefStore, BelievedEntityState, BodyCostPerTick, CauseRef,
         CommodityKind, ControlSource, DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind,
         EventLog, GoalKey, GoalKind, HomeostaticNeedId, KnownRecipes, MetabolismProfile,
-        OpportunityAnchor, Permille, Quantity, Tick, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn, build_prototype_world,
+        OpportunityAnchor, Permille, PrototypePlace, Quantity, ResourceSource, Tick,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -3890,6 +3978,54 @@ mod tests {
             })
             .collect();
         stats
+    }
+
+    fn support_resource_source(commodity: CommodityKind) -> ResourceSource {
+        ResourceSource {
+            commodity,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        }
+    }
+
+    fn build_split_support_convergence_world() -> World {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let mut txn = new_txn(&mut world, 1);
+        txn.create_item_lot_with_owner(
+            CommodityKind::Apple,
+            Quantity(4),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+            None,
+        )
+        .expect("orchard food lot");
+        txn.set_component_resource_source(
+            prototype_place_entity(PrototypePlace::BanditCamp),
+            support_resource_source(CommodityKind::Water),
+        )
+        .expect("camp water source");
+        commit_txn(txn);
+        world
+    }
+
+    fn build_bundled_support_convergence_world() -> World {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let mut txn = new_txn(&mut world, 1);
+        txn.set_component_resource_source(
+            prototype_place_entity(PrototypePlace::BanditCamp),
+            support_resource_source(CommodityKind::Water),
+        )
+        .expect("camp water source");
+        txn.create_item_lot_with_owner(
+            CommodityKind::Apple,
+            Quantity(4),
+            prototype_place_entity(PrototypePlace::BanditCamp),
+            None,
+        )
+        .expect("camp food lot");
+        commit_txn(txn);
+        world
     }
 
     fn sample_recipe(
@@ -4490,13 +4626,13 @@ mod tests {
         let mut stats = AgentStats::new("Alice".to_string(), false);
         stats
             .actions_committed
-            .insert("Harvest Grain".to_string(), 2);
+            .insert("harvest:Harvest Grain".to_string(), 2);
         stats
             .actions_committed
-            .insert("Harvest Apples".to_string(), 5);
+            .insert("harvest:Harvest Apples".to_string(), 5);
         stats
             .actions_committed
-            .insert("Harvest Water".to_string(), 3);
+            .insert("harvest:Harvest Water".to_string(), 3);
         let known = KnownRecipes::with([grain_id, apple_id]);
 
         let rows = recipe_usage_rows(&stats, Some(&known), &registry);
@@ -4540,7 +4676,7 @@ mod tests {
         let mut stats = AgentStats::new("Alice".to_string(), false);
         stats
             .actions_committed
-            .insert("Harvest Apples".to_string(), 4);
+            .insert("harvest:Harvest Apples".to_string(), 4);
         let known = KnownRecipes::with([apple_id, grain_id]);
 
         let rendered =
@@ -4809,6 +4945,51 @@ mod tests {
     }
 
     #[test]
+    fn test_geographic_convergence_suppresses_split_support_food_node() {
+        let orchard = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let world = build_split_support_convergence_world();
+        let stats = BTreeMap::from([
+            (
+                entity(1),
+                agent_stats_with_locations("Alice", &vec![orchard; 250]),
+            ),
+            (
+                entity(2),
+                agent_stats_with_locations("Bob", &vec![orchard; 250]),
+            ),
+            (
+                entity(3),
+                agent_stats_with_locations("Carol", &vec![orchard; 250]),
+            ),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_geographic_convergence_still_fires_on_bundled_support_hub() {
+        let camp = prototype_place_entity(PrototypePlace::BanditCamp);
+        let world = build_bundled_support_convergence_world();
+        let stats = BTreeMap::from([
+            (entity(1), agent_stats_with_locations("Alice", &vec![camp; 250])),
+            (entity(2), agent_stats_with_locations("Bob", &vec![camp; 250])),
+            (entity(3), agent_stats_with_locations("Carol", &vec![camp; 250])),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(
+            anomalies[0].kind,
+            AnomalyKind::GeographicConvergence
+        ));
+    }
+
+    #[test]
     fn test_maintenance_starvation_fires_on_rising_dirtiness_over_window() {
         let thresholds = DriveThresholds::default();
         let medium_threshold = need_medium_threshold(&thresholds, HomeostaticNeedId::Dirtiness);
@@ -4947,10 +5128,10 @@ mod tests {
         let mut stats = AgentStats::new("Alice".to_string(), false);
         stats
             .actions_committed
-            .insert("Harvest Apples".to_string(), 16);
+            .insert("harvest:Harvest Apples".to_string(), 16);
         stats
             .actions_committed
-            .insert("Harvest Grain".to_string(), 0);
+            .insert("harvest:Harvest Grain".to_string(), 0);
         stats.needs_samples = vec![NeedsSample {
             hunger: 0,
             thirst: 0,
@@ -5019,10 +5200,10 @@ mod tests {
         let mut stats = AgentStats::new("Alice".to_string(), false);
         stats
             .actions_committed
-            .insert("Harvest Apples".to_string(), 16);
+            .insert("harvest:Harvest Apples".to_string(), 16);
         stats
             .actions_committed
-            .insert("Harvest Grain".to_string(), 0);
+            .insert("harvest:Harvest Grain".to_string(), 0);
         stats.needs_samples = vec![NeedsSample {
             hunger: 0,
             thirst: 0,
@@ -5065,7 +5246,7 @@ mod tests {
         let mut stats = AgentStats::new("Alice".to_string(), false);
         stats
             .actions_committed
-            .insert("Harvest Apples".to_string(), 16);
+            .insert("harvest:Harvest Apples".to_string(), 16);
         stats.needs_samples = vec![NeedsSample {
             hunger: 0,
             thirst: 0,

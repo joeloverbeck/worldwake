@@ -204,4 +204,4 @@ These principles guide every scenario the skill creates:
 - **Worktree discipline**: If working in a worktree, ALL file operations use the worktree root path.
 - **FOUNDATIONS alignment**: Scenarios must not violate project principles. No magic spawners (P1), no omniscient agents (P14), no zero-tick travel (P8). Every resource must have a source. Every agent's starting inventory must be consistent with their location.
 - **Profile completeness**: Every AI agent must have at least `utility_profile` and `perception_profile`. Universal profiles (`HomeostaticNeeds`, `MetabolismProfile`) are always applied with defaults if not specified. Role-specific profiles added only when the role demands them.
-- **Preserve existing scenarios**: Never modify `scenarios/default.ron` or `scenarios/cli-evaluation.ron`. Always write new files.
+- **Preserve existing scenarios**: Never modify `scenarios/cli-evaluation.ron`. Always write new files.

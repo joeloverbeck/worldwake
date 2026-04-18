@@ -10,8 +10,8 @@ fn default_scenario_path() -> PathBuf {
         .parent()
         .and_then(std::path::Path::parent)
         .map_or_else(
-            || PathBuf::from("scenarios/default.ron"),
-            |workspace_root| workspace_root.join("scenarios/default.ron"),
+            || PathBuf::from("scenarios/survival-baseline.ron"),
+            |workspace_root| workspace_root.join("scenarios/survival-baseline.ron"),
         )
 }
 
@@ -132,8 +132,11 @@ mod tests {
 
     #[test]
     fn test_cli_args_parse() {
-        let cli = Cli::parse_from(["worldwake", "scenarios/default.ron"]);
-        assert_eq!(cli.scenario, PathBuf::from("scenarios/default.ron"));
+        let cli = Cli::parse_from(["worldwake", "scenarios/survival-baseline.ron"]);
+        assert_eq!(
+            cli.scenario,
+            PathBuf::from("scenarios/survival-baseline.ron")
+        );
     }
 
     #[test]
