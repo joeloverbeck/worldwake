@@ -1,10 +1,10 @@
 # S120SURCRIWIN-002: Golden harness forensic assertions and focused survival tests
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — this ticket adds test-facing wrappers under `crates/worldwake-ai/tests/golden_harness/` composing over the runtime types from `S120SURCRIWIN-001`, plus three focused tests. No simulation, planner, or agent-decision behavior changes.
-**Deps**: `S120SURCRIWIN-001`
+**Deps**: `archive/tickets/S120SURCRIWIN-001.md`
 
 ## Problem
 
@@ -22,12 +22,14 @@ This ticket implements S120 deliverable D5 in full: test-facing assertion helper
    Validated during `/reassess-spec` pass on 2026-04-18.
 2. Spec references: `specs/S120-survival-critical-window-forensics.md` D5 (lines 170–180) defines three focused-test invariants that this ticket implements directly:
    - D5.1: Fatigue / Sleep progress-barrier test — at least one frame with `exhaustion_state == Some(ExhaustionSummary::FrontierExhausted { .. })` AND at least one frame with `selected_goal` matching the `Sleep` goal family.
-   - D5.2: Wash-vs-water competition test — `top_competitors` contains both a wash-family and water-acquire-family goal; `selected_goal` matches one of them (deterministic).
+   - D5.2: Wash-vs-water competition test — `selected_goal` plus `top_competitors` collectively expose both a wash-family and water-acquire-family goal; `selected_goal` matches one of those families deterministically.
    - D5.3: Bounded-capture determinism — two runs of the same synthetic trace input produce byte-identical `CriticalWindowReport` vectors.
 3. Shared abstraction boundary under audit: the golden harness's per-tick observation loop. The new `SurvivalForensicExtractor::observe` hook slots in alongside the existing `SurvivalNeedRunTracker::observe` call; both operate on the same per-tick inputs (needs, thresholds, trace sinks) and neither replaces the other.
 6. AI-regression coverage layer: the three focused tests are focused unit tests against synthetic `SurvivalForensicExtractor` inputs (not full `agent_tick` integration). The golden-harness wiring is separately covered by the existing `all_agents_survive_1440_ticks` regressions — which continue to pass unchanged, since the extractor is optional and does not affect `SurvivalNeedRunTracker`'s existing assertion semantics.
 12. Scenario isolation (precision-rules Rule 8): D5.1 uses a synthetic fatigue-critical trace — it does not require modifying `scenarios/survival-baseline.ron`. D5.2 uses a synthetic wash-vs-water competition trace — it does not require modifying `scenarios/survival-contested.ron`. This keeps the focused tests independent of scenario calibration changes in other spec chains.
 13. Adjacent contradiction audit: the existing `assert_authored_critical_runs` max-run assertions remain load-bearing — this ticket does not weaken or alter them. The forensic report is emitted on-demand (either explicitly requested, or on assertion failure via a future panic-hook opt-in); it is not a replacement for the max-run bound.
+14. Dependency path drift: `S120SURCRIWIN-001` is now archived at `archive/tickets/S120SURCRIWIN-001.md`, so this ticket's dependency reference has been corrected to the live archived path.
+15. D5.2 invariant drift: the landed runtime extractor excludes the selected goal from `CriticalWindowFrame.top_competitors` (`crates/worldwake-ai/src/survival_forensics.rs`, `top_competitors_from_trace`). The drafted D5.2 wording requiring `top_competitors` alone to contain both the wash-family and water-acquire-family goals is therefore too strong for the live canonical report contract. The honest invariant is that `selected_goal` plus `top_competitors` collectively expose both families while `selected_goal` deterministically matches one of them.
 
 ## Architecture Check
 
@@ -38,7 +40,7 @@ This ticket implements S120 deliverable D5 in full: test-facing assertion helper
 ## Verification Layers
 
 1. D5.1 — Sleep/FrontierExhausted invariant → focused unit test over `SurvivalForensicExtractor` with a synthetic fatigue-critical trace including a `PlanSearchOutcome::FrontierExhausted` event.
-2. D5.2 — wash-vs-water competition → focused unit test over `SurvivalForensicExtractor` with a synthetic dirtiness-critical trace including two competitor `RankedGoal` entries.
+2. D5.2 — wash-vs-water competition → focused unit test over `SurvivalForensicExtractor` with a synthetic dirtiness-critical trace where `selected_goal` plus `top_competitors` collectively expose the wash-family and water-acquire-family competition set.
 3. D5.3 — deterministic frame capture → focused unit test running `observe` twice with the same synthetic inputs and asserting `PartialEq` on the resulting `Vec<CriticalWindowReport>`.
 4. Golden harness regression → existing `all_agents_survive_1440_ticks` tests in the three survival goldens remain green; the new `observe` hook does not perturb `SurvivalNeedRunTracker`'s existing `{need}_max` counters.
 5. No decision/action-trace layer mapping is applicable here — these are synthetic focused tests, not runtime planner coverage.
@@ -51,7 +53,7 @@ Add a new file `crates/worldwake-ai/tests/golden_harness/survival_forensics_asse
 
 - `fn observe_critical_windows(extractor: &mut SurvivalForensicExtractor, ...)` — thin wrapper matching the existing `update_need_run` helper style.
 - `fn expect_sleep_progress_barrier_window(reports: &[CriticalWindowReport])` — asserts D5.1 invariant.
-- `fn expect_wash_vs_water_competition_window(reports: &[CriticalWindowReport])` — asserts D5.2 invariant.
+- `fn expect_wash_vs_water_competition_window(reports: &[CriticalWindowReport])` — asserts the corrected D5.2 invariant over `selected_goal` plus `top_competitors`.
 - `fn expect_deterministic_reports(a: &[CriticalWindowReport], b: &[CriticalWindowReport])` — asserts D5.3 byte-equality.
 - `fn dump_reports_for_debug(reports: &[CriticalWindowReport]) -> String` — compact text summary for `#[ignore]`-free debugging; printed on assertion failure.
 
@@ -79,7 +81,7 @@ Call `finalize()` and invoke `expect_sleep_progress_barrier_window(&reports)`. A
 Add `crates/worldwake-ai/tests/forensic_wash_vs_water_competition.rs`. Construct a synthetic 150-tick session with:
 - `dirtiness` at authored critical throughout
 - each tick's trace surfaces two `RankedGoal` entries: one wash-family, one water-acquire-family
-- `selected_goal` alternates deterministically between them (to prove competitor reporting even under selection churn)
+- `selected_goal` alternates deterministically between those two families while `top_competitors` carries the non-selected family (to prove family-level competition reporting even under selection churn)
 
 Call `finalize()` and invoke `expect_wash_vs_water_competition_window(&reports)`. Assert the test passes.
 
@@ -101,6 +103,7 @@ Update `crates/worldwake-ai/tests/golden_harness/mod.rs` with `pub mod survival_
 - `crates/worldwake-ai/tests/forensic_sleep_progress_barrier.rs` (new)
 - `crates/worldwake-ai/tests/forensic_wash_vs_water_competition.rs` (new)
 - `crates/worldwake-ai/tests/forensic_determinism.rs` (new)
+- `specs/S120-survival-critical-window-forensics.md` (modify — correct D5.2 wording to match the landed extractor contract)
 
 ## Out of Scope
 
@@ -148,3 +151,29 @@ Update `crates/worldwake-ai/tests/golden_harness/mod.rs` with `pub mod survival_
 3. `cargo test -p worldwake-ai` — full AI crate.
 4. `cargo clippy --workspace --all-targets -- -D warnings` — workspace lint (CI parity).
 5. `cargo test --workspace` — full regression sweep.
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Added `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs` and re-exported it from `golden_harness/mod.rs`, providing the shared per-tick observation wrapper, compact report dump helper, three assertion helpers, and the synthetic trace builders used by the new focused tests.
+- Wired `SurvivalForensicExtractor` into `golden_survival_baseline.rs`, `golden_survival_scattered.rs`, and `golden_survival_contested.rs`, capturing `critical_window_reports: Vec<CriticalWindowReport>` alongside the existing `SurvivalNeedRunTracker` data without weakening the authored max-run assertions.
+- Added the three focused integration tests `forensic_sleep_progress_barrier.rs`, `forensic_wash_vs_water_competition.rs`, and `forensic_determinism.rs`, each proving the owned D5 invariant against the canonical runtime extractor surface.
+- Corrected the active ticket and parent S120 spec so the D5.2 wording matches the landed extractor behavior: `selected_goal` plus `top_competitors` collectively carry the wash-vs-water competition surface because the extractor intentionally excludes the selected goal from `top_competitors`.
+
+## Deviations
+
+- The focused D5.2 helper asserts the combined `selected_goal` + `top_competitors` family surface rather than requiring `top_competitors` alone to carry both families. This is not a production-code deviation; it is a reassessment correction to match the live `SurvivalForensicExtractor` contract landed by `archive/tickets/S120SURCRIWIN-001.md`.
+- The named golden-binary commands remain truthful verification for this ticket, but their long-running 1440-tick scenario cases are still `#[ignore]` on this branch. The commands therefore proved the modified binaries and their non-ignored harness-level tests stayed green; they did not execute the ignored 1440-tick scenarios.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test forensic_sleep_progress_barrier`
+- Passed `cargo test -p worldwake-ai --test forensic_wash_vs_water_competition`
+- Passed `cargo test -p worldwake-ai --test forensic_determinism`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline`
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered`
+- Passed `cargo test -p worldwake-ai --test golden_survival_contested`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

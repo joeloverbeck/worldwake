@@ -12,7 +12,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use golden_harness::*;
-use worldwake_ai::{CommodityPurpose, DecisionOutcome, PlanSearchOutcome};
+use worldwake_ai::{
+    CommodityPurpose, CriticalWindowReport, DecisionOutcome, PlanSearchOutcome,
+    SurvivalForensicExtractor,
+};
 use worldwake_cli::scenario::{
     load_scenario_file, spawn_scenario,
     types::{ScenarioDef, SurvivalCriticalRunLimitsDef},
@@ -27,6 +30,7 @@ struct AgentSurvivalObservation {
     alive: bool,
     critical_thresholds: DriveThresholds,
     critical_need_runs: SurvivalNeedRunTracker,
+    critical_window_reports: Vec<CriticalWindowReport>,
     committed_actions: BTreeSet<String>,
 }
 
@@ -176,6 +180,10 @@ fn run_survival_contested() -> SurvivalContestedObservation {
         .cloned()
         .map(|name| (name, SurvivalNeedRunTracker::default()))
         .collect::<BTreeMap<_, _>>();
+    let mut critical_window_extractors = agents
+        .iter()
+        .map(|(name, agent)| (name.clone(), SurvivalForensicExtractor::new(*agent)))
+        .collect::<BTreeMap<_, _>>();
     let critical_thresholds = agents
         .iter()
         .map(|(name, agent)| {
@@ -223,6 +231,7 @@ fn run_survival_contested() -> SurvivalContestedObservation {
             .expect("action tracing should be enabled");
 
         for (agent_name, agent) in &agents {
+            let tick = Tick(u64::from(tick_num));
             let needs = h
                 .world
                 .get_component_homeostatic_needs(*agent)
@@ -234,8 +243,18 @@ fn run_survival_contested() -> SurvivalContestedObservation {
                 .get_mut(agent_name)
                 .expect("every agent should have a run tracker")
                 .observe(needs, thresholds);
+            observe_critical_windows(
+                critical_window_extractors
+                    .get_mut(agent_name)
+                    .expect("every agent should have a forensic extractor"),
+                &h,
+                *agent,
+                tick,
+                needs,
+                thresholds,
+            );
 
-            let tick_events = action_sink.events_for_at(*agent, Tick(u64::from(tick_num)));
+            let tick_events = action_sink.events_for_at(*agent, tick);
 
             let had_action = tick_events
                 .iter()
@@ -308,6 +327,10 @@ fn run_survival_contested() -> SurvivalContestedObservation {
                     critical_need_runs: critical_need_runs
                         .remove(&name)
                         .expect("every agent should have final need tracking"),
+                    critical_window_reports: critical_window_extractors
+                        .remove(&name)
+                        .expect("every agent should have final forensic reports")
+                        .finalize(),
                     committed_actions,
                 },
             )

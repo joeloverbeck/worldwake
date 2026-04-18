@@ -175,7 +175,7 @@ Add reusable assertion helpers under `crates/worldwake-ai/tests/golden_harness/m
 At minimum:
 
 1. **Fatigue / Sleep progress-barrier test**: a synthetic authored-critical fatigue window SHALL produce a `CriticalWindowReport` such that at least one frame has `exhaustion_state == Some(ExhaustionSummary::FrontierExhausted { .. })` AND at least one frame has `selected_goal` whose `GoalKey::kind` matches `GoalKind::Sleep` (or a `ranked_goal_provenance_family` indicating the Sleep family).
-2. **Wash-vs-water competition test**: a synthetic dirtiness authored-critical window SHALL produce a `CriticalWindowReport` such that at least one frame has `top_competitors` containing both a wash-family goal and a water-acquire-family goal, and `selected_goal` matches one of them (deterministic).
+2. **Wash-vs-water competition test**: a synthetic dirtiness authored-critical window SHALL produce a `CriticalWindowReport` such that at least one frame has `selected_goal` plus `top_competitors` collectively exposing both a wash-family goal and a water-acquire-family goal, and `selected_goal` matches one of those families deterministically.
 3. **Bounded-capture determinism**: two runs of the same synthetic trace input SHALL produce byte-identical `CriticalWindowReport` vectors (via `PartialEq` or serialized comparison).
 
 ### D6: Optional observer/report rendering
@@ -221,7 +221,7 @@ None.
 ### Focused tests
 
 1. A synthetic fatigue-critical window with repeated `Sleep` planning reports the correct authored threshold and at least one frame with `exhaustion_state == Some(ExhaustionSummary::FrontierExhausted { .. })` and at least one frame whose `selected_goal` resolves to the `Sleep` goal family (D5.1).
-2. A synthetic thirst or dirtiness competition window reports both selected goal and top competitor through `RankedGoalSnapshot` with typed `provenance_family` (D5.2).
+2. A synthetic thirst or dirtiness competition window reports both wash-family and water-acquire-family pressure through `selected_goal` plus `top_competitors`, using `RankedGoalSnapshot` for the competitor surface (D5.2).
 3. Bounded frame selection is deterministic: two runs of the same synthetic trace input produce byte-identical `CriticalWindowReport` vectors (D5.3).
 
 ### Golden / integration tests

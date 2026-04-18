@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — documentation-only ticket.
-**Deps**: `S120SURCRIWIN-002`
+**Deps**: `archive/tickets/S120SURCRIWIN-002.md`
 
 ## Problem
 

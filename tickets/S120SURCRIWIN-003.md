@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None — this ticket adds an optional rendering section to the observer binary; no simulation, planner, or agent-decision behavior changes. The observer itself is a passive read-only tool (FND-26).
-**Deps**: `S120SURCRIWIN-001`
+**Deps**: `archive/tickets/S120SURCRIWIN-001.md`, `archive/tickets/S120SURCRIWIN-002.md`
 
 ## Problem
 
