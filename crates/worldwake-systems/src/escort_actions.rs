@@ -83,6 +83,7 @@ fn escort_to_safety_action_def(id: ActionDefId, handler: ActionHandlerId) -> Act
         ]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 

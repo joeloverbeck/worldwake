@@ -99,6 +99,7 @@ fn accuse_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         ]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -177,6 +178,7 @@ fn punishment_action_def(
         causal_event_tags: tags,
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 

@@ -4057,6 +4057,7 @@ mod tests {
                 causal_event_tags: std::collections::BTreeSet::new(),
                 payload: worldwake_sim::ActionPayload::None,
                 handler: worldwake_sim::ActionHandlerId(0),
+                binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             });
         }
 

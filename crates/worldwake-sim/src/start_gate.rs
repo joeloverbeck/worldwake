@@ -437,6 +437,7 @@ mod tests {
             causal_event_tags: BTreeSet::from([EventTag::ActionStarted]),
             payload: ActionPayload::None,
             handler,
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         }
     }
 
@@ -600,6 +601,7 @@ mod tests {
                 weapon: CombatWeaponRef::Unarmed,
             }),
             handler: ActionHandlerId(0),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         });
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(
@@ -702,6 +704,7 @@ mod tests {
             causal_event_tags: BTreeSet::from([EventTag::ActionStarted]),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         });
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(

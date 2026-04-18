@@ -1,9 +1,28 @@
 use crate::{
     ActionDef, ActionDefRegistry, ActionHandler, ActionHandlerRegistry, ActionPayload, Affordance,
-    Constraint, ConsumableEffect, Precondition, RuntimeBeliefView, TargetSpec,
+    BindingStrictness, Constraint, ConsumableEffect, Precondition, RuntimeBeliefView, TargetSpec,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{ActionDefId, ContentionStatus, EntityId, EntityKind};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StrictnessGate {
+    SubstitutionAllowed(BindingStrictness),
+    ExactIdentityRequired,
+}
+
+#[must_use]
+pub fn check_binding_strictness(def: &ActionDef, mode: crate::ActionRequestMode) -> StrictnessGate {
+    match (mode, def.binding_strictness) {
+        (crate::ActionRequestMode::Strict, _) => {
+            StrictnessGate::SubstitutionAllowed(def.binding_strictness)
+        }
+        (crate::ActionRequestMode::BestEffort, BindingStrictness::ExactIdentity) => {
+            StrictnessGate::ExactIdentityRequired
+        }
+        (crate::ActionRequestMode::BestEffort, class) => StrictnessGate::SubstitutionAllowed(class),
+    }
+}
 
 #[must_use]
 pub fn get_affordances(
@@ -599,15 +618,16 @@ fn enumerate_affordances_for_def(
 #[cfg(test)]
 mod tests {
     use super::{
-        enumerate_targets, evaluate_constraint, evaluate_precondition, get_affordances,
-        get_affordances_for_defs, preconditions_not_implied_by_target_specs,
+        StrictnessGate, check_binding_strictness, enumerate_targets, evaluate_constraint,
+        evaluate_precondition, get_affordances, get_affordances_for_defs,
+        preconditions_not_implied_by_target_specs,
     };
     use crate::{
         ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
-        Constraint, ConsumableEffect, ControlBeliefView, DeterministicRng, DurationExpr,
-        Interruptibility, InventoryBeliefView, PerAgentBeliefView, Precondition, ReservationReq,
-        SpatialBeliefView, TargetSpec, TradeActionPayload,
+        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, BindingStrictness,
+        CombatActionPayload, Constraint, ConsumableEffect, ControlBeliefView, DeterministicRng,
+        DurationExpr, Interruptibility, InventoryBeliefView, PerAgentBeliefView, Precondition,
+        ReservationReq, SpatialBeliefView, TargetSpec, TradeActionPayload,
     };
     use std::cell::Cell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -1094,6 +1114,66 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(id.0),
+            binding_strictness: BindingStrictness::ExactIdentity,
+        }
+    }
+
+    #[test]
+    fn strict_mode_allows_every_binding_strictness_class() {
+        for class in [
+            BindingStrictness::ExactIdentity,
+            BindingStrictness::FungibleEquivalentCommodity,
+            BindingStrictness::EquivalentWorkstationTagAtSamePlace,
+            BindingStrictness::EquivalentRouteStep,
+            BindingStrictness::AnyLegalTarget,
+        ] {
+            let mut def = sample_action_def(
+                ActionDefId(77),
+                vec![Constraint::ActorAlive],
+                Vec::new(),
+                Vec::new(),
+            );
+            def.binding_strictness = class;
+            assert_eq!(
+                check_binding_strictness(&def, crate::ActionRequestMode::Strict),
+                StrictnessGate::SubstitutionAllowed(class)
+            );
+        }
+    }
+
+    #[test]
+    fn best_effort_requires_exact_identity_for_exact_identity_actions() {
+        let def = sample_action_def(
+            ActionDefId(78),
+            vec![Constraint::ActorAlive],
+            Vec::new(),
+            Vec::new(),
+        );
+        assert_eq!(
+            check_binding_strictness(&def, crate::ActionRequestMode::BestEffort),
+            StrictnessGate::ExactIdentityRequired
+        );
+    }
+
+    #[test]
+    fn best_effort_allows_non_exact_binding_strictness_classes() {
+        for class in [
+            BindingStrictness::FungibleEquivalentCommodity,
+            BindingStrictness::EquivalentWorkstationTagAtSamePlace,
+            BindingStrictness::EquivalentRouteStep,
+            BindingStrictness::AnyLegalTarget,
+        ] {
+            let mut def = sample_action_def(
+                ActionDefId(79),
+                vec![Constraint::ActorAlive],
+                Vec::new(),
+                Vec::new(),
+            );
+            def.binding_strictness = class;
+            assert_eq!(
+                check_binding_strictness(&def, crate::ActionRequestMode::BestEffort),
+                StrictnessGate::SubstitutionAllowed(class)
+            );
         }
     }
 
@@ -1594,6 +1674,7 @@ mod tests {
                 required_tool_kinds: Vec::new(),
             }),
             handler: ActionHandlerId(0),
+            binding_strictness: BindingStrictness::EquivalentWorkstationTagAtSamePlace,
         });
         let handlers = handler_registry(registry.len());
 
@@ -1773,6 +1854,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: BindingStrictness::ExactIdentity,
         });
 
         let affordances = get_affordances(&view, actor, &registry, &handlers);
@@ -1884,6 +1966,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: BindingStrictness::ExactIdentity,
         });
 
         let affordances = get_affordances(&view, actor, &registry, &handlers);

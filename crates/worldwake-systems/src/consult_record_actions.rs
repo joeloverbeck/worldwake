@@ -70,6 +70,7 @@ fn consult_record_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
         causal_event_tags: BTreeSet::from([EventTag::Social, EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 

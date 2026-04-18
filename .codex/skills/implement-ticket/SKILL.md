@@ -75,6 +75,7 @@ Load `references/implementation-discipline.md` when reassessment shows a non-mec
 Run the narrowest correct verification first, then broaden.
 
 Prefer sequential `cargo` verification runs unless there is a concrete reason to parallelize them; this keeps cargo-lock contention, attribution, and close-out evidence truthful.
+Do not launch multiple `cargo` commands in parallel for focused proofs or broadened verification. Run one Cargo command to completion before starting the next.
 
 Load `references/verification.md`.
 

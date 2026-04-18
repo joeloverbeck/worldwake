@@ -53,7 +53,7 @@ pub mod tick_input_producer;
 pub mod tick_step;
 pub mod trade_valuation;
 
-pub use action_def::ActionDef;
+pub use action_def::{ActionDef, BindingStrictness};
 pub use action_def_registry::ActionDefRegistry;
 pub use action_duration::ActionDuration;
 pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
@@ -90,8 +90,8 @@ pub use action_trace::{
 pub use action_validation::validate_action_def_authoritatively;
 pub use affordance::Affordance;
 pub use affordance_query::{
-    evaluate_constraint, evaluate_precondition, get_affordances, get_affordances_for_defs,
-    requested_affordance_matches,
+    StrictnessGate, check_binding_strictness, evaluate_constraint, evaluate_precondition,
+    get_affordances, get_affordances_for_defs, requested_affordance_matches,
 };
 pub use autonomous_controller::{
     AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,

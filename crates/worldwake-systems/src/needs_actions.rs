@@ -119,6 +119,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation, EventTag::WildernessRelief]),
         payload: ActionPayload::None,
         handler: relieve_wilderness_handler,
+        binding_strictness: worldwake_sim::BindingStrictness::AnyLegalTarget,
     });
 }
 
@@ -166,6 +167,14 @@ fn register_def(
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: match name {
+            "eat" | "drink" => worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
+            "sleep" => worldwake_sim::BindingStrictness::AnyLegalTarget,
+            "toilet" | "wash" => {
+                worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace
+            }
+            other => panic!("unexpected needs action {other}"),
+        },
     })
 }
 

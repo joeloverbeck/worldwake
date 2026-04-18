@@ -171,6 +171,7 @@ fn bribe_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         ]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -216,6 +217,7 @@ fn threaten_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         ]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -237,6 +239,7 @@ fn declare_support_action_def(id: ActionDefId, handler: ActionHandlerId) -> Acti
         causal_event_tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -258,6 +261,7 @@ fn press_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> Ac
         causal_event_tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -279,6 +283,7 @@ fn yield_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> Ac
         causal_event_tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 

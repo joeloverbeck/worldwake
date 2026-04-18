@@ -63,6 +63,7 @@ fn ask_about_person_action_def(id: ActionDefId, handler: ActionHandlerId) -> Act
         causal_event_tags: BTreeSet::from([EventTag::Social, EventTag::Discovery]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 

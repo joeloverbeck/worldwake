@@ -1122,6 +1122,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         });
         registry.register(ActionDef {
             id: ActionDefId(1),
@@ -1140,6 +1141,7 @@ mod tests {
             causal_event_tags: BTreeSet::from([EventTag::Travel]),
             payload: ActionPayload::None,
             handler: ActionHandlerId(1),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         });
         registry.register(ActionDef {
             id: ActionDefId(2),
@@ -1161,6 +1163,7 @@ mod tests {
                 topic: worldwake_core::TellTopic::EntityBelief { subject: entity(8) },
             }),
             handler: ActionHandlerId(1),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         });
         registry
     }
@@ -1196,6 +1199,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         });
         registry.register(ActionDef {
             id: ActionDefId(4),
@@ -1226,6 +1230,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(2),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         });
         registry
     }

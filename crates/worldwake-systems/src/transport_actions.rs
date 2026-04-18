@@ -88,6 +88,7 @@ pub fn register_transport_actions(
             ]),
             payload: ActionPayload::None,
             handler: pick_up_handler,
+            binding_strictness: worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
         }),
         defs.register(ActionDef {
             id: put_down_id,
@@ -120,6 +121,7 @@ pub fn register_transport_actions(
             ]),
             payload: ActionPayload::None,
             handler: put_down_handler,
+            binding_strictness: worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
         }),
         defs.register(ActionDef {
             id: drop_item_id,
@@ -152,6 +154,7 @@ pub fn register_transport_actions(
             ]),
             payload: ActionPayload::None,
             handler: drop_item_handler,
+            binding_strictness: worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
         }),
         defs.register(ActionDef {
             id: steal_id,
@@ -188,6 +191,7 @@ pub fn register_transport_actions(
             causal_event_tags: BTreeSet::from([EventTag::Crime, EventTag::Transfer]),
             payload: ActionPayload::None,
             handler: steal_handler,
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         }),
     ]
 }

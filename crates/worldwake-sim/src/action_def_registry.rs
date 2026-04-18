@@ -88,6 +88,7 @@ mod tests {
             causal_event_tags: BTreeSet::from([EventTag::ActionStarted, EventTag::ActionCommitted]),
             payload: ActionPayload::None,
             handler: ActionHandlerId(id.0),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         }
     }
 

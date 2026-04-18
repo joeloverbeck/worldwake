@@ -2,7 +2,7 @@
 
 ## Summary
 
-Tighten `ActionRequestMode::BestEffort` substitution by attaching an explicit `BindingStrictness` classifier to every `ActionDef`. Today BestEffort is permissive-by-default: a planner-synthesized request can fall back to any affordance that matches the action kind at the same place, even when the step semantically requires a specific identity (accuse *this* suspect, transfer *this* item, loot *this* corpse, escort *this* subject). Classify each action on the spectrum `ExactIdentity → FungibleEquivalentCommodity → EquivalentFacilityClassAtSamePlace → EquivalentRouteStep → AnyLegalTarget`, enforce the classifier in the unified legality path (`requested_affordance_matches`, `revalidate_next_step`, tick-step dispatch), and refuse BestEffort substitution that would cross the strictness boundary.
+Tighten `ActionRequestMode::BestEffort` substitution by attaching an explicit `BindingStrictness` classifier to every `ActionDef`. Today BestEffort is permissive-by-default: when the unified matcher finds no identity match, `resolve_affordance` (`crates/worldwake-sim/src/tick_step.rs:504`) synthesizes an `Affordance` directly from the raw requested targets, regardless of whether the step semantically requires a specific identity (accuse *this* suspect, transfer *this* item, loot *this* corpse, escort *this* subject). Classify each action on the spectrum `ExactIdentity → FungibleEquivalentCommodity → EquivalentWorkstationTagAtSamePlace → EquivalentRouteStep → AnyLegalTarget`, gate the BestEffort synthesis site in `resolve_affordance` through a dedicated `check_binding_strictness` helper, apply the same helper to the two best-effort-like fallbacks in `plan_revalidation.rs`, and refuse substitutions that would cross the strictness boundary.
 
 ## Phase and Status
 
@@ -10,148 +10,242 @@ Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
 
 ## Crates
 
-- `worldwake-sim` — `BindingStrictness` enum, `ActionDef::binding_strictness`, strictness enforcement in `requested_affordance_matches` and `step_tick` BestEffort fallback
-- `worldwake-ai` — `plan_revalidation.rs` reads strictness when classifying revalidation failures; decision trace records the strictness class at dispatch
-- `worldwake-systems` — classify each registered action at its `ActionDef` registration site (accuse, transfer, loot, escort, post-bounty, give, treat-wounds, consume, buy, use-workstation, travel, etc.)
+- `worldwake-sim` — `BindingStrictness` enum, `ActionDef::binding_strictness`, `check_binding_strictness` helper, strictness gate in `resolve_affordance` (`tick_step.rs`) before the BestEffort synthesis fallback.
+- `worldwake-ai` — `plan_revalidation.rs` calls `check_binding_strictness` before entering `revalidate_best_effort_payload_override_step` and `revalidate_exact_target_step`; decision trace records the strictness class at dispatch via `PlannedStepSummary`.
+- `worldwake-systems` — classify each registered action at its `ActionDef` registration site (`accuse`, `loot`, `heal`, `escort_to_safety`, `pick_up`, `put_down`, `drop_item`, `steal`, `eat`, `drink`, `trade`, `travel`, `patrol`, `post_bounty`, `post_notice`, `claim_bounty`, `bribe`, `threaten`, `declare_support`, etc.).
 
 ## Dependencies
 
-- None. Builds on the existing unified legality path (`with_payload_override_validator`, `requested_affordance_matches` in `affordance_query.rs`).
+- None as a hard dependency. Builds on the existing unified legality path (`with_payload_override_validator`, `requested_affordance_matches` in `affordance_query.rs`).
+- Soft coupling to S109 (Typed Discrepancy Taxonomy): `check_binding_strictness`'s `ExactIdentityRequired` result feeds S109's `Discrepancy::NoLegalBinding`. S108 is standalone-valuable and maps its refusals to the existing `BlockingFact::AssumptionFailed`; S109 later refines that mapping.
+- Soft coupling to S110 (Decision History Events): the new strictness class should appear in the dispatch-time event payload once S110 lands.
 
 ## Design Goals
 
 - Every socially or materially identity-bound action refuses BestEffort substitution that silently redirects to a different counterparty, item, or target.
 - Strictness is declared at action-registration time, not inferred at dispatch. No per-handler ad-hoc checks.
-- Revalidation, affordance enumeration, and dispatch all consult the same strictness class. A step classified `ExactIdentity` behaves the same way in all three surfaces.
-- Strictness drives the failure classification surface: an `ExactIdentity` request that cannot find the exact target records a different discrepancy (`TargetGone` / `NoLegalBinding`) than an `AnyLegalTarget` fallback that found nothing available (`SellerOutOfStock`).
+- Strictness is **orthogonal to `TargetSpec`**: `TargetSpec` answers "which entities can be enumerated for this action?"; `BindingStrictness` answers "once the planner has bound a specific entity, may the dispatcher substitute?" Two actions with the same `TargetSpec` (e.g., `pick_up` and `loot`, both reaching items/corpses at actor's place) can carry different strictness.
+- Revalidation, affordance enumeration, and dispatch all consult the same helper. A step classified `ExactIdentity` behaves the same way at all three sites.
+- Strictness drives the failure classification surface: an `ExactIdentity` request that cannot find the exact target records a different discrepancy (`NoLegalBinding`, via S109) than an `AnyLegalTarget` fallback that found nothing available (`SellerOutOfStock`).
 
 ## Non-Goals
 
-- Revisiting the unified legality path (already in place via `requested_affordance_matches` + `with_payload_override_validator`). This spec adds a classifier on top, not a new validation surface.
+- Revisiting the unified legality path more broadly. The per-affordance identity predicate `requested_affordance_matches` keeps its current signature and semantics; the strictness gate is a new helper invoked at the BestEffort-substitution sites.
 - Full discrepancy taxonomy rework — covered separately by S109.
 - Per-action whitelisting of substitute targets. Strictness is coarse-grained (5 classes) and covers the common cases; finer-grained rules wait for concrete scenarios.
+- Removing `revalidate_exact_target_step` in this spec. That function's exact-identity semantics for all-`TargetSpec::SpecificEntity` action definitions already partially subset `ExactIdentity`; consolidation into the strictness classifier is a follow-up (see "Open Migration Work" below).
 
 ## FOUNDATIONS Alignment
 
 | Principle | How Satisfied |
 |-----------|---------------|
-| FND-4 (Persistent Identity, Object Permanence, Explicit Transfer) | `ExactIdentity` strictness forbids silent retargeting of identity-bearing actions (accuse, transfer, loot). The same exact entity that appeared in the plan must still be the target at dispatch, or the step fails lawfully. |
+| FND-4 (Persistent Identity, Object Permanence, Explicit Transfer) | `ExactIdentity` strictness forbids silent retargeting of identity-bearing actions (accuse, loot, heal, escort). The same exact entity that appeared in the plan must still be the target at dispatch, or the step fails lawfully through revalidation. |
 | FND-8 (Every Action Has Preconditions, Duration, Cost, and Occupancy) | Binding strictness is declared alongside preconditions and cost, formalizing the binding contract of an action. |
-| FND-20 (Resource-Bounded Practical Reasoning) | Planner-synthesized BestEffort requests still receive the strictness filter, so agents do not accidentally accuse a different suspect or give bread to a different recipient because the planner emitted a fungible request. |
+| FND-14 (World State Is Not Belief State) | Planner-synthesized BestEffort requests originate from the agent's belief state. When the world diverges from belief (target gone, moved, or replaced), the failure must surface through revalidation, not silent substitution against authoritative world state. Strictness is the gate that forces that surfacing. |
+| FND-20 (Resource-Bounded Practical Reasoning) | Declaring strictness at registration avoids hidden exception logic inside the planner or dispatcher. Every substitution decision is traceable to an authored classifier. |
 | FND-21 (Intentions Are Revisable Commitments) | An `ExactIdentity` step whose target is gone must fail through the normal revalidation + replan path, not silently substitute a different entity. |
-| FND-24 (Ownership, Custody, Access, Obligation, Jurisdiction Are Distinct) | Identity-bound actions (loot, transfer, accuse within jurisdiction) enforce the target-identity contract that ownership/custody/jurisdiction rules depend on. |
+| FND-24 (Ownership, Custody, Access, Obligation, Jurisdiction Are Distinct) | Identity-bound actions (loot, accuse within jurisdiction, escort) enforce the target-identity contract that ownership/custody/jurisdiction rules depend on. |
+| FND-26 (Systems Interact Through State) | `ActionDef::binding_strictness` is authoritative state that the dispatcher and revalidator both read; no hidden cross-system call or derived logic. |
+| FND-29 (Debuggability Is a Product Feature) | The dispatch-time trace records the classifier, so "why did this BestEffort request refuse to substitute?" has a direct answer. |
 
 ## Deliverables
 
 ### D1: `BindingStrictness` enum
 
-New type in `crates/worldwake-sim/src/action_def.rs` (or wherever `ActionDef` currently lives):
+New type in `crates/worldwake-sim/src/action_def.rs` (alongside `ActionDef`):
 
 ```rust
 /// How permissive BestEffort target substitution is for a given action.
-/// Declared once on each ActionDef at registration.
+/// Declared once on each ActionDef at registration. Orthogonal to TargetSpec:
+/// TargetSpec governs enumeration, BindingStrictness governs post-binding
+/// substitution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum BindingStrictness {
     /// The exact entity referenced in the request must be present and
     /// eligible. Substitution is forbidden. Example actions:
-    /// accuse, transfer, give, loot, escort, treat-wounds, punish,
-    /// tell-witness, consume-owned-specific-item.
+    /// accuse, loot, heal, escort_to_safety, bribe, threaten,
+    /// press_force_claim, yield_force_claim, declare_support,
+    /// queue_for_corpse_use, queue_for_care_target, claim_bounty.
     ExactIdentity,
     /// The target may be substituted with any entity of the same
     /// fungible commodity kind at the same place. Example actions:
-    /// eat-bread (any bread stack), drink-water (any water container),
-    /// consume-fungible-commodity.
+    /// pick_up, eat, drink.
     FungibleEquivalentCommodity,
-    /// The target may be substituted with any entity that fills the
-    /// same facility class (workstation, well, hearth) at the same
-    /// place. Example actions: use-workstation, use-well, rest-at-hearth.
-    EquivalentFacilityClassAtSamePlace,
+    /// The target may be substituted with any entity carrying the same
+    /// WorkstationTag at the same place. Example actions:
+    /// queue_for_facility_use, and the recipe-backed harvest/craft
+    /// action defs when their workstation target is generic.
+    EquivalentWorkstationTagAtSamePlace,
     /// The target may be substituted with any route edge that reaches
-    /// the same destination place. Example actions: travel.
+    /// the same destination place. Example actions: travel, patrol.
     EquivalentRouteStep,
     /// The target may be substituted with any legal target that
-    /// satisfies the action's preconditions. Example actions: explore,
-    /// scout, wait. Use sparingly.
+    /// satisfies the action's preconditions. Example actions:
+    /// investigate, search_place, ask_witness, ask_about_person,
+    /// report_missing, report_found, consult_record, tell,
+    /// staff_market, stage_stock_for_sale, unstage_stock, store_stock,
+    /// collect_display_stock, trade. Use sparingly and only when target
+    /// identity is not part of the step's semantic commitment.
     AnyLegalTarget,
 }
 ```
 
 ### D2: `ActionDef` extension
 
-Add a `binding_strictness: BindingStrictness` field to the `ActionDef` registration record. Every existing action receives an explicit classification at its registration site — no default. The compiler enforces completeness.
+Add a non-`Option` `binding_strictness: BindingStrictness` field to the `ActionDef` record. Every existing action receives an explicit classification at its registration site — there is no `Default` impl on the field and no `Default` impl on `ActionDef` that would bypass authorial choice. The compiler enforces completeness.
 
-Concrete classification table (to be confirmed at implementation time; representative assignments):
+Because `ActionDef` derives `Serialize, Deserialize` and participates in save/replay, the field uses `#[serde(default = "BindingStrictness::exact_identity_default")]` for deserialization compatibility with old saves; the default function returns `BindingStrictness::ExactIdentity` (the most conservative class — refuses substitution). This keeps construction-site completeness strict without breaking replay, and any old-save action whose true class was permissive will simply fail BestEffort substitution in a recoverable way until the save is re-emitted.
 
-| Action | Strictness |
-|--------|------------|
-| Accuse | `ExactIdentity` |
-| TransferItem / GiveItem | `ExactIdentity` |
-| LootCorpse | `ExactIdentity` |
-| EscortSubject | `ExactIdentity` |
-| TreatWounds | `ExactIdentity` |
-| TellWitness / ShareBelief (targeted) | `ExactIdentity` |
-| PostBounty / PostNotice | `ExactIdentity` (the issuer binds; the topic may be fungible separately) |
-| ConsumeOwnedCommodity | `FungibleEquivalentCommodity` |
-| AcquireCommodity (purchase) | `FungibleEquivalentCommodity` |
-| UseWorkstation (produce, craft) | `EquivalentFacilityClassAtSamePlace` |
-| UseWell / RestAtHearth | `EquivalentFacilityClassAtSamePlace` |
-| Travel | `EquivalentRouteStep` |
-| Explore / Scout / Wait | `AnyLegalTarget` |
+Authoritative classification for every currently-registered action:
 
-### D3: Strictness enforcement in `requested_affordance_matches`
+| Action (registered name) | Registration site | Strictness |
+|--------------------------|-------------------|------------|
+| `accuse` | `justice_actions.rs:62` | `ExactIdentity` |
+| `fine` | `justice_actions.rs` | `ExactIdentity` |
+| `exile` | `justice_actions.rs` | `ExactIdentity` |
+| `attack` | `combat.rs:402` | `ExactIdentity` |
+| `defend` | `combat.rs:460` | `ExactIdentity` |
+| `loot` | `combat.rs:496` | `ExactIdentity` |
+| `bury` | `combat.rs:548` | `ExactIdentity` |
+| `heal` | `combat.rs:816` | `ExactIdentity` |
+| `queue_for_corpse_use` | `combat.rs:582` | `ExactIdentity` |
+| `queue_for_care_target` | `combat.rs:856` | `ExactIdentity` |
+| `pick_up` | `transport_actions.rs:58` | `FungibleEquivalentCommodity` |
+| `put_down` | `transport_actions.rs:94` | `FungibleEquivalentCommodity` |
+| `drop_item` | `transport_actions.rs:126` | `FungibleEquivalentCommodity` |
+| `steal` | `transport_actions.rs:158` | `ExactIdentity` |
+| `travel` | `travel_actions.rs:28` | `EquivalentRouteStep` |
+| `patrol` | `patrol_actions.rs:28` | `EquivalentRouteStep` |
+| `investigate` | `investigate_actions.rs:37` | `AnyLegalTarget` |
+| `tell` | `tell_actions.rs:41` | `ExactIdentity` (the listener is the identity contract) |
+| `post_bounty` | `artifact_actions.rs:85` | `ExactIdentity` (the posting place binds) |
+| `post_notice` | `artifact_actions.rs:124` | `ExactIdentity` |
+| `claim_bounty` | `artifact_actions.rs:163` | `ExactIdentity` |
+| `ask_about_person` | `ask_about_person_actions.rs:49` | `ExactIdentity` (the subject binds) |
+| `ask_witness` | `epistemic_actions.rs:47` | `ExactIdentity` |
+| `escort_to_safety` | `escort_actions.rs:49` | `ExactIdentity` |
+| `establish_camp` | `bandit_camp_actions.rs:36` | `ExactIdentity` (the place binds) |
+| `trade` | `trade_actions.rs:39` | `ExactIdentity` (counterparty is the identity contract) |
+| `staff_market` | `trade_actions.rs:1345` | `ExactIdentity` |
+| `queue_for_facility_use` | `facility_queue_actions.rs:35` | `EquivalentWorkstationTagAtSamePlace` |
+| `bribe` | `office_actions.rs:135` | `ExactIdentity` |
+| `threaten` | `office_actions.rs:180` | `ExactIdentity` |
+| `declare_support` | `office_actions.rs:225` | `ExactIdentity` |
+| `press_force_claim` | `office_actions.rs:246` | `ExactIdentity` |
+| `yield_force_claim` | `office_actions.rs:267` | `ExactIdentity` |
+| `consult_record` | `consult_record_actions.rs:36` | `ExactIdentity` (the specific record binds) |
+| `report_missing` | `report_actions.rs:60` | `ExactIdentity` (the subject binds) |
+| `report_found` | `report_actions.rs:105` | `ExactIdentity` |
+| `relieve_wilderness` | `needs_actions.rs:100` | `AnyLegalTarget` (no target) |
+| `search_place` | `search_actions.rs:38` | `AnyLegalTarget` |
+| `store_stock` | `stock_actions.rs:60` | `ExactIdentity` (the specific lot binds) |
+| `collect_display_stock` | `stock_actions.rs:90` | `ExactIdentity` |
+| `stage_stock_for_sale` | `stock_actions.rs:120` | `ExactIdentity` |
+| `unstage_stock` | `stock_actions.rs:154` | `ExactIdentity` |
+| `eat` | `needs_actions.rs` (`register_def`) | `FungibleEquivalentCommodity` |
+| `drink` | `needs_actions.rs` (`register_def`) | `FungibleEquivalentCommodity` |
+| `sleep` | `needs_actions.rs` (`register_def`) | `AnyLegalTarget` (no target) |
+| `toilet` | `needs_actions.rs` (`register_def`) | `EquivalentWorkstationTagAtSamePlace` |
+| `wash` | `needs_actions.rs` (`register_def`) | `EquivalentWorkstationTagAtSamePlace` |
+| `Harvest Apples`, `Harvest Grain`, `Harvest Water`, `Bake Bread`, and other recipe-backed action defs | `production_actions.rs`, `action_registry.rs` | `EquivalentWorkstationTagAtSamePlace` |
 
-Modify `crates/worldwake-sim/src/affordance_query.rs::requested_affordance_matches` to consult the action's `binding_strictness`:
+Borderline classifications (`trade`, `tell`, `post_bounty`, `report_missing`, etc.) are explicit authorial calls because the identity contract is social, not enumerated. Edge cases are confirmed at ticket-implementation time with reference to the action's documented binding semantics.
+
+### D3: `check_binding_strictness` helper and gate at `resolve_affordance`
+
+Add a new helper in `crates/worldwake-sim/src/affordance_query.rs`:
 
 ```rust
-pub fn requested_affordance_matches(
-    world: &World,
-    request: &ActionRequest,
-    action_def: &ActionDef,
-    agent: EntityId,
-) -> MatchOutcome {
-    // 1. Attempt exact-identity match against the request's bound targets.
-    if let Some(affordance) = match_exact(world, request, action_def, agent) {
-        return MatchOutcome::Exact(affordance);
-    }
-    // 2. If mode is BestEffort, consult strictness before falling back.
-    match (request.mode, action_def.binding_strictness) {
+/// Result of checking whether BestEffort substitution is allowed for a
+/// given (action, request) pair.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StrictnessGate {
+    /// Substitution is allowed under the action's strictness class.
+    /// The caller may proceed with BestEffort synthesis constrained to
+    /// the matching substitution pool (fungible commodity / workstation
+    /// tag / route destination / any legal target).
+    SubstitutionAllowed(BindingStrictness),
+    /// Substitution is forbidden for this action (ExactIdentity) and
+    /// the exact target was not matched by any live affordance. The
+    /// caller must reject the request and surface a typed failure.
+    ExactIdentityRequired,
+}
+
+#[must_use]
+pub fn check_binding_strictness(
+    def: &ActionDef,
+    mode: ActionRequestMode,
+) -> StrictnessGate {
+    match (mode, def.binding_strictness) {
+        (ActionRequestMode::Strict, _) => StrictnessGate::SubstitutionAllowed(def.binding_strictness),
         (ActionRequestMode::BestEffort, BindingStrictness::ExactIdentity) => {
-            // ExactIdentity refuses BestEffort fallback. Return a typed
-            // failure that the caller can classify as NoLegalBinding.
-            MatchOutcome::ExactIdentityRequired
+            StrictnessGate::ExactIdentityRequired
         }
-        (ActionRequestMode::BestEffort, strictness) => {
-            match_best_effort_within(world, request, action_def, agent, strictness)
-        }
-        (ActionRequestMode::Strict, _) => MatchOutcome::NoMatch,
+        (ActionRequestMode::BestEffort, class) => StrictnessGate::SubstitutionAllowed(class),
     }
 }
 ```
 
-`match_best_effort_within` restricts the fallback pool to candidates that satisfy the strictness bound (same commodity / same facility class at same place / same route destination).
+The signature and return type of `requested_affordance_matches` are unchanged. `check_binding_strictness` is a pure function of `ActionDef` and `ActionRequestMode`.
 
-### D4: `tick_step` dispatch enforcement
+### D4: Dispatch enforcement in `resolve_affordance`
 
-`crates/worldwake-sim/src/tick_step.rs` already calls `requested_affordance_matches` around the BestEffort dispatch path. With D3 in place, the dispatch fallback (currently line ~504) receives `MatchOutcome::ExactIdentityRequired` for identity-bound actions whose target disappeared, converts it to a typed start-failure reason (see S109 for the full discrepancy taxonomy — pre-S109 it maps to the existing `BlockingFact::AssumptionFailed`), and does not synthesize a substitute affordance.
+Modify `crates/worldwake-sim/src/tick_step.rs::resolve_affordance` (currently line 468–522). Today, when the identity-match enumeration produces no match and `mode == BestEffort`, the function synthesizes a fresh `Affordance` from `targets.to_vec()` at line 504–514. Insert the strictness gate before synthesis:
 
-### D5: Revalidation classifier
+```rust
+let (mut affordance, binding) = match reproduced {
+    Some(affordance) => (affordance, RequestBindingKind::ReproducedAffordance),
+    None if mode == crate::ActionRequestMode::BestEffort => {
+        match check_binding_strictness(def, mode) {
+            StrictnessGate::ExactIdentityRequired => {
+                return Err(RequestResolutionRejectionReason::ExactIdentityRequired);
+            }
+            StrictnessGate::SubstitutionAllowed(_class) => (
+                crate::Affordance {
+                    def_id,
+                    actor,
+                    bound_targets: targets.to_vec(),
+                    payload_override: payload_override.clone(),
+                    explanation: None,
+                    contention_status: worldwake_core::ContentionStatus::Unmanaged,
+                },
+                RequestBindingKind::BestEffortFallback,
+            ),
+        }
+    }
+    None => return Err(RequestResolutionRejectionReason::NoMatchingAffordance),
+};
+```
 
-`crates/worldwake-ai/src/plan_revalidation.rs::revalidate_next_step` already calls the unified matcher. With D3, revalidation automatically observes the same strictness boundary. Extend the revalidation outcome to record the strictness class that decided the outcome, so the decision trace and S109 discrepancy classifier can see "ExactIdentity required — target gone" vs "Fungible substitution failed — no stock."
+Extend `RequestResolutionRejectionReason` with an `ExactIdentityRequired` variant. The caller (the `ProduceAction` arm of `input_action`) already converts rejection reasons into the request-resolution trace and returns `TickStepError::RequestedAffordanceUnavailable`; the new variant follows the same path. Pre-S109, the error maps into `BlockingFact::AssumptionFailed` via `ActionStartFailureReason::from_action_error` (`tick_step.rs:330`). S109 refines this to `Discrepancy::NoLegalBinding`.
 
-### D6: Decision trace field
+### D5: Revalidation gate in `plan_revalidation.rs`
 
-In `crates/worldwake-ai/src/decision_trace.rs`, extend the `PlannedStep`-level trace record with an optional `binding_strictness: Option<BindingStrictness>` field showing the classifier that governed dispatch. Populated from the `ActionDef` at the moment the step is resolved.
+`crates/worldwake-ai/src/plan_revalidation.rs::revalidate_next_step` (line 14–49) has three paths: the primary `requested_affordance_matches` over enumerated affordances, `revalidate_best_effort_payload_override_step` (line 51–82), and `revalidate_exact_target_step` (line 84–118). The latter two are substitution-style fallbacks — they re-validate a step whose exact affordance no longer enumerates.
+
+Gate both fallbacks with `check_binding_strictness(def, ActionRequestMode::BestEffort)`:
+
+- `revalidate_best_effort_payload_override_step`: return `false` early if `check_binding_strictness` returns `ExactIdentityRequired`.
+- `revalidate_exact_target_step`: this function's pre-existing all-`TargetSpec::SpecificEntity` check is a narrower subset of `ExactIdentity`. After D4/D5 land, `ExactIdentityRequired` is the authoritative gate; the all-`SpecificEntity` check becomes redundant for the strictness decision but may remain as a fast-path optimization. The migration work (see "Open Migration Work" below) consolidates this.
+
+Partial overlap with current code:
+- `accuse` uses `TargetSpec::SpecificEntity(EntityId { slot: 0, generation: 0 })` as a placeholder plus a custom `enumerate_accuse_targets` (`justice_actions.rs:27, 69-72`). `revalidate_exact_target_step` already exact-matches the step, so the strictness gate is behavior-preserving for `accuse`.
+- `loot` uses `TargetSpec::EntityAtActorPlace { kind: EntityKind::Agent }` (`combat.rs:505`). `revalidate_exact_target_step` does NOT apply (its all-`SpecificEntity` precondition fails). The strictness gate via D4 is the first place `loot`'s `ExactIdentity` class is enforced.
+
+### D6: Decision trace field on `PlannedStepSummary`
+
+Extend `crates/worldwake-ai/src/decision_trace.rs::PlannedStepSummary` (line 971) with an optional `binding_strictness: Option<BindingStrictness>` field showing the classifier that governed dispatch. Populated from the `ActionDef` at the moment the step is resolved into the trace. `PlannedStep` itself (`planner_ops.rs:814`) is NOT extended; the authoritative source is always `ActionDef::binding_strictness`, and the trace carries a snapshot for inspection.
 
 ## FND-01 Section H: Causal Hooks
 
 1. **Information-path analysis**: Not applicable. Strictness is a static property of `ActionDef`, registered at startup. No agent belief or information flow is introduced.
 2. **Positive-feedback analysis**: No amplifying loops. Strictness is a filter, not a feedback system.
 3. **Concrete dampeners**: Not applicable (no loops).
-4. **Stored state vs. derived read-model**: `BindingStrictness` is authoritative static metadata on each registered `ActionDef`. No runtime-derived state is introduced. The dispatch outcome is computed, not stored.
+4. **Stored state vs. derived read-model**: `BindingStrictness` is authoritative static metadata on each registered `ActionDef`. The `StrictnessGate` return is computed, not stored. The trace snapshot on `PlannedStepSummary` is a derived copy.
 
 ## SystemFn Integration
 
-No new SystemFn. The strictness filter runs inside the existing `requested_affordance_matches` called from `step_tick` and `revalidate_next_step`.
+No new SystemFn. The strictness gate is a pure helper invoked inline from `resolve_affordance` (sim) and `revalidate_next_step` (ai).
 
 ## Component Registration
 
@@ -159,33 +253,51 @@ None. `BindingStrictness` attaches to `ActionDef` (registry data, not an ECS com
 
 ## Cross-System Interactions
 
-- **AI planner ↔ sim dispatch**: The planner emits `ActionRequest` with `ActionRequestMode::BestEffort`; the sim's `requested_affordance_matches` filters substitution through the strictness class. State-mediated through the registered `ActionDef`, not a direct call.
-- **S109 discrepancy taxonomy**: The `MatchOutcome::ExactIdentityRequired` return feeds into S109's `NoLegalBinding` / `TargetGone` classification. S108 lands the enum and enforcement; S109 lands the discrepancy typing.
+- **AI planner ↔ sim dispatch**: The planner emits `ActionRequest` with `ActionRequestMode::BestEffort`; the sim's `resolve_affordance` consults `check_binding_strictness` before synthesizing a fallback affordance. State-mediated through the registered `ActionDef`, not a direct call (FND-26).
+- **S109 discrepancy taxonomy**: The new `RequestResolutionRejectionReason::ExactIdentityRequired` feeds into S109's `Discrepancy::NoLegalBinding` classification. S108 lands the enum, the gate, and the dispatch-side refusal; S109 refines the resulting failure typing.
 
 ## Profile-Driven Parameters
 
 Not applicable. `BindingStrictness` is per-`ActionDef`, not per-agent. Scenario authors do not override strictness per agent — an action's identity contract is a property of the action, not the actor.
 
+## Open Migration Work (follow-up, out of scope)
+
+Once D3–D6 land, `revalidate_exact_target_step`'s all-`TargetSpec::SpecificEntity` precondition becomes a narrower subset of `BindingStrictness::ExactIdentity`. A follow-up spec should either fold `revalidate_exact_target_step` into the strictness gate or retain it only as a documented fast path with an explicit comment tying it to `ExactIdentity` semantics (FND-28: no backward compatibility in live authority paths).
+
 ## Validation and Falsification
 
-### Unit tests (in `affordance_query.rs`)
+### Unit tests (in `affordance_query.rs` and `tick_step.rs`)
 
-1. `ExactIdentity` + target gone + BestEffort mode → returns `ExactIdentityRequired`, never substitutes.
-2. `FungibleEquivalentCommodity` + specific item gone + another of same kind present → substitutes successfully.
-3. `EquivalentFacilityClassAtSamePlace` + workstation A occupied, workstation B of same class available → substitutes.
-4. `EquivalentFacilityClassAtSamePlace` + facility at a different place → does NOT substitute (strictness requires same place).
-5. `EquivalentRouteStep` + alternate edge to same destination → substitutes.
-6. `AnyLegalTarget` + any eligible target → substitutes.
+1. `check_binding_strictness(def[ExactIdentity], BestEffort)` → `ExactIdentityRequired`.
+2. `check_binding_strictness(def[FungibleEquivalentCommodity], BestEffort)` → `SubstitutionAllowed(FungibleEquivalentCommodity)`.
+3. `check_binding_strictness(def[_], Strict)` → `SubstitutionAllowed(_)` for every class (Strict mode bypasses the gate).
+4. `resolve_affordance` with a BestEffort request against an `ExactIdentity` action whose target is gone → `RequestResolutionRejectionReason::ExactIdentityRequired`, no synthesized affordance.
+5. `resolve_affordance` with a BestEffort request against a `FungibleEquivalentCommodity` action whose specific item is gone but another of the same kind is present at the place → substitutes successfully.
+6. `resolve_affordance` with a BestEffort request against an `EquivalentRouteStep` action and an alternate route edge to the same destination → substitutes.
 
 ### Integration tests
 
-7. Existing `accuse` golden: with a substituted suspect entity available in the place, confirm the planner does NOT substitute; the original target-gone step fails through revalidation.
-8. Existing `eat` / `consume` golden: confirm fungible substitution still works.
-9. Existing `travel` golden: confirm equivalent-route substitution works.
+7. Existing `accuse` golden: with a substituted suspect entity available at the place, confirm the planner does NOT substitute; the original target-gone step fails through revalidation and triggers a lawful replan.
+8. Existing `loot` golden (any Phase-1 combat aftermath scenario): confirm that when the planned corpse is moved or removed, BestEffort dispatch does not silently pick a different corpse at the same place.
+9. Existing `eat` / `drink` golden: confirm fungible substitution still works under `FungibleEquivalentCommodity`.
+10. Existing `travel` golden: confirm equivalent-route substitution works under `EquivalentRouteStep`.
 
 ### Regression guard
 
-10. Each `ActionDef` registration site has explicit `binding_strictness`. A new action without an assigned strictness fails compilation (no default).
+11. Each `ActionDef` registration site assigns an explicit `binding_strictness` value. Because the field is non-`Option`, `ActionDef` has no `Default` impl, and `#[serde(default = …)]` is applied only for deserialization, a new action whose literal-construction site omits `binding_strictness` fails compilation.
+12. `ActionDef` bincode roundtrip test (extend the existing test at `action_def.rs:143`) round-trips the new field.
+
+### Authoritative-to-AI Impact Rule (CLAUDE.md checklist)
+
+Because this spec modifies BestEffort dispatch, tickets must verify the full AI decision cycle:
+
+1. `get_affordances` — unaffected; affordance enumeration does not consult strictness.
+2. `generate_candidates` — unaffected; candidate emission does not consult strictness.
+3. `search_plan` — unaffected; the planner does not pre-filter on strictness (strictness only gates substitution at dispatch/revalidation).
+4. `BestEffort` action start — core site. `resolve_affordance` now refuses substitution for `ExactIdentity` actions; confirm the refusal converts cleanly into a recoverable start failure via `ActionStartFailureReason::from_action_error` + `BlockingFact::AssumptionFailed` (pre-S109).
+5. `handle_plan_failure` — confirm `BlockingFact::AssumptionFailed` routes through `failure_handling.rs` for re-plan.
+6. Payload revalidation (`with_payload_override_validator`) — strictness is checked *before* the payload validator in `revalidate_best_effort_payload_override_step`; verify ordering in the affected goldens (`accuse`, `post_bounty`, `escort_to_safety`).
+7. Golden tests — run the full `cargo test -p worldwake-ai` suite; no existing golden should regress.
 
 ## Outcome
 

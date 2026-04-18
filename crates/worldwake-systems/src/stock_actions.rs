@@ -84,6 +84,7 @@ pub fn register_stock_actions(
             causal_event_tags: BTreeSet::from([EventTag::Transfer, EventTag::WorldMutation]),
             payload: ActionPayload::None,
             handler: store_handler,
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         }),
         defs.register(ActionDef {
             id: collect_id,
@@ -114,6 +115,7 @@ pub fn register_stock_actions(
             causal_event_tags: BTreeSet::from([EventTag::Transfer, EventTag::WorldMutation]),
             payload: ActionPayload::None,
             handler: collect_handler,
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         }),
         defs.register(ActionDef {
             id: stage_id,
@@ -148,6 +150,7 @@ pub fn register_stock_actions(
             ]),
             payload: ActionPayload::None,
             handler: stage_handler,
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         }),
         defs.register(ActionDef {
             id: unstage_id,
@@ -182,6 +185,7 @@ pub fn register_stock_actions(
             ]),
             payload: ActionPayload::None,
             handler: unstage_handler,
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         }),
     ]
 }
@@ -678,6 +682,7 @@ mod tests {
                 commit_store_stock,
                 abort_stock,
             )),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         }
     }
 

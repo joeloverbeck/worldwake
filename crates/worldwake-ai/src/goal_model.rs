@@ -4123,6 +4123,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -4211,6 +4212,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::MoveCargo,
@@ -4279,6 +4281,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4349,6 +4352,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4425,6 +4429,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4485,6 +4490,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
@@ -4547,6 +4553,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::SearchPlace,
@@ -4610,6 +4617,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ReportMissing,
@@ -4674,6 +4682,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Accuse,
@@ -4745,6 +4754,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Exile,
@@ -4803,6 +4813,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4847,6 +4858,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Accuse,
@@ -4887,6 +4899,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ClaimBounty,
@@ -4937,6 +4950,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostNotice,
@@ -4997,6 +5011,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostBounty,
@@ -5043,6 +5058,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::EstablishCamp,
@@ -5088,6 +5104,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -5132,6 +5149,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -5173,6 +5191,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -5215,6 +5234,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Attack,
@@ -5257,6 +5277,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Attack,
@@ -5300,6 +5321,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
@@ -5352,6 +5374,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::SearchPlace,
@@ -5401,6 +5424,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ReportMissing,
@@ -5454,6 +5478,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
@@ -6268,6 +6293,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let declare_semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::DeclareSupport,
@@ -6346,6 +6372,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::DeclareSupport,
@@ -6399,6 +6426,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::DeclareSupport,
@@ -6436,6 +6464,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PressForceClaim,
@@ -10429,6 +10458,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::MoveCargo,
@@ -10547,6 +10577,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostBounty,
@@ -10617,6 +10648,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostNotice,

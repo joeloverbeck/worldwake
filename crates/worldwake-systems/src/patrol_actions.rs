@@ -57,6 +57,7 @@ fn patrol_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         causal_event_tags: BTreeSet::from([EventTag::Patrol]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::EquivalentRouteStep,
     }
 }
 
