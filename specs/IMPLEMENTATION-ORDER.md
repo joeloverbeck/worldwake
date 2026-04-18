@@ -295,6 +295,20 @@ S118 (observer, independent)
 
 Follow-up tickets (not specs): scenario weight rebalance for `survival-contested.ron`, belief-retention investigation for landmark facilities under memory pressure (pending mid-run belief snapshot capability).
 
+### Adjunct Wave: Survival Stability Hardening
+
+Derived from the 2026-04-18 S116 implementation retrospective after tickets `S116DRIESCSUS-011` and `S116DRIESCSUS-012` exposed 2 distinct stability gaps on the live branch. First, survival goldens could drift away from authored scenario truth by hardcoding health-envelope constants outside the scenario's own `DriveThresholds` and intended invariants. Second, once a long-run authored-critical failure appeared, explaining it required ad hoc ignored reproducers instead of a stable causal read-model. The scenarios were not proven broadly unstable; the missing substrate was canonical proof carriage plus long-run survival forensics.
+
+```text
+S119 (independent)
+S120 (independent)
+```
+
+**Wave** (parallel, no hard deps):
+
+- **S119**: Authored Survival Health Contracts — add a shared scenario-authored `survival_health_contract` surface for survival scenarios so long-run goldens read authored-critical thresholds, idle-window bounds, and required self-care families from one canonical place instead of duplicating file-local constants.
+- **S120**: Survival Critical-Window Forensics — add a deterministic derived report for prolonged authored-critical runs showing selected goal, competitors, blocker/exhaustion state, and local authoritative survival state, so future regressions can be explained without one-off debug probes.
+
 ### Phase 7 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed

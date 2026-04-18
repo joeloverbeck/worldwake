@@ -7965,6 +7965,69 @@ mod tests {
     }
 
     #[test]
+    fn blocked_exact_acquire_target_suppresses_only_stale_move_cargo_opportunity() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let market = entity(12);
+        let orchard_seller = entity(2);
+        let bread_lot = entity(3);
+        let key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, orchard_seller, bread_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(orchard_seller, EntityKind::Agent);
+        view.entity_kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(orchard_seller, orchard);
+        view.effective_places.insert(bread_lot, market);
+        view.entities_at.insert(market, vec![bread_lot]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(home, vec![orchard, market]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.adjacent_places.insert(market, vec![home]);
+        view.register_seller(orchard, CommodityKind::Bread, orchard_seller);
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+
+        let mut blocked = BlockedIntentMemory::default();
+        blocked.record(BlockedIntent {
+            blocker_key: BlockerKey {
+                goal_key: key,
+                place: Some(market),
+                target: Some(bread_lot),
+                action_def: Some(worldwake_core::ActionDefId(7)),
+            },
+            blocking_fact: BlockingFact::AssumptionFailed,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(20),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let candidates = generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+        let acquire_goals = goals_for(
+            &candidates,
+            &GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            },
+        );
+
+        assert_eq!(acquire_goals.len(), 1);
+        assert_eq!(
+            acquire_goals[0].anchor,
+            worldwake_core::OpportunityAnchor::Place(orchard),
+        );
+        assert_eq!(acquire_goals[0].evidence_entities, BTreeSet::from([orchard_seller]));
+    }
+
+    #[test]
     fn diagnostics_record_desire_fully_blocked_when_all_opportunities_are_filtered() {
         let agent = entity(1);
         let home = entity(10);

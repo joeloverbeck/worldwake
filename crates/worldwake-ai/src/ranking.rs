@@ -1597,14 +1597,14 @@ fn ranked_goal_ordering(
         return (ordering, Some(RankedGoalComparisonDimension::PriorityClass));
     }
 
-    let ordering = left.feasibility.cmp(&right.feasibility);
-    if ordering != Ordering::Equal {
-        return (ordering, Some(RankedGoalComparisonDimension::Feasibility));
-    }
-
     let ordering = right.motive_score.cmp(&left.motive_score);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::MotiveScore));
+    }
+
+    let ordering = left.feasibility.cmp(&right.feasibility);
+    if ordering != Ordering::Equal {
+        return (ordering, Some(RankedGoalComparisonDimension::Feasibility));
     }
 
     let ordering = compare_goal_specificity(&left.grounded.key.kind, &right.grounded.key.kind);
@@ -6737,11 +6737,13 @@ mod tests {
             ),
         ];
         goals.sort_by(super::compare_ranked_goals);
-        // Likely(600) should outrank Unlikely(900) within same priority class.
-        assert_eq!(goals[0].feasibility, FeasibilityHint::Likely);
-        assert_eq!(goals[0].motive_score, 600);
-        assert_eq!(goals[1].feasibility, FeasibilityHint::Unlikely);
-        assert_eq!(goals[1].motive_score, 900);
+        // Within one priority class, higher motive should outrank a cheaper
+        // feasibility hint so urgent remote self-care is not starved by a
+        // merely local sibling option.
+        assert_eq!(goals[0].motive_score, 900);
+        assert_eq!(goals[0].feasibility, FeasibilityHint::Unlikely);
+        assert_eq!(goals[1].motive_score, 600);
+        assert_eq!(goals[1].feasibility, FeasibilityHint::Likely);
     }
 
     #[test]
@@ -6788,6 +6790,38 @@ mod tests {
         // Same priority class + same feasibility → higher motive wins.
         assert_eq!(goals[0].motive_score, 800);
         assert_eq!(goals[1].motive_score, 400);
+    }
+
+    #[test]
+    fn critical_remote_food_can_outrank_local_wash_on_motive() {
+        use crate::feasibility::FeasibilityHint;
+        let mut goals = [
+            make_ranked_goal(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::Critical,
+                617_400,
+                FeasibilityHint::Uncertain,
+            ),
+            make_ranked_goal(
+                GoalKind::Wash,
+                GoalPriorityClass::Critical,
+                600_000,
+                FeasibilityHint::Likely,
+            ),
+        ];
+
+        goals.sort_by(super::compare_ranked_goals);
+
+        assert!(matches!(
+            goals[0].grounded.key.kind,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
     }
 
     #[test]

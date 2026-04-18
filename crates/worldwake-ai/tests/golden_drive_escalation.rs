@@ -74,6 +74,20 @@ fn load_drive_escalation_harness() -> (GoldenHarness, ScenarioDef) {
     let def = load_scenario_file(&path).expect("drive-escalation scenario should parse");
     let spawned = spawn_scenario(&def).expect("drive-escalation scenario should spawn");
     let mut harness = GoldenHarness::from_simulation_state(&spawned.state);
+    let agents = harness
+        .world
+        .query_name_and_agent_data()
+        .map(|(agent, _, _)| agent)
+        .collect::<Vec<_>>();
+    for agent in agents {
+        seed_actor_world_beliefs(
+            &mut harness.world,
+            &mut harness.event_log,
+            agent,
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+    }
     harness.driver.enable_tracing();
     harness.enable_action_tracing();
     (harness, def)
@@ -83,13 +97,6 @@ fn named_agents(h: &GoldenHarness) -> BTreeMap<String, EntityId> {
     h.world
         .query_name_and_agent_data()
         .map(|(entity, name, _)| (name.0.clone(), entity))
-        .collect()
-}
-
-fn named_agents_by_id(h: &GoldenHarness) -> BTreeMap<EntityId, String> {
-    h.world
-        .query_name_and_agent_data()
-        .map(|(entity, name, _)| (entity, name.0.clone()))
         .collect()
 }
 
@@ -308,12 +315,100 @@ fn run_escalation_respects_belief_only_planning() -> BeliefBarrierObservation {
     }
 }
 
+fn build_escalation_relief_harness() -> (GoldenHarness, EntityId) {
+    let mut h = GoldenHarness::new(Seed([16; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Escalation Relief Washer",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(950)),
+        MetabolismProfile {
+            hunger_rate: pm(0),
+            thirst_rate: pm(0),
+            fatigue_rate: pm(0),
+            bladder_rate: pm(0),
+            dirtiness_rate: pm(0),
+            ..MetabolismProfile::default()
+        },
+        UtilityProfile {
+            hunger_weight: pm(0),
+            thirst_weight: pm(0),
+            fatigue_weight: pm(0),
+            bladder_weight: pm(0),
+            dirtiness_weight: pm(900),
+            ..UtilityProfile::default()
+        },
+    );
+
+    let params = h
+        .world
+        .get_component_drive_escalation_profile(agent)
+        .expect("default drive-escalation profile should exist")
+        .params_for(HomeostaticNeedId::Dirtiness);
+    let mut exposure = h
+        .world
+        .get_component_deprivation_exposure(agent)
+        .copied()
+        .expect("agent should have deprivation exposure");
+    exposure.dirtiness_critical_ticks = params.start_after_ticks + 1;
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_deprivation_exposure(agent, exposure)
+        .expect("relief harness should keep deprivation exposure writable");
+    txn.set_component_homeostatic_needs(
+        agent,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(950)),
+    )
+    .expect("relief harness should keep needs writable");
+    commit_txn(txn, &mut h.event_log);
+
+    let _wash_basin = place_workstation(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::WashBasin,
+        ProductionOutputOwner::Actor,
+    );
+    let _water_source = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::Well,
+        ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        },
+        ProductionOutputOwner::Actor,
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    (h, agent)
+}
+
 fn run_escalation_fades_after_relief() -> EscalationReliefObservation {
-    let (mut h, _) = load_drive_escalation_harness();
-    let agents = named_agents(&h);
-    let agent_names = named_agents_by_id(&h);
-    let mut last_wash_commit = BTreeMap::<EntityId, Tick>::new();
+    let (mut h, agent) = build_escalation_relief_harness();
+    let agent_name = h
+        .world
+        .get_component_name(agent)
+        .expect("relief harness agent should have a name")
+        .0
+        .clone();
+    let mut wash_commit_tick = None;
     let mut seen_escalation_events = 0usize;
+    let mut observed_actions = Vec::new();
+    let mut observed_escalation_events = Vec::new();
 
     for tick_num in 0..WASH_PRIORITY_TICKS {
         h.step_once();
@@ -321,13 +416,12 @@ fn run_escalation_fades_after_relief() -> EscalationReliefObservation {
         let action_sink = h
             .action_trace_sink()
             .expect("action tracing should be enabled");
-        for agent in agents.values() {
-            for event in action_sink.events_for_at(*agent, Tick(u64::from(tick_num))) {
-                if matches!(event.kind, ActionTraceKind::Committed { .. })
-                    && event.action_name == "wash"
-                {
-                    last_wash_commit.insert(*agent, event.tick);
-                }
+        for event in action_sink.events_for_at(agent, Tick(u64::from(tick_num))) {
+            observed_actions.push(format!("{:?}:{}", event.tick, event.action_name));
+            if matches!(event.kind, ActionTraceKind::Committed { .. })
+                && event.action_name == "wash"
+            {
+                wash_commit_tick = Some(event.tick);
             }
         }
 
@@ -340,26 +434,26 @@ fn run_escalation_fades_after_relief() -> EscalationReliefObservation {
             let Some(action_name) = record.action_name() else {
                 continue;
             };
+            observed_escalation_events.push(format!("{:?}:{}", record.tick(), action_name));
             if !action_name.starts_with("escalation_end:Dirtiness:") {
                 continue;
             }
-            let actor = record
-                .actor_id()
-                .expect("escalation event should have actor");
-            let wash_commit_tick = *last_wash_commit
-                .get(&actor)
-                .expect("dirtiness escalation end should follow a wash commit");
+            let committed_wash_tick = wash_commit_tick.unwrap_or_else(|| {
+                panic!(
+                    "dirtiness escalation end should follow a wash commit; observed_actions={observed_actions:?}; observed_escalation_events={observed_escalation_events:?}"
+                )
+            });
             let exposure = h
                 .world
-                .get_component_deprivation_exposure(actor)
+                .get_component_deprivation_exposure(agent)
                 .expect("agent should have deprivation exposure");
             let needs = h
                 .world
-                .get_component_homeostatic_needs(actor)
+                .get_component_homeostatic_needs(agent)
                 .expect("agent should have needs");
             let threshold = h
                 .world
-                .get_component_drive_thresholds(actor)
+                .get_component_drive_thresholds(agent)
                 .expect("agent should have drive thresholds")
                 .dirtiness
                 .critical();
@@ -374,17 +468,14 @@ fn run_escalation_fades_after_relief() -> EscalationReliefObservation {
                 "dirtiness should be sub-critical when the escalation end event is emitted"
             );
             assert!(
-                record.tick().0 <= wash_commit_tick.0 + 1,
-                "dirtiness escalation should end within 1 tick of wash relief: wash_tick={wash_commit_tick:?}, end_tick={:?}",
+                record.tick().0 <= committed_wash_tick.0 + 1,
+                "dirtiness escalation should end within 1 tick of wash relief: wash_tick={committed_wash_tick:?}, end_tick={:?}",
                 record.tick()
             );
 
             return EscalationReliefObservation {
-                agent_name: agent_names
-                    .get(&actor)
-                    .expect("agent name should exist")
-                    .clone(),
-                wash_commit_tick,
+                agent_name: agent_name.clone(),
+                wash_commit_tick: committed_wash_tick,
                 reset_tick: record.tick(),
                 end_event_tick: record.tick(),
                 end_action_name: action_name.to_string(),
@@ -394,7 +485,7 @@ fn run_escalation_fades_after_relief() -> EscalationReliefObservation {
     }
 
     panic!(
-        "scenario should emit a dirtiness escalation_end event within {WASH_PRIORITY_TICKS} ticks"
+        "scenario should emit a dirtiness escalation_end event within {WASH_PRIORITY_TICKS} ticks; observed_actions={observed_actions:?}; observed_escalation_events={observed_escalation_events:?}"
     );
 }
 

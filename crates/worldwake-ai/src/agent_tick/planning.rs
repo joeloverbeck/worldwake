@@ -656,7 +656,13 @@ fn record_exhausted_goals(
                         }
                     }
                     crate::PlanSearchResult::FrontierExhausted { .. } => {
-                        ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline)
+                        frontier_exhaustion_entry(
+                            &plan.opportunity.goal_key.kind,
+                            invalidation_conditions,
+                            baseline,
+                            tick,
+                            cognitive,
+                        )
                     }
                     crate::PlanSearchResult::Found(_) | crate::PlanSearchResult::Unsupported => {
                         unreachable!("match guard excludes non-exhaustion results")
@@ -670,6 +676,24 @@ fn record_exhausted_goals(
         }
     }
     pending_tracker_increments
+}
+
+fn frontier_exhaustion_entry(
+    goal_kind: &GoalKind,
+    invalidation_conditions: Vec<crate::ExhaustionInvalidationCondition>,
+    baseline: crate::ExhaustionBaseline,
+    tick: Tick,
+    cognitive: &CognitiveProfile,
+) -> ExhaustionEntry {
+    match goal_kind {
+        // Sleep is a direct local self-care action. If a single search pass
+        // exhausts its frontier, suppressing it until a band/position change
+        // can strand the agent inside one authored critical band.
+        GoalKind::Sleep => {
+            ExhaustionEntry::budget_retry_pending(invalidation_conditions, baseline, tick, cognitive)
+        }
+        _ => ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline),
+    }
 }
 
 fn has_pending_budget_retry(runtime: &AgentDecisionRuntime, current_tick: Tick) -> bool {
@@ -3202,6 +3226,40 @@ mod tests {
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
         assert_eq!(entry.retry_state, ExhaustionRetryState::FrontierExhausted);
         assert!(entry.suppresses_planning());
+    }
+
+    #[test]
+    fn record_exhausted_goals_records_sleep_frontier_exhaustion_as_budget_retry() {
+        let goal = opportunity(GoalKey::from(GoalKind::Sleep));
+        let mut runtime = AgentDecisionRuntime::default();
+        let plans = vec![searched_plan(
+            goal,
+            PlanSearchResult::FrontierExhausted {
+                expansions_used: 12,
+            },
+        )];
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let cognitive = cognitive(&ProfileFixture::default());
+
+        let tracker_increments = record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(9),
+            &cognitive,
+        );
+        assert!(tracker_increments.is_empty());
+
+        let entry = runtime.exhaustion_cache.get(&goal).unwrap();
+        assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
+        assert!(!entry.suppresses_planning());
+        assert!(
+            entry.next_retry_tick.is_some(),
+            "sleep frontier exhaustion should retry on cooldown instead of suppressing indefinitely"
+        );
     }
 
     #[test]

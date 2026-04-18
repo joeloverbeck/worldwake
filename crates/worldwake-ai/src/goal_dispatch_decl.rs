@@ -291,7 +291,7 @@ static DECL_SLEEP: GoalDispatchDeclaration = GoalDispatchDeclaration {
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Fatigue),
     feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
     family_policy: SELF_CARE_POLICY,
-    progress_barrier_ops: NO_BARRIER,
+    progress_barrier_ops: SLEEP_OPS,
 };
 static DECL_RELIEVE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "Relieve",

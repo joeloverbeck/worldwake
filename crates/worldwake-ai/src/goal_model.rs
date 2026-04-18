@@ -5614,6 +5614,15 @@ mod tests {
             purpose: CommodityPurpose::SelfConsume,
         };
         let sleep_goal = GoalKind::Sleep;
+        let sleep_step = PlannedStep {
+            def_id: ActionDefId(2),
+            targets: Vec::new(),
+            payload_override: None,
+            op_kind: PlannerOpKind::Sleep,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        };
         let barrier_step = PlannedStep {
             def_id: ActionDefId(1),
             targets: Vec::new(),
@@ -5625,6 +5634,7 @@ mod tests {
         };
 
         assert!(acquire_goal.is_progress_barrier(&barrier_step));
+        assert!(sleep_goal.is_progress_barrier(&sleep_step));
         assert!(!sleep_goal.is_progress_barrier(&barrier_step));
     }
 

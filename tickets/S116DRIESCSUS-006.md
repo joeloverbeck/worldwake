@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None (tests + scenario fixture)
-**Deps**: archive/tickets/S116DRIESCSUS-003.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-005.md, archive/tickets/S116DRIESCSUS-008.md, archive/tickets/S116DRIESCSUS-009.md, archive/tickets/S116DRIESCSUS-010.md
+**Deps**: archive/tickets/S116DRIESCSUS-003.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-005.md, archive/tickets/S116DRIESCSUS-008.md, archive/tickets/S116DRIESCSUS-009.md, archive/tickets/S116DRIESCSUS-010.md, tickets/S116DRIESCSUS-011.md, archive/tickets/S116DRIESCSUS-012.md
 
 ## Problem
 
@@ -23,9 +23,11 @@ Spec S116 D7 requires three new goldens proving escalation behavior end-to-end, 
 7. Shared boundary under audit: the full escalation pipeline — `needs_system` counter maintenance (ticket 003), ranking multiplier application (ticket 004), scenario-defined profile (ticket 005). Goldens validate that all three cooperate to break the wash-cycle starvation dynamic.
 8. Spec drift: the parent spec's D8 (`golden_survival_contested` bound tightening) is now split into active ticket `S116DRIESCSUS-007`, and D9 unit motive-math coverage already landed in archived ticket `S116DRIESCSUS-002.md`. This ticket remains a golden/scenario ticket; it does not re-own ranking unit tests or contested-bound tightening.
 9. Live `GoalKind::Wash` admission is no longer inventory-driven after active ticket `S116DRIESCSUS-010`. Candidate generation now requires local wash access, and planner-relevant Wash destinations come from believed places that have both a wash basin and a water source. For the belief-only golden, the honest invariant remains "no found/committed Wash plan without believed wash access," not "Wash never appears anywhere in trace data."
-10. Calibration proof surface is existing authored survival goldens plus command-backed observation, not a second duplicate assertion layer. The honest current-ticket obligation is to rerun `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested`, confirm no retune is required, and record that result in closeout unless focused reruns expose a real default-calibration regression.
+10. Calibration proof surface is existing authored survival goldens plus command-backed observation, not a second duplicate assertion layer. The honest current-ticket obligation is to rerun `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested`, confirm no retune is required, and record that result in closeout unless focused reruns expose a real default-calibration regression or a separate production contradiction.
 11. Separate planner-boundary concern: `PlanningSnapshot::collect_entities()` in `crates/worldwake-ai/src/planning_snapshot.rs` currently admits authoritative remote entities at included places, which may expose planner-visible facilities without belief carriage. That concern is now tracked explicitly in active ticket `S116DRIESCSUS-008`; this ticket does not own the planner snapshot repair itself.
 12. Live harness mismatch: the existing `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` tests are all `#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]` on this branch. Truthful calibration verification therefore requires running those binaries with `-- --ignored`; plain `cargo test --test ...` would only compile the binary and skip the owned assertions.
+13. Reassessment on 2026-04-18 exposed a separate production bug during calibration. In `golden_survival_baseline`, agents repeatedly selected exact `AcquireCommodity(SelfConsume)` opportunities that compiled to a root `MoveCargo` / `pick_up` step against stale believed current-place lots, then failed at runtime with `PreconditionFailed("TargetAtActorPlace(0)")`. That contradiction is now explicitly tracked in `tickets/S116DRIESCSUS-011.md`; this ticket does not own the planner/runtime repair itself.
+14. Follow-up reassessment after `011`'s local-authority repair shows the stale exact-target loop is gone, but `golden_survival_baseline::all_agents_survive_1440_ticks` still fails with a separate long hunger-critical run for Agent A. That residual calibration contradiction is now explicitly tracked in `tickets/S116DRIESCSUS-012.md`; this ticket should wait on both production follow-ups rather than absorbing either one silently.
 
 ## Architecture Check
 
@@ -38,7 +40,7 @@ Spec S116 D7 requires three new goldens proving escalation behavior end-to-end, 
 1. Wash-cycle under priority override → golden `dirtiness_wash_cycle_under_priority_override` asserts each agent performs ≥ 4 wash cycles over 800 ticks and each agent's max consecutive dirtiness-critical run is < 250 ticks. Authoritative proof surface: action-trace `Wash` commit count + event-log `DeprivationExposure.dirtiness_critical_ticks` reset pattern.
 2. Belief-only planning preserved under escalation → golden `escalation_respects_belief_only_planning` asserts no found `GoalKind::Wash` plan or committed `wash` action appears when no believed wash-basin place exists, while authoritative `DeprivationExposure.dirtiness_critical_ticks` still grows past `start_after_ticks`. FND-14 guard.
 3. Escalation fades through physical relief → golden `escalation_fades_after_relief` asserts `DeprivationExposure::ticks_at_critical(HomeostaticNeedId::Dirtiness) == 0` within 1 tick of `dirtiness < critical`, and an `EventTag::Escalation` end event with canonical `action_name` is present on the transition tick.
-4. Baseline/scattered/contested calibration verification → existing `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` rerun cleanly after the new golden/scenario lands. If those reruns expose a real default-calibration regression, retune defaults in the owning core component and record the deviation; otherwise leave production defaults untouched and capture the no-retune result in closeout.
+4. Baseline/scattered/contested calibration verification → existing `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` rerun cleanly after the new golden/scenario lands and after any separately tracked production contradictions uncovered during calibration are resolved. If those reruns then expose a real default-calibration regression, retune defaults in the owning core component and record the deviation; otherwise leave production defaults untouched and capture the no-retune result in closeout.
 
 ## What to Change
 
@@ -68,13 +70,14 @@ Follow the harness/assertion pattern already used in `golden_survival_contested.
 
 Re-run `golden_survival_baseline`, `golden_survival_scattered`, and `golden_survival_contested` locally. Record per-agent action-count distributions (wash, eat, drink, sleep). Compare to the current fixtures' numbers (extracted from `reports/scenario-analysis-report.md` and prior golden archives where available).
 
-If those reruns expose a real default-calibration regression, tune `DriveEscalationProfile::default()` constants (`start_after_ticks`, `growth_per_tick`, `max_multiplier`) in `crates/worldwake-core/src/drive_escalation_profile.rs` (landed by ticket 002) and re-run. Here `max_multiplier` is a multiplier-scale cap in permille units, not a `Permille` pressure value. If no regression appears, leave production defaults untouched and record the no-retune result in closeout.
+If those reruns expose a real default-calibration regression, tune `DriveEscalationProfile::default()` constants (`start_after_ticks`, `growth_per_tick`, `max_multiplier`) in `crates/worldwake-core/src/drive_escalation_profile.rs` (landed by ticket 002) and re-run. Here `max_multiplier` is a multiplier-scale cap in permille units, not a `Permille` pressure value. If calibration instead exposes a separate production contradiction, track that contradiction explicitly before retuning defaults. If no regression appears, leave production defaults untouched and record the no-retune result in closeout.
 
 ## Files to Touch
 
 - `scenarios/drive-escalation-wash-priority.ron` (new)
 - `crates/worldwake-ai/tests/golden_drive_escalation.rs` (new)
 - `crates/worldwake-core/src/drive_escalation_profile.rs` (modify only if calibration reruns expose a real default regression — otherwise untouched)
+- `tickets/S116DRIESCSUS-011.md` (new dependency ticket if calibration exposes a separate production contradiction)
 
 ## Out of Scope
 

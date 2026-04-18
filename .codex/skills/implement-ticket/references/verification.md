@@ -20,6 +20,7 @@ How to verify implementation at the right boundary (Step 6).
 - When a broad verification run dies by `SIGKILL` or another likely environment/resource kill after focused suites are green, rerun the named interrupted/failing suite in isolation before repeating the full broad run.
 - When a broader verification command is intentionally waived after user direction, record the exact completed command set plus the waived command in the ticket `Outcome`.
 - Remove temporary debug or trace scaffolding before final verification unless the ticket explicitly owns keeping that instrumentation. After cleanup, rerun the narrowest affected proof.
+- When a newly added ignored traceability or golden reproducer exists only to expose the pre-fix contradiction, remove or rewrite it before closeout if the shipped fix changes the live trace shape and the reproducer is no longer a stable contract test.
 - After changing code post-verification, rerun narrowest affected tests and any stale broader commands.
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
 - When CI/compile fallout follows a shared context-field change, sweep manual struct literals as well as direct function call sites.

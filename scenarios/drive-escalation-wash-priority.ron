@@ -12,6 +12,8 @@
 // - no combat, trade, or social branches
 // - no second food hub or long-distance water route
 // - no second camp or alternate local food source
+// - thirst and fatigue pressure are downweighted so the scenario stays focused
+//   on hunger-versus-dirtiness priority under repeated wilderness relief
 //
 // This keeps the scenario focused on the motive-priority branch:
 // hunger_weight=750 still beats dirtiness_weight=625 until sustained critical
@@ -35,15 +37,15 @@
             known_recipes: ["Harvest Apples", "Harvest Water"],
             needs: (
                 hunger: 560,
-                thirst: 320,
-                fatigue: 90,
+                thirst: 60,
+                fatigue: 20,
                 bladder: 260,
                 dirtiness: 760,
             ),
             utility_profile: (
                 hunger_weight: 750,
-                thirst_weight: 650,
-                fatigue_weight: 600,
+                thirst_weight: 100,
+                fatigue_weight: 100,
                 bladder_weight: 650,
                 dirtiness_weight: 625,
                 pain_weight: 500,
@@ -68,8 +70,8 @@
             ),
             metabolism_profile: (
                 hunger_rate: 2,
-                thirst_rate: 3,
-                fatigue_rate: 2,
+                thirst_rate: 1,
+                fatigue_rate: 1,
                 bladder_rate: 5,
                 dirtiness_rate: 1,
                 rest_efficiency: 20,
@@ -100,16 +102,16 @@
             control: Ai,
             known_recipes: ["Harvest Apples", "Harvest Water"],
             needs: (
-                hunger: 540,
-                thirst: 340,
-                fatigue: 110,
-                bladder: 300,
-                dirtiness: 780,
+                hunger: 560,
+                thirst: 60,
+                fatigue: 20,
+                bladder: 260,
+                dirtiness: 760,
             ),
             utility_profile: (
                 hunger_weight: 750,
-                thirst_weight: 650,
-                fatigue_weight: 600,
+                thirst_weight: 100,
+                fatigue_weight: 100,
                 bladder_weight: 650,
                 dirtiness_weight: 625,
                 pain_weight: 500,
@@ -134,8 +136,8 @@
             ),
             metabolism_profile: (
                 hunger_rate: 2,
-                thirst_rate: 3,
-                fatigue_rate: 2,
+                thirst_rate: 1,
+                fatigue_rate: 1,
                 bladder_rate: 5,
                 dirtiness_rate: 1,
                 rest_efficiency: 20,

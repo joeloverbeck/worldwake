@@ -29,7 +29,7 @@ use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
-    ActionDefId, BanditFactionPolicy, BeliefConfidencePolicy, BelievedInstitutionalClaim,
+    ActionDefId, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy, BelievedInstitutionalClaim,
     BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, BodyCostPerTick, BodyPart,
     CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents,
     ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
@@ -3747,6 +3747,57 @@ fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
             purpose: CommodityPurpose::SelfConsume,
         }
     ));
+}
+
+#[test]
+fn stale_current_place_lot_belief_does_not_emit_consume_owned_goal() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let local_place = harness
+        .world
+        .effective_place(harness.actor)
+        .expect("actor should start at a concrete place");
+    let remote_place = harness
+        .world
+        .topology()
+        .place_ids()
+        .find(|place| *place != local_place)
+        .expect("prototype world should include a second place");
+    let stale_lot = {
+        let mut txn = new_txn(&mut harness.world, 2);
+        let stale_lot = txn
+            .create_item_lot(CommodityKind::Apple, Quantity(2))
+            .unwrap();
+        txn.set_ground_location(stale_lot, remote_place).unwrap();
+        commit_txn(txn);
+        stale_lot
+    };
+
+    let mut belief_store = harness
+        .world
+        .get_component_agent_belief_store(harness.actor)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    let mut stale_lot_belief =
+        build_believed_entity_state(&harness.world, stale_lot, Tick(2), PerceptionSource::DirectObservation)
+            .expect("fresh lot should be representable as a belief snapshot");
+    stale_lot_belief.last_known_place = Some(local_place);
+    belief_store.update_entity(stale_lot, stale_lot_belief);
+
+    let mut txn = new_txn(&mut harness.world, 2);
+    txn.set_component_agent_belief_store(harness.actor, belief_store)
+        .unwrap();
+    commit_txn(txn);
+
+    let ranked = ranked_goals_at(&mut harness, Tick(2));
+    assert!(
+        !has_goal(
+            &ranked,
+            GoalKind::ConsumeOwnedCommodity {
+                commodity: CommodityKind::Apple,
+            }
+        ),
+        "stale believed current-place lots must not surface ConsumeOwnedCommodity for absent local cargo"
+    );
 }
 
 #[test]

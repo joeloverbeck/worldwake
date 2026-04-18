@@ -1141,7 +1141,7 @@ pub(super) fn unsupported_goal(_goal: &GoalKind) -> bool {
 
 /// Returns `Some((place, blocking_fact))` if the candidate is blocked by a
 /// place-scoped blocker, `None` otherwise.
-fn candidate_blocked_by_place(
+pub(super) fn candidate_blocked_by_place(
     candidate: &SearchCandidate,
     goal: &GroundedGoal,
     node: &SearchNode<'_>,
@@ -1173,6 +1173,19 @@ fn candidate_action_place(
     let semantics = semantics_table.get(&candidate.def_id)?;
     match semantics.op_kind {
         PlannerOpKind::Travel => candidate.authoritative_targets.first().copied(),
+        PlannerOpKind::MoveCargo => candidate
+            .authoritative_targets
+            .first()
+            .copied()
+            .and_then(|target| {
+                node.state
+                    .effective_place_ref(PlanningEntityRef::Authoritative(target))
+            })
+            .or_else(|| {
+                node.state.effective_place_ref(PlanningEntityRef::Authoritative(
+                    node.state.snapshot().actor(),
+                ))
+            }),
         _ => node
             .state
             .effective_place_ref(PlanningEntityRef::Authoritative(

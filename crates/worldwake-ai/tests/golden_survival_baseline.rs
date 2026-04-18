@@ -9,12 +9,12 @@ use golden_harness::*;
 use worldwake_ai::{CommodityPurpose, DecisionOutcome, PlanSearchOutcome};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    AgentBeliefStore, CommodityKind, EntityId, GoalKind, HomeostaticNeeds, Tick, WorkstationTag,
+    AgentBeliefStore, CommodityKind, DriveThresholds, EntityId, GoalKind, HomeostaticNeeds, Tick,
+    WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
-const NEED_CRITICAL_THRESHOLD: u16 = 750;
 const MAX_CRITICAL_RUN_TICKS: u32 = 100;
 /// Minimum idle window length (ticks) to consider an agent "stuck".
 const IDLE_THRESHOLD: u32 = 20;
@@ -36,31 +36,31 @@ struct NeedRunTracker {
 }
 
 impl NeedRunTracker {
-    fn observe(&mut self, needs: &HomeostaticNeeds) {
+    fn observe(&mut self, needs: &HomeostaticNeeds, thresholds: &DriveThresholds) {
         update_need_run(
             &mut self.hunger_current,
             &mut self.hunger_max,
-            needs.hunger >= pm(NEED_CRITICAL_THRESHOLD),
+            needs.hunger >= thresholds.hunger.critical(),
         );
         update_need_run(
             &mut self.thirst_current,
             &mut self.thirst_max,
-            needs.thirst >= pm(NEED_CRITICAL_THRESHOLD),
+            needs.thirst >= thresholds.thirst.critical(),
         );
         update_need_run(
             &mut self.fatigue_current,
             &mut self.fatigue_max,
-            needs.fatigue >= pm(NEED_CRITICAL_THRESHOLD),
+            needs.fatigue >= thresholds.fatigue.critical(),
         );
         update_need_run(
             &mut self.bladder_current,
             &mut self.bladder_max,
-            needs.bladder >= pm(NEED_CRITICAL_THRESHOLD),
+            needs.bladder >= thresholds.bladder.critical(),
         );
         update_need_run(
             &mut self.dirtiness_current,
             &mut self.dirtiness_max,
-            needs.dirtiness >= pm(NEED_CRITICAL_THRESHOLD),
+            needs.dirtiness >= thresholds.dirtiness.critical(),
         );
     }
 }
@@ -68,6 +68,7 @@ impl NeedRunTracker {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentSurvivalObservation {
     alive: bool,
+    critical_thresholds: DriveThresholds,
     critical_need_runs: NeedRunTracker,
     committed_actions: BTreeSet<String>,
 }
@@ -166,6 +167,18 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
         .cloned()
         .map(|name| (name, NeedRunTracker::default()))
         .collect::<BTreeMap<_, _>>();
+    let critical_thresholds = agents
+        .iter()
+        .map(|(name, agent)| {
+            (
+                name.clone(),
+                h.world
+                    .get_component_drive_thresholds(*agent)
+                    .copied()
+                    .expect("survival scenario agents should have drive thresholds"),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     let mut explorer_reached_fertile_fields = false;
 
     // Idle window tracking: (current_idle_start, max_need_at_start, consecutive_idle)
@@ -192,10 +205,13 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
                 .world
                 .get_component_homeostatic_needs(*agent)
                 .expect("survival scenario agents should always have needs");
+            let thresholds = critical_thresholds
+                .get(agent_name)
+                .expect("every agent should have critical thresholds");
             critical_need_runs
                 .get_mut(agent_name)
                 .expect("every agent should have a run tracker")
-                .observe(needs);
+                .observe(needs, thresholds);
 
             // Track idle windows.
             let had_action = action_sink
@@ -276,6 +292,9 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
                 name.clone(),
                 AgentSurvivalObservation {
                     alive: !h.agent_is_dead(agent),
+                    critical_thresholds: *critical_thresholds
+                        .get(&name)
+                        .expect("every agent should keep its critical thresholds"),
                     critical_need_runs: critical_need_runs
                         .remove(&name)
                         .expect("every agent should have final need tracking"),
@@ -353,7 +372,8 @@ fn assert_survival_action_coverage(agent_name: &str, actions: &BTreeSet<String>)
 // simulation for 1440 ticks with decision and action tracing enabled.
 //
 // Proves: all authored agents remain alive and none of the five tracked needs
-// stays above pm(750) for more than 100 consecutive ticks.
+// stays above that agent's authored critical threshold for more than 100
+// consecutive ticks.
 //
 // Chain: authored survival substrate -> exploration/perception discovers food
 // and water -> repeated self-care actions keep critical runs bounded -> no
@@ -370,27 +390,32 @@ fn all_agents_survive_1440_ticks() {
         );
         assert!(
             agent.critical_need_runs.hunger_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} hunger exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks",
+            "{agent_name} hunger exceeded authored critical pm({}) for {} consecutive ticks",
+            agent.critical_thresholds.hunger.critical().value(),
             agent.critical_need_runs.hunger_max
         );
         assert!(
             agent.critical_need_runs.thirst_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} thirst exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks",
+            "{agent_name} thirst exceeded authored critical pm({}) for {} consecutive ticks",
+            agent.critical_thresholds.thirst.critical().value(),
             agent.critical_need_runs.thirst_max
         );
         assert!(
             agent.critical_need_runs.fatigue_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} fatigue exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks",
+            "{agent_name} fatigue exceeded authored critical pm({}) for {} consecutive ticks",
+            agent.critical_thresholds.fatigue.critical().value(),
             agent.critical_need_runs.fatigue_max
         );
         assert!(
             agent.critical_need_runs.bladder_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} bladder exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks",
+            "{agent_name} bladder exceeded authored critical pm({}) for {} consecutive ticks",
+            agent.critical_thresholds.bladder.critical().value(),
             agent.critical_need_runs.bladder_max
         );
         assert!(
             agent.critical_need_runs.dirtiness_max <= MAX_CRITICAL_RUN_TICKS,
-            "{agent_name} dirtiness exceeded pm({NEED_CRITICAL_THRESHOLD}) for {} consecutive ticks",
+            "{agent_name} dirtiness exceeded authored critical pm({}) for {} consecutive ticks",
+            agent.critical_thresholds.dirtiness.critical().value(),
             agent.critical_need_runs.dirtiness_max
         );
     }

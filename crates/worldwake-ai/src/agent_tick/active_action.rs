@@ -32,6 +32,19 @@ pub(super) fn active_action_for_agent(
         .cloned()
 }
 
+fn should_build_interrupt_plans(
+    interruptibility: Interruptibility,
+    runtime: &AgentDecisionRuntime,
+    active_goal: Option<ActiveGoal>,
+    jc: Option<&IntentionFrame>,
+) -> bool {
+    if interruptibility != Interruptibility::FreelyInterruptible {
+        return false;
+    }
+
+    has_frame(jc) || active_goal.is_some() || runtime.current_plan.is_some()
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn handle_active_action_phase(
     ctx: &mut AgentTickContext<'_>,
@@ -63,9 +76,7 @@ pub(super) fn handle_active_action_phase(
     // `planned_candidates` is consumed only by `interrupt_freely`, so we can skip
     // the expensive GOAP search for NonInterruptible and InterruptibleWithPenalty
     // actions.
-    let needs_plans =
-        interruptibility == Interruptibility::FreelyInterruptible && has_frame(jc.as_ref());
-    let no_skip = std::collections::BTreeMap::new();
+    let needs_plans = should_build_interrupt_plans(interruptibility, runtime, *active_goal, jc.as_ref());
     let planned_candidates = needs_plans.then(|| {
         build_candidate_plans(
             ctx.world,
@@ -83,7 +94,7 @@ pub(super) fn handle_active_action_phase(
             ctx.recipe_registry,
             false,
             false,
-            &no_skip,
+            &runtime.exhaustion_cache,
         )
     });
     let selection_plans = planned_candidates.as_ref().map(|p| selection_candidates(p));
@@ -293,4 +304,72 @@ pub(super) fn handle_current_step_failure(
         &BlockedIntentMemory::default(),
         blocked_memory,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_build_interrupt_plans;
+    use crate::{AgentDecisionRuntime, PlannedPlan, PlannedStep};
+    use worldwake_core::{
+        ActionDefId, ActiveGoal, EntityId, GoalKey, GoalKind, IntentionFrame,
+        OpportunityAnchor, Tick,
+    };
+    use worldwake_sim::Interruptibility;
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    #[test]
+    fn frame_less_current_plan_still_builds_interrupt_plans() {
+        let current_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: worldwake_core::CommodityKind::Water,
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        });
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(PlannedPlan::new(
+                worldwake_core::OpportunityKey {
+                    goal_key: current_goal,
+                    anchor: OpportunityAnchor::None,
+                },
+                current_goal,
+                vec![PlannedStep {
+                    def_id: ActionDefId(1),
+                    targets: vec![crate::PlanningEntityRef::Authoritative(entity(7))],
+                    payload_override: None,
+                    op_kind: crate::PlannerOpKind::Travel,
+                    estimated_ticks: 3,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                }],
+                crate::PlanTerminalKind::ProgressBarrier,
+            )),
+            ..AgentDecisionRuntime::default()
+        };
+
+        assert!(should_build_interrupt_plans(
+            Interruptibility::FreelyInterruptible,
+            &runtime,
+            Some(ActiveGoal {
+                goal_key: current_goal,
+                adopted_at: Tick(5),
+            }),
+            Option::<&IntentionFrame>::None,
+        ));
+    }
+
+    #[test]
+    fn non_interruptible_actions_skip_interrupt_planning_without_frame() {
+        let runtime = AgentDecisionRuntime::default();
+
+        assert!(!should_build_interrupt_plans(
+            Interruptibility::NonInterruptible,
+            &runtime,
+            None,
+            Option::<&IntentionFrame>::None,
+        ));
+    }
 }

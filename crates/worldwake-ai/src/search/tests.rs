@@ -1,6 +1,6 @@
 use super::candidates::{
     CandidateSearchContext, CommodityFilterContext, apply_commodity_relevance_filter,
-    relevant_action_defs, root_candidate_trace_from_candidate,
+    candidate_blocked_by_place, relevant_action_defs, root_candidate_trace_from_candidate,
 };
 use super::{
     FrontierEntry, SearchCandidate, SearchNode, TacticalGoal, compare_search_nodes,
@@ -2239,6 +2239,99 @@ fn search_returns_pick_up_goal_satisfaction_for_local_unpossessed_food_lot() {
     assert_eq!(plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].op_kind, PlannerOpKind::MoveCargo);
+}
+
+#[test]
+fn search_blocks_remote_stale_move_cargo_by_target_place() {
+    let actor = entity(1);
+    let home = entity(10);
+    let orchard = entity(11);
+    let bread = entity(20);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, home, orchard, bread]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(home, EntityKind::Place);
+    view.kinds.insert(orchard, EntityKind::Place);
+    view.kinds.insert(bread, EntityKind::ItemLot);
+    view.effective_places.insert(actor, home);
+    view.effective_places.insert(bread, orchard);
+    view.entities_at.insert(home, vec![actor]);
+    view.entities_at.insert(orchard, vec![bread]);
+    view.lot_commodities.insert(bread, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((bread, CommodityKind::Bread), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(bread, LoadUnits(1));
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.adjacent
+        .insert(home, vec![(orchard, NonZeroU32::new(1).unwrap())]);
+    view.adjacent
+        .insert(orchard, vec![(home, NonZeroU32::new(1).unwrap())]);
+
+    let (registry, _handlers) = build_registry();
+    let semantics_table = build_semantics_table(&registry);
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(orchard),
+        key: acquire_goal(CommodityKind::Bread).key,
+        evidence_entities: BTreeSet::from([bread]),
+        evidence_places: BTreeSet::from([orchard]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let node = SearchNode {
+        state: PlanningState::new(&snapshot),
+        steps: SharedVec::new(),
+        total_estimated_ticks: 0,
+        search_cost: 0,
+        tactical_barrier_reached: false,
+        heuristic_ticks: 0,
+    };
+    let candidate = SearchCandidate {
+        def_id: pick_up_id,
+        authoritative_targets: vec![bread],
+        planning_targets: vec![PlanningEntityRef::Authoritative(bread)],
+        payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+            quantity: Quantity(1),
+        })),
+        planner_only: false,
+        trace_index: None,
+        expansion_trace_index: None,
+    };
+    let mut blocked = BlockedIntentMemory::default();
+    blocked.record(BlockedIntent {
+        blocker_key: BlockerKey {
+            goal_key: goal.key,
+            place: Some(orchard),
+            target: Some(bread),
+            action_def: Some(pick_up_id),
+        },
+        blocking_fact: BlockingFact::AssumptionFailed,
+        diagnostic_context: None,
+        observed_tick: Tick(1),
+        expires_tick: Tick(20),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
+    });
+
+    assert_eq!(
+        candidate_blocked_by_place(&candidate, &goal, &node, &semantics_table, &blocked, Tick(5)),
+        Some((Some(orchard), BlockingFact::AssumptionFailed)),
+    );
 }
 
 #[test]
@@ -9541,6 +9634,60 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
         "local sleep planning should still succeed"
     );
     assert_eq!(trace_metadata.tactical_goal, None);
+}
+
+#[test]
+fn local_critical_sleep_returns_progress_barrier_after_one_step() {
+    let actor = entity(1);
+    let town = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.effective_places.insert(actor, town);
+    view.entities_at.insert(town, vec![actor]);
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(1000), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::Sleep),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([town]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        0,
+    );
+
+    let result = super::search_plan_with_trace_metadata(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &cognitive(&ProfileFixture::default()),
+        &execution_budget(&ProfileFixture::default()),
+        &RecipeRegistry::new(),
+        &BlockedIntentMemory::default(),
+        Tick(0),
+        None,
+        None,
+        None,
+    );
+
+    let plan = result.into_plan().expect("critical local sleep should plan");
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Sleep);
 }
 
 #[test]

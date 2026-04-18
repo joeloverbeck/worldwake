@@ -364,7 +364,9 @@
     ],
     facilities: [
         (name: "Camp Well", workstation: Well, location: "Riverside Camp"),
+        (name: "Camp Washbasin", workstation: WashBasin, location: "Riverside Camp"),
         (name: "Forest Well", workstation: Well, location: "Forest Clearing"),
+        (name: "Forest Washbasin", workstation: WashBasin, location: "Forest Clearing"),
         (name: "North Orchard", workstation: OrchardRow, location: "Fertile Fields"),
     ],
     resource_sources: [

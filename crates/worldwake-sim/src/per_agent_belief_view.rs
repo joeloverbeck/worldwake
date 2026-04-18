@@ -265,8 +265,16 @@ impl<'w> PerAgentBeliefView<'w> {
             .flatten()
     }
 
+    fn has_authoritative_local_visibility(&self, entity: EntityId) -> bool {
+        let Some(agent_place) = self.world.effective_place(self.agent) else {
+            return false;
+        };
+        self.world.effective_place(entity) == Some(agent_place)
+    }
+
     fn knows_entity(&self, entity: EntityId) -> bool {
         entity == self.agent
+            || self.has_authoritative_local_visibility(entity)
             || self.world.possessor_of(entity) == Some(self.agent)
             || self.believed_entity(entity).is_some()
             || self
@@ -612,6 +620,13 @@ impl SpatialBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+        if self.world.effective_place(self.agent) == Some(place) {
+            let mut entities = self.world.entities_effectively_at(place);
+            entities.sort();
+            entities.dedup();
+            return entities;
+        }
+
         let mut entities = self
             .belief_store
             .known_entities
@@ -620,9 +635,6 @@ impl SpatialBeliefView for PerAgentBeliefView<'_> {
                 (state.last_known_place == Some(place)).then_some(*entity)
             })
             .collect::<Vec<_>>();
-        if self.world.effective_place(self.agent) == Some(place) {
-            entities.push(self.agent);
-        }
         entities.sort();
         entities.dedup();
         entities
@@ -1223,6 +1235,18 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
                 .filter(|lot| lot.commodity == kind)
                 .map_or(Quantity(0), |lot| lot.quantity);
         }
+        if self.has_authoritative_local_visibility(holder) {
+            if let Some(lot) = self.world.get_component_item_lot(holder)
+                && lot.commodity == kind
+            {
+                return lot.quantity;
+            }
+            if let Some(source) = self.world.get_component_resource_source(holder)
+                && source.commodity == kind
+            {
+                return source.available_quantity;
+            }
+        }
 
         self.believed_entity(holder)
             .and_then(|state| state.last_known_inventory.get(&kind).copied())
@@ -1550,7 +1574,7 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
 
 impl FacilityBeliefView for PerAgentBeliefView<'_> {
     fn workstation_tag(&self, entity: EntityId) -> Option<WorkstationTag> {
-        if entity == self.agent {
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
             return self
                 .world
                 .get_component_workstation_marker(entity)
@@ -1562,7 +1586,7 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
     }
 
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
-        if entity == self.agent {
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
             return self.world.get_component_resource_source(entity).cloned();
         }
 
@@ -1932,6 +1956,57 @@ mod tests {
         assert_eq!(
             InventoryBeliefView::commodity_quantity(&view, lot, CommodityKind::Waste),
             Quantity(6)
+        );
+    }
+
+    #[test]
+    fn current_place_entities_use_authoritative_local_set_over_stale_beliefs() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let remote_place = world
+            .topology()
+            .place_ids()
+            .find(|candidate| *candidate != place)
+            .expect("prototype world should include a second place");
+        let (agent, stale_lot, visible_lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            let stale_lot = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(stale_lot, remote_place).unwrap();
+            let visible_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(1))
+                .unwrap();
+            txn.set_ground_location(visible_lot, place).unwrap();
+            commit_txn(txn);
+            (agent, stale_lot, visible_lot)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        let mut stale_lot_belief = entity_belief(place, true, 0, 10);
+        stale_lot_belief.believed_kind = Some(EntityKind::ItemLot);
+        stale_lot_belief.last_known_inventory.clear();
+        stale_lot_belief
+            .last_known_inventory
+            .insert(CommodityKind::Apple, Quantity(2));
+        beliefs.update_entity(stale_lot, stale_lot_belief);
+
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+        let entities = SpatialBeliefView::entities_at(&view, place);
+
+        assert!(
+            entities.contains(&agent),
+            "agent should still observe itself at the current place"
+        );
+        assert!(
+            entities.contains(&visible_lot),
+            "authoritative local entities should stay visible at the current place"
+        );
+        assert!(
+            !entities.contains(&stale_lot),
+            "stale believed current-place lots must not remain visible once the actor is co-located"
         );
     }
 
