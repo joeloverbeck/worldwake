@@ -152,6 +152,19 @@ A planner may consult only the agent’s accessible belief state, memory, and kn
 
 **Test**: If an agent can plan around a fact it has never perceived, inferred, remembered, or been told, the design violates this principle.
 
+### 14A. Same-Tick Local Observation Is Belief-Equivalent; Social Facts Are Not
+
+Co-location is perception. An observing agent’s directly perceivable physical properties of a co-located entity — its kind, item-lot commodity and quantity, workstation tag, resource source availability, container contents, co-location of other entities — may be read from authoritative world state without violating FND-14, because a correct perception pipeline delivers those same facts on the same tick. The authoritative read is the fact the belief store would hold an instant later.
+
+This exception applies **only** to facts the agent could perceive directly through their own senses at their current location. Social, relational, and inferred facts — ownership, effective rights, institutional claims, jurisdiction, possessor identity beyond co-location, prior testimony, recorded artifacts, credibility of absent sources — **always** require an explicit belief entry, even when the subject is co-located. Standing next to a chest does not tell you who owns it.
+
+Two corollaries:
+
+1. **Memory vs. observation.** This exception covers same-tick co-located perception only. Off-place or delayed knowledge is always belief-backed; authoritative reads for non-co-located entities are an FND-14 violation.
+2. **Fidelity and budget.** Perception’s probabilistic observation checks and observation-budget truncation shape which co-located facts *persist into the belief store beyond the current tick*. They do not gate same-tick observability of entities the agent is physically standing with.
+
+**Test**: If a belief-view accessor reads world state for an entity that is neither co-located with the agent nor in the agent’s belief store, the design violates FND-14. If a belief-view accessor claims to surface *who owns*, *who has rights over*, or *what institutions claim* an entity on the basis of co-location alone, the design violates FND-14A.
+
 ### 15. Knowledge Is Acquired Locally and Travels Physically
 
 Knowledge enters an agent through perception, memory retrieval, inference, testimony, documents, traces, and other explicit carriers. Knowledge then moves through the world by physical or social transmission, with delay, distortion, source attribution, and possible loss.

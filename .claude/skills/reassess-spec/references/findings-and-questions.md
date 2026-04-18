@@ -65,7 +65,8 @@ Present in this format:
 
 - **Initial report**: At most 3 questions. If more, prioritize blockers and defer rest to follow-up.
 - **Interdependent questions**: Present as a single combined question with labeled option combinations.
-- **Discrete options (2-4)**: Use `AskUserQuestion` with a recommended default.
+- **Discrete options (2-4), single question**: Use `AskUserQuestion` with a recommended default.
+- **Discrete options (2-4), bundled (2–3 questions in one review round)**: Prefer plain-text bullets with labeled options `(a)/(b)/…` and a recommendation per question, under a single `### Questions` heading. This reads more cleanly than multiple `AskUserQuestion` calls and lets the user answer inline (e.g., "1) a, 2) b, 3) proceed with recommendation"). Use `AskUserQuestion` only when a single discrete-option question stands alone.
 - **Open-ended questions**: Present as plain text in the report.
 - **Follow-up rounds**: One question at a time. If answers raise new questions or invalidate findings, present a follow-up round (same format). Repeat until resolved.
 - **Delegated resolution**: If the user delegates (e.g., "you decide based on FOUNDATIONS"), resolve by reasoning against the referenced constraint. If resolution requires additional codebase investigation, perform a mini Step 3 scoped to the question. A delegated resolution may require investigation comparable in scope to an original Step 3 sub-step (e.g., tracing through 3+ files across multiple crates). If the investigation touches >3 files, consider launching a focused Explore agent rather than manual reads. If none of the original options are ideal, propose a new option with justification — scope investigation to 1-3 targeted checks. If the new option affects the dependency graph or crate boundaries, present as a new finding first. In plan mode, the new option is included in the plan file and ExitPlanMode approval covers it.

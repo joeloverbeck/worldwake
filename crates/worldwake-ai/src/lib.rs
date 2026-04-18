@@ -36,6 +36,7 @@ mod route_threat;
 pub mod search;
 mod shared_collections;
 pub mod side_benefit;
+pub mod survival_forensics;
 mod theft;
 
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
@@ -107,6 +108,11 @@ pub use ranking::{
 };
 pub use search::{PlanSearchResult, search_plan};
 pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};
+pub use survival_forensics::{
+    ActionTraceSnapshot, ActiveActionSummary, BlockerSummary, CriticalWindowFrame,
+    CriticalWindowReport, ExhaustionSummary, LocalSurvivalStateSummary, RankedGoalSnapshot,
+    SurvivalForensicExtractor,
+};
 pub use worldwake_core::{
     CognitiveProfile, CommodityPurpose, ExecutionBudget, GoalKey, GoalKind, OpportunityAnchor,
     OpportunityKey,

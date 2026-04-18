@@ -78,6 +78,7 @@ The simulation crate contains the action framework, scheduler, tick loop, and re
 | `input_queue` | `InputQueue` — deterministic input ordering by `(tick, sequence_no)` |
 | `deterministic_rng` | `DeterministicRng` — ChaCha8 wrapper for seeded randomness |
 | `belief_view` | `BeliefView` trait — agent belief interface |
+| `per_agent_belief_view` | `PerAgentBeliefView` — production implementation of the belief traits. Implements the FND-14 / FND-14A split contract: physical properties of co-located entities (kind, item-lot commodity/quantity, workstation tag, resource source, container contents) are read authoritatively from world state as same-tick perception equivalents; social/relational facts (ownership, effective rights, institutional claims) require an explicit belief entry even when the subject is co-located |
 | `omniscient_belief_view` | `OmniscientBeliefView` — omniscient stand-in until E14 |
 | `autonomous_controller` | `AutonomousController` trait — interface for AI/autonomous systems to claim and control agents |
 | `affordance` | `Affordance` — available actions for an agent |

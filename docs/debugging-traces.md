@@ -146,3 +146,13 @@ press_force_claim → hostility + ContestsOffice → (vacancy required) → succ
 - After uncontested hold for `succession_period_ticks`, the controller is installed as `office_holder`.
 
 Golden tests that need both hostility (requires incumbent) AND controller establishment (requires vacancy) must include an explicit vacancy step between them.
+
+## Critical Window Forensics
+
+Decision traces and action traces remain the primary raw debugging surfaces, but prolonged survival failures usually need one more layer: a stable read-model over an entire authored-critical window rather than a pile of single-tick facts.
+
+Use `worldwake_ai::{CriticalWindowReport, SurvivalForensicExtractor}` from `crates/worldwake-ai/src/survival_forensics.rs` for that composed view. The extractor bundles per-frame decision-trace snapshots, action-trace snapshots, blocker and exhaustion summaries, and authoritative local-place state with bounded capture rules so long windows stay readable.
+
+For golden tests, prefer the shared helpers in `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs` and print `dump_reports_for_debug(&reports)` before inventing a one-off reproducer. For manual scenario inspection, the observer binary now renders the same surface in `## Section 9 — Critical Window Forensics` and exposes `--critical-window-top-n` to bound the frame table.
+
+Cross-reference: `docs/golden-e2e-testing.md` section `Survival Critical-Window Forensics`.

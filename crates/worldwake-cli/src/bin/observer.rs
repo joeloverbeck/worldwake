@@ -11,18 +11,25 @@ use clap::Parser;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
-use worldwake_ai::AgentTickDriver;
 use worldwake_ai::decision_trace::{
     AffordanceSummary, AffordanceTrace, AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace,
     PlanSearchOutcome, TargetBeliefPresence,
 };
+use worldwake_ai::{
+    ActionTraceSnapshot, AgentTickDriver, CriticalWindowReport, ExhaustionSummary,
+    LocalSurvivalStateSummary, SurvivalForensicExtractor,
+};
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
-use worldwake_core::{DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView, Tick};
+use worldwake_core::{
+    AgentBeliefStore, CommodityKind, DeadAt, DeathCause, EntityId, EntityKind, EventId,
+    EventView, HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, Quantity, RecipeId,
+    Tick, WorkstationTag,
+};
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
-    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink,
-    RequestResolutionTraceSink, TickStepServices, step_tick,
+    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeDefinition,
+    RecipeRegistry, RequestResolutionTraceSink, TickStepServices, step_tick,
 };
 
 #[derive(Parser)]
@@ -39,6 +46,9 @@ struct ObserverCli {
     /// Output path for the observation dump
     #[arg(long, default_value = "reports/simulation-observer-dump.md")]
     output: PathBuf,
+    /// Number of longest authored-critical windows to render in Section 9 (0 disables the section)
+    #[arg(long, default_value_t = 3)]
+    critical_window_top_n: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +97,7 @@ struct AgentStats {
     needs_samples: Vec<NeedsSample>,
     // Location tracking
     location_ticks: BTreeMap<EntityId, u32>,
+    location_history: Vec<Option<EntityId>>,
     // Action sequence (for loop detection)
     action_sequence: Vec<String>,
     // Idle tracking
@@ -116,6 +127,7 @@ impl AgentStats {
             observation_tick_sets: BTreeMap::new(),
             needs_samples: Vec::new(),
             location_ticks: BTreeMap::new(),
+            location_history: Vec::new(),
             action_sequence: Vec::new(),
             consecutive_idle_ticks: 0,
             max_consecutive_idle: 0,
@@ -478,6 +490,239 @@ fn format_budget_exhaustion_snapshots(out: &mut String, snapshots: &[BudgetExhau
     }
 }
 
+fn format_critical_window_forensics(
+    out: &mut String,
+    agents: &[(EntityId, String)],
+    world: &worldwake_core::World,
+    reports: &[CriticalWindowReport],
+    total_windows_detected: usize,
+) {
+    writeln!(out, "## Section 9 — Critical Window Forensics\n").unwrap();
+    if reports.is_empty() {
+        writeln!(out, "No authored-critical windows detected.\n").unwrap();
+        return;
+    }
+
+    writeln!(
+        out,
+        "Showing {} longest authored-critical windows out of {} detected.\n",
+        reports.len(),
+        total_windows_detected
+    )
+    .unwrap();
+
+    let agent_names = agents
+        .iter()
+        .map(|(agent, name)| (*agent, name.as_str()))
+        .collect::<BTreeMap<_, _>>();
+
+    for (idx, report) in reports.iter().enumerate() {
+        let agent_name = agent_names
+            .get(&report.agent)
+            .copied()
+            .unwrap_or("Unknown agent");
+        writeln!(
+            out,
+            "### Window {} — {} / {:?}\n",
+            idx + 1,
+            agent_name,
+            report.need
+        )
+        .unwrap();
+        writeln!(out, "**Agent**: {agent_name} ({})", report.agent).unwrap();
+        writeln!(out, "**Need**: {:?}", report.need).unwrap();
+        writeln!(
+            out,
+            "**Window**: tick {}..{}",
+            report.start_tick.0, report.end_tick.0
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Authored critical threshold**: {} per mille",
+            report.threshold.value()
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Peak need value**: {} per mille",
+            report.peak_value.value()
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Selected goals across captured frames**: {}",
+            summarize_selected_goals(report)
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Selected plan sources**: {}",
+            summarize_plan_sources(report)
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Exhaustion states**: {}",
+            summarize_exhaustion_states(report)
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "**Blocker summaries**: {}",
+            summarize_blocker_states(report)
+        )
+        .unwrap();
+        writeln!(out).unwrap();
+
+        writeln!(
+            out,
+            "| Tick | Need | Selected Goal | Plan Source | Top Competitors | Active Action | Exhaustion | Blocker | Local Summary |"
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "|------|------|---------------|-------------|-----------------|---------------|------------|---------|---------------|"
+        )
+        .unwrap();
+        for frame in &report.frames {
+            let selected_goal = frame
+                .selected_goal
+                .map_or_else(|| "-".to_string(), |goal| format!("{:?}", goal.kind));
+            let selected_plan_source = frame
+                .selected_plan_source
+                .map_or_else(|| "-".to_string(), |source| format!("{source:?}"));
+            let top_competitors = if frame.top_competitors.is_empty() {
+                "-".to_string()
+            } else {
+                frame
+                    .top_competitors
+                    .iter()
+                    .map(|competitor| format!("{:?}", competitor.goal.kind))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let active_action = frame.active_action.as_ref().map_or_else(
+                || "-".to_string(),
+                |action| format!("{}@{}", action.action_name, action.started_at.0),
+            );
+            writeln!(
+                out,
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                frame.tick.0,
+                frame.need_value.value(),
+                selected_goal,
+                selected_plan_source,
+                top_competitors,
+                active_action,
+                format_frame_exhaustion(frame.exhaustion_state.as_ref()),
+                format_frame_blocker(frame.blocker_summary.as_ref()),
+                format_local_survival_state_summary(world, &frame.local_authoritative_summary),
+            )
+            .unwrap();
+        }
+        writeln!(out).unwrap();
+    }
+}
+
+fn summarize_selected_goals(report: &CriticalWindowReport) -> String {
+    summarize_counts(
+        report
+            .frames
+            .iter()
+            .filter_map(|frame| frame.selected_goal.map(|goal| format!("{:?}", goal.kind))),
+    )
+}
+
+fn summarize_plan_sources(report: &CriticalWindowReport) -> String {
+    summarize_counts(report.frames.iter().filter_map(|frame| {
+        frame
+            .selected_plan_source
+            .map(|source| format!("{source:?}"))
+    }))
+}
+
+fn summarize_exhaustion_states(report: &CriticalWindowReport) -> String {
+    summarize_counts(
+        report
+            .frames
+            .iter()
+            .filter_map(|frame| frame.exhaustion_state.as_ref().map(format_exhaustion_state)),
+    )
+}
+
+fn summarize_blocker_states(report: &CriticalWindowReport) -> String {
+    summarize_counts(
+        report
+            .frames
+            .iter()
+            .filter_map(|frame| frame.blocker_summary.as_ref().map(format_blocker_summary)),
+    )
+}
+
+fn summarize_counts(values: impl IntoIterator<Item = String>) -> String {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for value in values {
+        *counts.entry(value).or_insert(0) += 1;
+    }
+    if counts.is_empty() {
+        return "none".to_string();
+    }
+    counts
+        .into_iter()
+        .map(|(label, count)| format!("{label} x{count}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_exhaustion_state(exhaustion: &ExhaustionSummary) -> String {
+    match exhaustion {
+        ExhaustionSummary::FrontierExhausted { expansions_used } => {
+            format!("frontier-exhausted (expansions_used={expansions_used})")
+        }
+        ExhaustionSummary::BudgetExhausted { expansions_used } => {
+            format!("budget-exhausted (expansions_used={expansions_used})")
+        }
+        ExhaustionSummary::Unsupported => "unsupported".to_string(),
+    }
+}
+
+fn format_blocker_summary(summary: &worldwake_ai::BlockerSummary) -> String {
+    match summary.top_blocker {
+        Some(blocker) => format!("{} blockers (top={blocker:?})", summary.blocker_count),
+        None => format!("{} blockers", summary.blocker_count),
+    }
+}
+
+fn format_frame_exhaustion(exhaustion: Option<&ExhaustionSummary>) -> String {
+    exhaustion.map_or_else(|| "-".to_string(), format_exhaustion_state)
+}
+
+fn format_frame_blocker(summary: Option<&worldwake_ai::BlockerSummary>) -> String {
+    summary.map_or_else(|| "-".to_string(), format_blocker_summary)
+}
+
+fn format_local_survival_state_summary(
+    world: &worldwake_core::World,
+    summary: &LocalSurvivalStateSummary,
+) -> String {
+    let place_name = summary
+        .place
+        .map_or_else(|| "In transit".to_string(), |place| entity_display_name(world, place));
+    format!(
+        "{}: water={}, wash={}, sleep={}, food={}",
+        place_name,
+        yes_no(summary.water_source_present),
+        yes_no(summary.wash_basin_present),
+        yes_no(summary.sleep_affordance_present),
+        yes_no(summary.food_source_present)
+    )
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
+}
+
 // ---------------------------------------------------------------------------
 // Anomaly detection
 // ---------------------------------------------------------------------------
@@ -485,11 +730,13 @@ fn format_budget_exhaustion_snapshots(out: &mut String, snapshots: &[BudgetExhau
 struct Anomaly {
     kind: AnomalyKind,
     agent_name: String,
+    additional_agent_names: Option<Vec<String>>,
     description: String,
     tick_range: Option<(u64, u64)>,
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 enum AnomalyKind {
     RedundantPerception,
     ActionLoop,
@@ -497,6 +744,10 @@ enum AnomalyKind {
     FailedActionSpiral,
     SustainedCriticalNeed,
     UnaddressedNeed,
+    GeographicConvergence,
+    MaintenanceStarvation,
+    RecipeMonoculture,
+    AcuteNeedSpike,
 }
 
 impl AnomalyKind {
@@ -508,8 +759,28 @@ impl AnomalyKind {
             Self::FailedActionSpiral => "FAILED_ACTION_SPIRAL",
             Self::SustainedCriticalNeed => "SUSTAINED_CRITICAL_NEED",
             Self::UnaddressedNeed => "UNADDRESSED_NEED",
+            Self::GeographicConvergence => "GEOGRAPHIC_CONVERGENCE",
+            Self::MaintenanceStarvation => "MAINTENANCE_STARVATION",
+            Self::RecipeMonoculture => "RECIPE_MONOCULTURE",
+            Self::AcuteNeedSpike => "ACUTE_NEED_SPIKE",
         }
     }
+}
+
+fn format_anomaly_header(index: usize, anomaly: &Anomaly) -> String {
+    let mut names = vec![anomaly.agent_name.as_str()];
+    if let Some(additional_names) = anomaly.additional_agent_names.as_ref()
+        && !additional_names.is_empty()
+    {
+        names.extend(additional_names.iter().map(String::as_str));
+    }
+
+    format!(
+        "### Anomaly {} — {} ({})",
+        index,
+        anomaly.kind.label(),
+        names.join(", ")
+    )
 }
 
 fn detect_anomalies(
@@ -517,6 +788,7 @@ fn detect_anomalies(
     perception_trace: &PerceptionTraceSink,
     event_log: &worldwake_core::EventLog,
     world: &worldwake_core::World,
+    recipe_registry: &RecipeRegistry,
 ) -> Vec<Anomaly> {
     let mut anomalies = Vec::new();
 
@@ -538,6 +810,7 @@ fn detect_anomalies(
                 anomalies.push(Anomaly {
                     kind: AnomalyKind::RedundantPerception,
                     agent_name: stats.name.clone(),
+                    additional_agent_names: None,
                     description: format!(
                         "Observed entity {entity} ({entity_name}, {entity_kind}) {count} times \
                          across {distinct_ticks} distinct ticks via event witnessing",
@@ -554,6 +827,7 @@ fn detect_anomalies(
             anomalies.push(Anomaly {
                 kind: AnomalyKind::ActionLoop,
                 agent_name: stats.name.clone(),
+                additional_agent_names: None,
                 description: loop_desc,
                 tick_range: None,
             });
@@ -594,6 +868,7 @@ fn detect_anomalies(
             anomalies.push(Anomaly {
                 kind: AnomalyKind::StuckAgent,
                 agent_name: stats.name.clone(),
+                additional_agent_names: None,
                 description: desc,
                 tick_range,
             });
@@ -611,6 +886,7 @@ fn detect_anomalies(
                 anomalies.push(Anomaly {
                     kind: AnomalyKind::FailedActionSpiral,
                     agent_name: stats.name.clone(),
+                    additional_agent_names: None,
                     description: format!(
                         "Action '{}': {} failed out of {} attempts ({:.0}% failure rate)",
                         action_name,
@@ -630,6 +906,58 @@ fn detect_anomalies(
         detect_unaddressed_needs(stats, &mut anomalies);
     }
 
+    detect_geographic_convergence(agent_stats, world, &mut anomalies);
+    let thresholds_by_agent = agent_stats
+        .keys()
+        .map(|agent_id| {
+            (
+                *agent_id,
+                world
+                    .get_component_drive_thresholds(*agent_id)
+                    .copied()
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    detect_maintenance_starvation(agent_stats, &thresholds_by_agent, &mut anomalies);
+    let known_recipes_by_agent = agent_stats
+        .keys()
+        .map(|agent_id| {
+            (
+                *agent_id,
+                world
+                    .get_component_known_recipes(*agent_id)
+                    .map(|known| known.recipes.clone())
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    detect_recipe_monoculture(
+        agent_stats,
+        &known_recipes_by_agent,
+        recipe_registry,
+        world,
+        &mut anomalies,
+    );
+    let metabolism_by_agent = agent_stats
+        .keys()
+        .map(|agent_id| {
+            (
+                *agent_id,
+                world
+                    .get_component_metabolism_profile(*agent_id)
+                    .copied()
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    detect_acute_need_spike(
+        agent_stats,
+        &thresholds_by_agent,
+        &metabolism_by_agent,
+        &mut anomalies,
+    );
+
     // Cross-reference redundant perception more precisely using event log
     refine_redundant_perception(&mut anomalies, agent_stats, perception_trace, event_log);
 
@@ -638,6 +966,786 @@ fn detect_anomalies(
     refine_stuck_agents(&mut anomalies, agent_stats);
 
     anomalies
+}
+
+const GEOGRAPHIC_CONVERGENCE_SHARE_THRESHOLD_PERMILLE: u32 = 600;
+const ANOMALY_ROLLING_WINDOW_TICKS: usize = 200;
+const ACUTE_NEED_SPIKE_MIN_TICKS: usize = 30;
+const ACUTE_NEED_SPIKE_MAX_TICKS: usize = 100;
+
+fn commodity_is_edible(commodity: CommodityKind) -> bool {
+    commodity.spec().consumable_profile.is_some()
+}
+
+fn place_survival_state_summary(
+    world: &worldwake_core::World,
+    place: EntityId,
+) -> LocalSurvivalStateSummary {
+    let water_source_present = world.query_resource_source().any(|(entity, source)| {
+        world.effective_place(entity) == Some(place)
+            && source.commodity == CommodityKind::Water
+            && source.available_quantity > Quantity(0)
+    });
+    let wash_basin_present = world.query_workstation_marker().any(|(entity, marker)| {
+        world.effective_place(entity) == Some(place) && marker.0 == WorkstationTag::WashBasin
+    });
+    let sleep_affordance_present = [PlaceTag::Inn, PlaceTag::Barracks, PlaceTag::Camp]
+        .into_iter()
+        .any(|tag| world.place_has_tag(place, tag));
+    let food_source_present = world.query_resource_source().any(|(entity, source)| {
+        world.effective_place(entity) == Some(place)
+            && source.available_quantity > Quantity(0)
+            && commodity_is_edible(source.commodity)
+    }) || world.query_item_lot().any(|(entity, lot)| {
+        world.effective_place(entity) == Some(place)
+            && lot.quantity > Quantity(0)
+            && commodity_is_edible(lot.commodity)
+    });
+
+    LocalSurvivalStateSummary {
+        place: Some(place),
+        water_source_present,
+        wash_basin_present,
+        sleep_affordance_present,
+        food_source_present,
+    }
+}
+
+fn is_lawful_split_support_convergence_place(
+    world: &worldwake_core::World,
+    place: EntityId,
+) -> bool {
+    let summary = place_survival_state_summary(world, place);
+    let support_count = [
+        summary.water_source_present,
+        summary.wash_basin_present,
+        summary.sleep_affordance_present,
+        summary.food_source_present,
+    ]
+    .into_iter()
+    .filter(|present| *present)
+    .count();
+    if support_count != 1 {
+        return false;
+    }
+
+    world.topology().place_ids().any(|other_place| {
+        if other_place == place {
+            return false;
+        }
+        let other_summary = place_survival_state_summary(world, other_place);
+        (summary.water_source_present != other_summary.water_source_present
+            && other_summary.water_source_present)
+            || (summary.wash_basin_present != other_summary.wash_basin_present
+                && other_summary.wash_basin_present)
+            || (summary.sleep_affordance_present != other_summary.sleep_affordance_present
+                && other_summary.sleep_affordance_present)
+            || (summary.food_source_present != other_summary.food_source_present
+                && other_summary.food_source_present)
+    })
+}
+
+fn detect_geographic_convergence(
+    agent_stats: &BTreeMap<EntityId, AgentStats>,
+    world: &worldwake_core::World,
+    anomalies: &mut Vec<Anomaly>,
+) {
+    let sample_len = agent_stats
+        .values()
+        .map(|stats| stats.location_history.len())
+        .max()
+        .unwrap_or(0);
+    if sample_len < ANOMALY_ROLLING_WINDOW_TICKS {
+        return;
+    }
+
+    let mut merged_spans: BTreeMap<(BTreeSet<EntityId>, EntityId), (usize, usize)> =
+        BTreeMap::new();
+
+    for window_start in 0..=sample_len - ANOMALY_ROLLING_WINDOW_TICKS {
+        let window_end = window_start + ANOMALY_ROLLING_WINDOW_TICKS - 1;
+        let mut per_place_counts: BTreeMap<EntityId, BTreeMap<EntityId, usize>> = BTreeMap::new();
+
+        for (agent_id, stats) in agent_stats {
+            let Some(window) = stats.location_history.get(window_start..=window_end) else {
+                continue;
+            };
+
+            let mut counts_by_place: BTreeMap<EntityId, usize> = BTreeMap::new();
+            for place in window.iter().flatten() {
+                *counts_by_place.entry(*place).or_insert(0) += 1;
+            }
+
+            for (place, count) in counts_by_place {
+                per_place_counts
+                    .entry(place)
+                    .or_default()
+                    .insert(*agent_id, count);
+            }
+        }
+
+        for (place, counts_by_agent) in per_place_counts {
+            let qualifying_agents = counts_by_agent
+                .iter()
+                .filter_map(|(agent_id, count)| {
+                    let share_permille =
+                        (*count as u32 * 1000) / ANOMALY_ROLLING_WINDOW_TICKS as u32;
+                    (share_permille >= GEOGRAPHIC_CONVERGENCE_SHARE_THRESHOLD_PERMILLE)
+                        .then_some(*agent_id)
+                })
+                .collect::<BTreeSet<_>>();
+
+            if qualifying_agents.len() < 2 {
+                continue;
+            }
+            if is_lawful_split_support_convergence_place(world, place) {
+                continue;
+            }
+
+            let entry = merged_spans
+                .entry((qualifying_agents, place))
+                .or_insert((window_start, window_end));
+            entry.0 = entry.0.min(window_start);
+            entry.1 = entry.1.max(window_end);
+        }
+    }
+
+    for ((agent_ids, place), (start_tick, end_tick)) in merged_spans {
+        let Some((&lead_agent, remaining_agents)) = agent_ids.iter().next().map(|lead| {
+            (
+                lead,
+                agent_ids.iter().copied().skip(1).collect::<Vec<EntityId>>(),
+            )
+        }) else {
+            continue;
+        };
+
+        let Some(lead_stats) = agent_stats.get(&lead_agent) else {
+            continue;
+        };
+        let Some(window) = lead_stats.location_history.get(start_tick..=end_tick) else {
+            continue;
+        };
+        let lead_share_ticks = window
+            .iter()
+            .filter(|sample| **sample == Some(place))
+            .count();
+        let span_ticks = end_tick - start_tick + 1;
+        let lead_share_ticks_u32 = u32::try_from(lead_share_ticks).unwrap_or(u32::MAX);
+        let span_ticks_u32 = u32::try_from(span_ticks).unwrap_or(u32::MAX);
+        let lead_share_percent =
+            (f64::from(lead_share_ticks_u32) * 100.0) / f64::from(span_ticks_u32);
+
+        anomalies.push(Anomaly {
+            kind: AnomalyKind::GeographicConvergence,
+            agent_name: lead_stats.name.clone(),
+            additional_agent_names: Some(
+                remaining_agents
+                    .into_iter()
+                    .filter_map(|agent_id| {
+                        agent_stats.get(&agent_id).map(|stats| stats.name.clone())
+                    })
+                    .collect(),
+            ),
+            description: format!(
+                "{} agents spent at least {:.1}% of ticks {}–{} at {} (lead agent share: {:.1}%).",
+                agent_ids.len(),
+                f64::from(GEOGRAPHIC_CONVERGENCE_SHARE_THRESHOLD_PERMILLE) / 10.0,
+                start_tick,
+                end_tick,
+                entity_display_name(world, place),
+                lead_share_percent,
+            ),
+            tick_range: Some((start_tick as u64, end_tick as u64)),
+        });
+    }
+}
+
+const MAINTENANCE_STARVATION_NEEDS: [HomeostaticNeedId; 5] = [
+    HomeostaticNeedId::Hunger,
+    HomeostaticNeedId::Thirst,
+    HomeostaticNeedId::Fatigue,
+    HomeostaticNeedId::Bladder,
+    HomeostaticNeedId::Dirtiness,
+];
+
+fn need_label(need: HomeostaticNeedId) -> &'static str {
+    match need {
+        HomeostaticNeedId::Hunger => "hunger",
+        HomeostaticNeedId::Thirst => "thirst",
+        HomeostaticNeedId::Fatigue => "fatigue",
+        HomeostaticNeedId::Bladder => "bladder",
+        HomeostaticNeedId::Dirtiness => "dirtiness",
+    }
+}
+
+fn need_table_label(need: HomeostaticNeedId) -> &'static str {
+    match need {
+        HomeostaticNeedId::Hunger => "Hunger",
+        HomeostaticNeedId::Thirst => "Thirst",
+        HomeostaticNeedId::Fatigue => "Fatigue",
+        HomeostaticNeedId::Bladder => "Bladder",
+        HomeostaticNeedId::Dirtiness => "Dirtiness",
+    }
+}
+
+fn need_value(sample: &NeedsSample, need: HomeostaticNeedId) -> u16 {
+    match need {
+        HomeostaticNeedId::Hunger => sample.hunger,
+        HomeostaticNeedId::Thirst => sample.thirst,
+        HomeostaticNeedId::Fatigue => sample.fatigue,
+        HomeostaticNeedId::Bladder => sample.bladder,
+        HomeostaticNeedId::Dirtiness => sample.dirtiness,
+    }
+}
+
+fn need_high_threshold(
+    thresholds: &worldwake_core::DriveThresholds,
+    need: HomeostaticNeedId,
+) -> u16 {
+    match need {
+        HomeostaticNeedId::Hunger => thresholds.hunger.high().value(),
+        HomeostaticNeedId::Thirst => thresholds.thirst.high().value(),
+        HomeostaticNeedId::Fatigue => thresholds.fatigue.high().value(),
+        HomeostaticNeedId::Bladder => thresholds.bladder.high().value(),
+        HomeostaticNeedId::Dirtiness => thresholds.dirtiness.high().value(),
+    }
+}
+
+fn maintenance_window_stats(samples: &[NeedsSample], need: HomeostaticNeedId) -> (u32, u32, u32) {
+    let deltas = samples
+        .windows(2)
+        .map(|pair| i32::from(need_value(&pair[1], need)) - i32::from(need_value(&pair[0], need)))
+        .collect::<Vec<_>>();
+    let accumulation = deltas
+        .iter()
+        .copied()
+        .filter(|delta| *delta > 0)
+        .map(i32::cast_unsigned)
+        .sum::<u32>();
+    let relief = deltas
+        .iter()
+        .copied()
+        .filter(|delta| *delta < 0)
+        .map(i32::unsigned_abs)
+        .sum::<u32>();
+    let avg = samples
+        .iter()
+        .map(|sample| u32::from(need_value(sample, need)))
+        .sum::<u32>()
+        / samples.len() as u32;
+
+    (accumulation, relief, avg)
+}
+
+#[derive(Clone, Copy)]
+struct MaintenanceStarvationWindow {
+    start_tick: usize,
+    end_tick: usize,
+    accumulation: u32,
+    relief: u32,
+    avg: u32,
+}
+
+fn maintenance_window_is_starvation(
+    accumulation: u32,
+    relief: u32,
+    avg: u32,
+    high_threshold: u16,
+) -> bool {
+    accumulation > 0
+        && avg > u32::from(high_threshold)
+        && relief.saturating_mul(2) < accumulation
+}
+
+fn maintenance_window_is_better(
+    candidate: MaintenanceStarvationWindow,
+    current: MaintenanceStarvationWindow,
+) -> bool {
+    let candidate_deficit = candidate.accumulation.saturating_sub(candidate.relief);
+    let current_deficit = current.accumulation.saturating_sub(current.relief);
+    candidate_deficit > current_deficit
+        || (candidate_deficit == current_deficit
+            && (candidate.avg > current.avg
+                || (candidate.avg == current.avg && candidate.start_tick < current.start_tick)))
+}
+
+fn compute_maintenance_rates(samples: &[NeedsSample]) -> [(HomeostaticNeedId, u32, u32, i64); 5] {
+    MAINTENANCE_STARVATION_NEEDS.map(|need| {
+        let mut accumulation = 0u32;
+        let mut relief = 0u32;
+        for pair in samples.windows(2) {
+            let delta =
+                i32::from(need_value(&pair[1], need)) - i32::from(need_value(&pair[0], need));
+            if delta > 0 {
+                accumulation += delta.cast_unsigned();
+            } else if delta < 0 {
+                relief += delta.unsigned_abs();
+            }
+        }
+        (
+            need,
+            accumulation,
+            relief,
+            i64::from(accumulation) - i64::from(relief),
+        )
+    })
+}
+
+fn render_maintenance_rates_table(samples: &[NeedsSample]) -> Option<String> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    let mut out = String::new();
+    writeln!(out, "**Maintenance rates** (‰)\n").unwrap();
+    writeln!(out, "| Need | Accumulation | Relief | Net |").unwrap();
+    writeln!(out, "|------|--------------|--------|-----|").unwrap();
+    for (need, accumulation, relief, net) in compute_maintenance_rates(samples) {
+        writeln!(
+            out,
+            "| {} | {} | {} | {} |",
+            need_table_label(need),
+            accumulation,
+            relief,
+            net
+        )
+        .unwrap();
+    }
+    writeln!(out).unwrap();
+
+    Some(out)
+}
+
+fn detect_maintenance_starvation(
+    agent_stats: &BTreeMap<EntityId, AgentStats>,
+    thresholds_by_agent: &BTreeMap<EntityId, worldwake_core::DriveThresholds>,
+    anomalies: &mut Vec<Anomaly>,
+) {
+    let mut strongest_windows: BTreeMap<(EntityId, HomeostaticNeedId), MaintenanceStarvationWindow> =
+        BTreeMap::new();
+
+    for (agent_id, stats) in agent_stats {
+        if stats.needs_samples.len() < ANOMALY_ROLLING_WINDOW_TICKS {
+            continue;
+        }
+        let Some(thresholds) = thresholds_by_agent.get(agent_id) else {
+            continue;
+        };
+
+        for need in MAINTENANCE_STARVATION_NEEDS {
+            let high_threshold = need_high_threshold(thresholds, need);
+            for window_start in 0..=stats.needs_samples.len() - ANOMALY_ROLLING_WINDOW_TICKS {
+                let window_end = window_start + ANOMALY_ROLLING_WINDOW_TICKS - 1;
+                let Some(window) = stats.needs_samples.get(window_start..=window_end) else {
+                    continue;
+                };
+                let (accumulation, relief, avg) = maintenance_window_stats(window, need);
+                if maintenance_window_is_starvation(accumulation, relief, avg, high_threshold) {
+                    let candidate = MaintenanceStarvationWindow {
+                        start_tick: window_start,
+                        end_tick: window_end,
+                        accumulation,
+                        relief,
+                        avg,
+                    };
+                    match strongest_windows.entry((*agent_id, need)) {
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(candidate);
+                        }
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            if maintenance_window_is_better(candidate, *entry.get()) {
+                                entry.insert(candidate);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for ((agent_id, need), window) in strongest_windows {
+        let Some(stats) = agent_stats.get(&agent_id) else {
+            continue;
+        };
+        let Some(thresholds) = thresholds_by_agent.get(&agent_id) else {
+            continue;
+        };
+        let high_threshold = need_high_threshold(thresholds, need);
+        let need_label = need_label(need);
+        let deficit = window.accumulation.saturating_sub(window.relief);
+
+        anomalies.push(Anomaly {
+            kind: AnomalyKind::MaintenanceStarvation,
+            agent_name: stats.name.clone(),
+            additional_agent_names: None,
+            description: format!(
+                "{need_label} accumulated {accumulation} permille but was relieved only {relief} permille over ticks {start_tick}–{end_tick}. Net deficit: {deficit} permille; average {need_label} in window: {avg} permille (above high threshold {high_threshold}).",
+                accumulation = window.accumulation,
+                relief = window.relief,
+                start_tick = window.start_tick,
+                end_tick = window.end_tick,
+                avg = window.avg,
+            ),
+            tick_range: Some((window.start_tick as u64, window.end_tick as u64)),
+        });
+    }
+}
+
+const RECIPE_MONOCULTURE_SHARE_THRESHOLD_PERMILLE: u32 = 950;
+
+fn primary_satisfied_need(recipe: &RecipeDefinition) -> Option<HomeostaticNeedId> {
+    let (commodity, _) = recipe.outputs.first()?;
+    let spec = commodity.spec();
+    let _profile = spec.consumable_profile?;
+    match spec.trade_category {
+        worldwake_core::TradeCategory::Food => Some(HomeostaticNeedId::Hunger),
+        worldwake_core::TradeCategory::Water => Some(HomeostaticNeedId::Thirst),
+        _ => None,
+    }
+}
+
+fn recipe_facility_evidence_label(
+    recipe: &RecipeDefinition,
+    belief_store: &AgentBeliefStore,
+) -> Option<String> {
+    if let Some(tag) = recipe.required_workstation_tag
+        && belief_store
+            .known_entities
+            .values()
+            .any(|state| state.workstation_tag == Some(tag))
+    {
+        return Some(format!("workstation {tag:?}"));
+    }
+
+    let (primary_input, _) = recipe.inputs.first()?;
+    belief_store
+        .known_entities
+        .values()
+        .find(|state| {
+            state
+                .resource_source
+                .as_ref()
+                .is_some_and(|source| source.commodity == *primary_input)
+        })
+        .map(|_| format!("resource source {primary_input:?}"))
+}
+
+fn agent_believes_recipe_facility_reachable(
+    recipe: &RecipeDefinition,
+    belief_store: &AgentBeliefStore,
+) -> bool {
+    recipe_facility_evidence_label(recipe, belief_store).is_some()
+}
+
+fn action_name_recipe_name(action_name: &str) -> &str {
+    action_name
+        .strip_prefix("harvest:")
+        .or_else(|| action_name.strip_prefix("craft:"))
+        .unwrap_or(action_name)
+}
+
+fn recipe_commit_count(agent_stats: &AgentStats, recipe_name: &str) -> u32 {
+    agent_stats
+        .actions_committed
+        .iter()
+        .filter(|(action_name, _)| action_name_recipe_name(action_name) == recipe_name)
+        .map(|(_, commits)| *commits)
+        .sum()
+}
+
+fn recipe_usage_rows(
+    agent_stats: &AgentStats,
+    known_recipes: Option<&KnownRecipes>,
+    registry: &RecipeRegistry,
+) -> Vec<(String, u32)> {
+    let mut rows = Vec::new();
+    let known_recipes = known_recipes.map(|known| &known.recipes);
+    let mut known_names = BTreeSet::new();
+
+    if let Some(recipe_ids) = known_recipes {
+        for recipe_id in recipe_ids {
+            let recipe_name = registry.get(*recipe_id).map_or_else(
+                || format!("Recipe#{} (unknown)", recipe_id.0),
+                |def| def.name.clone(),
+            );
+            let commits = registry
+                .get(*recipe_id)
+                .map_or(0, |def| recipe_commit_count(agent_stats, &def.name));
+            known_names.insert(recipe_name.clone());
+            rows.push((recipe_name, commits));
+        }
+    }
+
+    for (action_name, commits) in &agent_stats.actions_committed {
+        if *commits == 0 {
+            continue;
+        }
+        let recipe_name = action_name_recipe_name(action_name);
+        if known_names.contains(recipe_name) {
+            continue;
+        }
+        let Some((recipe_id, _)) = registry.recipe_by_name(recipe_name) else {
+            continue;
+        };
+        if known_recipes.is_some_and(|recipes| recipes.contains(&recipe_id)) {
+            continue;
+        }
+        rows.push((format!("{recipe_name} (unknown)"), *commits));
+    }
+
+    rows
+}
+
+fn render_recipe_usage_table(
+    agent_stats: &AgentStats,
+    known_recipes: Option<&KnownRecipes>,
+    registry: &RecipeRegistry,
+) -> Option<String> {
+    let rows = recipe_usage_rows(agent_stats, known_recipes, registry);
+    if rows.is_empty() {
+        return None;
+    }
+
+    let mut out = String::new();
+    writeln!(out, "**Recipe usage**\n").unwrap();
+    writeln!(out, "| Recipe | Commits |").unwrap();
+    writeln!(out, "|--------|---------|").unwrap();
+    for (recipe_name, commits) in rows {
+        writeln!(out, "| {recipe_name} | {commits} |").unwrap();
+    }
+    writeln!(out).unwrap();
+
+    Some(out)
+}
+
+fn detect_recipe_monoculture(
+    agent_stats: &BTreeMap<EntityId, AgentStats>,
+    known_recipes_by_agent: &BTreeMap<EntityId, BTreeSet<RecipeId>>,
+    recipe_registry: &RecipeRegistry,
+    world: &worldwake_core::World,
+    anomalies: &mut Vec<Anomaly>,
+) {
+    for (agent_id, stats) in agent_stats {
+        let Some(belief_store) = world.get_component_agent_belief_store(*agent_id) else {
+            continue;
+        };
+        let Some(known_recipes) = known_recipes_by_agent.get(agent_id) else {
+            continue;
+        };
+
+        let mut recipes_by_need: BTreeMap<HomeostaticNeedId, Vec<RecipeId>> = BTreeMap::new();
+        for recipe_id in known_recipes {
+            let Some(recipe) = recipe_registry.get(*recipe_id) else {
+                continue;
+            };
+            let Some(need) = primary_satisfied_need(recipe) else {
+                continue;
+            };
+            recipes_by_need.entry(need).or_default().push(*recipe_id);
+        }
+
+        for (need, recipe_ids) in recipes_by_need {
+            if recipe_ids.len() < 2 {
+                continue;
+            }
+
+            let mut recipe_counts = recipe_ids
+                .into_iter()
+                .filter_map(|recipe_id| {
+                    let recipe = recipe_registry.get(recipe_id)?;
+                    Some((recipe_id, recipe.name.clone(), recipe_commit_count(stats, &recipe.name)))
+                })
+                .collect::<Vec<_>>();
+            recipe_counts.sort_by(|left, right| {
+                right
+                    .2
+                    .cmp(&left.2)
+                    .then_with(|| left.1.cmp(&right.1))
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+
+            let total_bucket_commits = recipe_counts
+                .iter()
+                .map(|(_, _, count)| *count)
+                .sum::<u32>();
+            if total_bucket_commits == 0 {
+                continue;
+            }
+
+            let Some((_, _, top_count)) = recipe_counts.first() else {
+                continue;
+            };
+            let top_share_permille = (*top_count * 1000) / total_bucket_commits;
+            if top_share_permille < RECIPE_MONOCULTURE_SHARE_THRESHOLD_PERMILLE {
+                continue;
+            }
+
+            let alternative_evidence =
+                recipe_counts.iter().skip(1).find_map(|(recipe_id, _, _)| {
+                    let recipe = recipe_registry.get(*recipe_id)?;
+                    agent_believes_recipe_facility_reachable(recipe, belief_store).then(|| {
+                        recipe_facility_evidence_label(recipe, belief_store)
+                            .unwrap_or_else(|| "alternative facility".to_string())
+                    })
+                });
+            let Some(alternative_evidence_label) = alternative_evidence else {
+                continue;
+            };
+
+            let parts = recipe_counts
+                .iter()
+                .map(|(_, recipe_name, count)| {
+                    let share_percent =
+                        (f64::from(*count) * 100.0) / f64::from(total_bucket_commits);
+                    format!("{share_percent:.0}% {recipe_name} ({count} actions)")
+                })
+                .collect::<Vec<_>>();
+            let run_end_tick = stats
+                .needs_samples
+                .len()
+                .checked_sub(1)
+                .map_or(0, |tick| tick as u64);
+
+            anomalies.push(Anomaly {
+                kind: AnomalyKind::RecipeMonoculture,
+                agent_name: stats.name.clone(),
+                additional_agent_names: None,
+                description: format!(
+                    "{} actions: {}. Both recipes known; final belief store includes {} evidence.",
+                    need_label(need),
+                    parts.join(", "),
+                    alternative_evidence_label
+                ),
+                tick_range: Some((0, run_end_tick)),
+            });
+        }
+    }
+}
+
+fn acute_need_tolerance_context(
+    need: HomeostaticNeedId,
+    metabolism: &MetabolismProfile,
+) -> Option<(&'static str, u32)> {
+    match need {
+        HomeostaticNeedId::Hunger => {
+            Some(("starvation", metabolism.starvation_tolerance_ticks.get()))
+        }
+        HomeostaticNeedId::Thirst => {
+            Some(("dehydration", metabolism.dehydration_tolerance_ticks.get()))
+        }
+        HomeostaticNeedId::Fatigue | HomeostaticNeedId::Bladder | HomeostaticNeedId::Dirtiness => {
+            None
+        }
+    }
+}
+
+fn acute_need_spike_description(
+    need: HomeostaticNeedId,
+    critical_permille: u16,
+    run_length: usize,
+    run_start: usize,
+    run_end: usize,
+    peak: u16,
+    metabolism: &MetabolismProfile,
+) -> String {
+    let need_label = need_label(need);
+    let mut description = format!(
+        "{need_label} above critical threshold ({critical_permille} permille) for {run_length} consecutive ticks (ticks {run_start}–{run_end}), peak {peak} permille. Below the 100-tick sustained-critical bar"
+    );
+
+    if let Some((tolerance_label, tolerance_ticks)) = acute_need_tolerance_context(need, metabolism)
+    {
+        let run_length_u32 = u32::try_from(run_length).expect("acute run length fits in u32");
+        let percent_of_tolerance = (f64::from(run_length_u32) * 100.0) / f64::from(tolerance_ticks);
+        write!(
+            description,
+            " but within {percent_of_tolerance:.0}% of {tolerance_label} tolerance ({tolerance_ticks} ticks)."
+        )
+        .unwrap();
+    } else {
+        description.push('.');
+    }
+
+    description
+}
+
+fn detect_acute_need_spike(
+    agent_stats: &BTreeMap<EntityId, AgentStats>,
+    thresholds_by_agent: &BTreeMap<EntityId, worldwake_core::DriveThresholds>,
+    metabolism_by_agent: &BTreeMap<EntityId, MetabolismProfile>,
+    anomalies: &mut Vec<Anomaly>,
+) {
+    for (agent_id, stats) in agent_stats {
+        let Some(thresholds) = thresholds_by_agent.get(agent_id) else {
+            continue;
+        };
+        let Some(metabolism) = metabolism_by_agent.get(agent_id) else {
+            continue;
+        };
+
+        for need in MAINTENANCE_STARVATION_NEEDS {
+            let critical_permille = thresholds.critical(need).value();
+            let mut run_start = None;
+            let mut peak = 0;
+
+            for (tick, sample) in stats.needs_samples.iter().enumerate() {
+                let value = need_value(sample, need);
+                if value >= critical_permille {
+                    run_start.get_or_insert(tick);
+                    peak = peak.max(value);
+                    continue;
+                }
+
+                if let Some(start_tick) = run_start.take() {
+                    let run_end = tick.saturating_sub(1);
+                    let run_length = run_end - start_tick + 1;
+                    if (ACUTE_NEED_SPIKE_MIN_TICKS..ACUTE_NEED_SPIKE_MAX_TICKS)
+                        .contains(&run_length)
+                    {
+                        anomalies.push(Anomaly {
+                            kind: AnomalyKind::AcuteNeedSpike,
+                            agent_name: stats.name.clone(),
+                            additional_agent_names: None,
+                            description: acute_need_spike_description(
+                                need,
+                                critical_permille,
+                                run_length,
+                                start_tick,
+                                run_end,
+                                peak,
+                                metabolism,
+                            ),
+                            tick_range: Some((start_tick as u64, run_end as u64)),
+                        });
+                    }
+                    peak = 0;
+                }
+            }
+
+            if let Some(start_tick) = run_start.take() {
+                let run_end = stats.needs_samples.len().saturating_sub(1);
+                let run_length = run_end - start_tick + 1;
+                if (ACUTE_NEED_SPIKE_MIN_TICKS..ACUTE_NEED_SPIKE_MAX_TICKS).contains(&run_length) {
+                    anomalies.push(Anomaly {
+                        kind: AnomalyKind::AcuteNeedSpike,
+                        agent_name: stats.name.clone(),
+                        additional_agent_names: None,
+                        description: acute_need_spike_description(
+                            need,
+                            critical_permille,
+                            run_length,
+                            start_tick,
+                            run_end,
+                            peak,
+                            metabolism,
+                        ),
+                        tick_range: Some((start_tick as u64, run_end as u64)),
+                    });
+                }
+            }
+        }
+    }
 }
 
 type NeedExtractor = (&'static str, fn(&NeedsSample) -> u16);
@@ -680,6 +1788,7 @@ fn detect_sustained_critical_needs(stats: &AgentStats, anomalies: &mut Vec<Anoma
             anomalies.push(Anomaly {
                 kind: AnomalyKind::SustainedCriticalNeed,
                 agent_name: stats.name.clone(),
+                additional_agent_names: None,
                 description: format!(
                     "{need_name} above {THRESHOLD}‰ for {max_consecutive} consecutive ticks (ticks {start_tick}–{max_end_tick})"
                 ),
@@ -725,6 +1834,7 @@ fn detect_unaddressed_needs(stats: &AgentStats, anomalies: &mut Vec<Anomaly>) {
                 anomalies.push(Anomaly {
                     kind: AnomalyKind::UnaddressedNeed,
                     agent_name: stats.name.clone(),
+                    additional_agent_names: None,
                     description: format!(
                         "{need_name} avg {avg}‰ but no relief action ({}) was ever attempted",
                         relief_actions.join("/")
@@ -1269,9 +2379,13 @@ fn format_report(
     event_log: &worldwake_core::EventLog,
     action_trace: &ActionTraceSink,
     perception_trace: &PerceptionTraceSink,
+    recipe_registry: &RecipeRegistry,
     world: &worldwake_core::World,
     driver: &AgentTickDriver,
     budget_exhaustion_snapshots: &[BudgetExhaustionSnapshot],
+    critical_window_section_enabled: bool,
+    critical_window_reports: &[CriticalWindowReport],
+    total_critical_window_count: usize,
 ) -> String {
     let mut out = String::new();
 
@@ -1438,6 +2552,18 @@ fn format_report(
             writeln!(out).unwrap();
         }
 
+        if let Some(table) = render_maintenance_rates_table(&stats.needs_samples) {
+            write!(out, "{table}").unwrap();
+        }
+
+        if let Some(table) = render_recipe_usage_table(
+            stats,
+            world.get_component_known_recipes(*agent_id),
+            recipe_registry,
+        ) {
+            write!(out, "{table}").unwrap();
+        }
+
         // Idle tracking
         writeln!(
             out,
@@ -1454,14 +2580,7 @@ fn format_report(
     } else {
         writeln!(out, "{} anomalies detected:\n", anomalies.len()).unwrap();
         for (i, anomaly) in anomalies.iter().enumerate() {
-            writeln!(
-                out,
-                "### Anomaly {} — {} ({})\n",
-                i + 1,
-                anomaly.kind.label(),
-                anomaly.agent_name
-            )
-            .unwrap();
+            writeln!(out, "{}\n", format_anomaly_header(i + 1, anomaly)).unwrap();
             writeln!(out, "{}\n", anomaly.description).unwrap();
             if let Some((start, end)) = anomaly.tick_range {
                 writeln!(out, "Tick range: {start}–{end}\n").unwrap();
@@ -2111,6 +3230,17 @@ fn format_report(
     // Section 8: Budget Exhaustion Snapshots
     format_budget_exhaustion_snapshots(&mut out, budget_exhaustion_snapshots);
 
+    // Section 9: Critical Window Forensics
+    if critical_window_section_enabled {
+        format_critical_window_forensics(
+            &mut out,
+            agents,
+            world,
+            critical_window_reports,
+            total_critical_window_count,
+        );
+    }
+
     out
 }
 
@@ -2173,6 +3303,15 @@ fn main() {
     // Budget exhaustion snapshot collection
     let mut budget_exhaustion_snapshots: Vec<BudgetExhaustionSnapshot> = Vec::new();
     let mut budget_exhaustion_seen: BTreeSet<BudgetExhaustionKey> = BTreeSet::new();
+    let mut survival_forensics: BTreeMap<EntityId, SurvivalForensicExtractor> =
+        if cli.critical_window_top_n == 0 {
+            BTreeMap::new()
+        } else {
+            agents
+                .iter()
+                .map(|(agent_id, _)| (*agent_id, SurvivalForensicExtractor::new(*agent_id)))
+                .collect()
+        };
 
     // Create all trace sinks (persistent across all ticks)
     let mut action_trace = ActionTraceSink::new();
@@ -2277,7 +3416,6 @@ fn main() {
         }
 
         // Needs, location sampling, and idle tracking (read from world after tick)
-        let world = sim.world();
         for (agent_id, stats) in &mut agent_stats {
             // Needs
             let current_needs =
@@ -2302,7 +3440,9 @@ fn main() {
                 };
 
             // Location
-            if let Some(place) = world.effective_place(*agent_id) {
+            let current_place = world.effective_place(*agent_id);
+            stats.location_history.push(current_place);
+            if let Some(place) = current_place {
                 *stats.location_ticks.entry(place).or_insert(0) += 1;
             }
 
@@ -2312,6 +3452,44 @@ fn main() {
                 .iter()
                 .any(|e| !matches!(e.kind, ActionTraceKind::StartFailed { .. }));
             stats.record_idle_tick(had_action, current_tick.0, current_needs);
+        }
+
+        if !survival_forensics.is_empty() {
+            let decision_trace_sink = driver.trace_sink();
+            for (agent_id, extractor) in &mut survival_forensics {
+                let Some(needs) = world.get_component_homeostatic_needs(*agent_id) else {
+                    continue;
+                };
+                let local_state = LocalSurvivalStateSummary::capture(world, *agent_id);
+                let thresholds = world
+                    .get_component_drive_thresholds(*agent_id)
+                    .copied()
+                    .unwrap_or_default();
+                let decision_trace =
+                    decision_trace_sink.and_then(|sink| sink.trace_at(*agent_id, current_tick));
+                let active_action = scheduler
+                    .active_actions()
+                    .values()
+                    .find(|instance| instance.actor == *agent_id);
+                let active_action_name = active_action
+                    .and_then(|instance| spawned.action_registries.defs.get(instance.def_id))
+                    .map(|def| def.name.as_str());
+                let action_snapshot = ActionTraceSnapshot::from_sink(
+                    *agent_id,
+                    current_tick,
+                    &action_trace,
+                    active_action,
+                    active_action_name,
+                );
+                extractor.observe(
+                    current_tick,
+                    needs,
+                    &thresholds,
+                    decision_trace,
+                    &action_snapshot,
+                    &local_state,
+                );
+            }
         }
 
         // Budget exhaustion snapshot collection
@@ -2434,9 +3612,22 @@ fn main() {
         &perception_trace,
         sim.event_log(),
         sim.world(),
+        sim.recipe_registry(),
     );
 
     eprintln!("Found {} anomalies. Writing report...", anomalies.len());
+
+    let all_critical_window_reports = survival_forensics
+        .into_values()
+        .flat_map(SurvivalForensicExtractor::finalize)
+        .collect::<Vec<_>>();
+    let critical_window_reports = SurvivalForensicExtractor::top_n_longest(
+        &all_critical_window_reports,
+        cli.critical_window_top_n,
+    )
+    .into_iter()
+    .cloned()
+    .collect::<Vec<_>>();
 
     let scenario_path_str = cli.scenario.display().to_string();
     let report = format_report(
@@ -2450,9 +3641,13 @@ fn main() {
         sim.event_log(),
         &action_trace,
         &perception_trace,
+        sim.recipe_registry(),
         sim.world(),
         &driver,
         &budget_exhaustion_snapshots,
+        cli.critical_window_top_n > 0,
+        &critical_window_reports,
+        all_critical_window_reports.len(),
     );
 
     // Ensure parent directory exists
@@ -2478,32 +3673,43 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentStats, BehavioralTransition, NeedsSample, PlanAttemptTrace, PlanSearchOutcome,
-        affordance_change_snapshots, behavioral_transitions, committed_travel_ticks,
-        death_summary_line, failed_plan_breakdown, failed_plan_candidates, failed_plan_location,
-        failed_plan_max_depth, failed_plan_outcome_label, failed_plan_target_beliefs,
-        final_affordance_snapshot, format_affordance_summary, format_behavioral_transition,
-        format_death_cause, format_report, post_travel_affordance_snapshots,
-        unknown_location_entity_groups,
+        ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
+        NeedsSample, PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots,
+        behavioral_transitions, committed_travel_ticks, compute_maintenance_rates,
+        death_summary_line, detect_acute_need_spike, detect_geographic_convergence,
+        detect_maintenance_starvation, detect_recipe_monoculture, failed_plan_breakdown,
+        failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
+        failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
+        format_affordance_summary, format_anomaly_header, format_behavioral_transition,
+        format_death_cause, format_report, need_high_threshold, post_travel_affordance_snapshots,
+        primary_satisfied_need, recipe_usage_rows, render_maintenance_rates_table,
+        render_recipe_usage_table, unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
+    use std::num::NonZeroU32;
     use worldwake_ai::decision_trace::{
         AffordanceSummary, AffordanceTrace, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
         ExecutionTrace, PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace,
         SearchExpansionSummary, SelectionTrace, TargetBeliefPresence,
     };
-    use worldwake_ai::{AgentTickDriver, DirtySet};
+    use worldwake_ai::{
+        ActiveActionSummary, AgentTickDriver, BlockerSummary, CriticalWindowFrame,
+        CriticalWindowReport, DirtySet, ExhaustionSummary, GoalPriorityClass,
+        LocalSurvivalStateSummary, RankedGoalSnapshot, SelectedPlanSource,
+    };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
-        ActionDefId, AgentBeliefStore, BelievedEntityState, CauseRef, ControlSource, DeadAt,
-        DeathCause, EntityId, EntityKind, EventLog, GoalKey, GoalKind, HomeostaticNeedId,
-        OpportunityAnchor, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
-        build_prototype_world,
+        ActionDefId, AgentBeliefStore, BelievedEntityState, BodyCostPerTick, CauseRef,
+        CommodityKind, ControlSource, DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind,
+        EventLog, GoalKey, GoalKind, HomeostaticNeedId, KnownRecipes, MetabolismProfile,
+        OpportunityAnchor, Permille, PrototypePlace, Quantity, ResourceSource, Tick,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
-        PerceptionTraceSink,
+        PerceptionTraceSink, RecipeDefinition, RecipeRegistry,
     };
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
@@ -2701,6 +3907,199 @@ mod tests {
                 Tick(0),
                 PerceptionSource::DirectObservation,
             )
+        }
+    }
+
+    fn sample_local_survival_state_summary() -> LocalSurvivalStateSummary {
+        LocalSurvivalStateSummary {
+            place: Some(entity(20)),
+            water_source_present: true,
+            wash_basin_present: false,
+            sleep_affordance_present: true,
+            food_source_present: false,
+        }
+    }
+
+    fn sample_critical_window_report(agent: EntityId) -> CriticalWindowReport {
+        CriticalWindowReport {
+            agent,
+            need: HomeostaticNeedId::Fatigue,
+            start_tick: Tick(12),
+            end_tick: Tick(16),
+            threshold: Permille::new(900).expect("threshold"),
+            peak_value: Permille::new(940).expect("peak"),
+            frames: vec![CriticalWindowFrame {
+                tick: Tick(12),
+                need_value: Permille::new(940).expect("need value"),
+                selected_goal: Some(GoalKey::from(GoalKind::Sleep)),
+                selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                top_competitors: vec![RankedGoalSnapshot {
+                    goal: GoalKey::from(GoalKind::Sleep),
+                    priority_class: GoalPriorityClass::Critical,
+                    motive_score: 940,
+                    provenance_family: None,
+                }],
+                active_action: Some(ActiveActionSummary {
+                    action_name: "sleep".to_string(),
+                    instance: ActionInstanceId(9),
+                    started_at: Tick(12),
+                }),
+                exhaustion_state: Some(ExhaustionSummary::FrontierExhausted { expansions_used: 7 }),
+                blocker_summary: Some(BlockerSummary {
+                    blocker_count: 2,
+                    top_blocker: None,
+                }),
+                local_authoritative_summary: sample_local_survival_state_summary(),
+            }],
+        }
+    }
+
+    fn agent_stats_with_locations(name: &str, locations: &[EntityId]) -> AgentStats {
+        let mut stats = AgentStats::new(name.to_string(), false);
+        stats.location_history = locations.iter().copied().map(Some).collect();
+        for place in locations {
+            *stats.location_ticks.entry(*place).or_insert(0) += 1;
+        }
+        stats
+    }
+
+    fn agent_stats_with_dirtiness(name: &str, dirtiness: &[u16]) -> AgentStats {
+        let mut stats = AgentStats::new(name.to_string(), false);
+        stats.needs_samples = dirtiness
+            .iter()
+            .map(|value| NeedsSample {
+                hunger: 0,
+                thirst: 0,
+                fatigue: 0,
+                bladder: 0,
+                dirtiness: *value,
+            })
+            .collect();
+        stats
+    }
+
+    fn agent_stats_with_need_values(
+        name: &str,
+        need: HomeostaticNeedId,
+        values: &[u16],
+    ) -> AgentStats {
+        let mut stats = AgentStats::new(name.to_string(), false);
+        stats.needs_samples = values
+            .iter()
+            .map(|value| match need {
+                HomeostaticNeedId::Hunger => NeedsSample {
+                    hunger: *value,
+                    thirst: 0,
+                    fatigue: 0,
+                    bladder: 0,
+                    dirtiness: 0,
+                },
+                HomeostaticNeedId::Thirst => NeedsSample {
+                    hunger: 0,
+                    thirst: *value,
+                    fatigue: 0,
+                    bladder: 0,
+                    dirtiness: 0,
+                },
+                HomeostaticNeedId::Fatigue => NeedsSample {
+                    hunger: 0,
+                    thirst: 0,
+                    fatigue: *value,
+                    bladder: 0,
+                    dirtiness: 0,
+                },
+                HomeostaticNeedId::Bladder => NeedsSample {
+                    hunger: 0,
+                    thirst: 0,
+                    fatigue: 0,
+                    bladder: *value,
+                    dirtiness: 0,
+                },
+                HomeostaticNeedId::Dirtiness => NeedsSample {
+                    hunger: 0,
+                    thirst: 0,
+                    fatigue: 0,
+                    bladder: 0,
+                    dirtiness: *value,
+                },
+            })
+            .collect();
+        stats
+    }
+
+    fn support_resource_source(commodity: CommodityKind) -> ResourceSource {
+        ResourceSource {
+            commodity,
+            available_quantity: Quantity(10),
+            max_quantity: Quantity(10),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+        }
+    }
+
+    fn build_split_support_convergence_world() -> World {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let mut txn = new_txn(&mut world, 1);
+        txn.create_item_lot_with_owner(
+            CommodityKind::Apple,
+            Quantity(4),
+            prototype_place_entity(PrototypePlace::OrchardFarm),
+            None,
+        )
+        .expect("orchard food lot");
+        txn.set_component_resource_source(
+            prototype_place_entity(PrototypePlace::BanditCamp),
+            support_resource_source(CommodityKind::Water),
+        )
+        .expect("camp water source");
+        commit_txn(txn);
+        world
+    }
+
+    fn build_bundled_support_convergence_world() -> World {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let mut txn = new_txn(&mut world, 1);
+        txn.set_component_resource_source(
+            prototype_place_entity(PrototypePlace::BanditCamp),
+            support_resource_source(CommodityKind::Water),
+        )
+        .expect("camp water source");
+        txn.create_item_lot_with_owner(
+            CommodityKind::Apple,
+            Quantity(4),
+            prototype_place_entity(PrototypePlace::BanditCamp),
+            None,
+        )
+        .expect("camp food lot");
+        commit_txn(txn);
+        world
+    }
+
+    fn sample_recipe(
+        name: &str,
+        inputs: Vec<(CommodityKind, Quantity)>,
+        outputs: Vec<(CommodityKind, Quantity)>,
+        workstation: Option<WorkstationTag>,
+    ) -> RecipeDefinition {
+        RecipeDefinition {
+            name: name.to_string(),
+            inputs,
+            outputs,
+            work_ticks: NonZeroU32::new(3).expect("work ticks"),
+            required_workstation_tag: workstation,
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+        }
+    }
+
+    fn belief_state_with_workstation(
+        kind: Option<EntityKind>,
+        last_known_place: Option<EntityId>,
+        workstation_tag: Option<WorkstationTag>,
+    ) -> BelievedEntityState {
+        BelievedEntityState {
+            workstation_tag,
+            ..belief_state(kind, last_known_place)
         }
     }
 
@@ -3055,6 +4454,7 @@ mod tests {
     fn format_report_includes_affordance_change_lines() {
         let mut driver = AgentTickDriver::new();
         driver.enable_tracing();
+        let registry = RecipeRegistry::new();
         let agent = entity(1);
         let initial = affordance_trace(Some(entity(10)), &[("sleep", 0)]);
         let changed = affordance_trace(Some(entity(20)), &[("harvest", 2)]);
@@ -3079,14 +4479,260 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &registry,
             &world,
             &driver,
             &[],
+            false,
+            &[],
+            0,
         );
 
         assert!(
             report.contains("**Affordance changes** (tick 5): +harvest, -sleep (at Unknown#20)")
         );
+    }
+
+    #[test]
+    fn format_report_renders_critical_window_section_for_synthetic_report() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
+        let agent = entity(1);
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            true,
+            &[sample_critical_window_report(agent)],
+            1,
+        );
+
+        assert!(report.contains("## Section 9 — Critical Window Forensics"));
+        assert!(report.contains("### Window 1 — Guard Theron / Fatigue"));
+        assert!(report.contains("**Selected goals across captured frames**: Sleep x1"));
+        assert!(
+            report.contains("**Exhaustion states**: frontier-exhausted (expansions_used=7) x1")
+        );
+        assert!(report.contains(
+            "| 12 | 940 | Sleep | SearchSelection | Sleep | sleep@12 | frontier-exhausted (expansions_used=7) | 2 blockers | Unknown#20: water=yes, wash=no, sleep=yes, food=no |"
+        ));
+    }
+
+    #[test]
+    fn format_report_renders_critical_window_empty_state() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
+        let agent = entity(1);
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            true,
+            &[],
+            0,
+        );
+
+        assert!(report.contains("## Section 9 — Critical Window Forensics"));
+        assert!(report.contains("No authored-critical windows detected."));
+    }
+
+    #[test]
+    fn format_report_omits_critical_window_section_when_disabled() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
+        let agent = entity(1);
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            false,
+            &[],
+            0,
+        );
+
+        assert!(!report.contains("## Section 9 — Critical Window Forensics"));
+    }
+
+    #[test]
+    fn format_report_keeps_section_9_after_section_8() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
+        let agent = entity(1);
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            true,
+            &[sample_critical_window_report(agent)],
+            1,
+        );
+
+        let section_8 = report
+            .find("## Section 8 — Budget Exhaustion Snapshots")
+            .expect("section 8");
+        let section_9 = report
+            .find("## Section 9 — Critical Window Forensics")
+            .expect("section 9");
+        assert!(section_8 < section_9);
+    }
+
+    #[test]
+    fn test_compute_maintenance_rates_tracks_accumulation_and_relief() {
+        let samples = vec![
+            NeedsSample {
+                hunger: 0,
+                thirst: 0,
+                fatigue: 0,
+                bladder: 0,
+                dirtiness: 0,
+            },
+            NeedsSample {
+                hunger: 10,
+                thirst: 5,
+                fatigue: 0,
+                bladder: 0,
+                dirtiness: 3,
+            },
+            NeedsSample {
+                hunger: 4,
+                thirst: 9,
+                fatigue: 2,
+                bladder: 0,
+                dirtiness: 1,
+            },
+        ];
+
+        let rates = compute_maintenance_rates(&samples);
+
+        assert_eq!(rates[0], (HomeostaticNeedId::Hunger, 10, 6, 4));
+        assert_eq!(rates[1], (HomeostaticNeedId::Thirst, 9, 0, 9));
+        assert_eq!(rates[2], (HomeostaticNeedId::Fatigue, 2, 0, 2));
+        assert_eq!(rates[3], (HomeostaticNeedId::Bladder, 0, 0, 0));
+        assert_eq!(rates[4], (HomeostaticNeedId::Dirtiness, 3, 2, 1));
+    }
+
+    #[test]
+    fn test_recipe_usage_rows_iteration_order_is_deterministic() {
+        let mut registry = RecipeRegistry::new();
+        let grain_id = registry.register(sample_recipe(
+            "Harvest Grain",
+            vec![(CommodityKind::Grain, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(1))],
+            Some(WorkstationTag::FieldPlot),
+        ));
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("harvest:Harvest Grain".to_string(), 2);
+        stats
+            .actions_committed
+            .insert("harvest:Harvest Apples".to_string(), 5);
+        stats
+            .actions_committed
+            .insert("harvest:Harvest Water".to_string(), 3);
+        let known = KnownRecipes::with([grain_id, apple_id]);
+
+        let rows = recipe_usage_rows(&stats, Some(&known), &registry);
+
+        assert_eq!(
+            rows,
+            vec![
+                ("Harvest Grain".to_string(), 2),
+                ("Harvest Apples".to_string(), 5),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_maintenance_rates_table_renders_for_sampled_agent() {
+        let stats = agent_stats_with_dirtiness("Alice", &[10, 15, 12]);
+
+        let rendered =
+            render_maintenance_rates_table(&stats.needs_samples).expect("maintenance table");
+
+        assert!(rendered.contains("**Maintenance rates** (‰)"));
+        assert!(rendered.contains("| Need | Accumulation | Relief | Net |"));
+        assert!(rendered.contains("| Dirtiness | 5 | 3 | 2 |"));
+    }
+
+    #[test]
+    fn test_recipe_usage_table_renders_for_agent_with_known_recipes() {
+        let mut registry = RecipeRegistry::new();
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let grain_id = registry.register(sample_recipe(
+            "Harvest Grain",
+            vec![(CommodityKind::Grain, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(1))],
+            Some(WorkstationTag::FieldPlot),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("harvest:Harvest Apples".to_string(), 4);
+        let known = KnownRecipes::with([apple_id, grain_id]);
+
+        let rendered =
+            render_recipe_usage_table(&stats, Some(&known), &registry).expect("recipe table");
+
+        assert!(rendered.contains("**Recipe usage**"));
+        assert!(rendered.contains("| Recipe | Commits |"));
+        assert!(rendered.contains("| Harvest Apples | 4 |"));
+        assert!(rendered.contains("| Harvest Grain | 0 |"));
     }
 
     #[test]
@@ -3202,5 +4848,634 @@ mod tests {
         };
 
         assert_eq!(death_summary_line(&world, agent), None);
+    }
+
+    #[test]
+    fn test_anomaly_kind_label_emits_new_labels() {
+        assert_eq!(
+            AnomalyKind::GeographicConvergence.label(),
+            "GEOGRAPHIC_CONVERGENCE"
+        );
+        assert_eq!(
+            AnomalyKind::MaintenanceStarvation.label(),
+            "MAINTENANCE_STARVATION"
+        );
+        assert_eq!(AnomalyKind::RecipeMonoculture.label(), "RECIPE_MONOCULTURE");
+        assert_eq!(AnomalyKind::AcuteNeedSpike.label(), "ACUTE_NEED_SPIKE");
+    }
+
+    #[test]
+    fn test_anomaly_render_single_agent_header_unchanged() {
+        let anomaly = Anomaly {
+            kind: AnomalyKind::RedundantPerception,
+            agent_name: "Alice".to_string(),
+            additional_agent_names: None,
+            description: "desc".to_string(),
+            tick_range: None,
+        };
+
+        assert_eq!(
+            format_anomaly_header(1, &anomaly),
+            "### Anomaly 1 — REDUNDANT_PERCEPTION (Alice)"
+        );
+    }
+
+    #[test]
+    fn test_anomaly_render_multi_agent_header() {
+        let anomaly = Anomaly {
+            kind: AnomalyKind::GeographicConvergence,
+            agent_name: "Alice".to_string(),
+            additional_agent_names: Some(vec!["Bob".to_string(), "Carol".to_string()]),
+            description: "desc".to_string(),
+            tick_range: None,
+        };
+
+        assert_eq!(
+            format_anomaly_header(1, &anomaly),
+            "### Anomaly 1 — GEOGRAPHIC_CONVERGENCE (Alice, Bob, Carol)"
+        );
+    }
+
+    #[test]
+    fn test_geographic_convergence_fires_when_three_agents_share_place_for_window() {
+        let shared_place = entity(10);
+        let world = World::new(build_prototype_world()).expect("world");
+        let stats = BTreeMap::from([
+            (
+                entity(1),
+                agent_stats_with_locations("Alice", &vec![shared_place; 250]),
+            ),
+            (
+                entity(2),
+                agent_stats_with_locations("Bob", &vec![shared_place; 250]),
+            ),
+            (
+                entity(3),
+                agent_stats_with_locations("Carol", &vec![shared_place; 250]),
+            ),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(
+            anomalies[0].kind,
+            AnomalyKind::GeographicConvergence
+        ));
+        assert_eq!(anomalies[0].agent_name, "Alice");
+        assert_eq!(
+            anomalies[0].additional_agent_names.as_deref(),
+            Some(&["Bob".to_string(), "Carol".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn test_geographic_convergence_deduplicates_overlapping_windows() {
+        let shared_place = entity(10);
+        let world = World::new(build_prototype_world()).expect("world");
+        let stats = BTreeMap::from([
+            (
+                entity(1),
+                agent_stats_with_locations("Alice", &vec![shared_place; 250]),
+            ),
+            (
+                entity(2),
+                agent_stats_with_locations("Bob", &vec![shared_place; 250]),
+            ),
+            (
+                entity(3),
+                agent_stats_with_locations("Carol", &vec![shared_place; 250]),
+            ),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert_eq!(anomalies[0].tick_range, Some((0, 249)));
+    }
+
+    #[test]
+    fn test_geographic_convergence_does_not_fire_on_rotating_agents() {
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let world = World::new(build_prototype_world()).expect("world");
+        let rotating = (0..250)
+            .map(|tick| {
+                if (tick / 50) % 2 == 0 {
+                    place_a
+                } else {
+                    place_b
+                }
+            })
+            .collect::<Vec<_>>();
+        let inverse = (0..250)
+            .map(|tick| {
+                if (tick / 50) % 2 == 0 {
+                    place_b
+                } else {
+                    place_a
+                }
+            })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([
+            (entity(1), agent_stats_with_locations("Alice", &rotating)),
+            (entity(2), agent_stats_with_locations("Bob", &inverse)),
+            (entity(3), agent_stats_with_locations("Carol", &rotating)),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_geographic_convergence_suppresses_split_support_food_node() {
+        let orchard = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let world = build_split_support_convergence_world();
+        let stats = BTreeMap::from([
+            (
+                entity(1),
+                agent_stats_with_locations("Alice", &vec![orchard; 250]),
+            ),
+            (
+                entity(2),
+                agent_stats_with_locations("Bob", &vec![orchard; 250]),
+            ),
+            (
+                entity(3),
+                agent_stats_with_locations("Carol", &vec![orchard; 250]),
+            ),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_geographic_convergence_still_fires_on_bundled_support_hub() {
+        let camp = prototype_place_entity(PrototypePlace::BanditCamp);
+        let world = build_bundled_support_convergence_world();
+        let stats = BTreeMap::from([
+            (entity(1), agent_stats_with_locations("Alice", &vec![camp; 250])),
+            (entity(2), agent_stats_with_locations("Bob", &vec![camp; 250])),
+            (entity(3), agent_stats_with_locations("Carol", &vec![camp; 250])),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(
+            anomalies[0].kind,
+            AnomalyKind::GeographicConvergence
+        ));
+    }
+
+    #[test]
+    fn test_maintenance_starvation_fires_on_rising_dirtiness_over_window() {
+        let thresholds = DriveThresholds::default();
+        let high_threshold = need_high_threshold(&thresholds, HomeostaticNeedId::Dirtiness);
+        let dirtiness = (0..ANOMALY_ROLLING_WINDOW_TICKS)
+            .map(|tick| high_threshold + 50 + u16::try_from(tick.min(49)).expect("tick fits"))
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let mut anomalies = Vec::new();
+
+        detect_maintenance_starvation(&stats, &thresholds_by_agent, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(
+            anomalies[0].kind,
+            AnomalyKind::MaintenanceStarvation
+        ));
+        assert!(
+            anomalies[0]
+                .description
+                .contains("dirtiness accumulated 49 permille")
+        );
+        assert!(
+            anomalies[0]
+                .description
+                .contains("relieved only 0 permille")
+        );
+        assert!(
+            anomalies[0]
+                .description
+                .contains("Net deficit: 49 permille")
+        );
+        assert!(anomalies[0].description.contains("above high threshold 850"));
+        assert_eq!(anomalies[0].tick_range, Some((0, 199)));
+    }
+
+    #[test]
+    fn test_maintenance_starvation_does_not_fire_when_relief_keeps_up() {
+        let dirtiness = (0..ANOMALY_ROLLING_WINDOW_TICKS)
+            .map(|tick| if tick % 2 == 0 { 900 } else { 1000 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), DriveThresholds::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_maintenance_starvation(&stats, &thresholds_by_agent, &mut anomalies);
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_maintenance_starvation_does_not_fire_when_avg_below_high() {
+        let dirtiness = (0..ANOMALY_ROLLING_WINDOW_TICKS)
+            .map(|tick| if tick % 2 == 0 { 800 } else { 900 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), DriveThresholds::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_maintenance_starvation(&stats, &thresholds_by_agent, &mut anomalies);
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_maintenance_starvation_reports_strongest_qualifying_window() {
+        let thresholds = DriveThresholds::default();
+        let high_threshold = need_high_threshold(&thresholds, HomeostaticNeedId::Dirtiness);
+        let dirtiness = (0u16..400u16)
+            .map(|tick| {
+                if tick < 200 {
+                    high_threshold + 50 + tick.min(49)
+                } else {
+                    high_threshold + 10
+                }
+            })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(entity(1), agent_stats_with_dirtiness("Alice", &dirtiness))]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let mut anomalies = Vec::new();
+
+        detect_maintenance_starvation(&stats, &thresholds_by_agent, &mut anomalies);
+
+        assert_eq!(anomalies.len(), 1);
+        assert_eq!(anomalies[0].tick_range, Some((0, 199)));
+    }
+
+    #[test]
+    fn test_primary_satisfied_need_classifies_apple_as_hunger() {
+        let recipe = sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        );
+
+        assert_eq!(
+            primary_satisfied_need(&recipe),
+            Some(HomeostaticNeedId::Hunger)
+        );
+    }
+
+    #[test]
+    fn test_primary_satisfied_need_classifies_water_as_thirst() {
+        let recipe = sample_recipe(
+            "Harvest Water",
+            vec![(CommodityKind::Water, Quantity(1))],
+            vec![(CommodityKind::Water, Quantity(1))],
+            Some(WorkstationTag::Well),
+        );
+
+        assert_eq!(
+            primary_satisfied_need(&recipe),
+            Some(HomeostaticNeedId::Thirst)
+        );
+    }
+
+    #[test]
+    fn test_primary_satisfied_need_returns_none_for_non_consumable() {
+        let recipe = sample_recipe(
+            "Gather Firewood",
+            vec![],
+            vec![(CommodityKind::Firewood, Quantity(1))],
+            None,
+        );
+
+        assert_eq!(primary_satisfied_need(&recipe), None);
+    }
+
+    #[test]
+    fn test_recipe_monoculture_fires_on_100_percent_apple_share() {
+        let mut registry = RecipeRegistry::new();
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let grain_id = registry.register(sample_recipe(
+            "Harvest Grain",
+            vec![(CommodityKind::Grain, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(1))],
+            Some(WorkstationTag::FieldPlot),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("harvest:Harvest Apples".to_string(), 16);
+        stats
+            .actions_committed
+            .insert("harvest:Harvest Grain".to_string(), 0);
+        stats.needs_samples = vec![NeedsSample {
+            hunger: 0,
+            thirst: 0,
+            fatigue: 0,
+            bladder: 0,
+            dirtiness: 0,
+        }];
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let mut store = AgentBeliefStore::new();
+        store.known_entities.insert(
+            entity(10),
+            belief_state_with_workstation(
+                Some(EntityKind::Facility),
+                Some(entity(20)),
+                Some(WorkstationTag::FieldPlot),
+            ),
+        );
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Alice", ControlSource::Ai).expect("agent");
+            txn.set_component_agent_belief_store(agent, store)
+                .expect("belief store");
+            commit_txn(txn);
+            agent
+        };
+        let stats_by_agent = BTreeMap::from([(agent, stats)]);
+        let known_recipes_by_agent =
+            BTreeMap::from([(agent, BTreeSet::from([apple_id, grain_id]))]);
+        let mut anomalies = Vec::new();
+
+        detect_recipe_monoculture(
+            &stats_by_agent,
+            &known_recipes_by_agent,
+            &registry,
+            &world,
+            &mut anomalies,
+        );
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(anomalies[0].kind, AnomalyKind::RecipeMonoculture));
+        assert!(anomalies[0].description.contains(
+            "hunger actions: 100% Harvest Apples (16 actions), 0% Harvest Grain (0 actions)"
+        ));
+        assert!(
+            anomalies[0]
+                .description
+                .contains("final belief store includes workstation FieldPlot evidence")
+        );
+    }
+
+    #[test]
+    fn test_recipe_monoculture_does_not_fire_without_belief_gate() {
+        let mut registry = RecipeRegistry::new();
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let grain_id = registry.register(sample_recipe(
+            "Harvest Grain",
+            vec![(CommodityKind::Grain, Quantity(1))],
+            vec![(CommodityKind::Grain, Quantity(1))],
+            Some(WorkstationTag::FieldPlot),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("harvest:Harvest Apples".to_string(), 16);
+        stats
+            .actions_committed
+            .insert("harvest:Harvest Grain".to_string(), 0);
+        stats.needs_samples = vec![NeedsSample {
+            hunger: 0,
+            thirst: 0,
+            fatigue: 0,
+            bladder: 0,
+            dirtiness: 0,
+        }];
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Alice", ControlSource::Ai).expect("agent");
+            commit_txn(txn);
+            agent
+        };
+        let stats_by_agent = BTreeMap::from([(agent, stats)]);
+        let known_recipes_by_agent =
+            BTreeMap::from([(agent, BTreeSet::from([apple_id, grain_id]))]);
+        let mut anomalies = Vec::new();
+
+        detect_recipe_monoculture(
+            &stats_by_agent,
+            &known_recipes_by_agent,
+            &registry,
+            &world,
+            &mut anomalies,
+        );
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_recipe_monoculture_does_not_fire_on_single_known_recipe() {
+        let mut registry = RecipeRegistry::new();
+        let apple_id = registry.register(sample_recipe(
+            "Harvest Apples",
+            vec![(CommodityKind::Apple, Quantity(1))],
+            vec![(CommodityKind::Apple, Quantity(1))],
+            Some(WorkstationTag::OrchardRow),
+        ));
+        let mut stats = AgentStats::new("Alice".to_string(), false);
+        stats
+            .actions_committed
+            .insert("harvest:Harvest Apples".to_string(), 16);
+        stats.needs_samples = vec![NeedsSample {
+            hunger: 0,
+            thirst: 0,
+            fatigue: 0,
+            bladder: 0,
+            dirtiness: 0,
+        }];
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Alice", ControlSource::Ai).expect("agent");
+            commit_txn(txn);
+            agent
+        };
+        let stats_by_agent = BTreeMap::from([(agent, stats)]);
+        let known_recipes_by_agent = BTreeMap::from([(agent, BTreeSet::from([apple_id]))]);
+        let mut anomalies = Vec::new();
+
+        detect_recipe_monoculture(
+            &stats_by_agent,
+            &known_recipes_by_agent,
+            &registry,
+            &world,
+            &mut anomalies,
+        );
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_acute_need_spike_fires_on_40_tick_run() {
+        let thresholds = DriveThresholds::default();
+        let metabolism = MetabolismProfile::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..50)
+            .map(|tick| if tick < 40 { critical } else { 100 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), metabolism)]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert_eq!(anomalies.len(), 1);
+        assert!(matches!(anomalies[0].kind, AnomalyKind::AcuteNeedSpike));
+        assert_eq!(anomalies[0].tick_range, Some((0, 39)));
+        assert!(
+            anomalies[0].description.contains(
+                "thirst above critical threshold (850 permille) for 40 consecutive ticks"
+            )
+        );
+        assert!(
+            anomalies[0]
+                .description
+                .contains("within 17% of dehydration tolerance (240 ticks)")
+        );
+    }
+
+    #[test]
+    fn test_acute_need_spike_does_not_fire_below_30_ticks() {
+        let thresholds = DriveThresholds::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..40)
+            .map(|tick| if tick < 29 { critical } else { 100 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), MetabolismProfile::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_acute_need_spike_does_not_fire_at_or_above_100_ticks() {
+        let thresholds = DriveThresholds::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..110)
+            .map(|tick| if tick < 100 { critical } else { 100 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), MetabolismProfile::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_acute_need_spike_emits_once_per_maximal_run() {
+        let thresholds = DriveThresholds::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..60)
+            .map(|tick| if tick < 50 { critical } else { 100 })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), MetabolismProfile::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert_eq!(anomalies.len(), 1);
+        assert_eq!(anomalies[0].tick_range, Some((0, 49)));
+    }
+
+    #[test]
+    fn test_acute_need_spike_treats_gaps_as_distinct() {
+        let thresholds = DriveThresholds::default();
+        let critical = thresholds.critical(HomeostaticNeedId::Thirst).value();
+        let values = (0..90)
+            .map(|tick| {
+                if tick < 40 || (41..81).contains(&tick) {
+                    critical
+                } else {
+                    100
+                }
+            })
+            .collect::<Vec<_>>();
+        let stats = BTreeMap::from([(
+            entity(1),
+            agent_stats_with_need_values("Alice", HomeostaticNeedId::Thirst, &values),
+        )]);
+        let thresholds_by_agent = BTreeMap::from([(entity(1), thresholds)]);
+        let metabolism_by_agent = BTreeMap::from([(entity(1), MetabolismProfile::default())]);
+        let mut anomalies = Vec::new();
+
+        detect_acute_need_spike(
+            &stats,
+            &thresholds_by_agent,
+            &metabolism_by_agent,
+            &mut anomalies,
+        );
+
+        assert_eq!(anomalies.len(), 2);
+        assert_eq!(anomalies[0].tick_range, Some((0, 39)));
+        assert_eq!(anomalies[1].tick_range, Some((41, 80)));
     }
 }

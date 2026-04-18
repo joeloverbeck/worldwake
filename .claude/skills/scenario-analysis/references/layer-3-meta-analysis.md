@@ -78,6 +78,8 @@ Base the assessment on what this specific scenario reveals. A threshold that wor
 
 ## Step 6.4: Proposed New Smell Categories
 
+**Graduated smells (shipped as of S117)**: Geographic Convergence, Maintenance Starvation, Recipe Monoculture, and `ACUTE_NEED_SPIKE` are now mechanical observer detectors. Do not re-propose them as new smell categories. If a future run reveals a gap beyond the shipped mechanical suite, propose a new successor smell or spec instead.
+
 For each detection gap identified in Step 6.2 with MEDIUM or higher impact, propose a concrete new smell category:
 
 ```markdown

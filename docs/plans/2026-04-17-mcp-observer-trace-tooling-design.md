@@ -117,7 +117,7 @@ Discoverable and shared across contributors. Global user-level registration is o
 **Phase 1 — run-and-query path:**
 
 ```
-Claude → MCP tool: run_observer(scenario="scenarios/default.ron", seed=42, ticks=500)
+Claude → MCP tool: run_observer(scenario="scenarios/survival-baseline.ron", seed=42, ticks=500)
   → MCP spawns: cargo run --release --bin observer -- --scenario ... --seed 42 --ticks 500 --json /tmp/ww-mcp-<hash>.json
   → Observer writes markdown (unchanged) AND json sidecar
   → MCP reads+parses json, stores in in-memory cache keyed by (scenario, seed, ticks)
@@ -242,7 +242,7 @@ Claude → MCP tool: trace_agent_decisions(cache_key, agent_id, tick_range)
 
 **Phase 1 tests:**
 
-- **Observer JSON schema fidelity:** Unit test in `worldwake-cli/tests/` runs the observer on `scenarios/default.ron` with both `--json out.json` and markdown output, parses the JSON, asserts: (1) every markdown section has a corresponding JSON section, (2) agent counts match, (3) `schema_version` is present and equal to `"1.0"`, (4) every `budget_exhaustion_snapshot` has all required fields populated.
+- **Observer JSON schema fidelity:** Unit test in `worldwake-cli/tests/` runs the observer on `scenarios/survival-baseline.ron` with both `--json out.json` and markdown output, parses the JSON, asserts: (1) every markdown section has a corresponding JSON section, (2) agent counts match, (3) `schema_version` is present and equal to `"1.0"`, (4) every `budget_exhaustion_snapshot` has all required fields populated.
 - **Schema regression test:** Snapshot test — observer JSON for a fixed `(scenario, seed, ticks)` tuple is committed under `crates/worldwake-cli/tests/snapshots/`. Any schema-shape change forces an explicit snapshot update (FND-28 discipline).
 - **MCP crate unit tests:** In `crates/worldwake-mcp/tests/`, feed canned JSON fixtures into the cache and assert each tool returns correct filtered output. No observer spawn — fast and decoupled.
 - **MCP integration test:** One end-to-end test that spawns the `worldwake-mcp` binary, sends a `run_observer` request over stdio, verifies the response. Gated behind `#[ignore]` by default; runnable via `cargo test -p worldwake-mcp -- --ignored`.

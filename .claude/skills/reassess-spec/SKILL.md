@@ -55,11 +55,20 @@ Before beginning Steps 2-3, classify the spec:
   - Section H updates only if the change introduces new causal hooks.
   - **Root-cause tracing (Step 2)**: The structured root-cause tracing substeps (a-d) apply to investigation/bugfix specs. For computation-optimization specs, skip root-cause tracing — instead prioritize validating that the spec's referenced types, functions, and integration points exist and have the assumed signatures and semantics.
 
+- **(f) Retroactive reassessment** — reassessment concludes (via Step 3 validation) that all deliverables already landed through downstream tickets. This classification is **not pre-selected**; it activates when every deliverable verifies as implemented in code. The user hint "I suspect this already landed" is a soft signal, not a classification by itself — only Step 3 evidence can confirm (f).
+  - Steps 3.1-3.4 apply rigorously to prove landing of every deliverable; cite file paths + line numbers as evidence. Skip Steps 3.5-3.8 (ripple/root-cause substeps) — the work has already shipped, so there is no ripple to trace.
+  - Step 4 applies for Outcome-section honesty (does the delivered implementation still align with FOUNDATIONS?).
+  - **Step 7 output shape switches to Outcome population + archival**, not deliverable refinement (see Step 7's retroactive branch).
+  - **Step 8 suggested next step becomes archival per `docs/archival-workflow.md` + IMPLEMENTATION-ORDER.md reconciliation**, not `/spec-to-tickets` (see Step 8's retroactive path).
+  - Classification shift from (a)/(b)/(c)/(d)/(e) → (f) is a legitimate and common outcome when a spec is reassessed after the work already shipped through downstream tickets. Name the shift explicitly in Step 8.
+  - (f) does not participate in hybrid combinations — it is outcome-based rather than deliverable-based, and it supersedes the originally-assumed classification once Step 3 confirms full landing.
+
 **Deliverable removal**: If validation reveals a deliverable should be removed entirely, skip remaining sub-steps for that deliverable and record the removal as a finding. Continue validation for surviving deliverables.
 
 **Hybrid specs**: Apply the union of applicable steps — use the most rigorous classification's checklist for shared steps. Common hybrids:
   - **(d)+(e)** (test triage with a bugfix): Steps 3.1-3.4 from both; 3.5-3.8 for bugfix deliverables only; 4.4 if bugfix touches candidate emission/preconditions; Section H only for bugfix deliverables.
   - **(b)+(d)** (system extension with golden tests): Full (b) checklist for production deliverables; (d) rules for test deliverables; 4.4 if any production deliverable modifies validation/emission.
+  - **(b)-tooling-only + (d)** (tooling/report/observer enhancement with test-support helpers): Steps 3.1-3.4 apply fully; 3.5-3.7 apply only if the spec extends cross-crate types or enums; 3.3A applies if the spec proposes new observer/CLI output; 3.8 still applies; skip 3.9; Section H updates only for new causal hooks. Check the "Dual-Use Read-Model Types" pattern in `references/worldwake-validation-patterns.md` if the spec proposes types shared between tests and a non-test crate.
   - **(a)+(d)** (new system with test infrastructure): Full (a) checklist; test deliverables validated per 3.1-3.4 only.
 
 **Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and not externally modified, Steps 2-3 may scope to only references affected by the triggering change. Step 1 still applies.
@@ -72,7 +81,7 @@ Read ALL of these before any analysis:
 
 1. **The spec file** (from the argument) — entire file
 2. **`docs/FOUNDATIONS.md`** — skip if read earlier in this session and unmodified. If the file exceeds the Read tool's token limit, read in sections (e.g., 200 lines each) to cumulatively cover the full document, or target specific principle sections relevant to the spec's domain.
-3. **`docs/spec-drafting-rules.md`** (if the spec contains or should contain Section H) — skip if read earlier and unmodified
+3. **`docs/spec-drafting-rules.md`** (if the spec contains or should contain Section H) — skip if read earlier and unmodified. Skip for classification (f) — deliverable refinement and Section H editing do not occur in the retroactive branch.
 
 Parse the spec's metadata: Phase, Status, Priority, Crates, Dependencies, Goals/Design Goals, Non-Goals, FOUNDATIONS Alignment, and all deliverable sections.
 
@@ -108,25 +117,54 @@ For computation-optimization specs (type e, optimization subtype), skip root-cau
 
 **Read `references/codebase-validation.md` and `references/worldwake-validation-patterns.md` now, with the Read tool, before any validation work.** These files carry the validation checklists and the pattern-specific triggers (new GoalKind variant, new component on Agent, new component read by AI crate, new action type, new cross-crate enum variant). Skipping these reads means pattern-specific checklists will be missed and findings produced in that state are incomplete.
 
-After reading, acknowledge the load with a one-line "Loaded: codebase-validation.md, worldwake-validation-patterns.md" so the skip is auditable. Then validate every reference from Step 2, applying any pattern-specific checklist the spec triggers.
+After reading each file, emit a **content-tied acknowledgment** — one per Read call, immediately after that Read returns. Each acknowledgment must quote a concrete anchor from the file just loaded, not a free-form "Loaded: …" string:
+
+- `Loaded codebase-validation.md — top section is "3.0 Cross-Crate Scope Establishment"`
+- `Loaded worldwake-validation-patterns.md — first pattern is "New GoalKind Variant"`
+
+A generic "Loaded: codebase-validation.md, worldwake-validation-patterns.md" without a content anchor is treated as a skipped load, because it can be emitted without opening the file. Batching acknowledgments at report time defeats the audit trail. Then validate every reference from Step 2, applying any pattern-specific checklist the spec triggers.
 
 Do not present findings yet. Collect everything for Step 4.
 
 ### Step 4: FOUNDATIONS.md Alignment Check
 
-**Read `references/foundations-alignment.md` now, with the Read tool, before checking alignment.** Acknowledge with "Loaded: foundations-alignment.md". Then check spec alignment against all applicable principles.
+**Read `references/foundations-alignment.md` now, with the Read tool, before checking alignment.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded foundations-alignment.md — opens with "4.0 Internal Contradictions"`. A bare "Loaded: foundations-alignment.md" is treated as a skipped load. Then check spec alignment against all applicable principles.
 
 ### Steps 5-6: Classify and Present Findings
 
-**Read `references/findings-and-questions.md` now, with the Read tool, before classifying.** Acknowledge with "Loaded: findings-and-questions.md". The file prescribes the one-line finding format and the Step 6 presentation template; using your own format is not a substitute. Then classify all findings from Steps 3-4 and present to the user using that template.
+**Read `references/findings-and-questions.md` now, with the Read tool, before classifying.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded findings-and-questions.md — opens with "Step 5: Classify Findings"`. A bare "Loaded: findings-and-questions.md" is treated as a skipped load. The file prescribes the one-line finding format and the Step 6 presentation template; using your own format is not a substitute. Then classify all findings from Steps 3-4 and present to the user using that template.
 
 Wait for user response before proceeding to Step 7. (In plan mode: after question resolution, write the plan file per `references/plan-mode.md`, then call ExitPlanMode. Steps 7-8 execute after approval.)
 
+**Auto mode interaction**: When auto mode is active and the findings contain no Issues (CRITICAL/HIGH severity or FOUNDATIONS violations) and no open Questions, proceed directly to Step 7. Report the auto-mode auto-approval inline in Step 6 presentation (e.g., "Auto mode: no Issues, proceeding to Step 7"). If any Issue is present or any Question is open, the wait-for-user gate still applies even in auto mode.
+
 ### Step 7: Write the Updated Spec
 
-**Pre-Apply Verification**: Before editing, run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying.
+#### Pre-Apply Verification Table
 
-**Read `references/spec-writing-rules.md` now, with the Read tool, before writing.** Acknowledge with "Loaded: spec-writing-rules.md". The file carries the full pre-apply verification, apply-changes, and post-apply confirmation rules. Then apply all approved changes.
+Before editing, build a per-finding verification mini-table **and emit it in chat before calling Write/Edit**. For each finding (by its Step 6 key — `I1`, `I2`, `M1`, `F1`, etc.), run a targeted check (grep, count, path existence) and record both the command and the result. The table is the gate — a vague "I checked the findings" is not sufficient and will be treated as no verification.
+
+Example:
+
+| Finding | Check | Result |
+|---------|-------|--------|
+| I1 | `grep -n "pm(750)" crates/worldwake-ai/tests/golden_survival_*.rs` | 0 matches — confirms stale constant eliminated |
+| I2 | `grep -rn "AnomalyKind::" crates/worldwake-cli/src/` | 17 matches, all in `bin/observer.rs` — no external consumers to migrate |
+| M3 | `test -f specs/S118-stuck-agent-detector-active-frame-exclusion.md` | file exists — dependency path valid |
+
+If any check invalidates a finding, re-present the corrected finding to the user before applying any edits — do not silently drop or modify the finding.
+
+**Read `references/spec-writing-rules.md` now, with the Read tool, before writing.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded spec-writing-rules.md — opens with "Pre-Apply Verification"`. A bare "Loaded: spec-writing-rules.md" is treated as a skipped load. The file carries the full pre-apply verification, apply-changes, and post-apply confirmation rules. Then apply all approved changes.
+
+**Retroactive branch (classification (f))**: If Step 3 validation concluded all deliverables already landed, Step 7's output shape is **not** deliverable refinement. Instead:
+
+1. Flip the spec's **Status** to `✅ COMPLETED`.
+2. Populate the **Outcome** section with: completion date; landed changes (cite file paths + line numbers); delivering ticket(s); deviations from original plan (especially work absorbed by sibling specs); verification commands **re-run at reassessment time**, and their pass/fail status. Do not copy verification from the delivering ticket — rerun each command now to catch post-delivery regressions.
+3. Mark historical **Motivating Evidence** as such — add a short parenthetical noting the drift described was resolved by the landed implementation, so future readers don't treat a stale condition as a live one.
+4. Cross-reference any downstream specs that extended or absorbed original-spec scope (e.g., a later spec that added fields to the original's struct).
+5. Do **not** apply structural refinements to deliverables that already shipped — the spec file is now a historical record, and editing D-sections to match current code would confuse the causal narrative.
+
+After Step 7 completes for (f), Step 8 drives archival + IMPLEMENTATION-ORDER.md reconciliation rather than suggesting `/spec-to-tickets`.
 
 ### Step 8: Final Summary
 
@@ -134,12 +172,21 @@ Present:
 
 - Number of issues fixed, improvements applied, additions incorporated
 - Change inventory: all changes grouped by finding type (mirroring Step 6 structure)
-- Post-Apply Confirmation results (e.g., "Verified: zero matches for eliminated references, N matches for corrected references")
+- **Post-Apply Confirmation results**: for every finding that eliminated or renamed a reference, grep-prove it is gone and that corrected references resolve — e.g., "Verified: zero matches for eliminated references, N matches for corrected references". For retroactive reassessments (classification (f)), additionally grep every concrete artifact named in the spec's Motivating Evidence (symbols, constants, file-local numbers, old thresholds) and prove its absence or corrected form in the current codebase. This validates the Outcome section's claims are still true at archival time rather than at some earlier point.
 - Deferred items the user chose not to address
 - Items excluded by reassessment-driven scope changes (distinct from user-deferred) — note why. Omit if none.
 - 1-3 sections that changed most substantially, with a note to review before proceeding
-- **Classification shift note**: If the reassessment caused the spec's effective classification to shift (e.g., (a) new system collapsed into (b) system extension after deliverable removal, or (e) investigation was promoted to (a) after a new component proved necessary), name the shift explicitly — e.g., "Effective classification shifted (a) → (b) after D2/D3 elimination." This surfaces the change so `/spec-to-tickets` can plan ticket granularity accordingly. Omit if the classification is unchanged.
-- Suggested next step: `/spec-to-tickets <spec-path>` (the spec-to-tickets skill will prompt for the ticket namespace)
+- **Classification shift note**: If the reassessment caused the spec's effective classification to shift, name the shift explicitly. Examples:
+  - "(a) new system collapsed into (b) system extension after deliverable removal"
+  - "(e) investigation was promoted to (a) after a new component proved necessary"
+  - "(b) system extension shifted to (f) retroactive reassessment after Step 3 verified full landing"
+  This surfaces the change so downstream handling is correct. Omit if the classification is unchanged.
+- **Suggested next step**:
+  - **Default path** (classifications (a)–(e)): `/spec-to-tickets <spec-path>` — the spec-to-tickets skill will prompt for the ticket namespace.
+  - **Retroactive path** (classification (f)): `/spec-to-tickets` is **not** applicable. Instead, complete the archival flow:
+    1. Archive the spec per `docs/archival-workflow.md` — move it from `specs/` to `archive/specs/`.
+    2. **Reconcile `specs/IMPLEMENTATION-ORDER.md`**: find the spec's roadmap entry, verify it doesn't already say "✅ COMPLETED", and rewrite it using the canonical format used elsewhere in that file: `- **<ID>**: ✅ COMPLETED — archived at [archive/specs/<file>.md](...). <1–2 line summary of landed artifacts>.` Include delivering-ticket IDs and note any fallout absorbed by sibling specs.
+    3. **Grep `specs/`, `archive/specs/`, `tickets/`, and `archive/tickets/`** for paths of the form `specs/<ID>-…` and rewrite them to `archive/specs/<ID>-…`. Include archive directories explicitly — prior archived specs and tickets often forward-reference the just-archived spec.
 
 Do NOT commit. Leave the file for user review.
 

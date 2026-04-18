@@ -7,6 +7,7 @@
 #![allow(dead_code)]
 
 pub mod soak_world;
+pub mod survival_forensics_assertions;
 mod timeline;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -39,6 +40,12 @@ use worldwake_sim::{
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
 // Re-export so test files using `use golden_harness::*` get the ownership types.
+#[allow(unused_imports)]
+pub use survival_forensics_assertions::{
+    dump_reports_for_debug, expect_deterministic_reports, expect_sleep_progress_barrier_window,
+    expect_wash_vs_water_competition_window, observe_critical_windows,
+    sample_local_survival_state_summary, synthetic_planning_trace, synthetic_ranked_goal_summary,
+};
 #[allow(unused_imports)]
 pub use timeline::{CrossLayerTimelineBuilder, TimelineLayer};
 pub use worldwake_core::{ProductionOutputOwner, ProductionOutputOwnershipPolicy};

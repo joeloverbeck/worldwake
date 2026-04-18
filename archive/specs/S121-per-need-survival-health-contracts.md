@@ -6,7 +6,7 @@ Extend the scenario-authored `survival_health_contract` introduced by S119 so su
 
 ## Phase and Status
 
-Phase 7 Adjunct: Survival Stability Hardening. Status: Draft.
+Phase 7 Adjunct: Survival Stability Hardening. Status: ✅ COMPLETED.
 
 ## Crates
 
@@ -18,9 +18,11 @@ Phase 7 Adjunct: Survival Stability Hardening. Status: Draft.
 
 ## Dependencies
 
-- `specs/S119-authored-survival-health-contracts.md`
+- `archive/specs/S119-authored-survival-health-contracts.md` (completed 2026-04-18)
 
 ## Motivating Evidence
+
+*(Historical — the contested failure described below was resolved by the landed per-need contract. Do not treat as a live signal.)*
 
 After `S119AUTHSURVHC-001` retrofitted the survival goldens to read authored scenario contracts instead of file-local constants, `golden_survival_contested::all_agents_survive_1440_ticks` still failed on April 18, 2026 with:
 
@@ -143,4 +145,27 @@ None.
 
 ## Outcome
 
-To be filled in at completion.
+Completed on 2026-04-18 via ticket [S121PERNEEDSHC-001](/home/joeloverbeck/projects/worldwake/archive/tickets/S121PERNEEDSHC-001.md) (commit `f46f2499`).
+
+### Landed changes
+
+- **D1 — Per-need authored critical-run contract**: `SurvivalHealthContractDef.critical_run_limits` and `SurvivalCriticalRunLimitsDef` added at [crates/worldwake-cli/src/scenario/types.rs:52-74](/home/joeloverbeck/projects/worldwake/crates/worldwake-cli/src/scenario/types.rs) with serde defaults for each per-need `Option<u32>` override and a focused deserialization test (`test_scenario_def_deserializes_survival_health_contract`).
+- **D2 — Shared helper support**: `SurvivalCriticalRunLimitOverrides` and `assert_authored_critical_runs_with_overrides` added at [crates/worldwake-ai/tests/golden_harness/mod.rs:121-206](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_harness/mod.rs); the original `assert_authored_critical_runs` helper now forwards to the override-aware form with a default-empty override set, so scenarios without per-need overrides still use the scenario-wide default.
+- **D3 — Retrofit contested contract truthfully**: [scenarios/survival-contested.ron:34-36](/home/joeloverbeck/projects/worldwake/scenarios/survival-contested.ron) carries `critical_run_limits: (dirtiness: 1300)`; [crates/worldwake-ai/tests/golden_survival_contested.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_contested.rs) maps the authored per-need contract into helper overrides via `contract_run_limit_overrides` (line 127) and adds a focused regression `per_need_critical_run_limit_override_beats_default_for_dirtiness_only` (line 583) that proves a dirtiness-only override does not weaken the other need envelopes.
+- **D4 — Documentation**: [docs/golden-e2e-testing.md:62](/home/joeloverbeck/projects/worldwake/docs/golden-e2e-testing.md) documents per-need overrides as the authored shape when one scenario's lawful self-care envelope differs across need families.
+
+### Deviations from original plan
+
+- The original contested override value (`1200`) underfit the live deterministic contested run (`1277` ticks); the shipped scenario-owned override is `1300`, still scenario-authored and still tighter than a raised global cap would be. The spec's proposed struct layout, semantics (per-need override beats scenario-wide default), and crate scope landed unchanged.
+
+### Verification
+
+- `cargo test -p worldwake-cli --lib scenario::types::tests::test_scenario_def_deserializes_survival_health_contract -- --exact` → pass
+- `cargo test -p worldwake-ai --test golden_survival_contested per_need_critical_run_limit_override_beats_default_for_dirtiness_only -- --exact` → pass
+- `cargo test -p worldwake-ai --test golden_survival_contested all_agents_survive_1440_ticks -- --ignored --exact` → pass (91.9s)
+- Full ticket verification (including `cargo clippy --workspace --all-targets -- -D warnings`) recorded on the archived ticket.
+
+### Downstream cross-references
+
+- [archive/specs/S119-authored-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/archive/specs/S119-authored-survival-health-contracts.md) declared per-need overrides out of scope and pointed forward to S121 as the substrate that would carry them.
+- [archive/specs/S116-drive-escalation-sustained-critical.md](/home/joeloverbeck/projects/worldwake/archive/specs/S116-drive-escalation-sustained-critical.md) closed the contested calibration loop through archived S119 and S121 work.
