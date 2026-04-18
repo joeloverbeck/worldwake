@@ -4,11 +4,11 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — investigation, trace analysis, and roadmap/spec disposition only
-**Deps**: `archive/tickets/S117CONMAIOBS-005.md`, `S117CONMAIOBS-007`, `specs/S117-convergence-maintenance-observer-smells.md`, `docs/golden-e2e-testing.md`
+**Deps**: `archive/tickets/S117CONMAIOBS-005.md`, `archive/tickets/S117CONMAIOBS-010.md`, `S117CONMAIOBS-007`, `specs/S117-convergence-maintenance-observer-smells.md`, `docs/golden-e2e-testing.md`
 
 ## Problem
 
-`ACUTE_NEED_SPIKE` fires on `scenarios/survival-baseline.ron`, and unlike the convergence/starvation baseline failures, the evidence currently suggests these are real high-need episodes rather than detector noise. In the same observer dump, `Agent B` also hits existing `SUSTAINED_CRITICAL_NEED` anomalies, and the critical-window forensics show repeated oscillation between a food-only site (`Fertile Fields`) and water/wash/sleep sites (`Riverside Camp` / `Forest Clearing`). Before changing the detector, the scenario, or planner behavior, the project needs an explicit disposition ticket that decides which layer is wrong and why, using repo contracts plus outside primary research on homeostatic decision systems.
+`ACUTE_NEED_SPIKE` fires on `scenarios/survival-baseline.ron`, and unlike the convergence false positive, the evidence currently suggests these are real high-need episodes rather than detector noise. The corrected `MAINTENANCE_STARVATION` detector from `S117CONMAIOBS-010` also leaves three severe baseline hunger/thirst windows. In the same observer dump, `Agent B` hits existing `SUSTAINED_CRITICAL_NEED` anomalies, and the critical-window forensics show repeated oscillation between a food-only site (`Fertile Fields`) and water/wash/sleep sites (`Riverside Camp` / `Forest Clearing`). Before changing the detector, the scenario, or planner behavior, the project needs an explicit disposition ticket that decides which layer is wrong and why, using repo contracts plus outside primary research on homeostatic decision systems.
 
 ## Assumption Reassessment (2026-04-18)
 
@@ -31,9 +31,10 @@
    - Principle 14 / 20 / 21: agents reason from local beliefs and revisable commitments, not omniscient safety scores
    - Principle 22A: any learned/anticipatory fix must be concrete state, not hidden drama tuning
    - Principle 29A / 31-style traceability: the chosen fix must leave the acute windows explainable after the fact
-9. Adjacent contradictions are already split:
+9. Archived `S117CONMAIOBS-010.md` and completed `S117CONMAIOBS-012.md` together show that the remaining baseline maintenance windows are not a second observer bug; they are corroborating evidence for the same split-support coupled-need contradiction under audit here.
+10. Adjacent contradictions are already split:
    - `GEOGRAPHIC_CONVERGENCE` lawful single-source false positives belong to `S117CONMAIOBS-009`
-   - `MAINTENANCE_STARVATION` merged-window correctness belongs to `S117CONMAIOBS-010`
+   - `MAINTENANCE_STARVATION` merged-window correctness belonged to `S117CONMAIOBS-010`; the remaining baseline maintenance disposition is now absorbed into this ticket as shared root-cause evidence
 
 ## Architecture Check
 
@@ -44,15 +45,16 @@
 
 1. Baseline acute windows are real and not detector arithmetic bugs -> observer Section 3 + Section 9 forensic evidence
 2. The baseline scenario still claims a healthy authored envelope -> `survival-baseline.ron` plus `golden_survival_baseline.rs`
-3. The owning contradiction layer (scenario vs planner vs observer redundancy) is identified from the strongest available traces -> decision trace, action trace, local-place forensic summaries, and scenario substrate audit
-4. Outside-repo guidance is used only to inform the architectural disposition, not to override local contracts -> cited primary literature in ticket closeout or created follow-up ticket
-5. This is an investigation/disposition ticket, so no stronger mutation-layer proof applies until the owning implementation ticket is created
+3. The corrected baseline maintenance windows are corroborating evidence for the same contradiction rather than a separate detector bug -> archived `S117CONMAIOBS-010.md`, completed `S117CONMAIOBS-012.md`, observer Section 3, and the shared local-place forensic summaries
+4. The owning contradiction layer (scenario vs planner vs observer redundancy) is identified from the strongest available traces -> decision trace, action trace, local-place forensic summaries, and scenario substrate audit
+5. Outside-repo guidance is used only to inform the architectural disposition, not to override local contracts -> cited primary literature in ticket closeout or created follow-up ticket
+6. This is an investigation/disposition ticket, so no stronger mutation-layer proof applies until the owning implementation ticket is created
 
 ## What to Change
 
-### 1. Audit the baseline acute windows end-to-end
+### 1. Audit the baseline acute and corroborating maintenance windows end-to-end
 
-Use the existing observer Section 9 forensics, decision traces, action traces, and scenario substrate to explain exactly why `Agent B` enters the acute hunger/thirst runs on baseline and whether that behavior is lawful-but-unhealthy, scenario-authored, or planner-induced.
+Use the existing observer Section 9 forensics, corrected maintenance anomalies, decision traces, action traces, and scenario substrate to explain exactly why `Agent B` enters the acute hunger/thirst runs on baseline and why the same split-support oscillation also produces severe maintenance windows.
 
 ### 2. Evaluate remedy classes against `FOUNDATIONS.md`
 
@@ -110,4 +112,3 @@ If more than one layer truly needs work, split them explicitly and document the 
 1. `cargo test -p worldwake-cli --test golden_observer_anomalies`
 2. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
 3. `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
-

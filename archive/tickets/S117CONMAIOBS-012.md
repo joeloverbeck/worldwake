@@ -1,10 +1,10 @@
 # S117CONMAIOBS-012: Baseline `MaintenanceStarvation` disposition after detector correction
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — investigation, trace analysis, and roadmap/spec disposition only
-**Deps**: `archive/tickets/S117CONMAIOBS-010.md`, `S117CONMAIOBS-007`, `specs/S117-convergence-maintenance-observer-smells.md`
+**Deps**: `archive/tickets/S117CONMAIOBS-010.md`, `S117CONMAIOBS-007`, `S117CONMAIOBS-011`, `specs/S117-convergence-maintenance-observer-smells.md`
 
 ## Problem
 
@@ -23,15 +23,17 @@ These are no longer merged-span contradictions or tiny-drift artifacts. Before s
 3. The motivating invariant is not "maintenance starvation must never fire." It is: if `survival-baseline.ron` remains the project's intended healthy baseline, then high-band 200-tick hunger/thirst windows with severe relief lag require a concrete explanation and a specific owning fix boundary.
 4. The strongest current evidence is already local and concrete: the corrected observer report on `survival-baseline.ron` shows the three windows above, all with rendered numbers that satisfy the tightened detector predicate exactly.
 5. Existing repo expectations still treat `survival-baseline.ron` as healthy. The scenario declares a `survival_health_contract`, and `crates/worldwake-ai/tests/golden_survival_baseline.rs` still expects bounded critical runs on a full-day baseline.
-6. Adjacent contradictions remain separate:
+6. The strongest baseline evidence now overlaps `S117CONMAIOBS-011` rather than defining a maintenance-only contradiction. The corrected starvation windows line up with the same split-support coupled-need oscillation already visible in Agent B's acute/sustained-critical forensic windows: `Fertile Fields` provides food only, while `Riverside Camp` provides water, wash, and sleep.
+7. The ignored survival golden is not currently a clean health oracle. Running `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact` fails early in `survival_forensics_assertions.rs` on `golden survival agents should always have an effective place`, before reaching the authored health assertions.
+8. Adjacent contradictions remain separate:
    - `GEOGRAPHIC_CONVERGENCE` lawful split-support false positives were fixed in archived `S117CONMAIOBS-009.md`
-   - `ACUTE_NEED_SPIKE` baseline disposition belongs to `S117CONMAIOBS-011`
-7. Per `docs/FOUNDATIONS.md`, this ticket must not solve the contradiction by adding scenario-name suppression or hiding a real high-need window inside observer-only filtering. The disposition must stay grounded in concrete local state, agent-belief planning, and post-hoc traceability.
+   - `ACUTE_NEED_SPIKE` baseline disposition, plus the shared split-support coupled-need root-cause audit, belongs to `S117CONMAIOBS-011`
+9. Per `docs/FOUNDATIONS.md`, this ticket must not solve the contradiction by adding scenario-name suppression or hiding a real high-need window inside observer-only filtering. The disposition must stay grounded in concrete local state, agent-belief planning, and post-hoc traceability.
 
 ## Architecture Check
 
 1. A dedicated disposition ticket is cleaner than continuing to tighten `MAINTENANCE_STARVATION` until the baseline goes quiet. The detector is now mechanically honest; if baseline still fails it, the remaining question is architectural ownership, not detector arithmetic.
-2. Keeping this investigation separate from `010` preserves a clean detector contract and makes any eventual scenario/planner/observer follow-up explicit rather than hidden behind another threshold tweak.
+2. Keeping this investigation separate from `010` preserved a clean detector contract. The completed audit shows the remaining maintenance contradiction does not justify a second maintenance-only implementation path; it is the same cross-layer split-support survival issue already owned by `S117CONMAIOBS-011`.
 
 ## Verification Layers
 
@@ -103,3 +105,25 @@ If more than one layer truly needs work, split them explicitly and document depe
 1. `cargo test -p worldwake-cli --test golden_observer_anomalies`
 2. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
 3. `cargo test -p worldwake-cli`
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Reran the corrected observer on `scenarios/survival-baseline.ron` and confirmed that the three remaining `MAINTENANCE_STARVATION` anomalies are mechanically honest under the landed `S117CONMAIOBS-010` contract; no observer-semantic contradiction remains in the rendered numbers.
+- Audited the baseline report, decision timeline, and critical-window forensics. The remaining maintenance windows are downstream of the same split-support coupled-need oscillation already visible in Agent B's acute/sustained-critical evidence: `Fertile Fields` supplies food only, while `Riverside Camp` supplies water, wash, and sleep, and the planner repeatedly alternates between them under rising survival pressure.
+- Confirmed that the ignored survival golden is not yet a clean health oracle for this investigation: `all_agents_survive_1440_ticks` currently fails early on an effective-place assumption before reaching the authored health assertions.
+- Concluded that the owning contradiction layer is not the observer detector. The remaining baseline maintenance issue belongs to the broader planner/scenario split-support survival disposition already tracked by `tickets/S117CONMAIOBS-011.md`, so no separate maintenance-only implementation ticket was created.
+- Updated `tickets/S117CONMAIOBS-011.md` to absorb the corrected maintenance evidence as corroborating input to that shared baseline disposition.
+
+## Deviations
+
+- The drafted ticket assumed the remaining baseline maintenance contradiction might need its own implementation follow-up after the detector fix. Live investigation showed that would duplicate `S117CONMAIOBS-011`: the maintenance windows and acute windows are symptoms of the same split-support coupled-need failure mode.
+- The strongest additional evidence came from a failing ignored survival golden, but that test currently fails at a harness-level effective-place assumption rather than the authored health assertion. The ticket records that failure as traceability evidence, not as proof that the maintenance detector is wrong.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --test golden_observer_anomalies`
+- Passed `cargo run -p worldwake-cli --bin observer -- scenarios/survival-baseline.ron --ticks 1440 --output /tmp/baseline-dump.md`
+- Passed `cargo test -p worldwake-cli`
+- Observed expected investigation failure in `cargo test -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --exact` (`golden survival agents should always have an effective place`)
