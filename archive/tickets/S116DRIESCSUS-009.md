@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` candidate generation, goal dispatch/feasibility, focused planner tests
-**Deps**: specs/S116-drive-escalation-sustained-critical.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-008.md
+**Deps**: archive/specs/S116-drive-escalation-sustained-critical.md, archive/tickets/S116DRIESCSUS-004.md, archive/tickets/S116DRIESCSUS-008.md
 
 ## Problem
 

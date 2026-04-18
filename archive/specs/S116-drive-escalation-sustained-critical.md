@@ -1,5 +1,7 @@
 # S116: Drive Escalation Under Sustained Critical Need
 
+**Status**: COMPLETED
+
 ## Summary
 
 Add a per-agent, profile-configured motive-score multiplier that grows with the number of consecutive ticks a homeostatic need has spent above its critical threshold. Escalation is **not** new stored state: it is a read-time function of the existing `DeprivationExposure` counter (extended to cover dirtiness) and a new `DriveEscalationProfile` universal agent component. The multiplier grows gradually, is capped, and falls back to `1×` the moment the need drops below critical through the normal physical relief pathway. This turns "wash-cycle starvation" and its siblings — where a need's base utility weight loses motive scoring indefinitely to a higher-weight competitor even while the need sits at 900+ permille — into a recoverable homeostatic loop instead of a permanent equilibrium failure.
@@ -28,7 +30,7 @@ From `reports/scenario-analysis-report.md` (survival-contested, seed 306006, 144
 - All 4 agents in `survival-contested.ron` had dirtiness ≥ 750 permille for 703–901 ticks and all reached max=1000 permille. Observed maximum consecutive critical runs: 313 / 315 / 319 / 372 ticks.
 - Wash action committed 3–5 times per agent; `relieve_wilderness` committed 22–27 times per agent (each adding +200 permille dirtiness via `wilderness_relief_dirtiness_penalty`).
 - Section 7 decision timeline confirmed Wash goal was generated but consistently lost motive scoring to `AcquireCommodity(Apple)` at the food hub because `dirtiness_weight=625 < hunger_weight=700–750`.
-- No agent died. The failure is a chronic equilibrium violation, not a survival collapse — precisely the regime the existing `MAX_CRITICAL_RUN_TICKS=400` golden tolerance was knowingly relaxed to accommodate (see `golden_survival_contested.rs:22-34`).
+- No agent died. The failure is a chronic equilibrium violation, not a survival collapse — precisely the regime the existing authored contested survival-health bound of `max_authored_critical_run_ticks: 400` was knowingly relaxed to accommodate before the later S116 tightening.
 
 Root cause per Layer 2 analysis: **Priority Override** — relief is never impossible (affordance present, plan found) but fires at a frequency insufficient to keep the need below threshold. Current motive scoring has no time-dependent component, so a need with lower base utility weight can sit at critical indefinitely while higher-weight needs are actively managed.
 
@@ -262,11 +264,11 @@ Three new goldens in `crates/worldwake-ai/tests/golden_drive_escalation.rs`:
 
 3. **`escalation_fades_after_relief`** — agent with critical dirtiness performs wash. Assert: within 1 tick of dirtiness falling below critical, `DeprivationExposure::ticks_at_critical(HomeostaticNeedId::Dirtiness) == 0` and an `EventTag::Escalation` event with `action_name` indicating escalation-end is present in the event log for the transition tick.
 
-### D8: Retrofit existing survival goldens
+### D8: Retrofit contested authored survival bound
 
-After S116 lands, tighten `golden_survival_contested.rs::MAX_CRITICAL_RUN_TICKS` from **400 to 300**. Rationale: the current empirical maximum consecutive critical run across the four agents in survival-contested is 372 ticks (Agent D), with the others at 313/315/319. Motive-score escalation is expected to break runs earlier than the current worst case; a target of 300 represents a ≥ 72-tick improvement over today's peak run while leaving headroom for the affordance-level water-possession bottleneck (`wash_preconditions` requires `TargetDirectlyPossessedByActor(0)` Water) that S116 does not solve. Further tightening toward 200 requires a follow-up spec that changes acquire-water-for-wash precedence or the wash precondition itself.
+After S116 lands, tighten `survival-contested.ron`'s canonical authored survival-health contract from **400 to 300** by changing `survival_health_contract.max_authored_critical_run_ticks`. Rationale: the current empirical maximum consecutive critical run across the four agents in survival-contested is 372 ticks (Agent D), with the others at 313/315/319. Motive-score escalation is expected to break runs earlier than the current worst case; a target of 300 represents a ≥ 72-tick improvement over today's peak run while leaving headroom for the affordance-level water-possession bottleneck (`wash_preconditions` requires `TargetDirectlyPossessedByActor(0)` Water) that S116 does not solve. Further tightening toward 200 requires a follow-up spec that changes acquire-water-for-wash precedence or the wash precondition itself.
 
-Update the rationale comment at `golden_survival_contested.rs:22-34` to reference S116 and the remaining water-possession follow-up. Mirror the tightening on `golden_survival_scattered.rs` only if its current `MAX_CRITICAL_RUN_TICKS` exceeds 300 and empirical data supports the tighter bound; otherwise leave it.
+Update the rationale comment beside that scenario-authored bound to reference S116 and the remaining water-possession follow-up. Mirror the tightening on the scattered survival contract only if its empirical envelope supports it; otherwise leave scattered unchanged.
 
 ### D9: Unit coverage for motive math
 
@@ -327,10 +329,34 @@ No system calls another directly. No cross-crate imperative dispatch. No new Sys
 ## Verification Plan
 
 1. `cargo test -p worldwake-ai --test golden_drive_escalation` — 3 new goldens pass.
-2. `cargo test -p worldwake-ai --test golden_survival_contested` — retrofit `MAX_CRITICAL_RUN_TICKS=300` passes.
+2. `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored` — retrofit `survival_health_contract.max_authored_critical_run_ticks = 300` passes.
 3. `cargo test -p worldwake-ai --test golden_survival_scattered` — still passes within the ±10% calibration acceptance band.
 4. `cargo test -p worldwake-ai --test golden_survival_baseline` — still passes within the ±10% calibration acceptance band.
 5. `cargo test -p worldwake-core` — `DeprivationExposure` dirtiness round-trip + `DriveEscalationProfile` component-table + bincode round-trip coverage pass.
 6. `cargo test -p worldwake-ai ranking` — three new unit tests (D9) pass: multiplier=1000 regression, multiplier=2000 doubles, saturation at cap.
 7. `cargo clippy --workspace --all-targets -- -D warnings` — clean.
 8. Observer re-run of `survival-contested.ron` with `/scenario-analysis` — expected: 0 sustained-critical anomalies (or substantially fewer / shorter ones); `MAINTENANCE_STARVATION` (if S117 has landed) should also be absent.
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Landed the drive-escalation substrate across the live architecture: `DriveEscalationProfile`, extended `DeprivationExposure`, escalation transition event tagging from `needs_system`, planner-facing belief accessors, motive-score multiplier integration in AI ranking, and decision-trace multiplier surfacing.
+- Landed the authored scenario and golden proof chain through the archived S116 ticket family, including `golden_drive_escalation.rs`, the `drive-escalation-wash-priority.ron` scenario, and the contested authored-bound tightening from 400 to 300 in `survival-contested.ron`.
+- Preserved the canonical `needs_system` carrier instead of introducing a separate `drive_escalation_system`, and completed the survival-health retrofit/follow-up chain through archived S119 and S121 work before closing the contested calibration loop.
+
+### Deviations
+
+- The final implementation differed from the original draft in 3 important ways:
+  - escalation transitions remained on the existing `needs_system` path rather than introducing a dedicated new SystemFn
+  - the contested retrofit ended at a scenario-authored `survival_health_contract.max_authored_critical_run_ticks = 300`, not the earlier draft target of 200
+  - long-run survival proof carriage moved onto the later authored-contract substrate (`S119`/`S121`), so the final contested tightening lived in `survival-contested.ron` instead of a file-local golden constant
+
+### Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_drive_escalation`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

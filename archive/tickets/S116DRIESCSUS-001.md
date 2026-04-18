@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `HomeostaticNeedId`, `HomeostaticNeeds`, `DriveThresholds`, `DeprivationExposure`, `EventTag`
-**Deps**: specs/S116-drive-escalation-sustained-critical.md (D1, D5)
+**Deps**: archive/specs/S116-drive-escalation-sustained-critical.md (D1, D5)
 
 ## Problem
 

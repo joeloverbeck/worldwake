@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-systems` wash validation, matching AI/runtime fallout, focused action/planner coverage
-**Deps**: specs/S116-drive-escalation-sustained-critical.md, archive/tickets/S116DRIESCSUS-009.md
+**Deps**: archive/specs/S116-drive-escalation-sustained-critical.md, archive/tickets/S116DRIESCSUS-009.md
 
 ## Problem
 
@@ -16,7 +16,7 @@ The immediate planner gap for Wash is that the AI cannot currently pursue water 
 2. The current world already has concrete wash-adjacent substrates: scenarios author `WorkstationTag::WashBasin`, `WorkstationTag::Well`, and `ResourceSource` entries at places. This means a redesigned wash contract can stay concrete and place-local rather than introducing an abstract permission or purpose flag.
 3. The same gameplay fact currently has multiple nearby carriers with no single canonical contract: portable water lots, local water resource sources, and wash-basin facilities. This ticket must choose one authoritative carrier for “water available for wash” and remove any contradictory duplicate semantics from the live runtime path.
 4. The immediate AI planning gap is distinct and owned by `S116DRIESCSUS-009`. This ticket is the adjacent authoritative-contract follow-up already anticipated by the S116 spec and reports; it should not be folded back into 009 unless implementation proves the two are inseparable.
-5. The S116 spec already names this residual bottleneck explicitly in [specs/S116-drive-escalation-sustained-critical.md](/home/joeloverbeck/projects/worldwake/specs/S116-drive-escalation-sustained-critical.md): the direct-possession wash rule is the remaining architectural limit after motive escalation and planner repair.
+5. The S116 spec already names this residual bottleneck explicitly in [archive/specs/S116-drive-escalation-sustained-critical.md](/home/joeloverbeck/projects/worldwake/archive/specs/S116-drive-escalation-sustained-critical.md): the direct-possession wash rule is the remaining architectural limit after motive escalation and planner repair.
 6. Exact mixed-layer boundary under audit: authoritative `wash` start validation and execution semantics in `worldwake-systems` versus the corresponding planner-visible prerequisite contract in `worldwake-ai`. If the action contract changes, the AI must be updated to match it truthfully.
 7. Intended invariant before implementation: wash should become available through one concrete, local, world-state-backed water-access contract that remains belief-driven on the AI side and authoritative on the action side. The fix must not introduce a second parallel “special wash water” lane or purpose-only bookkeeping.
 8. Mismatch + correction: the active S116 golden ticket originally tried to prove repeated washing using only “basin + co-located water source” scenario authoring. Reassessment showed that authored setup is not sufficient under the current authoritative direct-possession rule. This ticket is the explicit owner for deciding whether that rule should remain canonical.
