@@ -18,7 +18,7 @@ Phase 7 Adjunct: Survival Stability Hardening. Status: Draft.
 
 ## Dependencies
 
-- `specs/S119-authored-survival-health-contracts.md`
+- `archive/specs/S119-authored-survival-health-contracts.md` (completed 2026-04-18)
 
 ## Motivating Evidence
 

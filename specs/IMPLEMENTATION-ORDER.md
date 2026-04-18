@@ -307,7 +307,7 @@ S121 (soft depends on S119)
 
 **Wave** (parallel, no hard deps):
 
-- **S119**: Authored Survival Health Contracts — add a shared scenario-authored `survival_health_contract` surface for survival scenarios so long-run goldens read authored-critical thresholds, idle-window bounds, and required self-care families from one canonical place instead of duplicating file-local constants.
+- **S119**: ✅ COMPLETED — archived at [archive/specs/S119-authored-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/archive/specs/S119-authored-survival-health-contracts.md). Landed `SurvivalHealthContractDef` and `NeedsActionFamily` on `ScenarioDef`, shared survival-golden harness helpers (`expect_survival_health_contract`, `assert_authored_critical_runs`, `assert_required_self_care_families`, `assert_no_stuck_idle_windows`), authored `survival_health_contract` sections in the three survival scenarios, the contract-presence guard plus dedicated regression test, and the `docs/golden-e2e-testing.md` update. Post-retrofit fallout absorbed by `S119AUTHSURVHC-002` (scattered hunger bound raised to 550) and `S121` (per-need `critical_run_limits` extension).
 - **S120**: Survival Critical-Window Forensics — add a deterministic derived report for prolonged authored-critical runs showing selected goal, competitors, blocker/exhaustion state, and local authoritative survival state, so future regressions can be explained without one-off debug probes.
 - **S121**: Per-Need Survival Health Contracts — extend the S119 contract so contested/adversarial scenarios can author different critical-run bounds per need when one coarse global cap overstates unlike self-care families such as dirtiness under non-Wash-required scenarios.
 

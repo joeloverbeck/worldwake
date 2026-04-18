@@ -60,9 +60,9 @@ See `docs/module-reference.md` for per-module type listings.
 These are non-negotiable design rules enforced by tests:
 
 - **No `Player` type** — only `ControlSource = Human | Ai | None`
-- **Belief-only planning** — agents never read world state directly (Principle 10)
-- **Information locality** — no system queries global state on behalf of an agent; information propagates through perception, reports, witnesses, and travel over the place graph (Principle 7)
-- **System decoupling** — system modules in `worldwake-systems` depend only on `worldwake-core` and `worldwake-sim`, never on each other (Principle 12)
+- **Belief-only planning** — agents plan from beliefs (FND-14), with one narrow exception: same-tick direct observation of a co-located entity's physical properties (kind, item-lot commodity/quantity, workstation tag, resource source, container contents) may read world state, since a correct perception pipeline would deliver those facts on the same tick (FND-14A). Social/relational facts (ownership, effective rights, institutional claims, jurisdiction) always require an explicit belief entry even when the subject is co-located. See `crates/worldwake-sim/src/per_agent_belief_view.rs` for the canonical split implementation.
+- **Information locality** — no system queries global state on behalf of an agent; information propagates through perception, reports, witnesses, and travel over the place graph (FND-7, FND-15)
+- **System decoupling** — system modules in `worldwake-systems` depend only on `worldwake-core` and `worldwake-sim`, never on each other (FND-26)
 - **Append-only event log** — causal source of truth, never mutated
 - **Determinism** — `ChaCha8Rng` seeded, `BTreeMap`/`BTreeSet` only in authoritative state (no `HashMap`/`HashSet`), no floats, no wall-clock time
 - **Conservation** — items cannot be created/destroyed except through explicit actions; enforced by `verify_conservation`

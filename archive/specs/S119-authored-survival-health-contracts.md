@@ -6,7 +6,7 @@ Add a shared, profile-driven survival health contract surface for authored scena
 
 ## Phase and Status
 
-Phase 7 Adjunct: Survival Stability Hardening. Status: Draft.
+Phase 7 Adjunct: Survival Stability Hardening. Status: ✅ COMPLETED.
 
 ## Crates
 
@@ -25,6 +25,8 @@ Phase 7 Adjunct: Survival Stability Hardening. Status: Draft.
   - `scenarios/survival-contested.ron`
 
 ## Motivating Evidence
+
+(Conditions described below reflect the branch state at spec authoring; the drift was resolved by the implementation landed on 2026-04-18. Kept as the causal motivation for the substrate.)
 
 Implementation of the S116 survival ticket chain exposed that the existing survival golden surface could silently diverge from authored scenario truth:
 
@@ -89,6 +91,8 @@ pub struct ScenarioDef {
 
 `survival_health_contract` is optional so non-survival scenarios do not carry irrelevant assertions.
 
+Per-need critical-run overrides are out of scope for this spec. They were added as a separate substrate by [specs/S121-per-need-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/specs/S121-per-need-survival-health-contracts.md), which extends `SurvivalHealthContractDef` with an optional `critical_run_limits: Option<SurvivalCriticalRunLimitsDef>` field carried on the same authored-contract surface.
+
 ### D2: Shared golden helper reads authored contract
 
 In `crates/worldwake-ai/tests/golden_harness/` (or the existing shared support file used by survival goldens), add helpers that:
@@ -134,7 +138,7 @@ The goldens may still keep file-local constants for test mechanics that are not 
 
 Add a focused regression that fails if a golden survival scenario is missing `survival_health_contract`.
 
-This can live in `worldwake-cli` or `worldwake-ai/tests/golden_harness/` depending on where the scenario inventory is easiest to enumerate.
+Implemented in the shared golden harness via `expect_survival_health_contract` (panics on `None`) plus a dedicated regression test in `crates/worldwake-ai/tests/golden_survival_baseline.rs` that constructs a synthetic scenario with `survival_health_contract: None` and confirms the guard fires.
 
 ### D6: Documentation
 
@@ -170,13 +174,43 @@ None.
 1. A synthetic scenario with `survival_health_contract = None` is accepted by the loader, but the survival-golden inventory guard rejects using it as a survival scenario.
 2. Shared helper test: sustained-critical tracking compares against each agent's authored `DriveThresholds`, not a file-local constant.
 3. Shared helper test: required self-care family coverage reports missing families deterministically.
+4. Loader deserialization test: `crates/worldwake-cli/src/scenario/types.rs::tests::test_scenario_def_deserializes_survival_health_contract` proves the authored contract deserializes through the normal scenario path.
 
 ### Golden / integration tests
 
-4. `golden_survival_baseline.rs` reads authored contract values and stays green.
-5. `golden_survival_scattered.rs` reads authored contract values and stays green.
-6. `golden_survival_contested.rs` reads authored contract values and stays green.
+5. `golden_survival_baseline.rs` reads authored contract values and stays green.
+6. `golden_survival_scattered.rs` reads authored contract values and stays green.
+7. `golden_survival_contested.rs` reads authored contract values and stays green.
 
 ## Outcome
 
-To be filled in at completion.
+Completed on 2026-04-18.
+
+**What changed**:
+
+- Added `SurvivalHealthContractDef` and `NeedsActionFamily` to [crates/worldwake-cli/src/scenario/types.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-cli/src/scenario/types.rs) and attached an optional `survival_health_contract: Option<SurvivalHealthContractDef>` field to `ScenarioDef`.
+- Added shared survival-golden helpers to [crates/worldwake-ai/tests/golden_harness/mod.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_harness/mod.rs): `expect_survival_health_contract`, `SurvivalNeedRunTracker`, `assert_authored_critical_runs`, `assert_required_self_care_families`, `assert_no_stuck_idle_windows`.
+- Authored explicit `survival_health_contract` sections in [survival-baseline.ron](/home/joeloverbeck/projects/worldwake/scenarios/survival-baseline.ron), [survival-scattered.ron](/home/joeloverbeck/projects/worldwake/scenarios/survival-scattered.ron), and [survival-contested.ron](/home/joeloverbeck/projects/worldwake/scenarios/survival-contested.ron).
+- Retrofitted [golden_survival_baseline.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_baseline.rs), [golden_survival_scattered.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_scattered.rs), and [golden_survival_contested.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_contested.rs) to consume the authored contract and removed the stale file-local `NEED_CRITICAL_THRESHOLD` / `MAX_CRITICAL_RUN_TICKS` / `pm(750)` constants.
+- Added the contract-presence guard plus a dedicated regression test in `golden_survival_baseline.rs`.
+- Updated [docs/golden-e2e-testing.md](/home/joeloverbeck/projects/worldwake/docs/golden-e2e-testing.md) with the "Survival Health Contracts" section.
+
+**Tickets**:
+
+- [archive/tickets/S119AUTHSURVHC-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S119AUTHSURVHC-001.md) — primary substrate and retrofit
+- [archive/tickets/S119AUTHSURVHC-002.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S119AUTHSURVHC-002.md) — scattered hunger-bound classification (authored bound raised from 400 → 550)
+
+**Deviations from original plan**:
+
+- Post-retrofit verification surfaced two additional blockers that were resolved in their own explicit owners rather than absorbed into this spec:
+  1. Scattered hunger overrun → [archive/tickets/S119AUTHSURVHC-002.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S119AUTHSURVHC-002.md) classified it as a too-strict authored bound and corrected `survival-scattered.ron`.
+  2. Contested dirtiness overrun → [specs/S121-per-need-survival-health-contracts.md](/home/joeloverbeck/projects/worldwake/specs/S121-per-need-survival-health-contracts.md) extended `SurvivalHealthContractDef` with an optional `critical_run_limits: Option<SurvivalCriticalRunLimitsDef>` field so per-need authored-critical bounds could live on the same contract surface without weakening the global envelope.
+- `NeedsActionFamily` carries a `Wash` variant even though `survival-contested.ron` authors `required_self_care_families: [Eat, Drink, Sleep, Relieve]` (no `Wash`). The variant exists at the enum level; each scenario declares its own required families.
+
+**Verification**:
+
+- Passed `cargo test -p worldwake-cli scenario`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
