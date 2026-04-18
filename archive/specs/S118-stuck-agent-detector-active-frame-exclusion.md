@@ -1,5 +1,7 @@
 # S118: Stuck-Agent Detector Precision — Active-Frame Exclusion
 
+**Status**: COMPLETED
+
 ## Summary
 
 Refine the mechanical `STUCK_AGENT` observer anomaly detector to exclude tick windows where the agent was in an active multi-tick action frame (ActionStarted without a matching ActionCommitted/ActionAborted yet). The current detector counts "ticks with no ActionStarted event at tick T" as idle, which produces false positives during composite maintenance trips (travel → wash → travel) where the middle ticks of a 12-tick wash register as "no action started at this tick" even though the agent is demonstrably working. Observer-only change; no simulation behavior impact.
@@ -247,3 +249,22 @@ None. Observer-only.
 3. `cargo run -p worldwake-cli --bin observer -- scenarios/survival-contested.ron --ticks 1440 --output /tmp/contested-dump.md` — the historical Agent C 26-tick window (ticks 59-84) is no longer flagged as `STUCK_AGENT`.
 4. `cargo test -p worldwake-ai --test golden_survival_contested` — still passes. This test is independent of the observer binary's detector: it runs its own per-agent idle tracker inside `no_stuck_idle_windows_with_elevated_needs` (see `golden_survival_contested.rs:593-602`) using scenario-authored thresholds read from the `SurvivalHealthContract` (`contract.max_idle_window_ticks_with_elevated_need = 40` and `contract.elevated_need_floor`, both sourced from `scenarios/survival-contested.ron:31`). S118 does not touch either the contract or the test's idle logic.
 5. `cargo clippy --workspace --all-targets -- -D warnings` — clean.
+
+## Outcome
+
+- Completed: 2026-04-18
+- What changed:
+  - Landed the observer-local `open_frame` tracking refinement so `had_action` now treats both same-tick lifecycle events and already-open multi-tick action frames as non-idle.
+  - Added the binary-level regression for the wash+travel false-positive shape in `crates/worldwake-cli/tests/golden_observer_anomalies.rs` with fixture `crates/worldwake-cli/tests/fixtures/observer_anomalies/stuck_detector_wash_travel_cycle.ron`.
+  - Added the two guardrail proofs that complete the detector partition: genuine-idle still fires (`stuck_detector_genuine_idle.ron`) and `StartFailed`-only spans still fire via the focused `observer.rs` unit test.
+  - Simplified the scenario-analysis Smell-3 detector caveat in `.claude/skills/scenario-analysis/references/layer-1-behavioral-smells.md` to match the landed runtime behavior.
+- Deviations from original plan:
+  - D4 did not land as a pure observer-binary `.ron` fixture. Live reassessment showed the current observer scenario seam cannot truthfully author a `StartFailed`-only span; the honest proof moved to a focused unit test in `crates/worldwake-cli/src/bin/observer.rs`.
+  - The strongest verified closeout surface for S118 came through the delivered ticket chain (`S118STUAGEDET-001` through `003`), so the actual verification record below reflects the commands that passed during implementation rather than the broader draft-plan commands listed above.
+- Verification results:
+  - `cargo test -p worldwake-cli --test golden_observer_anomalies stuck_detector_excludes_wash_travel_cycle -- --exact`
+  - `cargo test -p worldwake-cli --test golden_observer_anomalies stuck_detector_still_fires_on_genuine_idle -- --exact`
+  - `cargo test -p worldwake-cli --bin observer tests::stuck_detector_does_not_treat_startfailed_as_active_frame -- --exact`
+  - `cargo test -p worldwake-cli --test golden_observer_anomalies`
+  - `cargo test -p worldwake-cli`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

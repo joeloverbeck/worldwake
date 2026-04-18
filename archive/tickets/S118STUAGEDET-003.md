@@ -1,6 +1,6 @@
 # S118STUAGEDET-003: Simplify stuck-agent detector caveat in scenario-analysis skill
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — skill-documentation-only edit.
@@ -78,3 +78,16 @@ The removed clauses — "behavior is not 100% reliable for composite maintenance
 
 1. `cargo test -p worldwake-cli --test golden_observer_anomalies stuck_detector_excludes_wash_travel_cycle` — confirms the detector fix from S118STUAGEDET-001 is present before editing the doc.
 2. `grep -n "100% reliable" .claude/skills/scenario-analysis/references/layer-1-behavioral-smells.md` — must return zero matches after the edit. (Verification via direct grep; narrower than `scripts/verify.sh` because the ticket changes no compiled or runtime code.)
+
+## Outcome
+
+Completed on 2026-04-18.
+
+- Replaced the stale Smell-3 "Detector caveat" paragraph in `.claude/skills/scenario-analysis/references/layer-1-behavioral-smells.md` with the simplified post-S118 wording from the spec.
+- Removed the obsolete "behavior is not 100% reliable for composite maintenance trips" warning, the manual false-positive verification procedure, and the sentence claiming anomalies may fire on active multi-tick work windows.
+- Left `.claude/skills/scenario-analysis/SKILL.md` unchanged because the caveat text lives only in the layered reference file.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --test golden_observer_anomalies stuck_detector_excludes_wash_travel_cycle -- --exact`
+- Passed `grep -n "100% reliable" .claude/skills/scenario-analysis/references/layer-1-behavioral-smells.md` by returning zero matches
